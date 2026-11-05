@@ -37,7 +37,7 @@ from max.nn.legacy.kv_cache.cache_params import (
     recurrent_leaf,
     spec_decode_cache_slack,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     indexer_selection_width,
 )

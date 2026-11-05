@@ -41,11 +41,11 @@ from max.graph import Module as GraphModule
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.attention import (
     TensorParallelAttentionWithRope,
     num_heads_for_device,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.comm import Allreduce
 from max.nn.legacy.embedding import VocabParallelEmbedding
 from max.nn.legacy.kernels import flash_attention_gpu

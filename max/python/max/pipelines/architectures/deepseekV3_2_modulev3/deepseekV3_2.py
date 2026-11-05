@@ -32,8 +32,8 @@ from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs

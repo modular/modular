@@ -54,7 +54,7 @@ from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn import Module
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     create_empty_embeddings,
     create_empty_indices,

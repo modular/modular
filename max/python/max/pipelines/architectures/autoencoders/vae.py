@@ -19,7 +19,7 @@ from itertools import pairwise
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, Weight, ops
 from max.graph.type import FilterLayout
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_gpu
 from max.nn.legacy.layer import LayerList, Module
 

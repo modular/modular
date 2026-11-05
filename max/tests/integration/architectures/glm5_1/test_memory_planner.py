@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, NonCallableMock
 import pytest
 from max.driver import DeviceSpec
 from max.dtype import DType
-from max.nn.legacy.comm.ep.ep_config import EPConfig
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.comm.ep.ep_manager import (
     _bound_fused_moe_workspace,
     _ep_sync_counter_bytes,

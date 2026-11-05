@@ -40,7 +40,8 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8,
     rms_norm_quantize_dynamic_scaled_float8,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.quant_ops import quantized_matmul
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -48,7 +49,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.quant_ops import quantized_matmul
 
 _GROUP = 128
 _EPS = 1e-6

@@ -38,7 +38,7 @@ from max.dtype import DType
 from max.functional import collective_ops
 from max.graph import DeviceRef, TensorValue
 from max.nn.legacy import kernels
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )

@@ -29,8 +29,8 @@ from max.nn.common_layers.quant_linear import (
     tensor_parallel_mlp,
 )
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.quant_config import QuantFormat
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantFormat
 from max.tensor import Tensor
 
 from ...deepseekV3_modulev3.layers.moe_gate import DeepseekV3TopKRouter

@@ -23,10 +23,8 @@ from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
-    Llama3RopeScalingParams,
-    Llama3RotaryEmbedding,
-)
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.rope_scaling import Llama3RopeScalingParams
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.registration_encoder import EncoderInputs
 

@@ -17,6 +17,7 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",

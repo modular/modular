@@ -27,13 +27,8 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy import (
-    LayerNorm,
-    Linear,
-    Module,
-    QuantConfig,
-)
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.legacy import LayerNorm, Linear, Module
 from max.nn.legacy.kernels import (
     mla_fp8_index_top_k,
     mla_fp8_index_top_k_physical,
@@ -50,7 +45,7 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Shardable
-from max.nn.legacy.quant_config import QuantFormat
+from max.nn.quant_config import QuantConfig, QuantFormat
 
 from .transforms import HadamardTransform
 

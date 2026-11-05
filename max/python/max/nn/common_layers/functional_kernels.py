@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.nn.legacy.activation import GatedActivation
+from max.nn.activation import GatedActivation
 from max.nn.legacy.comm.ep.ep_kernels import (
     fused_silu as _fused_silu,
 )

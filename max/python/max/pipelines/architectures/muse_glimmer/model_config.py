@@ -21,7 +21,7 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )

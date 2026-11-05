@@ -39,7 +39,7 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.moe import MoEGate
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.moe.expert_parallel import _SHARED_EXPERT_STREAM_ID
-from max.nn.legacy.quant_config import QuantConfig, QuantFormat
+from max.nn.quant_config import QuantConfig, QuantFormat
 from max.nn.sequential import ModuleList
 from max.tensor import (
     Tensor,

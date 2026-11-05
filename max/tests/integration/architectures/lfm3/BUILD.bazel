@@ -11,7 +11,7 @@ modular_py_test(
     srcs = ["test_registration.py"],
     deps = [
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/lfm3",
         "//max/python/max/pipelines/lib",
     ],

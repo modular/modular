@@ -37,11 +37,11 @@ from max.graph import (
 )
 from max.nn.legacy.kernels import merge_ragged_tensors
 from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
     distributed_logits_postprocess,
 )
 from max.nn.legacy.transformer.transformer import logits_postprocess
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.driver import (
     CarryDimNames,

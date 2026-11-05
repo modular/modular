@@ -28,6 +28,8 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.quant_config import QuantConfig, fp4_packed_k
 from max.support.math import ceildiv
 
 from ..comm import Allreduce
@@ -41,10 +43,8 @@ from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
-from ..quant_config import QuantConfig, fp4_packed_k
 from ..quant_ops import quantized_matmul
 from ..rotary_embedding import RotaryEmbedding
-from .mask_config import MHAMaskVariant
 from .multi_latent_attention import MLAPrefillMetadata
 
 

@@ -83,13 +83,13 @@ from max.nn.common_layers.functional_kernels import (
     shard_and_stack,
 )
 from max.nn.common_layers.mesh_axis import EP, TP
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.kernels import (
     grouped_dynamic_block_scaled_matmul_amd,
     quantize_dynamic_block_scaled,
 )
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.support.math import ceildiv
 from max.tensor import Tensor, default_device

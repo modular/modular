@@ -26,7 +26,7 @@ from typing import Any
 from max.nn import Module as ModuleV3
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MLAKVCacheParams
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 
 from .block_driver import BlockProposer
 from .config import SpeculativeConfig, SpeculativeMethod

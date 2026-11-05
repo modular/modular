@@ -21,7 +21,7 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Linear, Module
-from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.tensor import Tensor
 

@@ -28,6 +28,7 @@ from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.graph.weight import _compute_shard_range
+from max.nn.quant_config import QuantConfig, QuantFormat
 from max.support.math import ceildiv
 from typing_extensions import Self
 
@@ -38,7 +39,6 @@ from ..kernels import (
 )
 from ..layer import Module, Shardable
 from ..linear import MLP
-from ..quant_config import QuantConfig, QuantFormat
 from ..quant_ops import quantized_grouped_matmul
 from .moe import MoEGate
 from .quant_strategy import NvMxf4f8Strategy, interleaved_block_scales_shape

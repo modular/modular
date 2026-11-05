@@ -24,7 +24,13 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy import (
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.legacy.kv_cache import (
+    KVCacheQuantizationConfig,
+    MHAKVCacheParams,
+)
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -32,12 +38,6 @@ from max.nn.legacy import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kv_cache import (
-    KVCacheQuantizationConfig,
-    MHAKVCacheParams,
-)
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.deepseekV3_2.layers import Indexer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context

@@ -44,15 +44,13 @@ from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.moe import MoE
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from max.nn.legacy.transformer import (
     DecoderOutputs,
     Transformer,
     TransformerBlock,
 )
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )

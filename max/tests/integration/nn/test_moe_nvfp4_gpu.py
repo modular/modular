@@ -20,9 +20,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy.activation import GatedActivation
+from max.nn.activation import GatedActivation
 from max.nn.legacy.moe import MoEQuantized
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

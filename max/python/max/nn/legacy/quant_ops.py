@@ -15,6 +15,13 @@
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    WeightScaleSpec,
+)
 
 from .kernels import (
     _apple_int8_w8a8_matmul,
@@ -48,13 +55,6 @@ from .kernels import (
     quantize_tensor_dynamic_scaled_float8,
 )
 from .kv_cache import KVCacheParams, PagedCacheValues
-from .quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    WeightScaleSpec,
-)
 
 
 def _reshape_pre_interleaved_scales(

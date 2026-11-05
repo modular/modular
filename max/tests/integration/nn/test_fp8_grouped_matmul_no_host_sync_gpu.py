@@ -33,7 +33,7 @@ from max.graph.weights import WeightData
 from max.nn.legacy import kernels
 from max.nn.legacy.moe import MoEQuantized
 from max.nn.legacy.moe.quant_strategy import Fp8Strategy
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

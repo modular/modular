@@ -30,7 +30,7 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import (
     cross_attention_ragged,
     flash_attention_gpu,

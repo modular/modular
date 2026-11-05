@@ -30,7 +30,7 @@ from _mla_sparse_test_utils import paged_kv_from_flat_graph_inputs
 from max import mlir, tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
     MLAPrefillMetadata,
@@ -46,7 +46,8 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.kv_cache import KVCacheQuantizationConfig, MLAKVCacheParams
 from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -54,10 +55,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 
 
 def test_mla_prefill_decode_graph_sparse_smoke() -> None:

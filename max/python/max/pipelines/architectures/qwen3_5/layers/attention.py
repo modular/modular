@@ -30,7 +30,7 @@ import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.graph.weight import Segment
-from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
@@ -42,9 +42,9 @@ from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.stacked_linear import StackedLinear
+from max.nn.quant_config import QuantConfig
 
 
 def _projection(stack: StackedLinear, name: str) -> Linear:

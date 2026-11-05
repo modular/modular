@@ -27,7 +27,7 @@ from max.nn.common_layers.stacked_quant_moe import (
     StackedQuantizedMoE,
 )
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor, default_dtype
 
 from ..model_config import MuseSparkTextConfig

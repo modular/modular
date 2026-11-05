@@ -44,8 +44,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
 )
 from max.nn.legacy.layer import Module
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.glm5_next.glm5_next import Glm5Next
 from max.pipelines.architectures.glm5_next.layers import kimi_delta_attention

@@ -49,7 +49,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (

@@ -29,7 +29,8 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.quant_config import QuantConfig
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -47,7 +48,6 @@ from ..norm import RMSNorm
 from ..rotary_embedding import RotaryEmbedding
 from ..stacked_linear import StackedLinear
 from .interfaces import DistributedAttentionImpl
-from .mask_config import MHAMaskVariant
 
 
 class AttentionWithRope(Module, Shardable):

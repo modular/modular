@@ -35,7 +35,7 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.activation import GatedActivation
+from max.nn.activation import GatedActivation
 from max.nn.legacy.kernels import (
     amd_mega_ffn_workspace_words,
     block_scaled_preshuffle_grouped_scale_4d,

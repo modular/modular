@@ -39,7 +39,7 @@ from max.nn.legacy.kernels import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,

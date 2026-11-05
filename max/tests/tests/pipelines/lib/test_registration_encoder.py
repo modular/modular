@@ -31,7 +31,7 @@ from max.graph import DeviceRef, TensorType, TensorValue
 from max.graph.weights import WeightsFormat
 from max.nn import Module as ModuleV3
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.lib.graph_specs import GraphSpec, compile_and_init_graphs

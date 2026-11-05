@@ -64,7 +64,7 @@ from max.nn.legacy.sampling.rejection_sampler import (
     _draft_step_seed,
     _reshape_target_logits,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )

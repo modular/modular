@@ -37,8 +37,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor

@@ -46,8 +46,8 @@ from max.graph import (
     TensorValueLike,
     Value,
 )
+from max.nn.activation import GatedActivation
 from max.nn.legacy import MLP
-from max.nn.legacy.activation import GatedActivation
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.layer import Module
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers

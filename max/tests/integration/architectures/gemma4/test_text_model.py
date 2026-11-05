@@ -54,7 +54,7 @@ from max.graph import (
 from max.nn.legacy.comm.allreduce import Signals
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.linear import MLP
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     create_empty_embeddings,
     create_empty_indices,

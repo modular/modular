@@ -62,7 +62,8 @@ from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.kernels import (
     BLOCKWISE_FP8_LANE_BYTES,
     amd_mega_ffn_workspace_words,
@@ -78,7 +79,7 @@ from max.nn.legacy.kernels import (
     stack_blockwise_fp8_b,
 )
 from max.nn.legacy.moe.moe_fp8 import MoEQuantized
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

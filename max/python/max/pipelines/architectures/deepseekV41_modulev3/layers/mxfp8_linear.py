@@ -34,10 +34,10 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn import Module
+from max.nn.activation import GatedActivation
 from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
 )
-from max.nn.legacy.activation import GatedActivation
 from max.nn.legacy.kernels import (
     _is_apple_gpu,
     _is_sm10x_gpu,

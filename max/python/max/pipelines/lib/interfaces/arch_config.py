@@ -38,7 +38,7 @@ from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,
     cache_dtype_for_encoding,

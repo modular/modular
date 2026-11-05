@@ -44,14 +44,13 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
     QuantAwareTensor,
 )
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS
+from max.nn.ep_config import NUM_GROUPS, EPConfig
 from max.nn.legacy.comm.ep.ep_manager import (
     EPBatchManager,
     EPCommBuffers,
     get_ep_local_sync_counters_size,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
 )

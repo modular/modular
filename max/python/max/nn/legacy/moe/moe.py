@@ -23,10 +23,11 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._identity import IdentityMap
+from max.nn.activation import GatedActivation
+from max.nn.quant_config import QuantConfig
 from typing_extensions import Self
 
-from .._identity import IdentityMap
-from ..activation import GatedActivation
 from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
 from ..kernels import (
@@ -36,7 +37,6 @@ from ..kernels import (
 )
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
-from ..quant_config import QuantConfig
 
 
 def make_concatenated_gated_activation_fn(

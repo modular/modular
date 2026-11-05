@@ -34,6 +34,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV4",
         "//max/python/max/pipelines/context",

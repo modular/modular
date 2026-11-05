@@ -78,6 +78,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         # test_model_config.py builds the real HF shim
         # (hf_config_shims.DeepseekV41HFConfig) like arch:test_hf_config_shim.

@@ -46,7 +46,7 @@ from max.nn.legacy.kernels import (
     grouped_dynamic_block_scaled_matmul_amd,
     quantize_dynamic_block_scaled_mxfp4,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

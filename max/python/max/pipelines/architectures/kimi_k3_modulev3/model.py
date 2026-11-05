@@ -59,7 +59,7 @@ from max.graph import BufferValue, TensorType, TensorValue
 from max.nn import Embedding, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -69,8 +69,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor

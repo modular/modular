@@ -22,6 +22,7 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Linear, Module
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.functional_kernels import (
     flare_mla_prefill_plan,
     mla_decode_graph,
@@ -29,7 +30,6 @@ from max.nn.common_layers.functional_kernels import (
     mla_prefill_graph,
 )
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor

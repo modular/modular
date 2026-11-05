@@ -44,7 +44,8 @@ from max.nn.legacy.kv_cache import (
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -52,7 +53,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
     SparseLatentAttentionWithRope,
     SparseLatentAttentionWithRopeFp8,

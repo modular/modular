@@ -40,6 +40,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
         "//max/python/max/pipelines/architectures/llama3",
@@ -54,6 +55,7 @@ modular_py_library(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
@@ -88,6 +90,7 @@ modular_py_test(
     deps = [
         ":dflash2_pairing_harness",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
         "//max/python/max/pipelines/lib",

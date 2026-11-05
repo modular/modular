@@ -26,7 +26,7 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import BufferType, TensorType, TensorValue, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.pipelines.speculative.block_driver import (
     Accepted,

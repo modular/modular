@@ -26,11 +26,8 @@ from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 from max.dtype import DType
 from max.graph import DimLike, TensorValue, Value, ops
 from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnHiddenStates,
-    ReturnLogits,
-)
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 
 from .driver import (
     CarryDimNames,

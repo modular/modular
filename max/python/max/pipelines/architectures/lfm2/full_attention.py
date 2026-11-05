@@ -32,7 +32,7 @@ from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
 from max.nn.legacy.kernels import (
     flash_attention_ragged,

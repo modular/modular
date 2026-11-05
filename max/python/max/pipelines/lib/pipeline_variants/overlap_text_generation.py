@@ -112,7 +112,7 @@ from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     spec_decode_cache_slack,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.context import (
     EOSTracker,
     SpecDecodingState,

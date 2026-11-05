@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 
 from max.dtype import DType
-from max.nn.legacy.comm.ep.ep_config import (
+from max.nn.ep_config import (
     EPConfig,
     _ep_fused_moe_requested,
     calculate_ep_max_tokens_per_rank,

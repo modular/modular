@@ -68,6 +68,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
     ] + select({
         # flash-attn-4 b31 resolves only in the bench lock group; the bench
@@ -125,6 +126,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
     ],
 )
@@ -211,6 +213,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
     ],
 )
@@ -245,6 +248,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
     ],
 )
@@ -361,6 +365,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
@@ -389,6 +394,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
@@ -412,6 +418,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         requirement("torch"),
     ],

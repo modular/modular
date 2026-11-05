@@ -34,7 +34,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import (
     _mixed_step_split_value,
     flare_mla_decode_ragged,

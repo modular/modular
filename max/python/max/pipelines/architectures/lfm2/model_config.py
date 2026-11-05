@@ -28,7 +28,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig

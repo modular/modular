@@ -26,8 +26,8 @@ from max.nn.common_layers.linear import (
 )
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy import kernels
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.linear import _float8_matmul_op, _matmul_mapping
+from max.nn.quant_config import QuantConfig
 from max.support.math import ceildiv
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context

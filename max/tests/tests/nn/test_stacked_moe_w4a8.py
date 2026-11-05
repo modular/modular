@@ -39,7 +39,7 @@ from max.nn.legacy.moe import (
     quant_strategy,
     stacked_moe,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

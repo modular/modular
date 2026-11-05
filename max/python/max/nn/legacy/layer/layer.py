@@ -43,10 +43,9 @@ from max.graph import (
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from max.nn._identity import IdentitySet
 from max.tree import Tree
 from typing_extensions import Self
-
-from .._identity import IdentitySet
 
 
 @runtime_checkable

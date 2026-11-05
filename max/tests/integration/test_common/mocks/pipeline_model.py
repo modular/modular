@@ -28,7 +28,7 @@ from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,

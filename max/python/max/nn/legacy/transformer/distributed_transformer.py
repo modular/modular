@@ -28,6 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.tree import Tree
 
 from ..embedding import VocabParallelEmbedding
@@ -37,8 +38,6 @@ from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
 from .transformer import (
     DecoderOutputs,
-    ReturnHiddenStates,
-    ReturnLogits,
     extract_hs,
     forward_sequential_layers,
     forward_sharded_layers,

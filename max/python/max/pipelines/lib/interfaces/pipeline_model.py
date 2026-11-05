@@ -34,7 +34,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.kv_cache import (
     CacheLeafParamInterface,
     KVCacheInputs,
@@ -43,8 +43,8 @@ from max.nn.legacy.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.legacy.layer import Module as LayerModule
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.module import Module as _ModuleV3
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContextType, LogProbabilities
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,

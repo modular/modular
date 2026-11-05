@@ -53,7 +53,7 @@ from max.nn.legacy.kernels import (
     mla_kpool_ring_close,
     mla_kpool_seed_tail,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

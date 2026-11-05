@@ -52,16 +52,12 @@ from max.nn.legacy.moe import MoE, MoEQuantized
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnHiddenStates,
-    logits_outputs,
-)
+from max.nn.legacy.transformer import DecoderOutputs, logits_outputs
 from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
-    ReturnLogits,
     forward_sharded_layers,
 )
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
 from max.pipelines.architectures.qwen3.layers.moe import Qwen3MoEGate
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config

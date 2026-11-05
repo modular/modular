@@ -69,7 +69,7 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter

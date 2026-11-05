@@ -39,13 +39,13 @@ from max.nn import (
     ModuleList,
     RMSNorm,
 )
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.mlp import MLP
-from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,

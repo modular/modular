@@ -44,12 +44,8 @@ from max.driver import Buffer, accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.mesh_axis import EP, TP
-from max.nn.legacy.comm.ep import (
-    EPBatchManager,
-    EPCommInitializer,
-    EPConfig,
-    calculate_ep_max_tokens_per_rank,
-)
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
@@ -57,8 +53,8 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding

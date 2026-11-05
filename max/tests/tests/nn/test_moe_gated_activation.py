@@ -22,7 +22,8 @@ import pytest
 import torch
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.moe import GatedActivation, MoE
+from max.nn.activation import GatedActivation
+from max.nn.legacy.moe import MoE
 
 _HIDDEN_DIM = 64
 _MOE_DIM = 32

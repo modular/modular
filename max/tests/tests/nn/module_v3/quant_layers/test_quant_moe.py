@@ -27,7 +27,7 @@ from max.nn.common_layers.quant_tensor import (
     MXFP8Tensor,
     NVFP4Tensor,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor, default_dtype
 
 _HIDDEN_DIM = 256

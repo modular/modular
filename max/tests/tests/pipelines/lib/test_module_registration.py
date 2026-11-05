@@ -31,10 +31,10 @@ from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData, WeightsFormat
 from max.nn import Module
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.graph_groups import DecoderGraphInputs, VisionMerge
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,

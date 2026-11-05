@@ -53,7 +53,7 @@ from max.nn.legacy.kv_cache import (
     KVConnectorType,
     MultiKVCacheParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.arch import (
     dflash_mimo_v2_modulev3_draft_arch,
 )

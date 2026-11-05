@@ -53,7 +53,7 @@ from max.nn.common_layers.quant_ops import (
 from max.nn.legacy.kernels import (
     moe_create_indices_with_slots as _moe_create_indices_with_slots,
 )
-from max.nn.legacy.quant_config import ceildiv
+from max.nn.quant_config import ceildiv
 from max.tensor import Tensor
 from max.tensor.sharding import (
     AxisAssignment,

@@ -45,7 +45,8 @@ from max.nn.legacy.graph_groups import (
     VisionSegments,
     VisionSelfIndex,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, logits_outputs
+from max.nn.legacy.transformer import logits_outputs
+from max.nn.outputs import ReturnHiddenStates
 
 
 def _values(n: int) -> list[TensorValue]:

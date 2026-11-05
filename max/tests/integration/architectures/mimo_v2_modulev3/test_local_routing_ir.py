@@ -46,9 +46,10 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.graph.weights import SafetensorWeights, WeightData
 from max.nn import Module
+from max.nn.ep_config import EPConfig
 from max.nn.legacy import kernels
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import (
     MiMoV2,
     MiMoV2SpecTarget,

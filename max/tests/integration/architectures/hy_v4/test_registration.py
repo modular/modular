@@ -20,7 +20,7 @@ import pytest
 from max import tree
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.hy_v4.arch import hy_v4_arch
 from max.pipelines.architectures.hy_v4.decoder import HYV4Decoder
 from max.pipelines.architectures.hy_v4.model_config import (

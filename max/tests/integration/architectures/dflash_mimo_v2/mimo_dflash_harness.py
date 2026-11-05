@@ -50,7 +50,7 @@ from max.nn.legacy.kv_cache import (
 from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.layer import Module
 from max.nn.legacy.sampling import AcceptanceSampler
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2,

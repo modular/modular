@@ -41,7 +41,7 @@ from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2.model_config import (
     FULL,

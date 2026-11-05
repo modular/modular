@@ -142,6 +142,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/lib",

@@ -45,7 +45,8 @@ from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -53,7 +54,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
 
 from ...deepseekV4.layers.rope import apply_rope_tail
 from ..layer_resolver import LayerInfo

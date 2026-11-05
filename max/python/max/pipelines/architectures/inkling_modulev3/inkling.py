@@ -35,8 +35,8 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings

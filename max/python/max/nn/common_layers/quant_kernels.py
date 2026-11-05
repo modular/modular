@@ -82,7 +82,7 @@ from max.nn.legacy.kernels import (
 from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
-from max.nn.legacy.quant_config import InputScaleSpec, WeightScaleSpec
+from max.nn.quant_config import InputScaleSpec, WeightScaleSpec
 from max.tensor.sharding.action import AxisAssignment
 from max.tensor.sharding.cost import P, R
 from max.tensor.sharding.placements import Placement, Sharded

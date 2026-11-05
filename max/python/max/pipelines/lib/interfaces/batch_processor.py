@@ -44,7 +44,7 @@ from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
     max_pages_per_request,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext, TextContext
 from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.graph_input_stager import (

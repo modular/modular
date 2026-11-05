@@ -41,11 +41,7 @@ from max.nn.common_layers.quant_linear import (
     QuantizedQKVLinear,
 )
 from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
-from max.nn.legacy.quant_config import (
-    QuantConfig,
-    QuantFormat,
-    WeightSource,
-)
+from max.nn.quant_config import QuantConfig, QuantFormat, WeightSource
 from max.pipelines import PIPELINE_REGISTRY, TextGenerationPipelineInterface
 from max.pipelines.context import (
     SamplingParams,

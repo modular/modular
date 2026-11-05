@@ -27,8 +27,8 @@ from max.nn.common_layers.linear import (
     col_parallel,
     row_parallel,
 )
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.module import _TransparentKey
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 from typing_extensions import Self

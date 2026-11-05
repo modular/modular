@@ -89,6 +89,7 @@ modular_eager_py_test(
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
@@ -288,7 +289,6 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -403,7 +403,6 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
         "//max/python/max/nn/legacy/hooks",
     ],
 )

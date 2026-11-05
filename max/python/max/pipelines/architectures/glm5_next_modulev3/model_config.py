@@ -34,7 +34,7 @@ from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     spec_decode_cache_slack,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.glm5_next.model_config import (
     LINEAR_ATTENTION,
     MLA_KERNEL_LATENT_WIDTH,

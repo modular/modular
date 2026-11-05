@@ -58,7 +58,8 @@ from max.nn.legacy.kv_cache import (
     MLAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.quant_ops import quantized_fused_qkv_index_matmul
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -66,7 +67,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.quant_ops import quantized_fused_qkv_index_matmul
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 

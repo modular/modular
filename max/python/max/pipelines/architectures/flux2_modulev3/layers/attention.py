@@ -24,7 +24,7 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.nn import Module
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import (
     flash_attention_gpu,
     rope_ragged_with_position_ids,

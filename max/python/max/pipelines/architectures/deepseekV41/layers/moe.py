@@ -36,7 +36,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.activation import GatedActivation
+from max.nn.activation import GatedActivation
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.comm.ep.ep_kernels import fused_silu, fused_silu_quantized
 from max.nn.legacy.kernels import (
@@ -51,7 +51,7 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear, linear
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

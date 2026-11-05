@@ -32,7 +32,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.kv_cache.cache_params import MLAKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3_2_modulev3.deepseekV3_2 import (
     DeepseekV3_2TextModel,
 )

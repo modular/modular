@@ -49,9 +49,7 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8,
 )
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import (
-    QuantConfig,
-)
+from max.nn.quant_config import QuantConfig
 
 if TYPE_CHECKING:
     from ..model_config import DeepseekV4Config

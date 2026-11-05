@@ -45,7 +45,7 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_ragged
 from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,

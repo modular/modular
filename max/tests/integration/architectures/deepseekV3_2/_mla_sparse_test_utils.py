@@ -28,10 +28,8 @@ from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 
 
 def make_deepseek_rope(

@@ -23,8 +23,8 @@ from max.nn.legacy.clamp import clamp
 from max.nn.legacy.kernels import convert_weights_to_fp8_fnuz_if_needed
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear, linear
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.quant_ops import quantize_static_scaled_float8
+from max.nn.quant_config import QuantConfig
 
 
 class StackedLinear(Module):

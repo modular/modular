@@ -24,11 +24,8 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightsFormat
 from max.nn.legacy.kv_cache import MLAKVCacheParams
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnHiddenStates,
-    ReturnLogits,
-)
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3_nextn.deepseekV3_nextn import (
     DeepseekV3NextN,
 )

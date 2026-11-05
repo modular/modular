@@ -44,7 +44,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, Weights
 from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.glm5_next.model_config import (
     Glm5NextConfig as GraphGlm5NextConfig,

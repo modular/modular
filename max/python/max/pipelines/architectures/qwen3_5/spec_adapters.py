@@ -61,11 +61,11 @@ from max.nn.legacy.state_space import (
     GatedDeltaReplayInputs,
     verify_width_operand,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates
 from max.nn.legacy.transformer.transformer import (
     captures_by_device,
     fuse_captured_hidden_states,
 )
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig

@@ -34,9 +34,9 @@ from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 

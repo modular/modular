@@ -56,14 +56,10 @@ from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.ops.rms_norm import _float32_attr
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.legacy.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    WeightScaleSpec,
-)
+from max.nn.activation import GatedActivation
+from max.nn.attention_mask import AttentionMaskVariant, MHAMaskVariant
+from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
-from .activation import GatedActivation
-from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,

@@ -32,8 +32,8 @@ from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor

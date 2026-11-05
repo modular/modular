@@ -35,9 +35,10 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2Config,
     DFlashMiMoV2DraftConfig,

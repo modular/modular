@@ -19,8 +19,9 @@ from typing import NamedTuple, Protocol
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
+from max.nn.activation import GatedActivation
+from max.nn.quant_config import QuantConfig
 
-from ..activation import GatedActivation
 from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
     MXFP6_LANE_BYTES,
@@ -39,7 +40,6 @@ from ..kernels import (
     quantize_dynamic_block_scaled_mxfp6,
     quantize_dynamic_scaled_float8,
 )
-from ..quant_config import QuantConfig
 
 
 @dataclass

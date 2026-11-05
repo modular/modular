@@ -18,7 +18,7 @@ from collections.abc import Iterable
 from functools import partial
 
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_ragged_gpu
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear

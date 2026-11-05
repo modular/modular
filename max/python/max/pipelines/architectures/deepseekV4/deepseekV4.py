@@ -72,10 +72,10 @@ from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm
 from max.nn.legacy.transformer import (
     DecoderOutputs,
-    ReturnHiddenStates,
     forward_sequential_layers,
     logits_postprocess,
 )
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_kv_symbolic_input_tree,
 )

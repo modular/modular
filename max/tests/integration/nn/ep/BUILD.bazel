@@ -87,6 +87,9 @@ _COMMON_DEPS = [
     requirement("torch"),
 ]
 
+# Tests whose sources reach the shared nn configs.
+_NN_CONFIG_DEPS = ["//max/python/max/nn:core"]
+
 modular_py_test(
     name = "ep_tests",
     size = "large",
@@ -109,7 +112,10 @@ modular_py_test(
         "gpu",
         "requires-network",
     ],
-    deps = _COMMON_DEPS + [requirement("numpy")],
+    deps = _COMMON_DEPS + [
+        requirement("numpy"),
+        "//max/python/max/nn:core",
+    ],
 )
 
 modular_py_test(
@@ -145,6 +151,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
@@ -180,7 +187,7 @@ modular_py_test(
         "gpu",
         "requires-network",
     ],
-    deps = _COMMON_DEPS,
+    deps = _COMMON_DEPS + _NN_CONFIG_DEPS,
 )
 
 # The EP8, EP4 and EP2 128-local fused tests' shared helpers.
@@ -194,6 +201,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         requirement("pytest"),
         requirement("torch"),
@@ -236,6 +244,7 @@ modular_py_test(
     deps = _COMMON_DEPS + [
         ":fused_megaffn_gates",
         requirement("safetensors"),
+        "//max/python/max/nn:core",
     ],
 )
 
@@ -267,7 +276,7 @@ modular_py_test(
         "manual",
         "requires-network",
     ],
-    deps = _COMMON_DEPS,
+    deps = _COMMON_DEPS + _NN_CONFIG_DEPS,
 )
 
 # One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP2 with GLM-5.3's 256
@@ -299,7 +308,10 @@ modular_py_test(
         "manual",
         "requires-network",
     ],
-    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+    deps = _COMMON_DEPS + [
+        ":fused_megaffn_gates",
+        "//max/python/max/nn:core",
+    ],
 )
 
 # One-launch fused EP MoE (`mega_ffn.ep_fused`) at a top-6 MoE cell over two
@@ -331,7 +343,10 @@ modular_py_test(
         "manual",
         "requires-network",
     ],
-    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+    deps = _COMMON_DEPS + [
+        ":fused_megaffn_gates",
+        "//max/python/max/nn:core",
+    ],
 )
 
 # One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP4 (devices 0-3), 8 local
@@ -358,7 +373,10 @@ modular_py_test(
         "manual",
         "requires-network",
     ],
-    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+    deps = _COMMON_DEPS + [
+        ":fused_megaffn_gates",
+        "//max/python/max/nn:core",
+    ],
 )
 
 # One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP4 (devices 0-3) with
@@ -391,7 +409,10 @@ modular_py_test(
         "manual",
         "requires-network",
     ],
-    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+    deps = _COMMON_DEPS + [
+        ":fused_megaffn_gates",
+        "//max/python/max/nn:core",
+    ],
 )
 
 # Checks captured device graphs' profiler manifests against the graphs'
@@ -421,6 +442,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
@@ -455,5 +477,8 @@ modular_py_test(
         "manual",
         "requires-network",
     ],
-    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
+    deps = _COMMON_DEPS + [
+        ":fused_megaffn_gates",
+        "//max/python/max/nn:core",
+    ],
 )

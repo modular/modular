@@ -42,7 +42,8 @@ from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MLAKVCacheParams,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -50,10 +51,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack

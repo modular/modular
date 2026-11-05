@@ -69,7 +69,6 @@ from max.graph.weight import Segment
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.stacked_linear import StackedLinear
 from max.nn.legacy.state_space import (
     GatedDeltaReplayInputs,
@@ -81,6 +80,7 @@ from max.nn.legacy.state_space import (
     kda_chunk_is_registered,
     kda_chunk_supports_head_dims,
 )
+from max.nn.quant_config import QuantConfig
 
 from ..state_cache import GatedDeltaRingAccess
 

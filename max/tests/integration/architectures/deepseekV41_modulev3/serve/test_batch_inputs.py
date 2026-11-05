@@ -31,7 +31,7 @@ import numpy as np
 import pytest
 from max.driver import CPU, Buffer, Usage
 from max.dtype import DType
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
     engram_lookback_token_ids,
 )

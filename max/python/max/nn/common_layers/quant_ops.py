@@ -28,19 +28,19 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
+from max.nn.activation import GatedActivation
 from max.nn.common_layers.functional_kernels import (
     fused_silu,
     fused_silu_quantized,
     grouped_matmul_ragged,
 )
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.comm.ep.ep_kernels import uses_mx_ep_token_format
 from max.nn.legacy.kernels import _is_amd_gpu
 from max.nn.legacy.kernels import (
     grouped_matmul_blocked_swiglu as _grouped_matmul_blocked_swiglu,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

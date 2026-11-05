@@ -21,7 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding

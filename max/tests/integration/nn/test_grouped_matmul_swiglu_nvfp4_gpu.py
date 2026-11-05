@@ -49,7 +49,7 @@ from max.nn.legacy.kernels import (
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

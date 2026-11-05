@@ -52,6 +52,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn import Linear, Module
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     store_k_cache_ragged,
@@ -61,7 +62,6 @@ from max.nn.common_layers.linear import col_parallel, row_parallel
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
-from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kernels import fused_qk_ragged_rope as _fused_qk_ragged_rope
 from max.nn.legacy.kernels import store_v_cache_ragged as _store_v_cache_ragged
 from max.nn.legacy.kv_cache import KVCacheParams

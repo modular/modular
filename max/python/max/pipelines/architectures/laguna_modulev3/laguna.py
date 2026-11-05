@@ -38,8 +38,8 @@ from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.rotary_embedding import YarnScalingParams
 from max.nn.linear import Linear
+from max.nn.rope_scaling import YarnScalingParams
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,

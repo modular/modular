@@ -58,7 +58,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.comm import Allreduce
 from max.nn.legacy.kernels import mla_decode_graph
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues

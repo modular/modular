@@ -48,20 +48,20 @@ from max.graph import (
     Value,
     ops,
 )
-from max.support.human_readable_formatter import to_human_readable_bytes
-from max.support.math import ceildiv
-from max.tensor import Tensor
-from numpy.typing import NDArray
-
-from ...activation import GatedActivation
-from ...graph_groups import EPPayload
-from ...layer import Module
-from .ep_config import (
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import (
     _EP_LOCAL_SYNC_RESERVED_WORDS,
     NUM_GROUPS,
     EPConfig,
     _ep_fused_moe_requested,
 )
+from max.support.human_readable_formatter import to_human_readable_bytes
+from max.support.math import ceildiv
+from max.tensor import Tensor
+from numpy.typing import NDArray
+
+from ...graph_groups import EPPayload
+from ...layer import Module
 from .ep_kernels import (
     _call_mega_ffn_ep_combine_send,
     _call_mega_ffn_ep_fused,

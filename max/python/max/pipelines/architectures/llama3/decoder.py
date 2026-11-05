@@ -26,7 +26,7 @@ from max.graph.weights import WeightData
 from max.nn.legacy.data_parallelism import split_batch
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.module_registration import finalize_config

@@ -20,12 +20,6 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import (
-    InputScaleSpec,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-)
 from max.nn.legacy.kernels import (
     _fused_qkv_ragged_matmul_scaled_float8 as fused_qkv_ragged_matmul_scaled_float8,
 )
@@ -40,6 +34,12 @@ from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,
+)
+from max.nn.quant_config import (
+    InputScaleSpec,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 
 

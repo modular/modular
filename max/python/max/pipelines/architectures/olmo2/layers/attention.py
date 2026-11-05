@@ -20,8 +20,8 @@ from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import (
-    MHAMaskVariant,
     flash_attention_ragged,
     rope_split_store_ragged,
 )

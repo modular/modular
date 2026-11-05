@@ -22,7 +22,7 @@ from typing import Any, ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.quant_ops import routed_weight_dtype
-from max.nn.legacy.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
 )

@@ -17,6 +17,7 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.nn import Module
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.functional_kernels import (
     mla_fp8_index_top_k_physical,
     quantize_dynamic_scaled_float8,
@@ -26,8 +27,8 @@ from max.nn.common_layers.functional_kernels import (
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_linear import QuantizedLinear
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.quant_config import (
+from max.nn.norm import LayerNorm
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -35,7 +36,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.norm import LayerNorm
 from max.tensor import Tensor
 from max.tensor.sharding.mappings import DeviceMapping
 from max.tensor.sharding.placements import Sharded

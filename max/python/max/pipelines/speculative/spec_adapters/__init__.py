@@ -40,7 +40,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
 )
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 from ..block_driver import BlockBatch, BlockProposer

@@ -33,7 +33,7 @@ from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )

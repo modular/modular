@@ -29,11 +29,11 @@ from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.moe.moe import MoE
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention,
 )

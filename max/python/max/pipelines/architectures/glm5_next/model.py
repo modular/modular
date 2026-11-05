@@ -39,7 +39,7 @@ from max.nn.legacy.kv_cache.cache_params import (
     MultiKVCacheParams,
 )
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3_2.model import DeepseekV3_2Model
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,

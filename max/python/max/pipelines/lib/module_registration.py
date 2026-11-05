@@ -111,7 +111,7 @@ from max.nn.legacy.graph_groups import (
 )
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
 from max.pipelines.modeling.types import RequestID

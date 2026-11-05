@@ -58,7 +58,6 @@ from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.transformer import (
     DecoderOutputs,
-    ReturnHiddenStates,
     forward_sequential_layers,
     logits_outputs,
 )
@@ -66,6 +65,7 @@ from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
+from max.nn.outputs import ReturnHiddenStates
 from max.tree import Tree
 
 from .layers.attention import HYV3Attention

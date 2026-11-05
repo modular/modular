@@ -45,7 +45,6 @@ from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
@@ -53,6 +52,7 @@ from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 
 from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
 from ..deepseekV3_2.deepseekV3_2 import DeepseekV3_2DecoderLayer

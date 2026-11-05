@@ -34,10 +34,9 @@ from max.graph import (
     Value,
     ops,
 )
-
-from ...activation import GatedActivation
-from ...quant_config import QuantConfig
-from .ep_config import NUM_GROUPS, EPConfig
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import NUM_GROUPS, EPConfig
+from max.nn.quant_config import QuantConfig
 
 # With NVFP4 format, each expert's scales need to be padded to the nearest
 # multiple of NVFP4_MN_GROUP_SIZE.

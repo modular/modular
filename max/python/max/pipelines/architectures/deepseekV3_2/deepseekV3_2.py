@@ -52,7 +52,6 @@ from max.nn.legacy.moe import MoE
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
@@ -60,6 +59,7 @@ from max.nn.legacy.transformer import DecoderOutputs, forward_sequential_layers
 from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.tree import Tree
 
 from ..deepseekV3.deepseekV3 import (

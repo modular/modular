@@ -25,7 +25,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     VisionRawInputs,
 )

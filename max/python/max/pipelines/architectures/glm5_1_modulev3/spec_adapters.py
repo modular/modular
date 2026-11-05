@@ -35,7 +35,7 @@ from max.nn.common_layers.multi_latent_attention import (
 )
 from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,

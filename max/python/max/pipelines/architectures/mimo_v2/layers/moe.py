@@ -24,7 +24,7 @@ from max.nn.legacy.moe import (
     QuantStrategy,
     SigmoidTopKRouter,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 
 class MiMoV2Router(SigmoidTopKRouter):

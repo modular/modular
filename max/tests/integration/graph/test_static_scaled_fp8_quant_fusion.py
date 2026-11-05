@@ -37,7 +37,7 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,

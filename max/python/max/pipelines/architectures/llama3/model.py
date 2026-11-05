@@ -26,7 +26,7 @@ from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,

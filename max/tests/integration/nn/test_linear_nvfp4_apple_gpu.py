@@ -47,7 +47,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
 from max.nn.legacy import Linear
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

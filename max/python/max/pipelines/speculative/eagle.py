@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.graph import DimLike, TensorValue
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 
 from .draft_contracts import DraftPhase, EagleDraft, EagleDraftInputs
 from .driver import (

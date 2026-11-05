@@ -75,7 +75,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.outputs import ReturnLogits
 from max.pipelines import lib as pipelines_lib
 from max.pipelines.lib import (
     GraphRole,

@@ -27,7 +27,7 @@ import pytest
 from max import mlir, tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_ragged
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 from test_common.mixed_step_split_ops import record_source

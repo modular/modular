@@ -107,7 +107,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/support",
     ],
@@ -202,7 +202,7 @@ modular_eager_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -356,6 +356,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/lib",
@@ -476,7 +477,7 @@ modular_eager_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -589,7 +590,7 @@ modular_eager_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )

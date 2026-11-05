@@ -47,7 +47,7 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 

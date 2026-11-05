@@ -32,7 +32,7 @@ from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma3_modulev3.layers.scaled_word_embedding import (
     ScaledEmbedding,

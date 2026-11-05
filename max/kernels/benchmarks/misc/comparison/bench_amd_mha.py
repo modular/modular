@@ -47,7 +47,7 @@ from max.driver import Accelerator
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_gpu
 
 # aiter imports (JIT-compiled on first use via AITER_JIT_DIR).

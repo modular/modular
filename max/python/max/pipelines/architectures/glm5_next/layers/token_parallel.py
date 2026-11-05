@@ -29,7 +29,7 @@ expression inside the subgraph body where it is legal.
 The partition is ``[T*r // G, T*(r+1) // G)``: contiguous, covering, and every
 rank lands on floor or ceil of ``T / G``. So ``ceildiv(T, G)`` remains the
 per-rank upper bound, which is exactly what
-:func:`~max.nn.legacy.comm.ep.ep_config.calculate_ep_max_tokens_per_rank` already
+:func:`~max.nn.ep_config.calculate_ep_max_tokens_per_rank` already
 returns -- the shared helper needs no architecture-specific override.
 :func:`~max.graph.ops.allgather` concatenates in device order, which inverts
 the split exactly.

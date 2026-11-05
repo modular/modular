@@ -19,10 +19,10 @@ from collections.abc import Sequence
 from max.graph import BufferType, DimLike, TensorType, TensorValue
 from max.nn.legacy.graph_groups import SparseIndices
 from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.speculative.driver import (
     CarryDimNames,
     DecodeKVSwap,

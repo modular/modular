@@ -33,9 +33,9 @@ from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs

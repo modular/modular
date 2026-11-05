@@ -37,6 +37,7 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
@@ -46,7 +47,7 @@ from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
     TensorParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import VocabParallelEmbedding
 from max.nn.legacy.graph_groups import BatchContext, EPLBProfile
@@ -61,14 +62,11 @@ from max.nn.legacy.moe import MoE, MoEQuantized
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
 from max.nn.legacy.transformer import (
     DecoderOutputs,
-    ReturnHiddenStates,
-    ReturnLogits,
     forward_sequential_layers,
     logits_outputs,
 )
@@ -76,6 +74,8 @@ from max.nn.legacy.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_batch_inputs,
     signal_inputs,

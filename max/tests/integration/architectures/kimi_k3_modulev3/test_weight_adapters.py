@@ -35,7 +35,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.kimi_k3_modulev3 import model as km
 from max.pipelines.architectures.kimi_k3_modulev3 import (
     weight_adapters as wa,

@@ -31,7 +31,7 @@ from max.graph.weights import (
 )
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,

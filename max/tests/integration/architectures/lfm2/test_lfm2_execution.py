@@ -34,7 +34,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.lfm2 import LFM2, LFM2Config
 from max.pipelines.architectures.lfm2.model_config import (
     ATTN_CACHE_KEY,

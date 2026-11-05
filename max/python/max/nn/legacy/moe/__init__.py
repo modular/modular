@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Mixture of Experts (MoE) module."""
 
-from ..activation import GatedActivation
+from max.nn.activation import GatedActivation
+
 from .eplb import (
     EplbExpertContainer,
     apply_eplb_placement,

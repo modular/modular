@@ -34,8 +34,8 @@ from max.nn.common_layers.quant_moe import (
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
 from max.nn.norm import RMSNorm
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
