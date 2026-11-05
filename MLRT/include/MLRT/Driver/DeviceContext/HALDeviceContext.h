@@ -183,7 +183,8 @@ public:
 
   /// DLPack device descriptor for this device. Mirrors the legacy
   /// per-backend mappings; APIs without a DLPack code (for example the mock
-  /// test plugin's generic gpu) report `kDLExtDev`.
+  /// test plugin's generic gpu) report `kDLExtDev`, and their pinned buffers,
+  /// which are plain host memory, report `kDLCPU`.
   DLDevice getDLDevice(bool pinned) const {
     if (api_ == cudaAPI)
       return pinned ? DLDevice{kDLCUDAHost, 0} : DLDevice{kDLCUDA, id_};
@@ -191,7 +192,7 @@ public:
       return pinned ? DLDevice{kDLROCMHost, 0} : DLDevice{kDLROCM, id_};
     if (api_ == metalAPI)
       return pinned ? DLDevice{kDLCPU, 0} : DLDevice{kDLMetal, id_};
-    return DLDevice{kDLExtDev, id_};
+    return pinned ? DLDevice{kDLCPU, 0} : DLDevice{kDLExtDev, id_};
   }
 
 private:
