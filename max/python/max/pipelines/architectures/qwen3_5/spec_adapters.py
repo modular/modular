@@ -34,6 +34,7 @@ Qwen3.5 speculative graphs slot by slot find it.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
@@ -61,6 +62,7 @@ from max.nn.kv_cache import (
     RecurrentStateRegion,
     recurrent_leaf,
 )
+from max.nn.legacy.graph_groups import MRoPEPositions, RecurrentStateTail
 from max.nn.legacy.transformer.transformer import (
     captures_by_device,
     fuse_captured_hidden_states,
@@ -384,6 +386,25 @@ def trailing_input_types(
     return state_tail_types(_regions(target_config), target_config.devices)
 
 
+def trailing_input_tree(target_config: Any) -> OrderedDict[str, object]:
+    """Names the state tail for an exported graph."""
+    types = iter(trailing_input_types(target_config))
+    return OrderedDict(state=_state_tail_group(types, target_config))
+
+
+def _state_tail_group(
+    types: Iterator[TensorType | BufferType], target_config: Any
+) -> RecurrentStateTail:
+    """Groups the state tail :func:`state_tail_types` declares."""
+    regions = _regions(target_config)
+    devices = target_config.devices
+
+    def block() -> tuple[tuple[TensorType | BufferType, ...], ...]:
+        return tuple(tuple(next(types) for _ in devices) for _ in regions)
+
+    return RecurrentStateTail(pool=block(), live_row_ids=block())
+
+
 def extra(target_config: Any, trailing: Sequence[Any]) -> dict[str, Any]:
     """Names the state tail's pools and rows for the verify's state."""
     return state_tail(
@@ -423,6 +444,17 @@ def _mtp_trailing_input_types(
             )
         )
     return types
+
+
+def _mtp_trailing_input_tree(target_config: Any) -> OrderedDict[str, object]:
+    """Names the state tail, and the positions that follow it."""
+    types = iter(_mtp_trailing_input_types(target_config))
+    named: OrderedDict[str, object] = OrderedDict(
+        state=_state_tail_group(types, target_config)
+    )
+    if target_config.mrope_enabled:
+        named["mrope"] = MRoPEPositions(position_ids=next(types))
+    return named
 
 
 def _mtp_extra(target_config: Any, trailing: Sequence[Any]) -> dict[str, Any]:
@@ -590,6 +622,7 @@ _BASE = TargetAdapter(
     tail_buffers=tail_buffers,
     check=check,
     trailing_input_types=trailing_input_types,
+    trailing_input_tree=trailing_input_tree,
     extra=extra,
 )
 # The MTP head reads 3-axis positions past the state tail.
@@ -599,6 +632,7 @@ ADAPTER = replace(
         "mtp": replace(
             _BASE,
             trailing_input_types=_mtp_trailing_input_types,
+            trailing_input_tree=_mtp_trailing_input_tree,
             extra=_mtp_extra,
             trailing_buffers=_mtp_trailing_buffers,
             takes_vision_outputs=_mtp_takes_vision_outputs,

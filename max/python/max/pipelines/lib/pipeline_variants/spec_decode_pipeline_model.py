@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from max import tree
+from max._artifact.vision import VisionMetadata
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import CompiledModel, InferenceSession, Model
@@ -70,6 +71,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.legacy.graph_groups import DecoderGraphInputs
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (
     ImageMetadata,
@@ -93,7 +95,10 @@ from max.pipelines.speculative.spec_adapters import STAGE_BOUNDARY
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     ReplayBatching,
 )
-from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeInputTypeSpec,
+    spec_decode_outputs,
+)
 from max.profiler import traced
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable
@@ -101,7 +106,12 @@ from max.tensor.realization_context import current_realization_context
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture
-from ..graph_specs import GraphRole, compile_and_init_graphs, graph_callable
+from ..graph_specs import (
+    GraphRole,
+    GraphSpec,
+    compile_and_init_graphs,
+    graph_callable,
+)
 from ..interfaces.arch_config import ArchConfigWithVisionCache
 from ..interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -1425,6 +1435,8 @@ class SpecDecodePipelineModel(
     weights, when the target's adapter enables one."""
     _weight_loads: list[WeightLoad]
     """The weight loads the modules deferred to the compile."""
+    _target_config: Any = None
+    """The target's model config, which describes its media for export."""
 
     def __init__(
         self,
@@ -1601,6 +1613,7 @@ class SpecDecodePipelineModel(
         )
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
+        self._target_config = modules.target_config
         target, draft = modules.target, modules.draft
         # A draft without its own embedding or head reads the target's, so
         # those weights load once. Drafts declare it as vLLM's do.
@@ -1676,9 +1689,11 @@ class SpecDecodePipelineModel(
         if compiled is not None:
             self.compiled_modules = {
                 GraphRole.SPEC_DECODER: _graph_callable(
-                    spec.graph, compiled, model
+                    spec.graph, compiled, model, spec.input_tree
                 )
             }
+        if spec.input_tree is not None:
+            self._batching.bind_input_tree(spec.input_tree)
         config.input_spec = spec.input_spec
         self.export_input_types = spec.input_types
         self.export_contract = spec.export_contract
@@ -1879,11 +1894,23 @@ def _forget_traced_weights(*modules: Any) -> None:
 
 
 def _graph_callable(
-    graph: Graph, compiled: CompiledModel, model: Model
+    graph: Graph,
+    compiled: CompiledModel,
+    model: Model,
+    input_tree: Mapping[str, object] | None = None,
 ) -> CompiledCallable[..., Any]:
-    """Wraps the compiled ``graph`` as the callable an artifact exports."""
+    """Wraps the compiled ``graph`` as the callable an artifact exports.
+
+    The callable takes ``input_tree``, the graph's inputs named by group,
+    when there is one, and the graph's inputs in order otherwise.
+    """
     input_types = [value.type for value in graph.inputs]
-    return graph_callable(compiled, model, input_types, graph.output_tree)
+    return graph_callable(
+        compiled,
+        model,
+        input_types if input_tree is None else input_tree,
+        graph.output_tree,
+    )
 
 
 @dataclass(frozen=True)
@@ -1900,6 +1927,9 @@ class SpecGraph:
     export_contract: Mapping[str, object] | None
     """What the target's engine checks the export's inputs against, if it
     keeps a record of its own."""
+    input_tree: DecoderGraphInputs | None
+    """The graph's inputs named by group, or ``None`` for a signature with
+    inputs no group names."""
 
 
 def build_spec_graph(
@@ -1984,7 +2014,9 @@ def build_spec_graph(
         module=module,
     ) as graph:
         graph.output(
-            *call(nn_model.decode_inputs(graph.inputs, call.kv_params))
+            spec_decode_outputs(
+                call(nn_model.decode_inputs(graph.inputs, call.kv_params))
+            )
         )
 
     return SpecGraph(
@@ -1993,6 +2025,19 @@ def build_spec_graph(
         input_spec=nn_model.input_spec,
         input_types=call.input_types,
         export_contract=call.export_contract,
+        # Penalties, a later stage's boundary and the replay graph's own
+        # inputs have no names, so a graph that takes any stays unnamed.
+        input_tree=(
+            None
+            if call.penalties or call.boundary_count or call.replay_count
+            else nn_model.input_tree(
+                call.input_types,
+                call.kv_params,
+                trailing=spec_adapters.trailing_input_tree(
+                    call.target_arch, call.method, call.target_config
+                ),
+            )
+        ),
     )
 
 
@@ -2344,6 +2389,30 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
 
     vision_model: Model
 
+    def vision_metadata(self) -> VisionMetadata | None:
+        """Returns the target's vision metadata.
+
+        The fused graph takes the target's images.
+        """
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_metadata_for(
+            self.pipeline_config, self._target_config
+        )
+
+    def vision_preprocess_spec(self) -> GraphSpec | None:
+        """Returns the target's image preprocessing graph."""
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_preprocess_spec_for(
+            self.pipeline_config, self._target_config
+        )
+
+    def vision_preprocess_video_spec(self) -> GraphSpec | None:
+        """Returns the target's video preprocessing graph."""
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_preprocess_video_spec_for(
+            self.pipeline_config, self._target_config
+        )
+
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         """Compiles the fused graph, then the target's vision graph.
@@ -2362,7 +2431,17 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
             return model
         target = _pipeline_model(self.pairing.target)
         with CompilationTimer("vision model") as timer:
-            graph, weights_registry = target.build_vision_graph(context)
+            # A target that names its vision graph's inputs exports them
+            # named, so a serving engine binds them by group.
+            spec = target.build_vision_spec(context)
+            input_tree: Mapping[str, object] | None = None
+            if spec is None:
+                graph, weights_registry = target.build_vision_graph(context)
+            else:
+                graph = spec.trace()
+                weights_registry = dict(spec.weights_registry())
+                assert isinstance(spec.input_types, Mapping)
+                input_tree = spec.input_types
             timer.mark_build_complete()
             compiled = session.compile_reusing_mefs(graph)
             self.vision_model = session.init(
@@ -2371,7 +2450,7 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
         self.compiled_modules = {
             **self.compiled_modules,
             GraphRole.VISION: _graph_callable(
-                graph, compiled, self.vision_model
+                graph, compiled, self.vision_model, input_tree
             ),
         }
         # The target's rules name its whole checkpoint, vision tower included.

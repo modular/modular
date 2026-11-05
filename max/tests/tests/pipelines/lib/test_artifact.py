@@ -641,6 +641,8 @@ def _attention_fields(name: str, group: str) -> dict[str, Any]:
         "stride_alignment": None,
         "scratch": False,
         "kvcache_quant_config": None,
+        "speculative_method": None,
+        "num_draft_tokens": 0,
         "leaves": (
             KVPoolLeaf(
                 leaf_id=f"{name}.{group}",
@@ -657,7 +659,8 @@ KV_CACHE = KVCacheLayout(
     page_size=128,
     caches=(
         MHAKVCache(
-            **_attention_fields("attention", "full_group"),
+            **_attention_fields("attention", "full_group")
+            | {"speculative_method": "mtp", "num_draft_tokens": 3},
             n_kv_heads=4,
             allow_kv_head_replication=False,
         ),
@@ -723,6 +726,8 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
         "stride_alignment": None,
         "scratch": False,
         "kvcache_quant_config": None,
+        "speculative_method": "mtp",
+        "num_draft_tokens": 3,
         "leaves": [
             {
                 "leaf_id": "attention.full_group",

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial
@@ -35,6 +36,15 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
 )
 from max.nn.legacy.comm import Signals
+from max.nn.legacy.graph_groups import (
+    BatchContext,
+    DecoderGraphInputs,
+    SpecDecode,
+    SpecDecodeOutputs,
+    TokenBitmask,
+    TPSignals,
+    VisionMerge,
+)
 from max.tensor import Tensor
 from typing_extensions import TypeVar
 
@@ -49,6 +59,8 @@ __all__ = [
     "decode_spec_decode_input_values",
     "decode_spec_decode_tail",
     "drop_mixed_step_split",
+    "spec_decode_input_tree",
+    "spec_decode_outputs",
     "without_mixed_step_split",
 ]
 
@@ -499,7 +511,10 @@ class SpecDecodeTailValues:
     device_bitmask_scratch: BufferValue | None = None
 
 
-def _next_input(it: Iterator[Value[Any]], *, decoding: str) -> Value[Any]:
+_I = TypeVar("_I")
+
+
+def _next_input(it: Iterator[_I], *, decoding: str) -> _I:
     """Returns the next graph input, or says which decode ran dry.
 
     Bare ``next`` would raise ``StopIteration``, which names no cause and
@@ -699,6 +714,134 @@ def decode_spec_decode_input_values(
     )
 
 
+def spec_decode_input_tree(
+    input_types: Sequence[TensorType | BufferType],
+    spec: SpecDecodeInputTypeSpec,
+    *,
+    kv_params: KVCacheParamInterface,
+    ep: object | None = None,
+    trailing: Mapping[str, object] | None = None,
+) -> DecoderGraphInputs:
+    """Names a unified spec-decode graph's inputs by group, in graph order.
+
+    The twin of :func:`decode_spec_decode_input_values` over the declared
+    types, for a signature with no leading inputs. The fields a decoder also
+    takes keep a decoder's names and groups, so a serving engine feeds them
+    as it feeds a decoder's; ``spec`` and ``bitmask`` hold the canonical
+    tail.
+
+    Args:
+        input_types: The graph's input types, in order.
+        spec: The spec the signature was built from.
+        kv_params: The KV params the signature was built from.
+        ep: The expert-parallel inputs' tree, such as an
+            :class:`~max.nn.legacy.graph_groups.EPPayload`, when the
+            signature takes them.
+        trailing: The trailing inputs' groups by name, when the signature
+            takes them.
+
+    Returns:
+        The inputs, named. Their leaves are ``input_types``, in order.
+
+    Raises:
+        ValueError: If ``input_types`` holds more or fewer types than
+            ``spec`` accounts for.
+    """
+    it = iter(input_types)
+    take = partial(_next_input, it, decoding="the canonical inputs")
+
+    def per_device() -> tuple[TensorType | BufferType, ...]:
+        return tuple(take() for _ in spec.devices)
+
+    def tensor() -> TensorType:
+        value = take()
+        assert isinstance(value, TensorType)
+        return value
+
+    def expert_parallel() -> object:
+        return tree.unflatten(tree.flatten(ep)[1], it, exact=False)
+
+    inputs = DecoderGraphInputs(tokens=take())
+    if spec.enable_vision:
+        inputs["vision"] = VisionMerge(
+            image_embeddings=per_device(), image_token_indices=per_device()
+        )
+    inputs["input_row_offsets"] = take()
+    if spec.distributed:
+        inputs["host_input_row_offsets"] = take()
+    inputs["return_n_logits"] = take()
+    if spec.distributed:
+        inputs["data_parallel_splits"] = take()
+    if _declares_signal_buffers(spec):
+        inputs["signals"] = TPSignals(signal=per_device())
+    inputs["kv"] = kv_params.unflatten_kv_inputs(it)
+    if spec.distributed:
+        inputs["batch_context_lengths"] = BatchContext(length=per_device())
+        if ep is not None:
+            inputs["ep"] = expert_parallel()
+
+    tail = SpecDecode(draft_tokens=tensor())
+    if spec.enable_sampled_draft_proposal:
+        tail["draft_probs_full"] = (
+            tuple(tensor() for _ in range(spec.draft_probs_replicas))
+            if spec.draft_probs_replicas
+            else tensor()
+        )
+    for name in ("seed", "temperature", "top_k", "max_k", "top_p", "min_top_p"):
+        tail[name] = tensor()
+    if spec.include_in_thinking_phase:
+        tail["in_thinking_phase"] = tensor()
+    if spec.include_skippable_draft:
+        tail["draft_slot_ids"] = tensor()
+        tail["draft_block_offsets"] = tensor()
+    inputs["spec"] = tail
+    if spec.enable_structured_output:
+        inputs["bitmask"] = TokenBitmask(
+            pinned_bitmask=take(),
+            wait_payload=take(),
+            device_bitmask_scratch=take(),
+        )
+    if not spec.distributed and ep is not None:
+        inputs["ep"] = expert_parallel()
+    if trailing is not None:
+        inputs.update(
+            tree.unflatten(tree.flatten(trailing)[1], it, exact=False)
+        )
+
+    if leftover := list(it):
+        raise ValueError(
+            f"unified spec-decode graph has {len(leftover)} input(s) left"
+            " over after naming; the graph signature and this spec disagree"
+        )
+    return inputs
+
+
+def spec_decode_outputs(
+    outputs: Sequence[TensorValue],
+) -> OrderedDict[str, SpecDecodeOutputs[TensorValue]]:
+    """Names a spec-decode driver's outputs, as a decoder names its groups.
+
+    Args:
+        outputs: ``(num_accepted, next_tokens, next_draft_tokens)``, then
+            under a sampled draft proposal the draft's distributions, one
+            per data-parallel replica when it holds them per replica.
+
+    Returns:
+        The outputs in one ``spec`` group, in the same order.
+    """
+    num_accepted, next_tokens, next_draft_tokens, *probs = outputs
+    named = SpecDecodeOutputs(
+        num_accepted=num_accepted,
+        next_tokens=next_tokens,
+        next_draft_tokens=next_draft_tokens,
+    )
+    if probs:
+        named["next_draft_probs"] = (
+            probs[0] if len(probs) == 1 else tuple(probs)
+        )
+    return OrderedDict(spec=named)
+
+
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
@@ -869,6 +1012,44 @@ class SpecDecodeGraphSignature:
             decoded.draft_block_offsets,
         )
         return as_tensors(decoded) if takes_tensors else decoded
+
+    def input_tree(
+        self,
+        input_types: Sequence[TensorType | BufferType],
+        kv_params: KVCacheParamInterface | None = None,
+        *,
+        ep: object | None = None,
+        trailing: Mapping[str, object] | None = None,
+    ) -> DecoderGraphInputs | None:
+        """Names a graph's inputs by group, as :func:`spec_decode_input_tree`.
+
+        Args:
+            input_types: The input types of a graph built from
+                :meth:`input_types`.
+            kv_params: The KV params the graph was built with.
+            ep: The expert-parallel inputs' tree, when the signature takes
+                them.
+            trailing: The trailing inputs' groups by name, when the
+                signature takes them.
+
+        Returns:
+            The named inputs, or ``None`` for a signature with inputs no
+            group names: leading ones, or trailing or expert-parallel ones
+            without their tree.
+        """
+        if (
+            self.leading_input_types()
+            or (self.has_trailing_inputs and trailing is None)
+            or (self.ep_input_types() and ep is None)
+        ):
+            return None
+        return spec_decode_input_tree(
+            input_types,
+            self.input_spec,
+            kv_params=self._signature_kv(kv_params),
+            ep=ep,
+            trailing=trailing,
+        )
 
     def _draft_rows(
         self,

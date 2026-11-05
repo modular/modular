@@ -374,6 +374,8 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             stride_alignment=params.stride_alignment,
             scratch=params.scratch,
             kvcache_quant_config=_quantization(params),
+            speculative_method=params.speculative_method,
+            num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
         )
     elif type(params) is MLAKVCacheParams:
@@ -391,6 +393,8 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             stride_alignment=params.stride_alignment,
             scratch=params.scratch,
             kvcache_quant_config=_quantization(params),
+            speculative_method=params.speculative_method,
+            num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
         )
     elif type(params) is RecurrentStateParams:
@@ -507,10 +511,11 @@ def export_pipeline(
             " not record its compiled graphs by role"
         )
     model = pipeline_modules(pipeline, architecture)
+    decoder = model.roles.get("decoder") or model.roles.get("spec_decoder")
     dims = (
-        batch_processor_dims(pipeline._pipeline_model, model.roles["decoder"])
+        batch_processor_dims(pipeline._pipeline_model, decoder)
         if isinstance(pipeline, TextGenerationPipelineInterface)
-        and "decoder" in model.roles
+        and decoder is not None
         else None
     )
     if format_spec is None:

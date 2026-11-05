@@ -555,6 +555,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=None,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(
             KVPoolLeaf(
                 leaf_id=sliding_id,
@@ -600,6 +602,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=512,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(full_leaf("indexer"),),
     )
     assert layout.caches[3] == MLAKVCache(
@@ -615,6 +619,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=None,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(full_leaf("latent"),),
     )
     assert layout.caches[4] == RecurrentStateCache(

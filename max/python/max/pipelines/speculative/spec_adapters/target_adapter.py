@@ -91,6 +91,14 @@ def _default_trailing_input_types(target_config: Any) -> list[TensorType]:
     return []
 
 
+def _default_trailing_input_tree(
+    target_config: Any,
+) -> Mapping[str, object] | None:
+    """Names no inputs past the canonical tail."""
+    del target_config
+    return None
+
+
 def _default_trailing_buffers(
     target_config: Any,
     contexts: Sequence[TextContext],
@@ -279,6 +287,12 @@ class TargetAdapter:
         _default_trailing_input_types
     )
     """Returns the inputs the target's call takes past the canonical tail."""
+
+    trailing_input_tree: Callable[[Any], Mapping[str, object] | None] = (
+        _default_trailing_input_tree
+    )
+    """Returns the groups an exported graph names :attr:`trailing_input_types`
+    by, in order; ``None`` leaves the graph's inputs unnamed."""
 
     trailing_buffers: Callable[
         [Any, Sequence[TextContext], Sequence[Device]], list[Buffer]

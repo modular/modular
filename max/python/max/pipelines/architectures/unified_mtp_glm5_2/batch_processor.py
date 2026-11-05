@@ -14,10 +14,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessorBase,
 )
@@ -36,6 +37,12 @@ class UnifiedMTPGlm5_2BatchProcessor(
     slot required for speculative decoding. The slot is left ``None`` here; the
     overlap pipeline fills it in after this call returns.
     """
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Bounds the dims of a decoder's inputs and of the spec-decode tail."""
+        return self.runtime.spec_decode_max_dims(dims, kv_params)
 
     def _make_mla_inputs(
         self,

@@ -934,6 +934,16 @@ class PipelineModel(
         )
 
     @classmethod
+    def build_vision_spec(cls, context: ModelLoadContext) -> GraphSpec | None:
+        """Returns the vision encoder's graph spec, whose inputs it names.
+
+        ``None`` for an architecture whose vision graph
+        :meth:`build_vision_graph` builds without one.
+        """
+        del context
+        return None
+
+    @classmethod
     def build_vision_graph(
         cls, context: ModelLoadContext
     ) -> tuple[Graph, dict[str, Any]]:
@@ -1064,7 +1074,7 @@ class PipelineModel(
         embeddings into the prompt by them. ``None`` for a model whose
         artifact serves no media.
         """
-        return None
+        return self.vision_metadata_for(self.pipeline_config, self.arch_config)
 
     def vision_preprocess_spec(self) -> GraphSpec | None:
         """Returns the graph that preprocesses one image for the vision encoder.
@@ -1074,7 +1084,9 @@ class PipelineModel(
         serving engine to run per image. Its outputs are the vision graph's
         named inputs for that image, path for path.
         """
-        return None
+        return self.vision_preprocess_spec_for(
+            self.pipeline_config, self.arch_config
+        )
 
     def vision_preprocess_video_spec(self) -> GraphSpec | None:
         """Returns the graph that preprocesses one segment of a video clip.
@@ -1086,6 +1098,51 @@ class PipelineModel(
         ``vision_preprocess_video`` role. Its outputs are the vision graph's
         named inputs for that segment, path for path.
         """
+        return self.vision_preprocess_video_spec_for(
+            self.pipeline_config, self.arch_config
+        )
+
+    @classmethod
+    def vision_metadata_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> VisionMetadata | None:
+        """Returns the :meth:`vision_metadata` for ``config``.
+
+        A pipeline that serves this model's media without building the
+        model, as a fused speculative-decoding one does its target's, reads
+        it here.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The model config the model is built with.
+        """
+        del pipeline_config, config
+        return None
+
+    @classmethod
+    def vision_preprocess_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
+        """Returns the :meth:`vision_preprocess_spec` for ``config``.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The model config the model is built with.
+        """
+        del pipeline_config, config
+        return None
+
+    @classmethod
+    def vision_preprocess_video_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
+        """Returns the :meth:`vision_preprocess_video_spec` for ``config``.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The model config the model is built with.
+        """
+        del pipeline_config, config
         return None
 
     @traced
@@ -1304,11 +1361,20 @@ class GraphPipelineModelWithKVCache(
             )
             timer.mark_build_complete()
             self.state_dict = weights_registry
-            model = session.load(graph, weights_registry=weights_registry)
+            model = self._compile_and_load(session, graph, weights_registry)
 
         self._maybe_release_host_weights(model)
         self._wire_batch_processor(model, model_config)
         return model
+
+    def _compile_and_load(
+        self,
+        session: InferenceSession,
+        graph: Graph,
+        weights_registry: dict[str, Any],
+    ) -> Model:
+        """Compiles ``graph`` and initializes it with ``weights_registry``."""
+        return session.load(graph, weights_registry=weights_registry)
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``.

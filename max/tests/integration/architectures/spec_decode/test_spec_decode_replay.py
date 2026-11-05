@@ -124,6 +124,8 @@ def test_load_registers_the_fused_graph_unless_it_replays(
     model.device_refs = []
     model.takes_signal_buffers = False
     model.replay_model = None
+    batching = Mock(spec=_BatchProcessor)
+    model._batch_processor = batching
     modules = Mock()
     for module in (modules.target, modules.draft):
         module.state_dict.return_value = {}
@@ -159,4 +161,7 @@ def test_load_registers_the_fused_graph_unless_it_replays(
         assert not model.compiled_modules
     else:
         assert model.compiled_modules == {GraphRole.SPEC_DECODER: wrapped}
-        graph_callable.assert_called_once_with(spec.graph, compiled, decoder)
+        graph_callable.assert_called_once_with(
+            spec.graph, compiled, decoder, spec.input_tree
+        )
+    batching.bind_input_tree.assert_called_once_with(spec.input_tree)

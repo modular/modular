@@ -35,7 +35,11 @@ from max.nn.legacy.graph_groups import (
     Logits,
     MRoPEPositions,
     RaggedBatch,
+    RecurrentStateTail,
     SparseIndices,
+    SpecDecode,
+    SpecDecodeOutputs,
+    TokenBitmask,
     TPSignals,
     VisionEmbeddings,
     VisionHostMax,
@@ -81,6 +85,12 @@ def _examples() -> list[GraphGroup[Any, Any]]:
         VisionHostMax(max_seqlen=t),
         VisionEmbeddings(image_embeddings=(a, b)),
         ItemPositions(position_ids=a, position_advance=b),
+        SpecDecode(draft_tokens=t, seed=t),
+        TokenBitmask(
+            pinned_bitmask=t, wait_payload=buf, device_bitmask_scratch=buf
+        ),
+        SpecDecodeOutputs(num_accepted=a, next_tokens=b, next_draft_tokens=a),
+        RecurrentStateTail(pool=((buf,),), live_row_ids=((t,),)),
     ]
 
 
