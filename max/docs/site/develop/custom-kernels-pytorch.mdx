@@ -198,8 +198,9 @@ First, the `@extensibility.register("grayscale")` decorator makes this operation
 available to PyTorch under the name `grayscale`. This is the
 `ops.grayscale(output, pic)` function called in the PyTorch model.
 
-The `execute()` arguments are tensor traits: `Some[Output & Tensor]` is any
-tensor the op writes, and `Some[Input & Tensor]` is any tensor it reads. The
+Each `execute()` argument's type is a generic parameter bounded by tensor
+traits: `Output & Tensor` for a tensor the op writes and `Input & Tensor` for
+one it reads. `Some[...]` is shorthand for declaring that parameter inline. The
 `comptime assert` lines pin the dtype and rank each argument must have, and
 `to_tile_tensor()` gives a `TileTensor` view of each one that the kernel can
 index. `as_imm()` makes the input view read-only.
