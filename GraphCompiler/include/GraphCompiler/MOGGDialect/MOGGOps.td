@@ -912,6 +912,10 @@ def MOGG_KernelDeclOp
     built-ins with the same registration. The shape function lives in a
     separate `mogg.shape_func.decl`.
 
+    `platform_predicate` is the set of devices that the decl applies to, as a
+    `#kgen.gen` over the device's label, API, architecture, and model (see
+    `PlatformPredicate`).
+
     `build_graph` has the same tensor signature as `execute` but takes a
     `DeviceGraphBuilder` in place of the `DeviceContext`.
 
@@ -937,6 +941,7 @@ def MOGG_KernelDeclOp
     SymbolNameAttr:$sym_name,
     StrAttr:$registration,
     M_DeviceInfoAttr:$registration_device_info,
+    OptionalAttr<KGEN_GeneratorAttr>:$platform_predicate,
     OptionalAttr<MOGG_KernelFunctionAttr>:$execute,
     OptionalAttr<MOGG_KernelFunctionAttr>:$elementwise,
     OptionalAttr<MOGG_KernelFunctionAttr>:$tile_elementwise,
@@ -954,6 +959,7 @@ def MOGG_KernelDeclOp
     custom<SymbolVisibility>($sym_visibility) `` $sym_name
     `registration` `=` $registration
     `device_info` `=` $registration_device_info
+    (`platform_predicate` `=` qualified($platform_predicate)^)?
     (`execute` `=` $execute^)?
     (`elementwise` `=` $elementwise^)?
     (`tile_elementwise` `=` $tile_elementwise^)?

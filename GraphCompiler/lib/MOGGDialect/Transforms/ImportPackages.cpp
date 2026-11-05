@@ -1147,10 +1147,11 @@ struct ImportPackagesPass
 
       auto declOp = KernelDeclOp::create(
           builder, mlir::FusedLoc::get(ctx, fnLocs), kernel.mojoName,
-          kernel.registration, kernel.deviceInfo, *executeAttr,
-          *elementwiseAttr, *tileElementwiseAttr, *buildGraphAttr,
-          *executeDeviceAttr, *executeConfigurationAttr, kernel.reduction,
-          structParams, mlir::BoolAttr::get(ctx, isUserDefined),
+          kernel.registration, kernel.deviceInfo,
+          /*platform_predicate=*/nullptr, *executeAttr, *elementwiseAttr,
+          *tileElementwiseAttr, *buildGraphAttr, *executeDeviceAttr,
+          *executeConfigurationAttr, kernel.reduction, structParams,
+          mlir::BoolAttr::get(ctx, isUserDefined),
           /*supports_unfused_execute=*/
           kernel.supportsUnfusedExecute ? mlir::UnitAttr::get(ctx)
                                         : mlir::UnitAttr(),

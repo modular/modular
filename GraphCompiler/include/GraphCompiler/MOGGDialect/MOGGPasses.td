@@ -534,6 +534,24 @@ def VerifyKernels: Pass<"mogg-verify-kernels", "ModuleOp"> {
   }];
 }
 
+def TestKernelRegistrations
+    : Pass<"mogg-test-kernel-registrations", "ModuleOp"> {
+  let summary = "Test-only: evaluates and compares kernel registrations";
+  let description = [{
+    Prints the platform of each `mogg.kernel.decl` with a
+    `platform_predicate`, and its value for each device in the
+    `mogg.test_device_infos` module attribute. Then it prints how the
+    platforms of each pair of those decls with the same registration
+    compare. The output goes to stderr:
+
+    ```
+    platform @Kernel = type("gpu") & api("cuda")
+    platform @Kernel on #M.device_info<"gpu", "cuda", "sm_100a", ""> = true
+    compare @Kernel @Other = first narrower
+    ```
+  }];
+}
+
 def DumpKernels: Pass<"mogg-dump-kernels", "ModuleOp"> {
   let summary = "Prints the internal representation of kernels";
   let description = [{
