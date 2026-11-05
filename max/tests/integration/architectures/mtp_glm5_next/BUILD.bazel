@@ -203,7 +203,11 @@ modular_py_test(
     # where that run first needs a GPU, so the plain run compiles here.
     precompile_device_count = 2,
     precompile_mefs = True,
-    tags = ["gpu"],
+    # Tagged manual since this test is 9+ minutes on 2xB200 in CI.
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
