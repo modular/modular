@@ -19,14 +19,19 @@ from layout import (
 )
 from layout.layout import (
     Layout,
+    TensorLayout,
     CoalesceLayout,
+    ComposedLayout,
     blocked_product,
     coalesce,
+    composition,
     _format_layout,
     _print_layout,
     zipped_divide,
 )
 from std.testing import assert_equal, TestSuite
+
+from layout.coord import ComptimeInt, Coord
 
 
 # ===----------------------------------------------------------------------=== #
@@ -342,6 +347,62 @@ def test_print_layout() raises:
     # Nested 4×4 layout via blocked_product
     var l1 = blocked_product(row_major[2, 2](), row_major[2, 2]())
     _print_layout(l1)
+
+
+comptime _Leaf[s: Int, d: Int] = Layout[
+    Coord[ComptimeInt[s]].element_types, Coord[ComptimeInt[d]].element_types
+]
+
+
+def _leaves[L: TensorLayout]() -> List[Int]:
+    var out = List[Int]()
+    comptime for i in range(L.flat_rank):
+        out.append(L.static_shape[i])
+        out.append(L.static_stride[i])
+    return out^
+
+
+def test_composition_splits_across_modes() raises:
+    # 8:2 walks indices 0, 2, .., 14 of a row-major 4 x 4 domain read
+    # column-major: every other row, then every column.
+    assert_equal(
+        _leaves[ComposedLayout[type_of(row_major[4, 4]()), _Leaf[8, 2]]](),
+        [2, 8, 4, 1],
+    )
+    # The whole domain in order gives back the layout itself.
+    assert_equal(
+        _leaves[ComposedLayout[type_of(row_major[4, 4]()), _Leaf[16, 1]]](),
+        [4, 4, 4, 1],
+    )
+
+
+def test_composition_broadcast() raises:
+    comptime B = Layout[
+        Coord[ComptimeInt[4], ComptimeInt[4]].element_types,
+        Coord[ComptimeInt[0], ComptimeInt[4]].element_types,
+    ]
+    assert_equal(
+        _leaves[ComposedLayout[type_of(row_major[4, 4]()), B]](), [4, 0, 4, 1]
+    )
+
+
+def test_composition_thread_value() raises:
+    # mma.sync m16n8k16's A fragment: lane t holds rows t/4 and t/4 + 8,
+    # columns 2(t%4) + {0, 1} and + 8.
+    comptime TV = Layout[
+        Coord[
+            Coord[ComptimeInt[4], ComptimeInt[8]],
+            Coord[ComptimeInt[2], ComptimeInt[2], ComptimeInt[2]],
+        ].element_types,
+        Coord[
+            Coord[ComptimeInt[32], ComptimeInt[1]],
+            Coord[ComptimeInt[16], ComptimeInt[8], ComptimeInt[128]],
+        ].element_types,
+    ]
+    comptime RowMajorTV = type_of(composition(row_major[16, 16](), TV()))
+    assert_equal(_leaves[RowMajorTV](), [4, 2, 8, 16, 2, 1, 2, 128, 2, 8])
+    comptime ColMajorTV = type_of(composition(col_major[16, 16](), TV()))
+    assert_equal(_leaves[ColMajorTV](), [4, 32, 8, 1, 2, 16, 2, 8, 2, 128])
 
 
 def main() raises:

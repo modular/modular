@@ -32,6 +32,8 @@ Key components:
   a layout into inner and outer components by a tile shape.
 - [`coalesce`](/api/mojo/layout/layout/coalesce): Simplify a
   layout by merging dimensions with contiguous strides.
+- [`composition`](/api/mojo/layout/layout/composition): Compose two
+  static layouts, such as an operand's layout after a thread-value layout.
 
 You can import these APIs from the `layout` package:
 
@@ -1494,6 +1496,178 @@ Parameters:
     LayoutType: The input layout type.
     tile: Shape types of the tile used to divide the layout.
 """
+
+
+def _shape_div(a: Int, b: Int) -> Int:
+    """Divides `a` by `b` when `b` divides it, else returns 1 (`a` divides
+    `b`): CuTe's `shape_div` on static values."""
+    if a % b == 0:
+        return a // b
+    return 1
+
+
+def _compose_leaf[
+    AS: TypeList[Trait=CoordLike, ...],
+    AD: TypeList[Trait=CoordLike, ...],
+    s: Int,
+    d: Int,
+    i: Int,
+    what: Int,
+]() -> Int:
+    """Composes a flat static layout `AS:AD` with one leaf `s:d`.
+
+    The leaf walks `AS:AD`'s domain in colexicographic order, so it splits
+    into one result leaf per mode of A it crosses. `what` selects the
+    answer: 0 for the number of result leaves, 1 for leaf `i`'s shape, 2
+    for its stride.
+    """
+    if d == 0:
+        if what == 0:
+            return 1
+        return s if what == 1 else 0
+    var n = 0
+    var rest_shape = s
+    var rest_stride = d
+    var shape_i = 1
+    var stride_i = 0
+    comptime for k in range(AS.length - 1):
+        var cs = AS[k].static_value
+        var cd = AD[k].static_value
+        var next_shape = _shape_div(cs, rest_stride)
+        var next_stride = _shape_div(rest_stride, cs)
+        if next_shape != 1 and rest_shape != 1:
+            var new_shape = min(next_shape, rest_shape)
+            if n == i:
+                shape_i = new_shape
+                stride_i = rest_stride * cd
+            n += 1
+            rest_shape = _shape_div(rest_shape, new_shape)
+        rest_stride = next_stride
+    if rest_shape != 1 or n == 0:
+        if n == i:
+            shape_i = rest_shape
+            stride_i = rest_stride * AD[AS.length - 1].static_value
+        n += 1
+    if what == 0:
+        return n
+    return shape_i if what == 1 else stride_i
+
+
+def _compose_mode[
+    AS: TypeList[Trait=CoordLike, ...],
+    AD: TypeList[Trait=CoordLike, ...],
+    BS: TypeList[Trait=CoordLike, ...],
+    BD: TypeList[Trait=CoordLike, ...],
+    j: Int,
+    what: Int,
+]() -> Int:
+    """Composes `AS:AD` with one mode of B, whose leaves are `BS:BD`, and
+    answers as `_compose_leaf` does for the mode's `j`-th result leaf."""
+    var base = 0
+    var out = 0
+    comptime for l in range(BS.length):
+        comptime s = BS[l].static_value
+        comptime d = BD[l].static_value
+        comptime count = _compose_leaf[AS, AD, s, d, 0, 0]()
+        if what != 0 and j >= base and j < base + count:
+            comptime for k in range(count):
+                if j - base == k:
+                    out = _compose_leaf[AS, AD, s, d, k, what]()
+        base += count
+    return base if what == 0 else out
+
+
+comptime _ComposeLeafTabulator[
+    AS: TypeList[Trait=CoordLike, ...],
+    AD: TypeList[Trait=CoordLike, ...],
+    BS: TypeList[Trait=CoordLike, ...],
+    BD: TypeList[Trait=CoordLike, ...],
+    what: Int,
+    j: Int,
+]: CoordLike = ComptimeInt[_compose_mode[AS, AD, BS, BD, j, what]()]
+
+
+comptime _ComposeModeTabulator[
+    A: TensorLayout,
+    B: TensorLayout,
+    what: Int,
+    m: Int,
+]: CoordLike = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        _compose_mode[
+            _Flattened[*A._shape_types],
+            _Flattened[*A._stride_types],
+            _Flattened[B._shape_types[m]],
+            _Flattened[B._stride_types[m]],
+            0,
+            0,
+        ](),
+        _ComposeLeafTabulator[
+            _Flattened[*A._shape_types],
+            _Flattened[*A._stride_types],
+            _Flattened[B._shape_types[m]],
+            _Flattened[B._stride_types[m]],
+            what,
+            ...,
+        ],
+    ]()
+]
+
+
+comptime ComposedLayout[A: TensorLayout, B: TensorLayout] = Layout[
+    TypeList.tabulate[
+        Trait=CoordLike, B.rank, _ComposeModeTabulator[A, B, 1, ...]
+    ](),
+    TypeList.tabulate[
+        Trait=CoordLike, B.rank, _ComposeModeTabulator[A, B, 2, ...]
+    ](),
+]
+"""Type alias for the result of `composition`: `A` after `B`.
+
+`B` maps its coordinates to a linear index into `A`'s domain, read in
+colexicographic order (the first mode fastest), and the result maps `B`'s
+coordinates through `A`. The result has `B`'s rank; each of its modes is the
+flat tuple of leaves `B`'s mode splits into as it crosses `A`'s modes.
+
+Both layouts must be fully static.
+
+Parameters:
+    A: The outer layout, applied second.
+    B: The inner layout, applied first.
+"""
+
+
+def composition[
+    A: TensorLayout, B: TensorLayout, //
+](a: A, b: B) -> ComposedLayout[A, B]:
+    """Composes two static layouts: the result maps `B`'s coordinates
+    through `B`, then through `A`.
+
+    This is CuTe's `composition`. A thread-value layout composed after an
+    operand's layout gives, per thread, the operand offsets of its values.
+
+    Parameters:
+        A: The outer layout's type.
+        B: The inner layout's type.
+
+    Args:
+        a: The outer layout, applied second.
+        b: The inner layout, applied first.
+
+    Returns:
+        The composed layout, with `B`'s rank.
+
+    Constraints:
+        Both layouts are fully static, and `B`'s image lies in `A`'s domain.
+    """
+    comptime assert (
+        A.all_dims_known and B.all_dims_known
+    ), "composition needs fully static layouts"
+    comptime assert (
+        B.static_cosize <= A.static_product
+    ), "composition: B's image exceeds A's domain"
+    return {}
 
 
 comptime _ModeLeaves[Mode: CoordLike] = _Flattened[*Mode.ParamListType]
