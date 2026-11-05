@@ -60,7 +60,7 @@ def _graph(name: str = "add_one") -> Graph:
     return graph
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def stand_in() -> CompileOnlyModel:
     model = InferenceSession(devices=[CPU()]).load(_graph())
     assert isinstance(model, CompileOnlyModel)
@@ -98,9 +98,18 @@ def test_executing_refuses(stand_in: CompileOnlyModel, call: object) -> None:
         call(stand_in)
 
 
-# What the stand-in answers rather than refuses: both are known without a
-# device, and `execute` refuses when called rather than when looked up.
-_CARRIED = frozenset({"name", "compiled", "execute"})
+# What the stand-in answers rather than refuses: everything known without a
+# device. `execute` refuses when called rather than when looked up.
+_CARRIED = frozenset(
+    {
+        "name",
+        "compiled",
+        "execute",
+        "input_metadata",
+        "output_metadata",
+        "signature",
+    }
+)
 
 
 @pytest.mark.parametrize(
@@ -121,6 +130,25 @@ def test_every_model_member_refuses(
     # without anyone remembering to.
     with pytest.raises(CompileOnlyExecutionError):
         getattr(stand_in, member)
+
+
+def test_metadata_comes_from_the_artifact(stand_in: CompileOnlyModel) -> None:
+    for specs in (stand_in.input_metadata, stand_in.output_metadata):
+        assert [(s.shape, s.dtype) for s in specs] == [([4], DType.float32)]
+    assert list(stand_in.signature.parameters) == [
+        s.name for s in stand_in.input_metadata
+    ]
+
+
+def test_a_graph_missing_from_the_artifact_is_not_a_device_refusal(
+    stand_in: CompileOnlyModel,
+) -> None:
+    # A miss means the module's graph names and the compile disagree, which
+    # no device would fix.
+    misnamed = CompileOnlyModel("not_compiled", stand_in.compiled)
+    with pytest.raises(RuntimeError, match="add_one") as raised:
+        _ = misnamed.output_metadata
+    assert not isinstance(raised.value, CompileOnlyExecutionError)
 
 
 def test_an_attribute_no_model_has_stays_an_attribute_error(
