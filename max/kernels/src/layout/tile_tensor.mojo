@@ -73,8 +73,17 @@ from .owned_tensor import OwnedTensor
 
 
 @inline(.always)
-def _default_invariant[mut: Bool]() -> Bool:
-    return is_gpu() and mut == False
+def _default_invariant[mut: Bool, address_space: AddressSpace]() -> Bool:
+    # An immutable view only says this code reads through it. Global data a
+    # kernel only reads is safe to load invariant, but shared and local
+    # memory are written by the same kernel, often by this thread just
+    # before, and an invariant load may be hoisted above those writes.
+    return (
+        is_gpu()
+        and not mut
+        and address_space != AddressSpace.SHARED
+        and address_space != AddressSpace.LOCAL
+    )
 
 
 @inline(.always)
@@ -1263,8 +1272,8 @@ struct TileTensor[
     def _load_storage[
         width: SIMDLength,
         alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
+        invariant: Bool,
+        non_temporal: Bool,
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Loads `width` elements at `offset` through the engine's raw
         pointer, or through `StorageIO.load` for an engine whose storage has
@@ -1880,7 +1889,7 @@ struct TileTensor[
         alignment: Int = align_of[
             SIMD[Self.dtype, width]
         ]() if is_gpu() else align_of[Self.dtype](),
-        invariant: Bool = _default_invariant[Self.mut](),
+        invariant: Bool = _default_invariant[Self.mut, Self.address_space](),
         non_temporal: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width]:
         """Load elements from the tensor at the specified coordinates.
@@ -1893,6 +1902,8 @@ struct TileTensor[
             alignment: Memory alignment for the load.
             invariant: If True, the compiler may assume the memory won't be
                 modified during the kernel, enabling load hoisting and caching.
+                Defaults to True on GPU for an immutable view outside shared
+                and local memory.
             non_temporal: If True, indicates the data will not be reused soon,
                 allowing the hardware to bypass caches (e.g., streaming loads).
 
@@ -1988,7 +1999,7 @@ struct TileTensor[
     def raw_load[
         width: SIMDLength = 1,
         alignment: Int = align_of[Self.dtype](),
-        invariant: Bool = _default_invariant[Self.mut](),
+        invariant: Bool = _default_invariant[Self.mut, Self.address_space](),
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Load `width` elements starting at `ptr[offset]`, bypassing the layout.
@@ -2002,7 +2013,8 @@ struct TileTensor[
         Parameters:
             width: Number of elements to load.
             alignment: Memory alignment for the load.
-            invariant: If True, enables load hoisting.
+            invariant: If True, enables load hoisting. Defaults to True on
+                GPU for an immutable view outside shared and local memory.
             non_temporal: If True, indicates the data will not be reused
                 soon, allowing the hardware to bypass caches (e.g.,
                 streaming loads).
@@ -4525,7 +4537,10 @@ def _pretty_print_elementwise[W: Writer](tensor: TileTensor, mut writer: W):
             tensor._load_storage[
                 width=tensor.element_size,
                 alignment=align_of[tensor.dtype](),
-                invariant=_default_invariant[tensor.mut](),
+                invariant=_default_invariant[
+                    tensor.mut, tensor.address_space
+                ](),
+                non_temporal=False,
             ](offset)
         )
         if i < n - 1:
