@@ -15,7 +15,6 @@
 from layout import Coord, TileTensor, coord_to_index_list
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu
 from std.memory import unsafe_memcpy
 from std.sys.info import simd_width_of
 from std.utils import IndexList, StaticTuple
@@ -355,7 +354,6 @@ def tile[
 def tile[
     dtype: DType,
     type_repeats: DType,
-    target: StaticString,
 ](
     input: TileTensor[dtype, address_space=.GENERIC, ...],
     repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
@@ -363,9 +361,7 @@ def tile[
     ctx: DeviceContext,
 ) raises:
     """Tiles `input` into `output` on CPU or GPU."""
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         _tile_cpu(input, repeats, output)
     else:
         _tile_gpu[dtype, type_repeats](input, repeats, output, ctx)

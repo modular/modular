@@ -1047,7 +1047,7 @@ def mgp_buffer_concat[
     )
     for i in range(1, len(inputs)):
         input_tensors[i] = inputs[i].view.to_tile_tensor().as_imm()
-    concat[.int8, bDevice](output_lt, 0, input_tensors, context=call_ctx)
+    concat[.int8](output_lt, 0, input_tensors, context=call_ctx)
 
 
 @register_internal("mgp.buffer.device_to_host")

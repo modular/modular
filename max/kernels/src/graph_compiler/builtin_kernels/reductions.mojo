@@ -576,7 +576,7 @@ struct ApplyQKRMSNorm:
         # (asserted above), so bitcast its tile tensor to unify the single
         # `out_dtype` parameter. Likewise `in_dtype` is inferred from `q`, so
         # bitcast `k`.
-        apply_qk_rms_norm[target=target,](
+        apply_qk_rms_norm(
             q_out_tile,
             k_out_tile.bitcast[out_dtype](),
             gamma_q_tile.bitcast[DType.float32](),
@@ -1382,7 +1382,7 @@ struct ReduceGroupNorm:
                 beta_view.load[width=width](coords)
             )
 
-        group_norm[dtype, rank, target=target](
+        group_norm[dtype, rank](
             input_fn,
             gamma_fn,
             beta_fn,
@@ -2396,7 +2396,7 @@ struct CumSum:
         comptime dtype = type_of(output).dtype
         comptime assert type_of(input).rank == type_of(output).rank
 
-        cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis, target=target](
+        cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis](
             output.to_tile_tensor(),
             input.to_tile_tensor[dtype](),
             ctx,

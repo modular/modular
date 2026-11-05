@@ -263,7 +263,7 @@ def test_fused_concat_cpu() raises:
 
     var output_dyn = output.make_dynamic[.int64]()
 
-    fused_concat[dtype, rank, axis=axis, target="cpu"](
+    fused_concat[dtype, rank, axis=axis](
         StaticTuple[DynamicCoord[.int, rank], 2](input_shape_0, input_shape_1),
         output_dyn.layout,
         input_fn,

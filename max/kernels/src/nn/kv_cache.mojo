@@ -3285,7 +3285,6 @@ def rms_norm_kv_cache_ragged_paged[
         _rms_norm_impl[
             dtype,
             rank,
-            target=target,
             epsilon=epsilon,
             weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,
@@ -3426,7 +3425,6 @@ def rms_norm_value_cache_ragged_paged[
         _rms_norm_impl[
             dtype,
             rank,
-            target=target,
             epsilon=epsilon,
             weight_offset=weight_offset,
             multiply_before_cast=multiply_before_cast,

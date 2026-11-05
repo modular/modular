@@ -18,7 +18,6 @@ from std.sys.info import CompilationTarget
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
     TensorEngine,
@@ -40,7 +39,6 @@ def split[
     //,
     dtype: DType,
     num_outputs: Int,
-    target: StaticString,
     trace_description: StaticString,
     output_origin: MutOrigin,
     *,
@@ -66,7 +64,6 @@ def split[
         OutputEngine: Engine policy shared by all output tensors.
         dtype: Element type of the input and output tensors.
         num_outputs: Number of output chunks to produce.
-        target: Target string used by the elementwise dispatch.
         trace_description: Trace label propagated to the elementwise kernel.
         output_origin: Mutability origin shared by the output tensors.
         axis: Axis along which the input is divided.
@@ -79,7 +76,6 @@ def split[
     Raises:
         Error: If the outputs disagree on a non-split axis dimension.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
     comptime assert (
         input.rank == OutputLayoutType.rank
     ), "Input and outputs must have the same rank."
@@ -148,7 +144,7 @@ def split[
         comptime target_simd_width = (
             simd_width_of[
                 dtype, target=CompilationTarget.current()
-            ]() if is_cpu[target]() else simd_width_of[
+            ]() if ctx.target.is_cpu() else simd_width_of[
                 dtype, target=ctx.target
             ]()
         )

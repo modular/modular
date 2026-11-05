@@ -240,7 +240,7 @@ def run_case[
             expected[o] = updates[k]
 
     var cpu_out = _poisoned_output[dt](n_in)
-    scatter_elements[target="cpu", atomic_update_fn=atomic_update_fn](
+    scatter_elements[atomic_update_fn=atomic_update_fn](
         TileTensor(input.unsafe_ptr(), row_major(Coord(in_shape))),
         TileTensor(indices.unsafe_ptr(), row_major(Coord(upd_shape))),
         TileTensor(updates.unsafe_ptr(), row_major(Coord(upd_shape))),
@@ -260,7 +260,7 @@ def run_case[
     gpu.enqueue_copy(idx_dev, indices.unsafe_ptr())
     gpu.enqueue_copy(out_dev, gpu_out.unsafe_ptr())
 
-    scatter_elements[target="gpu", atomic_update_fn=atomic_update_fn](
+    scatter_elements[atomic_update_fn=atomic_update_fn](
         TileTensor(in_dev.unsafe_ptr(), row_major(Coord(in_shape))),
         TileTensor(idx_dev.unsafe_ptr(), row_major(Coord(upd_shape))),
         TileTensor(upd_dev.unsafe_ptr(), row_major(Coord(upd_shape))),

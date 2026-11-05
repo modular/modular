@@ -200,7 +200,6 @@ def copy_to_slice[
     start_type: DType,
     end_type: DType,
     step_type: DType,
-    target: StaticString = "cpu",
 ](
     buffer: TileTensor[mut=True, dtype, ...],
     in_slice: TileTensor[mut=False, dtype, ...],
@@ -223,8 +222,6 @@ def copy_to_slice[
         step: One-dimensional tensor of strides, one per rank; each must be non-zero.
         context: Device context for the target execution backend.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     var expected_shape = slice_shape(buffer, start, end, step)
 
     if expected_shape != rebind[IndexList[buffer.rank]](
@@ -378,7 +375,6 @@ def slice_shape[
 def sliced_add[
     dtype: DType,
     //,
-    target: StaticString,
 ](
     c: TileTensor[mut=True, dtype, ...],
     a: TileTensor[mut=False, dtype, ...],
@@ -399,8 +395,6 @@ def sliced_add[
         lora_end_idx: Scalar tensor with end index of LoRA token portion (rows to apply add).
         ctx: Device context for GPU operations.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert lora_end_idx.flat_rank == 1
 
     var batch_end_idx = Int(lora_end_idx[0])
@@ -417,7 +411,7 @@ def sliced_add[
 
         c.store(idx, out_val)
 
-    comptime if target == "gpu":
+    comptime if ctx.target.is_gpu():
         comptime compile_target = ctx.target
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 

@@ -36,7 +36,6 @@ from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile, vectorize
 from std.atomic import Atomic, Ordering
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from max.gpu.host.info import is_cpu, is_gpu
 
 from layout.coord import CoordLike, DynamicCoord
 from std.memory import unsafe_memcpy
@@ -334,7 +333,6 @@ def gather_reduce[
 def gather_sum[
     dtype: DType,
     //,
-    target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, ...],
     input: TileTensor[mut=False, dtype, ...],
@@ -355,8 +353,6 @@ def gather_sum[
         ctx: Device context for kernel execution; the compiled builtin
             always supplies the placement device's context.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert input.flat_rank == 2
     comptime assert indices.flat_rank == 2
 
@@ -374,7 +370,7 @@ def gather_sum[
     var output_flat = output.reshape(row_major(Coord(batch, emb_dim)))
     var input_flat = input.reshape(input.layout.make_dynamic[.int64]())
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
 
         def add[
             dtype: DType, simd_width: SIMDLength
@@ -463,7 +459,6 @@ def gather[
     //,
     *,
     axis: Int,
-    target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, ...],
     input: TileTensor[mut=False, dtype, ...],
@@ -480,8 +475,6 @@ def gather[
         dtype: Element type of `input` and `output`.
         indices_type: Element type of the `indices` tensor.
         axis: Axis along which to gather from `input`.
-        target: Target backend to execute on, such as "cpu" or "cuda"
-            (defaults to "cpu").
 
     Args:
         output: Gathered values, shaped per the ONNX Gather spec.
@@ -489,8 +482,6 @@ def gather[
         indices: Indices to gather along `axis`.
         context: Device context for execution.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime prefetch_offset = 12  # TODO: search
 
     @inline(.always)
@@ -576,7 +567,6 @@ def gather[
         dtype,
         indices_type,
         has_prefetch=True,
-        target=target,
     ](
         Axis(axis),
         input_shape,
@@ -646,17 +636,19 @@ def gather_guards[
 
 
 @inline(.always)
-def _vectorizes_last_axis[indices_rank: Int, target: StaticString]() -> Bool:
+def _vectorizes_last_axis[
+    indices_rank: Int, target: CompilationTarget
+]() -> Bool:
     """Whether a gather along the input's last axis runs on SIMD vectors.
 
     Only the CPU does, and rank-0 indices have no index vector to load.
     """
-    return is_cpu[target]() and indices_rank > 0
+    return target.is_cpu() and indices_rank > 0
 
 
 @inline(.always)
 def _normalize_and_check_gather_index[
-    dtype: DType, width: SIMDLength, *, target: StaticString
+    dtype: DType, width: SIMDLength, *, target: CompilationTarget
 ](
     raw: SIMD[dtype, width],
     axis_dim: Int,
@@ -675,7 +667,7 @@ def _normalize_and_check_gather_index[
 
     # Use debug_assert to validate normalized index is within bounds on GPU
     # and trap, as more detailed checking is costly on GPU.
-    comptime if is_cpu[target]():
+    comptime if target.is_cpu():
         if any(out_of_bounds):
             for k in range(Int(width)):
                 if out_of_bounds[k]:
@@ -717,7 +709,7 @@ def gather_elementwise_fn_wrapper[
     *,
     simd_width: Int,
     has_prefetch: Bool,
-    target: StaticString = "cpu",
+    target: CompilationTarget,
     element_alignment: Int = 1,
 ](
     input_fn: InputFnType,
@@ -759,8 +751,7 @@ def gather_elementwise_fn_wrapper[
             indices and the output instead, and the data loads are scalar.
         has_prefetch: Whether to call `prefetch_fn` before each load (not done
             on the vectorized last-axis path).
-        target: Target backend to execute on, such as "cpu" or "cuda"
-            (defaults to "cpu").
+        target: Compilation target the gather runs on.
         element_alignment: Alignment factor for element loads and stores
             (defaults to 1).
 
@@ -893,8 +884,6 @@ def gather[
     & def[width: SIMDLength, element_alignment: Int](
         Coord, SIMD[dtype, width]
     ) -> None,
-    *,
-    target: StaticString = "cpu",
 ](
     axis: Axis,
     input_shape: DynamicCoord[.int64, input_rank],
@@ -923,8 +912,6 @@ def gather[
             the indices buffer at given coordinates.
         OutputFnType: Function type that stores a SIMD vector into the output
             tensor at given coordinates.
-        target: Target backend to execute on, such as "cpu" or "cuda"
-            (defaults to "cpu").
 
     Args:
         axis: Validated axis along which to gather from the input tensor.
@@ -936,8 +923,6 @@ def gather[
         output_fn: Callback that stores values into the output tensor.
         context: Device context for execution.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     _gather_impl[
         input_rank,
         indices_rank,
@@ -945,7 +930,6 @@ def gather[
         dtype,
         indices_type,
         has_prefetch=False,
-        target=target,
     ](
         axis,
         input_shape,
@@ -982,7 +966,6 @@ def _gather_impl[
     & def(Coord, Coord) -> None,
     *,
     has_prefetch: Bool,
-    target: StaticString = "cpu",
 ](
     axis: Axis,
     input_shape: DynamicCoord[.int64, input_rank],
@@ -995,18 +978,12 @@ def _gather_impl[
     prefetch_fn: PrefetchFnType,
     context: DeviceContext,
 ) raises:
-    context._comptime_assert_matches_target_is_cpu[target]()
-
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=context.target]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=context.target]()
 
     gather_guards[input_rank, indices_rank, output_rank](
         axis, input_shape, indices_shape, output_shape
     )
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "gather", task_id=get_safe_task_id(context)
     ):
         if Int(input_shape.product()) == 0 or Int(indices_shape.product()) == 0:
@@ -1015,7 +992,7 @@ def _gather_impl[
         # Create an error reporting location since we cannot raise from an elementwise lambda.
         var error_index: Int = -1
         var error_index_ptr = OptionalReg[MutPointer[Int, MutAnyOrigin]](None)
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             error_index_ptr = OptionalReg[MutPointer[Int, MutAnyOrigin]](
                 MutPointer[Int, MutAnyOrigin](to=error_index)
             )
@@ -1042,7 +1019,7 @@ def _gather_impl[
                 indices_type,
                 simd_width=simd_width,
                 has_prefetch=has_prefetch,
-                target=target,
+                target=context.target,
                 element_alignment=alignment,
             ](
                 input_fn,
@@ -1060,7 +1037,7 @@ def _gather_impl[
         # Gathering the last axis can't vectorize the data loads; see
         # `gather_elementwise_fn_wrapper`.
         comptime last_axis_width = target_simd_width if _vectorizes_last_axis[
-            indices_rank, target
+            indices_rank, context.target
         ]() else 1
         if Int(axis) == input_shape.rank - 1:
             elementwise[
@@ -1082,7 +1059,7 @@ def _gather_impl[
             )
 
         # Check for bounds errors after elementwise operation completes (CPU only)
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             if error_index != -1:
                 var invalid_index = error_index
                 raise Error(
@@ -1242,7 +1219,6 @@ def scatter_nd_generator[
     indices_type: DType,
     //,
     oob_index_strategy: ScatterOobIndexStrategy = ScatterOobIndexStrategy.UNDEFINED,
-    target: StaticString = "cpu",
     atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
     *,
     _trace_description: StaticString = "scatter_nd",
@@ -1260,7 +1236,6 @@ def scatter_nd_generator[
         output_type: Type of data, updates, and output tensors.
         indices_type: Type of the indices tensor.
         oob_index_strategy: Strategy to handle out of bounds indices.
-        target: Target cpu or cuda.
         atomic_update_fn: Callable that atomically applies an update to a
             destination pointer. Called for every update on CPU and GPU, in
             unspecified order. Use `_atomic_add` for addition or
@@ -1277,9 +1252,7 @@ def scatter_nd_generator[
         output: Tensor of rank data_rank, shaped the same as data tensor.
         context: Pointer to DeviceContext.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         _trace_description, task_id=get_safe_task_id(context)
     ):
         if data.layout.shape_coord() != output.layout.shape_coord():
@@ -1311,14 +1284,14 @@ def scatter_nd_generator[
             updates_strides.replace_dynamic[i](Int64(updates.dynamic_stride(i)))
 
         # Always copy input to output first.
-        comptime if is_gpu[target]():
+        comptime if context.target.is_gpu():
             # TODO: Does it matter if output.data or output_flat.data (and data)?
             var ctx = context
             ctx.enqueue_copy(
                 output.to_device_buffer(ctx), data.to_device_buffer(ctx)
             )
 
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             unsafe_memcpy(
                 dest=output_flat.ptr,
                 src=data_flat.ptr,
@@ -1548,7 +1521,7 @@ def scatter_nd_generator[
             "elementwise_impl_" + _trace_description
         ]()
 
-        comptime if is_gpu[target]():
+        comptime if context.target.is_gpu():
             # Iterate over indices.shape[:-1] x slice_elems, one update
             # element per thread. The CPU path below iterates over index rows
             # with a contiguous inner copy per row, which is the right shape
@@ -1617,7 +1590,6 @@ def scatter_nd[
     output_type: DType,
     indices_type: DType,
     //,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, output_type, address_space=.GENERIC, ...],
     indices: TileTensor[mut=False, indices_type, address_space=.GENERIC, ...],
@@ -1630,7 +1602,6 @@ def scatter_nd[
     Parameters:
         output_type: Element type of `data`, `updates`, and `output`.
         indices_type: Element type of the `indices` tensor.
-        target: Target backend to execute on, such as "cpu" or "cuda".
 
     Args:
         data: Source tensor of rank at least 1 copied into `output` before
@@ -1643,9 +1614,7 @@ def scatter_nd[
             and scattered result.
         context: Device context for execution.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
-    scatter_nd_generator[target=target](data, indices, updates, output, context)
+    scatter_nd_generator(data, indices, updates, output, context)
 
 
 @inline(.always)
@@ -1796,7 +1765,6 @@ def scatter_elements[
     indices_type: DType,
     //,
     *,
-    target: StaticString = "cpu",
     atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
 ](
     input: TileTensor[input_type, address_space=.GENERIC, ...],
@@ -1812,7 +1780,6 @@ def scatter_elements[
     Parameters:
         input_type: Element type of `input`, `updates`, and `output`.
         indices_type: Element type of `indices` (must be `int32` or `int64`).
-        target: Target backend to execute on, such as "cpu" or "gpu".
         atomic_update_fn: Callable that atomically applies an update to a
             destination pointer. Called for every update on CPU and GPU, in
             unspecified order. Use `_atomic_add` for addition or
@@ -1830,8 +1797,6 @@ def scatter_elements[
             updates.
         ctx: Device context for execution.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert (
         indices_type == .int32 or indices_type == .int64
     ), "indices in scatter_elements must be int32 or int64"
@@ -1857,7 +1822,7 @@ def scatter_elements[
 
     var axis = _axis if _axis >= 0 else _axis + rank
 
-    comptime if is_gpu[target]():
+    comptime if ctx.target.is_gpu():
         ctx.enqueue_copy(output.ptr, input.as_imm().ptr, output.num_elements())
     else:
         unsafe_parallel_memcpy(
@@ -2111,7 +2076,6 @@ def gather_nd[
     indices_type: DType,
     //,
     batch_dims: Int,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
@@ -2127,7 +2091,6 @@ def gather_nd[
         indices_type: Type of indices tensor.
         batch_dims: Number of batch dimensions. The gather of indexing
                     starts from dimension of data[batch_dims:].
-        target: The target architecture to execute on.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -2138,8 +2101,6 @@ def gather_nd[
         ctx: The device context as prepared by the graph compiler.
 
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert (
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
@@ -2203,11 +2164,7 @@ def gather_nd[
             data.load[width=simd_width, alignment=1](data_idx),
         )
 
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=ctx.target]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous
@@ -2247,7 +2204,6 @@ def scatter_set_constant[
     data_type: DType,
     index_type: DType,
     //,
-    target: StaticString,
 ](
     data: TileTensor[mut=True, data_type, ...],
     indices: TileTensor[mut=False, index_type, ...],
@@ -2278,7 +2234,6 @@ def scatter_set_constant[
     Parameters:
         data_type: Element type of `data` and `fill_value`.
         index_type: Integral element type of the `indices` tensor.
-        target: Target backend to execute on, such as "cpu" or "cuda".
 
     Args:
         data: The data to scatter the updates into.
@@ -2286,8 +2241,6 @@ def scatter_set_constant[
         fill_value: The value to fill the data with.
         ctx: The device context.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert (
         index_type.is_integral()
     ), "index_type must be an integer dtype"
@@ -2319,7 +2272,6 @@ def scatter_set_constant[
 def apply_packed_bitmask[
     dtype: DType,
     //,
-    target: StaticString,
 ](
     output: TileTensor[mut=True, dtype, ...],
     logits: TileTensor[dtype, ...],
@@ -2346,7 +2298,6 @@ def apply_packed_bitmask[
 
     Parameters:
         dtype: Element type of `logits`, `output`, and `fill_value`.
-        target: Target backend to execute on, such as "cpu" or "cuda".
 
     Args:
         output: Masked logits, shape `[batch, vocab]`.
@@ -2357,8 +2308,6 @@ def apply_packed_bitmask[
         fill_value: Value written for masked-out (grammar-invalid) tokens.
         ctx: The device context.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert output.flat_rank == 2, "apply_packed_bitmask: output rank 2"
     comptime assert logits.flat_rank == 2, "apply_packed_bitmask: logits rank 2"
     comptime assert packed.flat_rank == 2, "apply_packed_bitmask: packed rank 2"

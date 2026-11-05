@@ -165,13 +165,11 @@ def run_2d[
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             comptime if use_atomic:
-                scatter_elements[target="gpu", atomic_update_fn=_atomic_add](
+                scatter_elements[atomic_update_fn=_atomic_add](
                     in_tt, idx_tt, upd_tt, 0, out_tt, ctx
                 )
             else:
-                scatter_elements[target="gpu"](
-                    in_tt, idx_tt, upd_tt, 0, out_tt, ctx
-                )
+                scatter_elements(in_tt, idx_tt, upd_tt, 0, out_tt, ctx)
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
@@ -252,7 +250,7 @@ def run_seg[
     ) raises {var in_tt, var out_tt, var upd_tt, var idx_tt, imm}:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[]) raises {imm}:
-            scatter_elements[target="gpu", atomic_update_fn=_atomic_add](
+            scatter_elements[atomic_update_fn=_atomic_add](
                 in_tt, idx_tt, upd_tt, 0, out_tt, ctx
             )
 
@@ -368,7 +366,7 @@ def _report_determinism[
     # Every rerun is hashed as a whole, so the report counts distinct results
     # rather than distances from an arbitrary first run: two arms that both
     # differ from their first run can still have the same spread.
-    scatter_elements[target="gpu", atomic_update_fn=_atomic_add](
+    scatter_elements[atomic_update_fn=_atomic_add](
         in_tt, idx_tt, upd_tt, 0, out_tt, ctx
     )
     ctx.enqueue_copy(ref_host, out_dev)
@@ -380,7 +378,7 @@ def _report_determinism[
     var differing = 0
     var worst_bits = 0
     for _ in range(_DET_RUNS):
-        scatter_elements[target="gpu", atomic_update_fn=_atomic_add](
+        scatter_elements[atomic_update_fn=_atomic_add](
             in_tt, idx_tt, upd_tt, 0, out_tt, ctx
         )
         ctx.enqueue_copy(cmp_host, out_dev)
@@ -469,7 +467,7 @@ def _report_determinism_seg[
     var upd_tt = TileTensor(upd_dev, row_major[num_seg]())
     var idx_tt = TileTensor(idx_dev, row_major[num_seg]())
 
-    scatter_elements[target="gpu", atomic_update_fn=_atomic_add](
+    scatter_elements[atomic_update_fn=_atomic_add](
         in_tt, idx_tt, upd_tt, 0, out_tt, ctx
     )
     ctx.enqueue_copy(ref_host, out_dev)
@@ -479,7 +477,7 @@ def _report_determinism_seg[
 
     var differing = 0
     for _ in range(_DET_RUNS):
-        scatter_elements[target="gpu", atomic_update_fn=_atomic_add](
+        scatter_elements[atomic_update_fn=_atomic_add](
             in_tt, idx_tt, upd_tt, 0, out_tt, ctx
         )
         ctx.enqueue_copy(cmp_host, out_dev)

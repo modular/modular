@@ -22,7 +22,6 @@ from max.algorithm import elementwise
 from max._plugin import MaxPluginForTarget
 from std.collections.string.string_span import get_static_string
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu, is_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.sys.info import CompilationTarget, _accelerator_arch
 
@@ -361,7 +360,6 @@ def _elementwise_impl[
 def dual_elementwise[
     simd_width: Int,
     *,
-    target: StaticString = "gpu",
     _trace_description: StaticString = "dual_elementwise",
 ](
     shape_0: Coord,
@@ -384,7 +382,6 @@ def dual_elementwise[
 
     Parameters:
         simd_width: The SIMD vector width to use.
-        target: The target to run on (must be GPU).
         _trace_description: Description of the trace.
 
     Args:
@@ -400,7 +397,6 @@ def dual_elementwise[
 
     _dual_elementwise_impl[
         simd_width,
-        target=target,
         trace_description=_trace_description,
     ](func_0, func_1, shape_0, shape_1, context)
 
@@ -416,7 +412,6 @@ def _dual_elementwise_impl[
     & def[width: Int, alignment: Int = 1](Coord) -> None,
     /,
     *,
-    target: StaticString = "gpu",
     trace_description: StaticString,
 ](
     func_0: Func0Type,
@@ -425,7 +420,9 @@ def _dual_elementwise_impl[
     shape_1: Coord,
     context: DeviceContext,
 ) raises:
-    context._comptime_assert_matches_target_is_cpu[target]()
+    comptime assert (
+        context.target.is_gpu()
+    ), "dual_elementwise only supports GPU target"
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -438,14 +435,11 @@ def _dual_elementwise_impl[
     comptime desc = String(t"({d})") if d else ""
     comptime kind = get_static_string["dual_elementwise", desc]()
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
         kind,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        comptime assert is_gpu[
-            target
-        ](), "dual_elementwise only supports GPU target"
         _dual_elementwise_impl_gpu[
             simd_width=simd_width,
             trace_description=kind,

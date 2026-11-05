@@ -108,7 +108,7 @@ def run_case[
             var input = TileTensor(in_dev, row_major[sr[0]]())
             var output = TileTensor(out_dev, row_major[sr[0] * sr[1]]())
             var repeats = TileTensor(repeats_stack, row_major[rank]())
-            tile[target="gpu"](
+            tile(
                 input.make_dynamic[.int64](),
                 repeats.make_dynamic[.int64](),
                 output.make_dynamic[.int64](),
@@ -121,7 +121,7 @@ def run_case[
                 row_major[sr[0] * sr[2], sr[1] * sr[3]](),
             )
             var repeats = TileTensor(repeats_stack, row_major[rank]())
-            tile[target="gpu"](
+            tile(
                 input.make_dynamic[.int64](),
                 repeats.make_dynamic[.int64](),
                 output.make_dynamic[.int64](),
@@ -134,7 +134,7 @@ def run_case[
                 row_major[sr[0] * sr[3], sr[1] * sr[4], sr[2] * sr[5]](),
             )
             var repeats = TileTensor(repeats_stack, row_major[rank]())
-            tile[target="gpu"](
+            tile(
                 input.make_dynamic[.int64](),
                 repeats.make_dynamic[.int64](),
                 output.make_dynamic[.int64](),
@@ -154,7 +154,7 @@ def run_case[
                 ](),
             )
             var repeats = TileTensor(repeats_stack, row_major[rank]())
-            tile[target="gpu"](
+            tile(
                 input.make_dynamic[.int64](),
                 repeats.make_dynamic[.int64](),
                 output.make_dynamic[.int64](),

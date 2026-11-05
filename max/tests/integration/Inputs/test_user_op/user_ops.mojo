@@ -118,7 +118,7 @@ struct ConcatOpaque:
                 rebind[SIMD[output.dtype, width]](value),
             )
 
-        fused_concat[dtype, rank, axis=axis, target=target](
+        fused_concat[dtype, rank, axis=axis](
             input_shapes,
             output.runtime_layout(),
             inputs_lambda,

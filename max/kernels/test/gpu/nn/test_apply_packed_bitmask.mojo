@@ -63,9 +63,7 @@ def test_apply_packed_bitmask(ctx: DeviceContext) raises:
     var out_gpu_buf = ctx.enqueue_create_buffer[.float32](batch * vocab)
     var out_gpu = TileTensor(out_gpu_buf, row_major[batch, vocab]())
 
-    apply_packed_bitmask[target="gpu"](
-        out_gpu, logits_gpu, packed_gpu, fill_value, ctx
-    )
+    apply_packed_bitmask(out_gpu, logits_gpu, packed_gpu, fill_value, ctx)
 
     var out_stack = Array[Float32, batch * vocab](fill={})
     ctx.enqueue_copy(Span(out_stack), out_gpu_buf)
@@ -141,9 +139,7 @@ def test_neg_inf_survives_the_mask(ctx: DeviceContext) raises:
     var out_gpu_buf = ctx.enqueue_create_buffer[.float32](batch * vocab)
     var out_gpu = TileTensor(out_gpu_buf, row_major[batch, vocab]())
 
-    apply_packed_bitmask[target="gpu"](
-        out_gpu, logits_gpu, packed_gpu, fill_value, ctx
-    )
+    apply_packed_bitmask(out_gpu, logits_gpu, packed_gpu, fill_value, ctx)
 
     var out_stack = Array[Float32, batch * vocab](fill={})
     ctx.enqueue_copy(Span(out_stack), out_gpu_buf)

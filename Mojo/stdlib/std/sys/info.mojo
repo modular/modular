@@ -697,16 +697,21 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         target.
 
         Returns:
-            "cpu" for a CPU target and "gpu" for a GPU target.
+            "cpu" for a CPU target and "gpu" for any other accelerator.
         """
         comptime if Self().is_cpu():
             return "cpu"
-        elif Self().is_gpu():
+        # TODO(MSTDL-3366): The label was previously set by the GraphCompiler,
+        #   which used "gpu" all non-CPU accelerators, including devices that
+        #   were not actually GPUs. Continue to label these as "gpu" for now to
+        #   avoid a behavior change. However, eventually this entire method
+        #   should simpler be unnecessary, and will be removed.
+        elif Self().is_accelerator():
             return "gpu"
         else:
             Self.unsupported_target_error[
                 operation="target label",
-                note="target is not a recognized CPU or GPU",
+                note="target is not a recognized CPU or accelerator",
             ]()
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed

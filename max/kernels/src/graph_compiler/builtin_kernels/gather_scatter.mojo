@@ -678,7 +678,7 @@ struct ScatterND:
         comptime dtype = type_of(output).dtype
         comptime assert type_of(input).rank == type_of(output).rank
         # Existing implementations do not require static shape information
-        scatter_nd[target=target](
+        scatter_nd(
             input.to_tile_tensor[dtype](),
             indices.to_tile_tensor(),
             updates.to_tile_tensor[dtype](),
@@ -734,7 +734,6 @@ struct ScatterNDSkipOobIndices:
         # -dim_size, such as the dtype's min.
         scatter_nd_generator[
             oob_index_strategy=ScatterOobIndexStrategy.SKIP,
-            target=target,
             atomic_update_fn=None,
             _trace_description="scatter_nd.skip_oob_indices",
         ](
@@ -767,7 +766,6 @@ struct ScatterNDAdd:
         comptime dtype = type_of(output).dtype
         comptime assert type_of(input).rank == type_of(output).rank
         scatter_nd_generator[
-            target=target,
             atomic_update_fn=_atomic_add,
             _trace_description="scatter_nd.add",
         ](
@@ -828,7 +826,6 @@ struct ScatterNDMul:
             return lhs * rhs
 
         scatter_nd_generator[
-            target=target,
             atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.mul",
         ](
@@ -889,7 +886,6 @@ struct ScatterNDMin:
             return min(lhs, rhs)
 
         scatter_nd_generator[
-            target=target,
             atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.min",
         ](
@@ -950,7 +946,6 @@ struct ScatterNDMax:
             return max(lhs, rhs)
 
         scatter_nd_generator[
-            target=target,
             atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.max",
         ](
@@ -1004,7 +999,7 @@ struct ApplyPackedBitmask:
         comptime assert type_of(output).rank == 2
         comptime assert type_of(logits).rank == 2
         comptime assert type_of(packed).rank == 2
-        apply_packed_bitmask[target](
+        apply_packed_bitmask(
             output.to_tile_tensor[dtype](),
             logits.to_tile_tensor[dtype](),
             packed.to_tile_tensor[.int32](),
@@ -1033,7 +1028,7 @@ struct ScatterSetConstant:
         comptime assert conforms_to(type_of(indices), TileTensorable)
         comptime assert type_of(data).rank == 2
         comptime assert type_of(indices).rank == 2
-        scatter_set_constant[target](
+        scatter_set_constant(
             data.to_tile_tensor[data_type](),
             indices.to_tile_tensor(),
             fill_value,
@@ -1065,7 +1060,7 @@ struct Scatter:
         comptime assert type_of(indices).rank == type_of(output).rank
         check_axis_in_range[type_of(output).rank](axis)
 
-        scatter_elements[target=target](
+        scatter_elements(
             input.to_tile_tensor[type_of(output).dtype](),
             indices.to_tile_tensor(),
             updates.to_tile_tensor[type_of(output).dtype](),
@@ -1128,7 +1123,7 @@ struct ScatterAdd:
         comptime assert type_of(indices).rank == type_of(output).rank
         check_axis_in_range[type_of(output).rank](Int(axis))
 
-        scatter_elements[target=target, atomic_update_fn=_atomic_add](
+        scatter_elements[atomic_update_fn=_atomic_add](
             input.to_tile_tensor[type_of(output).dtype](),
             indices.to_tile_tensor(),
             updates.to_tile_tensor[type_of(output).dtype](),
@@ -1198,9 +1193,7 @@ struct ScatterMax:
         ]:
             return max(lhs, rhs)
 
-        scatter_elements[
-            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
-        ](
+        scatter_elements[atomic_update_fn=_atomic_reduce[reduce_func]](
             input.to_tile_tensor[type_of(output).dtype](),
             indices.to_tile_tensor(),
             updates.to_tile_tensor[type_of(output).dtype](),
@@ -1270,9 +1263,7 @@ struct ScatterMin:
         ]:
             return min(lhs, rhs)
 
-        scatter_elements[
-            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
-        ](
+        scatter_elements[atomic_update_fn=_atomic_reduce[reduce_func]](
             input.to_tile_tensor[type_of(output).dtype](),
             indices.to_tile_tensor(),
             updates.to_tile_tensor[type_of(output).dtype](),
@@ -1342,9 +1333,7 @@ struct ScatterMul:
         ]:
             return lhs * rhs
 
-        scatter_elements[
-            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
-        ](
+        scatter_elements[atomic_update_fn=_atomic_reduce[reduce_func]](
             input.to_tile_tensor[type_of(output).dtype](),
             indices.to_tile_tensor(),
             updates.to_tile_tensor[type_of(output).dtype](),
@@ -2064,7 +2053,7 @@ struct MutableStoreSlice:
         comptime assert type_of(starts).rank == 1
         comptime assert type_of(stops).rank == 1
         comptime assert type_of(steps).rank == 1
-        copy_to_slice[target=target](
+        copy_to_slice(
             to_buffer.to_tile_tensor[dtype](),
             in_slice.to_tile_tensor[dtype](),
             starts.to_tile_tensor(),
@@ -2093,7 +2082,7 @@ struct GatherND:
         comptime assert conforms_to(type_of(data), TileTensorable)
         comptime assert conforms_to(type_of(indices), TileTensorable)
         comptime dtype = type_of(output).dtype
-        gather_nd[batch_dims=batchDims, target=target](
+        gather_nd[batch_dims=batchDims](
             data.to_tile_tensor[dtype](),
             indices.to_tile_tensor(),
             output.to_tile_tensor(),
@@ -2186,7 +2175,6 @@ struct Gather:
             output_rank=output_rank,
             dtype=dtype,
             indices_type=indices_type,
-            target=target,
         ](
             Axis(axis, input_rank),
             rebind[DynamicCoord[.int64, input_rank]](
@@ -2244,7 +2232,7 @@ struct GatherSum:
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(indices), TileTensorable)
         comptime dtype = type_of(output).dtype
-        gather_sum[target=target](
+        gather_sum(
             output.to_tile_tensor(),
             input.to_tile_tensor[dtype](),
             indices.to_tile_tensor[.int32](),
@@ -2270,7 +2258,7 @@ struct Tile:
         comptime assert conforms_to(type_of(repeats), TileTensorable)
         comptime dtype = type_of(output).dtype
         comptime assert type_of(input).rank == type_of(output).rank
-        tile[target=target](
+        tile(
             input.to_tile_tensor[dtype](),
             repeats.to_tile_tensor(),
             output.to_tile_tensor[dtype](),
@@ -2385,7 +2373,6 @@ struct Concat:
             dtype,
             rank,
             axis=normalize_neg_index(axis, rank),
-            target=target,
         ](
             input_shapes,
             row_major(output.shape()),
@@ -2464,7 +2451,6 @@ struct Split:
 
         split[
             dtype,
-            target=target,
             trace_description=_trace_name,
             axis=normalized_axis,
         ](
@@ -2586,7 +2572,7 @@ struct Struct_sliced_add_ragged:
         var a_tile_tensor = a.to_tile_tensor[dtype]()
         var b_tile_tensor = b.to_tile_tensor[dtype]()
 
-        sliced_add[target=target](
+        sliced_add(
             c_tile_tensor,
             a_tile_tensor,
             b_tile_tensor,

@@ -3543,7 +3543,7 @@ struct Struct_sampler_apply_packed_bitmask_with_penalties:
         comptime assert type_of(presence_penalty).rank == 1
         comptime assert is_valid_target[target](), "not a valid target"
 
-        apply_packed_bitmask[target](
+        apply_packed_bitmask(
             output.to_tile_tensor[dtype](),
             logits.to_tile_tensor[dtype](),
             packed.to_tile_tensor[.int32](),

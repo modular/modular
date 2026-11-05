@@ -530,7 +530,7 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
         comptime assert output_dyn.flat_rank >= coords.flat_rank
         output_dyn.store(coords, rebind[SIMD[dtype, width]](val + 10))
 
-    fused_concat[dtype, rank, axis=axis, target="gpu"](
+    fused_concat[dtype, rank, axis=axis](
         StaticTuple[DynamicCoord[.int, rank], 2](input_shape_0, input_shape_1),
         output_dyn.layout,
         input_fn,
