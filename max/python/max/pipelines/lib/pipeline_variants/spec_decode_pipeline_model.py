@@ -975,7 +975,6 @@ class _Inputs(UnifiedSpecDecodeInputs):
     target_inputs: Any = None
     """The target's own prepared inputs, kept only where its batching takes
     part in replay; ``None`` otherwise."""
-    spec: SpecDecodeInputTypeSpec | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -986,53 +985,18 @@ class _Inputs(UnifiedSpecDecodeInputs):
         """
         spec = self.spec
         assert spec is not None
-        kv = tree.leaves(self.kv_cache_inputs) if self.kv_cache_inputs else ()
-        traced = spec.trace_owns_signal_buffers
-        signals = [] if traced else self.signal_buffers
-        # The pipeline sets the images' embeddings and merge positions on
-        # every batch of a target that encodes images.
-        vision = (
-            (*self.vision_embeddings, *self.vision_scatter_indices)
-            if spec.enable_vision
-            else ()
+        buffers = self._spec_decode_buffers(
+            tokens=self.tokens,
+            input_row_offsets=self.input_row_offsets,
+            return_n_logits=self.return_n_logits,
+            host_input_row_offsets=self.host_input_row_offsets,
+            data_parallel_splits=self.data_parallel_splits,
+            signal_buffers=self.signal_buffers,
+            batch_context_lengths=self.batch_context_lengths,
+            ep_inputs=self.ep_inputs,
+            trailing=(*self.trailing, *self.replay_trailing),
         )
-        prefix: tuple[Buffer, ...]
-        if spec.distributed:
-            assert self.host_input_row_offsets is not None
-            assert self.data_parallel_splits is not None
-            prefix = (
-                self.tokens,
-                *vision,
-                self.input_row_offsets,
-                self.host_input_row_offsets,
-                self.return_n_logits,
-                self.data_parallel_splits,
-                *signals,
-                *kv,
-                *self.batch_context_lengths,
-                *self.ep_inputs,
-            )
-        else:
-            if not spec.include_signal_buffers:
-                signals = []
-            prefix = (
-                self.tokens,
-                *vision,
-                self.input_row_offsets,
-                self.return_n_logits,
-                *signals,
-                *kv,
-            )
-        buffers = (
-            *prefix,
-            *self._spec_decode_tail_buffers(
-                include_in_thinking_phase=spec.include_in_thinking_phase,
-            ),
-            *(() if spec.distributed else self.ep_inputs),
-            *self.trailing,
-            *self.replay_trailing,
-        )
-        if not traced:
+        if not spec.trace_owns_signal_buffers:
             return buffers
         at = (
             len(buffers)
@@ -1231,7 +1195,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=target.kv_cache_inputs,
             seed=self._next_seed(self.runtime.devices[0]),
-            structured_output=spec.enable_structured_output,
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
                 self._pairing.adapter_arch,
@@ -1292,7 +1255,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             ep_inputs=tuple(ep_inputs),
             kv_cache_inputs=target.kv_cache_inputs,
             seed=self._next_seed(self.runtime.devices[0]),
-            structured_output=spec.enable_structured_output,
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
                 self._pairing.adapter_arch,
@@ -1401,7 +1363,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=kv_cache_inputs,
             seed=seed,
-            structured_output=spec.enable_structured_output,
             spec=spec,
         )
 
@@ -2031,7 +1992,6 @@ def build_spec_graph(
             None
             if call.penalties or call.boundary_count or call.replay_count
             else nn_model.input_tree(
-                call.input_types,
                 call.kv_params,
                 trailing=spec_adapters.trailing_input_tree(
                     call.target_arch, call.method, call.target_config

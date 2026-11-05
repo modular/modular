@@ -86,16 +86,23 @@ class UnifiedMTPGlm5_2Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
     """Inputs for the UnifiedMTPGlm5_2 model.
 
     Target-prefix fields come from :class:`DeepseekV3Inputs`; the spec-decode
-    fields and trailing buffer packing come from
-    :class:`UnifiedSpecDecodeInputs`. The MTP graph binds the per-row
-    ``in_thinking_phase`` flag (consumed by relaxed acceptance).
+    fields and the packing come from :class:`UnifiedSpecDecodeInputs`. The
+    MTP graph binds the per-row ``in_thinking_phase`` flag (consumed by
+    relaxed acceptance).
     """
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        """The step's buffers, plus the speculative decode tail's."""
-        return super().buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=True,
+        """The step's buffers, in the order the fused graph takes them."""
+        return self._spec_decode_buffers(
+            tokens=self.tokens,
+            input_row_offsets=self.input_row_offsets,
+            return_n_logits=self.return_n_logits,
+            host_input_row_offsets=self.host_input_row_offsets,
+            data_parallel_splits=self.data_parallel_splits,
+            signal_buffers=self.signal_buffers,
+            batch_context_lengths=self.batch_context_lengths,
+            ep_inputs=self.ep_inputs,
         )
 
 
@@ -263,6 +270,9 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             speculative_config=self.pipeline_config.speculative,
             enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
+        if (batch_processor := self.batch_processor) is not None:
+            assert isinstance(batch_processor, UnifiedMTPGlm5_2BatchProcessor)
+            batch_processor.input_spec = nn_model.input_spec
 
         # Share embed_tokens and lm_head BEFORE loading so state_dict()
         # deduplicates them — the adapter only emits target.* copies.
@@ -348,7 +358,6 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             graph.output(spec_decode_outputs(outputs))
 
         self._input_tree = nn_model.input_tree(
-            input_types,
             kv_params,
             ep=(
                 EPBatchManager(model_config.ep_config).input_tree()

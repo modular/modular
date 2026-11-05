@@ -42,6 +42,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import (
@@ -131,35 +132,46 @@ def state_tail_types(
 ) -> list[TensorType | BufferType]:
     """Returns the state tail a fused Qwen3.5 speculative graph declares.
 
-    A pool per region, then the ``[num_layers, batch_size]`` rows each layer
-    of each request occupies in it, every block region-major and
-    device-minor. One buffer per leaf rather than one per layer, so the
-    caller picks the row layout.
+    The leaves of its ``state`` group: a pool per region, then the
+    ``[num_layers, batch_size]`` rows each layer of each request occupies in
+    it, every block region-major and device-minor. One buffer per leaf rather
+    than one per layer, so the caller picks the row layout.
 
     Args:
         regions: The state regions, the ring included, in declaration order.
         devices: Devices the target is sharded across.
     """
-    tail: list[TensorType | BufferType] = []
-    for region in regions:
-        tail.extend(
-            BufferType(
-                region.dtype,
-                shape=[region.rows_dim, *region.row_shape],
-                device=device,
+    return tree.leaves(_state_tail_group(regions, devices))
+
+
+def _state_tail_group(
+    regions: Sequence[RecurrentStateRegion], devices: Sequence[DeviceRef]
+) -> RecurrentStateTail:
+    """Groups the state tail's pools and rows, region-major, device-minor."""
+    return RecurrentStateTail(
+        pool=tuple(
+            tuple(
+                BufferType(
+                    region.dtype,
+                    shape=[region.rows_dim, *region.row_shape],
+                    device=device,
+                )
+                for device in devices
             )
-            for device in devices
-        )
-    for region in regions:
-        tail.extend(
-            TensorType(
-                DType.uint32,
-                shape=[region.num_layers, "batch_size"],
-                device=device,
+            for region in regions
+        ),
+        live_row_ids=tuple(
+            tuple(
+                TensorType(
+                    DType.uint32,
+                    shape=[region.num_layers, "batch_size"],
+                    device=device,
+                )
+                for device in devices
             )
-            for device in devices
-        )
-    return tail
+            for region in regions
+        ),
+    )
 
 
 def state_tail(
@@ -382,27 +394,18 @@ def _regions(target_config: Any) -> tuple[RecurrentStateRegion, ...]:
 def trailing_input_types(
     target_config: Any,
 ) -> list[TensorType | BufferType]:
-    """Returns the state tail, the verify ring included."""
-    return state_tail_types(_regions(target_config), target_config.devices)
+    """Returns the state tail, the verify ring included.
+
+    That is the leaves of :func:`trailing_input_tree`.
+    """
+    return tree.leaves(trailing_input_tree(target_config))
 
 
 def trailing_input_tree(target_config: Any) -> OrderedDict[str, object]:
     """Names the state tail for an exported graph."""
-    types = iter(trailing_input_types(target_config))
-    return OrderedDict(state=_state_tail_group(types, target_config))
-
-
-def _state_tail_group(
-    types: Iterator[TensorType | BufferType], target_config: Any
-) -> RecurrentStateTail:
-    """Groups the state tail :func:`state_tail_types` declares."""
-    regions = _regions(target_config)
-    devices = target_config.devices
-
-    def block() -> tuple[tuple[TensorType | BufferType, ...], ...]:
-        return tuple(tuple(next(types) for _ in devices) for _ in regions)
-
-    return RecurrentStateTail(pool=block(), live_row_ids=block())
+    return OrderedDict(
+        state=_state_tail_group(_regions(target_config), target_config.devices)
+    )
 
 
 def extra(target_config: Any, trailing: Sequence[Any]) -> dict[str, Any]:
@@ -429,31 +432,28 @@ def tail_buffers(
 def _mtp_trailing_input_types(
     target_config: Any,
 ) -> list[TensorType | BufferType]:
-    """Returns the state tail.
-
-    Then the merged window's 3-axis positions for a target that runs M-RoPE,
-    shared across devices.
-    """
-    types = trailing_input_types(target_config)
-    if target_config.mrope_enabled:
-        types.append(
-            TensorType(
-                DType.int64,
-                shape=[3, "merged_total_seq_len"],
-                device=target_config.devices[0],
-            )
-        )
-    return types
+    """Returns the leaves of :func:`_mtp_trailing_input_tree`."""
+    return tree.leaves(_mtp_trailing_input_tree(target_config))
 
 
 def _mtp_trailing_input_tree(target_config: Any) -> OrderedDict[str, object]:
-    """Names the state tail, and the positions that follow it."""
-    types = iter(_mtp_trailing_input_types(target_config))
+    """Names the state tail, then the M-RoPE positions.
+
+    The positions are the merged window's 3-axis positions, shared across
+    devices, for a target that runs M-RoPE.
+    """
+    devices = target_config.devices
     named: OrderedDict[str, object] = OrderedDict(
-        state=_state_tail_group(types, target_config)
+        state=_state_tail_group(_regions(target_config), devices)
     )
     if target_config.mrope_enabled:
-        named["mrope"] = MRoPEPositions(position_ids=next(types))
+        named["mrope"] = MRoPEPositions(
+            position_ids=TensorType(
+                DType.int64,
+                shape=[3, "merged_total_seq_len"],
+                device=devices[0],
+            )
+        )
     return named
 
 

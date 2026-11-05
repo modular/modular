@@ -63,12 +63,16 @@ __all__ = [
 _K = TypeVar("_K", bound=str)
 _V = TypeVar("_V")
 # A ModuleV3 graph's groups hold tensor layouts and tensors in place of
-# graph-API types and values.
+# graph-API types and values, and a step packs some groups with its buffers.
 _TensorT = TypeVar("_TensorT", default=TensorValue)
 _MergeT = TypeVar(
     "_MergeT",
     default=tuple[TensorType, ...] | tuple[tuple[TensorType, ...], ...],
 )
+_SignalsT = TypeVar("_SignalsT", default=tuple[BufferType, ...])
+_ContextT = TypeVar("_ContextT", default=tuple[TensorType, ...])
+_SpecT = TypeVar("_SpecT", default=TensorType | tuple[TensorType, ...])
+_BitmaskT = TypeVar("_BitmaskT", default=TensorType | BufferType)
 
 
 class GraphGroup(OrderedDict[_K, _V]):
@@ -119,7 +123,7 @@ class RaggedBatch(GraphGroup[str, TensorType | tuple[TensorType, ...]]):
     kind = "ragged_batch"
 
 
-class TPSignals(GraphGroup[str, tuple[BufferType, ...]]):
+class TPSignals(GraphGroup[str, _SignalsT]):
     """The allreduce signal buffers, one per device."""
 
     kind = "tp_signals"
@@ -235,7 +239,7 @@ class ItemPositions(GraphGroup[str, TensorValue]):
     kind = "item_positions"
 
 
-class BatchContext(GraphGroup[str, tuple[TensorType, ...]]):
+class BatchContext(GraphGroup[str, _ContextT]):
     """Per-device host scalars summarizing the batch's context lengths."""
 
     kind = "batch_context"
@@ -308,7 +312,7 @@ class SparseIndices(GraphGroup[str, tuple[TensorValue, ...]]):
     kind = "sparse_indices"
 
 
-class SpecDecode(GraphGroup[str, TensorType | tuple[TensorType, ...]]):
+class SpecDecode(GraphGroup[str, _SpecT]):
     """A speculative-decoding step's drafts and per-row sampling inputs.
 
     The drafts to verify, any distributions the draft sampled them from, and
@@ -319,7 +323,7 @@ class SpecDecode(GraphGroup[str, TensorType | tuple[TensorType, ...]]):
     kind = "spec_decode"
 
 
-class TokenBitmask(GraphGroup[str, TensorType | BufferType]):
+class TokenBitmask(GraphGroup[str, _BitmaskT]):
     """The structured-output token bitmask and the handshake it arrives by.
 
     The host writes each row's allowed tokens to ``pinned_bitmask`` and sets

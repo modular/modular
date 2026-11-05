@@ -72,6 +72,7 @@ modular_py_test(
     deps = [
         ":dspark_test_support",
         "//max/python/max:tensor",
+        "//max/python/max:tree",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
