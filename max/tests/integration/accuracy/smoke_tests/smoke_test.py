@@ -205,6 +205,9 @@ class ServerCommand(NamedTuple):
 # draft a Mach speculative variant exports with.
 VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
     "google/gemma-4-31B-it__pp_mtp": ("google/gemma-4-31B-it-assistant",),
+    "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark": (
+        "Inferact/Muse-Spark-Open-DSpark",
+    ),
 }
 
 
@@ -242,6 +245,7 @@ def is_vision_model(model: str) -> bool:
             "kimi-vl",
             "minimax-m3",
             "muse-glimmer",
+            "muse-spark",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",

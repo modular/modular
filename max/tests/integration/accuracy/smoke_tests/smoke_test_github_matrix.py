@@ -44,22 +44,25 @@ DISABLE: set[str] = set()
 NIGHTLY = {"NIGHTLY"}
 VARIANT = {"VARIANT"}
 PRIVATE = {"PRIVATE"}
+MACH = {"MACH"}
 
 # Model → HW it runs on. DISABLE runs nowhere. NIGHTLY adds the model to the
 # scheduled nightly run (`--tier nightly`) on the HW it lists; without it the
 # model runs only on manual dispatch. VARIANT marks a `<hf-repo>__<variant>` key
 # that runs a recipe from MODEL_RECIPES in smoke_test.py; PRIVATE marks one
 # whose recipe ships with a private arch and resolves from private hw_recipes.
-# Mach runs every entry on the same HW as MAX. Do not add Mach-only HW tags to
-# hide a model Mach cannot serve on some HW yet: let that job fail. A red smoke
-# test is the forcing function to implement it or to drop the model.
+# Mach runs every other entry on the same HW as MAX. Do not add Mach-only HW
+# tags to hide a model Mach cannot serve on some HW yet: let that job fail. A
+# red smoke test is the forcing function to implement it or to drop the model.
+# MACH marks the one exception, a model with no MAX Serve path: only mach-ci
+# runs it, on the HW it lists, and a MACH variant runs its Mach recipe alone.
 #
 # To add a model, trigger the smoke test with it first:
 # https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
 # then list it below with the HW it passed on. VLMs also go in is_vision_model
 # in smoke_test.py.
 # Every entry is exactly one line, sorted by key, with tags in the order
-# NIGHTLY, VARIANT, PRIVATE, HW. The only comment allowed is an existing
+# NIGHTLY, VARIANT, PRIVATE, MACH, HW. The only comment allowed is an existing
 # Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off
 MODELS: Mapping[str, set[str]] = {
@@ -92,6 +95,8 @@ MODELS: Mapping[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "meta-models/Muse-Glimmer-30B": NIGHTLY | _1xB200,
+    "meta-models/Muse-Spark-Open-816B-A42B-NVFP4": NIGHTLY | MACH | _8xB200,
+    "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark": NIGHTLY | VARIANT | MACH | _8xB200,
     "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
     "microsoft/Phi-3.5-mini-instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
     "microsoft/phi-4": _1xB200 | _1xMI355,
@@ -185,6 +190,8 @@ def excluded(framework: str, gpu: str, model: str) -> bool:
     A model only runs on the HW listed for it in ``MODELS``.
     """
     tags = MODELS.get(model, set())
+    if "MACH" in tags and framework != "mach-ci":
+        return True
     # Variants run MAX recipes; vLLM and SGLang have no equivalent.
     if "VARIANT" in tags and framework in {"vllm", "sglang"}:
         return True

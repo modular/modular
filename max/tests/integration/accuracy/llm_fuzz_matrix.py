@@ -62,6 +62,16 @@ PIPELINES: Final[list[PipelineEntry]] = [
         timeout=90,
     ),
     PipelineEntry(
+        pipeline="meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+        model_path="meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=210,
+        # Mach serves the shipped recipe, with the DSpark drafter.
+        mach_key="meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",
+    ),
+    PipelineEntry(
         pipeline="tencent/Hy4-preview-FP8-ep-tp-mtp",
         model_path="tencent/Hy4-preview-FP8",
         runner="modrunner-b200-efa-8x",
