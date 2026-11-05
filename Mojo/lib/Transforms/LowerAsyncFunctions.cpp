@@ -661,14 +661,7 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
     op->erase();
   }
 
-  // (4) Insert state updates. The hot ramp stores the state of its own
-  // suspension points, but the resume function must store the state of every
-  // suspension point it reaches, otherwise a coroutine that suspends again
-  // after being resumed re-dispatches to the same resume point forever. The
-  // numbering matches `createColdResume`: the first-state suspends are kept in
-  // the body, so they take their ids and later suspends follow. The first-state
-  // suspends are never executed by the resume function, the hot ramp already
-  // stores their state, so they only consume an id.
+  // (4) Insert state updates.
   int susId = 0;
   Value continuation = resumeFunction.getBodyRegion().getArgument(0);
   resumeFunction.walk([&](SuspendOp suspendOp) {
