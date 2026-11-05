@@ -8911,6 +8911,33 @@ def amd_mega_ffn_workspace_words(
     )
 
 
+def amd_mega_ffn_tp_scratch_bytes(
+    num_experts: int, max_rows: int, moe_dim: int
+) -> int:
+    """Returns the act scratch bytes of a tensor-parallel A8W4 decode MegaFFN.
+
+    One fragment-layout block of 16 rows per possible block: each expert
+    with rows adds at most one partial block.
+
+    Args:
+        num_experts: Expert slots of the FFN.
+        max_rows: The most rows the GPU can receive inside the MegaFFN's
+            band.
+        moe_dim: The expert width ``I`` on this GPU.
+
+    Returns:
+        The scratch length in bytes.
+    """
+    block_rows = 16
+    scale_bytes_per_k_chunk = 512
+    k_chunk = 256
+    blocks = -(-max_rows // block_rows) + min(num_experts, max_rows)
+    # mega_ffn_amd_decode.afrag_bytes at MXFP8
+    return blocks * (
+        block_rows * moe_dim + scale_bytes_per_k_chunk * -(-moe_dim // k_chunk)
+    )
+
+
 def grouped_ffn_block_scaled_amd(
     hidden_states: TensorValue,
     gate_up_weight: TensorValue,
@@ -8932,7 +8959,7 @@ def grouped_ffn_block_scaled_amd(
     prefill_mega: bool = True,
     activation: GatedActivation | None = None,
 ) -> TensorValue:
-    """Runs an MXFP8 or MXFP4 MoE FFN on AMD gfx950.
+    """Runs an MXFP8, MXFP4 or A8W4 MoE FFN on AMD gfx950.
 
     The FFN is gate/up, activation, down. In its band it is the one-launch MegaFFN; otherwise it runs the chain
     it replaces, bit for bit either way. At MXFP8 that is
@@ -8942,31 +8969,48 @@ def grouped_ffn_block_scaled_amd(
     bf16, the ``ep.fused_silu.mxfp4`` kernel, then
     :func:`grouped_dynamic_block_scaled_matmul_amd`.
 
+    ``scales_max_padded_m=0`` selects A8W4 under tensor parallelism: MXFP8
+    ``hidden_states`` against ``uint8`` MXFP4 weights preshuffled by
+    :func:`stack_a8w4_mega_ffn_b`, every scale row-major as a shard of the
+    checkpoint stores it, the rows grouped by :func:`moe_create_indices`.
+    It is bit for bit the chain
+    :func:`grouped_dynamic_block_scaled_matmul_amd` into bf16,
+    :func:`swiglu_quantize_dynamic_block_scaled`, then
+    :func:`grouped_dynamic_block_scaled_matmul_amd` on the row-major weights,
+    which cannot read preshuffled ones: the decode MegaFFN runs up to
+    ``mega_band_m`` and the prefill MegaFFN above it, its counters in the
+    workspace's prefill region.
+
     Args:
         hidden_states: Rows grouped by expert, ``[total_tokens, H]`` MXFP8
-            or ``[total_tokens, H / 2]`` packed MXFP4.
+            (also at A8W4) or ``[total_tokens, H / 2]`` packed MXFP4.
         gate_up_weight: Preshuffled gate/up weight, ``[num_experts, 2 * I,
             H]`` sigma-permuted at MXFP8, or ``[num_experts, 2 * I, H / 2]``
-            split ``[gate | up]`` at MXFP4.
-        a_scales: The rows' E8M0 scales in the per-expert slot layout.
-        gate_up_scales: Preshuffled gate/up weight scales.
+            split ``[gate | up]`` at MXFP4 and A8W4.
+        a_scales: The rows' E8M0 scales in the per-expert slot layout, or
+            row-major ``[total_tokens, H / 32]`` at A8W4.
+        gate_up_scales: Preshuffled gate/up weight scales (row-major at
+            A8W4).
         down_weight: Preshuffled down weight, ``[num_experts, H, I]``
-            (``I / 2`` bytes at MXFP4).
-        down_scales: Preshuffled down weight scales.
+            (``I / 2`` bytes at MXFP4 and A8W4).
+        down_scales: Preshuffled down weight scales (row-major at A8W4).
         expert_start_indices: Where each expert's rows start.
         expert_ids: The expert ID for each slot.
         expert_usage_stats_host: ``[max_tokens_per_expert,
             num_active_experts]``.
         workspace: The persistent MegaFFN counter buffer: minted once per
             call site with ``ops.buffer_create(..., init_value=0)``, sized by
-            :func:`amd_mega_ffn_workspace_words` (``grids=2`` at MXFP4),
-            never zeroed again.
+            :func:`amd_mega_ffn_workspace_words` (``grids=2`` at MXFP4 and
+            A8W4), never zeroed again.
         estimated_total_m: Row-count estimate that picks the regime.
-        scales_max_padded_m: Per-expert slot stride of the scales.
-        decode_grid_m_cap: Decode-band gate; 0 disables the MegaFFN.
+        scales_max_padded_m: Per-expert slot stride of the scales, or 0
+            for A8W4 under tensor parallelism.
+        decode_grid_m_cap: Decode-band gate; 0 disables. Ignored at
+            ``scales_max_padded_m=0``, where the MegaFFN always runs.
         decode_grid_m_rows: Rows the chain's decode grid covers per expert.
         mega_band_m: The MegaFFN runs when ``estimated_total_m`` is at most
-            this (0: never).
+            this (0: never). At ``scales_max_padded_m=0`` it bounds the decode
+            kernel instead, and the prefill MegaFFN takes larger steps.
         mega_max_rows: The most rows this GPU can receive inside that band.
         prefill_band_m: Above this ``estimated_total_m`` the op runs the
             prefill GEMMs (0: never), bit for bit the chain's output.
@@ -8977,33 +9021,58 @@ def grouped_ffn_block_scaled_amd(
 
     Returns:
         The bf16 FFN output, ``[total_tokens, H]``.
+
+    Raises:
+        ValueError: If ``scales_max_padded_m`` is negative.
+        TypeError: If the operand dtypes are not MXFP8, MXFP4 or (at
+            ``scales_max_padded_m=0``) A8W4.
     """
-    if scales_max_padded_m <= 0:
+    if scales_max_padded_m < 0:
         raise ValueError(
-            "the AMD MoE FFN reads slot-layout scales; scales_max_padded_m"
-            f" must be positive but got {scales_max_padded_m}"
+            "scales_max_padded_m must be non-negative but got"
+            f" {scales_max_padded_m}"
         )
+    tp = scales_max_padded_m == 0
     if hidden_states.dtype not in (DType.float8_e4m3fn, DType.uint8):
         raise TypeError(
             "hidden_states must be float8_e4m3fn (MXFP8) or uint8 (MXFP4)"
             f" but got {hidden_states.dtype}"
         )
+    weight_dtype = DType.uint8 if tp else hidden_states.dtype
+    if tp and hidden_states.dtype != DType.float8_e4m3fn:
+        raise TypeError(
+            "row-major A8W4 (scales_max_padded_m=0) takes float8_e4m3fn"
+            f" hidden_states but got {hidden_states.dtype}"
+        )
     for name, t in (
         ("gate_up_weight", gate_up_weight),
         ("down_weight", down_weight),
     ):
-        if t.dtype != hidden_states.dtype:
-            raise TypeError(
-                f"{name} must be {hidden_states.dtype}, as hidden_states,"
-                f" but got {t.dtype}"
-            )
+        if t.dtype != weight_dtype:
+            raise TypeError(f"{name} must be {weight_dtype} but got {t.dtype}")
     # MXFP4 packs two elements a byte along K
-    elems_per_byte = 2 if hidden_states.dtype == DType.uint8 else 1
-    max_num_tokens_arg = ops.constant(
-        scales_max_padded_m,
-        dtype=expert_usage_stats_host.dtype,
-        device=expert_usage_stats_host.device,
+    moe_dim = int(down_weight.shape[2]) * (
+        2 if weight_dtype == DType.uint8 else 1
     )
+    act_cols = moe_dim // 2 if hidden_states.dtype == DType.uint8 else moe_dim
+    if tp:
+        max_num_tokens_arg = expert_usage_stats_host[0]
+        act_scale_rows: Dim = hidden_states.shape[0]
+        scratch_bytes = (
+            amd_mega_ffn_tp_scratch_bytes(
+                int(gate_up_weight.shape[0]), mega_max_rows, moe_dim
+            )
+            if mega_band_m > 0
+            else 0
+        )
+    else:
+        max_num_tokens_arg = ops.constant(
+            scales_max_padded_m,
+            dtype=expert_usage_stats_host.dtype,
+            device=expert_usage_stats_host.device,
+        )
+        act_scale_rows = Dim(int(gate_up_weight.shape[0])) * scales_max_padded_m
+        scratch_bytes = 0
     results = ops.inplace_custom(
         "moe.grouped.ffn.block.scaled.amd",
         device=hidden_states.device,
@@ -9045,20 +9114,22 @@ def grouped_ffn_block_scaled_amd(
                 shape=[hidden_states.shape[0], down_weight.shape[1]],
                 device=hidden_states.device,
             ),
-            # The intermediate activation and its slot-layout scales: op
-            # outputs so the memory planner owns them, as for the two-op
-            # chain. Unused by callers.
+            # The intermediate activation, its scales and the A8W4 decode
+            # MegaFFN's scratch: op outputs so the memory planner owns them,
+            # as for the two-op chain. Unused by callers.
             TensorType(
                 dtype=hidden_states.dtype,
-                shape=[hidden_states.shape[0], down_weight.shape[2]],
+                shape=[hidden_states.shape[0], act_cols],
                 device=hidden_states.device,
             ),
             TensorType(
                 dtype=DType.float8_e8m0fnu,
-                shape=[
-                    Dim(int(gate_up_weight.shape[0])) * scales_max_padded_m,
-                    ceildiv(down_weight.shape[2] * elems_per_byte, Dim(32)),
-                ],
+                shape=[act_scale_rows, -(-moe_dim // _MX_SF_VECTOR_SIZE)],
+                device=hidden_states.device,
+            ),
+            TensorType(
+                dtype=DType.uint8,
+                shape=[scratch_bytes],
                 device=hidden_states.device,
             ),
         ],
@@ -9356,6 +9427,78 @@ def stack_blockwise_fp8_b(
         ],
         parameters={"projections": per_expert},
     )[0].tensor
+
+
+def stack_a8w4_mega_ffn_b(
+    projections: Sequence[TensorValue],
+    experts: int,
+    devices: Sequence[Device | DeviceRef],
+    axis: int,
+) -> list[TensorValue]:
+    """Stacks MXFP4 experts in the A8W4 MegaFFN's B layout, a shard a device.
+
+    For device ``d``: each projection split ``len(devices)`` ways along
+    ``axis`` and shard ``d`` taken, each expert's shards concatenated along
+    ``N``, the experts stacked, and :func:`preshuffle_block_scaled_b`
+    applied, in one pass: the host reads the checkpoint's mmapped bytes once
+    per device, in order, and writes each device's stack an expert at a time
+    through pinned memory, with no temporary on either side.
+
+    Args:
+        projections: Row-major packed ``[N_p, K / 2]`` uint8 projections on
+            the CPU, expert by expert, each expert's in concatenation order.
+        experts: The number of experts.
+        devices: The devices the stacks are built on, in shard order: all
+            accelerators, or all the CPU.
+        axis: The axis each projection is sharded along: 0 (rows, a
+            gate/up) or 1 (K, a down projection).
+
+    Returns:
+        One permuted ``[experts, N, K_BYTES]`` uint8 stack per device.
+
+    Raises:
+        ValueError: If the projections do not split evenly into experts or
+            shards, or are not uint8 on the CPU.
+    """
+    if not experts or len(projections) % experts:
+        raise ValueError(
+            f"{len(projections)} projections do not split into {experts}"
+            " experts"
+        )
+    if axis not in (0, 1):
+        raise ValueError(f"axis must be 0 or 1, got {axis}")
+    first = projections[0]
+    if first.dtype != DType.uint8 or first.device != DeviceRef.CPU():
+        raise ValueError(
+            f"expected uint8 projections on the CPU, got {first.dtype} on"
+            f" {first.device}"
+        )
+    per_expert = len(projections) // experts
+    rows, k = (int(d) for d in first.shape)
+    if (rows, k)[axis] % len(devices):
+        raise ValueError(
+            f"a [{rows}, {k}] projection does not split {len(devices)} ways"
+            f" along axis {axis}"
+        )
+    n = per_expert * (rows // len(devices) if axis == 0 else rows)
+    kb = k // len(devices) if axis == 1 else k
+    return [
+        r.tensor
+        for r in ops.custom(
+            "moe.grouped.ffn.a8w4.amd.stack_b",
+            device=first.device,
+            values=list(projections),
+            out_types=[
+                TensorType(
+                    DType.uint8,
+                    [experts, n, kb],
+                    device=DeviceRef.from_device(device),
+                )
+                for device in devices
+            ],
+            parameters={"projections": per_expert, "axis": axis},
+        )
+    ]
 
 
 def preshuffle_block_scaled_b_scales(scales: TensorValue) -> TensorValue:

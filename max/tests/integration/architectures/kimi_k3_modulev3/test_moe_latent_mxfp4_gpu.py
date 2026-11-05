@@ -222,6 +222,9 @@ def _build(
             QuantConfig.mxfp4(mlp_quantized_layers=[0]) if mxfp4 else None
         ),
         amd_w4a8=True if mxfp4 else None,
+        # The chain under test; the MegaFFN covers only the full-size
+        # experts, against this chain, in test_moe_latent_megaffn_gpu.py.
+        amd_mega_ffn=False,
     )
     layer.gate.gate_score.weight = Tensor(
         weights["gate_score_weight"], dtype=DType.float32

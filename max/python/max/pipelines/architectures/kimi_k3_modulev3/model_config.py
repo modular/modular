@@ -182,6 +182,12 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
 
     quantization_encoding: SupportedEncoding | None = None
 
+    max_tokens_per_expert: int = 8192
+    """Rows one forward can route to an expert, which sizes the routed
+    experts' GEMM grid and the MegaFFN's workspace: set by :meth:`initialize`
+    from :meth:`routed_expert_row_bound`, since an expert receives a token at
+    most once."""
+
     mesh: DeviceMesh | None = None
     """Device mesh for sharding across multiple devices."""
 
@@ -835,6 +841,12 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
             ep_size=pipeline_config.runtime.ep_size,
             spec_num_draft_tokens=(
                 kimi_k3_spec_num_draft_tokens(pipeline_config)
+            ),
+        )
+        config_instance = replace(
+            config_instance,
+            max_tokens_per_expert=config_instance.routed_expert_row_bound(
+                pipeline_config
             ),
         )
         config_instance.validate_tensor_parallel_split()

@@ -174,6 +174,26 @@ def test_layer_split_matches_the_checkpoint_partition(
     assert config.model.num_hidden_layers == _NUM_HIDDEN_LAYERS
 
 
+def test_routed_experts_sized_for_the_batch_token_budget(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """A budget past the layer's 8192-row fallback reaches the routed
+    experts, which size their GEMM grid and MegaFFN workspace from it."""
+    _huggingface_config, pipeline_config, _ = configs
+    pipeline_config.runtime = pipeline_config.runtime.model_copy(
+        update={"max_batch_input_tokens": 16384, "enable_chunked_prefill": True}
+    )
+
+    config = KimiK3Config.initialize(
+        pipeline_config, pipeline_config.model, max_seq_len=_MAX_LENGTH
+    )
+
+    assert config.max_tokens_per_expert == config.routed_expert_row_bound(
+        pipeline_config
+    )
+    assert config.max_tokens_per_expert >= 16384
+
+
 def test_cache_is_the_attention_leaf_beside_the_kda_state(
     configs: tuple[Any, Any, Any],
 ) -> None:

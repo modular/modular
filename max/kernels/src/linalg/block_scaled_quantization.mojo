@@ -3855,13 +3855,15 @@ def quantize_mxfp8_lane_group[
     scales_dtype: DType,
     *,
     SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
+    stride: Int = 1,
 ](val: SIMD[in_dtype, width]) -> Tuple[
     SIMD[out_dtype, width], Scalar[scales_dtype]
 ]:
     """Quantizes one thread's slice of an MX block to MXFP8, cooperatively.
 
-    The block max spans `SF_VECTOR_SIZE // width` lanes, so the caller's
-    thread-to-column map must land each MX block on one aligned lane group.
+    The block max spans `SF_VECTOR_SIZE // width` lanes `stride` apart, so the
+    caller's thread-to-column map must land each MX block on one aligned lane
+    group.
 
     Parameters:
         in_dtype: Element type of the incoming values (bfloat16).
@@ -3869,9 +3871,10 @@ def quantize_mxfp8_lane_group[
         out_dtype: Quantized element type (`float8_e4m3fn`).
         scales_dtype: Block-scale type (`float8_e8m0fnu`).
         SF_VECTOR_SIZE: Elements covered by one block scale (32).
+        stride: Lane distance between the group's lanes.
 
     Args:
-        val: This thread's `width` contiguous elements.
+        val: This thread's `width` elements of the block.
 
     Returns:
         `(quantized, e8m0_scale)`. Every lane in the group returns the same
@@ -3894,13 +3897,23 @@ def quantize_mxfp8_lane_group[
         num_lanes.is_power_of_two() and num_lanes <= WARP_SIZE
     ), "SF_VECTOR_SIZE // width must be a power of two no larger than the warp"
 
-    var thread_max = lane_group_max[num_lanes=num_lanes](abs(val).reduce_max())
+    var group_max: Float32
+    comptime if stride == 1:
+        group_max = lane_group_max[num_lanes=num_lanes](
+            abs(val).reduce_max()
+        ).cast[.float32]()
+    else:
+        # The cross-lane permutes take 32-bit lanes. The cast is exact, so
+        # the block max is the same.
+        group_max = lane_group_max[num_lanes=num_lanes, stride=stride](
+            abs(val).reduce_max().cast[.float32]()
+        )
     var e8m0_scale: Scalar[scales_dtype]
     var out_scale: Float32
     var block_is_dead: Bool
     e8m0_scale, out_scale, block_is_dead = compute_mxfp8_block_scale[
         scales_dtype
-    ](thread_max.cast[.float32]())
+    ](group_max)
 
     var data = val.cast[.float32]()
     # A dead block's multiplier is 0; zeroing avoids storing `inf * 0.0 = NaN`.

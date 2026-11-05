@@ -208,6 +208,33 @@ modular_eager_py_test(
 )
 
 modular_eager_py_test(
+    name = "moe_latent_megaffn_tests_gpu",
+    size = "enormous",
+    srcs = ["test_moe_latent_megaffn_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    tags = [
+        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
+        "exclusive-if-local",
+        "gpu",
+    ],
+    # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":moe_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
     name = "mla_attention_tests_gpu",
     size = "enormous",
     srcs = ["test_mla_attention.py"],
