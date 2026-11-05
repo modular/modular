@@ -112,6 +112,10 @@ This version is still a work in progress.
   that captures values. Write `take_while(items, pred)` instead of
   `take_while[pred](items)`.
 
+- `Span.binary_search_by()` no longer takes the comparator as a compile-time
+  parameter. Pass it as an argument, `span.binary_search_by(cmp)`, which also
+  lets it capture the value being searched for.
+
 - `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
   now raise an `Error` instead of aborting when the string is empty. They also
   raise when the string holds more than one codepoint; previously they
