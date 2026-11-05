@@ -3518,7 +3518,7 @@ static LogicalResult bindRowValues(EmitMojoState &state, Region &region,
 }
 
 // Lowers the body of `phase` inside a phase lambda of width `width`, at the
-// element index `idx`, with `tile` for `mogg.rowwise.primary`.
+// element index `idx`, reading the row's cache as `tile`.
 static LogicalResult lowerPhaseBody(EmitMojoState &state,
                                     RowwisePhaseOpInterface phase,
                                     const MojoValue &width,
@@ -3529,34 +3529,29 @@ static LogicalResult lowerPhaseBody(EmitMojoState &state,
   state.setMojoValueFor(phase.getIndexArg(), MojoValue("idx"));
   if (failed(bindRowValues(state, phase->getRegion(0), width)))
     return failure();
-  for (Operation &op : phase->getRegion(0).front().without_terminator()) {
-    if (auto primary = dyn_cast<RowwisePrimaryOp>(op)) {
-      state.setMojoValueFor(primary.getResult(), tile);
-      continue;
-    }
+  state.rowwiseBody->tile = tile;
+  for (Operation &op : phase->getRegion(0).front().without_terminator())
     if (failed(state.lowerOpToMojo(&op)))
       return failure();
-  }
   return success();
 }
 
 // Prints the kernel as a Row API body and launches it:
 //
 //   def body[params](row_coords, mut row_ctx) {var}:                    (1)
-//     def load[width, alignment](idx) -> SIMD[dtype, width]:            (2)
-//       return <primary capture>[idx.coord]
-//     var row = Row[params, accum, dtype, axis, rank, is_cached](       (3)
-//         row_coords, Idx[cols], row_ctx, load)
-//     <each op of the body, in order: a fold, a map phase, a row load   (4)
-//      and the emit print themselves; any other row-level op runs once
-//      per row, at params.simd_width>
-//   mogg.call.rowwise[SimdMonoid, dtype, accum, axis = ..., ...](       (5)
+//     <each op of the body, in order: the cache prints the `load`       (2)
+//      closure and the Row; folds, map phases, per-row loads and the
+//      emit print themselves; any other row-level op runs once per row,
+//      at params.simd_width>
+//   mogg.call.rowwise[SimdMonoid, dtype, accum, axis = ..., ...](       (3)
 //       body, shape, ctx)
 LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
-  if (!getPrimary() || !getDtype() || !getAccum() || !getNumPhases() ||
-      !getDtypeSize() || !getSimdMonoid())
+  RowwiseCacheOp cache = getCache();
+  if (!cache || !getAccum() || !getNumPhases() || !getDtypeSize() ||
+      !getSimdMonoid())
     return emitOpError("isn't legalized for the Row API");
-  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(*getDtype());
+  ErrorOr<DType> dtypeOr =
+      M::MO::fromMLIRType(cache.getType().getElementType());
   ErrorOr<DType> accumOr = M::MO::fromMLIRType(*getAccum());
   if (dtypeOr.isError() || accumOr.isError())
     return emitOpError("has a non-dtype `dtype` or `accum`");
@@ -3575,7 +3570,6 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   for (auto [arg, info] : llvm::zip(args, *captureInfosOr))
     state.setFusedTensorArgFor(arg,
                                {info.ptr, info.shape, info.strides, info.spec});
-  const FusedCaptureInfo &primary = (*captureInfosOr)[*getPrimary()];
 
   SmallVector<RowwiseReduceOp> folds =
       llvm::to_vector(body.getOps<RowwiseReduceOp>());
@@ -3621,40 +3615,13 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
         MojoValue rowCoord = MojoValue(kAliasDynamicCoord)[{
             MojoValue(kStructDType).get(kEnumDTypeInt), rank}];
 
-        // (2) def load[width, alignment](idx) -> SIMD[dtype, width]:
-        MojoValue load = state.builder.lambda(
-            "load_",
-            {NamedMojoDef::asVerbatim(kParameterWidth, kStructInt),
-             NamedMojoDef::asVerbatim("alignment", kStructInt)},
-            {NamedMojoDef::asVerbatim("idx", rowCoord)},
-            MojoValue(kStructSIMD)[{dtype, MojoValue(kParameterWidth)}],
-            MojoBuilder::LambdaInline::kAutomatic, false, false, "var",
-            [&](const FunctionBody &fb) {
-              // return <primary capture>[idx.coord]
-              state.builder.returnsValue(simdLoadFromCapture(
-                  {primary.ptr, primary.shape, primary.strides, primary.spec},
-                  fb.parameters[0], fb.parameters[1], MojoValue("idx")));
-            });
-
-        // (3) var row = Row[params, accum, dtype, axis, rank, is_cached](...)
-        MojoValue row = state.builder.var(
-            MojoValue(kStructRowwiseRow)[{
-                params, accum, dtype, MojoValue(axis), rank,
-                MojoValue("is_cached").equal(MojoValue(getIsCached()))}](
-                {}, {MojoValue("row_coords"), axisSize, MojoValue("row_ctx"),
-                     load}),
-            /*cache=*/false);
-
-        // Row-level ops index the row with the reduced coordinate pinned to
-        // 0, as `emit` does: at_axis[axis](row.row_coord, 0)
-        state.setMojoValueFor(args.back(),
-                              MojoValue(kFuncRowwiseAtAxis)[MojoValue(axis)](
-                                  {}, {row.get("row_coord"), MojoValue(0)}));
-
-        // (4) The body's ops, in order.
-        EmitMojoState::RowwiseBodyInfo info{&body,    params, row,  load,
-                                            rowCoord, dtype,  accum};
+        EmitMojoState::RowwiseBodyInfo info{&body,      params,      rank,
+                                            rowCoord,   axisSize,    dtype,
+                                            accum,      /*load=*/{}, /*row=*/{},
+                                            /*tile=*/{}};
         EmitMojoState::RowwiseBodyGuard bodyGuard(state, info);
+
+        // (2) The body's ops, in order.
         EmitMojoState::LambdaInfosGuard rowLevel(
             state,
             {&state.builder, params.get(kParameterSimdWidth), MojoValue(1)});
@@ -3667,7 +3634,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   if (failedToLower)
     return failure();
 
-  // (5) mogg.call.rowwise[SimdMonoid, dtype, accum, ...](body, shape, ctx)
+  // (3) mogg.call.rowwise[SimdMonoid, dtype, accum, ...](body, shape, ctx)
   PrimitiveDeclOp launch = state.registry.lookupPrimitive(getOperationName());
   state.builder.call(
       MojoValue(primitiveMojoName(launch)),
@@ -3680,6 +3647,11 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
        MojoValue("dtype_size").equal(MojoValue(*getDtypeSize()))},
       {bodyFn, shape, context});
   return success();
+}
+
+RowwiseCacheOp CallRowwiseOp::getCache() {
+  auto loads = getBody().front().getOps<RowwiseCacheOp>();
+  return loads.empty() ? RowwiseCacheOp() : *loads.begin();
 }
 
 LogicalResult CallRowwiseOp::verify() {
@@ -3699,6 +3671,67 @@ LogicalResult CallRowwiseOp::verify() {
   // every element.
   if (afterMap && !body.getOps<RowwiseEmitOp>().empty())
     return emitOpError("has both per-row stores and a map phase");
+  return success();
+}
+
+// Prints the cache as the Row's `load` closure, and the Row, which reads the
+// row through it:
+//
+//   def load[width, alignment](idx) -> SIMD[dtype, width]:              (1)
+//     <body at idx, each load at width and alignment>
+//     return <the yielded value>                                        (2)
+//   var row = Row[params, accum, dtype, axis, rank, is_cached](         (3)
+//       row_coords, Idx[cols], row_ctx, load)
+LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
+  EmitMojoState::RowwiseBodyInfo &info = *state.rowwiseBody;
+  auto call = cast<CallRowwiseOp>(getOperation()->getParentOp());
+  Block &body = getBody().front();
+
+  // (1) def load[width, alignment](idx) -> SIMD[dtype, width]:
+  bool failedToLower = false;
+  info.load = state.builder.lambda(
+      "load_",
+      {NamedMojoDef::asVerbatim(kParameterWidth, kStructInt),
+       NamedMojoDef::asVerbatim("alignment", kStructInt)},
+      {NamedMojoDef::asVerbatim("idx", info.rowCoord)},
+      MojoValue(kStructSIMD)[{info.dtype, MojoValue(kParameterWidth)}],
+      MojoBuilder::LambdaInline::kAutomatic, false, false, "var",
+      [&](const FunctionBody &fb) {
+        EmitMojoState::LambdaInfosGuard guard(
+            state, {&state.builder, fb.parameters[0], fb.parameters[1]});
+        EmitMojoState::ValueScope scope(state);
+        state.setMojoValueFor(body.getArgument(0), MojoValue("idx"));
+        if (failed(bindRowValues(state, getBody(), fb.parameters[0]))) {
+          failedToLower = true;
+          return;
+        }
+        for (Operation &op : body.without_terminator())
+          if (failed(state.lowerOpToMojo(&op))) {
+            failedToLower = true;
+            return;
+          }
+        // (2) return <the yielded value>
+        state.builder.returnsValue(state.getMojoValueFor(
+            cast<YieldOp>(body.getTerminator()).getOperand(0)));
+      });
+  if (failedToLower)
+    return failure();
+
+  // (3) var row = Row[params, accum, dtype, axis, rank, is_cached](...)
+  MojoValue axis(call.getAxis());
+  info.row = state.builder.var(
+      MojoValue(kStructRowwiseRow)[{
+          info.params, info.accum, info.dtype, axis, info.rank,
+          MojoValue("is_cached").equal(MojoValue(call.getIsCached()))}](
+          {}, {MojoValue("row_coords"), info.axisSize, MojoValue("row_ctx"),
+               info.load}),
+      /*cache=*/false);
+
+  // Row-level ops index the row with the reduced coordinate pinned to 0, as
+  // `emit` does: at_axis[axis](row.row_coord, 0)
+  state.setMojoValueFor(info.body->getArguments().back(),
+                        MojoValue(kFuncRowwiseAtAxis)[axis](
+                            {}, {info.row.get("row_coord"), MojoValue(0)}));
   return success();
 }
 
@@ -3731,7 +3764,7 @@ LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
 // Prints the fold:
 //
 //   def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:     (1)
-//     <fold body, reading `tile` for the primary value>
+//     <fold body, reading `tile` for the cached value>
 //   var acc = row.reduce[Monoid[..., W = params.simd_width]](           (2)
 //       contribute, load)
 LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
@@ -3898,6 +3931,56 @@ LogicalResult RowwiseReduceOp::verify() {
           .walk([](TensorStoreOp) { return WalkResult::interrupt(); })
           .wasInterrupted())
     return emitOpError("stores; only the emit and the map phases store");
+  return success();
+}
+
+ParseResult RowwiseCacheOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::Argument> entryArgs;
+  if (parseLeadingArgs(parser, entryArgs) ||
+      parser.parseArrowTypeList(result.types) ||
+      parser.parseRegion(*result.addRegion(), entryArgs))
+    return failure();
+  return parser.parseOptionalAttrDict(result.attributes);
+}
+
+void RowwiseCacheOp::print(OpAsmPrinter &p) {
+  p << " ";
+  printLeadingArgs(p, getBody().front().getArguments());
+  p.printArrowTypeList(getOperation()->getResultTypes());
+  p << " ";
+  p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
+  p.printOptionalAttrDict((*this)->getAttrs());
+}
+
+void RowwiseCacheOp::getAsmBlockArgumentNames(Region &region,
+                                              OpAsmSetValueNameFn setNameFn) {
+  if (region.empty())
+    return;
+  nameLeadingArgs(region.front().getArguments(), {"i"}, setNameFn);
+}
+
+LogicalResult RowwiseCacheOp::verify() {
+  Block &body = getBody().front();
+  if (body.getNumArguments() != 1)
+    return emitOpError("body takes exactly one argument, the index");
+  auto yield = body.empty() ? YieldOp() : dyn_cast<YieldOp>(body.back());
+  if (!yield || yield.getNumOperands() != 1 ||
+      yield.getOperand(0).getType() != getType())
+    return emitOpError("body must yield one value of the result type");
+  if (body.walk([](TensorStoreOp) { return WalkResult::interrupt(); })
+          .wasInterrupted())
+    return emitOpError("must not store; it only reads the row");
+  for (Operation *op = getOperation()->getPrevNode(); op;
+       op = op->getPrevNode())
+    if (!isa<ConstantScalarOp>(op))
+      return emitOpError("must come first in the row, after constants only");
+  return success();
+}
+
+// The phase's closure gets the cached tile as its argument; the read prints
+// nothing: tile
+LogicalResult RowwiseCacheLoadOp::emitMojo(EmitMojoState &state) {
+  state.setMojoValueFor(getResult(), state.rowwiseBody->tile);
   return success();
 }
 

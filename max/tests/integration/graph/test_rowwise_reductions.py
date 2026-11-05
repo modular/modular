@@ -156,7 +156,12 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         return (3e-3, 6e-2, 5e-3) if half else (1e-4, 1e-3, 0.0)
     if op == "logsoftmax":
         return (5e-2, 6e-2, 5e-3) if half else (1e-3, 1e-3, 0.0)
-    if op in ("layer_norm", "rms_norm", "rms_norm_spelled"):
+    if op in (
+        "layer_norm",
+        "rms_norm",
+        "rms_norm_spelled",
+        "rms_norm_of_product",
+    ):
         return (4e-2, 6e-2, 1e-2) if half else (2e-3, 2e-3, 0.0)
     raise ValueError(f"no tolerance for {op!r}")
 
@@ -258,8 +263,11 @@ def _reference_and_check(
         weight = weights[0].to(torch.float32)
         ms = xf.pow(2).mean(dim=-1, keepdim=True)
         ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * weight).numpy()
-    elif op == "rms_norm_spelled":
-        gamma = weights[0].to(torch.float32)
+    elif op in ("rms_norm_spelled", "rms_norm_of_product"):
+        if op == "rms_norm_of_product":
+            # The product rounds to the input dtype before the norm.
+            xf = (x * weights[0]).to(torch.float32)
+        gamma = weights[-1].to(torch.float32)
         ms = xf.pow(2).mean(dim=axis, keepdim=True)
         ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * gamma).numpy()
     else:
@@ -295,10 +303,16 @@ def _fused_inputs(
         shape = (rows, 1) if axis == -1 else (1, cols)
         torch.manual_seed(1)
         return [torch.randn(shape).to(_torch_dtype(dtype))]
-    if op == "rms_norm_spelled":
-        if axis == -1:
-            return [_make_weight(1, cols, dtype)]
-        return [_make_weight(1, rows, dtype).reshape(rows, 1)]
+    if op in ("rms_norm_spelled", "rms_norm_of_product"):
+        gamma = (
+            _make_weight(1, cols, dtype)
+            if axis == -1
+            else _make_weight(1, rows, dtype).reshape(rows, 1)
+        )
+        if op == "rms_norm_spelled":
+            return [gamma]
+        torch.manual_seed(2)
+        return [torch.randn(rows, cols).to(_torch_dtype(dtype)), gamma]
     raise ValueError(f"no inputs for {op!r}")
 
 

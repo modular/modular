@@ -623,6 +623,70 @@ def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
 // map.iter.map
 //===----------------------------------------------------------------------===//
 
+def MAP_IterCacheOp : MAP_Op<"iter.cache", [
+  ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
+  SingleBlock,
+  RecursiveMemoryEffects,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "A value every phase of the row reads, computed once and cached";
+  let description = [{
+    Computes, at index `%i`, a value the phases of the enclosing rowwise all
+    compute: a load of the reduced input, or a fused computation on it. The
+    row computes it once per element and caches it; each phase reads it with
+    `map.iter.cache.load` instead of computing it again. A row has at most
+    one, after only constants, so it reads nothing the row computes.
+    `map-rcse` creates it.
+
+    Example:
+    ```mlir
+    %p = map.iter.cache index (%i: !map.index<2>) -> bf16 {
+      %x = map.load %x[%i] : !mo.tensor<[M, N], bf16>
+      %s = map.load %s[%i] : !mo.tensor<[M, N], bf16>
+      %v = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %x, %s)
+          : !map.index<2>, bf16, bf16 -> bf16
+      map.yield %v : bf16
+    }
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum
+        index (%i: !map.index<2>) -> f32 {
+      %v = map.iter.cache.load %p[%i] : !map.index<2>, bf16
+      ...
+    }
+    ```
+  }];
+
+  let results = (outs AnyType:$result);
+  let regions = (region SizedRegion<1>:$body);
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    ::mlir::BlockArgument getIndexArg() {
+      return getBody().front().getArgument(0);
+    }
+  }];
+}
+
+def MAP_IterCacheLoadOp : MAP_Op<"iter.cache.load", [
+  ParentOneOf<["IterReduceOp", "IterMapOp"]>,
+  AllTypesMatch<["cache", "result"]>,
+  Pure,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "Read the row's cache at the current phase's element";
+  let description = [{
+    Reads the value `$cache` computes at `$index`, the enclosing phase's
+    index.
+  }];
+  let arguments = (ins AnyType:$cache, MAP_AnyIndex:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $cache `[` $index `]` attr-dict `:` type($index) `,` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
 def MAP_IterMapOp : MAP_Op<"iter.map", [
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
   SingleBlock,

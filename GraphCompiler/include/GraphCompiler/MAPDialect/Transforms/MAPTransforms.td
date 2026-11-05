@@ -178,6 +178,22 @@ def ReductionLoopInvariantCodeMotion : Pass<"map-rlicm", "MO::GraphOp"> {
   ];
 }
 
+def ReductionCSE : Pass<"map-rcse", "MO::GraphOp"> {
+  let summary = "Compute once what every phase of a rowwise kernel computes.";
+  let description = [{
+    Runs after fusion. Common subexpression elimination across the phases
+    of each `map.iter.rowwise`: of the values every phase computes from the
+    input the first fold reduces, wherever it reads that input, it takes
+    the narrowest, then the largest, and computes it once per element in a
+    `map.iter.cache`, which the Row caches. Each phase's copy becomes a
+    `map.iter.cache.load`.
+  }];
+
+  let dependentDialects = [
+    "M::MAP::MAPDialect",
+  ];
+}
+
 def FuseInput : Pass<"map-fuse-input", "MO::GraphOp"> {
   let summary = "Unconstrained generic input fusion. For testing only.";
   let description = [{

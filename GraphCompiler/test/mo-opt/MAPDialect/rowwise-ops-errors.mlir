@@ -381,3 +381,93 @@ mo.graph @bodyPerElementOutsideMap(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<
   } {device = #M.device_ref<"cpu", 0>}
   mo.output %r : !mo.tensor<[8, 128], f32>
 }
+
+// -----
+
+mo.graph @cacheNotFirst(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    map.iter.map index (%i: !map.index<2>) {
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      map.store %out[%i] = %v : !mo.tensor<[8, 128], f32>
+    }
+    // expected-error @below{{must come first in the row, after constants only}}
+    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+      %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
+      map.yield %xv : f32
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}
+
+// -----
+
+mo.graph @cacheYieldType(%x: !mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], bf16>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    // expected-error @below{{body must yield one value of the result type}}
+    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+      %xv = map.load %x[%k] : !mo.tensor<[8, 128], bf16>
+      map.yield %xv : bf16
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}
+
+// -----
+
+mo.graph @cacheLoadOfNonCache(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    map.iter.map index (%i: !map.index<2>) {
+      %xv = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      // expected-error @below{{reads a value that isn't a map.iter.cache}}
+      %v = map.iter.cache.load %xv[%i] : !map.index<2>, f32
+      map.store %out[%i] = %v : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}
+
+// -----
+
+mo.graph @cacheStores(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    // expected-error @below{{must not store; it only reads the row}}
+    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+      %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
+      map.store %out[%k] = %xv : !mo.tensor<[8, 128], f32>
+      map.yield %xv : f32
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}
+
+// -----
+
+mo.graph @cacheLoadAtRow(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+      %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
+      map.yield %xv : f32
+    }
+    map.iter.map index (%i: !map.index<2>) {
+      // expected-error @below{{must read at its phase's index}}
+      %v = map.iter.cache.load %p[%row] : !map.index<2>, f32
+      map.store %out[%i] = %v : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}

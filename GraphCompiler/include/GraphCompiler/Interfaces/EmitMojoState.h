@@ -170,18 +170,23 @@ struct EmitMojoState {
   struct RowwiseBodyInfo {
     Block *body = nullptr;
     MojoValue params;
-    MojoValue row;
-    MojoValue load;
+    MojoValue rank;
     MojoValue rowCoord;
+    MojoValue axisSize;
     MojoValue dtype;
     MojoValue accum;
+    /// Set by the body's `mogg.rowwise.cache`, which prints them.
+    MojoValue load;
+    MojoValue row;
+    /// The cached tile the phase printing now reads.
+    MojoValue tile;
   };
-  const RowwiseBodyInfo *rowwiseBody = nullptr;
+  RowwiseBodyInfo *rowwiseBody = nullptr;
 
   /// Sets `rowwiseBody` while it lives.
   class RowwiseBodyGuard {
   public:
-    RowwiseBodyGuard(EmitMojoState &state, const RowwiseBodyInfo &info)
+    RowwiseBodyGuard(EmitMojoState &state, RowwiseBodyInfo &info)
         : state(state), saved(state.rowwiseBody) {
       state.rowwiseBody = &info;
     }
@@ -191,7 +196,7 @@ struct EmitMojoState {
 
   private:
     EmitMojoState &state;
-    const RowwiseBodyInfo *saved;
+    RowwiseBodyInfo *saved;
   };
 
   /// Drops the bindings made while it lives, and restores the outer ones they

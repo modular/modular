@@ -1083,8 +1083,8 @@ LogicalResult IterRowwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
   auto callRowwise = MOGG::CallRowwiseOp::create(
       state.builder, loc, rowShape, getAxisAttr(), state.contextArgs.front(),
       capturing, state.builder.getStringAttr(state.device.getLabel()),
-      /*primary=*/nullptr, /*dtype=*/nullptr, /*accum=*/nullptr,
-      /*is_cached=*/nullptr, /*cols=*/nullptr, /*num_phases=*/nullptr,
+      /*accum=*/nullptr, /*is_cached=*/nullptr, /*cols=*/nullptr,
+      /*num_phases=*/nullptr,
       /*dtype_size=*/nullptr, /*computationally_expensive=*/nullptr,
       /*simd_monoid=*/nullptr);
 
@@ -1128,6 +1128,38 @@ LogicalResult IterReduceOp::lowerToMOGG(MAPToMOGGState &state) {
 
   state.builder.setInsertionPointAfter(reduce);
   state.mapping.map(getResults(), reduce.getResults());
+  return success();
+}
+
+// map.iter.cache -> mogg.rowwise.cache.
+LogicalResult IterCacheOp::lowerToMOGG(MAPToMOGGState &state) {
+  Location loc = getLoc();
+  auto cache = MOGG::RowwiseCacheOp::create(state.builder, loc,
+                                            MOGG::SimdType::get(getType()));
+  Block *cacheBlock = state.builder.createBlock(&cache.getBody());
+  state.mapping.map(getIndexArg(),
+                    cacheBlock->addArgument(getIndexArg().getType(), loc));
+
+  state.builder.setInsertionPointToStart(cacheBlock);
+  Block &body = getBody().front();
+  for (Operation &op : body.without_terminator())
+    if (failed(state.lowerOp(&op)))
+      return failure();
+  auto yield = cast<YieldOp>(body.getTerminator());
+  MOGG::YieldOp::create(state.builder, yield.getLoc(),
+                        state.mapping.lookup(yield.getOperand(0)));
+
+  state.builder.setInsertionPointAfter(cache);
+  state.mapping.map(getResult(), cache.getResult());
+  return success();
+}
+
+// map.iter.cache.load -> mogg.rowwise.cache.load.
+LogicalResult IterCacheLoadOp::lowerToMOGG(MAPToMOGGState &state) {
+  state.mapping.map(getResult(),
+                    MOGG::RowwiseCacheLoadOp::create(
+                        state.builder, getLoc(), MOGG::SimdType::get(getType()))
+                        .getResult());
   return success();
 }
 

@@ -13,7 +13,37 @@
 //
 // Fills in what a `mogg.call.rowwise` needs to print as a Row API body. Each
 // step is its own pass so it can be tested alone;
-// `mogg-legalize-rowwise-kernels` runs them in order.
+// `mogg-legalize-rowwise-kernels` runs them in order:
+//
+// 1. `mogg-rowwise-create-cache`: a body without a cache (one that skipped
+//    `map-rcse`) caches the input its first fold reads:
+//
+//      reduce (%i) {                  %c = cache (%k) { yield %x[%k] }
+//        %v = load %x[%i]       =>    reduce (%i) {
+//        ...                            %v = cache.load
+//                                       ...
+//
+// 2. `mogg-rowwise-bind-monoids`: each fold names its monoid's fields and
+//    parameters:
+//
+//      %acc = reduce @ReduceSum (%i) -> f32 { ... }
+//        =>  %acc = reduce @ReduceSum (%i) -> f32 { ... }
+//                       {fields = ["acc"], params = {dtype = f32}}
+//
+// 3. `mogg-rowwise-group-row-stores`: the per-row stores, and the row-level
+//    ops only they read, move into one emit; a load at the row index outside
+//    it becomes a `mogg.rowwise.load_lane` spread by a
+//    `mogg.rowwise.splat_lane`:
+//
+//      %b = load %b[%row]               emit {
+//      %y = add(%acc, %b)       =>        %b = load %b[%row]
+//      store %out[%row] = %y              %y = add(%acc, %b)
+//                                         store %out[%row] = %y
+//                                       }
+//
+// 4. `mogg-rowwise-set-launch-params`: the Row API's launch parameters,
+//    `num_phases`, `dtype_size` and `computationally_expensive` among them,
+//    set as the hand-written kernels set them.
 //
 //===----------------------------------------------------------------------===//
 
@@ -38,7 +68,7 @@ using namespace mlir;
 namespace M::MOGG {
 
 #define GEN_PASS_DEF_LEGALIZEROWWISEKERNELS
-#define GEN_PASS_DEF_ROWWISESELECTPRIMARYINPUT
+#define GEN_PASS_DEF_ROWWISECREATECACHE
 #define GEN_PASS_DEF_ROWWISEBINDMONOIDS
 #define GEN_PASS_DEF_ROWWISEGROUPROWSTORES
 #define GEN_PASS_DEF_ROWWISESETLAUNCHPARAMS
@@ -75,50 +105,57 @@ SmallVector<TensorLoadOp> elementLoads(RowwisePhaseOpInterface phase,
   return loads;
 }
 
-LogicalResult selectPrimaryInput(CallRowwiseOp op) {
-  if (op.getPrimary())
-    return success();
+// Without a `mogg.rowwise.cache` from MAP, the row caches the input its first
+// fold reads at the element index, and each phase's load of it there becomes
+// `mogg.rowwise.cache.load`.
+LogicalResult createPlainCache(CallRowwiseOp op) {
   if (folds(op).empty())
     return op.emitOpError("has no fold");
-
-  // The first capture the first fold loads at its own index.
   RowwiseReduceOp first = *folds(op).begin();
-  Value index = first.getBody().front().getArgument(0);
-  std::optional<unsigned> primary;
+  TensorLoadOp firstLoad;
   first.getBody().walk([&](TensorLoadOp load) {
-    auto arg = dyn_cast<BlockArgument>(load.getTensor());
-    if (!arg || load.getIndex() != index)
+    if (load.getIndex() != first.getIndexArg() ||
+        !llvm::is_contained(captureArgs(op), load.getTensor()))
       return WalkResult::advance();
-    auto it = llvm::find(captureArgs(op), arg);
-    if (it == captureArgs(op).end())
-      return WalkResult::advance();
-    primary = it - captureArgs(op).begin();
+    firstLoad = load;
     return WalkResult::interrupt();
   });
-  if (!primary)
+  if (!firstLoad)
     return op.emitOpError("has no input its first fold loads at the element "
                           "index");
 
-  Value tensor = captureArgs(op)[*primary];
-  Type dtype;
-  unsigned phasesReadingPrimary = 0;
-  for (RowwisePhaseOpInterface phase : phases(op)) {
-    SmallVector<TensorLoadOp> loads = elementLoads(phase, tensor);
-    if (loads.empty())
-      continue;
-    ++phasesReadingPrimary;
-    for (TensorLoadOp load : loads) {
-      OpBuilder builder(load);
-      auto value =
-          RowwisePrimaryOp::create(builder, load.getLoc(), load.getType());
-      dtype = value.getType().getElementType();
-      load.replaceAllUsesWith(value.getResult());
+  Value tensor = firstLoad.getTensor();
+  auto type = cast<SimdType>(firstLoad.getType());
+  OpBuilder builder = OpBuilder::atBlockBegin(&op.getBody().front());
+  auto cache = RowwiseCacheOp::create(builder, op.getLoc(), type);
+  Block *block = builder.createBlock(&cache.getBody());
+  BlockArgument index =
+      block->addArgument(first.getIndexArg().getType(), op.getLoc());
+  YieldOp::create(
+      builder, op.getLoc(),
+      TensorLoadOp::create(builder, op.getLoc(), type, tensor, index)
+          .getResult());
+
+  for (RowwisePhaseOpInterface phase : phases(op))
+    for (TensorLoadOp load : elementLoads(phase, tensor)) {
+      OpBuilder phaseBuilder(load);
+      load.replaceAllUsesWith(
+          RowwiseCacheLoadOp::create(phaseBuilder, load.getLoc(), type)
+              .getResult());
       load.erase();
     }
-  }
-  op.setPrimary(*primary);
-  op.setDtype(dtype);
-  op.setIsCached(phasesReadingPrimary > 1);
+  return success();
+}
+
+LogicalResult createCache(CallRowwiseOp op) {
+  if (!op.getCache() && failed(createPlainCache(op)))
+    return failure();
+  unsigned readers = llvm::count_if(phases(op), [](RowwisePhaseOpInterface p) {
+    return p->getRegion(0)
+        .walk([](RowwiseCacheLoadOp) { return WalkResult::interrupt(); })
+        .wasInterrupted();
+  });
+  op.setIsCached(readers > 1);
   return success();
 }
 
@@ -258,11 +295,16 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
     if (stateBits(fold) > stateBits(widest))
       widest = fold;
 
-  // Per-element work only: row-level ops run once per row.
+  // Per-element work only: the cache and the folds. Row-level ops run
+  // once per row.
   unsigned elementCost = 0;
+  auto addCost = [&](Region &region) {
+    region.walk([&](CallElementwiseOp call) { elementCost += cost(call); });
+  };
+  if (RowwiseCacheOp cache = op.getCache())
+    addCost(cache.getBody());
   for (RowwiseReduceOp fold : rowFolds)
-    fold.getBody().walk(
-        [&](CallElementwiseOp call) { elementCost += cost(call); });
+    addCost(fold.getBody());
 
   // The Row API's launch parameters, set as the hand-written kernels set
   // them (rowwise_reductions.mojo, rowwise_normalization.mojo and
@@ -283,8 +325,10 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
   op.setNumPhases(writesEveryElement ? rowFolds.size() + 1 : 1);
   op.setDtypeSize(0);
   if (writesEveryElement && oneFieldFolds) {
-    ASSERT_STREAM(op.getDtype(), << "the primary input is selected first");
-    op.setDtypeSize((op.getDtype()->getIntOrFloatBitWidth() + 7) / 8);
+    ASSERT_STREAM(op.getCache(), << "the cache is created first");
+    op.setDtypeSize(
+        (op.getCache().getType().getElementType().getIntOrFloatBitWidth() + 7) /
+        8);
   }
   op.setComputationallyExpensive(writesEveryElement ||
                                  elementCost >= expensiveCostThreshold);
@@ -309,11 +353,10 @@ LogicalResult forEachRowwise(ModuleOp module,
   return success(ok);
 }
 
-struct RowwiseSelectPrimaryInputPass
-    : public impl::RowwiseSelectPrimaryInputBase<
-          RowwiseSelectPrimaryInputPass> {
+struct RowwiseCreateCachePass
+    : public impl::RowwiseCreateCacheBase<RowwiseCreateCachePass> {
   void runOnOperation() override {
-    if (failed(forEachRowwise(getOperation(), selectPrimaryInput)))
+    if (failed(forEachRowwise(getOperation(), createCache)))
       signalPassFailure();
   }
 };
@@ -353,7 +396,7 @@ struct LegalizeRowwiseKernelsPass
 
   void runOnOperation() override {
     OpPassManager pm(ModuleOp::getOperationName());
-    pm.addPass(createRowwiseSelectPrimaryInput());
+    pm.addPass(createRowwiseCreateCache());
     pm.addPass(createRowwiseBindMonoids());
     pm.addPass(createRowwiseGroupRowStores());
     pm.addPass(createRowwiseSetLaunchParams(

@@ -121,8 +121,10 @@ _INNER_CASES = (
 # compiler fuses into one rowwise kernel. `sum_plus_bias` adds a per-row input
 # to the sum, which the kernel loads once per row; on the non-inner axis the
 # GPU's tiled tier holds one output per lane. `rms_norm_spelled` is rms_norm
-# written as graph ops, which fuses into a fold and a per-element phase.
-FUSED_OPS = ("sum_plus_bias", "rms_norm_spelled")
+# written as graph ops, which fuses into a fold and a per-element phase;
+# `rms_norm_of_product` normalizes x * s, which the kernel's load computes once
+# per element.
+FUSED_OPS = ("sum_plus_bias", "rms_norm_spelled", "rms_norm_of_product")
 _FUSED_CASES = [
     (op, dtype) for op in FUSED_OPS for dtype in (DType.float32, DType.bfloat16)
 ]
@@ -260,13 +262,13 @@ def build_graph(spec: RowwiseSpec) -> Graph:
         input_types = [x_t, w_t]
     elif spec.op == "sum_plus_bias":
         input_types = [x_t, row_t]
-    elif spec.op == "rms_norm_spelled":
+    elif spec.op in ("rms_norm_spelled", "rms_norm_of_product"):
         # Gamma along the reduced axis.
         gamma_shape = ["c"] if spec.axis == -1 else ["r", 1]
-        input_types = [
-            x_t,
-            TensorType(spec.dtype, gamma_shape, device=spec.device),
-        ]
+        gamma_t = TensorType(spec.dtype, gamma_shape, device=spec.device)
+        input_types = [x_t, gamma_t]
+        if spec.op == "rms_norm_of_product":
+            input_types = [x_t, x_t, gamma_t]
     else:
         input_types = [x_t]
 
@@ -288,6 +290,9 @@ def _build_fused(
     if op == "sum_plus_bias":
         (bias,) = inputs
         return ops.sum(x, axis=axis) + bias
+    if op == "rms_norm_of_product":
+        scale, gamma = inputs
+        return _build_fused("rms_norm_spelled", x * scale, axis, [gamma])
     if op == "rms_norm_spelled":
         (gamma,) = inputs
         xf = ops.cast(x, DType.float32)
