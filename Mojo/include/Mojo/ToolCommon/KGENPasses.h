@@ -98,7 +98,9 @@ enum class InlinerDebugInfoUpdateTime {
 
 #define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION
+#pragma GCC visibility push(default)
 #include "Mojo/KGENPasses.h.inc"
+#pragma GCC visibility pop
 
 /// Register all passes with default options.
 void registerDefaultKGENPasses(const std::string &cacheBaseExtra);

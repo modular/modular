@@ -66,6 +66,9 @@ PATCHES = [
     # v16f16 patterns: select v8bf16/v16bf16 broadcasts to VPBROADCASTW(Y)
     # under [HasAVX2, NoVLX_Or_NoBWI].
     "//bazel/public-patches:llvm-avx2-bf16-broadcast.patch",
+    # Provides targets to enable use of `libLLVM.so` and related changes.
+    # TODO: Upstream
+    "//bazel/public-patches:llvm-shared.patch",
 ]
 
 # Upstream lit test inputs that no target reads: about three quarters of the

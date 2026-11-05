@@ -38,6 +38,7 @@
 /bazel/public-patches/llvm-avx2-bf16-broadcast.patch @modular/sdlc
 /bazel/public-patches/llvm-flag-defaults.patch @modular/sdlc
 /bazel/public-patches/llvm-libxml2-config-setting-visibility.patch @modular/sdlc
+/bazel/public-patches/llvm-shared.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc
 /bazel/public-patches/protobuf-dev-dep.patch @modular/sdlc
 /bazel/public-patches/rules_mojo_toolchain.patch @modular/sdlc

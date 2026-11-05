@@ -8,6 +8,12 @@ modular_cc_binary(
         "*.cpp",
         "*.h",
     ]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     internal_deps = select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
@@ -19,7 +25,7 @@ modular_cc_binary(
     }),
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Config",
         "//Init",
         "//Mojo:LITDialect",
@@ -33,7 +39,7 @@ modular_cc_binary(
         "//Mojo/tools/common/lsp-protocol",
         "//Support:Base",
         "//Support:Context",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:Telemetry",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerLib",

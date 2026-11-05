@@ -15,6 +15,12 @@ driver_option_tablegen(
 modular_cc_binary(
     name = "kgen",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     internal_deps = select({
         # Under --config=hal-device-context the compiler links neither the
         # legacy nor the HAL DeviceContext runtime, only the legacy-DeviceContext-free
@@ -37,7 +43,7 @@ modular_cc_binary(
         ":KGEN.inc_files",
         "//:accel_registration",
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Config",
         "//Init",
         "//Mojo:Compiler",
@@ -56,7 +62,7 @@ modular_cc_binary(
         "//Support:Compiler",
         "//Support:Driver",
         "//Support:Filesystem",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MArchTarget",
         "//Support:MDialect",
         "@llvm-project//mlir:BytecodeWriter",

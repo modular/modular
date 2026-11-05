@@ -606,9 +606,15 @@ modular_cc_test(
         "DeviceContextTest.cpp",
         "ScopedEnvVar.h",
     ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         ":TestUtils",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
         "//Target:Support",
@@ -623,14 +629,22 @@ modular_cc_test(
     # The HAL backend creates even the CPU context through a driver plugin;
     # the legacy backend ignores the variable.
     data = ["//Target:CPUPlugin.so"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     env = {
         "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so)",
     },
     deps = [
         ":TestUtils",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         # Carries AsyncRT_AsyncValue_createFromDeviceBuffer for both backends.
-        "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/DeviceContext.static",
         "//AsyncRT:Runtime",
         "//Support:Base",
         "//Support:TypeID",
@@ -675,6 +689,12 @@ modular_cc_test(
     name = "HALVirtualDeviceTest",
     size = "small",
     srcs = ["HALVirtualDeviceTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     # Virtual mode needs a CompilationDevice for the configured api, and CUDA's
     # is the only one that exists (Metal hard-errors -- FIXME: MOCO-2411); its
     # NVPTX compilation driver is Linux-only.
@@ -684,7 +704,7 @@ modular_cc_test(
     }),
     deps = [
         ":TestUtils",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/CompilationDeviceImpl",
         "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
@@ -704,6 +724,12 @@ modular_cc_test(
         "//:apple_gpu": ["//Target:MetalPlugin.so"],
         "//conditions:default": [],
     }),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     env = select({
         "//:nvidia_gpu": {
             "EXPECTED_ARCH_PREFIX": "nvidia:sm_",
@@ -722,7 +748,7 @@ modular_cc_test(
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/CompilerDeviceArch",
         "//MLRT:Driver/DeviceContextAPI",
         "@llvm-project//llvm:Support",
@@ -739,11 +765,17 @@ modular_cc_test(
         "//MLRT/test/Driver/HAL:MockPlugin.so",
         "//Target:CPUPlugin.so",
     ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     env = {
         "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
     },
     deps = [
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/CompilerDeviceArch",
         "//MLRT:Driver/DeviceContextAPI",
         "@llvm-project//llvm:Support",
@@ -786,10 +818,18 @@ modular_cc_test(
     name = "TraceMetadataTest",
     size = "small",
     srcs = ["TraceMetadataTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     local_defines = ["MODULAR_TESTING"],
     deps = [
         ":TestUtils",
-        "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/DeviceContext.static",
         "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "@llvm-project//llvm:Support",

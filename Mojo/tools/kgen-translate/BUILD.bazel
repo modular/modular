@@ -47,6 +47,12 @@ modular_cc_binary(
     data = [
         "//Mojo:CompilerRT",
     ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     internal_deps = select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
@@ -61,7 +67,7 @@ modular_cc_binary(
         ":KGENTranslateDoc.inc_files",
         ":KGENTranslateLLVMIR.inc_files",
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Init",
         "//Mojo:Compiler",
         "//Mojo:ExecutionEngine",
@@ -74,7 +80,7 @@ modular_cc_binary(
         "//Mojo:ToolCommon",
         "//Mojo:Transforms",
         "//Support:Driver",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MDialect",
         "@llvm-project//mlir:TranslateLib",
     ],

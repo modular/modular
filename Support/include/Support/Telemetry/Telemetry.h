@@ -17,6 +17,7 @@
 #include "Support/Configuration.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Instruments.h"
 #include "Support/Telemetry/Logs.h"
@@ -73,7 +74,7 @@ constexpr auto kOtlpRequestTimeout = std::chrono::milliseconds(3000);
 
 /// Whether `endpoint` is Modular's collector, whose exports must not carry
 /// the operator's OTEL_EXPORTER_OTLP_*HEADERS.
-bool isModularEndpoint(StringRef endpoint);
+MODULAR_CXX_EXPORT bool isModularEndpoint(StringRef endpoint);
 
 /// Drops the headers that OTLP HTTP exporter `options` read from the
 /// environment when `endpoint` is Modular's collector.
@@ -371,18 +372,18 @@ struct LocalIDs {
 /// The result is computed once and memoized (it may be quite expensive), so
 /// every caller in the process observes identical values. The crash reporting
 /// and usage telemetry lanes rely on this to carry the same IDs.
-const LocalIDs &createLocalIDs();
+MODULAR_CXX_EXPORT const LocalIDs &createLocalIDs();
 
 /// The folder holding `installId`: `$TEST_TMPDIR/.modular`, else the XDG state
 /// directory (`$XDG_STATE_HOME/modular`, default `~/.local/state/modular`).
-ErrorOr<std::filesystem::path> getInstallIdFolder();
+MODULAR_CXX_EXPORT ErrorOr<std::filesystem::path> getInstallIdFolder();
 
 /// Reads `dataFolder/installId`, creating it with a fresh random id when it is
 /// missing, and returns the id with its `machineid.source`. An existing file
 /// that holds no valid id is left alone and reported as
 /// `kMachineSourceCorrupted`; any other failure is `kMachineSourceNone`. Both
 /// failures return `kUnknownId`.
-std::pair<std::string, llvm::StringRef>
+MODULAR_CXX_EXPORT std::pair<std::string, llvm::StringRef>
 readOrCreateInstallId(const std::filesystem::path &dataFolder);
 
 /// Reports whether the usage telemetry lane is enabled,
@@ -401,7 +402,7 @@ bool isCrashReportingEnabled(Config &settings);
 /// attributes (e.g. CPU info, OS info, version of software components) without
 /// this information being passed to it explicitly through its API, but this is
 /// subject to change.
-class TelemetryContext {
+class MODULAR_CXX_EXPORT TelemetryContext {
 public:
   /// This is just a copy of the OTel MetricAttributeValue - we can use this to
   /// provide resources to the telemetry context. We don't support the lists

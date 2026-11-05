@@ -21,7 +21,9 @@
 //===----------------------------------------------------------------------===//
 
 // Pull in all enum type definitions and utility function declarations.
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENEnums.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN {
 

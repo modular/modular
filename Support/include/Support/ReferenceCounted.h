@@ -14,6 +14,7 @@
 #ifndef SUPPORT_REFERENCECOUNTED_H
 #define SUPPORT_REFERENCECOUNTED_H
 
+#include "Support/SymbolExport.h"
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -93,7 +94,8 @@ extern std::atomic<std::size_t> currentReferenceCountedObjects;
 
 /// Verify that there are no live ReferenceCounted objects that are currently
 /// alive and print the specified message and abort if there are.
-void verifyNoLiveReferenceCountedObjects(const char *errorMessage);
+MODULAR_CXX_EXPORT void
+verifyNoLiveReferenceCountedObjects(const char *errorMessage);
 
 template <typename SubClass>
 inline ReferenceCounted<SubClass>::ReferenceCounted() : refCount(1) {

@@ -16,6 +16,7 @@
 
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 namespace llvm {
 class SourceMgr;
@@ -58,7 +59,7 @@ llvm::SMLoc findStartOfNextToken(SharedState &shared, StringRef string);
 ///
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
-OwningOpRef<ModuleOp>
+MODULAR_CXX_EXPORT OwningOpRef<ModuleOp>
 importMojoFile(ContextRef context, llvm::SourceMgr &sourceMgr,
                MLIRContext *mlirContext, const CompilationOptions &options,
                const FrontendOptions &frontendOptions, mlir::TimingScope &ts,

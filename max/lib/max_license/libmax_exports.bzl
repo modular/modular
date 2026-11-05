@@ -32,16 +32,11 @@ LIBMAX_EXPORTS = [
     "weights_registry_lookup",
     "weights_registry_lookup_mojo_string",
 
-    # The GDB JIT interface, which debuggers find by name.
-    "__jit_debug_descriptor",
-    "__jit_debug_register_code",
-
-    # opentelemetry's runtime context. Every DSO that includes its headers
-    # defines these, and exporting them is what makes the copies one.
-    "_ZZN13opentelemetry2v17context14RuntimeContext10GetStorageEvE7context",
-    "_ZGVZN13opentelemetry2v17context14RuntimeContext10GetStorageEvE7context",
-    "_ZZN13opentelemetry2v17context25ThreadLocalContextStorage8GetStackEvE6stack_",
-    "_ZGVZN13opentelemetry2v17context25ThreadLocalContextStorage8GetStackEvE6stack_",
+    # The C++ classes behind those, which the Python bindings link from here.
+    "_ZN1M9MojoTrace*",
+    "_ZNK1M9MojoTrace*",
+    "_ZN1M15WeightsRegistry*",
+    "_ZNK1M15WeightsRegistry*",
 
     # The device driver. _core links its own copy, so nothing imports this, but
     # exporting it from both is what makes the two copies one: one device

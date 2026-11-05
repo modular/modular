@@ -18,6 +18,7 @@
 #include "Support/Error.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/STLExtras.h"
+#include "Support/SymbolExport.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/Support/raw_ostream.h"
@@ -44,7 +45,7 @@ enum class MaxEngineErrorCode : uint32_t {
   CompilationError = 10000
 };
 
-std::string stringifyErrorCode(MaxEngineErrorCode code);
+MODULAR_CXX_EXPORT std::string stringifyErrorCode(MaxEngineErrorCode code);
 
 /// Telemetry counter for one error code, stored in a context and reused across
 /// frameworks and models.

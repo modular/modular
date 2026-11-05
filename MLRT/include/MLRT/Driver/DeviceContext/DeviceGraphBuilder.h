@@ -20,6 +20,7 @@
 #define MLRT_DRIVER_DEVICECONTEXT_DEVICEGRAPHBUILDER_H
 
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "Support/SymbolExport.h"
 
 #include "llvm/ADT/ArrayRef.h"
 
@@ -85,7 +86,8 @@ struct DeviceGraphNode {
 ///   auto graph   = builder->instantiate();
 ///   graph->replay();
 /// \endcode
-class DeviceGraphBuilder : public ReferenceCounted<DeviceGraphBuilder> {
+class MODULAR_CXX_EXPORT DeviceGraphBuilder
+    : public ReferenceCounted<DeviceGraphBuilder> {
 public:
   /// \param pool optional shared memory pool to allocate from; when null the
   /// builder creates a private one. Must belong to `context`'s device. See the

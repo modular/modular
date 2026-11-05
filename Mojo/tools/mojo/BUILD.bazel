@@ -82,13 +82,27 @@ _MOJO_LINKOPTS = select({
     "//conditions:default": [],
 })
 
-_MOJO_MALLOC = select({
-    "//:asan_linux": "@bazel_tools//tools/cpp:malloc",
-    "//:tsan_linux": "@bazel_tools//tools/cpp:malloc",
-    "//:ubsan_linux": "@bazel_tools//tools/cpp:malloc",
-    "@platforms//os:linux": "//bazel/internal:jemalloc_global",
-    "//conditions:default": "@bazel_tools//tools/cpp:malloc",
-})
+# An alias rather than a select() in `malloc`: cc_binary with dynamic_deps
+# cannot take a select() there.
+alias(
+    name = "mojo_malloc",
+    actual = select({
+        "//:asan_linux": "@bazel_tools//tools/cpp:malloc",
+        "//:tsan_linux": "@bazel_tools//tools/cpp:malloc",
+        "//:ubsan_linux": "@bazel_tools//tools/cpp:malloc",
+        "@platforms//os:linux": "//bazel/internal:jemalloc_global",
+        "//conditions:default": "@bazel_tools//tools/cpp:malloc",
+    }),
+    visibility = ["//visibility:private"],
+)
+
+_MOJO_DYNAMIC_DEPS = [
+    "//AsyncRT:RuntimeGlobals",
+    "//Support:Globals",
+    "@llvm-project//mlir:MLIR",
+    "@llvm-project//clang:clangBasic",
+    "@llvm-project//llvm:LLVM",
+]
 
 modular_cc_library(
     name = "mojo_common",
@@ -118,7 +132,7 @@ modular_cc_library(
         ":Run.inc_files",
         "//:accel_registration",
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Config",
         "//Init",
         "//Mojo:Compiler",
@@ -143,7 +157,7 @@ modular_cc_library(
         "//Support:DebugInfoDialect",
         "//Support:Driver",
         "//Support:Filesystem",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MArchTarget",
         "//Support:MDialect",
         "@llvm-project//mlir:IndexDialect",
@@ -152,8 +166,9 @@ modular_cc_library(
 
 modular_cc_binary(
     name = "mojo",
+    dynamic_deps = _MOJO_DYNAMIC_DEPS,
     linkopts = _MOJO_LINKOPTS,
-    malloc = _MOJO_MALLOC,
+    malloc = ":mojo_malloc",
     deps = [":mojo_common"],
 )
 
@@ -167,11 +182,12 @@ modular_cc_binary(
         "@llvm-project//lldb:lldb-argdumper",
         "@llvm-project//llvm:llvm-symbolizer",
     ],
+    dynamic_deps = _MOJO_DYNAMIC_DEPS,
     env = {
         "MODULAR_CRASH_REPORTING_ENABLED": "0",
     },
     linkopts = _MOJO_LINKOPTS,
-    malloc = _MOJO_MALLOC,
+    malloc = ":mojo_malloc",
     mojo_deps = ["@mojo//:std"],
     tags = ["manual"],
     deps = [":mojo_common"],

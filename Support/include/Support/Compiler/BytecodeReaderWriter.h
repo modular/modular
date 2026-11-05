@@ -17,6 +17,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -25,7 +26,7 @@
 namespace M {
 /// Read a single operation from the given bytecode file. Returns nullptr in the
 /// case of failure.
-OwningOpRef<Operation *>
+MODULAR_CXX_EXPORT OwningOpRef<Operation *>
 readOpFromBytecodeFile(llvm::MemoryBufferRef buffer,
                        const mlir::ParserConfig &config);
 template <typename T>
@@ -41,7 +42,7 @@ OwningOpRef<T> readOpFromBytecodeFile(llvm::MemoryBufferRef buffer,
 
 /// Read a single operation from the given bytecode blob. Returns nullptr in the
 /// case of failure.
-OwningOpRef<Operation *>
+MODULAR_CXX_EXPORT OwningOpRef<Operation *>
 readOpFromBytecodeFile(DenseResourceElementsAttr bytecodeAttr,
                        const mlir::ParserConfig &config);
 template <typename T>

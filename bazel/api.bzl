@@ -103,7 +103,7 @@ def modular_shared_library(name = None, **kwargs):
     # TODO(SDLC-4549): profiler plugin still stubbed in OSS; see modular_cc_library.
     if name in ["MAXProfilerPlugin"]:
         # Provide TimeProfiler for now since that may be what they're actually after
-        _modular_cc_library(name = name, deps = ["//Support:TimeProfiler"])
+        _modular_shared_library(name = name, deps = ["//Support:TimeProfiler"])
         return
 
     _modular_shared_library(name = name, **kwargs)

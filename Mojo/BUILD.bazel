@@ -25,6 +25,7 @@ package_group(
         "//bazel/...",
         "//docs/...",
         "//max/docs/site/...",
+        "//max/lib/max_license",
         "//max/python/max/_core/max_license/...",
         "//max/tests/internal/API/c/...",  # Only when testing internally
         "//oss/modular/bazel/...",
@@ -571,6 +572,7 @@ modular_cc_library(
         "//Support:DebugInfoDialect",
         "//Support:IPInt",
         "//Support:IPRational",
+        "//Support:SymbolExport",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:InferTypeOpInterface",
     ],
@@ -729,6 +731,7 @@ modular_cc_library(
         "//Support:IPInt",
         "//Support:IPRational",
         "//Support:MDialect",
+        "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],
@@ -871,6 +874,7 @@ modular_cc_library(
         "//Support:IPInt",
         "//Support:IPRational",
         "//Support:MDialect",
+        "//Support:SymbolExport",
         "//Support:Threading",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
@@ -932,6 +936,7 @@ modular_cc_library(
         "//Support:HashUtils",
         "//Support:IPInt",
         "//Support:MDialect",
+        "//Support:SymbolExport",
         "@llvm-project//mlir:LLVMDialect",
         "@llvm-project//mlir:Transforms",
     ],
@@ -957,6 +962,7 @@ modular_cc_library(
         "//AsyncRT:Runtime",
         "//Support:CommonCLOptions",
         "//Support:Driver",
+        "//Support:SymbolExport",
     ],
 )
 
@@ -988,6 +994,7 @@ modular_cc_library(
         "//AsyncRT:CompilerSupport",
         "//Support:Context",
         "//Support:DebugInfoTransforms",
+        "//Support:SymbolExport",
         "@llvm-project//llvm:OrcJIT",
     ],
 )
@@ -1001,27 +1008,25 @@ modular_shared_library(
     hdrs = glob([
         "include/Mojo/CompilerRT/*.h",
     ]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    exports_filter = [
+        "@fmt//:__subpackages__",
+        "@xxhash//:__subpackages__",
+    ],
     internal_deps = [
         "//MLRT:Core",
-        # The profiler host glue attaches the dlopen loader for
-        # libMAXProfilerPlugin.so to this DSO's //Support:ProfilingRanges copy, so the
-        # mo.profile bridge and Dynolog daemon registration work in mojo
-        # processes too. internal_deps: the OSS build drops it, so OSS mojo
-        # keeps the inert weak default and never compiles the loader.
-        "//Support:ProfilerHostGlue",
-        # Same wiring for the external profiler annotation sink: attaches the
-        # dlopen loader for libmax_profiler_shim.so so the
-        # ExternalProfilerAnnotationBridge entry points annotate external
-        # profiler traces (NVTX/roctx). OSS builds drop it and keep the inert
-        # weak default.
-        "//Support:ExternalProfilerAnnotationHostGlue",
     ] + select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
-        "//:hal_device_context_enabled": [],
+        "//:hal_device_context_enabled": ["//MLRT:Driver/CompilerDeviceArch"],
         "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
     }) + select({
-        "//:tracy_enabled": ["@tracy//:Tracy"],
+        "//:tracy_enabled": ["@tracy//:Tracy.import"],
         "//conditions:default": [],
     }),
     local_defines = [
@@ -1033,21 +1038,48 @@ modular_shared_library(
     }),
     output_name = "KGENCompilerRTShared",
     visibility = [
+        "//GraphCompiler:__pkg__",
+        "//MLRT:__subpackages__",
         "//Mojo:consumers",
         "//Mojo/stdlib/std:__pkg__",
         "//Mojo/test/max_license/profiling:__pkg__",
         "//Mojo/test/tracy:__pkg__",
+        "//mach/crates/max-sys-internal:__pkg__",
+        "//max/examples/capi:__pkg__",
+        "//max/lib/max_license:__pkg__",
+        "//max/python/max:__pkg__",
+        "//max/python/max/_mlir/_mlir_libs:__pkg__",
+        "//max/tests/integration/c:__pkg__",
         "//mojo/stdlib/std:__pkg__",
     ],
+    with_import = True,
+    exports = [
+        "//AsyncRT:Runtime",
+        "//MLRT:Core",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceAffinity",
+        "//MLRT:Driver/KernelLoadGate",
+        "//MLRT:Driver/LaunchTraceRegistry",
+        "//Support:DLFcn",
+        "//Support:HashUtils",
+        "//Support:Log",
+        "//Support:LogFFI",
+        "//Target:DriverPlugin",
+    ] + select({
+        # Under --config=hal-device-context the HAL shim in
+        # //MLRT:Driver/DeviceContext implements the same M::Driver classes.
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
+    }),
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//AsyncRT:Support",
         "//Support:Base",
         "//Support:BinaryID",
         "//Support:Configuration",
         "//Support:Filesystem",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:Log",
         "//Support:ML",
         "//Support:Profiling",
@@ -1086,6 +1118,7 @@ modular_cc_library(
         "//Support:ML",
         "//Support:Profiling",
         "//Support:ProfilingRanges",
+        "//Support:SymbolExport",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
@@ -1104,6 +1137,7 @@ modular_cc_library(
     ],
     tags = ["no-clang-tidy-headers"],
     deps = [
+        "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:CAPIIR",
         "@llvm-project//mlir:CAPITransforms",
@@ -1309,7 +1343,11 @@ modular_cc_library(
         "lib/Compiler/ObjectCompiler/LLVM/Bitcode/**/*.h",
     ]),
     tags = ["no-clang-tidy"],
-    visibility = ["//visibility:private"],
+    # Exported from the shared libraries that link it.
+    visibility = [
+        "//GraphCompiler:__pkg__",
+        "//max/lib/max_license:__pkg__",
+    ],
     deps = [
         ":Compiler",
         ":KGENToLLVM",
@@ -1449,6 +1487,7 @@ modular_cc_library(
         ":DialectChecksum",
         ":ToolCommon",
         "//Support:Base",
+        "//Support:SymbolExport",
     ],
 )
 
@@ -1510,6 +1549,7 @@ modular_cc_library(
         "//Cache",
         "//Support:Buffer",
         "//Support:Compiler",
+        "//Support:SymbolExport",
         "@llvm-project//llvm:OrcDebugging",
         "@llvm-project//mlir:MlirLspServerSupportLib",
     ],
@@ -1557,6 +1597,7 @@ modular_cc_library(
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
         "//Support:Driver",
+        "//Support:SymbolExport",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
         "@llvm-project//mlir:BytecodeWriter",
@@ -1619,6 +1660,17 @@ modular_shared_library(
         exclude = ["lib/MojoLLDB/Language/Formatters/MojoVariantTypeNameParser.cpp"],
     ),
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    exports_filter = [
+        "@@+http_archive+crashpad//:__subpackages__",
+        "@@curl+//:__subpackages__",
+        "@@mbedtls+//:__subpackages__",
+    ],
     includes = [],
     internal_deps = select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
@@ -1629,6 +1681,37 @@ modular_shared_library(
         ],
         "//conditions:default": [],
     }),
+    exports = [
+        ":ExecutionEngine",
+        ":KGENDialect",
+        ":MojoTooling",
+        "//AsyncRT:CompilerSupport",
+        "//AsyncRT:Runtime",
+        "//Cache",
+        "//Init",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceAffinity",
+        "//MLRT:Driver/KernelLoadGate",
+        "//MLRT:Driver/LaunchTraceRegistry",
+        "//Support:Base64",
+        "//Support:CommonCLOptions",
+        "//Support:CrashReporting",
+        "//Support:DLFcn",
+        "//Support:DebugInfoDialect",
+        "//Support:Driver",
+        "//Support:HashUtils",
+        "//Support:IPInt",
+        "//Support:IPRational",
+        "//Support:Log",
+        "//Support:Telemetry",
+        "//Support:URI",
+        "//Target:DriverPlugin",
+    ] + select({
+        # Under --config=hal-device-context the HAL shim in
+        # //MLRT:Driver/DeviceContext implements the same M::Driver classes.
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
+    }),
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",
@@ -1638,12 +1721,12 @@ modular_shared_library(
         ":ObjectCompiler",
         ":REPLSupport",
         ":TransformUtils",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Init",
         "//Support:Base",
         "//Support:Context",
         "//Support:CrashReporting",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//lldb:liblldb.wrapper",
         "@llvm-project//lldb:lldb24.0.0git",
         "@llvm-project//llvm:ExecutionEngine",
@@ -1693,9 +1776,16 @@ modular_shared_library(
     name = "MojoJupyter",
     srcs = glob(["lib/MojoJupyter/*.cpp"]) + [":gen_matplotlib_initialization"],
     hdrs = glob(["include/Mojo/MojoJupyter/*.h"]),
+    dynamic_deps = [
+        ":MojoLLDB",
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         ":KGENDialect",
-        ":MojoLLDB",
+        ":MojoLLDB.static",
         ":MojoLLDBPublicHeaders",
         ":MojoTooling",
         "//Support:Context",

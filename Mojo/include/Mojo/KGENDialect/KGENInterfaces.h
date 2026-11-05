@@ -19,6 +19,7 @@
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Region.h"
@@ -57,8 +58,9 @@ struct ParamDefValue {
 };
 
 namespace impl {
-void scanAllAttrsAndTypes(Operation *op, function_ref<void(Attribute)> scanAttr,
-                          function_ref<void(Type)> scanType);
+MODULAR_CXX_EXPORT void
+scanAllAttrsAndTypes(Operation *op, function_ref<void(Attribute)> scanAttr,
+                     function_ref<void(Type)> scanType);
 LogicalResult verifyFunctionLike(FunctionLike op);
 LogicalResult verifyGeneratorUser(GeneratorUserOpInterface op);
 LogicalResult verifyIfTopLevel(DeclInterface decl,
@@ -69,6 +71,8 @@ Operation *lookupConformance(Operation *op, ParameterEvaluator &evaluator,
 } // namespace impl
 } // namespace M::KGEN
 
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENInterfaces.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_KGENDIALECT_KGENINTERFACES_H

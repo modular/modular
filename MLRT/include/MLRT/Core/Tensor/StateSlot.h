@@ -19,6 +19,7 @@
 #include "Support/ADT/GenericRCRef.h"
 #include "Support/ErrorOr.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 #include "Support/TypeID.h"
 
 namespace M::MLRT {
@@ -107,7 +108,8 @@ private:
 /// other more refined types can be constructed from this buffer. Used by
 /// `mgp.buffer.cache` / `mgp.buffer.get_cached` to cache buffer allocations
 /// across calls to the 'execute' block via the !mgp.context cache.
-class TensorStateSlot : public ReferenceCounted<TensorStateSlot> {
+class MODULAR_CXX_EXPORT TensorStateSlot
+    : public ReferenceCounted<TensorStateSlot> {
 public:
   /// Returns a buffer reference to a buffer of size with alignment.
   /// If a buffer with matching size already exists in this state slot then it

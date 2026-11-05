@@ -18,6 +18,8 @@
 #ifndef CONFIG_VERSION_H
 #define CONFIG_VERSION_H
 
+#include "Support/SymbolExport.h"
+
 namespace M {
 
 struct ProjectVersion final {
@@ -29,15 +31,15 @@ struct ProjectVersion final {
   const char *buildType;
 };
 
-ProjectVersion getMAXVersion();
-ProjectVersion getMojoVersion();
-const char *getMAXVersionString();
-const char *getMojoVersionString();
+MODULAR_CXX_EXPORT ProjectVersion getMAXVersion();
+MODULAR_CXX_EXPORT ProjectVersion getMojoVersion();
+MODULAR_CXX_EXPORT const char *getMAXVersionString();
+MODULAR_CXX_EXPORT const char *getMojoVersionString();
 
 // TODO: Remove
 using ModularVersion = ProjectVersion;
-ModularVersion getModularVersion();
-const char *getModularVersionString();
+MODULAR_CXX_EXPORT ModularVersion getModularVersion();
+MODULAR_CXX_EXPORT const char *getModularVersionString();
 
 } // namespace M
 

@@ -32,7 +32,9 @@ class KGENParamPrinter;
 } // namespace M::KGEN
 
 // Pull in the dialect definition.
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENDialect.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN {
 /// Register KGEN dialect commandline options.

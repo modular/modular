@@ -251,6 +251,13 @@ modular_cc_binary(
         "lib/CPU/*.cpp",
         "lib/CPU/*.h",
     ]),
+    dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     linkshared = True,
     linkstatic = False,
     visibility = ["//visibility:public"],

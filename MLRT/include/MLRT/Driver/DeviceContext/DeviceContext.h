@@ -73,7 +73,7 @@ class Value;
 namespace M::Driver {
 
 /// Result of comparing two launch traces.
-struct LaunchTraceDiff {
+struct MODULAR_CXX_EXPORT LaunchTraceDiff {
   /// Operations in baseline but missing from current trace, with counts.
   std::map<KernelLaunchMetadata, int> missingOps;
 
@@ -129,7 +129,7 @@ size_t getPreferredAlignment(std::string label);
 void setVirtualCpuTarget(StringRef cpu);
 std::string getVirtualCpuTarget();
 
-class DeviceContextScope {
+class MODULAR_CXX_EXPORT DeviceContextScope {
 public:
   explicit DeviceContextScope(const DeviceContext &ctx);
   ~DeviceContextScope();
@@ -142,7 +142,7 @@ private:
   ErrorOrSuccess err_;
 };
 
-class Device : public ReferenceCounted<Device> {
+class MODULAR_CXX_EXPORT Device : public ReferenceCounted<Device> {
 public:
   enum class Attribute;
 
@@ -441,9 +441,10 @@ struct GPUHealthData {
 
 /// Evaluate GPU health from pre-gathered metrics. Returns an error with a
 /// descriptive message if the GPU is unhealthy.
-ErrorOrSuccess evaluateGPUHealth(const GPUHealthData &data);
+MODULAR_CXX_EXPORT ErrorOrSuccess evaluateGPUHealth(const GPUHealthData &data);
 
-class DeviceBuffer final : public ReferenceCounted<DeviceBuffer> {
+class MODULAR_CXX_EXPORT DeviceBuffer final
+    : public ReferenceCounted<DeviceBuffer> {
 public:
   ~DeviceBuffer();
 
@@ -531,7 +532,8 @@ private:
 // Only the non-virtual members the Python extension calls are exported;
 // exporting the class would duplicate its vtable across every library that
 // links DeviceContext.cpp (an ODR violation).
-class DeviceMulticastBuffer : public ReferenceCounted<DeviceMulticastBuffer> {
+class MODULAR_CXX_EXPORT DeviceMulticastBuffer
+    : public ReferenceCounted<DeviceMulticastBuffer> {
 public:
   virtual ~DeviceMulticastBuffer();
 
@@ -596,7 +598,7 @@ private:
 /// The outputs correspond to the pinned memory allocated by one of the
 /// DeviceGraphs during the record session and are used to ensure the backing
 /// memory lives as long as the allocating DeviceGraph.
-class DeviceGraphCollection {
+class MODULAR_CXX_EXPORT DeviceGraphCollection {
 public:
   explicit DeviceGraphCollection(SmallVector<AsyncDeviceGraphRef> &&graphs)
       : graphs(std::move(graphs)) {}
@@ -642,7 +644,8 @@ private:
 /// Allocator for buffers whose lifetime is tied to a device graph rather than
 /// to a single execution: allocations stay live for as long as the graph that
 /// references them, so a replay can reuse the recorded device pointers.
-class DeviceGraphMemoryPool : public ReferenceCounted<DeviceGraphMemoryPool> {
+class MODULAR_CXX_EXPORT DeviceGraphMemoryPool
+    : public ReferenceCounted<DeviceGraphMemoryPool> {
 public:
   DeviceGraphMemoryPool(DeviceContextRef context);
   ~DeviceGraphMemoryPool();
@@ -675,7 +678,7 @@ private:
 };
 
 /// A captured sequence of GPU operations that can be replayed.
-class DeviceGraph : public ReferenceCounted<DeviceGraph> {
+class MODULAR_CXX_EXPORT DeviceGraph : public ReferenceCounted<DeviceGraph> {
 public:
   virtual ~DeviceGraph() = default;
   Device &device() const;
@@ -857,7 +860,7 @@ private:
   DeviceGraphMemoryPoolRef memoryPool;
 };
 
-class DeviceStream : public ReferenceCounted<DeviceStream> {
+class MODULAR_CXX_EXPORT DeviceStream : public ReferenceCounted<DeviceStream> {
 public:
   virtual ~DeviceStream() = default;
   Device &device() const;
@@ -930,7 +933,8 @@ private:
   DeviceContextRef ctx_;
 };
 
-class DeviceFunction : public ReferenceCounted<DeviceFunction> {
+class MODULAR_CXX_EXPORT DeviceFunction
+    : public ReferenceCounted<DeviceFunction> {
 public:
   virtual ~DeviceFunction() = default;
 
@@ -990,7 +994,8 @@ public:
   virtual void reset() = 0;
 };
 
-class DeviceContext : public ReferenceCounted<DeviceContext> {
+class MODULAR_CXX_EXPORT DeviceContext
+    : public ReferenceCounted<DeviceContext> {
 public:
   virtual ~DeviceContext();
 

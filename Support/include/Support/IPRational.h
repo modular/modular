@@ -20,6 +20,7 @@
 #define SUPPORT_IPRATIONAL_H
 
 #include "Support/IPInt.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/Support/raw_ostream.h"
@@ -29,7 +30,7 @@ namespace M {
 
 /// IPRational class for arbitrary precision rational numbers.  Represented as
 /// two IPInts, one for each of numerator and denominator.
-class IPRational {
+class MODULAR_CXX_EXPORT IPRational {
 public:
   /// Constructs a rational with the given numerator and denominator.  The user
   /// is responsible for ensuring that the denominator is never zero.
@@ -67,8 +68,8 @@ public:
 
   friend llvm::hash_code hash_value(const IPRational &arg);
 
-  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
-                                       const IPRational &arg);
+  friend MODULAR_CXX_EXPORT llvm::raw_ostream &
+  operator<<(llvm::raw_ostream &os, const IPRational &arg);
 
 private:
   IPInt numerator;

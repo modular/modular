@@ -21,6 +21,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 #include "Support/RCRef.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <functional>
@@ -52,7 +53,7 @@ using MetalDeviceTimerRef = RCRef<MetalDeviceTimer>;
 using MetalModuleFunctionRef = RCRef<const MetalModuleFunction>;
 using MetalDeviceFunctionRef = RCRef<MetalDeviceFunction>;
 
-class MetalDevice : public Device {
+class MODULAR_CXX_EXPORT MetalDevice : public Device {
 public:
   static constexpr API api = Device::metalAPI;
 
@@ -196,7 +197,7 @@ private:
   std::vector<MetalQueue> queues_;
 };
 
-class MetalDeviceContext : public DeviceContext {
+class MODULAR_CXX_EXPORT MetalDeviceContext : public DeviceContext {
 public:
   MetalDeviceContext(MetalDevice &device,
                      NS::SharedPtr<MTL::CommandQueue> commandQueue);

@@ -15,6 +15,7 @@
 #define SUPPORT_URI_H
 
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 #include <filesystem>
 
@@ -27,7 +28,7 @@ namespace M {
 ///
 /// If parsing a non-URI, it will assume that it is a local filesystem path
 /// (see `parse` method for details).
-class URI {
+class MODULAR_CXX_EXPORT URI {
 public:
   /// Creates a URI with form "file://path" (note that it does not modify the
   /// path).

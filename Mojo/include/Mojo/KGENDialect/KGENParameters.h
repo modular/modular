@@ -22,6 +22,7 @@
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/ParameterReplacer.h"
+#include "Support/SymbolExport.h"
 #include "mlir/Pass/AnalysisManager.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/MapVector.h"
@@ -436,7 +437,7 @@ struct ParamDeclaration {
 /// expressions to a simple constant value. Then, all operations that use
 /// parameters (in an attribute, type, or location) can be concretized in any
 /// order.
-struct ParameterUseDefGraph {
+struct MODULAR_CXX_EXPORT ParameterUseDefGraph {
   ParameterUseDefGraph(Region &scope) : scope(&scope) {}
   ParameterUseDefGraph(Region *scope) : scope(scope) {}
   virtual ~ParameterUseDefGraph() = default;

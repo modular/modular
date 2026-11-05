@@ -18,6 +18,7 @@
 #include "Support/Compiler/Sanitizers.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
 #include "llvm/ExecutionEngine/Orc/DylibManager.h"
@@ -107,7 +108,7 @@ private:
 /// to a file. The fundamental unit this class deals with is a single llvm
 /// function because that's the minimum granularity we would want to use for
 /// caching and search.
-class ExecutionEngine {
+class MODULAR_CXX_EXPORT ExecutionEngine {
 public:
   ~ExecutionEngine();
 

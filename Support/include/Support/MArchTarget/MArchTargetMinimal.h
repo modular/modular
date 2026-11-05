@@ -25,6 +25,7 @@
 #include "Support/DeviceSpecs.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -46,11 +47,11 @@ ErrorOr<std::vector<std::string>>
 getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts, StringRef cpu);
 
 /// Returns a TargetInfo describing the host.
-ErrorOr<TargetInfo> getHostTargetInfo();
+MODULAR_CXX_EXPORT ErrorOr<TargetInfo> getHostTargetInfo();
 
 /// Returns the features for the host as a signed string (e.g.
 /// "+avx2,+bmi1,-avx512f") ready to pass to LLVM.
-std::string getHostCPUFeatures();
+MODULAR_CXX_EXPORT std::string getHostCPUFeatures();
 
 /// Returns a TargetInfo describing the consequences of the given `-march`,
 /// `-mcpu` and `-mtune` settings. These flags have target-dependent behaviour
@@ -76,8 +77,9 @@ std::string getHostCPUFeatures();
 /// only an architecture is specified, `-mcpu=generic` will be used.
 ///
 /// `-mtune` will specify the CPU to specifically tune code for.
-ErrorOr<TargetInfo> getMArchTargetInfo(StringRef targetTriple, StringRef march,
-                                       StringRef mcpu, StringRef mtune);
+MODULAR_CXX_EXPORT ErrorOr<TargetInfo>
+getMArchTargetInfo(StringRef targetTriple, StringRef march, StringRef mcpu,
+                   StringRef mtune);
 
 /// Returns the CPU features for a given target triple and CPU.
 ///
@@ -85,7 +87,8 @@ ErrorOr<TargetInfo> getMArchTargetInfo(StringRef targetTriple, StringRef march,
 /// user picked deserves: substituting the baseline would compile something
 /// other than what was asked for. Use `resolveCpu` for a name that was detected
 /// rather than chosen.
-ErrorOr<std::vector<std::string>> getFeatures(StringRef triple, StringRef cpu);
+MODULAR_CXX_EXPORT ErrorOr<std::vector<std::string>>
+getFeatures(StringRef triple, StringRef cpu);
 
 /// A CPU name the target accepts, and the features it implies.
 struct ResolvedCpu {
@@ -104,7 +107,8 @@ struct ResolvedCpu {
 /// creation outright rather than compile for the architecture baseline.
 /// Returning the name with the features keeps the two in step -- a caller
 /// cannot record a CPU that the features did not come from.
-ErrorOr<ResolvedCpu> resolveCpu(StringRef triple, StringRef cpu);
+MODULAR_CXX_EXPORT ErrorOr<ResolvedCpu> resolveCpu(StringRef triple,
+                                                   StringRef cpu);
 
 } // namespace M
 

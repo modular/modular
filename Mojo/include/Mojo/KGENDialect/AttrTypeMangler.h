@@ -16,6 +16,7 @@
 
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Types.h"
@@ -25,7 +26,7 @@ namespace M::KGEN {
 /// This uniquing scheme involves splitting each decl name into a key string
 /// and a substring of trailing digits. We track the max of such digits of the
 /// same key string and use that to generate the next unique ID.
-class NameUniquer {
+class MODULAR_CXX_EXPORT NameUniquer {
 public:
   NameUniquer(const ParameterUseDefGraph &scope,
               const ParameterUseDefGraph &topLevelGraph);
@@ -57,7 +58,7 @@ private:
 /// expression. Manually walk and mangle parameter references in attributes and
 /// types in an expression tree while accounting for name shadowing in a
 /// signature type.
-class AttrTypeMangler {
+class MODULAR_CXX_EXPORT AttrTypeMangler {
 public:
   using Cache = llvm::DenseSet<const void *>;
 

@@ -16,6 +16,7 @@
 
 #include "AsyncRT/Runtime/AsyncValueRef.h"
 #include "AsyncRT/Support/Chain.h"
+#include "Support/SymbolExport.h"
 
 #include <algorithm>
 #include <chrono>
@@ -25,7 +26,7 @@
 
 namespace M::AsyncRT {
 
-class TimerHeap {
+class MODULAR_CXX_EXPORT TimerHeap {
 public:
   using deadline = std::chrono::time_point<std::chrono::steady_clock>;
   TimerHeap() : running(true), thread(&TimerHeap::run, this) {}

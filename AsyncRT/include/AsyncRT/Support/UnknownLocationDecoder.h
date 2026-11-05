@@ -17,13 +17,14 @@
 #include "AsyncRT/Support/Location.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 
 namespace M::AsyncRT {
 
 /// This class implements LocationDecoder and returns a filename of `<unknown>`.
 /// This is useful for inner infrastructure that doesn't really have a good way
 /// of inferring a location that hasn't been passed-in.
-class UnknownLocationDecoder final
+class MODULAR_CXX_EXPORT UnknownLocationDecoder final
     : public ReferenceCounted<UnknownLocationDecoder>,
       public LocationDecoder {
 public:

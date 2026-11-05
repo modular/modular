@@ -18,6 +18,15 @@ modular_cc_binary(
     data = [
         "//max:builtin_kernels",
     ] + INTERNAL_KERNEL_MOJOPKGS,
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     mojo_deps = [
         "//max:builtin_kernels",
         "//max:builtin_primitives",
@@ -25,8 +34,9 @@ modular_cc_binary(
     deps = [
         "//GraphCompiler",
         "//Init",
+        "//Mojo:CompilerRT.static",
         "//Support:Context",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//mlir:MlirOptLib",
     ],
 )

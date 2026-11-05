@@ -35,10 +35,14 @@ class FnMetaOriginDataAttr;
 } // namespace LIT
 } // namespace M::KGEN
 
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LITEnums.h.inc"
+#pragma GCC visibility pop
 
 #define GET_ATTRDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LITAttrs.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN::LIT {
 

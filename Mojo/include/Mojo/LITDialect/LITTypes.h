@@ -20,6 +20,7 @@
 
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/LITDialect/LITAttrs.h"
+#include "Support/SymbolExport.h"
 
 namespace M::KGEN {
 class ConstraintAttr;
@@ -34,7 +35,9 @@ class RefPackType;
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LITTypes.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN::LIT {
 
@@ -184,7 +187,7 @@ public:
 //===----------------------------------------------------------------------===//
 // FnTypeGeneratorType
 //===----------------------------------------------------------------------===//
-class FnTypeGeneratorType
+class MODULAR_CXX_EXPORT FnTypeGeneratorType
     : public FnTypeWrapperGeneratorType<FnTypeGeneratorType,
                                         FuncTypeGeneratorType> {
 public:

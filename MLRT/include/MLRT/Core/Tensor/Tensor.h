@@ -19,6 +19,7 @@
 #include "Support/ML/DebugPrint.h"
 #include "Support/ML/TensorBase.h"
 #include "Support/ML/TensorSpec.h"
+#include "Support/SymbolExport.h"
 
 namespace M::MLRT {
 
@@ -33,7 +34,7 @@ namespace M::MLRT {
 ///
 /// CAUTION: Though movable, this is 48 bytes on 64-bit systems so best not
 ///          to consider it a simple handle.
-class Tensor : public TensorBase<TensorBufferRef> {
+class MODULAR_CXX_EXPORT Tensor : public TensorBase<TensorBufferRef> {
 public:
   using TensorBase::TensorBase;
 

@@ -21,6 +21,7 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ML/DType.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/BitmaskEnum.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -165,7 +166,7 @@ static inline unsigned getWidthInBits(AttributeKind kind) {
 }
 
 /// Print the AttributeKind as a string.
-std::string getAsString(AttributeKind kind);
+MODULAR_CXX_EXPORT std::string getAsString(AttributeKind kind);
 
 /// Given an AttributeKind for an element, return the AttributeKind for an array
 /// of that element.

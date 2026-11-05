@@ -32,6 +32,7 @@
 #include "Support/ReferenceCounted.h"
 #include "Support/STLExtras.h"
 #include "Support/StringExtras.h"
+#include "Support/SymbolExport.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
@@ -62,7 +63,7 @@ struct AllocatorOptions {
 };
 
 /// Collects all the options which influence a cpuDevice.
-struct CPUDeviceOptions {
+struct MODULAR_CXX_EXPORT CPUDeviceOptions {
   enum class AllocatorType {
     /// Allocator that just calls malloc/free.
     kMalloc,
@@ -320,7 +321,8 @@ enum class CPUDeviceSource {
 /// Runtime is reference-counted so that CPUDeviceRef can be RCRef<CPUDevice>
 /// and support shared ownership. It inherits ReferenceCounted and must only be
 /// destroyed via dropRef().
-class CPUDevice final : public M::ReferenceCounted<CPUDevice> {
+class MODULAR_CXX_EXPORT CPUDevice final
+    : public M::ReferenceCounted<CPUDevice> {
 public:
   /// Construct cpuDevice with the already reserved cpuDevicePtr, and already
   /// created allocator and workQueue. The work queue must have been constructed

@@ -15,6 +15,7 @@
 #define KGEN_SUPPORT_COMPILERPROFILING_H
 
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/SymbolExport.h"
 #include <filesystem>
 
 namespace M::KGEN {
@@ -73,7 +74,7 @@ struct VerboseCompilerTimeTraceScope
 //===----------------------------------------------------------------------===//
 
 /// Common trace profiler setup.
-struct TraceProfiler {
+struct MODULAR_CXX_EXPORT TraceProfiler {
   TraceProfiler(bool enabled, int timeTraceGranularity) {
     if (enabled)
       initialize(timeTraceGranularity);
