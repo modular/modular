@@ -7,12 +7,6 @@ _FILECHECK_TESTS = [
     "test_locks.mojo",
 ]
 
-# Built without debug info: with `--debug-level full` the coroutine frame keeps
-# extra state alive and masks https://github.com/modular/modular/issues/7368.
-_NO_DEBUG_INFO_TESTS = [
-    "test_asyncrt_multi_suspend.mojo",
-]
-
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -35,22 +29,6 @@ _NO_DEBUG_INFO_TESTS = [
         srcs = [src],
         copts = [
             "--debug-level",
-            "none",
-        ],
-        deps = [
-            "@mojo//:std",
-            "@mojo//:test_utils",
-        ],
-    )
-    for src in _NO_DEBUG_INFO_TESTS
-]
-
-[
-    mojo_test(
-        name = src + ".test",
-        srcs = [src],
-        copts = [
-            "--debug-level",
             "full",
         ],
         deps = [
@@ -60,6 +38,6 @@ _NO_DEBUG_INFO_TESTS = [
     )
     for src in glob(
         ["*.mojo"],
-        exclude = _FILECHECK_TESTS + _NO_DEBUG_INFO_TESTS,
+        exclude = _FILECHECK_TESTS,
     )
 ]
