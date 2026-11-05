@@ -173,6 +173,7 @@ struct Span[
     Boolable,
     Defaultable,
     DevicePassable where address_space == .GENERIC,
+    Equatable where conforms_to(T, Equatable) and address_space == .GENERIC,
     Hashable where conforms_to(T, Hashable) and address_space == .GENERIC,
     ImplicitlyCopyable,
     Iterable where address_space == .GENERIC,
@@ -724,10 +725,50 @@ struct Span[
         """
         return len(self) > 0
 
-    # This decorator informs the compiler that indirect address spaces are not
-    # dereferenced by the method.
-    # TODO: replace with a safe model that checks the body of the method for
-    # accesses to the origin.
+    # TODO: This decorator informs the compiler that indirect origins are
+    # not dereferenced by the method. replace with a safe model that checks the
+    # body of the method for accesses to the origin.
+    # TODO: We require these first two overload of `__eq/ne__` to conform to the
+    # `Equatable` trait as the `__eq/ne__` signature must match exactly. Ideally
+    # we don't need overloads to have origins work correctly.
+    @__unsafe_nested_origins_read_only
+    @inline(.always)
+    def __eq__(
+        self, rhs_same: Self
+    ) -> Bool where conforms_to(Self.T, Equatable) and Self._is_generic_as:
+        """Verify if span is equal to another span with the same origin.
+
+        Args:
+            rhs_same: The span to compare against.
+
+        Returns:
+            True if the spans are equal in length and contain the same
+            elements, False otherwise.
+        """
+        comptime Generic = Span[Self.T, Self.origin]
+        return rebind[Generic](self).__eq__(rhs=rebind[Generic](rhs_same))
+
+    @__unsafe_nested_origins_read_only
+    @inline(.always)
+    def __ne__(
+        self, rhs_same: Self
+    ) -> Bool where conforms_to(Self.T, Equatable) and Self._is_generic_as:
+        """Verify if span is not equal to another span with the same origin.
+
+        Args:
+            rhs_same: The span to compare against.
+
+        Returns:
+            True if the spans are not equal in length or contents, False
+            otherwise.
+        """
+        comptime Generic = Span[Self.T, Self.origin]
+        return rebind[Generic](self).__ne__(rhs=rebind[Generic](rhs_same))
+
+    # TODO: These follow two overloads of `__eq/ne__` are required so that we
+    # can compare `Span`s with different origins. Ideally we'd only need a
+    # single eq/ne method that handles origins and conforms to the `Equatable`
+    # trait properly.
     @__unsafe_nested_origins_read_only
     @__allow_legacy_custom_self_type
     def __eq__(
@@ -756,6 +797,7 @@ struct Span[
 
     @inline(.always)
     @__allow_legacy_custom_self_type
+    @__unsafe_nested_origins_read_only
     def __ne__(
         self: Span[Self.T, _], rhs: Span[Self.T, _]
     ) -> Bool where conforms_to(Self.T, Equatable):

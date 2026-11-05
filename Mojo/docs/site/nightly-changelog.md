@@ -228,6 +228,8 @@ This version is still a work in progress.
   deprecated. Use `StringSpan` instead. `StringSpan` is always immutable, so
   the `Imm` variants are redundant.
 
+- `Span` now conforms to `Equatable` when its element type does.
+
 - `Optional.value()`, `Optional.unsafe_value()`, and `Optional.__getitem__()`
   now return a reference with an interior origin of the `Optional`.
   Reassigning the `Optional`, or calling a `mut self` method on it
