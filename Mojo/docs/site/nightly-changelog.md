@@ -228,6 +228,20 @@ This version is still a work in progress.
   deprecated. Use `StringSpan` instead. `StringSpan` is always immutable, so
   the `Imm` variants are redundant.
 
+- `Optional.value()`, `Optional.unsafe_value()`, and `Optional.__getitem__()`
+  now return a reference with an interior origin of the `Optional`.
+  Reassigning the `Optional`, or calling a `mut self` method on it
+  invalidates outstanding references to its value. Reading through
+  such a reference afterward used to compile and read a destroyed value; it is
+  now a compile error:
+
+  ```mojo
+  var opt = Optional(5)
+  ref i = opt.value()
+  opt = None
+  print(i)  # error: use of invalidated interior reference 'opt["value"]'
+  ```
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and

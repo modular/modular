@@ -781,17 +781,20 @@ struct _FlashAttention[
                     Scalar[Self.dtype], alignment=packed_alignment
                 ]
             ]()
-            var packed_ptr = type_of(
-                packed_alloc.value().unsafe_ptr()
-            ).unsafe_dangling()
+            var packed_ptr = MutPointer[
+                Scalar[Self.dtype], origin_of(packed_alloc)
+            ].unsafe_dangling()
 
             if max_seq_len != 1:
-                packed_alloc = alloc(
+                var allocation = alloc(
                     AllocLayout[Scalar[Self.dtype], alignment=packed_alignment](
                         length=packed_size
                     )
                 ).into_managed()
-                packed_ptr = packed_alloc.unsafe_value().unsafe_ptr()
+                packed_ptr = allocation.unsafe_ptr().unsafe_origin_cast[
+                    origin_of(packed_alloc)
+                ]()
+                packed_alloc = allocation^
 
             var q_seq_stride = num_heads * depth_dim
 
