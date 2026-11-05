@@ -277,6 +277,8 @@ modular_eager_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
+    # `max.tensor` imports `max.nn.legacy` lazily to allocate signal buffers
+    # for two or more devices, so no source here imports it.
     ignore_extra_deps = [
         "//max/python/max/nn/legacy",
     ],
@@ -289,6 +291,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],
