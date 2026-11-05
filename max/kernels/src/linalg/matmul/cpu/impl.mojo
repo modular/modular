@@ -31,7 +31,7 @@ from std.memory import alloc, dealloc, Allocation
 from std.memory.alloc import Alignment, Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from ...gemv import _gemv_cpu
@@ -85,7 +85,7 @@ trait InnerMatmulKernel(Deinitable, ImplicitlyCopyable):
         b_packed: TileTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
-        tile_n_k: IndexList[2],
+        tile_n_k: Tuple[Int, Int],
         skip_boundary_check: Bool,
     ):
         """Accumulates one packed `B` tile into the corresponding `C` tile.
@@ -317,7 +317,7 @@ struct TiledMatmul[
     var b: TileTensor[Self.b_type, Self.b_layout, Self.b_origin]
     """Right operand `TileTensor`."""
     # Dynamic tile parameter.
-    var tile_n_k: IndexList[2]
+    var tile_n_k: Tuple[Int, Int]
     """Dynamic `(N, K)` tile extents used to partition the problem."""
 
     # Tile starting points on the (M,N,K) coordinates.
@@ -381,8 +381,9 @@ struct TiledMatmul[
         # Launch the MLoop
         # The upper bounds apply to runtime packing. For pre-packing, the
         # tile has been padded to fit (sub_tile_n, sub_tile_k).
-        var sub_tile_n_k = Index(
-            min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
+        var sub_tile_n_k = (
+            min(sub_tile_n, knm_bounds.N),
+            min(sub_tile_k, knm_bounds.K),
         )
 
         @inline(.always)

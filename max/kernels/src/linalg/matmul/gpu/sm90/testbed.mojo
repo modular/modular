@@ -258,7 +258,7 @@ def test_matmul_sm90[
             schedule=schedule,
             grid_shape=grid_shape,
             use_tma_store=use_tma_store,
-        ](IndexList[2](M, N), a_tensor, b_tensor, epilogue_fn, ctx)
+        ]((M, N), a_tensor, b_tensor, epilogue_fn, ctx)
     else:
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,

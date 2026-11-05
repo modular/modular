@@ -132,7 +132,7 @@ def compile_kernel_to_asm[
         b_type,
         transpose_b=True,
         K=K,
-    ](Index(block_m, block_n))
+    ]((block_m, block_n))
 
     comptime a_tt_layout = RowMajorLayout[ComptimeInt[M], ComptimeInt[K]]
     comptime b_tt_layout = RowMajorLayout[ComptimeInt[N], ComptimeInt[K]]

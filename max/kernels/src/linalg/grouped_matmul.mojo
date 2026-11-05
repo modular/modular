@@ -55,7 +55,6 @@ from layout import (
 )
 
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
@@ -113,7 +112,7 @@ def naive_grouped_matmul_kernel[
     *,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
 ](
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin, Engine=c_engine],
     a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin, Engine=a_engine],
@@ -695,7 +694,7 @@ def grouped_matmul[
     *,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1111,7 +1110,7 @@ def grouped_matmul[
     *,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1169,7 +1168,7 @@ def naive_grouped_matmul[
     transpose_b: Bool = True,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, address_space=.GENERIC, ...],

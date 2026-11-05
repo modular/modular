@@ -64,7 +64,6 @@ from layout import (
 )
 from std.logger import Logger
 from std.memory import bitcast, unsafe_stack_allocation
-from std.utils import IndexList
 from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -2199,7 +2198,7 @@ def _amd_gemv_config[
     static_K: Int,
     has_N: Bool,
     static_N: Int,
-]() -> IndexList[3]:
+]() -> Tuple[Int, Int, Int]:
     """Compute GEMV split-K dispatch config for AMD GPUs.
 
     Returns (num_threads, tile_n, unroll_factor).
@@ -2265,7 +2264,7 @@ def _amd_gemv_config[
     # unroll=4 when there are enough K-iterations and tile_n is small enough
     # to avoid register pressure (tile_n=4 + unroll=4 hurts large-N shapes).
     var unroll = 4 if k_iters >= 8 and tile_n <= 2 else 2
-    return IndexList[3](num_threads, tile_n, unroll)
+    return (num_threads, tile_n, unroll)
 
 
 def _nvidia_gemv_config[
@@ -2274,7 +2273,7 @@ def _nvidia_gemv_config[
     static_K: Int,
     has_N: Bool,
     static_N: Int,
-]() -> IndexList[3]:
+]() -> Tuple[Int, Int, Int]:
     """Compute GEMV split-K dispatch config for NVIDIA B200 GPUs.
 
     Returns (num_threads, tile_n, unroll_factor).
@@ -2289,7 +2288,7 @@ def _nvidia_gemv_config[
     # per block); 256 threads/block and unroll=2 are the swept winner, while
     # tile_n>=2 and 128T regress. (KERN-3076.)
     comptime if a_type == .float32:
-        return IndexList[3](256, 1, 2)
+        return (256, 1, 2)
 
     var num_threads: Int
     comptime if simd_width <= 8:
@@ -2347,7 +2346,7 @@ def _nvidia_gemv_config[
             unroll = 2
         else:
             unroll = 1
-    return IndexList[3](num_threads, tile_n, unroll)
+    return (num_threads, tile_n, unroll)
 
 
 # Row tile of `gemv_kernel_vector_multirow`, and the K depth up to which it

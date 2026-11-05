@@ -104,7 +104,6 @@ from layout.tile_tensor import (
     _ComptimeConditionalTileTensor,
 )
 from std.memory.alloc import Layout as AllocLayout
-from std.utils import IndexList
 from std.utils.variant import Variant
 from max.gpu.host.info import B200, _is_sm10x_gpu, _is_sm12x_gpu
 
@@ -535,19 +534,19 @@ def matmul[
         return String(
             trace_arg(
                 "A",
-                IndexList[2](Int(a_tensor.dim[0]()), Int(a_tensor.dim[1]())),
+                (Int(a_tensor.dim[0]()), Int(a_tensor.dim[1]())),
                 a_type,
             ),
             ";",
             trace_arg(
                 "B",
-                IndexList[2](Int(b_tensor.dim[0]()), Int(b_tensor.dim[1]())),
+                (Int(b_tensor.dim[0]()), Int(b_tensor.dim[1]())),
                 b_type,
             ),
             ";",
             trace_arg(
                 "C",
-                IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+                (Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
                 c_type,
             ),
             ";transpose_a=",
@@ -670,9 +669,9 @@ def _cublas_matmul[
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]()) if not transpose_a else Int(a.dim[0]())
 
-    var c_dynamic_shape = IndexList[2](M, N)
-    var a_dynamic_shape = IndexList[2](Int(a.dim[0]()), Int(a.dim[1]()))
-    var b_dynamic_shape = IndexList[2](Int(b.dim[0]()), Int(b.dim[1]()))
+    var c_dynamic_shape = (M, N)
+    var a_dynamic_shape = (Int(a.dim[0]()), Int(a.dim[1]()))
+    var b_dynamic_shape = (Int(b.dim[0]()), Int(b.dim[1]()))
 
     var compute_type: ComputeType
 

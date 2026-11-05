@@ -91,7 +91,6 @@ from layout.tma_async import (
 )
 
 from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -197,7 +196,7 @@ def load_AB[
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
 ](
     expert_ids: ImmPointer[Int32, _],
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -387,7 +386,7 @@ def load_AB_cuda_core[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_32B,
     a_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
     b_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
 ](
     a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     b_gmem: TileTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
@@ -1474,7 +1473,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     has_epilogue_fn: Bool = False,
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
     transpose_c: Bool = False,
     use_tma: Bool = True,
     K_actual: Int = 0,
@@ -2126,7 +2125,7 @@ def grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -2258,7 +2257,7 @@ def _grouped_matmul_sm100_persistent[
     has_epilogue_fn: Bool = False,
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],

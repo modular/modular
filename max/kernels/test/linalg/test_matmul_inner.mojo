@@ -33,8 +33,6 @@ from linalg.utils import (
 )
 from std.testing import assert_equal
 
-from std.utils import IndexList
-
 comptime M: Int = 64
 comptime N: Int = 64
 comptime K: Int = 256
@@ -51,7 +49,7 @@ def _matmul_inner_loop[
     b_packed: TileTensor,
     global_offset: GemmShape,
     global_bound: GemmShape,
-    tile_n_k: IndexList[2],
+    tile_n_k: Tuple[Int, Int],
     skip_boundary_check: Bool,
 ):
     comptime kernel_id = select_inner_kernel[a.dtype, b_packed.dtype, c.dtype]()

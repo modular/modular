@@ -1458,7 +1458,7 @@ trait KVBufferConfig:
 
     @staticmethod
     @inline(.always)
-    def get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> Tuple[Int, Int]:
         ...
 
 
@@ -1487,9 +1487,9 @@ struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
 
     @staticmethod
     @inline(.always)
-    def get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> Tuple[Int, Int]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](warp_col, 0)
+        return (warp_col, 0)
 
 
 @fieldwise_init
@@ -1518,9 +1518,9 @@ struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
 
     @staticmethod
     @inline(.always)
-    def get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> Tuple[Int, Int]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](0, warp_col)
+        return (0, warp_col)
 
 
 struct DecodeKVBuffer[

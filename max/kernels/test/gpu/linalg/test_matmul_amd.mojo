@@ -432,7 +432,7 @@ def test_k_tail(ctx: DeviceContext) raises:
     def test_block_shape[N: Int, K: Int, block: Int](m: Int) raises {imm}:
         comptime config = _amdgpu_matmul_config_from_block_shape[
             .float32, .bfloat16, .bfloat16, True, K
-        ](Index(block, block))
+        ]((block, block))
         test[config, N=N, K=K](ctx, m, N, K)
 
     test_block_shape[1152, 4304, 128](300)
@@ -702,7 +702,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
             ]() raises {imm}:
                 comptime config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
-                ](Index(block_m, block_n))
+                ]((block_m, block_n))
                 print(
                     block_m,
                     block_n,

@@ -17,8 +17,7 @@ from std.collections import Optional
 from std.math import align_down, align_up, ceildiv, iota
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
-from std.sys.intrinsics import masked_load, masked_store
-from std.utils.index import Index, IndexList
+from std.sys.intrinsics import masked_store
 from std.algorithm import vectorize
 from layout import TileTensor, Coord, TensorLayout
 from layout.layout import Layout as _NewLayout, row_major
@@ -58,13 +57,13 @@ def partial_simd_load[
     Returns:
         The SIMD vector loaded and zero-filled.
     """
-    # Create a mask based on input bounds.
-    var effective_lbound = SIMD[.int32, width](max(lbound, 0))
-    var effective_rbound = SIMD[.int32, width](min(width, rbound))
-    var incr = iota[.int32, width]()
-    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
-
-    return masked_load[width](storage, mask, pad_value)
+    # Fill lane by lane: the masked-load intrinsic rejects the alignment
+    # this call site needs once the enclosing kernel is compiled for an
+    # accelerator target, and the bounds only ever clip one partial vector.
+    var result = SIMD[dtype, width](pad_value)
+    for i in range(max(lbound, 0), min(width, rbound)):
+        result[i] = storage[i]
+    return result
 
 
 @inline(.always)
@@ -427,7 +426,7 @@ def is_valid_epilogue[T: AnyType]() -> Bool:
 
 @inline(.always)
 def lora_qkv_plane_row_offset[
-    splits: IndexList[2]
+    splits: Tuple[Int, Int]
 ](out_col: Int, plane_stride: Int) -> Int:
     """Additive row offset into a 3-plane row-stacked activation `[3*M, K]`.
 
@@ -512,7 +511,6 @@ struct GemmShape(TrivialRegisterPassable):
 
         return GemmShape(Int(c.dim[0]()), Int(c.dim[1]()), Int(a.dim[1]()))
 
-    # TODO: re-enable using IndexList.
     @inline(.always)
     def __getitem__(self, idx: Int) -> Int:
         if idx == 0:
@@ -532,32 +530,13 @@ struct GemmShape(TrivialRegisterPassable):
             self.K = value
             return
 
-    def __init__(out self, index: IndexList[3]):
-        """Constructor of a gemm shape record from a index tuple.
-
-        Args:
-            index: The int tuple containing the index(m,n,k).
-        """
-        self.M = index[0]
-        self.N = index[1]
-        self.K = index[2]
-
-    def as_index(self) -> IndexList[3]:
-        """Utility to convert the underlying data to an index tuple. So that the
-        utilities such as elementwise add can be used.
-
-        Returns:
-            The constructed index tuple.
-        """
-        return Index(self.M, self.N, self.K)
-
     def __add__(self, rhs: GemmShape) -> GemmShape:
         """Coordinate-wise addition of two gemm shape records.
 
         Args:
             rhs: Another gemm shape record to add with.
         """
-        return GemmShape(self.as_index() + rhs.as_index())
+        return GemmShape(self.M + rhs.M, self.N + rhs.N, self.K + rhs.K)
 
     def __sub__(self, rhs: GemmShape) -> GemmShape:
         """Coordinate-wise subtraction of two gemm shape records.
@@ -565,7 +544,7 @@ struct GemmShape(TrivialRegisterPassable):
         Args:
             rhs: Another gemm shape record to subtract with.
         """
-        return GemmShape(self.as_index() - rhs.as_index())
+        return GemmShape(self.M - rhs.M, self.N - rhs.N, self.K - rhs.K)
 
 
 # Helper heuristic function to decide on tile size
@@ -576,7 +555,7 @@ def calculate_tile_n_k[
     b_type: DType,
     c_type: DType,
     kernel_cols: Int,
-](n: Int, k: Int) -> IndexList[2]:
+](n: Int, k: Int) -> Tuple[Int, Int]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
 
@@ -619,7 +598,7 @@ def calculate_tile_n_k[
     # Calculate tile_n size.
     var tile_n = tile_n_in_inner_size * kernel_cols
 
-    return Index(tile_n, tile_k)
+    return (tile_n, tile_k)
 
 
 def calculate_tile_n_k[
@@ -627,7 +606,7 @@ def calculate_tile_n_k[
     b_type: DType,
     c_type: DType,
     kernel_cols: Int,
-](global_tile_shape: GemmShape) -> IndexList[2]:
+](global_tile_shape: GemmShape) -> Tuple[Int, Int]:
     return calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
         global_tile_shape.N, global_tile_shape.K
     )
@@ -640,20 +619,17 @@ def _get_tile_n_k[
     c_type: DType,
     kernel_cols: Int,
     transpose_b: Bool,
-](b: TileTensor[mut=False, ...]) -> IndexList[2]:
+](b: TileTensor[mut=False, ...]) -> Tuple[Int, Int]:
     comptime assert b.rank == 2
-    var tile_n_k: IndexList[2]
 
     comptime if not transpose_b:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+        return calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
             Int(b.dim[1]()), Int(b.dim[0]())
         )
     else:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+        return calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
             Int(b.dim[0]()), Int(b.dim[1]())
         )
-
-    return tile_n_k
 
 
 # The number of registers used for the inner kernel is:
@@ -837,7 +813,7 @@ struct SubMatmulConfig(ImplicitlyCopyable):
 @inline(.always)
 def partition_work(
     task_id: Int, num_tasks: Int, work: Int, work_block_size: Int
-) -> IndexList[2]:
+) -> Tuple[Int, Int]:
     """Partitions `work` into blocks distributed across `num_tasks` tasks.
 
     The work is first grouped into `work_block_size`-sized blocks for alignment
@@ -866,9 +842,9 @@ def partition_work(
     if task_id < blocks_per_task_extra:
         work_per_task = (blocks_per_task + 1) * work_block_size
         work_id = task_id * work_per_task
-        return IndexList[2](work_id, min(work - work_id, work_per_task))
+        return (work_id, min(work - work_id, work_per_task))
 
-    return IndexList[2](work_id, min(work - work_id, work_per_task))
+    return (work_id, min(work - work_id, work_per_task))
 
 
 def get_partitioned_matmul[
@@ -968,7 +944,7 @@ def get_partitioned_matmul_mojo_shape[
     kernel_rows: Int,
     kernel_cols: Int,
     use_i8mm: Bool,
-](m: Int, n: Int, k: Int, num_tasks: Int) -> IndexList[2]:
+](m: Int, n: Int, k: Int, num_tasks: Int) -> Tuple[Int, Int]:
     """Returns the row and column task counts that best balance a parallel matmul.
 
     Searches over feasible task grids and selects the one that minimizes the
@@ -1031,7 +1007,7 @@ def get_partitioned_matmul_mojo_shape[
         num_row_tasks = 1
         num_col_tasks = num_tasks
 
-    return Index(num_row_tasks, num_col_tasks)
+    return (num_row_tasks, num_col_tasks)
 
 
 def get_pack_data_size[dtype: DType]() -> Int:

@@ -45,7 +45,6 @@ from layout.tensor_core import get_mma_shape
 from std.utils.coord import Coord
 from std.logger import Logger
 from std.memory import unsafe_stack_allocation
-from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 from ...gemv import (
     GEMVAlgorithm,
@@ -558,7 +557,7 @@ def _amdgpu_matmul_config_from_block_shape[
     transpose_b: Bool,
     K: Int,
     pdl_level: PDLLevel = PDLLevel(),
-](block_shape: IndexList[2]) -> MatmulConfig[
+](block_shape: Tuple[Int, Int]) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
     comptime max_num_warps: Int = 4
@@ -633,7 +632,7 @@ def _amdgpu_matmul_config_from_block_shape[
     )
 
 
-def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
+def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[Tuple[Int, Int]]:
     comptime sm_count = get_gpu_info().sm_count
 
     comptime block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
@@ -675,7 +674,7 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
     for m in range(1024, 8192, 32):
         process_m(m)
 
-    var block_shape_list = List[IndexList[2]]()
+    var block_shape_list = List[Tuple[Int, Int]]()
 
     for idx in range(len(emit_block_shape)):
         if not emit_block_shape[idx]:
@@ -683,7 +682,7 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
 
         var idx_m, idx_n = divmod(idx, len_block_sizes)
 
-        block_shape_list.append(Index(block_sizes[idx_m], block_sizes[idx_n]))
+        block_shape_list.append((block_sizes[idx_m], block_sizes[idx_n]))
 
     return block_shape_list^
 
