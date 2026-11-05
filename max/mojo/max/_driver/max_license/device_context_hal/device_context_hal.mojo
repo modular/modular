@@ -1059,7 +1059,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # Previous context is automatically restored
         ```
         """
-        return _DeviceContextScopeHAL(self.assert_default_target())
+        return _DeviceContextScopeHAL(self)
 
     @doc_hidden
     def stream(self) -> DeviceStreamBase[Self.target]:
@@ -1816,7 +1816,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         # NOTE: The HAL supports doing this asynchronously, but to match
         # existing DeviceContext semantics we create a buffer immediately.
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def create_buffer_sync[
         dtype: DType
@@ -1835,7 +1835,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def enqueue_create_host_buffer[
         dtype: DType
@@ -1883,7 +1883,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        return HostBuffer[dtype](self.assert_default_target(), size)
+        return HostBuffer[dtype](self, size)
 
     def enqueue_copy[
         dtype: DType
@@ -1908,12 +1908,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         self.enqueue_copy(
-            DeviceBuffer[dtype](
-                self.assert_default_target(), dst_ptr, size, owning=False
-            ),
-            DeviceBuffer[dtype](
-                self.assert_default_target(), src_ptr, size, owning=False
-            ),
+            DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
+            DeviceBuffer[dtype](self, src_ptr, size, owning=False),
         )
 
     def enqueue_copy[
@@ -1994,7 +1990,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             self.enqueue_wait_for(src_ctx)
         self._enqueue_copy_device_to_device(dst_buf, src_buf)
         if sync:
-            src_ctx.enqueue_wait_for(self.assert_default_target())
+            src_ctx.enqueue_wait_for(self)
 
     def _check_device_to_device_copy[
         dtype: DType
@@ -2979,14 +2975,14 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
 
 struct _DeviceContextScopeHAL(Movable):
-    var _device_context: DeviceContext[]
+    var _device_context: DeviceContext.Unknown
     # Driver-context handle to restore on exit; only meaningful when `_active`
     # (any value, including zero, can be a live handle).
     var _prev_driver_ctx: Int
     var _active: Bool
 
-    def __init__(out self, device_context: DeviceContext[]):
-        self._device_context = device_context
+    def __init__(out self, device_context: DeviceContext):
+        self._device_context = device_context.into_unknown_target()
         self._prev_driver_ctx = 0
         self._active = False
 
@@ -3006,7 +3002,7 @@ struct _DeviceContextScopeHAL(Movable):
         )
         self._device_context._context[].set_current()
         self._active = True
-        return self._device_context
+        return rebind[DeviceContext[]](self._device_context)
 
     def __exit__(mut self) raises:
         if self._active:
@@ -4735,7 +4731,7 @@ struct DeviceBuffer[dtype: DType](
     var _device_ptr: Self._DevicePtr
     # Wrap the inner buffer in an ArcPointer so copies of this DeviceBuffer hold
     # a reference to the same underlying buffer.
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_HALBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -4754,7 +4750,7 @@ struct DeviceBuffer[dtype: DType](
         if byte_size > 0:
             addr = ctx._context[].memory_get_address(buffer)
         self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
-        self._ctx = ctx.assert_default_target()
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(
             _HALBufferInner(buffer^, ctx._context, addr, [], [])
         )
@@ -4803,7 +4799,7 @@ struct DeviceBuffer[dtype: DType](
                 except:
                     pass
             self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
-            self._ctx = ctx.assert_default_target()
+            self._ctx = ctx.into_unknown_target()
             self._inner = ArcPointer(
                 _HALBufferInner(buffer^, ctx._context, addr, [], [])
             )
@@ -4902,7 +4898,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The device context associated with this buffer.
         """
-        return self._ctx
+        return rebind[DeviceContext[]](self._ctx)
 
     @doc_hidden
     @inline(.always)
@@ -5279,7 +5275,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_HostBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -5287,7 +5283,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext[], size: Int) raises:
+    def __init__(out self, ctx: DeviceContext, size: Int) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
@@ -5303,16 +5299,16 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
             host_ptr = Pointer[UInt8, MutUntrackedOrigin](
                 unsafe_from_address=Int(addr)
             )
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(
             _HostBufferInner(buffer^, ctx._context, host_ptr, [])
         )
 
     @doc_hidden
     def __init__(
-        out self, ctx: DeviceContext[], var inner: ArcPointer[_HostBufferInner]
+        out self, ctx: DeviceContext, var inner: ArcPointer[_HostBufferInner]
     ):
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = inner^
 
     # ===-------------------------------------------------------------------===#
@@ -5373,7 +5369,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         Returns:
             The device context associated with this buffer.
         """
-        return self._ctx
+        return rebind[DeviceContext[]](self._ctx)
 
     def unsafe_ptr(
         self,
