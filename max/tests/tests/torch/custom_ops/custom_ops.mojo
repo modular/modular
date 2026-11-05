@@ -11,16 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.sys import align_of
+
 from extensibility import register
+from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 from extensibility import (
+    Input,
     InputTensor,
+    Output,
     OutputTensor,
+    Tensor,
+    TileTensorable,
     foreach,
+    get_kernel_simd_width,
 )
 
 from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import IndexList
 
 
 @register("grayscale")
@@ -30,73 +37,130 @@ struct Grayscale:
         # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=.uint8, rank=3, ...],
+        img_out: Some[Output & Tensor],
+        img_in: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(img_out), TileTensorable)
+        comptime assert conforms_to(type_of(img_in), TileTensorable)
+        comptime assert type_of(img_out).dtype == .uint8
+        comptime assert type_of(img_out).rank == 2
+        comptime assert type_of(img_in).dtype == .uint8
+        comptime assert type_of(img_in).rank == 3
+        var out_tile = img_out.to_tile_tensor[.uint8]()
+        var in_tile = img_in.to_tile_tensor[.uint8]().as_imm()
+
         @inline(.always)
         def color_to_grayscale[
-            simd_width: Int
-        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
+            simd_width: Int, element_alignment: Int = 1
+        ](idx: Coord) {var out_tile, var in_tile}:
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
             var col = idx_l[1]
 
-            var r_idx = IndexList[3](row, col, 0)
-            var g_idx = IndexList[3](row, col, 1)
-            var b_idx = IndexList[3](row, col, 2)
-
-            var r_f32 = img_in.load[simd_width](r_idx).cast[.float32]()
-            var g_f32 = img_in.load[simd_width](g_idx).cast[.float32]()
-            var b_f32 = img_in.load[simd_width](b_idx).cast[.float32]()
+            comptime align = align_of[DType.uint8]()
+            var r_f32 = in_tile.load[width=simd_width, alignment=align](
+                Coord(row, col, 0)
+            ).cast[.float32]()
+            var g_f32 = in_tile.load[width=simd_width, alignment=align](
+                Coord(row, col, 1)
+            ).cast[.float32]()
+            var b_f32 = in_tile.load[width=simd_width, alignment=align](
+                Coord(row, col, 2)
+            ).cast[.float32]()
 
             var gray_f32 = 0.21 * r_f32 + 0.71 * g_f32 + 0.07 * b_f32
 
-            return min(gray_f32, 255).cast[.uint8]()
+            out_tile.store[
+                width=simd_width,
+                alignment=min(
+                    type_of(img_out).alignment, element_alignment * align
+                ),
+            ](idx, min(gray_f32, 255).cast[.uint8]())
 
-        foreach[target=target, simd_width=1](color_to_grayscale, img_out, ctx)
+        elementwise[simd_width=1](color_to_grayscale, img_out.shape(), ctx)
 
 
 @register("myadd")
 struct MyAdd:
     @staticmethod
     def execute[
-        type: DType, rank: Int, target: StaticString
+        target: StaticString
     ](
-        C: OutputTensor[dtype=type, rank=rank, ...],
-        A: InputTensor[dtype=type, rank=rank, ...],
-        B: InputTensor[dtype=type, rank=rank, ...],
+        C: Some[Output & Tensor],
+        A: Some[Input & Tensor],
+        B: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(C), TileTensorable)
+        comptime assert conforms_to(type_of(A), TileTensorable)
+        comptime assert conforms_to(type_of(B), TileTensorable)
+        comptime type = type_of(C).dtype
+        comptime assert type_of(A).dtype == type
+        comptime assert type_of(B).dtype == type
+        comptime assert type_of(A).rank == type_of(C).rank
+        comptime assert type_of(B).rank == type_of(C).rank
+        var c_tile = C.to_tile_tensor[type]()
+        var a_tile = A.to_tile_tensor[type]().as_imm()
+        var b_tile = B.to_tile_tensor[type]().as_imm()
+
         @inline(.always)
         def doit[
-            simd_width: Int
-        ](idx: Coord) {var} -> SIMD[C.dtype, simd_width]:
-            var a = A.load[simd_width](idx)
-            var b = B.load[simd_width](idx)
-            return a + b
+            simd_width: Int, element_alignment: Int = 1
+        ](idx: Coord) {var c_tile, var a_tile, var b_tile}:
+            var a = a_tile.load[width=simd_width, alignment=align_of[type]()](
+                idx
+            )
+            var b = b_tile.load[width=simd_width, alignment=align_of[type]()](
+                idx
+            )
+            c_tile.store[
+                width=simd_width,
+                alignment=min(
+                    type_of(C).alignment, element_alignment * align_of[type]()
+                ),
+            ](idx, a + b)
 
-        foreach[target=target](doit, C, ctx)
+        elementwise[simd_width=get_kernel_simd_width[type, target]()](
+            doit, C.shape(), ctx
+        )
 
 
 @register("parameter_increment")
 struct ParameterIncrement:
     @staticmethod
     def execute[
-        type: DType, rank: Int, increment: Int, target: StaticString
+        increment: Int, target: StaticString
     ](
-        B: OutputTensor[dtype=type, rank=rank, ...],
-        A: InputTensor[dtype=type, rank=rank, ...],
+        B: Some[Output & Tensor],
+        A: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(B), TileTensorable)
+        comptime assert conforms_to(type_of(A), TileTensorable)
+        comptime type = type_of(B).dtype
+        comptime assert type_of(A).dtype == type
+        comptime assert type_of(A).rank == type_of(B).rank
+        var b_tile = B.to_tile_tensor[type]()
+        var a_tile = A.to_tile_tensor[type]().as_imm()
+
         @inline(.always)
         def doit[
-            simd_width: Int
-        ](idx: Coord) {var} -> SIMD[B.dtype, simd_width]:
-            var a = A.load[simd_width](idx)
-            return a + type_of(a)(increment)
+            simd_width: Int, element_alignment: Int = 1
+        ](idx: Coord) {var b_tile, var a_tile}:
+            var a = a_tile.load[width=simd_width, alignment=align_of[type]()](
+                idx
+            )
+            b_tile.store[
+                width=simd_width,
+                alignment=min(
+                    type_of(B).alignment, element_alignment * align_of[type]()
+                ),
+            ](idx, a + type_of(a)(increment))
 
-        foreach[target=target](doit, B, ctx)
+        elementwise[simd_width=get_kernel_simd_width[type, target]()](
+            doit, B.shape(), ctx
+        )
 
 
 @register("scalar_add")
@@ -104,12 +168,11 @@ struct ScalarAdd:
     @staticmethod
     def execute[
         dtype: DType,
-    ](
-        C: OutputTensor[dtype=dtype, rank=1, ...],
-        A: Scalar[dtype],
-        B: Scalar[dtype],
-    ) raises:
-        C.store((0,), A + B)
+    ](C: Some[Output & Tensor], A: Scalar[dtype], B: Scalar[dtype],) raises:
+        comptime assert conforms_to(type_of(C), TileTensorable)
+        comptime assert type_of(C).dtype == dtype
+        comptime assert type_of(C).rank == 1
+        C.to_tile_tensor[dtype]().store[width=1](Coord(0), A + B)
 
 
 @register("unsupported_type_op")
