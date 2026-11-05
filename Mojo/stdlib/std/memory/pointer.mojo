@@ -599,7 +599,7 @@ struct Pointer[
     def __init__(
         out self,
         *,
-        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.T,
+        ref[Self.origin, Self.address_space] to: Self.T,
     ):
         """Constructs a Pointer from a reference to a value.
 
