@@ -715,7 +715,7 @@ def map[
 
     ```mojo
     var l = [1, 2, 3]
-    var m = map[lambda (x: Int) -> Int: x + 1](l)
+    var m = map(l, lambda (x: Int) -> Int: x + 1)
 
     # outputs:
     # 2
