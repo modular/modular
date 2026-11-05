@@ -54,6 +54,7 @@ struct object_creator;
 
 namespace mlir {
 class Operation;
+class PassManager;
 } // namespace mlir
 
 namespace M::KGEN {
@@ -178,6 +179,16 @@ public:
   virtual void preprocessGenerator(GeneratorOp entry, GeneratorOp source,
                                    FuncSymbolAttr symbol,
                                    mlir::ModuleOp module) const;
+
+  /// Appends the target's whole post-elaboration pipeline to `pm` and returns
+  /// true. A target that returns false gets the default pipeline instead. A
+  /// target pipeline replaces the default entirely, so it must include the
+  /// generic optimizations.
+  virtual bool
+  buildPostElaborationPipeline(mlir::PassManager &pm,
+                               const CompilationOptions &options) const {
+    return false;
+  }
 
   virtual SplitStrategy
   splitStrategy(const CompilationOptions &options) const = 0;
