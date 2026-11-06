@@ -491,8 +491,8 @@ def MOGG_FuncOp : MOGG_Op<"func", [
                               "::M::MOGG::DispatchKind::Immediate">:$dispatch,
     DefaultValuedAttr<ArrayAttr, "{}">:$constantResources,
     MOGG_ABIKindAttr:$abi,
-    // Execution-device label for each kernel's `target` parameter. A string
-    // rather than `#M.device_ref` because only the label matters.
+    // Execution-device label of the stub. A string rather than `#M.device_ref`
+    // because only the label matters.
     StrAttr:$device,
     OptionalAttr<ArrayAttr>:$trait_stub_buffer_capture,
     OptionalAttr<ArrayAttr>:$trait_stub_arg_bounds,

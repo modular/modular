@@ -17,7 +17,6 @@ from std.collections.string import StaticString
 from std.math import ceildiv, iota
 from std.ffi import external_call
 from max.gpu import global_idx
-from max.gpu.host.info import is_cpu
 from std.sys.info import simd_width_of
 from max.algorithm.functional import elementwise
 import extensibility
@@ -893,13 +892,13 @@ struct TraitTensorTupleSum:
     def execute[
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
         bias: Some[Input & TileTensorable],
+        ctx: DeviceContext,
     ) raises:
-        comptime assert is_cpu[target]()
+        comptime assert ctx.target.is_cpu()
         comptime assert conforms_to(type_of(z), TileTensorable)
         comptime assert conforms_to(type_of(bias), TileTensorable)
         var zt = z.to_tile_tensor()
@@ -928,14 +927,14 @@ struct TraitTensorTupleSumTail:
         Outs: TypeList[Trait=Output & TileTensorable, ...],
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         copies: TensorTuple[*Outs],
         bias: Some[Input & TileTensorable],
         inputs: TensorTuple[*Ins],
+        ctx: DeviceContext,
     ) raises:
-        comptime assert is_cpu[target]()
+        comptime assert ctx.target.is_cpu()
         comptime assert conforms_to(type_of(z), TileTensorable)
         comptime assert conforms_to(type_of(bias), TileTensorable)
         var zt = z.to_tile_tensor()
@@ -2480,12 +2479,13 @@ struct KernelWithNoTarget:
 struct BasicTarget:
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString
+        dtype: DType
     ](
         outp: OutputTensor[dtype=dtype, ...],
         x: InputTensor[dtype=dtype, ...],
+        ctx: DeviceContext,
     ) raises:
-        print("hello from kernel on", target)
+        print("hello from kernel on", ctx.target.device_kind_label())
 
 
 struct MyCustomScalarReg[dtype: DType](ImplicitlyCopyable, RegisterPassable):
@@ -2878,12 +2878,14 @@ def custom_op_with_mixed_bound_shape_func_shape(
     return IndexList[2](Int(num_rows), cols[1])
 
 
-@extensibility.register("custom_op_with_static_string_params")
-struct CustomOpWithStaticStringParams:
+# Declares the retired `target` parameter, which the graph compiler rejects.
+@extensibility.register("kernel_with_target_param")
+struct KernelWithTargetParam:
     @staticmethod
-    def execute[target: StaticString, foo: StaticString]():
-        print(target)
-        print(foo)
+    def execute[
+        target: StaticString
+    ](output: Some[Output & Tensor], x: Some[Input & Tensor]):
+        pass
 
 
 comptime _WrapperLayout = Layout[

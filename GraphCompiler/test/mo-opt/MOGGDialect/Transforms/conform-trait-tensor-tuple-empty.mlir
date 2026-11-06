@@ -23,7 +23,7 @@
 // CHECK: mogg.call.opaque @{{.*}}TraitTensorTupleSum inputs(%[[INS]], %[[BIAS]] : !mogg.tuple, !mogg.tensor)
 
 // MOJO: var [[INS:[a-z0-9_]+]] = extensibility.TensorTuple()
-// MOJO: TraitTensorTupleSum.execute[target = "cpu"]({{[a-z0-9_]+}}, [[INS]], {{[a-z0-9_]+}})
+// MOJO: TraitTensorTupleSum.execute({{[a-z0-9_]+}}, [[INS]], {{[a-z0-9_]+}}, {{[a-z0-9_]+}})
 mo.graph @trait_tensor_tuple_empty_graph(%bias: !mo.tensor<[2], f32>) -> !mo.tensor<[2], f32> {
   %z = mo.custom [symbol = "trait_tensor_tuple_sum", device = #M.device_ref<"cpu", 0>] (%bias) : (
     !mo.tensor<[2], f32>
@@ -44,7 +44,7 @@ mo.graph @trait_tensor_tuple_empty_graph(%bias: !mo.tensor<[2], f32>) -> !mo.ten
 
 // CSE merges the two empty tuples, so emit passes one value in both positions.
 // MOJO: var [[EMPTY:[a-z0-9_]+]] = extensibility.TensorTuple()
-// MOJO: TraitTensorTupleSumTail.execute[target = "cpu"]({{[a-z0-9_]+}}, [[EMPTY]], {{[a-z0-9_]+}}, [[EMPTY]])
+// MOJO: TraitTensorTupleSumTail.execute({{[a-z0-9_]+}}, [[EMPTY]], {{[a-z0-9_]+}}, [[EMPTY]], {{[a-z0-9_]+}})
 mo.graph @trait_tensor_tuple_empty_tail_graph(%bias: !mo.tensor<[2], f32>) -> !mo.tensor<[2], f32> {
   %z = mo.custom [symbol = "trait_tensor_tuple_sum_tail", device = #M.device_ref<"cpu", 0>] (%bias) : (
     !mo.tensor<[2], f32>

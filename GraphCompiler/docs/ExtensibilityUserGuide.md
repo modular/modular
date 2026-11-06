@@ -16,7 +16,6 @@ struct BottomK:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
     ](
         values: OutputTensor[dtype=dtype, rank=rank, ...],
         indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
@@ -26,7 +25,7 @@ struct BottomK:
         sorted: Scalar[DType.bool],
         ctx: DeviceContext,
     ) raises:
-        top_k[largest=False, target=target](
+        top_k[largest=False](
             input.to_tile_tensor[DType.int64](),
             Int(k),
             Int(axis),
@@ -213,9 +212,12 @@ and in our stack).
 
 We have a few “special parameters” the compiler always knows how to handle:
 
-- **target: StaticString** which might be “cpu” or “gpu” and can be used for
-specializing code for devices. This corresponds to the **device annotated on
-the associated MO op.** `mo.add(...) {device = **gpu:0**}`
+- **Device target:** a kernel that needs to specialize for a device takes a
+`ctx: DeviceContext` argument and reads `ctx.target`, for example
+`ctx.target.is_gpu()`. The context corresponds to the **device annotated on the
+associated MO op.** `mo.add(...) {device = **gpu:0**}`. The former
+`target: StaticString` parameter is no longer supported, and the graph compiler
+reports an error for a kernel that declares it.
 - **synchronous: Bool** if the graph compiler chooses to run this kernel
 synchronously, this will be true. The heuristic meaning behind this being true
 is “there is not a lot of computation.” This is often used to dispatch to a
@@ -232,9 +234,7 @@ The `ManagedTensorSlice` provides aliases for the commonly accessed compile-time
 information of each tensor.
 
 ```python
-def execute[
-    target: StaticString
-](
+def execute(
     output: OutputTensor,
     input: InputTensor[dtype=output.dtype, rank=output.rank],
     ctx: DeviceContext,
@@ -292,7 +292,7 @@ struct TensorMutatingOperation:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString
+        dtype: DType
     ](
         #These are all "inputs" to the graph-api operation
         mutable_input: MutableInputTensor[dtype=dtype, rank=6],
@@ -317,7 +317,7 @@ struct Struct_paged_kv_cache_collection_h8_d128_bshd:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString
+        dtype: DType
     ](
         blocks: InputTensor[dtype, 6],
         cache_lengths: InputTensor[DType.uint32, 1],
