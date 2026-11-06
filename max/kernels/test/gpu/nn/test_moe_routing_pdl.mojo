@@ -37,6 +37,7 @@ kernels are not probed.
 """
 
 from std.math import ceildiv
+from std.os import getenv
 from std.sys import size_of
 from std.testing import assert_equal, assert_true
 from std.time import global_perf_counter_ns, sleep
@@ -838,6 +839,16 @@ def stamp_around_wait(times: MutPointer[UInt64, MutUntrackedOrigin]):
     times[1] = after
 
 
+def _redzone_allocator() -> Bool:
+    """Whether `MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds` is set.
+
+    It reads the redzones back and synchronizes the stream on every free, so
+    a free between two launches drops the second launch's programmatic
+    dependency on the first, and an early release cannot be observed.
+    """
+    return "out-of-bounds" in getenv("MODULAR_DEBUG_DEVICE_ALLOCATOR")
+
+
 def test_indices_release_on_entry(ctx: DeviceContext) raises:
     """A grid behind `moe_create_indices` is resident while its scan runs.
 
@@ -873,6 +884,9 @@ def test_indices_release_on_entry(ctx: DeviceContext) raises:
     sort(gaps)
     var gap_ns = gaps[len(gaps) // 2]
     print("  indices start-to-release gap (ns):", gap_ns)
+    if _redzone_allocator():
+        print("  skipping the gap check: the redzone allocator syncs on free")
+        return
     assert_true(
         gap_ns > 50_000,
         String("probe did not start early: gap ", gap_ns, " ns"),
