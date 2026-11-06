@@ -113,10 +113,12 @@ modular_shared_library(
         "include/AsyncRT/ForwardDecls.h",
     ],
     dynamic_deps = [
-        "@llvm-project//clang:clangBasic",
         "@llvm-project//llvm:LLVM",
         "//Support:Globals",
-    ],
+    ] + select({
+        "//bazel/internal:profiling_off": [],
+        "//conditions:default": ["@llvm-project//clang:clangBasic"],
+    }),
     exports_filter = [
         "//Support:ExternalProfilerAnnotationHostGlue",
         "//Support:ProfilerHostGlue",
@@ -145,7 +147,6 @@ modular_shared_library(
         "//Support:Configuration",
         "//Support:DeviceSpecs",
         "//Support:Filesystem",
-        "//Support:MArchTargetMinimal",
         "//Support:ProfilingRanges",
         "//Support:Threading",
         "//Support:TimeProfiler",
@@ -156,7 +157,11 @@ modular_shared_library(
         "@abseil-cpp//absl/strings:cord",
         "@abseil-cpp//absl/strings:str_format",
         "@rules_cc//cc/runfiles",
-    ],
+    ] + select({
+        # TimeProfiler links it only in profiling builds.
+        "//bazel/internal:profiling_off": [],
+        "//conditions:default": ["//Support:MArchTargetMinimal"],
+    }),
     deps = [
         ":Support",
         "//Support:ADT",

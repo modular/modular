@@ -19,7 +19,11 @@
 #include "Support/Globals/Globals.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+// Only profiling builds report the host in the trace header, and only they
+// depend on MArchTargetMinimal, which keeps clang out of the runtime.
+#if MODULAR_ASYNCRT_MAX_PROFILING_LEVEL > 0
 #include "Support/MArchTarget/Host.h"
+#endif
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -501,7 +505,8 @@ void ProfilingDetail::GlobalProfilerContext::writeJsonTrace(
   jsonOS.objectEnd();
   jsonOS.attributeEnd();
 
-  if constexpr (kProfilingEnabled) {
+#if MODULAR_ASYNCRT_MAX_PROFILING_LEVEL > 0
+  {
     // Emit the host machine info, if we can retrieve
     // it.
     auto hostMachineInfoOr = getHostMachineInfo();
@@ -514,6 +519,7 @@ void ProfilingDetail::GlobalProfilerContext::writeJsonTrace(
       jsonOS.attributeEnd();
     }
   }
+#endif
 
   jsonOS.objectEnd();
   os.flush();

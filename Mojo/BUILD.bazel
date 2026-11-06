@@ -1126,6 +1126,7 @@ modular_cc_library(
         "//Support:ProfilingRanges",
         "//Support:SymbolExport",
         "//Support:TimeProfiler",
+        "@llvm-project//llvm:CodeGen",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@xxhash",
@@ -1668,6 +1669,7 @@ modular_shared_library(
     ),
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
     dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",

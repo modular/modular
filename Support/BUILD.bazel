@@ -477,11 +477,14 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Globals.static",
-        ":MArchTargetMinimal",
         ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:Support",
-    ],
+    ] + select({
+        # Profiling builds write the host's description into the trace header.
+        "//bazel/internal:profiling_off": [],
+        "//conditions:default": [":MArchTargetMinimal"],
+    }),
 )
 
 # Minimal range-annotation and profiler-control API: per-copy
@@ -725,10 +728,6 @@ modular_cc_library(
         ":SymbolExport",
         ":Threading",
         "@llvm-project//clang:basic",
-        "@llvm-project//llvm:AllTargetsAsmParsers",
-        "@llvm-project//llvm:AllTargetsCodeGens",
-        "@llvm-project//llvm:AllTargetsDisassemblers",
-        "@llvm-project//llvm:AllTargetsMCAs",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
     ],

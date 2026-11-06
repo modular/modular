@@ -1741,6 +1741,7 @@ modular_shared_library(
     ]),
     hdrs = glob(["include/GraphCompiler/MGPDialect/RT/*.h"]),
     dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/DeviceContext",
@@ -1788,7 +1789,11 @@ modular_shared_library(
         "//Support:MDialect",
         "//Support:Telemetry",
         "//Support:URI",
-    ],
+    ] + select({
+        # Profiling builds link it into RuntimeGlobals, which exports it.
+        "//bazel/internal:profiling_off": ["//Support:MArchTargetMinimal"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":Support",
         "//Init",
