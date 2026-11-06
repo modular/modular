@@ -809,48 +809,82 @@ struct Conv2dResidualAdd:
         pad_right: Int,
         has_bias: Bool,
     ](
-        output: FusedOutputTensor[...],
-        input: InputTensor[dtype=output.dtype, rank=4, ...],
-        filter: InputTensor[rank=4, ...],
-        source: InputTensor[dtype=output.dtype, rank=4, ...],
-        bias: InputTensor[dtype=output.dtype, rank=1, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Tensor],
+        filter: Some[Input & Tensor],
+        source: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
+        comptime assert conforms_to(type_of(source), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        comptime assert type_of(output).rank == 4
+        comptime assert type_of(input).rank == 4
+        comptime assert type_of(filter).rank == 4
+        comptime assert type_of(source).rank == 4
+        comptime assert type_of(bias).rank == 1
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(source).dtype == dtype
+        comptime assert type_of(bias).dtype == dtype
+
+        # The epilogue runs in the kernels `conv_gpu` launches, so it
+        # copy-captures the access-enabled view rather than the host proxy.
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
+        var bias_tt = bias.to_tile_tensor[dtype]()
+
         @inline(.always)
         def output_fn[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var output, var bias}:
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var out_view, var bias_tt}:
             var result = val
 
             comptime if has_bias:
                 var c_idx = Int(coords[coords.rank - 1])
-                var bias_vec = (
-                    bias.unsafe_ptr()
-                    .unsafe_offset(c_idx)
-                    .unsafe_load[width=_width]()
-                )
+                var bias_vec = bias_tt.ptr.unsafe_offset(c_idx).unsafe_load[
+                    width=_width
+                ]()
                 result = val + bias_vec.cast[_dtype]()
 
-            output._lambda_store[width=_width, element_alignment=_alignment](
-                coords, rebind[SIMD[output.dtype, _width]](result)
+            out_view.store[width=Int(_width), element_alignment=_alignment](
+                coords,
+                rebind[SIMD[type_of(out_view).dtype, Int(_width)]](result),
             )
 
         comptime assert (
             not ctx.target.is_cpu()
         ), "conv2d_residual_add is only supported on GPU"
 
-        var input_tt = input.to_tile_tensor[.int64]()
-        var filter_tt = filter.to_tile_tensor[.int64]()
-        var output_tt = output.to_tile_tensor[.int64]()
+        # `conv_gpu` takes its input as mutable but only reads it.
+        var input_imm = input.to_tile_tensor[dtype]()
+        var input_tt = TileTensor(
+            input_imm.ptr.unsafe_mut_cast[True](), input_imm.layout
+        )
+        var filter_tt = filter.to_tile_tensor()
+
+        # TODO(KERN-3840): `output_fn` owns every output store, so `conv_gpu`
+        # gets only the output's shape, over a null pointer it never
+        # dereferences. Pass the output layout instead once the store-epilogue
+        # path down the call stack takes one.
+        var output_ptr: Optional[
+            MutPointer[Scalar[dtype], MutUntrackedOrigin]
+        ] = None
+        var output_tt = TileTensor(
+            output_ptr._unsafe_nullable(), row_major(output.shape())
+        )
 
         var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
         var stride_tuple = IndexList[2](stride_h, stride_w)
         var dilation_tuple = IndexList[2](1, 1)
 
         conv_gpu[
-            input.dtype,
-            filter.dtype,
-            output.dtype,
+            dtype,
+            type_of(filter).dtype,
+            dtype,
             has_epilogue_fn=True,
             filter_is_fcrs=True,
             has_residual=True,
@@ -863,7 +897,9 @@ struct Conv2dResidualAdd:
             pad_tuple,
             1,  # num_groups
             ctx,
-            source.unsafe_ptr().as_unsafe_any_origin(),
+            source.to_tile_tensor[dtype]()
+            .ptr.unsafe_mut_cast[True]()
+            .as_unsafe_any_origin(),
             Float32(1.0),  # beta
             output_fn,
         )
