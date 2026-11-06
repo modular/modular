@@ -646,10 +646,29 @@ def grouped_matmul_mxfp8_dispatch[
         and (_decode_K == 4096 or _decode_K == 2048)
     ) else 1
 
+    # Large-prefill k-tiles per pipeline stage for DeepSeek-V4.1's W4A8
+    # experts (E2M1 weights, MXFP8 tokens). Two k-tiles a stage halve the
+    # stage barriers and scale handoffs of the auto-staged loop; the output
+    # is bit-identical. B200, 96 experts, mma_bn 128, cta_group 2, two
+    # remote runs, lognormal routing around 457 rows an expert:
+    #   gate_up N=4608 K=5120: 1.064 -> 0.895 ms, 1.004 -> 0.946 ms
+    #   down    N=5120 K=2304: 0.570 -> 0.454 ms, 0.507 -> 0.483 ms
+    # and 5-16% at 500 and 1,000 uniform rows an expert. A 256-token tile
+    # is faster still on the plain GEMM but the fused SwiGLU epilogue does
+    # not build at mma_bn 256.
+    comptime _b_N = type_of(b).static_shape[1]
+    comptime _prefill_k_group = 2 if (
+        is_w4a8_operand_pair[a.dtype, b.dtype]()
+        and (
+            (_b_N == 4608 and _decode_K == 5120)
+            or (_b_N == 5120 and _decode_K == 2304)
+        )
+    ) else 1
+
     # Nested forwarder: the MXFP8 regimes differ in (mma_bn, cta_group) and
-    # -- decode only -- pipeline stages and k-group; AB_swapped, scaling_kind,
-    # and all the other forwarding comptime params + the 13 runtime args are
-    # identical.
+    # -- decode only -- pipeline stages, plus per-shape k-group; AB_swapped,
+    # scaling_kind, and all the other forwarding comptime params + the 13
+    # runtime args are identical.
     # Factor the call here and select via the same ordered (upper-bound,
     # config) table as the NVFP4 path. Stages travel per-row as an Int with
     # -1 = auto (the classifier's pick), mirroring the NVFP4 table sentinel.
@@ -690,14 +709,15 @@ def grouped_matmul_mxfp8_dispatch[
         )
 
     # (upper_avg_m, mma_bn, cta_group, stages_int, k_group). upper_avg_m < 0
-    # = unbounded (large prefill). Only the decode row carries stage and
-    # k-group overrides; prefill rows use -1 (= auto) and 1. First-match-and-
-    # return reproduces the original decode / small-prefill / large-prefill
-    # cascade exactly.
+    # = unbounded (large prefill). Only the decode row carries a stage
+    # override; prefill rows use -1 (= auto). The decode and large-prefill
+    # rows carry shape-scoped k-group overrides; all others use 1.
+    # First-match-and-return reproduces the original decode / small-prefill /
+    # large-prefill cascade exactly.
     comptime regimes = [
         (DECODE_AVG_M, 8, 1, _decode_stages, _decode_k_group),
         (SMALL_PREFILL_AVG_M, 64, 2, -1, 1),
-        (-1, 128, 2, -1, 1),
+        (-1, 128, 2, -1, _prefill_k_group),
     ]
     comptime for r in regimes:
         comptime _s = Optional[Int](r[3]) if r[3] >= 0 else Optional[Int](None)
