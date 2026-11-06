@@ -37,12 +37,16 @@ from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
+    CheckpointRole,
     KVCacheConfig,
     MemoryPlan,
     ModelInputs,
     ModuleV3PipelineModelWithKVCache,
     PipelineConfig,
+    WeightEntry,
+    WeightTransform,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
@@ -506,14 +510,12 @@ class MiMoV2ModuleV3Model(
     ) -> dict[str, Any]:
         """Returns the weights the built module compiles with."""
         del config
-        assert context.adapter is not None
-        pipeline_config = context.pipeline_config
+        assert isinstance(context.adapter, WeightTransform)
         return context.adapter(
             text_model_weights(
-                pipeline_config.model.huggingface_weight_repo, context.weights
-            ),
-            huggingface_config=pipeline_config.model.huggingface_config,
-            pipeline_config=pipeline_config,
+                context.pipeline_config.model.huggingface_weight_repo,
+                context.weights,
+            )
         )
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> MiMoV2Config:
@@ -566,18 +568,21 @@ class MiMoV2ModuleV3Model(
     def _load_state_dict(self) -> dict[str, Any]:
         """Adapts the text model's tensors, :func:`text_model_weights`.
 
-        The adapter must see exactly those to prove every one is consumed or
-        ignored.
+        The rules must see exactly those to prove every one is consumed or
+        ignored, and they name the decoder's weights.
         """
-        assert self.adapter is not None
+        assert isinstance(self.adapter, WeightTransform)
         self._checkpoint = self.adapter(
             text_model_weights(
                 self.pipeline_config.model.huggingface_weight_repo,
                 self.weights,
-            ),
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
+            )
         )
+        self.weight_naming = {
+            GraphRole.DECODER: (
+                WeightEntry(CheckpointRole.TARGET, self.adapter),
+            )
+        }
         return self._checkpoint
 
     def _instantiate_module(self, model_config: MiMoV2Config) -> MiMoV2:
