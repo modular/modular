@@ -19,6 +19,7 @@ This file contains the kernels for Expert Parallelism (EP) communication.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Final
 
 from max.driver import accelerator_api
@@ -46,6 +47,21 @@ NVFP4_MN_GROUP_SIZE = 128
 # stream; binding the shared expert to a side stream lets it run concurrently
 # with the routed-expert dispatch/combine.
 _SHARED_EXPERT_STREAM_ID = 1
+
+
+@dataclass(frozen=True)
+class ExpertLoad:
+    """The EPLB expert-load tally a dispatch adds its routed-token counts to.
+
+    Passing one selects the dispatch op's ``.expert_load`` form.
+    """
+
+    tally: BufferValue
+    """``[num_moe_layers, n_local_experts]`` uint64 running totals on the
+    dispatch's device."""
+
+    layer_idx: TensorValue
+    """int32 ``[1]`` index of this MoE layer's row in ``tally``."""
 
 
 def _reject_dyn_global_scales(config: EPConfig, caller: str) -> None:
@@ -500,6 +516,7 @@ def call_ep_dispatch_wait(
     recv_count_ptrs: TensorValue,
     config: EPConfig,
     num_tokens: Dim | None = None,
+    expert_load: ExpertLoad | None = None,
 ) -> tuple[TensorValue, ...]:
     """Wait for Expert Parallelism token dispatch to complete.
 
@@ -521,6 +538,8 @@ def call_ep_dispatch_wait(
         config: EP configuration.
         num_tokens: Number of input tokens, when known at graph build time.
             Enables the decode fast-path grid sizing.
+        expert_load: When given, also adds each local expert's routed-token
+            count to the tally row of this layer.
 
     Returns:
         A tuple containing:
@@ -586,6 +605,10 @@ def call_ep_dispatch_wait(
             raise ValueError(
                 f"Unsupported dispatch dtype: {config.dispatch_dtype}"
             )
+
+    if expert_load is not None:
+        op_name += ".expert_load"
+        input_vals += [expert_load.tally, expert_load.layer_idx]
 
     results = ops.inplace_custom(
         op_name,
@@ -1110,6 +1133,7 @@ def call_ep_dispatch(
     recv_count_ptrs: TensorValue,
     config: EPConfig,
     input_scales: TensorValue | None = None,
+    expert_load: ExpertLoad | None = None,
 ) -> tuple[TensorValue, ...]:
     """Execute fused Expert Parallelism token dispatch (async + wait).
 
@@ -1140,6 +1164,8 @@ def call_ep_dispatch(
         input_scales: Optional input scales tensor. Needed for NVFP4 dispatch,
             unless ``config.nvfp4_dyn_global_scales`` is set, in which case it
             is ignored. Shape: (1,)
+        expert_load: When given, also adds each local expert's routed-token
+            count to the tally row of this layer.
 
     Returns:
         A tuple containing:
@@ -1213,6 +1239,10 @@ def call_ep_dispatch(
             raise ValueError(
                 f"Unsupported dispatch dtype: {config.dispatch_dtype}"
             )
+
+    if expert_load is not None:
+        op_name += ".expert_load"
+        input_vals += [expert_load.tally, expert_load.layer_idx]
 
     results = ops.inplace_custom(
         op_name,

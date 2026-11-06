@@ -179,6 +179,13 @@ class EPConfig:
     the EPLB remap. Only valid for a placement that is a pure permutation
     (``max_replicas == 1``)."""
 
+    eplb_count_expert_load: bool = False
+    """When true, EPBatchManager exposes one ``[num_moe_layers,
+    n_local_experts]`` uint64 tally per GPU and every dispatch adds each local
+    expert slot's routed-token count to the row of its MoE layer. The tally is
+    a running total the engine reads and differences on the host. Independent
+    of ``eplb_enabled``: a static placement can be profiled too."""
+
     eplb_phy2log_plan: Any = None
     """Optional pre-computed EPLB plan (phy2log numpy array, shape
     [num_moe_layers, num_phy]). When non-None, EPBatchManager picks it
@@ -245,6 +252,11 @@ class EPConfig:
     def __post_init__(self):
         if self.num_logical_experts == 0:
             self.num_logical_experts = self.n_experts
+
+        if self.eplb_count_expert_load and self.num_moe_layers < 1:
+            raise ValueError(
+                "eplb_count_expert_load needs num_moe_layers to size the tally"
+            )
 
         if self.dispatch_dtype != DType.bfloat16:
             if self.dispatch_quant_config is None:

@@ -989,8 +989,11 @@ class DeepseekV3(Module):
                 if eplb_counter_buffers_per_layer is not None
                 else []
             )
-            if self.config.ep_config is not None and getattr(
-                self.config.ep_config, "eplb_enabled", False
+            if self.config.ep_config is not None and (
+                getattr(self.config.ep_config, "eplb_enabled", False)
+                or getattr(
+                    self.config.ep_config, "eplb_count_expert_load", False
+                )
             ):
                 values.append(
                     [

@@ -110,6 +110,12 @@ def _compute_shared_experts(
     ]
 
 
+def _layer_idx(
+    layer_idx_per_device: list[TensorValue] | None, device_id: int
+) -> TensorValue | None:
+    return layer_idx_per_device[device_id] if layer_idx_per_device else None
+
+
 def _ep_forward(
     moe_shards: list[MoE],
     xs: list[TensorValue],
@@ -273,6 +279,12 @@ def _ep_forward(
     if batch_mgr.config.fused_moe_ready and all(
         shard._can_fuse_megaffn_ep() for shard in moe_shards
     ):
+        if batch_mgr.config.eplb_count_expert_load:
+            # TODO(MAX-922): count in the fused EP MoE's own arrival wait.
+            raise NotImplementedError(
+                "eplb_count_expert_load does not count the fused EP MoE"
+                " dispatch yet"
+            )
         fused_outputs: list[TensorValue] = []
         for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
             shared = shard.shared_experts(x) if has_unfused_shared else None
@@ -297,6 +309,7 @@ def _ep_forward(
                 all_topk_ids[i],
                 device_ids[i],
                 input_scales=scales[i] if scales is not None else None,
+                layer_idx=_layer_idx(layer_idx_per_device, device_ids[i]),
             )
             all_dispatch_results.append(dispatch_result)
         if has_unfused_shared:
@@ -324,7 +337,10 @@ def _ep_forward(
             moe_shards, xs, range(len(moe_shards))
         )
         all_dispatch_results = [
-            shard.ep_batch_manager.ep_dispatch_wait(device_ids[i])
+            shard.ep_batch_manager.ep_dispatch_wait(
+                device_ids[i],
+                _layer_idx(layer_idx_per_device, device_ids[i]),
+            )
             for i, shard in enumerate(moe_shards)
         ]
     else:
@@ -343,7 +359,11 @@ def _ep_forward(
             )
         # Multi-device dispatch (single op).
         all_dispatch_results = batch_mgr.ep_dispatch_all(
-            xs, all_topk_ids, device_ids, input_scales=scales
+            xs,
+            all_topk_ids,
+            device_ids,
+            input_scales=scales,
+            layer_idx_per_device=layer_idx_per_device,
         )
         if has_unfused_shared and batch_mgr.config.nvfp4_dyn_global_scales:
             if dyn_shared_side is None:
