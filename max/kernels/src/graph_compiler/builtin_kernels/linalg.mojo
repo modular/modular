@@ -265,6 +265,8 @@ struct MatmulCPU:
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert not (packed_b and transpose_b), (
             "transpose_b and b_packed cannot both be true because"
             " pre-packing transposes B"
@@ -346,6 +348,8 @@ struct MatmulCPU:
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert not (packed_b and transpose_b), (
             "transpose_b and b_packed cannot both be true because"
             " pre-packing transposes B"
@@ -391,6 +395,8 @@ struct MatmulGPU:
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         # TODO(KERN-3837): The store-epilogue matmul has no output buffer to
         # write, yet every GPU matmul interface on its path still takes a
         # `c: TileTensor`, so the store branch below hands it a tile over a
@@ -490,6 +496,8 @@ struct MatmulGPU:
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises where not conforms_to(type_of(c), Fused):
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert not packed_b, "packed B is only supported on CPU"
         matmul[
             transpose_a=False,
@@ -520,6 +528,8 @@ struct BatchMatmulCPU:
         b: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         @inline(.always)
         def output_fn[
             _type: DType, _width: SIMDLength, *, alignment: Int
@@ -575,6 +585,8 @@ struct BatchMatmulGPU:
         b: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         @inline(.always)
         def output_fn[
             _type: DType, _width: SIMDLength, *, alignment: Int
@@ -1814,6 +1826,8 @@ struct Struct_matmul_dynamic_block_scaled:
         tensor_sf: Float32,
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert is_gpu[target](), (
             "dynamic block scaled matmul only support GPUs with native"
             " block scaled support"
@@ -2417,6 +2431,8 @@ struct MatmulDynamicScaledFloat8:
         b_scales: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
@@ -2466,6 +2482,8 @@ struct MatmulStaticScaledFloat8:
         weight_scale: Scalar[scale_type],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output_tensor), TileTensorable)
         comptime assert conforms_to(type_of(input_tensor), TileTensorable)
         comptime assert conforms_to(type_of(weight_tensor), TileTensorable)
@@ -2909,6 +2927,8 @@ struct Struct_router_gate_mixed_gemv:
             b: Weight `[N, K]` fp32 tensor (transpose_b layout).
             context: The device context.
         """
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
@@ -3054,6 +3074,8 @@ struct Struct_smallm_streaming_matmul:
             b: The same weight, row-major (the above-band fallback operand).
             context: The device context.
         """
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a_scratch), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)

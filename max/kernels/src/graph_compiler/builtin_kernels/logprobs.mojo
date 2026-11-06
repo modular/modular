@@ -235,6 +235,8 @@ struct LogProbabilitiesRagged:
             Error: If `lp_logits` and `lp_tokens` disagree on axis 0, or if
                 either output's axis 1 does not match `2**levels`.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var num_output_tokens = lp_logits.shape()[0]
         if lp_tokens.shape()[0] != num_output_tokens:
             raise Error("Mismatch in axis 0 of lp_logits and lp_tokens")

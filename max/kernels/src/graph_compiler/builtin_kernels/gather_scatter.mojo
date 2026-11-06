@@ -1591,6 +1591,8 @@ struct StaticBroadcastTo:
         output_shape: IndexList[out_rank],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
@@ -1651,6 +1653,8 @@ struct StaticReshape:
         shape: IndexList[output_rank],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var view_tensor = Self.input_view[output._static_shape_tuple](
             input, shape
         )
@@ -1756,6 +1760,8 @@ struct Transpose:
         permutations: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var view = Self.input_view[
             output._static_shape_tuple, static_permutations
         ](input, permutations)
@@ -1954,6 +1960,8 @@ struct Slice:
         steps: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var view_tensor = Self.input_view[
             output._static_shape_tuple, static_starts, static_steps
         ](input, starts, stops, steps)
@@ -2504,6 +2512,8 @@ struct IndexTensor:
         indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(data), TileTensorable)
         comptime assert conforms_to(type_of(indices), TileTensorable)

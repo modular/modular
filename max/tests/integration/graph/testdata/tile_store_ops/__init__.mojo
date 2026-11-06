@@ -160,6 +160,8 @@ struct RMSNormTileSM100:
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         # The tile programming model (`tile_based_fusion=True`) binds `output`
         # to `_FusedOutputTile`, and the selection filter routes the op to
         # this sm_100a registration. Naive, correctness-only GPU rms_norm on

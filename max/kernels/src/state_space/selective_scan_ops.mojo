@@ -79,6 +79,8 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         delta_bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime assert conforms_to(type_of(out_z), TileTensorable)
@@ -371,6 +373,8 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         C: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime assert conforms_to(type_of(u), TileTensorable)
@@ -614,6 +618,8 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         dt_bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(state_out), TileTensorable)
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(state_in), TileTensorable)

@@ -131,6 +131,8 @@ struct AvgPool:
         paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(filter), TileTensorable)
@@ -205,6 +207,8 @@ struct AvgPoolCeilModeTrue:
         paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(filter), TileTensorable)
@@ -276,6 +280,8 @@ struct PadConstant:
         constant: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(padding), TileTensorable)
@@ -355,6 +361,8 @@ struct PadRepeat:
         padding: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(padding), TileTensorable)
@@ -412,6 +420,8 @@ struct PadReflect:
         padding: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(padding), TileTensorable)

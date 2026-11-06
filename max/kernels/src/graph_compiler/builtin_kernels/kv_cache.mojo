@@ -1323,6 +1323,8 @@ struct Struct_kv_matmul_ragged_paged:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(weight), TileTensorable)
@@ -1382,6 +1384,8 @@ struct Struct_k_matmul_ragged_paged:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(weight), TileTensorable)

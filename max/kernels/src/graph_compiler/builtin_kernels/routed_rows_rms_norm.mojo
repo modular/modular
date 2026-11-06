@@ -84,6 +84,8 @@ struct RoutedRowsRMSNorm:
         Raises:
             Error: If the launch fails.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert is_gpu[
             target
         ](), "norm.routed_rows_rms_norm is GPU only"

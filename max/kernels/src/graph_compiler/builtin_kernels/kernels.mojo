@@ -289,6 +289,8 @@ struct Range:
         step: Scalar[dtype],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert type_of(output).dtype == dtype
         comptime assert type_of(output).rank == 1
 
@@ -517,6 +519,8 @@ struct MaxPool:
         paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(filter), TileTensorable)
@@ -602,6 +606,8 @@ struct MaxPoolCeilModeTrue:
         paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(filter), TileTensorable)
@@ -782,6 +788,8 @@ struct ROIAlign:
         sampling_ratio: Scalar,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(rois), TileTensorable)
@@ -1545,6 +1553,8 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(qkv), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1621,6 +1631,8 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(qkv), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1722,6 +1734,8 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         freqs_cis: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(start_pos), TileTensorable)
@@ -1815,6 +1829,8 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         position_ids: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(start_pos), TileTensorable)
@@ -2658,6 +2674,8 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(expert_indices), TileTensorable)
         comptime assert conforms_to(type_of(expert_weights), TileTensorable)
         comptime assert conforms_to(type_of(hidden), TileTensorable)
@@ -4593,6 +4611,8 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
         verify_width: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(recurrence_output), TileTensorable)
         comptime assert conforms_to(type_of(qkv_conv_output), TileTensorable)
         comptime assert conforms_to(type_of(decay_per_token), TileTensorable)
@@ -5016,6 +5036,8 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         xbc: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(y), TileTensorable)
         comptime assert conforms_to(type_of(A), TileTensorable)
         comptime assert conforms_to(type_of(D), TileTensorable)
@@ -5756,6 +5778,8 @@ struct CausalConv1DVarlenFwd[
         update_state: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(weight), TileTensorable)
         comptime assert conforms_to(type_of(bias), TileTensorable)
@@ -6024,6 +6048,8 @@ struct GatedGroupRMSNorm[group_size: Int]:
         eps: Float32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var n_rows = y.dim_size(0)
         var intermediate = y.dim_size(1)
         comptime gs = Self.group_size

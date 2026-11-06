@@ -1560,6 +1560,8 @@ struct Struct_fused_qkv_matmul_padded_paged:
         valid_lengths: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(weight), TileTensorable)
@@ -1624,6 +1626,8 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1689,6 +1693,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1760,6 +1766,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1832,6 +1840,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1944,6 +1954,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2032,6 +2044,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2123,6 +2137,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2210,6 +2226,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp6_amd:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2327,6 +2345,8 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(q_output), TileTensorable)
         comptime assert conforms_to(type_of(iq_output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
@@ -2475,6 +2495,8 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(q_output), TileTensorable)
         comptime assert conforms_to(type_of(iq_output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
@@ -2610,6 +2632,8 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(q_output), TileTensorable)
         comptime assert conforms_to(type_of(iq_output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
@@ -2754,6 +2778,8 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2857,6 +2883,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2952,6 +2980,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -4097,6 +4127,8 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         layer_idx: UInt32,
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(k_latent_buffer), TileTensorable)
         comptime assert conforms_to(type_of(k_buffer), TileTensorable)
         comptime assert conforms_to(
@@ -4184,6 +4216,8 @@ trait _MLAPrefillGraphPagedOp:
         w_uv_scale: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -4922,6 +4956,8 @@ trait _MLAPrefillGraphBF16PagedOp:
         epsilon: Float32,
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -5614,6 +5650,8 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
         num_partitions_scalar: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -5860,6 +5898,8 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
@@ -6067,6 +6107,8 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         num_partitions_scalar: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -6387,6 +6429,8 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
@@ -6617,6 +6661,8 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert is_gpu[target](), (
             "attention.mla.graph.prefill.decode.paged.sparse.nvfp4 is only"
             " supported on GPU"
@@ -6824,6 +6870,8 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
         num_partitions_scalar: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        context._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)

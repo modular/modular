@@ -135,6 +135,8 @@ struct QKRMSNormRopeSplitStore:
         Raises:
             Error: If the launch fails.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert is_gpu[
             target
         ](), "mo.qk_rms_norm_rope_split_store is GPU only"

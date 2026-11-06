@@ -117,6 +117,8 @@ struct ArgMax:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
         # the new impl handles CPU + GPU and any axis.
         comptime dtype = type_of(input).dtype
@@ -187,6 +189,8 @@ struct ArgMin:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
         # the new impl handles CPU + GPU and any axis.
         comptime dtype = type_of(input).dtype
@@ -303,6 +307,8 @@ struct RowMeanOfSquares:
         Raises:
             Error: If `output` does not have shape `[input_rows, 1]`.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime in_dtype = type_of(input).dtype
         comptime out_dtype = type_of(output).dtype
@@ -398,6 +404,8 @@ struct RowMeanOfSquaresQK:
             k: Key tensor of shape `[M, Nk]`.
             ctx: Device context used to enqueue the kernel.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(k), TileTensorable)
@@ -610,6 +618,8 @@ struct ReduceMul:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime dtype = type_of(input).dtype
         comptime assert type_of(output).dtype == dtype
         comptime assert type_of(input).rank == type_of(output).rank
@@ -698,6 +708,8 @@ struct LayerNorm:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(gamma), TileTensorable)
         comptime assert conforms_to(type_of(beta), TileTensorable)
         comptime dtype = type_of(input).dtype
@@ -831,6 +843,8 @@ struct ReduceRMSNormRoPE:
         sin_vals: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(weight), TileTensorable)
         comptime dtype = type_of(input).dtype
         comptime output_dtype = type_of(output).dtype
@@ -1008,6 +1022,8 @@ struct LayerNormRopeRagged:
         freqs_cis: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(gamma), TileTensorable)
         comptime assert conforms_to(type_of(beta), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1297,6 +1313,8 @@ struct ReduceMinAndMax:
         writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
         the minimum reduction and [:, :, 1, :] contains the maximum reduction.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime dtype = type_of(output).dtype
@@ -1422,6 +1440,8 @@ struct ReduceRMSNormFusedResidualAdd:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(residual_output), TileTensorable)
         comptime assert conforms_to(type_of(gamma1), TileTensorable)
@@ -1611,6 +1631,8 @@ struct RMSNormResidualAdd:
         gamma: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(residual_output), TileTensorable)
         comptime assert conforms_to(type_of(gamma), TileTensorable)
@@ -2065,6 +2087,7 @@ struct Softmax:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
 
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime dtype = type_of(output).dtype
@@ -2139,6 +2162,7 @@ struct LogSoftmax:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        ctx._comptime_assert_matches_target_is_cpu[target]()
 
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime dtype = type_of(output).dtype

@@ -73,6 +73,8 @@ struct CausalConv1D[activation: StaticString]:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(weight), TileTensorable)
@@ -388,6 +390,8 @@ struct CausalConv1DUpdate[activation: StaticString]:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(conv_state), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)

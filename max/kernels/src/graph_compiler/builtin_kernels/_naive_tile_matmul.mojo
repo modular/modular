@@ -264,6 +264,8 @@ struct MatmulTileSM100:
         b: InputTensor[rank=2, ...],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         # The tile programming model (`tile_based_fusion=True`) binds `c` to
         # `_FusedComputeOutputTile`, and the selection filter routes the op to
         # this sm_100a registration. Naive, correctness-only GPU matmul on MAX's

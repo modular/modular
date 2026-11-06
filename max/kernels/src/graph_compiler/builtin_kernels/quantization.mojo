@@ -140,6 +140,8 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(scales), TileTensorable)
         comptime assert conforms_to(type_of(gamma), TileTensorable)
@@ -864,6 +866,8 @@ struct QMatmulGPU_b4_g128:
         b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
@@ -906,6 +910,8 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(b_packed), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -945,6 +951,8 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         perm_idx: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(b_packed), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert conforms_to(type_of(perm_idx), TileTensorable)
@@ -1998,6 +2006,8 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         scale: Scalar[scale_type],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime input_type = type_of(input).dtype
         comptime output_type = type_of(output).dtype
