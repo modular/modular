@@ -25,7 +25,7 @@ from std.sys.info import align_of, simd_width_of
 from std.bit import log2_floor
 from std.math.math import max as _max, min as _min
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.host.info import is_cpu
 
 from std.utils.index import IndexList, StaticTuple
 from std.utils.coord import Coord, CoordLike, DynamicCoord, coord_to_index_list
@@ -205,10 +205,6 @@ def _reduce_generator[
         reduce_function: The lambda implementing the reduction.
         context: The pointer to DeviceContext.
     """
-    comptime assert is_valid_target[
-        context.T.target.device_kind_label()
-    ](), "unsupported target"
-
     # The plugin hook only accepts an `IndexList`, and the empty-dimension
     # check below needs runtime indexing that a `Coord` does not support, so
     # materialize an `IndexList` view of the shape once.

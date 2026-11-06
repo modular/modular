@@ -559,27 +559,3 @@ def is_accelerator(target: StringSpan) -> Bool:
         True if the target is an accelerator, False otherwise.
     """
     return is_gpu(target)
-
-
-def is_valid_target[target: StringSpan]() -> Bool:
-    """Checks if the target is valid (compile-time version).
-
-    Parameters:
-        target: Target string to check.
-
-    Returns:
-        True if the target is valid (CPU or GPU), False otherwise.
-    """
-    return is_valid_target(target)
-
-
-def is_valid_target(target: StringSpan) -> Bool:
-    """Checks if the target is valid (runtime version).
-
-    Args:
-        target: Target string to check.
-
-    Returns:
-        True if the target is valid (CPU or GPU), False otherwise.
-    """
-    return is_cpu(target) or is_accelerator(target)

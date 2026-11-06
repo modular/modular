@@ -75,7 +75,7 @@ from std.utils import Variant
 from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
-from ..info import _device_type_encoder_target, is_cpu
+from ..info import _device_type_encoder_target
 from max._plugin import MaxPluginForTarget
 
 from ..info import get_gpu_info, default_accelerator
@@ -4567,66 +4567,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return DeviceContext.CPU(api="cpu")
         except e:
             abort(t"unable to create CPU DeviceContext: {e}")
-
-    # ===-------------------------------------------------------------------===#
-    # TODO(MSTDL-3208): Temporary target parameterization helpers
-    # ===-------------------------------------------------------------------===#
-
-    # TODO(MSTDL-3265): Remove `target: StaticString` parameters from all
-    #   callers of this method after verifying all callers instead indicate
-    #   target device via `DeviceContext.target`.
-    @staticmethod
-    @inline(.always)
-    def _comptime_assert_matches_target_is_cpu[device_kind: StaticString]():
-        comptime assert Self.target.is_cpu() == is_cpu[device_kind](), String(
-            "`target` parameter '",
-            device_kind,
-            "' does not match the DeviceContext target, which is ",
-            "a CPU" if Self.target.is_cpu() else "not a CPU",
-            " (triple: ",
-            StaticString(Self.target.__triple()),
-            ", arch: ",
-            Self.target._arch(),
-            ")",
-        )
-
-    # The inverse of `CompilationTarget.device_kind_label()`: "cpu" maps to
-    # the host target and anything else to `Self.target`. The branches are
-    # distinct `CompilationTarget` types, so the choice has to be made on the
-    # raw `_mlir_value` rather than with a ternary over the targets themselves.
-    @staticmethod
-    @inline(.always)
-    def from_device_kind[
-        device_kind: StaticString
-    ](
-        out result: DeviceContext[
-            CompilationTarget[
-                _mlir_value=(
-                    CompilationTarget.current()._mlir_value if device_kind
-                    == "cpu" else Self.target._mlir_value
-                )
-            ]()
-        ]
-    ) raises:
-        """Creates a `DeviceContext` whose static target matches a device kind.
-
-        Parameters:
-            device_kind: The device kind, either "cpu" or "gpu". "cpu" gives a
-                `DeviceContext.CPU` and "gpu" gives a context for this type's
-                `target` (the default accelerator for a plain `DeviceContext`).
-
-        Returns:
-            A new device context with the target selected by `device_kind`.
-
-        Raises:
-            If device initialization fails.
-        """
-        comptime assert device_kind == "cpu" or device_kind == "gpu", String(
-            "unsupported device kind '",
-            device_kind,
-            "', expected 'cpu' or 'gpu'",
-        )
-        result = type_of(result)()
 
     @inline(.always)
     def assert_cpu_target(var self) -> DeviceContext.CPU:

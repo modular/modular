@@ -39,7 +39,7 @@ from max.gpu import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host.info import A100, is_cpu, is_valid_target
+from max.gpu.host.info import A100, is_cpu
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import (
     coord,
@@ -1525,10 +1525,6 @@ def _batched_matmul[
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        comptime assert is_valid_target[
-            context.T.target.device_kind_label()
-        ](), "unsupported target"
-
         comptime if context.T.target.is_cpu():
             var cpu_ctx = DeviceContext._map_assert_cpu_target(context)
             _batched_matmul_cpu_impl[

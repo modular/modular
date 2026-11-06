@@ -19,7 +19,7 @@ from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
 
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.host.info import is_cpu
 from layout import (
     RowMajorLayout,
     TileTensor,
@@ -289,9 +289,6 @@ def _matmul_impl[
     else:
         # CPU path: handle tracing and compute lambda wrapping, then
         # delegate to TileTensor cpu.matmul overload.
-        comptime assert is_valid_target[
-            ctx.T.target.device_kind_label()
-        ](), "unsupported target"
         comptime assert not transpose_a, "transpose_a not yet supported"
 
         if Int(c.dim[0]()) == 0 or Int(c.dim[1]()) == 0:

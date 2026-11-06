@@ -39,7 +39,7 @@ from max.gpu.host import (
     DeviceContextArray,
 )
 from layout.tile_tensor import row_major
-from max.gpu.host.info import is_cpu, is_gpu, is_valid_target
+from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
