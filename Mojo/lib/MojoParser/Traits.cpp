@@ -723,7 +723,23 @@ LIT::verifyAndBuildConformance(ConformanceASTDecl &conformanceDecl,
       if (structAliasDecl->resolvedness == DeclResolvedness::body) {
         clonedDefault = structAliasDeclOp;
       } else {
-        AliasDeclOp defaultAliasOp = structAliasDeclOp;
+        // This is not necessarily the trait decl that we are trying to verify,
+        // a refined trait might provide the default.
+        auto parentTraitDecl = shared.resolveAndGetTypeDecl(
+            getFullyResolvedSymbolRef(
+                cast<TraitDeclOp>(structAliasDeclOp->getParentOp())),
+            traitDecl.getLoc());
+        ArrayRef<ASTDecl *> decls = parentTraitDecl->lookupInCurrentScope(name);
+        assert(decls.size() == 1 &&
+               isa_and_nonnull<AliasDeclOp>(decls.front()->getIfOperation()) &&
+               "expected one AliasDeclOp in the trait");
+        if (failed(shared.declResolver->resolveSignature(*decls.front(),
+                                                         traitDecl.getLoc()))) {
+          hadErrors = true;
+          return success();
+        }
+        auto defaultAliasOp =
+            cast<AliasDeclOp>(decls.front()->getIfOperation());
         // Position builder before the first ConformanceOp (there will always
         // be one since the struct should at least conform the trait that we
         // are cloning the defaulted value from).
