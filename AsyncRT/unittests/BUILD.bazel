@@ -62,6 +62,9 @@ modular_cc_test(
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],
+    # Crash test: times out in external CI after the crash trace is printed.
+    # Temporary, until crash-test slowness is fixed.
+    tags = ["skip-external-ci"],
     deps = [
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals.static",
@@ -122,6 +125,9 @@ modular_cc_test(
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],
+    # Crash test: times out in external CI after the crash trace is printed.
+    # Temporary, until crash-test slowness is fixed.
+    tags = ["skip-external-ci"],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -143,6 +149,9 @@ modular_cc_test(
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],
+    # Crash test: times out in external CI after the crash trace is printed.
+    # Temporary, until crash-test slowness is fixed.
+    tags = ["skip-external-ci"],
     # Asyncrt altstack is disabled on sanitizer builds, so there is nothing to test.
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
