@@ -52,9 +52,7 @@ def register(
 ):
     """Registers a struct as a kernel implementation for a MAX Graph op.
 
-    At compile time, the Graph Compiler selects the most specific registered
-    kernel that matches the runtime device. The four device fields narrow the
-    target from coarse to fine:
+    The four device fields restrict the devices that the kernel supports:
 
     - `type`: broad device category: `"cpu"`, `"gpu"`, or a custom label.
     - `api`: compute backend: `"cuda"`, `"hip"`, `"metal"`, etc.
@@ -62,17 +60,26 @@ def register(
     - `model`: exact hardware model: `"NVIDIA B200"`, `"AMD Instinct MI355X"`, etc.
 
     An empty string for any field acts as a wildcard: it matches any device
-    value for that field.
-    Fields are ordered from least to most specific: `type` < `api` < `arch` <
-    `model`. Among all matching candidates, the most specific registration wins:
-    a registration that sets `arch` is more specific than one that sets only
-    `type` and `api`, because `arch` sits higher in the hierarchy.
+    value for that field. A registration applies to the devices whose fields
+    equal every field that it sets.
 
-    If a user-defined kernel and a built-in kernel are equally specific for a
-    device, the user-defined kernel takes precedence.
-    Registering the same op with identical device fields more than once,
-    whether within the same library or across multiple user libraries, is an
-    error reported by the Graph Compiler.
+    The Graph Compiler selects a kernel for each op and device as follows:
+
+    1. It keeps the registrations that apply to the device.
+    2. If a user-defined registration remains, it keeps only the user-defined
+       ones. Otherwise it keeps the built-in ones.
+    3. It selects the registration whose set of devices is a strict subset of
+       the set of every other remaining registration.
+
+    If no registration is a strict subset of all the others, the selection is
+    ambiguous and the Graph Compiler reports an error. For example,
+    `type="gpu", api="cuda"` and `arch="sm_90a"` both apply to an H100, but
+    neither contains the other: `arch="sm_90a"` alone also applies to a device
+    of any type and API with that architecture. Set every field above the
+    narrowest one that you test, as in `type="gpu", api="cuda", arch="sm_90a"`.
+    Two registrations of the same op with identical device fields, both
+    built-in or both user-defined, are an error, because neither can ever be
+    selected.
 
     Example: device field combinations and their reach:
 
@@ -99,13 +106,15 @@ def register(
     Example: selection with multiple registrations in scope:
 
     ```mojo
-    @extensibility.register("mo.matmul")                                          # wildcard
-    @extensibility.register("mo.matmul", type="cpu")                              # least specific
-    @extensibility.register("mo.matmul", type="gpu")                              # least specific
-    @extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")  # more specific
+    @extensibility.register("mo.matmul")                                          # all devices
+    @extensibility.register("mo.matmul", type="cpu")                              # all CPUs
+    @extensibility.register("mo.matmul", type="gpu")                              # all GPUs
+    @extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")  # SM100A CUDA GPUs
     ```
 
-    - SM100A CUDA GPU → all four match; `arch` registration wins (most specific).
+    - SM100A CUDA GPU → the wildcard, `type="gpu"`, and `arch` registrations
+      match; the `arch` registration wins, because its devices are a strict
+      subset of the other two.
     - SM90A CUDA GPU  → wildcard and `type="gpu"` match; `type="gpu"` wins.
     - CPU             → wildcard and `type="cpu"` match; `type="cpu"` wins.
     - Some NPU        → only the wildcard matches; wildcard wins.

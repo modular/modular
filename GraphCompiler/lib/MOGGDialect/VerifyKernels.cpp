@@ -16,6 +16,7 @@
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENPogUtils.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringSet.h"
 
 using namespace M;
@@ -968,10 +969,14 @@ getSemanticResult(const KernelDeclFunctionAdaptor &fn) {
   return fn.outputResult;
 }
 
-/// Verify cross-kernel consistency for every registration identity — the
-/// {op name, device_info} pair ImportPackages deduplicates on — with multiple
-/// declarations. For each group, decls[0] is the reference (ImportPackages
-/// inserts built-ins first, so it is the built-in when one exists).
+/// Verify cross-kernel consistency for every registration identity — an op
+/// name and a set of devices — with multiple declarations. Two registrations
+/// have the same identity if their platforms apply to exactly the
+/// same devices, however the platforms are written. ImportPackages rejects
+/// such a pair within one provenance group, so a group here is a user
+/// registration that replaces a built-in on the same devices. For each group,
+/// decls[0] is the reference (ImportPackages inserts built-ins first, so it is
+/// the built-in when one exists).
 ///
 /// Decls differing in device scope are grouped apart: `getResolvedKernel`
 /// picks among them by device, so they need not agree (e.g. an accelerator
@@ -982,17 +987,43 @@ getSemanticResult(const KernelDeclFunctionAdaptor &fn) {
 ///   2. If execute: output count, non-launch input count, and per-operand
 ///      types must all match (fusion variants are treated as equivalent).
 LogicalResult crossVerifyKernels(ModuleOp moduleOp) {
-  using RegistrationKey = std::pair<mlir::StringAttr, DeviceInfoAttr>;
-  llvm::DenseMap<RegistrationKey, llvm::SmallVector<KernelDeclOp>> byReg;
-  for (KernelDeclOp decl : moduleOp.getOps<KernelDeclOp>())
-    byReg[{decl.getRegistrationAttr(), decl.getRegistrationDeviceInfo()}]
-        .push_back(decl);
-
   bool failed = false;
-  for (auto &[regKey, decls] : byReg) {
+  llvm::MapVector<mlir::StringAttr, llvm::SmallVector<KernelDeclOp>> byName;
+  for (KernelDeclOp decl : moduleOp.getOps<KernelDeclOp>())
+    byName[decl.getRegistrationAttr()].push_back(decl);
+
+  llvm::SmallVector<llvm::SmallVector<KernelDeclOp>> groups;
+  for (auto &[name, decls] : byName) {
     if (decls.size() < 2)
       continue;
-    mlir::StringAttr regName = regKey.first;
+    llvm::SmallVector<
+        std::pair<PlatformPredicate, llvm::SmallVector<KernelDeclOp>>>
+        classes;
+    for (KernelDeclOp decl : decls) {
+      ErrorOr<PlatformPredicate> platform =
+          getRegistrationPlatformPredicate(decl);
+      if (platform.isError()) {
+        decl->emitError() << "invalid platform: " << platform.getError();
+        failed = true;
+        continue;
+      }
+      auto *it = classes.begin();
+      for (; it != classes.end(); ++it)
+        if (comparePlatformPredicates(it->first, *platform).order ==
+            PlatformPredicateOrder::Equivalent)
+          break;
+      if (it == classes.end())
+        classes.push_back({platform.takeValue(), {decl}});
+      else
+        it->second.push_back(decl);
+    }
+    for (auto &[platform, members] : classes)
+      if (members.size() >= 2)
+        groups.push_back(std::move(members));
+  }
+
+  for (llvm::SmallVector<KernelDeclOp> &decls : groups) {
+    mlir::StringAttr regName = decls.front().getRegistrationAttr();
 
     KernelDeclAdaptor refAdaptor(decls[0]);
     KernelTypeTag refTag = getKernelType(refAdaptor);

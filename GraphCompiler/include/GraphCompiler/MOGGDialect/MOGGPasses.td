@@ -550,18 +550,21 @@ def VerifyKernels: Pass<"mogg-verify-kernels", "ModuleOp"> {
 
 def TestKernelRegistrations
     : Pass<"mogg-test-kernel-registrations", "ModuleOp"> {
-  let summary = "Test-only: evaluates and compares kernel registrations";
+  let summary = "Test-only: evaluates, compares, and resolves registrations";
   let description = [{
-    Prints the platform of each `mogg.kernel.decl` with a
-    `platform_predicate`, and its value for each device in the
-    `mogg.test_device_infos` module attribute. Then it prints how the
-    platforms of each pair of those decls with the same registration
-    compare. The output goes to stderr:
+    For each registration that has at least one `mogg.kernel.decl` with a
+    `platform_predicate`, prints each decl's platform (the platform of its
+    `device_info` for a decl without one) and its value for each device in
+    the `mogg.test_device_infos` module attribute. Then it prints how the
+    platforms of each pair of decls of the registration compare, and the decl
+    that `MojoRegistry` resolves for each device in `mo.device_info_mapping`.
+    The output goes to stderr:
 
     ```
     platform @Kernel = type("gpu") & api("cuda")
     platform @Kernel on #M.device_info<"gpu", "cuda", "sm_100a", ""> = true
     compare @Kernel @Other = first narrower
+    resolve "my.op" on "gpu" -> @Kernel
     ```
   }];
 }

@@ -17,6 +17,7 @@
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
+#include "GraphCompiler/MOGGDialect/Support/PlatformPredicate.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/LITDialect/LITInterfaces.h"
 #include "Mojo/LITDialect/LITOps.h"
@@ -300,6 +301,8 @@ struct ScannedKernel {
   mlir::StringAttr registration;
   mlir::StringAttr mojoName;
   DeviceInfoAttr deviceInfo;
+  /// The devices that the registration applies to.
+  PlatformPredicate platform;
   /// Every method named `execute`; `resolveExecuteOverloads` picks the one
   /// the decl records.
   llvm::SmallVector<KGEN::LIT::FnOp, 2> executeOverloads;
@@ -314,43 +317,29 @@ struct ScannedKernel {
 };
 
 /// One registration allowed a second `execute` overload: the op name and the
-/// device fields exactly as its `@extensibility.register` declares them, so
-/// an entry covers one registration and never a sibling on another device.
+/// platform of its registration, as `PlatformPredicate::print` spells it, or
+/// "true" for `register(name)`. A kernel matches an entry only if its
+/// registration has exactly that platform, so an entry covers one
+/// registration and never a sibling on another device.
 struct UnfusedExecuteRegistration {
   llvm::StringLiteral registration;
-  llvm::StringLiteral type = "";
-  llvm::StringLiteral api = "";
-  llvm::StringLiteral arch = "";
-  llvm::StringLiteral model = "";
+  llvm::StringLiteral cond = "true";
 
-  bool matches(llvm::StringRef name, DeviceInfoAttr device) const {
-    return name == registration && device.getLabel() == type &&
-           device.getApi() == api && device.getArch() == arch &&
-           device.getModel() == model;
+  bool matches(llvm::StringRef name, const PlatformPredicate &platform) const {
+    return name == registration && platform.str() == cond;
   }
 };
 
-/// Spells a registration the way `@extensibility.register` declares it, e.g.
-/// `'mo.matmul' (type="gpu", api="cuda")`, omitting unset device fields.
+/// Spells a registration, e.g. `'mo.matmul' (cond=type("gpu") & api("cuda"))`,
+/// or only the name if the registration applies to all devices.
 static std::string formatRegistration(llvm::StringRef name,
-                                      DeviceInfoAttr device) {
+                                      const PlatformPredicate &platform) {
   std::string result;
   llvm::raw_string_ostream os(result);
   os << "'" << name << "'";
-  std::pair<llvm::StringRef, llvm::StringRef> fields[] = {
-      {"type", device.getLabel()},
-      {"api", device.getApi()},
-      {"arch", device.getArch()},
-      {"model", device.getModel()}};
-  bool anySet = false;
-  for (auto [key, value] : fields) {
-    if (value.empty())
-      continue;
-    os << (anySet ? ", " : " (") << key << "=\"" << value << "\"";
-    anySet = true;
-  }
-  if (anySet)
-    os << ")";
+  std::string cond = platform.str();
+  if (cond != "true")
+    os << " (cond=" << cond << ")";
   return result;
 }
 
@@ -366,13 +355,13 @@ static std::string formatRegistration(llvm::StringRef name,
 /// here without that conversation is a review blocker, whatever the diff
 /// says about why it was needed.
 static constexpr UnfusedExecuteRegistration kUnfusedExecuteRegistrations[] = {
-    {"mo.conv", "gpu"},
-    {"mo.conv_transpose", "cpu"},
-    {"mo.conv_transpose", "gpu"},
+    {"mo.conv", R"(type("gpu"))"},
+    {"mo.conv_transpose", R"(type("cpu"))"},
+    {"mo.conv_transpose", R"(type("gpu"))"},
     {"matmul.grouped.ragged"},
     {"mo.matmul"},
-    {"mo.matmul", "cpu"},
-    {"mo.matmul", "gpu"},
+    {"mo.matmul", R"(type("cpu"))"},
+    {"mo.matmul", R"(type("gpu"))"},
     // Graph compiler test kernels (`GraphCompiler/test/kernels`).
     {"trait_unfused_execute"},
     {"unfused_invalid_both_fused"},
@@ -603,6 +592,7 @@ static mlir::LogicalResult scanForKernelDecls(
     kernel.structDeclOp = structDeclOp;
     kernel.registration = info.registrationName;
     kernel.deviceInfo = info.deviceInfo;
+    kernel.platform = PlatformPredicate::fromDeviceInfo(info.deviceInfo);
     kernel.mojoName = getFullyResolvedMojoName(structDeclOp);
 
     for (auto &op : structDeclOp.getFields().front()) {
@@ -852,6 +842,39 @@ static void persistOpaqueTypeMapping(mlir::ModuleOp module,
                   mlir::DictionaryAttr::get(ctx, entries));
 }
 
+/// A registration already imported in one provenance group.
+struct SeenRegistration {
+  PlatformPredicate platform;
+  mlir::Location loc;
+};
+
+/// The registrations already imported in one provenance group, by op name.
+using SeenRegistrations =
+    llvm::StringMap<llvm::SmallVector<SeenRegistration, 1>>;
+
+/// Records `kernel` in `seen`. Fails if a registration of the same op in the
+/// same provenance group applies to the same devices: the two always tie,
+/// so neither can be selected.
+static mlir::LogicalResult checkNewDevices(const ScannedKernel &kernel,
+                                           SeenRegistrations &seen) {
+  llvm::StringRef name = kernel.registration.strref();
+  KGEN::LIT::StructDeclOp structDeclOp = kernel.structDeclOp;
+  llvm::SmallVector<SeenRegistration, 1> &others = seen[name];
+  for (const SeenRegistration &other : others) {
+    PlatformPredicateComparison comparison =
+        comparePlatformPredicates(kernel.platform, other.platform);
+    if (comparison.order != PlatformPredicateOrder::Equivalent)
+      continue;
+    mlir::InFlightDiagnostic diag = structDeclOp.emitError();
+    diag << "kernel '" << name
+         << "' is registered multiple times for the same devices";
+    diag.attachNote(other.loc) << "the other registration is here";
+    return diag;
+  }
+  others.push_back({kernel.platform, structDeclOp.getLoc()});
+  return mlir::success();
+}
+
 struct ImportPackagesPass
     : public impl::ImportPackagesBase<ImportPackagesPass> {
   using Base::Base;
@@ -862,9 +885,8 @@ struct ImportPackagesPass
   // name entries discovered in `pkg`. `isUserDefined` sets the is_user_defined
   // attribute on emitted KernelDeclOps; MojoRegistry::getResolvedKernel uses
   // this flag to apply override semantics.
-  using RegistrationKey = std::pair<llvm::StringRef, DeviceInfoAttr>;
   void emitDecls(OpBuilder &builder, SymbolTable &symbolTable, ModuleOp pkg,
-                 llvm::DenseSet<RegistrationKey> &seenRegistrations,
+                 SeenRegistrations &seenRegistrations,
                  llvm::StringSet<> &seenPrimitives,
                  llvm::StringSet<> &seenShapeFunctions,
                  llvm::StringMap<std::string> &opaqueTypeMapping,
@@ -1011,12 +1033,10 @@ struct ImportPackagesPass
                << " `execute` overloads; declare a single `execute`";
       if (llvm::none_of(kUnfusedExecuteRegistrations,
                         [&](const UnfusedExecuteRegistration &allowed) {
-                          return allowed.matches(registration,
-                                                 kernel.deviceInfo);
+                          return allowed.matches(registration, kernel.platform);
                         }))
         return mlir::emitError(kernel.structDeclOp.getLoc())
-               << "kernel "
-               << formatRegistration(registration, kernel.deviceInfo)
+               << "kernel " << formatRegistration(registration, kernel.platform)
                << " declares a second `execute` overload; the only supported "
                   "second `execute` receives the kernel's outputs unfused "
                   "when nothing is fused into them, and it is a stopgap that "
@@ -1056,14 +1076,9 @@ struct ImportPackagesPass
     bool sawFailure = false;
 
     for (auto kernel : kernels) {
-      auto [_, inserted] = seenRegistrations.insert(
-          {kernel.registration.strref(), kernel.deviceInfo});
-      if (!inserted) {
-        kernel.structDeclOp.emitError()
-            << "kernel '" << kernel.registration.strref()
-            << "' is registered multiple times with the same device infos";
-        signalPassFailure();
-        return;
+      if (failed(checkNewDevices(kernel, seenRegistrations))) {
+        sawFailure = true;
+        continue;
       }
 
       if (failed(resolveExecuteOverloads(kernel))) {
@@ -1227,8 +1242,8 @@ struct ImportPackagesPass
     // Separate deduplication sets let user packages override built-ins;
     // MojoRegistry::getResolvedKernel applies override semantics at lookup
     // time.
-    llvm::DenseSet<RegistrationKey> seenBuiltinRegistrations;
-    llvm::DenseSet<RegistrationKey> seenUserRegistrations;
+    SeenRegistrations seenBuiltinRegistrations;
+    SeenRegistrations seenUserRegistrations;
     llvm::StringSet<> seenPrimitives;
     llvm::StringSet<> seenShapeFunctions;
     // Mapping from simple struct names to fully-qualified Mojo names, built
@@ -1240,9 +1255,17 @@ struct ImportPackagesPass
     // origin for `MojoRegistry::getResolvedKernel`.
     if (append) {
       for (auto decl : module.getOps<KernelDeclOp>()) {
-        auto &set = decl.getIsUserDefined() ? seenUserRegistrations
-                                            : seenBuiltinRegistrations;
-        set.insert({decl.getRegistration(), decl.getRegistrationDeviceInfo()});
+        auto &seen = decl.getIsUserDefined() ? seenUserRegistrations
+                                             : seenBuiltinRegistrations;
+        ErrorOr<PlatformPredicate> platform =
+            getRegistrationPlatformPredicate(decl);
+        if (platform.isError()) {
+          decl.emitError() << "invalid platform: " << platform.getError();
+          signalPassFailure();
+          return;
+        }
+        seen[decl.getRegistration()].push_back(
+            {platform.takeValue(), decl.getLoc()});
       }
       for (auto decl : module.getOps<PrimitiveDeclOp>())
         seenPrimitives.insert(decl.getRegistration());
