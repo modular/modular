@@ -421,14 +421,6 @@ inline void printColonTypeParamValue(AsmPrinter &p, Operation *,
   printColonTypeParamValue(p, value);
 }
 
-/// Print the operand of a `TypeConformsToTraitAttr`. The operand is stored as
-/// a `param_list<!kgen.type>` value. As a shorthand, when the value is a
-/// 1-element `ParamListAttr` literal, print just its upcast-stripped element.
-void printConformsToParamList(AsmPrinter &p, TypedAttr typeValue);
-/// Parse a `TypeConformsToTraitAttr` operand, accepting either the sugared
-/// scalar form or the canonical `param_list<!kgen.type>` storage form.
-ParseResult parseConformsToParamList(AsmParser &p, TypedAttr &typeValue);
-
 /// Parse and print a witness entry which has syntactic form `name : type =
 /// value`.
 ParseResult parseWitnessEntry(AsmParser &p, StringAttr &name,
@@ -525,7 +517,6 @@ OptionalParseResult parseOptionalSignatureValues(
 ParseResult parseSignatureValues(
     AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
     FunctionType &values, FnEffects &effects, bool optionalResultList);
-void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
 void printSignatureValues(AsmPrinter &p, FunctionType functionType,
                           FuncTypeGeneratorType sigGen);
 void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,

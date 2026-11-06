@@ -382,7 +382,6 @@ private:
                             const std::string *backdoorError = nullptr,
                             bool duringCapture = false) const;
   bool allocateChunk();
-  bool freeLocked(void *buf);
 
   // ---- VMM (defragmenting allocator) ----
   //

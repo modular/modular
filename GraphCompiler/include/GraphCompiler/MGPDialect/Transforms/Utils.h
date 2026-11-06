@@ -113,10 +113,6 @@ OpOperand *getUniqueMutator(Value value);
 /// Return the OpOperands for all input chains to op.
 SmallVector<OpOperand *, 1> getInputChainOpOperands(Operation *op);
 
-/// Returns the 'earliest' operation (in block operations order) which uses
-/// one of results as an operand.
-Operation *earliestUsingOp(ArrayRef<Value> results);
-
 using ValueSetVector = llvm::SetVector<Value, SmallVector<Value>>;
 
 /// If chain is defined by a grt.chain.create operation then accumulate

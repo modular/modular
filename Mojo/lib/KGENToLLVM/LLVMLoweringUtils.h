@@ -410,30 +410,6 @@ struct DirectOpToLLVMPattern : public M::DirectOpConversionPattern<OpT> {
   }
 };
 
-/// Direct-conversion analogue of mlir::OneToOneConvertToLLVMPattern: replace
-/// the source op with the target op, forwarding the converted operands and
-/// attributes.
-template <typename SourceOp, typename TargetOp>
-struct DirectOneToOnePattern : public DirectOpToLLVMPattern<SourceOp> {
-  using DirectOpToLLVMPattern<SourceOp>::DirectOpToLLVMPattern;
-  using OpAdaptor = typename SourceOp::Adaptor;
-
-  LogicalResult matchAndRewrite(SourceOp op, OpAdaptor adaptor,
-                                M::DirectRewriter &rewriter) const override {
-    SmallVector<Type> resultTypes;
-    if (failed(this->getTypeConverter()->convertTypes(op->getResultTypes(),
-                                                      resultTypes)))
-      return rewriter.notifyMatchFailure(op, "failed to convert result types");
-    mlir::OperationState state(op.getLoc(), TargetOp::getOperationName());
-    state.addTypes(resultTypes);
-    state.addOperands(adaptor.getOperands());
-    state.addAttributes(op->getAttrs());
-    mlir::Operation *newOp = rewriter.create(state);
-    rewriter.replaceOp(op, newOp->getResults());
-    return success();
-  }
-};
-
 /// This is a templated instance of the wrapper class to rewrite a specific op.
 template <typename OpT>
 struct ConvertPOPToLLVMPattern : public DirectOpToLLVMPattern<OpT> {

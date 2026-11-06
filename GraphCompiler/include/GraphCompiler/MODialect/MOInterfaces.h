@@ -153,7 +153,6 @@ LogicalResult verifySlidingWindow(SlidingWindow op);
 LogicalResult verifyPadLike(PadLike op);
 LogicalResult verifyMOSameOperandsAndResultElementType(Operation *op);
 LogicalResult verifyMOSameOperandsAndResultShapeAttr(Operation *op);
-LogicalResult verifyMOSameOperandsAndResultShape(Operation *op);
 LogicalResult verifyMOSameOperandsElementType(Operation *op);
 LogicalResult verifyMOSameFirstOperandAndResultsElementType(Operation *op);
 LogicalResult verifyHostOnly(Operation *op);

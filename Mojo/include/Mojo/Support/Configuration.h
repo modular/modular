@@ -64,18 +64,11 @@ public:
   // LLDB Configurations
   //===--------------------------------------------------------------------===//
 
-  /// Return the path to the lldb-vscode executable within the mojo install.
-  StringRef getLLDBVSCodePath();
-
   /// Return the path to the Mojo lldb plugin within the mojo install.
   StringRef getLLDBPluginPath();
 
   /// Return the path to the lldb executable within the mojo install.
   StringRef getLLDBPath();
-
-  /// Return the default lldb visualizers to use when starting an LLDB debug
-  /// session.
-  void getLLDBVisualizers(SmallVectorImpl<StringRef> &paths);
 
   //===--------------------------------------------------------------------===//
   // JIT Configurations

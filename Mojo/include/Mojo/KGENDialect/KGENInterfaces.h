@@ -61,11 +61,7 @@ namespace impl {
 MODULAR_CXX_EXPORT void
 scanAllAttrsAndTypes(Operation *op, function_ref<void(Attribute)> scanAttr,
                      function_ref<void(Type)> scanType);
-LogicalResult verifyFunctionLike(FunctionLike op);
 LogicalResult verifyGeneratorUser(GeneratorUserOpInterface op);
-LogicalResult verifyIfTopLevel(DeclInterface decl,
-                               SymbolTableCollection &symtab);
-LogicalResult verifyExportInterface(Operation *op);
 Operation *lookupConformance(Operation *op, ParameterEvaluator &evaluator,
                              TraitSymbolAttr traitSymbol);
 } // namespace impl
