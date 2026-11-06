@@ -755,32 +755,48 @@ modular_cc_test(
     ],
 )
 
-# A plugin whose api has no Mojo vendor reports no arch, so the compiler falls
-# back to an explicit target instead of a guessed one.
-modular_cc_test(
-    name = "CompilerDeviceArchMockTest",
-    size = "small",
-    srcs = ["CompilerDeviceArchTest.cpp"],
-    data = [
-        "//MLRT/test/Driver/HAL:MockPlugin.so",
-        "//Target:CPUPlugin.so",
-    ],
-    dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
-        "//AsyncRT:RuntimeGlobals",
-        "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
-    ],
-    env = {
-        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
-    },
-    deps = [
-        "//AsyncRT:RuntimeGlobals.static",
-        "//MLRT:Driver/CompilerDeviceArch",
-        "//MLRT:Driver/DeviceContextAPI",
-        "@llvm-project//llvm:Support",
-    ],
-)
+# A plugin backend with no Mojo vendor: a named entry reports its arch under
+# that name, as the HAL runtime does, and a bare path reports none, so the
+# compiler falls back to an explicit target instead of a guessed one.
+[
+    modular_cc_test(
+        name = name,
+        size = "small",
+        srcs = ["CompilerDeviceArchTest.cpp"],
+        data = [
+            "//MLRT/test/Driver/HAL:MockPlugin.so",
+            "//Target:CPUPlugin.so",
+        ],
+        dynamic_deps = [
+            "@llvm-project//llvm:LLVM",
+            "//AsyncRT:RuntimeGlobals",
+            "//Support:Globals",
+            "@llvm-project//mlir:MLIR",
+        ],
+        env = {
+            "MOCK_DEVICE_ARCH": "mock1",
+            "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);" + mock_entry,
+        } | expected,
+        deps = [
+            "//AsyncRT:RuntimeGlobals.static",
+            "//MLRT:Driver/CompilerDeviceArch",
+            "//MLRT:Driver/DeviceContextAPI",
+            "@llvm-project//llvm:Support",
+        ],
+    )
+    for name, mock_entry, expected in [
+        (
+            "CompilerDeviceArchMockTest",
+            "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+            {"EXPECTED_ARCH": "mock:mock1"},
+        ),
+        (
+            "CompilerDeviceArchBareMockTest",
+            "$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+            {},
+        ),
+    ]
+]
 
 # A HAL device reports its plugin's own api; the mock plugin's has no HAL
 # constant. HAL-only: the legacy driver has no plugin to load.
