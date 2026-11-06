@@ -54,6 +54,7 @@ from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kernels import flare_mla_prefill_plan
 from max.nn.kv_cache import (
+    MIXED_STEP_SPLIT_SIZE,
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     MLAAttnKey,
@@ -235,6 +236,12 @@ class _LatentPool:
                 mla_num_partitions=Tensor(
                     storage=Buffer.from_numpy(
                         np.array([key.num_partitions], np.int64)
+                    )
+                ),
+                # Every paged leaf declares the record; zeros mean no split.
+                mixed_step_split=Tensor(
+                    storage=Buffer.from_numpy(
+                        np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)
                     )
                 ),
             )
