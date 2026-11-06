@@ -28,7 +28,6 @@ import extensibility
 from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 from layout import Coord, Idx
 from layout.tile_tensor import row_major as tt_row_major
-from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from kv_cache.paged_sparse_kv_index_remap import (
     NoRemap,
@@ -6042,7 +6041,6 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        target: StaticString,
         dcp_size: Int,
         dcp_interleave: Int,
         indices_stride: Int,
@@ -6078,7 +6076,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
         context: DeviceContext,
     ) raises:
         _cp_check_rank[dcp_size](dcp_rank)
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.decode.paged.fp8.sparse.cp is only supported"
             " on GPU"
         )
@@ -6103,7 +6101,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
             lse, num_tokens, Int(q.static_spec.shape_tuple[1])
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.fp8.sparse.cp",
             task_id=get_safe_task_id(context),
         ):
@@ -6165,7 +6163,6 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        target: StaticString,
         dcp_size: Int,
         dcp_interleave: Int,
         indices_stride: Int,
@@ -6205,9 +6202,9 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
         context: DeviceContext,
     ) raises:
         _cp_check_rank[dcp_size](dcp_rank)
-        comptime assert is_gpu[
-            target
-        ](), "attention.mla.graph.decode.paged.sparse.cp is only supported on GPU"
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.graph.decode.paged.sparse.cp is only supported on GPU"
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
@@ -6229,7 +6226,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
             lse, num_tokens, Int(q.static_spec.shape_tuple[1])
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.sparse.cp",
             task_id=get_safe_task_id(context),
         ):
@@ -6290,7 +6287,6 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        target: StaticString,
         dcp_size: Int,
         dcp_interleave: Int,
         indices_stride: Int,
@@ -6333,7 +6329,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
         context: DeviceContext,
     ) raises:
         _cp_check_rank[dcp_size](dcp_rank)
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.decode.paged.sparse.nvfp4.cp is only supported"
             " on GPU"
         )
@@ -6365,7 +6361,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
             lse, num_tokens, Int(q.static_spec.shape_tuple[1])
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.sparse.nvfp4.cp",
             task_id=get_safe_task_id(context),
         ):
