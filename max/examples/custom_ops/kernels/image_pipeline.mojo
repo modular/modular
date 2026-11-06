@@ -25,10 +25,7 @@ from std.utils.index import IndexList
 @extensibility.register("grayscale")
 struct Grayscale:
     @staticmethod
-    def execute[
-        # The kind of device this is running on: "cpu" or "gpu"
-        target: StaticString,
-    ](
+    def execute(
         img_out: OutputTensor[dtype=.uint8, rank=2, ...],
         img_in: InputTensor[dtype=.uint8, rank=3, ...],
         ctx: DeviceContext,
@@ -59,9 +56,7 @@ struct Grayscale:
 @extensibility.register("brightness")
 struct Brightness:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         img_out: OutputTensor[dtype=.uint8, rank=2, ...],
         img_in: InputTensor[dtype=.uint8, rank=2, ...],
         brightness: Float32,
@@ -83,9 +78,7 @@ struct Brightness:
 @extensibility.register("blur")
 struct Blur:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         img_out: OutputTensor[dtype=.uint8, rank=2, ...],
         img_in: InputTensor[dtype=.uint8, rank=2, ...],
         blur_size: Int64,

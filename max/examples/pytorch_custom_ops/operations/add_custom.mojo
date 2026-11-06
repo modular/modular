@@ -31,9 +31,7 @@ from std.utils.coord import Coord
 @extensibility.register("add_constant_custom")
 struct AddConstantCustom[value: Int]:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -62,6 +60,8 @@ struct AddConstantCustom[value: Int]:
                 + Scalar[dtype](Self.value),
             )
 
-        elementwise[simd_width=get_kernel_simd_width[dtype, target]()](
-            add_constant, outp.shape(), ctx
-        )
+        elementwise[
+            simd_width=get_kernel_simd_width[
+                dtype, ctx.target.device_kind_label()
+            ]()
+        ](add_constant, outp.shape(), ctx)

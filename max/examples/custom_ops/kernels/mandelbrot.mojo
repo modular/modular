@@ -28,10 +28,7 @@ comptime float_dtype = DType.float32
 @extensibility.register("mandelbrot")
 struct Mandelbrot:
     @staticmethod
-    def execute[
-        # The kind of device this will be run on: "cpu" or "gpu"
-        target: StaticString,
-    ](
+    def execute(
         output: OutputTensor,
         # starting here are the list of inputs
         min_x: Float32,

@@ -128,9 +128,7 @@ struct Grayscale:
     """Convert RGB image tensor to grayscale using weighted formula."""
 
     @staticmethod
-    def execute[
-        target: StaticString,  # "cpu" or "gpu"
-    ](
+    def execute(
         img_out: Some[Output & Tensor],
         img_in: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -210,7 +208,8 @@ computes that pixel's grayscale value, and stores it in the output. The
 `elementwise()` primitive calls it for every coordinate in the output shape and
 parallelizes the work across available compute units.
 
-Finally, the `target` parameter allows the same code to run on both CPU and GPU.
+Finally, `elementwise()` takes the device from `ctx`, so the same code runs on
+both CPU and GPU.
 
 This approach allows Mojo to handle the low-level optimization details: memory
 layout, vectorization, and parallelization, while you focus on the algorithm.

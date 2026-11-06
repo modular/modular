@@ -29,9 +29,7 @@ struct Grayscale:
     """Convert RGB image tensor to grayscale using weighted formula."""
 
     @staticmethod
-    def execute[
-        target: StaticString,  # "cpu" or "gpu"
-    ](
+    def execute(
         img_out: Some[Output & Tensor],
         img_in: Some[Input & Tensor],
         ctx: DeviceContext,

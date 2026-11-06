@@ -216,8 +216,8 @@ The custom operation itself is defined in Mojo within the
 `InputTensor`, `OutputTensor`, and `ManagedTensorSlice` are imported from the
 `extensibility` package. The `MatrixMultiplication` struct
 hosts all of the setup code for taking in the matrix tensors, branching
-execution based on whether the operation is running on CPU or GPU, and then
-selecting and running a specific algorithm. Mojo supports compile-time
+execution based on whether the device context's target is a CPU or GPU, and
+then selecting and running a specific algorithm. Mojo supports compile-time
 specialization of code based on parameters like target hardware, and that is
 also extended here to user-supplied algorithm choice. Compiling only the code
 paths used for a particular piece of hardware avoids run-time branching and

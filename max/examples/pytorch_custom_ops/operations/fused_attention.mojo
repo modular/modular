@@ -74,7 +74,6 @@ struct FusedAttention:
     def execute[
         BN: Int,  # Dimension of blocks to split Q into
         BD: Int,  # Dimension of blocks to split K, V into
-        target: StaticString,  # "cpu" or "gpu"
     ](
         output: Some[Output & Tensor],
         query: Some[Input & Tensor],
@@ -82,7 +81,7 @@ struct FusedAttention:
         value: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        fused_attention[BN, BD, target](output, query, key, value, ctx)
+        fused_attention[BN, BD](output, query, key, value, ctx)
 
 
 # CustomOpLibrary does not support names with '::' in them currently. Create
@@ -93,7 +92,6 @@ struct FusedAttentionAlias:
     def execute[
         BN: Int,  # Dimension of blocks to split Q into
         BD: Int,  # Dimension of blocks to split K, V into
-        target: StaticString,  # "cpu" or "gpu"
     ](
         output: Some[Output & Tensor],
         query: Some[Input & Tensor],
@@ -101,13 +99,12 @@ struct FusedAttentionAlias:
         value: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        fused_attention[BN, BD, target](output, query, key, value, ctx)
+        fused_attention[BN, BD](output, query, key, value, ctx)
 
 
 def fused_attention[
     BN: Int,
     BD: Int,
-    target: StaticString,
 ](
     output: Some[Output & Tensor],
     query: Some[Input & Tensor],
@@ -148,7 +145,7 @@ def fused_attention[
         ptr=output.to_tile_tensor[dtype]().ptr, layout=output.layout()
     ).as_unsafe_any_origin()
 
-    comptime if target == "cpu":
+    comptime if ctx.target.is_cpu():
         print("Running on CPU")
         fused_attention_cpu[BN, BD](Q, K, V, O)
     else:
@@ -250,7 +247,7 @@ def fused_attention_cpu[
                 m_1_delta -= m_2
                 m_1_delta.exp()
                 O_i *= m_1_delta
-                var PV = matmul["cpu"](E, V_tile)
+                var PV = matmul[is_cpu=True](E, V_tile)
                 O_i += PV
                 m_1.copy_from(m_2)
                 l_1.copy_from(l_2)
@@ -263,7 +260,7 @@ def matmul[
     dtype: DType,
     rhs_dtype: DType,
     //,
-    target: StaticString,
+    is_cpu: Bool,
     transpose_b: Bool = False,
 ](
     lhs: TileTensor[dtype, ...],
@@ -279,7 +276,7 @@ def matmul[
         row_major[lhs.static_shape[0], rhs.static_shape[0]]()
     )
 
-    comptime if target == "cpu":
+    comptime if is_cpu:
         comptime for m in range(lhs.static_shape[0]):
             comptime for n in range(rhs.static_shape[1]):
                 res[m, n] = 0.0
@@ -371,7 +368,7 @@ def fused_attention_kernel[
     for tile_n_idx in range(N // BN_1):
         var K_tile = K.tile[BN_1, D](tile_n_idx, 0)
         var V_tile = V.tile[BN_1, BD](tile_n_idx, block_idx.x)
-        var S = matmul["gpu", transpose_b=True](Q_tile, K_tile)
+        var S = matmul[is_cpu=False, transpose_b=True](Q_tile, K_tile)
         var m_2 = stack_allocation[q_dtype](row_major[BN]())
         max[axis=1](S, m_2)
         m_2.max(m_1)
@@ -399,7 +396,7 @@ def fused_attention_kernel[
         m_1_delta -= m_2
         m_1_delta.exp()
         O_i *= m_1_delta
-        var PV = matmul["gpu"](E, V_tile)
+        var PV = matmul[is_cpu=False](E, V_tile)
         O_i += PV
         m_1.copy_from(m_2)
         l_1.copy_from(l_2)
