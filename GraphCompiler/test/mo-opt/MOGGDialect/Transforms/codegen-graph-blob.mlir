@@ -25,13 +25,13 @@
 // CHECK:   comptime [[IN1_T:[A-Za-z0-9_]+]] = type_of([[IN1]])
 // CHECK:   comptime [[CONFIG_T:[A-Za-z0-9_]+]] = type_of([[CONFIG0]])
 // CHECK:   var [[CONFIG:[A-Za-z0-9_]+]] = [[CONFIG0]].merge([[CONFIG1]])
-// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].TileTensorType, [[A1:[A-Za-z0-9_]+]]: [[IN0_T]].TileTensorType, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].TileTensorType, [[A3:[A-Za-z0-9_]+]]: [[IN1_T]].TileTensorType, [[ACTIVE0:[A-Za-z0-9_]+]]: [[CONFIG_T]].ActiveThreads, [[ACTIVE1:[A-Za-z0-9_]+]]: [[CONFIG_T]].ActiveThreads):
+// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].DeviceType, [[A1:[A-Za-z0-9_]+]]: [[IN0_T]].DeviceType, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].DeviceType, [[A3:[A-Za-z0-9_]+]]: [[IN1_T]].DeviceType, [[ACTIVE0:[A-Za-z0-9_]+]]: [[CONFIG_T]].ActiveThreads, [[ACTIVE1:[A-Za-z0-9_]+]]: [[CONFIG_T]].ActiveThreads):
 // CHECK-NEXT: if {{\(?}}[[CONFIG_T]].is_thread_active([[ACTIVE0]]){{\)?}}:
 // CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT0_T]]([[A0]]), [[IN0_T]]([[A1]]))
 // CHECK: [[CONFIG_T]].barrier()
 // CHECK-NEXT: if {{\(?}}[[CONFIG_T]].is_thread_active([[ACTIVE1]]){{\)?}}:
 // CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT1_T]]([[A2]]), [[IN1_T]]([[A3]]))
-// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[CONFIG]], [[OUT0]].to_tile_tensor(), [[IN0]].to_tile_tensor(), [[OUT1]].to_tile_tensor(), [[IN1]].to_tile_tensor(), [[CONFIG0]].active_threads(), [[CONFIG1]].active_threads())
+// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[CONFIG]], [[OUT0]], [[IN0]], [[OUT1]], [[IN1]], [[CONFIG0]].active_threads(), [[CONFIG1]].active_threads())
 
 mo.graph @blob(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %0:2 = mogg.routine (%arg0 : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
