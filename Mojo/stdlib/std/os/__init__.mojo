@@ -45,6 +45,7 @@ from .os import (
     symlink,
     link,
     chdir,
+    getcwd,
 )
 from .pathlike import PathLike
 from .process import Process, Pipe

@@ -30,8 +30,7 @@ print(p)  # a/b/c.txt
 
 import std.os
 import std.format._utils as fmt
-from std.os import PathLike, listdir, stat_result
-from std.ffi import c_char, external_call
+from std.os import PathLike, listdir, stat_result, getcwd
 
 from std.reflection import call_location
 
@@ -57,19 +56,7 @@ def cwd() raises -> Path:
     print(string_path)
     ```
     """
-    comptime MAX_CWD_BUFFER_SIZE = 1024
-    var buf = Array[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
-
-    var ptr = buf.unsafe_ptr()
-    var res = external_call[
-        "getcwd", Optional[Pointer[c_char, origin_of(buf)]]
-    ](ptr, Int(MAX_CWD_BUFFER_SIZE))
-
-    # If we get a nullptr, then we raise an error.
-    if not res:
-        raise Error("unable to query the current directory")
-
-    return String(unsafe_from_utf8_ptr=ptr)
+    return getcwd()
 
 
 @inline(.always)

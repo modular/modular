@@ -10,10 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.os import chdir, mkdir, rmdir
+from std.os import chdir, getcwd, mkdir, rmdir
 from std.io import RawFileDescriptor, FileHandle
 from std.pathlib import cwd
-from std.testing import TestSuite, assert_equal, assert_not_equal
+from std.testing import TestSuite, assert_equal, assert_not_equal, assert_true
+
+
+def test_getcwd() raises:
+    var path = getcwd()
+    assert_true(path.startswith("/"))
+    assert_equal(path, String(cwd()))
 
 
 def test_chdir() raises:

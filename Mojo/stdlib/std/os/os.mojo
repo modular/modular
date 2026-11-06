@@ -668,3 +668,40 @@ def chdir[PathLike: stdPathLike](path: PathLike) raises:
     if error != 0:
         var err = get_errno()
         raise Error("chdir failed: ", fspath, " Err: ", String(err))
+
+
+# ===----------------------------------------------------------------------=== #
+# getcwd
+# ===----------------------------------------------------------------------=== #
+
+
+def getcwd() raises -> String:
+    """Gets the current working directory.
+
+    Returns:
+        The current working directory as a string.
+
+    Raises:
+        If the operation fails.
+
+    Example:
+
+    ```mojo
+    from std.os import getcwd
+
+    var path = getcwd()
+    print(path)
+    ```
+    """
+    comptime MAX_CWD_BUFFER_SIZE = 1024
+    var buf = Array[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
+
+    var ptr = buf.unsafe_ptr()
+    var res = external_call[
+        "getcwd", Optional[Pointer[c_char, origin_of(buf)]]
+    ](ptr, Int(MAX_CWD_BUFFER_SIZE))
+
+    if not res:
+        raise Error("unable to query the current directory")
+
+    return String(unsafe_from_utf8_ptr=ptr)
