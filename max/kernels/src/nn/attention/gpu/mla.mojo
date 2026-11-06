@@ -38,6 +38,8 @@ from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from nn.attention.gpu.mha import mha_splitk_reduce
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     AMD_MLA_BF16_DECODE_BLOCK_M,
+    AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS,
+    amd_mla_decode_fold_num_m_tiles,
     mha_decoding_num_partitions,
 )
 import max.gpu.primitives.warp as warp
@@ -165,10 +167,11 @@ comptime MLA_DECODE_MAX_SEQ_LEN = 8
 
 # AMD MLA decode S>1 (MTP) token-fold is wired only in the num_heads<=16 dispatch
 # arm of `AMDMLA.decode_dispatch`; the larger-head arms hardcode q_seq_len=1.
-# Both the host-side fold gate and the `mla_graph` decode-vs-prefill router key on
-# this, so an S>1 batch with num_heads>16 (e.g. DP-attention Kimi: 64 heads/rank)
-# routes to MLA prefill instead of the nonexistent large-head decode fold.
-comptime AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS = 16
+# Both the host-side fold gate and the `mla_graph` decode-vs-prefill router key
+# on AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS (imported from the partition heuristic
+# beside the fold helper), so an S>1 batch with num_heads>16 (e.g.
+# DP-attention Kimi: 64 heads/rank) routes to MLA prefill instead of the
+# nonexistent large-head decode fold.
 
 
 @inline(.always)
@@ -207,14 +210,17 @@ def mla_decode_max_seq_len[
 
 
 # Precise AMD MLA-decode token-fold cap: M = num_heads * S must be <= this for
-# the warp-local geometry (one 16-row MFMA M-tile per warp, BM = align16(M), up
-# to 8 warps). Enforced by a host-side `raise` (active in DEFAULT builds). At
-# BM=128 total LDS is ~89KB < the 160KB gfx950 limit (KV SMEM ~72KB is
-# BM-independent, Q is register-resident).
+# the token fold's tile geometry. Enforced by a host-side `raise`. At BM=128
+# total LDS is ~89KB < the 160KB gfx950 limit (KV SMEM ~72KB is BM-independent,
+# Q is register-resident).
 #
-# Occupancy: BM <= 64 fits 1 block/CU at ~510 VGPR with no spill; BM >= 80 forces
-# >= 2 waves/SIMD, capping VGPR at 256 so the working set spills (~1KB).
-# Correctness-neutral. A register-resident-P path would relieve this.
+# Occupancy: BM <= 64 fits 1 block/CU at ~510 VGPR with no spill. Past 64
+# folded rows a head-aligned fold therefore splits across two grid.y M-tiles
+# of BM = align_up(ceil(M/2), 16) rows (3-4 warps each); head-unaligned
+# counts keep the single warp-local tile (one 16-row MFMA M-tile per warp,
+# BM = align16(M), up to 8 warps), where BM >= 80 forces >= 2 waves/SIMD,
+# capping VGPR at 256 so the working set spills (~1KB). Correctness-neutral.
+# A register-resident-P path would relieve this.
 comptime AMD_MLA_DECODE_FOLD_M_MAX = 128
 
 
@@ -751,12 +757,34 @@ struct AMDMLA(MLAKernels):
             comptime _fold_m = num_heads * q_seq_len
             comptime num_blocks_y = ceildiv(_fold_m, BM)
             comptime assert BM % 16 == 0
-            # The S>1 fold packs all H*S rows into one block's M tile, so M must
-            # fit BM (= align16(M) for warp-local).
-            comptime assert (q_seq_len == 1) or (_fold_m <= BM), (
-                "S>1 requires M = num_heads*q_seq_len <= BM (the folded query"
-                " rows must fit the block M tile)."
+            # Backstop for the host-side fold cap (the chokepoint `raise`):
+            # the fold ladder, split-K workspace, and reducer are sized for
+            # M = num_heads*q_seq_len <= AMD_MLA_DECODE_FOLD_M_MAX.
+            comptime assert (q_seq_len == 1) or (
+                _fold_m <= AMD_MLA_DECODE_FOLD_M_MAX
+            ), (
+                "S>1 requires M = num_heads*q_seq_len <="
+                " AMD_MLA_DECODE_FOLD_M_MAX."
             )
+            # Multi-tile S>1 fold (num_blocks_y > 1): the tile-offset row
+            # math in `Attention` (valid_rows clamp, absolute stat-write and
+            # mask rows) is validated at BM % num_heads == 0; the dispatch
+            # ladder only launches multi-tile folds that satisfy it.
+            comptime if q_seq_len > 1 and num_blocks_y > 1:
+                comptime assert (
+                    BM % num_heads == 0
+                ), "Multi-tile S>1 fold requires BM % num_heads == 0."
+                # The partition heuristic and the HIP capture key count the
+                # M-tiles with `amd_mla_decode_fold_num_m_tiles` while the
+                # kernel bakes its split from `num_blocks_y` here; a ladder
+                # drift between the two would desync the host np from the
+                # launched grid silently.
+                comptime assert num_blocks_y == amd_mla_decode_fold_num_m_tiles(
+                    num_heads, q_seq_len
+                ), (
+                    "Multi-tile S>1 fold: num_blocks_y must equal"
+                    " amd_mla_decode_fold_num_m_tiles."
+                )
 
             comptime depth_v = type_of(output).static_shape[output.rank - 1]
 
@@ -793,12 +821,17 @@ struct AMDMLA(MLAKernels):
                 num_partitions_value = num_partitions
             else:
                 # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
+                # The S>1 fold spans num_blocks_y M-tiles per (batch,
+                # partition); the heuristic sizes the split for that CTA
+                # count. At S=1 the ceildiv(heads, block_m) packing already
+                # models the multi-tile grid, so it keeps num_m_tiles=1.
                 num_partitions_value = mha_decoding_num_partitions(
                     batch_size,
                     max_cache_valid_length,
                     num_heads,
                     ctx,
                     is_mla=True,
+                    num_m_tiles=(num_blocks_y if q_seq_len > 1 else 1),
                 )
 
             # Token fold (S>1): split-K is re-keyed by query row, so the
@@ -1047,11 +1080,35 @@ struct AMDMLA(MLAKernels):
                             # legacy (1,4) — WM/WN default to BM/32.
                             launch_with_BM[16, s]()
                         else:
-                            # warp-local (M/16, 1): one 16-row MFMA M-tile per
-                            # warp over align16(M) rows (W = BM//16 warps),
-                            # full N=128 KV, warp-local softmax.
-                            comptime _bm = align_up(_m, 16)
-                            launch_with_BM[_bm, s, WM=16, WN=128]()
+                            comptime _bm_single = align_up(_m, 16)
+                            # M > 64 needs >= 5 warps/CTA, which crosses the
+                            # 1-wave/SIMD occupancy cliff (2 waves/SIMD caps
+                            # VGPRs at 256; the working set then spills ~1 KB
+                            # of scratch per lane). Split the folded rows
+                            # across grid.y = 2 M-tiles of BM_tile rows
+                            # (3-4 warps each) instead, reusing the spill-free
+                            # BM <= 64 geometry. Gated on a head-aligned tile
+                            # (BM_tile % num_heads == 0) — the tile-offset row
+                            # math is validated there; other head counts keep
+                            # the single-tile launch (spilling, but
+                            # unchanged).
+                            comptime _bm_tile = align_up(ceildiv(_m, 2), 16)
+                            # The tile-count rule lives in
+                            # `amd_mla_decode_fold_num_m_tiles` (same file
+                            # as the partition heuristic) so the heuristic
+                            # and the device-graph capture key count the
+                            # same tiles this ladder launches.
+                            comptime if (
+                                amd_mla_decode_fold_num_m_tiles(num_heads, s)
+                                > 1
+                            ):
+                                launch_with_BM[_bm_tile, s, WM=16, WN=128]()
+                            else:
+                                # warp-local (M/16, 1): one 16-row MFMA
+                                # M-tile per warp over align16(M) rows
+                                # (W = BM//16 warps), full N=128 KV,
+                                # warp-local softmax.
+                                launch_with_BM[_bm_single, s, WM=16, WN=128]()
                         return
                 raise Error(
                     "AMD MLA decode (MTP): num_heads*S must be <= 128 (the"
