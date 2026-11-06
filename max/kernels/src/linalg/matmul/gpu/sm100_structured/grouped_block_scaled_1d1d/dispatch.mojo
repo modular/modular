@@ -635,21 +635,35 @@ def grouped_matmul_mxfp8_dispatch[
         and _decode_N == 6144
         and (_decode_K == 6144 or _decode_K == 3072)
     ) else -1
+    # W4A8 decode at these shapes is bound by per-CTA issue rate, not DRAM.
+    # Four k-tiles per stage at the same SMEM depth amortize each stage's
+    # barrier and SFB handoff over four times the weight bytes. Groups of 6
+    # and 12 do not compile.
+    comptime _decode_k_group = 4 if (
+        not fuse_swiglu
+        and is_w4a8_operand_pair[a.dtype, b.dtype]()
+        and _decode_N == 4096
+        and (_decode_K == 4096 or _decode_K == 2048)
+    ) else 1
 
     # Nested forwarder: the MXFP8 regimes differ in (mma_bn, cta_group) and
-    # -- decode only -- pipeline stages; AB_swapped, scaling_kind, and all the
-    # other forwarding comptime params + the 13 runtime args are identical.
+    # -- decode only -- pipeline stages and k-group; AB_swapped, scaling_kind,
+    # and all the other forwarding comptime params + the 13 runtime args are
+    # identical.
     # Factor the call here and select via the same ordered (upper-bound,
     # config) table as the NVFP4 path. Stages travel per-row as an Int with
     # -1 = auto (the classifier's pick), mirroring the NVFP4 table sentinel.
     @inline(.always)
-    def _go[mma_bn: Int, cta_group: Int, stages: Optional[Int]]() raises {imm}:
+    def _go[
+        mma_bn: Int, cta_group: Int, stages: Optional[Int], k_group: Int
+    ]() raises {imm}:
         _launch_grouped_block_scaled[
             transpose_b,
             AB_swapped=True,
             mma_bn=mma_bn,
             cta_group=cta_group,
             num_pipeline_stages=stages,
+            k_group_size=k_group,
             scaling_kind=UMMAKind.KIND_MXF8F6F4,
             pdl_level=pdl_level,
             fuse_swiglu=fuse_swiglu,
@@ -675,19 +689,20 @@ def grouped_matmul_mxfp8_dispatch[
             trace_buf,
         )
 
-    # (upper_avg_m, mma_bn, cta_group, stages_int). upper_avg_m < 0 =
-    # unbounded (large prefill). Only the decode row carries a stage override;
-    # prefill rows use -1 (= auto). First-match-and-return reproduces the
-    # original decode / small-prefill / large-prefill cascade exactly.
+    # (upper_avg_m, mma_bn, cta_group, stages_int, k_group). upper_avg_m < 0
+    # = unbounded (large prefill). Only the decode row carries stage and
+    # k-group overrides; prefill rows use -1 (= auto) and 1. First-match-and-
+    # return reproduces the original decode / small-prefill / large-prefill
+    # cascade exactly.
     comptime regimes = [
-        (DECODE_AVG_M, 8, 1, _decode_stages),
-        (SMALL_PREFILL_AVG_M, 64, 2, -1),
-        (-1, 128, 2, -1),
+        (DECODE_AVG_M, 8, 1, _decode_stages, _decode_k_group),
+        (SMALL_PREFILL_AVG_M, 64, 2, -1, 1),
+        (-1, 128, 2, -1, 1),
     ]
     comptime for r in regimes:
         comptime _s = Optional[Int](r[3]) if r[3] >= 0 else Optional[Int](None)
         if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
-            _go[r[1], r[2], _s]()
+            _go[r[1], r[2], _s, r[4]]()
             return
 
 

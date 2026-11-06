@@ -386,5 +386,13 @@ def main() raises:
             [32, 32, 32, 32], [0, 1, 2, 3], ctx
         )
 
+        # Decode shapes the dispatch runs with four k-tiles per stage.
+        _test_w4a8_grouped[N=4096, K=4096, num_experts=4](
+            [1, 2, 1, 3], [3, 0, 2, 1], ctx
+        )
+        _test_w4a8_grouped[N=4096, K=2048, num_experts=4](
+            [2, 1, 3, 1], [1, 3, 0, 2], ctx
+        )
+
         # K3's routed-expert shapes.
         _test_w4a8_grouped[N=3072, K=3584, num_experts=2]([96, 96], [0, 1], ctx)
