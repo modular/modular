@@ -1312,15 +1312,13 @@ struct FlashAttentionCPU:
     def execute[
         MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        dtype: DType,
-        rank: Int,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        q: InputTensor[dtype=dtype, rank=rank, ...],
-        k: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        v: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Fused & LoadAccess],
+        v: Some[Input & Fused & LoadAccess],
         scale: Float32,
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
@@ -1330,8 +1328,6 @@ struct FlashAttentionCPU:
 
         Parameters:
             MaskIns: The mask operand types.
-            dtype: Element type of `q`, `k`, `v` and the output.
-            rank: Rank of `q`, `k`, `v` and the output.
             mask_str: Attention mask type string passed to `dispatch_mask`.
             local_window_size: Sliding window size for windowed attention
                 (defaults to -1, meaning no window).
@@ -1347,23 +1343,47 @@ struct FlashAttentionCPU:
             ctx: Device context for CPU execution.
         """
         comptime assert ctx.target.is_cpu(), "only valid on CPUs"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime rank = type_of(output).rank
+        comptime assert type_of(q).dtype == dtype
+        comptime assert type_of(k).dtype == dtype
+        comptime assert type_of(v).dtype == dtype
+        comptime assert type_of(q).rank == rank
+        comptime assert type_of(k).rank == rank
+        comptime assert type_of(v).rank == rank
+
+        comptime assert conforms_to(type_of(k), UnsafeFusedView)
+        var k_view = unsafe_fused_view(k)
+        comptime assert conforms_to(type_of(k_view), Loadable)
+        comptime assert conforms_to(type_of(v), UnsafeFusedView)
+        var v_view = unsafe_fused_view(v)
+        comptime assert conforms_to(type_of(v_view), Loadable)
 
         @inline(.always)
-        def k_input_fn[width: Int](coords: Coord) {imm} -> SIMD[dtype, width]:
-            return k._lambda_load[width=width](coords)
+        def k_input_fn[
+            width: Int
+        ](coords: Coord) {var k_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](k_view.load[width=width](coords))
 
         @inline(.always)
-        def v_input_fn[width: Int](coords: Coord) {imm} -> SIMD[dtype, width]:
-            return v._lambda_load[width=width](coords)
+        def v_input_fn[
+            width: Int
+        ](coords: Coord) {var v_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](v_view.load[width=width](coords))
+
+        var k_shape = rebind[IndexList[rank]](coord_to_index_list(k.shape()))
+        var v_shape = rebind[IndexList[rank]](coord_to_index_list(v.shape()))
 
         def _run[mask_t: MHAMask](mask: mask_t) raises {imm}:
             nn_flash_attention(
                 k_input_fn,
                 v_input_fn,
-                q.to_tile_tensor[.int64]().as_imm(),
-                k.shape(),
-                v.shape(),
-                output.to_tile_tensor[.int64](),
+                q.to_tile_tensor[dtype]().as_imm(),
+                k_shape,
+                v_shape,
+                output.to_tile_tensor[dtype](),
                 mask,
                 scale,
                 ctx=Optional(ctx.assert_cpu_target()),
@@ -6349,22 +6369,17 @@ struct Struct_mla_store_ragged_paged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        kv_dtype: DType,
-        freq_dtype: DType,
-        gamma_dtype: DType,
-        //,
-    ](
-        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+    def execute[](
+        kv: Some[Input & Fused & LoadAccess],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_norm_gamma: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         epsilon: Float32,
         context: DeviceContext,
@@ -6402,39 +6417,72 @@ struct Struct_mla_store_ragged_paged:
         comptime assert (
             context.target.is_gpu()
         ), "attention.mla.store.ragged.paged is only supported on GPU"
-        comptime cache_head_size = Int(kv_blocks.static_spec.shape_tuple[5])
-        comptime kv_norm_dim = Int(kv_norm_gamma.static_spec.shape_tuple[0])
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_norm_gamma).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(kv).dtype == DType.bfloat16
+        comptime cache_head_size = type_of(kv_blocks)._shape_types[
+            5
+        ].static_value
+        comptime kv_norm_dim = type_of(kv_norm_gamma)._shape_types[
+            0
+        ].static_value
         comptime assert (
-            Int(kv.static_spec.shape_tuple[1]) == cache_head_size
+            type_of(kv)._shape_types[1].static_value == cache_head_size
         ), "kv's width must equal the MLA cache's head size"
         comptime assert (
             cache_head_size > kv_norm_dim
         ), "the store op needs a rope slice: a cache row wider than kv_norm_dim"
 
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
+
+        var num_rows = Int(kv.shape()[0].value())
+        comptime assert conforms_to(type_of(kv), UnsafeFusedView)
+        var kv_view = unsafe_fused_view(kv)
+        comptime assert conforms_to(type_of(kv_view), Loadable)
 
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
-            return kv._lambda_load[width=width, element_alignment=width](coords)
+        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+            return rebind[SIMD[.bfloat16, width]](
+                kv_view.load[width=width, element_alignment=width](
+                    Coord(coords)
+                )
+            )
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.store.ragged.paged",
             task_id=get_safe_task_id(context),
         ):
             mla_store_ragged_paged(
-                Int(kv.dim_size(0)),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
-                kv_norm_gamma.to_tile_tensor[.int64](),
+                num_rows,
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
+                kv_norm_gamma.to_tile_tensor(),
                 kv_collection,
                 layer_idx,
                 epsilon,
