@@ -270,19 +270,33 @@ class KVCacheMetrics:
     """Peer lookups begun alongside the co-located lookup rather than after
     it, under ``MODULAR_DKV_OVERLAP_PEER_LOOKUPS``."""
     dkv_peer_writeback_blocks: int = 0
-    """Peer-filled blocks queued at release to write back to the co-located
-    dKV, under ``MODULAR_DKV_OFFLOAD_PEER_LOADS``, counted per leaf for the
-    hashes the device prefix cache still held, up to the first one it lacks
-    on a full-attention leaf, where the offload stops."""
+    """Peer-filled blocks offloaded to write back to the co-located dKV once
+    their onload landed, under ``MODULAR_DKV_OFFLOAD_PEER_LOADS``, counted per
+    leaf for the hashes the device prefix cache still held, up to the first
+    one it lacks on a full-attention leaf, where the offload stops."""
     dkv_peer_writeback_blocks_evicted: int = 0
-    """Peer-filled hashes a release found missing from the device prefix
-    cache, per leaf, with those behind the first on a full-attention leaf.
-    Another request published these and they were evicted after it let them
-    go, and that request normally wrote them to dKV already."""
+    """Peer-filled hashes a write-back's offload found missing from the
+    device prefix cache while its request still held its own pages, per leaf,
+    with those behind the first on a full-attention leaf. Another request
+    published these as twins and they were evicted after it let them go, and
+    that request normally wrote them to dKV already, so this is not a loss."""
     dkv_peer_writeback_blocks_dropped: int = 0
-    """Peer-filled blocks no release will write back, per full-attention
-    leaf: those of an onload that landed after its request was released or
-    rolled back, and those a rollback took back after the onload landed."""
+    """Peer-filled hashes lost to the co-located dKV, per leaf: those a
+    write-back found missing from the device prefix cache when its request
+    had let the pages go, by a rollback or a release before the copy landed,
+    with those behind the first on a full-attention leaf. Nobody wrote these
+    back."""
+    dkv_peer_writeback_hold_expired: int = 0
+    """Peer write-backs not seen to land within their deadline, which then
+    stop holding back the offloads that follow them in their chains. One with
+    an offload held behind it lets dKV briefly register that offload's run
+    ahead of the pulled blocks."""
+    dkv_peer_writeback_held_offloads: int = 0
+    """Offloads released from a hold behind a peer write-back, directly or
+    through another held run."""
+    dkv_peer_writeback_hold_ms_total: float = 0.0
+    """Cumulative time the offloads ``dkv_peer_writeback_held_offloads``
+    counts were held, in milliseconds."""
     dkv_hinted_lookups: int = 0
     """Lookup rounds in which some entry routed to an attached peer."""
     dkv_hinted_lookup_ms_total: float = 0.0
@@ -385,6 +399,16 @@ class KVCacheMetrics:
         if self.dkv_hinted_lookups == 0:
             return 0.0
         return self.dkv_hinted_lookup_ms_total / self.dkv_hinted_lookups
+
+    @property
+    def dkv_peer_writeback_hold_avg_ms(self) -> float:
+        """Average hold behind a peer write-back in milliseconds."""
+        if self.dkv_peer_writeback_held_offloads == 0:
+            return 0.0
+        return (
+            self.dkv_peer_writeback_hold_ms_total
+            / self.dkv_peer_writeback_held_offloads
+        )
 
     @property
     def nixl_read_gib_per_s(self) -> float:
@@ -541,6 +565,18 @@ class KVCacheMetrics:
             dkv_peer_writeback_blocks_dropped=(
                 self.dkv_peer_writeback_blocks_dropped
                 + other.dkv_peer_writeback_blocks_dropped
+            ),
+            dkv_peer_writeback_hold_expired=(
+                self.dkv_peer_writeback_hold_expired
+                + other.dkv_peer_writeback_hold_expired
+            ),
+            dkv_peer_writeback_held_offloads=(
+                self.dkv_peer_writeback_held_offloads
+                + other.dkv_peer_writeback_held_offloads
+            ),
+            dkv_peer_writeback_hold_ms_total=(
+                self.dkv_peer_writeback_hold_ms_total
+                + other.dkv_peer_writeback_hold_ms_total
             ),
             dkv_hinted_lookups=self.dkv_hinted_lookups
             + other.dkv_hinted_lookups,

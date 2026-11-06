@@ -2310,6 +2310,9 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_peer_writeback_blocks.assert_not_called()
     mock_metrics.dkv_peer_writeback_blocks_evicted.assert_not_called()
     mock_metrics.dkv_peer_writeback_blocks_dropped.assert_not_called()
+    mock_metrics.dkv_peer_writeback_hold_expired.assert_not_called()
+    mock_metrics.dkv_peer_writeback_hold_latency.assert_not_called()
+    mock_metrics.dkv_peer_writeback_held_offloads.assert_not_called()
     mock_metrics.dkv_hinted_lookups.assert_not_called()
     mock_metrics.dkv_hinted_lookup_latency.assert_not_called()
     assert "dkv_prepare_load_degraded" not in metrics.to_log_extra()
@@ -2406,6 +2409,9 @@ def test_dkv_peer_writeback_counters_reach_the_log_and_the_counters() -> None:
         dkv_peer_writeback_blocks=6,
         dkv_peer_writeback_blocks_evicted=2,
         dkv_peer_writeback_blocks_dropped=3,
+        dkv_peer_writeback_hold_expired=4,
+        dkv_peer_writeback_held_offloads=2,
+        dkv_peer_writeback_hold_ms_total=30.0,
     )
 
     metrics = BatchMetrics.create(
@@ -2424,10 +2430,16 @@ def test_dkv_peer_writeback_counters_reach_the_log_and_the_counters() -> None:
     mock_metrics.dkv_peer_writeback_blocks.assert_called_once_with(6)
     mock_metrics.dkv_peer_writeback_blocks_evicted.assert_called_once_with(2)
     mock_metrics.dkv_peer_writeback_blocks_dropped.assert_called_once_with(3)
+    mock_metrics.dkv_peer_writeback_hold_expired.assert_called_once_with(4)
+    mock_metrics.dkv_peer_writeback_hold_latency.assert_called_once_with(15.0)
+    mock_metrics.dkv_peer_writeback_held_offloads.assert_called_once_with(2)
     extra = metrics.to_log_extra()
     assert extra["dkv_peer_writeback_blocks"] == 6
     assert extra["dkv_peer_writeback_blocks_evicted"] == 2
     assert extra["dkv_peer_writeback_blocks_dropped"] == 3
+    assert extra["dkv_peer_writeback_hold_expired"] == 4
+    assert extra["dkv_peer_writeback_hold_avg_ms"] == 15.0
+    assert extra["dkv_peer_writeback_held_offloads"] == 2
 
 
 _DKV_ORPHAN_FIELDS = {

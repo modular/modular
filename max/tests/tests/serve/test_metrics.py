@@ -755,6 +755,8 @@ def test_dkv_peer_writeback_counters_are_counters() -> None:
         "max.dkv.peer_writeback_blocks",
         "max.dkv.peer_writeback_blocks_evicted",
         "max.dkv.peer_writeback_blocks_dropped",
+        "max.dkv.peer_writeback_hold_expired",
+        "max.dkv.peer_writeback_held_offloads",
     ):
         assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
@@ -764,6 +766,18 @@ def test_dkv_hinted_lookup_latency_is_a_latency_histogram() -> None:
     """A window's mean hinted lookup, bucketed like the rpc latencies."""
     common.configure_metrics(Settings())
     name = "max.dkv.hinted_lookup_latency"
+    assert isinstance(metrics.SERVE_METRICS[name], _ProxyHistogram)
+    assert (
+        common.HISTOGRAM_BUCKETS_BY_METRIC[name]
+        == common.HISTOGRAM_BUCKETS_BY_METRIC["max.dkv.rpc_read_latency"]
+    )
+    metrics.MaxMeasurement(name, 2.5).commit()  # Should not raise
+
+
+def test_dkv_peer_writeback_hold_latency_is_a_latency_histogram() -> None:
+    """A window's mean hold behind a write-back, bucketed like the rpcs."""
+    common.configure_metrics(Settings())
+    name = "max.dkv.peer_writeback_hold_latency"
     assert isinstance(metrics.SERVE_METRICS[name], _ProxyHistogram)
     assert (
         common.HISTOGRAM_BUCKETS_BY_METRIC[name]

@@ -520,6 +520,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="Mean wall time of a hinted dKV lookup round in a batch's window, from routing to the assembled plan, for rounds in which some entry routed to an attached peer. What MODULAR_DKV_OVERLAP_PEER_LOOKUPS shortens.",
     ),  # type: ignore
+    "max.dkv.peer_writeback_hold_latency": _meter.create_histogram(
+        "max.dkv.peer_writeback_hold_latency",
+        unit="ms",
+        description="Mean time an offload was held behind a peer write-back in a batch's window, under MODULAR_DKV_OFFLOAD_PEER_LOADS, for offloads whose run follows the blocks a hinted peer filled, directly or through another held run. The head-of-line cost of registering those blocks first.",
+    ),  # type: ignore
     "max.dkv.read_blocks": _meter.create_counter(
         "max.dkv.read_blocks",
         unit="blocks",
@@ -654,15 +659,23 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     # batch like the split loads above.
     "max.dkv.peer_writeback_blocks": _create_counter(
         "max.dkv.peer_writeback_blocks",
-        description="Blocks a hinted peer filled that a request's release queued to write back to the co-located dKV, per leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS, up to the first hash the device prefix cache lacks on a full-attention leaf. Zero with the option off; dKV skips any it already holds, so read against its newly acquired offload count.",
+        description="Blocks a hinted peer filled that were offloaded once their onload landed to write back to the co-located dKV, per leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS, up to the first hash the device prefix cache lacks on a full-attention leaf. Zero with the option off; dKV skips any it already holds, so read against its newly acquired offload count.",
     ),
     "max.dkv.peer_writeback_blocks_evicted": _create_counter(
         "max.dkv.peer_writeback_blocks_evicted",
-        description="Peer-filled hashes a release found missing from the device prefix cache, per leaf, with those behind the first on a full-attention leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS. Another request published these and they were evicted after it let them go, and that request normally wrote them to dKV already, so this is not a lost write-back.",
+        description="Peer-filled hashes a write-back's offload found missing from the device prefix cache while its request still held its own pages, per leaf, with those behind the first on a full-attention leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS. Another request published these as twins and they were evicted after it let them go, and that request normally wrote them to dKV already, so this is not a lost write-back; max.dkv.peer_writeback_blocks_dropped counts the losses.",
     ),
     "max.dkv.peer_writeback_blocks_dropped": _create_counter(
         "max.dkv.peer_writeback_blocks_dropped",
-        description="Blocks a hinted peer filled that no release will write back, per full-attention leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS: those of an onload that landed after its request was released or rolled back, and those a rollback took back after the onload landed. Read against max.dkv.peer_writeback_blocks for how much of the peer-loaded KV the release-time write-back misses.",
+        description="Peer-filled hashes lost to the co-located dKV, per leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS: those a write-back found missing from the device prefix cache when its request had let the pages go, by a rollback or a release before the copy landed, with those behind the first on a full-attention leaf. Nobody wrote these back. Read against max.dkv.peer_writeback_blocks for how much of the peer-loaded KV the write-back misses.",
+    ),
+    "max.dkv.peer_writeback_hold_expired": _create_counter(
+        "max.dkv.peer_writeback_hold_expired",
+        description="Peer write-backs not seen to land within their hold deadline, under MODULAR_DKV_OFFLOAD_PEER_LOADS, which then stop holding back the offloads that follow them in their chains. One with an offload held behind it lets dKV briefly register that offload's run ahead of the blocks a hinted peer filled; read against max.dkv.peer_writeback_hold_latency.",
+    ),
+    "max.dkv.peer_writeback_held_offloads": _create_counter(
+        "max.dkv.peer_writeback_held_offloads",
+        description="Offloads released from a hold behind a peer write-back, under MODULAR_DKV_OFFLOAD_PEER_LOADS: those whose run follows the blocks a hinted peer filled, directly or through another held run. The offloads max.dkv.peer_writeback_hold_latency averages over.",
     ),
     "max.dkv.hinted_lookups": _create_counter(
         "max.dkv.hinted_lookups",
@@ -2213,6 +2226,15 @@ class _AsyncMetrics:
             ),
         )
 
+    def dkv_peer_writeback_hold_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_hold_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+        )
+
     def dkv_hinted_lookup_latency(self, latency_ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -2532,6 +2554,24 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.peer_writeback_blocks_dropped",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_hold_expired(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_hold_expired",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_held_offloads(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_held_offloads",
                 value,
                 self.extra_attributes,
             ),
