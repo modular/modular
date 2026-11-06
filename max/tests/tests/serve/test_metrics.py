@@ -748,6 +748,31 @@ def test_dkv_overlapped_lookup_counters_are_counters() -> None:
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
 
 
+def test_dkv_hint_loss_counters_are_counters() -> None:
+    """The hint denominator and the blocks each loss costs are per-batch
+    deltas, so counters, and the per-reason one carries its reason."""
+    common.configure_metrics(Settings())
+    for name in (
+        "max.dkv.hints_received",
+        "max.dkv.hint_blocks_forgone_by_reason",
+        "max.dkv.own_run_blocks_short_of_hint",
+        "max.dkv.peer_blocks_short_of_hint",
+        "max.dkv.hint_blocks_unserved",
+    ):
+        assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name
+        metrics.MaxMeasurement(name, 7).commit()  # Should not raise
+
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+    recorder.dkv_hint_blocks_forgone_by_reason(9, reason="chain_mismatch")
+    measurement = client.send_measurement.call_args.args[0]
+    assert (
+        measurement.instrument_name == "max.dkv.hint_blocks_forgone_by_reason"
+    )
+    assert measurement.attributes == {"model": "m", "reason": "chain_mismatch"}
+
+
 def test_dkv_peer_writeback_counters_are_counters() -> None:
     """Per-batch deltas like the split-load counter, so counters."""
     common.configure_metrics(Settings())

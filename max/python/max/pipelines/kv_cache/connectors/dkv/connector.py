@@ -2733,6 +2733,10 @@ class DKVConnector(KVConnector):
                     dkv_hints_unused_by_reason=dict(
                         m.get("hints_unused_by_reason", {})
                     ),
+                    dkv_hints_received=m.get("hints_received", 0),
+                    dkv_hint_blocks_forgone_by_reason=dict(
+                        m.get("hint_blocks_forgone_by_reason", {})
+                    ),
                     # A per-window delta like its neighbours. An extension
                     # predating it reports none, which folds as nothing
                     # dropped rather than as a missing key.
@@ -2754,6 +2758,13 @@ class DKVConnector(KVConnector):
                     dkv_own_runs_short_of_hint=m.get(
                         "own_runs_short_of_hint", 0
                     ),
+                    dkv_own_run_blocks_short_of_hint=m.get(
+                        "own_run_blocks_short_of_hint", 0
+                    ),
+                    dkv_peer_blocks_short_of_hint=m.get(
+                        "peer_blocks_short_of_hint", 0
+                    ),
+                    dkv_hint_blocks_unserved=m.get("hint_blocks_unserved", 0),
                     dkv_split_loads=m.get("split_loads", 0),
                     dkv_overlapped_peer_lookups=m.get(
                         "overlapped_peer_lookups", 0

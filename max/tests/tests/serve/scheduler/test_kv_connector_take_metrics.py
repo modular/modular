@@ -104,6 +104,36 @@ def test_kv_cache_metrics_add_sums_the_dkv_orphan_fields() -> None:
     assert total.dkv_orphan_queue_depth == 66
 
 
+def test_kv_cache_metrics_add_sums_the_dkv_hint_loss_fields() -> None:
+    """The hint denominator and the blocks lost to hints and short pulls sum
+    across replicas, the per-reason blocks label by label."""
+    first = KVCacheMetrics(
+        dkv_hints_received=3,
+        dkv_hint_blocks_forgone_by_reason={"chain_mismatch": 10},
+        dkv_own_run_blocks_short_of_hint=1,
+        dkv_peer_blocks_short_of_hint=2,
+        dkv_hint_blocks_unserved=3,
+    )
+    second = KVCacheMetrics(
+        dkv_hints_received=30,
+        dkv_hint_blocks_forgone_by_reason={"chain_mismatch": 5, "gapped": 4},
+        dkv_own_run_blocks_short_of_hint=10,
+        dkv_peer_blocks_short_of_hint=20,
+        dkv_hint_blocks_unserved=30,
+    )
+
+    total = first + second
+
+    assert total.dkv_hints_received == 33
+    assert total.dkv_hint_blocks_forgone_by_reason == {
+        "chain_mismatch": 15,
+        "gapped": 4,
+    }
+    assert total.dkv_own_run_blocks_short_of_hint == 11
+    assert total.dkv_peer_blocks_short_of_hint == 22
+    assert total.dkv_hint_blocks_unserved == 33
+
+
 def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
     """device_blocks_served and cross_replica_{blocks,bytes}_copied sum
     across replicas (CENG-845 G0/G0-DP tier-attribution counters)."""

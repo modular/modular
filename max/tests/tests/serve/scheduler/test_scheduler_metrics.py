@@ -2351,6 +2351,50 @@ def test_dkv_peer_rounds_while_degraded_reach_the_log_and_the_counters() -> (
     assert metrics.to_log_extra()["dkv_peer_rounds_while_degraded"] == 7
 
 
+def test_dkv_hint_loss_counters_reach_the_log_and_the_counters() -> None:
+    """The hint denominator and the blocks lost to each reason publish beside
+    the hint counters, and only the reasons that moved go out."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_hints_received=40,
+        dkv_hint_blocks_forgone_by_reason={"chain_mismatch": 120, "gapped": 0},
+        dkv_own_run_blocks_short_of_hint=6,
+        dkv_peer_blocks_short_of_hint=8,
+        dkv_hint_blocks_unserved=5,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_hints_received.assert_called_once_with(40)
+    mock_metrics.dkv_hint_blocks_forgone_by_reason.assert_called_once_with(
+        120, reason="chain_mismatch"
+    )
+    mock_metrics.dkv_own_run_blocks_short_of_hint.assert_called_once_with(6)
+    mock_metrics.dkv_peer_blocks_short_of_hint.assert_called_once_with(8)
+    mock_metrics.dkv_hint_blocks_unserved.assert_called_once_with(5)
+    extra = metrics.to_log_extra()
+    assert extra["dkv_hints_received"] == 40
+    assert extra["dkv_own_run_blocks_short_of_hint"] == 6
+    assert extra["dkv_peer_blocks_short_of_hint"] == 8
+    assert extra["dkv_hint_blocks_unserved"] == 5
+
+
 def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
     None
 ):

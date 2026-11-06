@@ -238,6 +238,42 @@ class KVCacheMetrics:
     """Recency touches the client dropped because a touch it sent within the
     last second already covered their keys, each an RPC the store was spared."""
 
+    # What lost cache hints and short peer pulls cost, in blocks (CLIN-2219).
+    # Per-window deltas like the hint counters above, so the blocks lost to
+    # each cause can be ranked rather than guessed from request counts.
+    dkv_hints_received: int = 0
+    """Cache hints that reached a lookup which counts them, aligned or not.
+    The denominator for the ``unparseable``, ``no_group_entry`` and
+    ``chain_mismatch`` rejections and for ``dkv_hints_unused``, per entry per
+    leaf client like them. An ``invalid_source`` rejection is counted per
+    source, not per hint, so it is not a share of this."""
+    dkv_hint_blocks_forgone_by_reason: dict[str, int] = field(
+        default_factory=dict
+    )
+    """Blocks the peers a rejected or unused hint named had offered from the
+    request's first block, by the rejection or unused reason, per entry per
+    leaf client like ``dkv_hints_received``. For ``chain_mismatch`` it counts
+    only the blocks before the chains part, since the rest were never the
+    request's. It is zero for a request sent without ``chain_start`` and for a
+    sliding window hint, neither of which can be placed on the hinted
+    chain."""
+    dkv_own_run_blocks_short_of_hint: int = 0
+    """Blocks the co-located run fell short of the run the hint credited it
+    with, over the entries ``dkv_own_runs_short_of_hint`` counts."""
+    dkv_peer_blocks_short_of_hint: int = 0
+    """Blocks a hinted peer was asked for that neither its answer nor the
+    co-located run covered, a failed read counting from where the co-located
+    run ends. A read sent back to the peer counts on the read that asks again,
+    or at the end of the round when none does. A later source can still serve
+    some of these blocks."""
+    dkv_hint_blocks_unserved: int = 0
+    """Blocks each hinted entry's hint promised that the finished lookup's
+    plan does not serve, per entry per leaf client like
+    ``dkv_hints_received``. The two ``*_short_of_hint`` counts are per hop and
+    can count one block more than once, so this is the count to rank blocks
+    lost by. Counted on the leased path MAX drives only, since Mach's
+    presence path does not count it yet."""
+
     # dKV fail-opens: loads answered as misses without a transfer, and the
     # lookups hinted peers still served through the same outage. Per-window
     # deltas like the peer counters, so a tier serving every load as a miss
@@ -541,6 +577,12 @@ class KVCacheMetrics:
                 self.dkv_hints_unused_by_reason,
                 other.dkv_hints_unused_by_reason,
             ),
+            dkv_hints_received=self.dkv_hints_received
+            + other.dkv_hints_received,
+            dkv_hint_blocks_forgone_by_reason=_add_by_key(
+                self.dkv_hint_blocks_forgone_by_reason,
+                other.dkv_hint_blocks_forgone_by_reason,
+            ),
             dkv_touches_deduplicated=self.dkv_touches_deduplicated
             + other.dkv_touches_deduplicated,
             dkv_prepare_load_degraded=self.dkv_prepare_load_degraded
@@ -553,6 +595,12 @@ class KVCacheMetrics:
             + other.dkv_peer_rounds_while_degraded,
             dkv_own_runs_short_of_hint=self.dkv_own_runs_short_of_hint
             + other.dkv_own_runs_short_of_hint,
+            dkv_own_run_blocks_short_of_hint=self.dkv_own_run_blocks_short_of_hint
+            + other.dkv_own_run_blocks_short_of_hint,
+            dkv_peer_blocks_short_of_hint=self.dkv_peer_blocks_short_of_hint
+            + other.dkv_peer_blocks_short_of_hint,
+            dkv_hint_blocks_unserved=self.dkv_hint_blocks_unserved
+            + other.dkv_hint_blocks_unserved,
             dkv_split_loads=self.dkv_split_loads + other.dkv_split_loads,
             dkv_overlapped_peer_lookups=self.dkv_overlapped_peer_lookups
             + other.dkv_overlapped_peer_lookups,

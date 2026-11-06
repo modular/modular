@@ -641,6 +641,25 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "max.dkv.peer_rounds_while_degraded",
         description="dKV lookups that found the co-located dKV down and still leased a loadable run from a peer the request's cache hint named. Read with max.dkv.prepare_load_degraded, which counts the lookups that left blocks to the co-located dKV, to see how much of a dKV restart the peers covered.",
     ),
+    # What lost cache hints and short peer pulls cost, in blocks (CLIN-2219).
+    # Counters, since take_metrics clears them every batch like the fail-opens
+    # above.
+    "max.dkv.hints_received": _create_counter(
+        "max.dkv.hints_received",
+        description="Cache hints that reached a lookup which counts them, aligned or not, per entry per leaf client. The denominator for the unparseable, no_group_entry and chain_mismatch rejections and for max.dkv.hints_unused. An invalid_source rejection counts per source, not per hint.",
+    ),
+    "max.dkv.own_run_blocks_short_of_hint": _create_counter(
+        "max.dkv.own_run_blocks_short_of_hint",
+        description="Blocks the co-located run fell short of the run the cache hint credited it with.",
+    ),
+    "max.dkv.peer_blocks_short_of_hint": _create_counter(
+        "max.dkv.peer_blocks_short_of_hint",
+        description="Blocks a hinted peer was asked for that neither its answer nor the co-located run covered, a failed read counting from where the co-located run ends. A read sent back to the peer counts on the read that asks again, or at the end of the round when none does. Per hop, so it can count a block max.dkv.own_run_blocks_short_of_hint also counts.",
+    ),
+    "max.dkv.hint_blocks_unserved": _create_counter(
+        "max.dkv.hint_blocks_unserved",
+        description="Blocks each hinted entry's cache hint promised that the finished lookup's plan does not serve, per entry per leaf client like max.dkv.hints_received. The count to rank blocks lost by, since the per hop *_short_of_hint counters can count one block more than once. Counted on the leased path (MAX) only, Mach's presence path does not count it yet.",
+    ),
     # The overlapped hinted lookup (CLIN-2163). Counters, since take_metrics
     # clears them every batch like the fail-opens above.
     "max.dkv.own_runs_short_of_hint": _create_counter(
@@ -712,6 +731,10 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     # Per-call dKV client counters. Counters, not histograms, so a dashboard
     # derives the per-call mean as time over calls; the rpc_*_latency
     # histograms above record one per-batch mean each.
+    "max.dkv.hint_blocks_forgone_by_reason": _create_counter(
+        "max.dkv.hint_blocks_forgone_by_reason",
+        description="Blocks the peers a rejected or unused cache hint named had offered from the request's first block, by the rejection or unused `reason`, per entry per leaf client. For chain_mismatch only the blocks before the chains part, since the rest were never the request's. Zero for a request sent without chain_start and for a sliding window hint, neither of which can be placed on the hinted chain.",
+    ),
     "max.dkv.hints_rejected_by_reason": _meter.create_counter(
         "max.dkv.hints_rejected_by_reason",
         description="max.dkv.hints_rejected split by `reason`: unparseable bytes, no entry for the group, a chain that disagrees with the request on a block both name, or an instance record that failed validation.",
@@ -2388,6 +2411,26 @@ class _AsyncMetrics:
             ),
         )
 
+    def dkv_hints_received(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hints_received",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hint_blocks_forgone_by_reason(
+        self, value: int, reason: str
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hint_blocks_forgone_by_reason",
+                value,
+                {**self.extra_attributes, "reason": reason},
+            ),
+        )
+
     def dkv_hints_rejected_by_reason(self, value: int, reason: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -2500,6 +2543,33 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.peer_rounds_while_degraded",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_own_run_blocks_short_of_hint(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.own_run_blocks_short_of_hint",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_blocks_short_of_hint(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_blocks_short_of_hint",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hint_blocks_unserved(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hint_blocks_unserved",
                 value,
                 self.extra_attributes,
             ),

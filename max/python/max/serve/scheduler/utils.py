@@ -365,6 +365,16 @@ class BatchMetrics:
     # Lookups a hinted peer served while the co-located dKV was down, which
     # read against the fail-opens show how much of an outage peers covered.
     dkv_peer_rounds_while_degraded: int = 0
+    # What lost cache hints and short peer pulls cost, in blocks (CLIN-2219):
+    # per-window counts published as counters on the same guard, 0 against an
+    # extension that predates them.
+    dkv_hints_received: int = 0
+    dkv_hint_blocks_forgone_by_reason: dict[str, int] = field(
+        default_factory=dict
+    )
+    dkv_own_run_blocks_short_of_hint: int = 0
+    dkv_peer_blocks_short_of_hint: int = 0
+    dkv_hint_blocks_unserved: int = 0
     # The overlapped hinted lookup (CLIN-2163): per-window counts published
     # as counters on the same guard, and the window's mean hinted lookup,
     # published as a histogram the way the rpc latencies are.
@@ -568,12 +578,17 @@ class BatchMetrics:
         dkv_hints_rejected_by_reason: dict[str, int] = {}
         dkv_hints_unused = 0
         dkv_hints_unused_by_reason: dict[str, int] = {}
+        dkv_hints_received = 0
+        dkv_hint_blocks_forgone_by_reason: dict[str, int] = {}
         dkv_touches_deduplicated = 0
         dkv_prepare_load_degraded = 0
         dkv_load_with_plan_degraded = 0
         dkv_load_with_plan_expired = 0
         dkv_peer_rounds_while_degraded = 0
         dkv_own_runs_short_of_hint = 0
+        dkv_own_run_blocks_short_of_hint = 0
+        dkv_peer_blocks_short_of_hint = 0
+        dkv_hint_blocks_unserved = 0
         dkv_split_loads = 0
         dkv_overlapped_peer_lookups = 0
         dkv_peer_writeback_blocks = 0
@@ -726,6 +741,10 @@ class BatchMetrics:
             )
             dkv_hints_unused = metrics_agg.dkv_hints_unused
             dkv_hints_unused_by_reason = metrics_agg.dkv_hints_unused_by_reason
+            dkv_hints_received = metrics_agg.dkv_hints_received
+            dkv_hint_blocks_forgone_by_reason = (
+                metrics_agg.dkv_hint_blocks_forgone_by_reason
+            )
             dkv_touches_deduplicated = metrics_agg.dkv_touches_deduplicated
             dkv_prepare_load_degraded = metrics_agg.dkv_prepare_load_degraded
             dkv_load_with_plan_degraded = (
@@ -736,6 +755,13 @@ class BatchMetrics:
                 metrics_agg.dkv_peer_rounds_while_degraded
             )
             dkv_own_runs_short_of_hint = metrics_agg.dkv_own_runs_short_of_hint
+            dkv_own_run_blocks_short_of_hint = (
+                metrics_agg.dkv_own_run_blocks_short_of_hint
+            )
+            dkv_peer_blocks_short_of_hint = (
+                metrics_agg.dkv_peer_blocks_short_of_hint
+            )
+            dkv_hint_blocks_unserved = metrics_agg.dkv_hint_blocks_unserved
             dkv_split_loads = metrics_agg.dkv_split_loads
             dkv_overlapped_peer_lookups = (
                 metrics_agg.dkv_overlapped_peer_lookups
@@ -917,12 +943,17 @@ class BatchMetrics:
             dkv_hints_rejected_by_reason=dkv_hints_rejected_by_reason,
             dkv_hints_unused=dkv_hints_unused,
             dkv_hints_unused_by_reason=dkv_hints_unused_by_reason,
+            dkv_hints_received=dkv_hints_received,
+            dkv_hint_blocks_forgone_by_reason=dkv_hint_blocks_forgone_by_reason,
             dkv_touches_deduplicated=dkv_touches_deduplicated,
             dkv_prepare_load_degraded=dkv_prepare_load_degraded,
             dkv_load_with_plan_degraded=dkv_load_with_plan_degraded,
             dkv_load_with_plan_expired=dkv_load_with_plan_expired,
             dkv_peer_rounds_while_degraded=dkv_peer_rounds_while_degraded,
             dkv_own_runs_short_of_hint=dkv_own_runs_short_of_hint,
+            dkv_own_run_blocks_short_of_hint=dkv_own_run_blocks_short_of_hint,
+            dkv_peer_blocks_short_of_hint=dkv_peer_blocks_short_of_hint,
+            dkv_hint_blocks_unserved=dkv_hint_blocks_unserved,
             dkv_split_loads=dkv_split_loads,
             dkv_overlapped_peer_lookups=dkv_overlapped_peer_lookups,
             dkv_peer_writeback_blocks=dkv_peer_writeback_blocks,
@@ -1413,6 +1444,7 @@ class BatchMetrics:
             )
             extra["dkv_hints_rejected"] = self.dkv_hints_rejected
             extra["dkv_hints_unused"] = self.dkv_hints_unused
+            extra["dkv_hints_received"] = self.dkv_hints_received
             extra["dkv_touches_deduplicated"] = self.dkv_touches_deduplicated
             extra["dkv_prepare_load_degraded"] = self.dkv_prepare_load_degraded
             extra["dkv_load_with_plan_degraded"] = (
@@ -1427,6 +1459,13 @@ class BatchMetrics:
             extra["dkv_own_runs_short_of_hint"] = (
                 self.dkv_own_runs_short_of_hint
             )
+            extra["dkv_own_run_blocks_short_of_hint"] = (
+                self.dkv_own_run_blocks_short_of_hint
+            )
+            extra["dkv_peer_blocks_short_of_hint"] = (
+                self.dkv_peer_blocks_short_of_hint
+            )
+            extra["dkv_hint_blocks_unserved"] = self.dkv_hint_blocks_unserved
             extra["dkv_split_loads"] = self.dkv_split_loads
             extra["dkv_overlapped_peer_lookups"] = (
                 self.dkv_overlapped_peer_lookups
@@ -1469,6 +1508,10 @@ class BatchMetrics:
             labeled: tuple[tuple[str, Mapping[str, float]], ...] = (
                 ("dkv_hints_rejected", self.dkv_hints_rejected_by_reason),
                 ("dkv_hints_unused", self.dkv_hints_unused_by_reason),
+                (
+                    "dkv_hint_blocks_forgone",
+                    self.dkv_hint_blocks_forgone_by_reason,
+                ),
                 ("dkv_rpc_calls", self.dkv_rpc_calls),
                 ("dkv_rpc_time_ms", self.dkv_rpc_time_ms),
                 ("dkv_rpc_socket_wait_ms", self.dkv_rpc_socket_wait_ms),
@@ -1672,6 +1715,7 @@ class BatchMetrics:
             )
             METRICS.dkv_hints_rejected(self.dkv_hints_rejected)
             METRICS.dkv_hints_unused(self.dkv_hints_unused)
+            METRICS.dkv_hints_received(self.dkv_hints_received)
             METRICS.dkv_touches_deduplicated(self.dkv_touches_deduplicated)
             METRICS.dkv_prepare_load_degraded(self.dkv_prepare_load_degraded)
             METRICS.dkv_load_with_plan_degraded(
@@ -1682,6 +1726,13 @@ class BatchMetrics:
                 self.dkv_peer_rounds_while_degraded
             )
             METRICS.dkv_own_runs_short_of_hint(self.dkv_own_runs_short_of_hint)
+            METRICS.dkv_own_run_blocks_short_of_hint(
+                self.dkv_own_run_blocks_short_of_hint
+            )
+            METRICS.dkv_peer_blocks_short_of_hint(
+                self.dkv_peer_blocks_short_of_hint
+            )
+            METRICS.dkv_hint_blocks_unserved(self.dkv_hint_blocks_unserved)
             METRICS.dkv_split_loads(self.dkv_split_loads)
             METRICS.dkv_overlapped_peer_lookups(
                 self.dkv_overlapped_peer_lookups
@@ -1722,6 +1773,10 @@ class BatchMetrics:
                 METRICS.dkv_hints_rejected_by_reason(count, reason=reason)
             for reason, count in _moved(self.dkv_hints_unused_by_reason):
                 METRICS.dkv_hints_unused_by_reason(count, reason=reason)
+            for reason, blocks in _moved(
+                self.dkv_hint_blocks_forgone_by_reason
+            ):
+                METRICS.dkv_hint_blocks_forgone_by_reason(blocks, reason=reason)
             for op, calls in _moved(self.dkv_rpc_calls):
                 METRICS.dkv_rpc_calls(calls, op=op)
             for op, ms in _moved(self.dkv_rpc_time_ms):
