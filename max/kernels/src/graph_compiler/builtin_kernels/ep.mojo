@@ -2983,7 +2983,7 @@ struct DistributedEPDispatchBlockScaledNV:
                 # per-expert scan and sent one token per CTA at a time; the
                 # histogram count and the warp-per-token send keep the same
                 # bytes and receive layout (KERN-3829). Only single-node NVFP4
-                # without a fused shared expert takes them.
+                # or MXFP8 without a fused shared expert takes them.
                 dispatch_warp_min_tokens=EP_WARP_TOKENS_MIN_TOKENS,
             ](
                 format_handler,

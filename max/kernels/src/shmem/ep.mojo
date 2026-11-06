@@ -671,7 +671,7 @@ def ep_fused_dispatch_kernel_api[
             expert's rows with one shared-memory histogram pass at any count.
             Same bytes and receive layout. -1 (the default) keeps the stock
             send and count, as does every configuration but single-node NVFP4
-            without a fused shared expert.
+            or MXFP8 without a fused shared expert.
         ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
             compiles the counting away.
 
@@ -808,7 +808,7 @@ def ep_fused_dispatch_kernel_api[
             expert's rows with one shared-memory histogram pass at any count.
             Same bytes and receive layout. -1 (the default) keeps the stock
             send and count, as does every configuration but single-node NVFP4
-            without a fused shared expert.
+            or MXFP8 without a fused shared expert.
         ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
             compiles the counting away.
 

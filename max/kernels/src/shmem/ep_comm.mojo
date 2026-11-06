@@ -1901,10 +1901,10 @@ struct NVBlockScaledTokenFormat[
         Self._n_warps * size_of[SharedMemBarrier](), 8
     )
     comptime dispatch_smem_size = Self._mbar_smem_offset + Self._mbar_smem_size
-    # Measured for NVFP4 only; the per-row global scale and the copy-role split
-    # are CTA-wide copies.
+    # NVFP4 and MXFP8 (DeepSeek-V4.1's MXFP4 experts read MXFP8 rows); the
+    # per-row global scale and the copy-role split are CTA-wide copies.
     comptime one_warp_copy = (
-        Self.is_nvfp4
+        (Self.is_nvfp4 or Self.is_mxfp8)
         and not Self.nvfp4_dyn_global_scales
         and not Self.ep_copy_role_split
         and not Self.ep_prequantized
@@ -7141,8 +7141,8 @@ def _takes_prefill_send[
     fused_shared_expert: Bool,
 ]() -> Bool:
     """Returns whether `dispatch_kernel` runs the histogram monitor and the
-    warp-per-token send: only the single-node NVFP4 configuration they were
-    measured on does, and every other one keeps the stock code."""
+    warp-per-token send: only the single-node NVFP4 and MXFP8 configurations
+    they were measured on do, and every other one keeps the stock code."""
     return (
         warp_min_tokens >= 0
         and token_fmt_type.one_warp_copy

@@ -83,6 +83,8 @@ _GPU_MEMORY = {
     "test_scatter.mojo": "3",
     "test_broadcast_subgroup.mojo": "2",
     "test_ep_ord_r_completion.mojo": "2",
+    # MXFP8 rows at 8 ranks x 8,168 tokens need about 2.6 GB.
+    "test_ep_dispatch_prefill_send.mojo": "4",
     "test_kernel_load_gate.mojo": "2",
 }
 
