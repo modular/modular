@@ -689,7 +689,8 @@ static ErrorOrSuccess validateCustomOpParameters(const MojoRegistry &registry,
   // declared on the registered functions. Collect struct params first to
   // mirror Mojo's merged `@register` parameter layout, then union the param
   // lists from each function variant (some kernels declare params only on
-  // `elementwise` instead of `execute`).
+  // `elementwise` instead of `execute`, and a declarative kernel has no
+  // `execute`).
   SmallVector<KGEN::ParamDeclAttr> inputParamsVec;
   llvm::SmallDenseSet<StringRef> seen;
   auto append = [&](KGEN::ParamDeclAttr p) {
@@ -705,6 +706,8 @@ static ErrorOrSuccess validateCustomOpParameters(const MojoRegistry &registry,
       append(cast<KGEN::ParamDeclAttr>(a));
   };
   appendFn(declOp.getExecute());
+  appendFn(declOp.getExecuteDevice());
+  appendFn(declOp.getExecuteConfiguration());
   appendFn(declOp.getElementwise());
   if (registry.containsShapeFunction(declOp.getRegistration()))
     appendFn(

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import extensibility
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, Dim
 from max.gpu.host import DeviceExternalFunction
 from max.gpu import global_idx
 from std.math import ceildiv
@@ -367,6 +367,37 @@ struct OpWithStringSliceParameter[StringParameter: StringSpan]:
             Coord(0), x.to_tile_tensor[dtype]().as_imm().load[width=1](Coord(0))
         )
         print(Self.StringParameter)
+
+
+# What a declarative kernel's `execute_configuration` returns: the graph
+# compiler calls only `get_grid_dim()` and `get_block_dim()`.
+@fieldwise_init
+struct DeclarativeLaunchConfig(Copyable):
+    var grid_dim: Dim
+    var block_dim: Dim
+
+    def get_grid_dim(self) -> Dim:
+        return self.grid_dim
+
+    def get_block_dim(self) -> Dim:
+        return self.block_dim
+
+
+# A declarative kernel has no `execute`, so it declares its parameters on its
+# entry points.
+@extensibility.register("declarative_op_with_int_parameter")
+struct DeclarativeOpWithIntParameter:
+    @staticmethod
+    def execute_configuration(
+        output: Some[Tensor], x: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(1))
+
+    @staticmethod
+    def execute_device[
+        IntParameter: Int
+    ](output: Some[Output & TileTensorable], x: Some[Input & TileTensorable]):
+        pass
 
 
 @extensibility.register("op_with_static_string_parameter")
