@@ -149,6 +149,12 @@ def _cp_merge_topk_kernel[
 
     with PDL():
         var rank = Int(cp_rank[0])
+        # The rank is read from the device; out of range, `own_begin` below
+        # would index past the `dcp * top_k` staged keys.
+        debug_assert(
+            rank >= 0 and rank < dcp,
+            "cp_merge_topk: cp_rank outside [0, dcp)",
+        )
         var row_scores = scores.unsafe_offset(row * N)
 
         # Pass 1: stage the keys, and histogram their high digit.

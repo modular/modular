@@ -29,13 +29,12 @@ from max.nn.common_layers import quant_ops
 from max.nn.common_layers.context_parallel import (
     check_dcp_mesh,
     combine_partial_attention,
-    dcp_axis,
     dcp_ranks,
     gather_columns,
     split_selection,
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.mesh_axis import TP, dcp_axis
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )

@@ -38,6 +38,7 @@ from max.nn._graph_ops import mla_prefill_graph as _mla_prefill_graph
 from max.nn._graph_ops import (
     store_mla_latent_ragged as _store_mla_latent_ragged,
 )
+from max.nn.common_layers.mesh_axis import dcp_axis
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Unknown
 
@@ -60,9 +61,6 @@ def mla_decode_graph_cp(q: Tensor, **kwargs: Any) -> tuple[Tensor, Tensor]:
     on the DCP mesh axis and keep ``q``'s placements on the other axes,
     where a data-parallel replica's tokens are its own.
     """
-    # context_parallel imports this module.
-    from max.nn.common_layers.context_parallel import dcp_axis
-
     out, lse = _mla_decode_graph_cp_per_device(q=q, **kwargs)
     axis = dcp_axis(q.mesh)
     partial = DeviceMapping(

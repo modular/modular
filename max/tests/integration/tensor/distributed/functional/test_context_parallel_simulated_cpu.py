@@ -114,11 +114,15 @@ def test_combine_returns_each_ranks_own_heads(dtype: Any) -> None:
     """On a one-axis mesh each rank keeps ``heads / dcp`` merged heads.
 
     Traces the merge without compiling or running it, in the layout
-    ``o_proj`` reads. The merge is graph ops around one all-to-all; its
-    numerics (LSE weights,
-    max-shift, the ``-inf`` floor for a rank with no keys) are covered end
-    to end by the DCP rows of the mach smoke accuracy tests, and the
-    all-to-all's data movement by its Mojo kernel test.
+    ``o_proj`` reads: this checks shapes, dtypes and placements only.
+
+    No test executes the merge's numerics (the LSE weights, the max shift,
+    the ``-1e30`` floor for a rank with no keys), since tests here may not
+    compile and run a MAX graph. The all-to-all's data movement has its
+    Mojo kernel test, and the DCP rows of the mach smoke tests check gsm8k
+    accuracy end to end, which catches a broken merge but does not pin its
+    numerics. A fused merge kernel (MAX-1124) will carry a Mojo numerics
+    test.
     """
     tokens, heads, depth = 3, 8, 5
     outs = [np.zeros((tokens, heads, depth), np.float32) for _ in range(DCP)]

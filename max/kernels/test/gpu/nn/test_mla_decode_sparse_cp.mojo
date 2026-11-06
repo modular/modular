@@ -43,7 +43,10 @@ rest of its cache untouched, and return a finite LSE (`-inf` for a token with
 no keys).
 
 `run_bf16_cp_store` checks the same store through the BF16 branch the
-`attention.mla.graph.decode.paged.sparse{,.cp}` ops call, and
+`attention.mla.graph.decode.paged.sparse{,.cp}` ops call,
+`run_bf16_cp_owned_rows` that branch on compacted owned rows with per-token
+lengths below the top-k and an empty token (LSE `-inf`, O zero), merged
+against a group of one, and
 `run_bf16_branch_modes` the BF16 `.cp` op's two other modes against its
 default: `latent_output` returns the attention's 512-wide latent output,
 which `w_uv` projects to the default output with the same LSE, and
@@ -881,11 +884,33 @@ def _bf16_w_uv(i: Int) -> Scalar[DType.bfloat16]:
     return Scalar[DType.bfloat16](Float32((i % 23) - 11) * 0.01)
 
 
+def _bf16_owned_selection[
+    dcp_size: Int, dcp_interleave: Int
+](rank: Int, t: Int, cache_len: Int) -> List[Int]:
+    """Token `t`'s selected cached positions that `rank` owns, in order.
+
+    Token 0 selects nothing. Every other token selects `B_TOPK` distinct
+    cached positions in a scrambled order, which the group's ranks split by
+    ownership.
+    """
+    var owned = List[Int]()
+    if t == 0:
+        return owned^
+    var layout = ContextParallelLayout[dcp_size, dcp_interleave](rank)
+    var m = _coprime_multiplier(cache_len)
+    for i in range(B_TOPK):
+        var pos = (i * m + 3 * t + 1) % cache_len
+        if layout.owns(pos):
+            owned.append(pos)
+    return owned^
+
+
 def _run_bf16_branch[
     dcp_size: Int,
     dcp_interleave: Int,
     q_absorbed: Bool = False,
     latent_output: Bool = False,
+    owned_rows: Bool = False,
 ](
     ctx: DeviceContext,
     seq_lens: List[Int],
@@ -901,9 +926,14 @@ def _run_bf16_branch[
     The BF16 cache starts as `_bf16_cache_pattern`. `q_in` is
     `[tokens, B_HEADS, B_Q_DEPTH]`, or `[tokens, B_HEADS, Q_DEPTH]` already
     absorbed with `q_absorbed`. Every token attends over the same `B_TOPK`
-    causally visible rows. Returns the cache as raw 16-bit words, the output
-    (`[tokens, B_HEADS, B_V]`, or `V_DEPTH` wide with `latent_output`) and the
-    LSE.
+    causally visible rows. With `owned_rows`, each token instead attends over
+    the rows of `_bf16_owned_selection` this rank owns, compacted to the front
+    of its index row as local slots with `-1` after them and a per-token
+    length below `B_TOPK` (0 for token 0), and the rank's cache holds each
+    cached position's `_bf16_cache_pattern` row at its local slot, so the
+    ranks' results merge to a group of one's. Returns the cache as raw 16-bit
+    words, the output (`[tokens, B_HEADS, B_V]`, or `V_DEPTH` wide with
+    `latent_output`) and the LSE.
     """
     comptime bf16 = DType.bfloat16
     comptime q_depth = Q_DEPTH if q_absorbed else B_Q_DEPTH
@@ -924,6 +954,19 @@ def _run_bf16_branch[
     var blocks_host = ctx.enqueue_create_host_buffer[bf16](block_elems)
     for i in range(block_elems):
         blocks_host[i] = _bf16_cache_pattern(i)
+    var layout = ContextParallelLayout[dcp_size, dcp_interleave](rank)
+    comptime if owned_rows:
+        # Each cached position this rank owns, at its local slot.
+        for b in range(batch_size):
+            for pos in range(cache_len):
+                if not layout.owns(pos):
+                    continue
+                var src = (b * pages * PAGE_SIZE + pos) * Q_DEPTH
+                var dst = (
+                    b * pages * PAGE_SIZE + layout.local_slot(pos)
+                ) * Q_DEPTH
+                for d in range(Q_DEPTH):
+                    blocks_host[dst + d] = _bf16_cache_pattern(src + d)
     var blocks_dev = ctx.enqueue_create_buffer[bf16](block_elems)
     ctx.enqueue_copy(blocks_dev, blocks_host)
     var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -950,6 +993,18 @@ def _run_bf16_branch[
     for b in range(batch_size):
         for s in range(seq_lens[b]):
             var t = Int(ro_host[b]) + s
+            comptime if owned_rows:
+                if B_TOPK > cache_len:
+                    raise Error("B_TOPK must not exceed the cached keys")
+                var owned = _bf16_owned_selection[dcp_size, dcp_interleave](
+                    rank, t, cache_len
+                )
+                len_host[t] = Int32(len(owned))
+                for i in range(B_TOPK):
+                    idx_host[t * B_TOPK + i] = Int32(
+                        b * pages * PAGE_SIZE + layout.local_slot(owned[i])
+                    ) if i < len(owned) else Int32(-1)
+                continue
             var visible = cache_len + s + 1
             if B_TOPK > visible:
                 raise Error("B_TOPK must not exceed the visible keys")
@@ -1187,6 +1242,109 @@ def run_bf16_cp_store[
             assert_true(not isnan(v) and not isinf(v), "token LSE not finite")
 
 
+def run_bf16_cp_owned_rows[
+    dcp_size: Int, dcp_interleave: Int
+](ctx: DeviceContext, seq_lens: List[Int], cache_len: Int) raises:
+    """Checks the BF16 `.cp` branch on compacted owned rows and empty tokens.
+
+    Each rank attends over the selected rows it owns, compacted as local
+    slots with a per-token length below `B_TOPK` (`_run_bf16_branch` with
+    `owned_rows`). A token with no rows, token 0 on every rank, must return
+    LSE `-inf` and a zero output; every other row a finite LSE. The ranks'
+    base-2 LSE merge,
+
+        m = max_r lse_r;  w_r = 2^(lse_r - m);  O = sum_r w_r O_r / sum_r w_r
+
+    must match a group of one attending over the whole selection.
+    """
+    print(
+        t"bf16_cp_owned_rows: dcp={dcp_size} interleave={dcp_interleave}"
+        t" cache_len={cache_len}"
+    )
+    var total = 0
+    for s in seq_lens:
+        total += s
+    var q = _bf16_plain_q(total)
+    var words = List[UInt16]()
+    var ref_out = List[Float32]()
+    var ref_lse = List[Float32]()
+    _run_bf16_branch[1, 1, owned_rows=True](
+        ctx, seq_lens, cache_len, 0, q, words, ref_out, ref_lse
+    )
+    var n = total * B_HEADS
+    var merged_m = List[Float64](length=n, fill=min_or_neg_inf[DType.float64]())
+    var merged_w = List[Float64](length=n, fill=0)
+    var merged_o = List[Float64](length=n * B_V, fill=0)
+    var empty_rows = 0
+    var short_rows = 0
+    for r in range(dcp_size):
+        var out = List[Float32]()
+        var lse = List[Float32]()
+        _run_bf16_branch[dcp_size, dcp_interleave, owned_rows=True](
+            ctx, seq_lens, cache_len, r, q, words, out, lse
+        )
+        for t in range(total):
+            var length = len(
+                _bf16_owned_selection[dcp_size, dcp_interleave](r, t, cache_len)
+            )
+            if length == 0:
+                empty_rows += 1
+            elif length < B_TOPK:
+                short_rows += 1
+            for h in range(B_HEADS):
+                var i = t * B_HEADS + h
+                var v = Float64(lse[i])
+                if length == 0:
+                    assert_true(
+                        isinf(v) and v < 0, String(t"empty token LSE {v}")
+                    )
+                    for d in range(B_V):
+                        assert_true(
+                            out[i * B_V + d] == 0, "empty token O is not zero"
+                        )
+                    continue
+                assert_true(
+                    not isnan(v) and not isinf(v), "token LSE not finite"
+                )
+                var m_new = max(merged_m[i], v)
+                var c_old = exp2(merged_m[i] - m_new)
+                var c_new = exp2(v - m_new)
+                merged_w[i] = merged_w[i] * c_old + c_new
+                for d in range(B_V):
+                    var o_old = merged_o[i * B_V + d]
+                    merged_o[i * B_V + d] = o_old * c_old + c_new * Float64(
+                        out[i * B_V + d]
+                    )
+                merged_m[i] = m_new
+    assert_true(empty_rows >= dcp_size, "no rank had an empty token")
+    assert_true(short_rows > 0, "no rank had a partial selection")
+
+    var max_out_err = Float64(0)
+    var max_lse_err = Float64(0)
+    for t in range(total):
+        for h in range(B_HEADS):
+            var i = t * B_HEADS + h
+            if t == 0:
+                # The group of one has no rows for token 0 either.
+                assert_true(
+                    isinf(ref_lse[i]) and ref_lse[i] < 0, "reference LSE"
+                )
+                assert_true(merged_w[i] == 0, "a rank had rows for token 0")
+                continue
+            var lse = merged_m[i] + log2(merged_w[i])
+            max_lse_err = max(max_lse_err, abs(lse - Float64(ref_lse[i])))
+            assert_almost_equal(lse, Float64(ref_lse[i]), atol=1e-2, rtol=1e-3)
+            for d in range(B_V):
+                var o = merged_o[i * B_V + d] / merged_w[i]
+                var want = Float64(ref_out[i * B_V + d])
+                max_out_err = max(max_out_err, abs(o - want))
+                assert_almost_equal(o, want, atol=2e-2, rtol=2e-2)
+    print(
+        t"  empty_rows={empty_rows} short_rows={short_rows}"
+        t" max_out_err={max_out_err} max_lse_err={max_lse_err}"
+    )
+
+
 def run_bf16_branch_modes(
     ctx: DeviceContext, seq_lens: List[Int], cache_len: Int
 ) raises:
@@ -1311,3 +1469,6 @@ def main() raises:
             run_bf16_cp_store[2, 1](ctx, [1, 3, 2], cache_len=101)
             run_bf16_cp_store[4, PAGE_SIZE](ctx, [2, 3], cache_len=250)
             run_bf16_branch_modes(ctx, [1, 3, 2], cache_len=101)
+            # Compacted owned rows, short lengths and an empty token.
+            run_bf16_cp_owned_rows[4, 1](ctx, [1, 3, 2], cache_len=101)
+            run_bf16_cp_owned_rows[2, PAGE_SIZE](ctx, [2, 3], cache_len=250)

@@ -343,8 +343,8 @@ class DeepseekV3_2TextModel(
                 indexer_slots[idx], DType.uint32, device=CPU()
             )
             call: Callable[..., tuple[Tensor, ...]] = layer
+            group = "shared" if layer.self_attn.skip_topk else "full"
             if isinstance(layer.mlp, QuantizedMoE):
-                group = "shared" if layer.self_attn.skip_topk else "full"
                 call = as_subgraph(layer, name=f"moe_block_{group}")
             elif self.config.decode_context_parallel_degree > 1:
                 # The memory planner gives the top-level graph one pool that
@@ -353,8 +353,10 @@ class DeepseekV3_2TextModel(
                 # heads, so a dense block's peak is ~14 GiB at a 32K-token
                 # prefill: inline, that is held through all 78 layers on top
                 # of each MoE block's own pool, and the step no longer fits.
-                # As a subgraph call it is planned and freed per call.
-                call = as_subgraph(layer, name="dense_block")
+                # As a subgraph call it is planned and freed per call. The
+                # name is the body's identity, so it carries the indexer
+                # group as the MoE blocks' does.
+                call = as_subgraph(layer, name=f"dense_block_{group}")
             # A block takes the next block's weight as an argument, since
             # a shared subgraph resolves only its own weights.
             next_input_gamma = (

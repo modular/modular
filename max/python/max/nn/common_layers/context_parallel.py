@@ -41,7 +41,7 @@ from max import functional as F
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.mesh_axis import TP, dcp_axis
 from max.nn.kernels import cp_merge_topk
 from max.tensor import Tensor
 from max.tensor.sharding import (
@@ -58,23 +58,6 @@ _LN2 = math.log(2.0)
 # exactly 0 next to any real LSE, and a row no rank has keys for merges to 0
 # instead of NaN (``-inf - -inf``).
 _LSE_FLOOR = -1e30
-
-
-def dcp_axis(mesh: DeviceMesh) -> int:
-    """Returns the index of the mesh axis a DCP group spans.
-
-    It is the ``tp`` axis, or the only axis of a one-axis mesh.
-
-    Raises:
-        NotImplementedError: If a mesh of several axes has no ``tp`` axis.
-    """
-    if TP in mesh.axis_names:
-        return mesh.axis_names.index(TP)
-    if mesh.ndim == 1:
-        return 0
-    raise NotImplementedError(
-        f"decode context parallelism needs a {TP!r} mesh axis, got {mesh}."
-    )
 
 
 def check_dcp_mesh(mesh: DeviceMesh, dcp: int) -> None:
@@ -291,6 +274,9 @@ def _combine_a2a(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
         out_specs=_on_dcp_axis(out, Unknown(), Unknown()),
     )(out, lse)
     received = F.all_to_all(packed, split_axis=1, concat_axis=1, mesh_axis=axis)
+    # Each rank holds every rank's partials for its heads, not a slice of
+    # one tensor, so drop the Sharded(1) the all-to-all claims.
+    received = received.rebind_mapping(_on_dcp_axis(received, Unknown()))
     return F.call_on_mesh(
         lambda received, partial: _merge_received(received, partial, dcp),
         mesh,
