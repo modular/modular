@@ -203,30 +203,6 @@ struct WaitCounts(Copyable, Movable):
         )
 
 
-def update_wait_counts(mut counts: WaitCounts, e: ScheduleEntry, next_tag: Int):
-    """Updates counts for one entry; `next_tag` is the next entry's tag
-    (or `_Ops.NONE.value` for the last entry).
-
-    Args:
-        counts: Counter aggregate updated in place.
-        e: The schedule entry being inspected.
-        next_tag: Tag of the next entry, used to detect coalesced
-            vm+lgkm pairs. Pass `_Ops.NONE.value` for the last entry.
-    """
-    var t = e.op.tag
-    match t:
-        case _Ops.WAIT_VM.value:
-            counts.n_vm += 1
-            if next_tag == _Ops.WAIT_LGKM.value:
-                counts.n_combined += 1
-        case _Ops.WAIT_LGKM.value:
-            counts.n_lgkm += 1
-        case _Ops.BARRIER.value:
-            counts.n_barrier += 1
-        case _Ops.SCHEDULE_BARRIER.value:
-            counts.n_sched_barrier += 1
-
-
 def print_wait_counts(label: StaticString, c: WaitCounts):
     """Prints a one-line summary of a `WaitCounts` value.
 

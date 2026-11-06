@@ -94,7 +94,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     sub_ftz,
     bulk_mma,
     bulk_mma_ws,
-    bulk_mma_ws_ts,
     st_shared_v4_b32,
     opaque_nonneg_i32,
     opaque_u32,
@@ -2969,29 +2968,6 @@ struct DecodeSProducer(TrivialRegisterPassable):
         self.pipe.step()
 
 
-########## Consumer of the S slot ##########
-struct DecodeSConsumer(TrivialRegisterPassable):
-    """Consumer side of the two-stage S pipeline between MMA and softmax."""
-
-    comptime SNumStages = 2
-    var pipe: ConsumerPipeline[Self.SNumStages]
-
-    @inline(.always)
-    def __init__(out self, pipe: ConsumerPipeline[Self.SNumStages]):
-        self.pipe = pipe
-
-    @inline(.always)
-    def wait(self) -> UInt32:
-        # Block until MMA has filled the current S slot
-        self.pipe.wait()
-        return self.pipe.state.index()
-
-    @inline(.always)
-    def release(mut self):
-        # Mark this S slot as "consumed" so MMA can reuse it
-        self.pipe.release()
-
-
 # Parameterized versions for N-stage S pipeline (used by native FP8 with 3 stages)
 struct DecodeSProducerN[num_stages: Int](TrivialRegisterPassable):
     """N-stage parameterized producer side of the S pipeline between MMA and softmax.
@@ -3048,36 +3024,6 @@ struct DecodeSConsumerN[num_stages: Int](TrivialRegisterPassable):
 # ------------------------------------------------------------------------------
 # MLA decoding P Pipeline between Softmax and MMA
 # ------------------------------------------------------------------------------
-########## Producer of the P slot ##########
-struct DecodePProducer(TrivialRegisterPassable):
-    """Producer side of the two-stage P pipeline between softmax and MMA."""
-
-    comptime PNumStages = 2
-    var pipe: ProducerPipeline[Self.PNumStages]
-
-    @inline(.always)
-    def __init__(out self, pipe: ProducerPipeline[Self.PNumStages]):
-        self.pipe = pipe
-
-    # Softmax threads collectively wait until MMA has released P
-    @inline(.always)
-    def acquire(self):
-        self.pipe.acquire()
-        # -> consumer_mbar.wait(phase), all 128 threads see the same phase
-
-    # After writing P, all 128 threads call commit()
-    @inline(.nodebug)
-    def commit(mut self):
-        self.pipe.commit()
-        # -> producer_mbar.arrive() (128 arrivals total)
-        # -> state.step() (phase toggles for next iteration)
-
-    # optional helper
-    @inline(.always)
-    def stage_index(self) -> UInt32:
-        return self.pipe.state.index()
-
-
 ########## Consumer of the P slot ##########
 struct DecodePConsumer(TrivialRegisterPassable):
     """Consumer side of the two-stage P pipeline between softmax and MMA."""
@@ -3723,81 +3669,6 @@ struct DecodeSM100PVSS[
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
         ](Self.UMMAPVSS, a, b, c, c_scale, elect)
-
-
-# ------------------------------------------------------------------------------
-# MLA decoding Tensor AccumulatorTS for QKT (TMEM Q, SMEM K)
-# ------------------------------------------------------------------------------
-struct DecodeSM100QKTTS[
-    operand_type: DType,
-    accum_type: DType,
-    *,
-    config: MLA_SM100_Decode_Config,
-](TrivialRegisterPassable):
-    """Tensor accumulator for the QK^T MMA with Q in TMEM and K in SMEM.
-
-    Parameters:
-        operand_type: Element type of the Q (in TMEM) and K (in SMEM)
-            operands.
-        accum_type: Accumulator dtype used for the QK^T MMA result in TMEM.
-        config: Decode config supplying MMA tile dimensions and swizzle
-            modes.
-    """
-
-    comptime MMA_M = Self.config.MMA_M  # 64 rows
-    comptime MMA_N = Self.config.MMA_QK_N  # 64 cols
-    comptime MMA_K = Self.config.MMA_K  # 16
-    comptime BK = Self.config.BK_QK  # 576
-    comptime num_k_mmas = Self.BK // Self.MMA_K
-    comptime operand_size = size_of[Self.operand_type]()
-
-    # ----- Instruction descriptor -----
-    comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
-        Self.accum_type,
-        Self.operand_type,
-        Self.operand_type,
-        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
-        transpose_b=True,  # QKᵀ
-    ]()
-
-    @staticmethod
-    @inline(.always)
-    def descriptor_k_block(
-        kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
-    ) -> MMASmemDescriptorPair:
-        var base = kv_smem
-        # Layout is 64 x 576, k-major, same swizzle as k_tma
-        return smem_descriptor[
-            BMN=Self.config.BN_QK,  # 64 rows
-            BK=Self.BK,  # 576 columns
-            swizzle_mode=Self.config.kv_mma_swizzle_mode,
-            is_k_major=True,
-        ](base)
-
-    @staticmethod
-    @inline(.always)
-    def mma[
-        *, stage_idx: Int = 0
-    ](
-        a: UInt32,
-        b: MMASmemDescriptorPair,
-        c: UInt32,
-        *,
-        c_scale: UInt32,
-        elect: Int32,
-    ):
-        comptime assert stage_idx == 0, "stage_idx should be 0"
-        bulk_mma_ws_ts[
-            UMMAKind.KIND_F16,
-            Self.operand_type,
-            b_BMN=Self.config.BN_QK,
-            b_BK=Self.BK,
-            b_swizzle=Self.config.kv_mma_swizzle_mode,
-            b_is_k_major=True,
-            num_k_mmas=Self.num_k_mmas,
-            operand_size=Self.operand_size,
-            tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
-        ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
 
 # ------------------------------------------------------------------------------
