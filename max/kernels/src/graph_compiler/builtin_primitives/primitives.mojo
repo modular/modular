@@ -2510,9 +2510,11 @@ def _mogg_slice_view_alignment[
     static_starts: Coord,
     static_steps: Coord,
 ](input_alignment: Int) -> Int:
-    """Same alignment derivation as `Slice.get_view_alignment` (mirrored here,
-    not called directly, since `builtin_kernels` already depends on
-    `builtin_primitives` and importing the other way would be circular).
+    """The alignment a `mo.slice` view can promise for itself: every address
+    it can produce is a multiple of the result. A stride that is only known
+    at runtime still moves the pointer by a whole multiple of a dense
+    row-major anchor stride, so that anchor bounds the alignment the same
+    way a static stride does; 0 when nothing can be established.
     """
     comptime stride_types = input_strides
     comptime start_types = static_starts.element_types
@@ -2549,9 +2551,8 @@ def _mogg_slice_view_alignment[
         # `step[i] * strides[i]` elements per step, so that stride bounds the
         # view's alignment too -- e.g. a slice that keeps the parent's row
         # stride (not a multiple of the vector width) leaves each row start
-        # under-aligned. Mirrors `Slice.get_view_alignment`; omitting it made a
-        # strided view over-report its alignment and emit a misaligned
-        # (faulting) vector load on GPU.
+        # under-aligned. Omitting this rule made a strided view over-report
+        # its alignment and emit a misaligned (faulting) vector load on GPU.
         comptime if i != rank - 1:
             comptime if stride_types[i].is_static_value:
                 alignment = gcd(
@@ -2655,12 +2656,10 @@ def _mogg_broadcast_view_strides[
     input_shape: TypeList[Trait=CoordLike, ...],
     input_strides: TypeList[Trait=CoordLike, ...],
 ]() -> IndexList[out_rank]:
-    """Same view-stride derivation as `StaticBroadcastTo.get_view_strides_list`
-    (mirrored here, not called directly, since `builtin_kernels` already
-    depends on `builtin_primitives` and importing the other way would be
-    circular): a dynamic dimension -- whose stride isn't statically known --
-    becomes a -1 entry, so `with_coord_layout` falls back to a dynamic
-    entry for it.
+    """The view strides of a broadcast: an axis the input doesn't have, or an
+    aligned dimension where the input's size is 1, gets stride 0. A dynamic
+    dimension -- whose stride isn't statically known -- becomes a -1 entry,
+    so `with_coord_layout` falls back to a dynamic entry for it.
     """
     var new_strides = IndexList[out_rank]()
     comptime delta = out_rank - in_rank
@@ -2707,8 +2706,7 @@ def mogg_tensor_create_broadcast[
     semantics) up to `output_static_shape` -- a leading dimension `input`
     doesn't have, or an aligned dimension where `input`'s size is 1, gets
     stride 0. Preserves whatever static shape/stride information is known
-    at compile time, mirroring
-    `StaticBroadcastTo.input_view`/`get_view_strides_list`.
+    at compile time.
 
     Parameters:
         dtype: The element type of `input`.
@@ -2758,8 +2756,7 @@ def mogg_tensor_create_reshape[
     `input` is contiguous, so de-linearizing/re-linearizing through one
     shared flat index produces row-major strides for the new shape.
     `output_static_shape` still types the return value's static layout with
-    whatever dims ARE known at compile time (mirroring
-    `StaticReshape.input_view`), but `output_shape` -- not a cast of
+    whatever dims ARE known at compile time, but `output_shape` -- not a cast of
     `output_static_shape` -- is what this op actually reshapes into: unlike
     broadcast/transpose, this op's own stride is a row-major
     de-linearization of the *output* shape's own values, with no input
@@ -2852,8 +2849,7 @@ def mogg_tensor_create_transpose[
     per dimension either at compile time (an entry of `static_permutations`)
     or, where that entry is dynamic, at runtime (the matching entry
     of the `permutations` operand). Preserves whatever static shape/stride
-    information is known at compile time, mirroring
-    `Transpose.input_view`/`_TransposeStrideTypes`.
+    information is known at compile time.
 
     Parameters:
         dtype: The element type of `input`.

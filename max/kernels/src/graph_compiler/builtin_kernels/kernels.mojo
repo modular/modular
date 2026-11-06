@@ -440,57 +440,6 @@ struct NanCheckRaiseOp:
         )
 
 
-# ===-----------------------------------------------------------------------===#
-# View op stride types
-# ===-----------------------------------------------------------------------===#
-
-
-# Type-level transpose stride computation. Permute input stride CoordLike
-# types according to a permutation Coord.
-comptime _TransposeStrideTypesTabulator[
-    permutations: Coord,
-    input_stride_types: TypeList[Trait=CoordLike, ...],
-    idx: Int,
-]: CoordLike = Scalar[DType.int] if not permutations.element_types[
-    idx
-].is_static_value else input_stride_types[
-    permutations.element_types[idx].static_value
-]
-
-
-comptime _TransposeStrideTypes[
-    permutations: Coord,
-    rank: Int,
-    input_stride_types: TypeList[Trait=CoordLike, ...],
-] = TypeList.tabulate[
-    rank, _TransposeStrideTypesTabulator[permutations, input_stride_types, _]
-]()
-
-
-# Type-level slice stride computation: multiplies input stride types by step
-# types element-wise.
-comptime _SliceStrideTypesTabulator[
-    input_stride_types: TypeList[Trait=CoordLike, ...],
-    step_types: TypeList[Trait=CoordLike, ...],
-    idx: Int,
-]: CoordLike = ComptimeInt[
-    input_stride_types[idx].static_value * step_types[idx].static_value
-] if input_stride_types[
-    idx
-].is_static_value and step_types[
-    idx
-].is_static_value else Scalar[
-    DType.int
-]
-
-comptime _SliceStrideTypes[
-    rank: Int,
-    input_stride_types: TypeList[Trait=CoordLike, ...],
-    step_types: TypeList[Trait=CoordLike, ...],
-] = TypeList.tabulate[
-    rank, _SliceStrideTypesTabulator[input_stride_types, step_types, _]
-]()
-
 # No shape function as we just directly embed the logic to check the shape
 # of the 'slice' operand of the MO op directly in the kernel.
 
