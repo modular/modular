@@ -13,28 +13,26 @@
 """Kimi K3's ``noaux_tc`` sigmoid MoE router (ModuleV3).
 
 The scoring math -- biased top-k selection, unbiased weight gather, group
-scoring by the sum of each group's top-2 biased scores, fp32 gate -- matches
-DeepSeek V3's ``noaux_tc`` router exactly, down to the shared Mojo kernel
+scoring by the sum of each group's top-2 biased scores -- matches DeepSeek
+V3's ``noaux_tc`` router exactly, down to the shared Mojo kernel
 (``group_limited_router_kernel``) both dispatch to. This subclasses
 :class:`DeepseekV3TopKRouter` rather than reimplementing the scoring.
 
-:class:`DeepseekV3TopKRouter` only casts the gate's *output* to
-``correction_bias_dtype`` after the matmul; it does not force
-``gate_score``'s own weight to fp32, so the matmul itself would run in a
-lower precision than the reference, which casts both the activation and the
-weight to fp32 *before* the matmul. Constructing the router inside a fp32
-``default_dtype`` context fixes this: ``gate_score`` is a plain
-:class:`~max.nn.Linear`, built from whatever the ambient
-default dtype is at construction time, so it becomes fp32 too.
+The gate weight keeps the checkpoint's bf16 storage (an fp32 copy would
+double the 92-layer replicated weight for no accuracy: bf16 x bf16 products
+are exact in fp32, so only the summation order can differ from an fp32 x
+fp32 gate). ``e_score_correction_bias`` and the logits stay fp32: the bias
+is built from the explicit ``correction_bias_dtype``, and the fused GEMV
+below returns fp32 logits whatever the weight dtype.
 
 On gfx950, a bf16 activation on an accelerator device takes the fused mixed
-router GEMV (``moe.router.gate.mixed.gemv``): the activation is widened to
-fp32 in registers and dotted against the unchanged fp32 gate weight in one
-launch, replacing the inherited path's tiled fp32 GEMM, which at the small-M
-decode row count pays a full gate-weight read to produce a handful of rows.
-Both compute fp32 arithmetic over exactly the same widened values, in
-different summation orders, so results can round differently. Every other
-device, activation dtype and gate shape keeps the inherited path.
+router GEMV (``moe.router.gate.mixed.gemv``): the activation and the gate
+weight are dotted in one launch, replacing the inherited path's cast + tiled
+GEMM, which at the small-M decode row count pays a full gate-weight read to
+produce a handful of rows. Both compute fp32 arithmetic over exactly the
+same values, in different summation orders, so results can round
+differently. Every other device, activation dtype and gate shape keeps the
+inherited path.
 """
 
 from __future__ import annotations
@@ -48,7 +46,7 @@ from max.nn.kernels import moe_router_group_limited
 from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
     DeepseekV3TopKRouter,
 )
-from max.tensor import Tensor, default_dtype
+from max.tensor import Tensor
 from max.tensor.sharding import match_operand_placement
 
 # The output takes the activation's placement: under TP the router stays
@@ -58,15 +56,16 @@ _router_gate_mixed_gemv_op = F.functional(
     rule=match_operand_placement(_router_gate_mixed_gemv, "hidden_states"),
 )
 
-# K granule the fused GEMV walks the gate weight's contraction by on gfx950:
-# `simd_width * num_threads` -- 512 for the 128-thread launches every gate
-# shape but [896, 7168] takes, 1024 on that table's streaming and wide-K
-# bands (max/kernels/src/linalg/gemv.mojo). The K walk has no tail guard, so
-# the op is only correct for a K that tiles its band's granule; [896, 7168]
-# pins K at 7168, which tiles every band, and every other shape walks the
-# 512 granule, so checking 512 is exact. Kimi K3's 7168 qualifies, as does
-# the other caller's 6144.
+# K granules the fused GEMV can walk the gate weight's contraction by on
+# gfx950: `simd_width * num_threads` (max/kernels/src/linalg/gemv.mojo).
+# The fp32-weight launches walk 512 (128 threads at the 4-wide load); the
+# [896, 7168] bf16 table walks 1024 (128 threads at the 8-wide load, 256
+# on its streaming row). The staged K walk has no tail, so the op is only
+# correct for a K that tiles its band's granule; checking both granules
+# is exact for every production shape (Kimi K3's 7168 and the other
+# caller's 6144 tile both).
 _MIXED_GEMV_K_TILE = 512
+_MIXED_GEMV_K_TILE_WIDE = 1024
 
 
 def _mixed_gemv_active(hidden_states: Tensor) -> bool:
@@ -98,12 +97,20 @@ def _gate_weight_tiles_k(weight: Tensor) -> bool:
     A statically known misaligned K would read past the weight rows, so
     those shapes keep the inherited cast + matmul path. A dynamic K cannot
     be checked here; it takes the fused path, whose wrapper then fails fast
-    on it.
+    on it. The granule is the weight dtype's: every fp32 launch that a
+    non-[896, 7168] shape can reach walks 512 (128 threads at the 4-wide
+    load), while every bf16 launch walks 1024 (the 8-wide load at 128
+    threads, or the 4-wide streaming row's 256). The [896, 7168] tables
+    are compile-time keyed to that exact K, so they cannot be reached at
+    any other K this check admits.
     """
     k_dim = weight.shape[1]
-    return not isinstance(k_dim, StaticDim) or (
-        int(k_dim) % _MIXED_GEMV_K_TILE == 0
+    granule = (
+        _MIXED_GEMV_K_TILE_WIDE
+        if weight.dtype == DType.bfloat16
+        else _MIXED_GEMV_K_TILE
     )
+    return not isinstance(k_dim, StaticDim) or int(k_dim) % granule == 0
 
 
 class KimiK3TopKRouter(DeepseekV3TopKRouter):
@@ -130,11 +137,36 @@ class KimiK3TopKRouter(DeepseekV3TopKRouter):
             and hidden_states.dtype == DType.bfloat16
             and _gate_weight_tiles_k(self.gate_score.weight)
         ):
-            return super().forward(hidden_states)
+            # The inherited path would matmul in the gate weight's dtype
+            # (bf16 in production), rounding the logits to an 8-bit
+            # significand before sigmoid and top-k. The gate weight is an
+            # exact bf16 either way, so widening both operands to fp32
+            # reproduces the reference's fp32 logits on every non-fused
+            # route (a CPU-device graph, a non-gfx950 GPU, fp32
+            # activations, or a K the fused GEMV cannot tile).
+            logits = (
+                hidden_states.cast(DType.float32)
+                @ (self.gate_score.weight.cast(DType.float32)).T
+            )
+            scores = F.sigmoid(logits.cast(self.e_score_correction_bias.dtype))
+            topk_idx, topk_weight = moe_router_group_limited(
+                scores,
+                self.e_score_correction_bias,
+                self.num_experts,
+                self.num_experts_per_token,
+                self.n_group,
+                self.topk_group,
+                self.norm_topk_prob,
+                self.routed_scaling_factor,
+            )
+            return (
+                topk_idx.rebind_mapping(scores.mapping),
+                topk_weight.rebind_mapping(scores.mapping),
+            )
 
         # Unconditional on this path: a gate weight the fused op cannot bind
-        # (a non-fp32 dtype, a dynamic shape) raises at graph build rather
-        # than silently taking the slower inherited path.
+        # (a dtype other than fp32/bf16, a dynamic shape) raises at graph
+        # build rather than silently taking the slower inherited path.
         logits = _router_gate_mixed_gemv_op(
             hidden_states, self.gate_score.weight
         )
@@ -164,7 +196,7 @@ def make_kimi_k3_moe_router(
     topk_group: int,
     moe_renormalize: bool,
 ) -> KimiK3TopKRouter:
-    """Builds K3's MoE router, with the gate matmul forced to run in fp32.
+    """Builds K3's MoE router, with the gate weight at the ambient dtype.
 
     Args:
         hidden_dim: ``config.hidden_size`` -- the gate reads the FULL
@@ -177,16 +209,15 @@ def make_kimi_k3_moe_router(
         topk_group: ``config.topk_group``.
         moe_renormalize: ``config.moe_renormalize``.
     """
-    with default_dtype(DType.float32):
-        return KimiK3TopKRouter(
-            hidden_dim=hidden_dim,
-            num_experts=num_experts,
-            num_experts_per_token=num_experts_per_token,
-            routed_scaling_factor=routed_scaling_factor,
-            scoring_func="sigmoid",
-            topk_method="noaux_tc",
-            n_group=num_expert_group,
-            topk_group=topk_group,
-            norm_topk_prob=moe_renormalize,
-            correction_bias_dtype=DType.float32,
-        )
+    return KimiK3TopKRouter(
+        hidden_dim=hidden_dim,
+        num_experts=num_experts,
+        num_experts_per_token=num_experts_per_token,
+        routed_scaling_factor=routed_scaling_factor,
+        scoring_func="sigmoid",
+        topk_method="noaux_tc",
+        n_group=num_expert_group,
+        topk_group=topk_group,
+        norm_topk_prob=moe_renormalize,
+        correction_bias_dtype=DType.float32,
+    )

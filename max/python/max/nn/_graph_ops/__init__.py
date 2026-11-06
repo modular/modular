@@ -8835,7 +8835,11 @@ def _router_gate_mixed_gemv(
     """
     _check_rank(2, hidden_states=hidden_states, gate_weight=gate_weight)
     _check_dtype(DType.bfloat16, hidden_states=hidden_states)
-    _check_dtype(DType.float32, gate_weight=gate_weight)
+    if gate_weight.dtype not in (DType.float32, DType.bfloat16):
+        raise ValueError(
+            "expected gate_weight to have dtype float32 or bfloat16, was"
+            f" {gate_weight.dtype}"
+        )
     _check_same_device(hidden_states=hidden_states, gate_weight=gate_weight)
 
     n_dim = gate_weight.shape[0]

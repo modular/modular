@@ -1024,7 +1024,7 @@ def load_kimi_k3_weights(
             assert isinstance(ffn, KimiK3LatentMoE)
             moe = f"{src}.block_sparse_moe"
             ffn.gate.gate_score.weight = Tensor(
-                get(f"{moe}.gate.weight"), dtype=DType.float32
+                get(f"{moe}.gate.weight"), dtype=DType.bfloat16
             )
             ffn.gate.e_score_correction_bias = Tensor(
                 get(f"{moe}.gate.e_score_correction_bias"), dtype=DType.float32

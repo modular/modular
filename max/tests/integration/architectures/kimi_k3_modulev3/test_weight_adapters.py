@@ -315,8 +315,11 @@ def _checkpoint(
                 )
         else:
             moe = f"{src}.block_sparse_moe"
+            # The real checkpoint stores the router gate bf16 (the gate
+            # GEMV computes bf16 x bf16 -> fp32); the adapter must pass it
+            # through at the working dtype without an fp32 detour.
             ck[f"{moe}.gate.weight"] = _weight(
-                _fp32((_NUM_EXPERTS, _HIDDEN_SIZE)), "gate"
+                _fp32((_NUM_EXPERTS, _HIDDEN_SIZE)), "gate", DType.bfloat16
             )
             ck[f"{moe}.gate.e_score_correction_bias"] = _weight(
                 _fp32((_NUM_EXPERTS,)), "bias"
@@ -649,15 +652,27 @@ def test_routed_entry_and_exit_are_not_swapped(
     [
         "layers.0.attention.a_log",
         "layers.0.attention.dt_bias",
-        "layers.1.ffn.gate.gate_score.weight",
         "layers.1.ffn.gate.e_score_correction_bias",
     ],
 )
 def test_fp32_pins_are_forced_even_from_bf16(
     converted: dict[str, WeightData], key: str
 ) -> None:
-    """Every pinned tensor is fp32 on output, whatever dtype it arrived in."""
+    """Every pinned tensor is fp32 on output, whatever dtype it arrived in.
+    The router's ``gate_score.weight`` is deliberately NOT pinned: it
+    follows the working dtype (bf16) like every other unpinned tensor."""
     assert converted[key].dtype == DType.float32
+
+
+def test_gate_score_weight_follows_the_working_dtype(
+    converted: dict[str, WeightData],
+) -> None:
+    """The router gate weight is NOT fp32-pinned: the checkpoint stores it
+    bf16 and the gate GEMV computes bf16 x bf16 -> fp32, so the adapter
+    resolves it to the working dtype like every other castable tensor."""
+    assert (
+        converted["layers.1.ffn.gate.gate_score.weight"].dtype == DType.bfloat16
+    )
 
 
 @pytest.mark.parametrize(

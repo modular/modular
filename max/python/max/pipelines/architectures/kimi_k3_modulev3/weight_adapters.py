@@ -90,15 +90,18 @@ _PACKED = "weight_packed"
 
 # Weights whose MAX parameter is explicitly declared fp32 regardless of the
 # model's working dtype: KDA's `a_log`/`dt_bias` gate parameters
-# (`kda_attention.py`), and the router's `gate_score`/`e_score_correction_bias`
-# (built inside a `default_dtype(float32)` context in `moe_router.py`).
-# `b_proj`/`conv_weight`/`o_norm.weight` only get cast to fp32 transiently at
-# compute time -- their parameters themselves follow the model's working
-# dtype like everything else, so they are deliberately not pinned here.
+# (`kda_attention.py`), and the router's `e_score_correction_bias` (built
+# from the explicit `correction_bias_dtype` in `moe_router.py`). The
+# router's `gate_score.weight` follows the working dtype like everything
+# else: the checkpoint stores it bf16 and the gate GEMV computes
+# bf16 x bf16 -> fp32, so pinning it fp32 would only double the replicated
+# weight. `b_proj`/`conv_weight`/`o_norm.weight` only get cast to fp32
+# transiently at compute time -- their parameters themselves follow the
+# model's working dtype like everything else, so they are deliberately not
+# pinned here either.
 _FP32_SUFFIXES = (
     ".a_log",
     ".dt_bias",
-    ".gate.gate_score.weight",
     ".gate.e_score_correction_bias",
 )
 

@@ -2836,27 +2836,30 @@ comptime _ROUTER_GATE_TF32_MIN_M = 8704
 struct Struct_router_gate_mixed_gemv:
     """MOGG wrapper for the mixed-input router-gate GEMV.
 
-    Computes `c = a @ b^T` for a bf16 activation `a` and an fp32 router weight
-    `b`, returning fp32 `c`. `M` is runtime-dynamic (one graph serves both
-    decode and prefill), so the op branches on runtime `M`:
+    Computes `c = a @ b^T` for a bf16 activation `a` and an fp32 or bf16
+    router weight `b`, returning fp32 `c`. `M` is runtime-dynamic (one graph
+    serves both decode and prefill), so the op branches on runtime `M`:
 
     - `M == 0` (graph-capture warmup): no launch.
     - tiny `M` (`M <= 64` on MI355X, `M <= 128` on SM100; decode): the fused
-      mixed GEMV — `a` is loaded as bf16 and widened to fp32 in registers, then
-      dotted against the unchanged fp32 `b` in a SINGLE launch, fusing away the
-      standalone bf16->fp32 activation cast that otherwise precedes the fp32
-      router GEMV.
+      mixed GEMV — `a` is dotted against the weight `b` in a SINGLE launch,
+      fusing away the standalone bf16->fp32 activation cast that otherwise
+      precedes the router GEMV. With an fp32 `b` the activation widens to
+      fp32 in registers; with a bf16 `b` both operands feed the fused
+      bf16 pair-dot (`v_dot2_f32_bf16`), which accumulates in fp32.
     - large `M` (prefill): the fused GEMV is catastrophically slow. On SM100
       from `M = 8704` the op runs `router_gate_tf32_gemm`, one bf16
       tensor-core GEMM that reads `a` once; elsewhere it falls back to the
-      baseline chain — cast `a` to fp32, then an ordinary fp32 matmul against
-      the fp32 `b` (two launches, matching baseline).
+      baseline chain — with a bf16 `b`, one bf16 x bf16 -> fp32 matmul; with
+      an fp32 `b`, cast `a` to fp32 then an ordinary fp32 matmul (two
+      launches, matching baseline).
 
     Because bf16->fp32 widening is lossless, every route is fp32 arithmetic
     over exactly the widened bf16 values: at the same launch config the fused
-    GEMV is bit-identical to the fp32 `gemv_split_k` over a pre-cast
-    activation. The MI355X decode bands with `act_wide_k` reorder the K
-    summation (each lane folds 8 consecutive K through a SIMD accumulator),
+    GEMV is bit-identical to the `gemv_split_k` of the same operand dtypes
+    over a pre-cast activation. The MI355X decode bands with `act_wide_k`
+    reorder the K summation (each lane folds 8 consecutive K through a SIMD
+    accumulator),
     so those bands match the fp32 GEMV only to fp32 rounding, not
     bit-for-bit. On SM100 the baseline's fp32 matmul switches to TF32 tensor
     cores above `M = 64`, so the fused GEMV's IEEE-fp32 result there is the
@@ -2880,8 +2883,8 @@ struct Struct_router_gate_mixed_gemv:
         b: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        """Executes the mixed bf16-A × fp32-B router-gate GEMV with an M-based
-        route to the baseline cast + fp32 matmul for large (prefill) M.
+        """Executes the mixed bf16-A router-gate GEMV with an M-based route to
+        the baseline matmuls for large (prefill) M.
 
         Constraints:
             The weight `b` must have a static `[N, K]` shape (both dims known at
@@ -2890,7 +2893,7 @@ struct Struct_router_gate_mixed_gemv:
         Args:
             c: Output `[M, N]` fp32 tensor.
             a: Activation `[M, K]` bf16 tensor.
-            b: Weight `[N, K]` fp32 tensor (transpose_b layout).
+            b: Weight `[N, K]` fp32 or bf16 tensor (transpose_b layout).
             context: The device context.
         """
         comptime assert conforms_to(type_of(c), TileTensorable)
@@ -2911,8 +2914,15 @@ struct Struct_router_gate_mixed_gemv:
         # `b` carries the static `[N, K]` router-gate shape from the graph, so
         # the standard projection drives the compile-time N/K specialization the
         # kernels rely on (`N` picks the `check_bounds_n` guard). `c`/`a` stay
-        # manual because their M dimension is runtime-dynamic.
-        var b_tt = b.to_tile_tensor[.float32]()
+        # manual because their M dimension is runtime-dynamic. The weight is
+        # fp32 (MiniMax-M3; the K3 legacy gate) or bf16 (the K3 checkpoint's
+        # own gate storage); anything else fails the dtype assert below at
+        # compile time.
+        comptime b_type = type_of(b).dtype
+        comptime assert (
+            b_type == .float32 or b_type == .bfloat16
+        ), "router-gate mixed GEMV binds an fp32 or bf16 weight only"
+        var b_tt = b.to_tile_tensor[b_type]()
         comptime N = type_of(b_tt).static_shape[0]
         comptime K = type_of(b_tt).static_shape[1]
         comptime assert (
@@ -2927,11 +2937,12 @@ struct Struct_router_gate_mixed_gemv:
         # TF32 tile GEMM below wins on weight reuse.
         comptime max_m = 64 if context.target.is_amd_gpu() else 128
         if router_gate_use_mixed_gemv(M, max_m):
-            # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
+            # Tiny-M decode: fused mixed bf16-A GEMV against the fp32 or
+            # bf16 weight, one launch.
             var a_tt = a.to_tile_tensor[.bfloat16]().reshape(
                 row_major(M, Idx[K])
             )
-            router_gate_mixed_gemv[N](
+            router_gate_mixed_gemv[b_type, N](
                 c_tt,
                 a_tt.as_imm(),
                 b_tt.as_imm(),
@@ -2946,8 +2957,11 @@ struct Struct_router_gate_mixed_gemv:
         # instead of casting it to fp32 and streaming that copy.
         # The two-CTA MMA needs 2*N columns in [32, 256], in steps of 32.
         # TMA requires a 16-byte bf16 row stride.
+        # fp32 weight only: `router_gate_tf32_gemm` binds an fp32 `b`; a
+        # bf16 weight takes the plain bf16 matmul fallback below.
         comptime if (
-            _is_sm10x_gpu(context.default_device_info)
+            b_type == .float32
+            and _is_sm10x_gpu(context.default_device_info)
             and 16 <= N <= 128
             and N % 16 == 0
             and K % 8 == 0
@@ -2956,40 +2970,54 @@ struct Struct_router_gate_mixed_gemv:
                 var a_gemm_tt = a.to_tile_tensor[.bfloat16]().reshape(
                     row_major(M, Idx[K])
                 )
+                var b_f32_tt = b.to_tile_tensor[.float32]()
                 router_gate_tf32_gemm(
-                    c_tt, a_gemm_tt.as_imm(), b_tt.as_imm(), M, context
+                    c_tt, a_gemm_tt.as_imm(), b_f32_tt.as_imm(), M, context
                 )
                 return
 
-        # Large-M prefill: preserve the baseline's semantics and performance —
-        # widen the bf16 activation to fp32 (the standalone cast the fused path
-        # avoids), then run the ordinary fp32 matmul against the fp32 weight.
-        # Routing large M through the tiny-M GEMV is catastrophically slow.
-        var a_f32 = context.enqueue_create_buffer[.float32](M * K)
-        var a_bf16_tt = a.to_tile_tensor[.bfloat16]().reshape(
-            row_major(M, Idx[K])
-        )
-        var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
-
-        @inline(.always)
-        def _cast_bf16_to_fp32[
-            width: Int, alignment: Int = 1
-        ](idx: Coord) {var a_bf16_tt, var a_f32_tt}:
-            var a_vec = a_bf16_tt.load[
-                width, alignment=align_of[SIMD[.bfloat16, width]]()
-            ](idx)
-            a_f32_tt.store[alignment=align_of[SIMD[.float32, width]]()](
-                idx, a_vec.cast[.float32]()
+        # Large-M prefill. With a bf16 weight the matmul dispatch admits
+        # bf16 x bf16 -> fp32 directly, so the activation cast launch is
+        # skipped entirely (the standalone `elementwise` cast the fused
+        # path avoids; the fp32-weight arm below still pays it, matching
+        # the baseline). Routing large M through the tiny-M GEMV is
+        # catastrophically slow.
+        comptime if b_type == .bfloat16:
+            var a_bf16_tt = a.to_tile_tensor[.bfloat16]().reshape(
+                row_major(M, Idx[K])
             )
+            matmul[transpose_b=True](
+                c_tt, a_bf16_tt.as_imm(), b_tt.as_imm(), context
+            )
+        else:
+            # Preserve the fp32 baseline's semantics and performance —
+            # widen the bf16 activation to fp32, then run the ordinary
+            # fp32 matmul against the fp32 weight.
+            var a_f32 = context.enqueue_create_buffer[.float32](M * K)
+            var a_bf16_tt = a.to_tile_tensor[.bfloat16]().reshape(
+                row_major(M, Idx[K])
+            )
+            var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
 
-        elementwise[simd_width_of[DType.bfloat16, target=context.target](),](
-            _cast_bf16_to_fp32, Coord(M, Idx[K]), context
-        )
+            @inline(.always)
+            def _cast_bf16_to_fp32[
+                width: Int, alignment: Int = 1
+            ](idx: Coord) {var a_bf16_tt, var a_f32_tt}:
+                var a_vec = a_bf16_tt.load[
+                    width, alignment=align_of[SIMD[.bfloat16, width]]()
+                ](idx)
+                a_f32_tt.store[alignment=align_of[SIMD[.float32, width]]()](
+                    idx, a_vec.cast[.float32]()
+                )
 
-        matmul[transpose_b=True](
-            c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
-        )
-        _ = a_f32^
+            elementwise[
+                simd_width_of[DType.bfloat16, target=context.target](),
+            ](_cast_bf16_to_fp32, Coord(M, Idx[K]), context)
+
+            matmul[transpose_b=True](
+                c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
+            )
+            _ = a_f32^
 
 
 @extensibility.register("matmul.smallm.streaming")

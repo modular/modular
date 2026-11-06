@@ -88,7 +88,7 @@ def _run_case[static_N: Int](ctx: DeviceContext, m: Int) raises:
     var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(m, Idx[K]))
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major[static_N, K]())
 
-    router_gate_mixed_gemv[static_N](
+    router_gate_mixed_gemv[.float32, static_N](
         c_tt, a_tt.as_imm(), b_tt.as_imm(), m, static_N, K, ctx
     )
 

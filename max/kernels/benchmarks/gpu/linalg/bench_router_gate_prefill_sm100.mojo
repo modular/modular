@@ -209,7 +209,9 @@ def run(ctx: DeviceContext, m: Int, layer: Int) raises:
     vendor_only()
     cand_cta1()
     cand_rn()
-    router_gate_mixed_gemv[N](c_ref_tt, a_bf16_tt, w_tt, m, N, K, ctx)
+    router_gate_mixed_gemv[DType.float32, N](
+        c_ref_tt, a_bf16_tt, w_tt, m, N, K, ctx
+    )
     ctx.synchronize()
     var it = Float64(ITERS)
     var t_cast = Float64(ctx.execution_time(cast_only, ITERS)) / 1e3 / it
