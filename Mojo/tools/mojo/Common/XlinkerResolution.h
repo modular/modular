@@ -29,8 +29,9 @@
 namespace M {
 struct State;
 
-/// Translates user-supplied `-Xlinker` arg values into a list of absolute
-/// paths to shared libraries that an in-process JIT should `dlopen()`. JIT
+/// Translates `-Xlinker`-style arg values, from the user or contributed by a
+/// target plugin, into a list of absolute paths to shared libraries that an
+/// in-process JIT should `dlopen()`. JIT
 /// modes have no native linker — the program is loaded in-process via ORC —
 /// so we emulate the subset of `ld` semantics that maps `-L<dir>` /
 /// `-l<name>` / absolute library paths to a set of libraries the JIT can
@@ -46,6 +47,10 @@ struct State;
 ///     `DT_NEEDED` resolution, not `-l<name>` lookup; but under JIT the
 ///     linker and runtime loader collapse into a single dlopen pass, so
 ///     treating it as another search dir matches what users expect.
+///   - `-Wl,<arg>[,<arg>...]`: expanded into the linker arguments the clang
+///     driver would pass, each then handled by the rules above. This is the
+///     spelling `mojo build` accepts, so a target can emit one argument set
+///     for both commands.
 ///   - An existing path whose filename has a shared-library extension
 ///     (`.so`, `.dylib`, or a versioned `.so.N` form): loaded directly.
 ///

@@ -814,6 +814,7 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
   registerAllKGENDialects(registry);
   registerContext(registry, *ctxOr);
   MLIRContext context(registry, MLIRContext::Threading::DISABLED);
+  configureKGENContext(&context);
 
   llvm::SourceMgr sourceMgr;
   configureSourceMgr(*clOptions.state, clOptions.driverOptions, sourceMgr);
@@ -1001,6 +1002,7 @@ int main(int argc, char **argv) {
 
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
+        configureKGENContext(ctx);
         ctx->printOpOnDiagnostic(true);
         ScopedMLIRWarningHandler warningHandler(
             ctx, clOptions.frontendOptions.disableWarnings,

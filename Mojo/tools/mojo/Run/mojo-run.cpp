@@ -39,6 +39,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Target/TargetTraits.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -275,6 +276,7 @@ static int run(const State &subcommandState) {
   CompilationOptions options;
   FrontendOptions frontendOptions;
   MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
+  configureKGENContext(&mlirCtx);
   TargetInfoAttr target;
   if (std::optional<int> exitCode =
           parseArgs(state, args, sourceManager, driverOptions, options,
@@ -367,6 +369,8 @@ static int run(const State &subcommandState) {
     }
   }
   llvm::append_range(linkerArgs, args.getAllArgValues(options::OPT_Xlinker));
+  KGEN::TargetTraitsRegistry::get().appendHostLinkArgs(
+      options.targetAccelerator, linkerArgs);
 
   SmallVector<std::string> additionalLibraries =
       resolveXlinkerLibraries(state, linkerArgs);

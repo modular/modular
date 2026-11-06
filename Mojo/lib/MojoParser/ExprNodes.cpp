@@ -52,6 +52,7 @@
 #include "Support/AssertStream.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Target/TargetTraits.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -2833,8 +2834,11 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Check for an unregistered operation, because otherwise MLIR will crash when
   // assertions are enabled.
+  // Targets allow unregistered dialects, so an unregistered op needs an owner.
   if (!state.name.getDialect() &&
-      !emitter.getContext()->allowsUnregisteredDialects()) {
+      !(emitter.getContext()->allowsUnregisteredDialects() &&
+        TargetTraitsRegistry::get().isKnownDialect(
+            emitter.getContext(), state.name.getDialectNamespace()))) {
     emitter.emitError(call.getLoc(), "use of unregistered MLIR operation ")
         << unboundOp.getName() << call.getRange();
     return {};

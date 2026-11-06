@@ -1492,6 +1492,7 @@ modular_cc_library(
         ":Compiler",
         ":DepGraphDialect",
         ":DialectChecksum",
+        ":TargetTraits",
         ":ToolCommon",
         "//Support:Base",
         "//Support:SymbolExport",

@@ -60,6 +60,16 @@ LogicalResult runMlirOptMain(int argc, char **argv,
   llvm::InitLLVM y(argc, argv);
   mlir::MlirOptMainConfig config =
       mlir::MlirOptMainConfig::createFromCLOptions();
+  // MlirOptMain creates its own context, so the linked backends' context
+  // settings cannot be applied to it directly. Probe a context for the
+  // settings MlirOptMain's config can carry (unregistered dialects) and
+  // forward those.
+  {
+    mlir::MLIRContext probe;
+    configureKGENContext(&probe);
+    if (probe.allowsUnregisteredDialects())
+      config.allowUnregisteredDialects(true);
+  }
 
   // When reading from stdin and the input is a tty, it is often a user
   // mistake and the process "appears to be stuck". Print a message to let the

@@ -533,6 +533,13 @@ static int linkOutput(LinkProduct product, const State &state,
   // Add any necessary system libraries.
   config.appendSystemLibraryLinkArgs(linkerArgs);
 
+  // Owned here: `linkerArgs` only holds views.
+  SmallVector<std::string> acceleratorLinkArgs;
+  KGEN::TargetTraitsRegistry::get().appendHostLinkArgs(
+      options.targetAccelerator, acceleratorLinkArgs);
+  for (const std::string &arg : acceleratorLinkArgs)
+    linkerArgs.push_back(arg);
+
   // Propagate any user-supplied linker flags. Add these last so they take
   // precedence.
   for (const auto &extraArg : extraLinkerArgs) {
@@ -584,6 +591,7 @@ static int build(const State &subcommandState) {
   // Parse arguments.
   State state = subcommandState;
   MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
+  configureKGENContext(&mlirCtx);
   TargetInfoAttr target;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceMgr;

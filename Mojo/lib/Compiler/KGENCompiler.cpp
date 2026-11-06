@@ -298,13 +298,18 @@ static ErrorOr<StringAttr> compileStandaloneKernel(
   exportedSymbols.insert({func.getSymNameAttr(), ExportKind::Exported});
   // Make sure to slice out anything referenced in the input parameters. When
   // generator references are instantiated in the standalone module, they are
-  // instantiated with the new target. Mirrors `bundleCompileOffloadOp` so a
-  // per-kernel offload slice exports the same dependency set.
+  // instantiated with the new target. Mirrors the per-kind handlers in
+  // `Elaborator::bundleCompileOffloadOp` so a per-kernel offload slice
+  // exports the same dependency set as the bundled-offload slice.
   mlir::AttrTypeWalker walker;
   walker.addWalk([&](FuncSymbolAttr ref) {
     exportedSymbols.insert(
         {ref.getSymbol().getRootReference(), ExportKind::NotExported});
   });
+  // Only generator references are exported: `bundleCompileOffloadOp` upgrades
+  // every type instance reference to the generator that defines it before it
+  // records the symbol, because the slicer cannot slice a
+  // `kgen.struct.instance` (it does not implement `ExportInterface`).
   walker.addWalk([&](TypeGeneratorRefAttr ref) {
     exportedSymbols.insert(
         {ref.getSymbol().getRootReference(), ExportKind::NotExported});

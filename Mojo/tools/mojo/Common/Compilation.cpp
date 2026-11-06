@@ -392,6 +392,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   ctx->appendDialectRegistry(registry);
+  configureKGENContext(ctx);
 
   // Parse the input Mojo file into an MLIR module.
   std::unique_ptr<AutoFixItHandler> fixItHandler;

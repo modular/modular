@@ -34,6 +34,10 @@ MODULAR_CXX_EXPORT void
 registerKGENToLLVMTranslation(mlir::DialectRegistry &registry);
 /// Preload all KGEN dialects in the MLIR context.
 void preloadAllKGENDialects(mlir::MLIRContext *ctx);
+
+/// Applies every linked backend's context settings. Call it right after
+/// creating a context that compiles Mojo code, before any pass runs on it.
+void configureKGENContext(mlir::MLIRContext *ctx);
 } // namespace M
 
 #endif // KGEN_TOOLCOMMON_INITALLDIALECTS_H
