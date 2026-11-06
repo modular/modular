@@ -107,7 +107,7 @@ mo.graph @one_fused_dynamic(%a: !mo.tensor<[batch, 2], f32>) -> !mo.tensor<[batc
 // CHECK:   var [[FR:.*]] = EpilogueStoreFunctor{{[0-9_]*}}[{{.*}}, {{.*}}]([[PTRR]], {{.*}}, [[PTRB]], {{.*}})
 // CHECK:   var [[BASER:.*]] = builtin_primitives.primitives.mogg_tensor_init[{{.*}}, False, extensibility.IO.Input, {{.*}}]({{.*}})
 // CHECK:   var [[WR:.*]] = [[BASER]]._bind_to_fused_output([[FR]])
-// CHECK:   {{.*}}.AddFuseOutput.execute[target = "cpu"]([[WR]], {{.*}})
+// CHECK:   {{.*}}.AddFuseOutput.execute([[WR]], {{.*}})
 
 mo.graph @real_kernel_fused_dynamic(%a: !mo.tensor<[batch, 2], f32>, %b: !mo.tensor<[batch, 2], f32>, %bias: !mo.tensor<[batch, 2], f32>) -> !mo.tensor<[batch, 2], f32> {
   %sum = mo.custom [symbol = "imposter_add_fuse_output", device = #M.device_ref<"cpu", 0>](%a, %b) : (!mo.tensor<[batch, 2], f32>, !mo.tensor<[batch, 2], f32>) -> !mo.tensor<[batch, 2], f32>

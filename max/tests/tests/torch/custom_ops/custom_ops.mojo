@@ -30,16 +30,11 @@ from std.utils.coord import Coord, coord_to_index_list
 @register("grayscale")
 struct Grayscale:
     @staticmethod
-    def execute[
-        # The kind of device this is running on: "cpu" or "gpu"
-        target: StaticString,
-    ](
+    def execute(
         img_out: Some[Output & Tensor],
         img_in: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(img_out), TileTensorable)
         comptime assert conforms_to(type_of(img_in), TileTensorable)
         comptime assert type_of(img_out).dtype == .uint8
@@ -83,16 +78,12 @@ struct Grayscale:
 @register("myadd")
 struct MyAdd:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         C: Some[Output & Tensor],
         A: Some[Input & Tensor],
         B: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(C), TileTensorable)
         comptime assert conforms_to(type_of(A), TileTensorable)
         comptime assert conforms_to(type_of(B), TileTensorable)
@@ -122,23 +113,23 @@ struct MyAdd:
                 ),
             ](idx, a + b)
 
-        elementwise[simd_width=get_kernel_simd_width[type, target]()](
-            doit, C.shape(), ctx
-        )
+        elementwise[
+            simd_width=get_kernel_simd_width[
+                type, ctx.target.device_kind_label()
+            ]()
+        ](doit, C.shape(), ctx)
 
 
 @register("parameter_increment")
 struct ParameterIncrement:
     @staticmethod
     def execute[
-        increment: Int, target: StaticString
+        increment: Int
     ](
         B: Some[Output & Tensor],
         A: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(B), TileTensorable)
         comptime assert conforms_to(type_of(A), TileTensorable)
         comptime type = type_of(B).dtype
@@ -161,9 +152,11 @@ struct ParameterIncrement:
                 ),
             ](idx, a + type_of(a)(increment))
 
-        elementwise[simd_width=get_kernel_simd_width[type, target]()](
-            doit, B.shape(), ctx
-        )
+        elementwise[
+            simd_width=get_kernel_simd_width[
+                type, ctx.target.device_kind_label()
+            ]()
+        ](doit, B.shape(), ctx)
 
 
 @register("scalar_add")

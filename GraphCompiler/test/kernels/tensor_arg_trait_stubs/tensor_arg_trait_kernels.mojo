@@ -49,12 +49,9 @@ from extensibility import (
 struct TraitAddExplicit:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable,
         X: Input & TileTensorable,
     ](z: Z, x: X, y: X, ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -63,16 +60,12 @@ struct TraitAddExplicit:
 @extensibility.register("trait_add_some")
 struct TraitAddSome:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -81,15 +74,11 @@ struct TraitAddSome:
 @extensibility.register("trait_fused_load")
 struct TraitFusedLoad:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & Loadable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -101,11 +90,8 @@ struct TraitFusedLoad:
 struct TraitBadConvention:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable,
     ](mut z: Z, ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -119,15 +105,11 @@ struct TraitBadConvention:
 @extensibility.register("trait_legacy_bad_convention")
 struct TraitLegacyBadConvention:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[Input & TileTensorable],
         mut z: OutputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -137,16 +119,12 @@ struct TraitLegacyBadConvention:
 @extensibility.register("trait_multi_output")
 struct TraitMultiOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         a: Some[Output & TileTensorable],
         b: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -156,15 +134,11 @@ struct TraitMultiOutput:
 @extensibility.register("trait_mutable_input")
 struct TraitMutableInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[MutableInput & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -180,15 +154,12 @@ struct TraitTensorTuple:
         As: TypeList[Trait=Input & TileTensorable, ...],
         Bs: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         a: TensorTuple[*As],
         b: TensorTuple[*Bs],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -200,14 +171,11 @@ struct TraitTensorTupleFused:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -217,16 +185,12 @@ struct TraitTensorTupleFused:
 @extensibility.register("trait_mixed_legacy")
 struct TraitMixedLegacy:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: InputTensor,
         y: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -236,16 +200,12 @@ struct TraitMixedLegacy:
 @extensibility.register("trait_mixed_legacy_out")
 struct TraitMixedLegacyOut:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: Some[Input & TileTensorable],
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -257,12 +217,9 @@ struct TraitMixedLegacyOut:
 struct TraitMultiOutputExplicit:
     @staticmethod
     def execute[
-        target: StaticString,
         A: Output & TileTensorable,
         X: Input & TileTensorable,
     ](a: A, b: A, x: X, ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -270,12 +227,9 @@ struct TraitMultiOutputExplicit:
 struct TraitMutableInputExplicit:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable,
         X: MutableInput & TileTensorable,
     ](z: Z, x: X, ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -283,12 +237,9 @@ struct TraitMutableInputExplicit:
 struct TraitFusedLoadExplicit:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable,
         X: Input & Fused & Loadable,
     ](z: Z, x: X, ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -298,15 +249,11 @@ struct TraitFusedLoadExplicit:
 @extensibility.register("trait_leading_mutable")
 struct TraitLeadingMutable:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[MutableInput & TileTensorable],
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -316,16 +263,12 @@ struct TraitLeadingMutable:
 @extensibility.register("trait_all_outputs")
 struct TraitAllOutputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         a: Some[Output & TileTensorable],
         b: Some[Output & TileTensorable],
         c: Some[Output & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -335,16 +278,12 @@ struct TraitAllOutputs:
 @extensibility.register("trait_non_leading_output")
 struct TraitNonLeadingOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[Input & TileTensorable],
         z: Some[Output & TileTensorable],
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -354,15 +293,11 @@ struct TraitNonLeadingOutput:
 @extensibility.register("trait_mixed_legacy_mut")
 struct TraitMixedLegacyMut:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: MutableInputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -372,16 +307,12 @@ struct TraitMixedLegacyMut:
 @extensibility.register("trait_mixed_legacy_fused")
 struct TraitMixedLegacyFused:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: InputTensor,
         y: Some[Input & Fused & Loadable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -390,31 +321,23 @@ struct TraitMixedLegacyFused:
 @extensibility.register("trait_fused_store_legacy_input")
 struct TraitFusedStoreLegacyInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
 @extensibility.register("trait_dense_and_fused_inputs")
 struct TraitDenseAndFusedInputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         y: Some[Input & Fused & Loadable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -424,16 +347,12 @@ struct TraitDenseAndFusedInputs:
 @extensibility.register("legacy_only_control")
 struct LegacyOnlyControl:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: InputTensor,
         w: MutableInputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -454,11 +373,7 @@ struct LegacyOnlyControl:
 @extensibility.register("trait_plain_tensor_input")
 struct TraitPlainTensorInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[Input & Tensor], ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
+    def execute(x: Some[Input & Tensor], ctx: DeviceContext) raises:
         pass
 
 
@@ -468,11 +383,7 @@ struct TraitPlainTensorInput:
 @extensibility.register("trait_fused_load_marker")
 struct TraitFusedLoadMarker:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[Input & Fused & LoadAccess], ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
+    def execute(x: Some[Input & Fused & LoadAccess], ctx: DeviceContext) raises:
         pass
 
 
@@ -481,11 +392,9 @@ struct TraitFusedLoadMarker:
 @extensibility.register("trait_fused_store_marker")
 struct TraitFusedStoreMarker:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Output & Fused & StoreAccess], ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
+    def execute(
+        z: Some[Output & Fused & StoreAccess], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -494,11 +403,7 @@ struct TraitFusedStoreMarker:
 @extensibility.register("trait_fused_store_capability")
 struct TraitFusedStoreCapability:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Output & Fused & Storable], ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
+    def execute(z: Some[Output & Fused & Storable], ctx: DeviceContext) raises:
         pass
 
 
@@ -507,13 +412,9 @@ struct TraitFusedStoreCapability:
 @extensibility.register("trait_fused_transform_marker")
 struct TraitFusedTransformMarker:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & _LegacyComputeOutput], ctx: DeviceContext
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -522,11 +423,9 @@ struct TraitFusedTransformMarker:
 @extensibility.register("trait_mutable_fused_store")
 struct TraitMutableFusedStore:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[MutableInput & Fused & Storable], ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
+    def execute(
+        x: Some[MutableInput & Fused & Storable], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -535,11 +434,9 @@ struct TraitMutableFusedStore:
 @extensibility.register("trait_mutable_fused_load")
 struct TraitMutableFusedLoad:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[MutableInput & Fused & Loadable], ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
+    def execute(
+        x: Some[MutableInput & Fused & Loadable], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -549,11 +446,9 @@ struct TraitMutableFusedLoad:
 @extensibility.register("trait_nonfused_load_capability")
 struct TraitNonFusedLoadCapability:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[Input & TileTensorable & Loadable], ctx: DeviceContext) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
+    def execute(
+        x: Some[Input & TileTensorable & Loadable], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -568,14 +463,10 @@ struct TraitNonFusedLoadCapability:
 @extensibility.register("trait_nonfused_load_store_capability")
 struct TraitNonFusedLoadStoreCapability:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[MutableInput & TileTensorable & Loadable & Storable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -605,15 +496,11 @@ def trait_tile_tensorable_shape_fn[
 @extensibility.register("trait_stable_input")
 struct TraitStableInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable & Stable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -621,13 +508,9 @@ struct TraitStableInput:
 @extensibility.register("trait_stable_mutable_input")
 struct TraitStableMutableInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[MutableInput & TileTensorable & Stable], ctx: DeviceContext
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
 
@@ -637,13 +520,9 @@ struct TraitStableMutableInput:
 @extensibility.register("trait_stable_tensor_input")
 struct TraitStableTensorInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Tensor & Stable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass

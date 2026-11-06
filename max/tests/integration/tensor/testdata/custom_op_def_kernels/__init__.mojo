@@ -251,16 +251,12 @@ struct Mxf353NVFP4Quantize:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         packed: Some[Output & Tensor],
         scales: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(packed), TileTensorable)
         comptime assert conforms_to(type_of(scales), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
@@ -319,9 +315,7 @@ struct Mxf353NVFP4Matmul:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         out_tensor: Some[Output & Tensor],
         a_packed: Some[Input & Tensor],
         a_scales: Some[Input & Tensor],
@@ -329,8 +323,6 @@ struct Mxf353NVFP4Matmul:
         b_scales: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(out_tensor), TileTensorable)
         comptime assert conforms_to(type_of(a_packed), TileTensorable)
         comptime assert conforms_to(type_of(a_scales), TileTensorable)
@@ -398,15 +390,11 @@ struct Mxf353Relu:
     """Shape- and dtype-preserving ReLU, the pipeline's activation."""
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime dtype = type_of(output).dtype
@@ -423,6 +411,6 @@ struct Mxf353Relu:
             var v = x_tile.load[width=width, alignment=align](idx)
             out_tile.store[alignment=align](idx, max(v, 0))
 
-        elementwise[get_kernel_simd_width[dtype, target]()](
-            relu, output.shape(), ctx
-        )
+        elementwise[
+            get_kernel_simd_width[dtype, ctx.target.device_kind_label()]()
+        ](relu, output.shape(), ctx)

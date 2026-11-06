@@ -80,15 +80,12 @@ struct ConcatOpaque:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
         axis: Int,
     ](
         output: Some[Output & Fused & StoreAccess],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime dtype = type_of(output).dtype
         comptime rank = type_of(output).rank
         comptime assert 0 <= axis < rank, "axis out of range"

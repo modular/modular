@@ -392,17 +392,13 @@ struct ExternalCubinVecAdd:
     """Custom op that uses an external cubin for vector addition."""
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         lhs: Some[Input & Tensor],
         rhs: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime assert target == "gpu"
+        comptime assert ctx.target.is_gpu()
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(lhs), TileTensorable)
         comptime assert conforms_to(type_of(rhs), TileTensorable)
@@ -453,16 +449,12 @@ struct IntentionalGpuCrash:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime assert target == "gpu"
+        comptime assert ctx.target.is_gpu()
         comptime assert type_of(output).rank == 1
         comptime assert type_of(x).dtype == type_of(output).dtype
         comptime assert type_of(x).rank == 1

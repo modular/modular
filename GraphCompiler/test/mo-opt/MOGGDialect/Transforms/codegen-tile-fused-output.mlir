@@ -47,7 +47,7 @@ mo.graph @matmul_residual_add(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.te
 // STORE:     var [[OUT:.*]] = self.tile_0.tile[{{.*}}](layout.Coord(Int(tile_coords[0]), Int(tile_coords[1])))
 // STORE:     store_copier.copy([[OUT]].unsafe_address_space_cast[StoreCopier.dst_address_space](), [[PROD]].unsafe_address_space_cast[StoreCopier.src_address_space]())
 // STORE-CALL: var [[W:.*]] = {{.*}}._bind_to_fused_output_tile(var__{{[0-9]+}})
-// STORE-CALL: TileRMSNormStub.execute[{{.*}}]([[W]], {{.*}})
+// STORE-CALL: TileRMSNormStub.execute([[W]], {{.*}})
 
 mo.graph @rms_norm_mul(%x: !mo.tensor<[256, 256], f32, gpu:0>, %gamma: !mo.tensor<[256], f32, gpu:0>, %scale: !mo.tensor<[256, 256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0> {
   %0 = mo.custom [symbol = "tile_rms_norm", device = #M.device_ref<"gpu", 0>](%x, %gamma) : (!mo.tensor<[256, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0>

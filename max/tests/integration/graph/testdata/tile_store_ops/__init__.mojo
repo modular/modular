@@ -131,15 +131,12 @@ struct RMSNormTileFallback:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         raise Error("tile_rms_norm runs only with tile_based_fusion")
 
 

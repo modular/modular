@@ -63,15 +63,11 @@ struct UseLogger:
 @extensibility.register("add_one_custom")
 struct AddOneCustom:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime dtype = type_of(output).dtype
@@ -94,9 +90,11 @@ struct AddOneCustom:
                 x_tile.load[width=width, alignment=align_of[dtype]()](idx) + 1,
             )
 
-        elementwise[simd_width=get_kernel_simd_width[dtype, target]()](
-            add_one, output.shape(), ctx
-        )
+        elementwise[
+            simd_width=get_kernel_simd_width[
+                dtype, ctx.target.device_kind_label()
+            ]()
+        ](add_one, output.shape(), ctx)
 
 
 @extensibility.register_shape_function("add_one_custom")

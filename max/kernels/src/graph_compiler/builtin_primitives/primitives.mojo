@@ -3149,15 +3149,12 @@ def view_copy_impl[
     spec: StaticTensorSpec[dtype, rank, _, InFusion, OutFusion, ComputeFusion],
     //,
     *,
-    target: StaticString,
     _trace_name: StaticString = "mogg.view_copy_impl",
 ](
     z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     x: ManagedTensorSlice[static_spec=spec, ...],
     ctx: DeviceContext,
 ) raises:
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert _shape_types_compatible[
         x.static_spec.static_layout._shape_types,
         z.static_spec.static_layout._shape_types,
@@ -3174,6 +3171,6 @@ def view_copy_impl[
         ](x, idx)
 
     foreach[
-        target=target,
+        target=ctx.target.device_kind_label(),
         _trace_name=_trace_name,
     ](func, z, ctx)

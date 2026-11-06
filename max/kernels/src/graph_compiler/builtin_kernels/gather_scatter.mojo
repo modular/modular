@@ -1595,10 +1595,7 @@ struct StaticBroadcastTo:
 
         var x_view = Self.input_view[z._static_shape_tuple](x, output_shape)
 
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=ctx.target.device_kind_label(),
-        ](z, x_view, ctx)
+        view_copy_impl[_trace_name=_trace_name,](z, x_view, ctx)
 
 
 struct StaticReshape:
@@ -1653,10 +1650,7 @@ struct StaticReshape:
             input, shape
         )
 
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=ctx.target.device_kind_label(),
-        ](output, view_tensor, ctx)
+        view_copy_impl[_trace_name=_trace_name,](output, view_tensor, ctx)
 
 
 @extensibility.register("mo.reshape")
@@ -1757,10 +1751,7 @@ struct Transpose:
             output._static_shape_tuple, static_permutations
         ](input, permutations)
 
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=ctx.target.device_kind_label(),
-        ](output, view, ctx)
+        view_copy_impl[_trace_name=_trace_name,](output, view, ctx)
 
     # TODO(GEX-1033) Make it possible to have multiple raises.
     @inline(.never)
@@ -1954,10 +1945,7 @@ struct Slice:
             output._static_shape_tuple, static_starts, static_steps
         ](input, starts, stops, steps)
 
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=ctx.target.device_kind_label(),
-        ](output, view_tensor, ctx)
+        view_copy_impl[_trace_name=_trace_name,](output, view_tensor, ctx)
 
 
 # TODO(GEX-4377): Bind `input` as `Some[Tensor]` once `slice_shape` takes its

@@ -118,15 +118,11 @@ struct OperandKindMismatch:
 @extensibility.register("declarative_execute_and_execute_device")
 struct ExecuteAndExecuteDevice:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res: Some[Output & Tensor],
         a: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass
 
     @staticmethod

@@ -87,21 +87,19 @@ struct ShapeKernel:
 
     @staticmethod
     def execute[
-        target: StaticString, salt: Int
+        salt: Int
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert type_of(output).dtype == .float32
         comptime assert type_of(input).dtype == .float32
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
-        comptime if target != "gpu":
+        comptime if not ctx.target.is_gpu():
             raise Error("shape_kernel runs on GPUs only")
         var output_tile = output.to_tile_tensor[.float32]()
         var input_tile = input.to_tile_tensor[.float32]()

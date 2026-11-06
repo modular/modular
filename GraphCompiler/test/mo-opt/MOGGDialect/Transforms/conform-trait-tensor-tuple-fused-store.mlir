@@ -38,7 +38,7 @@
 // MOJO: var [[OUT0:[a-z0-9_]+]] = _MoggOutputStoreFusionTensor[DType.float32,
 // MOJO: var [[OUT1:[a-z0-9_]+]] = _MoggOutputStoreFusionTensor[DType.int32,
 // MOJO: var [[OUTS:[a-z0-9_]+]] = extensibility.TensorTuple[type_of([[OUT0]]), type_of([[OUT1]])]([[OUT0]], [[OUT1]])
-// MOJO: TraitTensorTupleFusedStoreSplit.execute[target = "cpu"]([[OUTS]], {{[a-z0-9_]+}}, {{[a-z0-9_]+}})
+// MOJO: TraitTensorTupleFusedStoreSplit.execute([[OUTS]], {{[a-z0-9_]+}}, {{[a-z0-9_]+}})
 mo.graph @trait_tensor_tuple_fused_store_split_graph(%x: !mo.tensor<[5], f32>, %c: !mo.tensor<[2], f32>) -> (!mo.tensor<[2], f32>, !mo.tensor<[3], f64>) {
   %a, %b = mo.custom [symbol = "trait_tensor_tuple_fused_store_split", device = #M.device_ref<"cpu", 0>] (%x) : (
     !mo.tensor<[5], f32>

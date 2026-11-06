@@ -235,23 +235,19 @@ struct OpaqueAddToTensorSI32Raises:
 @extensibility.register("imposter_add")
 struct Foo:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: InputTensor,
         y: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
             return rebind[SIMD[z.dtype, width]](x.load[width](idx)) + rebind[
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=target](func, z, ctx)
+        foreach[target=ctx.target.device_kind_label()](func, z, ctx)
 
 
 @extensibility.register_shape_function("imposter_add")
@@ -266,23 +262,19 @@ def imposter_add_shape(
 @extensibility.register("imposter_add_raising_shape")
 struct FooRaisingShape:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: InputTensor,
         y: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
             return rebind[SIMD[z.dtype, width]](x.load[width](idx)) + rebind[
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=target](func, z, ctx)
+        foreach[target=ctx.target.device_kind_label()](func, z, ctx)
 
 
 @extensibility.register_shape_function("imposter_add_raising_shape")
@@ -324,18 +316,14 @@ def _gpu_negate_kernel[
 @extensibility.register("trait_negate")
 struct TraitNegate:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         # The host-entry bound is the role + metadata traits; each target arm
         # asserts the capability it needs (mirrors `DenseElementwiseKernel`).
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(x), TileTensorable)
             # `z.to_tile_tensor()` picks the mutable projection for an Output;
@@ -398,18 +386,14 @@ def _gpu_stable_negate_kernel[
 @extensibility.register("trait_stable_negate")
 struct TraitStableNegate:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Tensor & Stable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime assert not is_cpu[
-            target
-        ](), "trait_stable_negate: a stable address slot is device memory"
+        comptime assert (
+            not ctx.target.is_cpu()
+        ), "trait_stable_negate: a stable address slot is device memory"
         comptime assert conforms_to(type_of(z), DevicePassable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         var xt = x.to_tile_tensor()
@@ -436,20 +420,16 @@ struct TraitStableNegate:
 @extensibility.register("trait_negate_tile_tensor")
 struct TraitNegateTileTensor:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(z), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         var zt = z.to_tile_tensor()
         var xt = x.to_tile_tensor[type_of(z).dtype]()
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             var n = Int(x.shape().product())
             var zf = zt.reshape(row_major(n))
             var xf = xt.reshape(row_major(n))
@@ -499,16 +479,12 @@ def _gpu_fused_load_negate_unified_closure_kernel[
 @extensibility.register("trait_fused_load_negate_unified_closure")
 struct TraitFusedLoadNegateUnifiedClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(x), Loadable)
             var zt = z.to_tile_tensor()
@@ -576,7 +552,6 @@ def _gpu_fused_load_negate_host_unified_closure_kernel[
 def _fused_load_negate[
     Z: Output & TileTensorable,
     //,
-    target: StaticString,
 ](
     ctx: DeviceContext,
     z: Z,
@@ -590,11 +565,9 @@ def _fused_load_negate[
     `DevicePassable` and cannot be a runtime argument to `enqueue_function`; a
     regular device call can still take it as a comptime parameter.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert conforms_to(Z, TileTensorable)
     comptime assert conforms_to(type_of(load_fn), TrivialRegisterPassable)
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         var zt = z.to_tile_tensor()
         var zf = zt.reshape(row_major(n))
         for i in range(n):
@@ -626,17 +599,13 @@ def _fused_load_negate[
 @extensibility.register("trait_fused_load_host_unified_closure")
 struct TraitFusedLoadHostUnifiedClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var n = Int(z.shape().product())
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             # CPU: arg already access-enabled, capture directly.
             comptime assert conforms_to(
                 type_of(x),
@@ -649,7 +618,7 @@ struct TraitFusedLoadHostUnifiedClosure:
             ](idx: Int) {var x} -> SIMD[dtype, width]:
                 return rebind[SIMD[dtype, width]](x.load[width]((idx,)))
 
-            _fused_load_negate[target=target](ctx, z, n, cpu_load_fn)
+            _fused_load_negate(ctx, z, n, cpu_load_fn)
         else:
             # GPU: project via accessor and capture the access-enabled view.
             comptime assert conforms_to(type_of(x), DevicePassable)
@@ -663,7 +632,7 @@ struct TraitFusedLoadHostUnifiedClosure:
             ](idx: Int) {var xv} -> SIMD[dtype, width]:
                 return rebind[SIMD[dtype, width]](xv.load[width]((idx,)))
 
-            _fused_load_negate[target=target](ctx, z, n, gpu_load_fn)
+            _fused_load_negate(ctx, z, n, gpu_load_fn)
 
 
 # NEGATIVE control: a host-built closure that captures the fused-load host
@@ -675,15 +644,11 @@ struct TraitFusedLoadHostUnifiedClosure:
 @extensibility.register("trait_fused_load_host_closure_negative")
 struct TraitFusedLoadHostClosureNegative:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var n = Int(z.shape().product())
         # Intentionally no `unsafe_fused_view(x)` projection: this kernel
         # captures `x` directly so the launched closure's body reaches the
@@ -711,7 +676,7 @@ struct TraitFusedLoadHostClosureNegative:
         # `load_fn`. The capturing endpoint compiles the closure body on the
         # host, passing the encoded device-type instance, so the body sees the
         # `_access_enabled = False` proxy and the load gate rejects it.
-        _fused_load_negate[target=target](ctx, z, n, load_fn)
+        _fused_load_negate(ctx, z, n, load_fn)
 
 
 # Trait-lane in-place mutable kernel: `x` is read and written through the same
@@ -783,16 +748,12 @@ def _gpu_fused_load_negate_kernel[
 @extensibility.register("trait_fused_load_negate")
 struct TraitFusedLoadNegate:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(x), Loadable)
             var zt = z.to_tile_tensor()
@@ -868,16 +829,13 @@ struct TraitTensorTupleAdd:
         Outs: TypeList[Trait=Output & TileTensorable, ...],
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         bias: Some[Input & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert len(Outs) == len(Ins)
             comptime assert conforms_to(type_of(bias), TileTensorable)
             var bt = bias.to_tile_tensor()
@@ -1048,19 +1006,16 @@ struct TraitTensorTupleAddArray:
         Outs: TypeList[Trait=Output & TileTensorable, ...],
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         bias: Some[Input & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert len(Outs) == len(Ins)
         comptime assert conforms_to(type_of(bias), TileTensorable)
         var bt = bias.to_tile_tensor()
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             raise Error("trait_tensor_tuple_add_array only runs on the GPU")
         else:
             comptime out_dtype = Outs[0].dtype
@@ -1160,15 +1115,12 @@ struct TraitTensorTupleFusedConcat:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), TileTensorable)
             var zt = z.to_tile_tensor()
             comptime out_dtype = type_of(zt).dtype
@@ -1251,15 +1203,12 @@ struct TraitTensorTupleFusedStoreSplit:
     def execute[
         Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor()
             var xf = xt.reshape(row_major(Int(x.shape().product())))
@@ -1322,16 +1271,12 @@ def _gpu_fused_store_double_kernel[
 @extensibility.register("trait_fused_store_double")
 struct TraitFusedStoreDouble:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
@@ -1411,16 +1356,12 @@ def _launch_fused_store_parameter_closure[
 @extensibility.register("trait_fused_store_parameter_closure")
 struct TraitFusedStoreParameterClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
@@ -1483,16 +1424,12 @@ def _gpu_fused_store_unified_closure_kernel[
 @extensibility.register("trait_fused_store_unified_closure")
 struct TraitFusedStoreUnifiedClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
@@ -1599,9 +1536,7 @@ def _gpu_fused_transform_bias_store_form_kernel[
 @extensibility.register("trait_fused_transform_bias")
 struct TraitFusedTransformBias:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         # The output declares only `Output & Fused & _LegacyComputeOutput`.
         # The body branches on the form the graph compiler delivered:
         # `_LegacyComputable & TileTensorable` (the transform plus the output
@@ -1610,10 +1545,8 @@ struct TraitFusedTransformBias:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var n = Int(z.shape().product())
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
             var xf = xt.reshape(row_major(n))
@@ -1695,17 +1628,13 @@ def _gpu_fused_transform_bias_unified_closure_kernel[
 @extensibility.register("trait_fused_transform_bias_unified_closure")
 struct TraitFusedTransformBiasUnifiedClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & _LegacyComputeOutput],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var n = Int(z.shape().product())
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
             var xf = xt.reshape(row_major(n))
@@ -1762,16 +1691,13 @@ struct TraitTupleThenComputeOutput:
     def execute[
         Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         z: Some[Output & Fused & _LegacyComputeOutput],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var n = Int(x.shape().product())
             var xt = x.to_tile_tensor[type_of(z).dtype]()
@@ -2203,23 +2129,19 @@ def imposter_add_compute_fusion_shape(
 @extensibility.register("imposter_add_fuse_output")
 struct AddFuseOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: FusedOutputTensor,
         x: InputTensor,
         y: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
             return rebind[SIMD[z.dtype, width]](x.load[width](idx)) + rebind[
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=target](func, z, ctx)
+        foreach[target=ctx.target.device_kind_label()](func, z, ctx)
 
 
 # c = a @ b, should support CPU and GPU
@@ -2722,15 +2644,12 @@ struct TraitTensorTupleShapeOp:
     def execute[
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         output: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if not is_cpu[target]():
+        comptime if not ctx.target.is_cpu():
             raise Error("trait_tensor_tuple_shape_op only runs on the CPU")
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(inputs[0]), TileTensorable)
@@ -3017,15 +2936,12 @@ struct TensorWrapperPrinter:
 struct MutableStore:
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         tw: TensorWrapper,
         tensor: FusedInputTensor[dtype=.float32, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var buffer = tw.buffer
 
         @inline(.always)
@@ -3040,9 +2956,9 @@ struct MutableStore:
             idx[1] += 1
             buffer.store[width=width](Coord(idx), val)
 
-        foreach_out_func[target=target, _trace_name=_trace_name](
-            out_func, tensor, ctx
-        )
+        foreach_out_func[
+            target=ctx.target.device_kind_label(), _trace_name=_trace_name
+        ](out_func, tensor, ctx)
 
 
 @extensibility.register("my_square_compute_out_fusion")
@@ -3902,16 +3818,16 @@ struct MapLowerVariadic:
 @extensibility.register("map_lower_add_one")
 struct MapLowerAddOne:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](res: OutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
+    def execute(
+        res: OutputTensor,
+        a: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[res.dtype, width]:
             return rebind[SIMD[res.dtype, width]](a.load[width](idx)) + 1
 
-        foreach[target=target](func, res, ctx)
+        foreach[target=ctx.target.device_kind_label()](func, res, ctx)
 
 
 # Real-body plain-output kernels below broaden the advanced-fusion MAP-ABI
@@ -3926,17 +3842,13 @@ struct MapLowerAddOne:
 @extensibility.register("map_lower_add3")
 struct MapLowerAdd3:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res: OutputTensor,
         a: InputTensor,
         b: InputTensor,
         c: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[res.dtype, width]:
             return (
@@ -3945,7 +3857,7 @@ struct MapLowerAdd3:
                 + rebind[SIMD[res.dtype, width]](c.load[width](idx))
             )
 
-        foreach[target=target](func, res, ctx)
+        foreach[target=ctx.target.device_kind_label()](func, res, ctx)
 
 
 # 1 input / 2 outputs: `res0 = a + 1`, `res1 = a * 2` (two plain outputs, two
@@ -3976,24 +3888,20 @@ struct MapLowerTwoOutputs:
 @extensibility.register("map_lower_add_sub")
 struct MapLowerAddSub:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res0: OutputTensor,
         res1: OutputTensor,
         a: InputTensor,
         b: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         @inline(.always)
         def add[width: Int](idx: Coord) {var} -> SIMD[res0.dtype, width]:
             return rebind[SIMD[res0.dtype, width]](a.load[width](idx)) + rebind[
                 SIMD[res0.dtype, width]
             ](b.load[width](idx))
 
-        foreach[target=target](add, res0, ctx)
+        foreach[target=ctx.target.device_kind_label()](add, res0, ctx)
 
         @inline(.always)
         def sub[width: Int](idx: Coord) {var} -> SIMD[res1.dtype, width]:
@@ -4001,7 +3909,7 @@ struct MapLowerAddSub:
                 SIMD[res1.dtype, width]
             ](b.load[width](idx))
 
-        foreach[target=target](sub, res1, ctx)
+        foreach[target=ctx.target.device_kind_label()](sub, res1, ctx)
 
 
 # Scalar operand: `res = a * s` where `s: Scalar[dtype]`. Exercises the MAP
@@ -4090,15 +3998,12 @@ struct TraitTensorTupleFusedConcatUnifiedClosure:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             raise Error(
                 "trait_tensor_tuple_fused_concat_unified_closure only runs on"
                 " the GPU"
@@ -4148,22 +4053,18 @@ struct TraitTensorTupleFusedConcatUnifiedClosure:
 @extensibility.register("trait_unfused_execute")
 struct TraitUnfusedExecute:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         w: Some[Output & Fused & StoreAccess],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert (
             type_of(x).rank == 1
             and type_of(z).rank == 1
             and type_of(w).rank == 1
         )
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(w), Storable)
@@ -4176,22 +4077,18 @@ struct TraitUnfusedExecute:
             raise Error("trait_unfused_execute is CPU-only")
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Tensor],
         w: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises where not conforms_to(type_of(z), Fused):
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert (
             type_of(x).rank == 1
             and type_of(z).rank == 1
             and type_of(w).rank == 1
         )
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(w), TileTensorable)

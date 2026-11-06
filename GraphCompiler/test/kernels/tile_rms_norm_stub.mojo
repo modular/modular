@@ -28,13 +28,10 @@ struct TileRMSNormStub:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
     ](
         output: _FusedOutputTileTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
     ):
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         pass

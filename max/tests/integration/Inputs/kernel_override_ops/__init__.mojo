@@ -46,9 +46,7 @@ struct AddOverride(ElementwiseBinaryOp):
 @extensibility.register("mo.reduce.layer_norm")
 struct LayerNormOverride:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Fused & StoreAccess],
         input: Some[Input & Fused & LoadAccess],
         gamma: Some[Input & Tensor],
@@ -56,6 +54,4 @@ struct LayerNormOverride:
         epsilon: Float32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         raise Error("LAYER_NORM_OVERRIDE_FIRED")
