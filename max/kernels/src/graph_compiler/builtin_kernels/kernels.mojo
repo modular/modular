@@ -5836,10 +5836,14 @@ struct CausalConv1DVarlenFwd[
                     launch_gpu[4]()
                 case 7:
                     launch_gpu[7]()
+                # A 4-tap conv at dilation 3, passed as zero-padded dense
+                # taps.
+                case 10:
+                    launch_gpu[10]()
                 case _:
                     raise Error(
-                        "Unsupported kernel width: only widths 1, 2, 3, 4, 7"
-                        " are supported"
+                        "Unsupported kernel width: only widths 1, 2, 3, 4, 7,"
+                        " 10 are supported"
                     )
         else:
             raise Error("Unsupported target device")
