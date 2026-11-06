@@ -21,13 +21,15 @@ encoding the domain and codomain spaces define.
 You can import these APIs from the `layout.bit_layout` module:
 
 ```mojo
-from layout.bit_layout import BitLayout
+from layout.bit_layout import BitLayout, placement
 
 comptime pairs = BitLayout().run(0, 1, 0).run(16, 5, 1)
 ```
 """
 
 from std.bit import count_trailing_zeros
+
+from layout.layout import TensorLayout
 
 comptime BIT_LAYOUT_BITS = 64
 """The number of domain bits a `BitLayout` can map."""
@@ -215,3 +217,67 @@ struct BitLayout(Equatable, TrivialRegisterPassable, Writable):
             else:
                 writer.write(d, ": ", hex(self.img[d]))
         writer.write("}")
+
+
+def _log2(n: Int) -> Int:
+    return Int(count_trailing_zeros(UInt64(n)))
+
+
+def _power_of_two(n: Int) -> Bool:
+    return n > 0 and n & (n - 1) == 0
+
+
+def is_bit_linear[L: TensorLayout]() -> Bool:
+    """Returns whether a static layout is linear over F2.
+
+    It is when every mode's extent is a power of two, every stride is zero or
+    a power of two, and no two coordinate bits reach the same offset bit, so
+    adding offsets never carries.
+
+    Parameters:
+        L: The layout.
+
+    Returns:
+        True when `placement[L]()` describes `L` exactly.
+    """
+    if not L.all_dims_known:
+        return False
+    var reached: UInt64 = 0
+    comptime for i in range(L.rank):
+        comptime extent = L.static_shape[i]
+        comptime stride = L.static_stride[i]
+        if not _power_of_two(extent):
+            return False
+        if stride != 0:
+            if not _power_of_two(stride):
+                return False
+            var span = bits(_log2(stride), _log2(extent))
+            if reached & span != 0:
+                return False
+            reached |= span
+    return True
+
+
+def placement[L: TensorLayout]() -> BitLayout:
+    """Returns a static layout as a `BitLayout` from coordinate bits to
+    offset bits.
+
+    Coordinate bits number the layout's points colexicographically: mode 0's
+    bits are the lowest. Bit `b` of mode `i` goes to `stride_i << b`, or
+    nowhere for a stride of zero.
+
+    Parameters:
+        L: The layout, which `is_bit_linear`.
+
+    Returns:
+        The layout's placement.
+    """
+    var m = BitLayout()
+    var d = 0
+    comptime for i in range(L.rank):
+        comptime extent = L.static_shape[i]
+        comptime stride = L.static_stride[i]
+        for b in range(_log2(extent)):
+            m = m.put(d, UInt64(stride) << UInt64(b))
+            d += 1
+    return m
