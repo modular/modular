@@ -159,7 +159,7 @@ struct QKRMSNormRopeSplitStore:
         ), "64-channel heads only"
         comptime assert dtype == DType.bfloat16
         if qkv.dim_size[0]() < ctx.default_device_info.sm_count:
-            _rowwise_prologue[target, n_q_heads](
+            _rowwise_prologue[n_q_heads](
                 output,
                 qkv,
                 input_row_offsets,
@@ -253,7 +253,6 @@ def _rowwise_prologue[
     freq_dtype: DType,
     cache_t: KVCacheT,
     //,
-    target: StaticString,
     n_q_heads: Int,
 ](
     output: OutputTensor[dtype=dtype, rank=2, ...],
@@ -268,8 +267,6 @@ def _rowwise_prologue[
 ) raises:
     """The prologue as one `rowwise` kernel, a warp per (token, head) row:
     below SM-count tokens it beats `nn.head_rms_norm_rope`'s lane kernel."""
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime cache_dtype = cache_t.dtype
     comptime head_dim = cache_t.kv_params.head_size
     comptime n_kv_heads = cache_t.kv_params.num_heads
@@ -277,7 +274,7 @@ def _rowwise_prologue[
     comptime heads = n_q_heads + 2 * n_kv_heads
     comptime accum = get_accum_type[dtype]()
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
+        ReduceSum[accum, 1], ctx.target.device_kind_label(), 64, dtype, accum
     ]()
     # A tile must sit wholly in one half of the head to find its partner.
     comptime assert half % simd_width == 0, "head_dim / 2 % simd width"
@@ -415,7 +412,7 @@ def _rowwise_prologue[
     rowwise.launch[
         axis=2,
         simd_width=simd_width,
-        target=target,
+        target=ctx.target.device_kind_label(),
         num_phases=2,
         computationally_expensive=True,
         name="qk_rms_norm_rope_split_store",

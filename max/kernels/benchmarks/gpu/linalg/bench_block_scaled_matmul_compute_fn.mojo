@@ -146,7 +146,6 @@ def _run_shape[
             SF_VECTOR_SIZE=SF,
             transpose_b=True,
             pdl_level=PDLLevel.OFF,
-            target="gpu",
         ](c_plain, a, b, a_scales, b_scales, sf, c)
 
     def closure(c: DeviceContext[]) raises {imm}:
@@ -156,7 +155,6 @@ def _run_shape[
                 transpose_b=True,
                 has_compute_fn=True,
                 pdl_level=PDLLevel.OFF,
-                target="gpu",
             ](
                 c_closure,
                 a,
@@ -173,7 +171,6 @@ def _run_shape[
                 transpose_b=True,
                 has_compute_fn=True,
                 pdl_level=PDLLevel.OFF,
-                target="gpu",
             ](
                 c_closure,
                 a,

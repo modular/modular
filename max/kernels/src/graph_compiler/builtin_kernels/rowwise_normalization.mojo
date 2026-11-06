@@ -830,7 +830,6 @@ def row_mean_of_squares[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[out_dtype, width]) -> None),
     /,
-    target: StaticString = "cpu",
     reduce_dim: Int = rank - 1,
 ](
     input_fn: InputFn,
@@ -838,8 +837,6 @@ def row_mean_of_squares[
     shape: Coord,
     ctx: DeviceContext,
 ) raises:
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     comptime assert shape.is_flat, "shape must be flat"
     comptime assert 0 <= reduce_dim < rank, "reduce_dim must be in [0, rank)"
@@ -848,7 +845,7 @@ def row_mean_of_squares[
         accum.is_floating_point()
     ), "row_mean_of_squares requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, in_dtype, accum
+        ReduceSum[accum, 1], ctx.target.device_kind_label(), 64, in_dtype, accum
     ]()
     var axis_size = Int(shape[reduce_dim])
     var axis_size_accum = Scalar[accum](axis_size)
@@ -913,7 +910,7 @@ def row_mean_of_squares[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
+        target=ctx.target.device_kind_label(),
         num_phases=1,
     ](body, shape, ctx)
 
@@ -932,7 +929,6 @@ def row_mean_of_squares_qk[
     in_dtype: DType,
     out_dtype: DType,
     //,
-    target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, out_dtype, ...],
     query: TileTensor[mut=False, in_dtype, ...],
@@ -942,8 +938,6 @@ def row_mean_of_squares_qk[
     k_cols: Int,
     ctx: DeviceContext,
 ) raises:
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     if rows == 0:
         return
 
@@ -966,7 +960,7 @@ def row_mean_of_squares_qk[
         comptime for i in range(width):
             output.store((Int(oc[0]) + i, 0), val[i])
 
-    row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
+    row_mean_of_squares[in_dtype, out_dtype, 2](
         q_in, q_out, Coord(rows, q_cols), ctx
     )
 
@@ -985,7 +979,7 @@ def row_mean_of_squares_qk[
         comptime for i in range(width):
             output.store((Int(oc[0]) + i, 1), val[i])
 
-    row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
+    row_mean_of_squares[in_dtype, out_dtype, 2](
         k_in, k_out, Coord(rows, k_cols), ctx
     )
 

@@ -37,7 +37,7 @@ def _project[
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         output.store(idx, value.cast[dtype]())
 
-    _matmul_common[target=target](hidden, weight, context, write_output)
+    _matmul_common(hidden, weight, context, write_output)
 
 
 def _check_projection[

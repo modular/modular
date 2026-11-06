@@ -37,19 +37,19 @@ def main() raises:
     # CHECK: [[@LINE+3]]:5: error: no matching function in call to 'matmul_gpu_qint4'
     # CHECK: note: candidate not viable: violated constraint
     # CHECK-NEXT: def matmul_gpu_qint4[c_type: DType, a_type: DType, //,
-    matmul_gpu_qint4[32, "gpu"](c_bf16, a_f32, b, ctx)
+    matmul_gpu_qint4[32](c_bf16, a_f32, b, ctx)
 
     # CHECK: [[@LINE+3]]:5: error: no matching function in call to 'matmul_gpu_qint4'
     # CHECK: note: candidate not viable: violated constraint
     # CHECK-NEXT: def matmul_gpu_qint4[c_type: DType, a_type: DType, //,
-    matmul_gpu_qint4[32, "gpu"](c_f32, a_bf16, b, ctx)
+    matmul_gpu_qint4[32](c_f32, a_bf16, b, ctx)
 
     # CHECK: [[@LINE+3]]:5: error: no matching function in call to 'matmul_gpu_qint4'
     # CHECK: note: candidate not viable: violated constraint
     # CHECK-NEXT: def matmul_gpu_qint4[c_type: DType, a_type: DType, EpilogueFnType:
-    matmul_gpu_qint4[32, "gpu"](c_bf16, a_f32, b, no_epilogue_fn, ctx)
+    matmul_gpu_qint4[32](c_bf16, a_f32, b, no_epilogue_fn, ctx)
 
     # CHECK: [[@LINE+3]]:5: error: no matching function in call to 'matmul_gpu_qint4'
     # CHECK: note: candidate not viable: violated constraint
     # CHECK-NEXT: def matmul_gpu_qint4[c_type: DType, a_type: DType, EpilogueFnType:
-    matmul_gpu_qint4[32, "gpu"](c_f32, a_bf16, b, no_epilogue_fn, ctx)
+    matmul_gpu_qint4[32](c_f32, a_bf16, b, no_epilogue_fn, ctx)

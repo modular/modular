@@ -220,7 +220,6 @@ def test_mxfp8_dispatch[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
         pdl_level=pdl_level,
-        target="gpu",
     ](c, a, b, a_scales, b_scales, Float32(1.0), ctx)
 
     naive_block_scaled_matmul[
@@ -405,7 +404,6 @@ def test_mxfp8_dispatch[
             compute_fn_col_period=col_period,
             compute_fn_col_start=pass_col_start,
             pdl_level=pdl_level,
-            target="gpu",
         ](
             c,
             a,

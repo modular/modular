@@ -2509,7 +2509,7 @@ struct IndexTensor:
         comptime assert conforms_to(type_of(indices), TileTensorable)
         comptime dtype = type_of(output).dtype
         comptime indices_type = type_of(indices).dtype
-        index_tensor[dtype, indices_type, batch_dims, target=target](
+        index_tensor[dtype, indices_type, batch_dims](
             data.to_tile_tensor[dtype](),
             indices.to_tile_tensor(),
             output.to_tile_tensor(),

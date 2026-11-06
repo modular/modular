@@ -93,11 +93,12 @@ struct CausalConv1D[activation: StaticString]:
         var O = output.to_tile_tensor[dtype]()
         var B = bias.to_tile_tensor[dtype]()
 
-        causal_conv1d[target](O, X, W, B, Self.activation == "silu", ctx)
+        causal_conv1d(O, X, W, B, Self.activation == "silu", ctx)
 
 
 def causal_conv1d[
-    dtype: DType, //, target: StaticString
+    dtype: DType,
+    //,
 ](
     output: MutTileTensor[dtype, address_space=.GENERIC, ...],
     input: ImmTileTensor[dtype, address_space=.GENERIC, ...],
@@ -110,7 +111,6 @@ def causal_conv1d[
 
     Parameters:
         dtype: Element type of every tensor.
-        target: Device to run on, `"cpu"` or `"gpu"`.
 
     Args:
         output: Output view with the shape of `input`.
@@ -120,14 +120,12 @@ def causal_conv1d[
         silu_activation: Whether to apply SiLU after the convolution.
         ctx: Device context to run on.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     var batch_size = Int(input.dim[0]())
     var dim = Int(input.dim[1]())
     var seqlen = Int(input.dim[2]())
     var width = Int(weight.dim[1]())
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         causal_conv1d_channel_first_fwd_cpu[
             input.dtype,
             weight.dtype,
@@ -145,7 +143,7 @@ def causal_conv1d[
             silu_activation,
             Optional(ctx.assert_cpu_target()),
         )
-    elif is_gpu[target]():
+    elif ctx.target.is_gpu():
         var gpu_ctx = ctx
         comptime kNThreads = 128
         comptime kNElts = 4
@@ -424,13 +422,14 @@ struct CausalConv1DUpdate[activation: StaticString]:
         var O = output.to_tile_tensor[dtype]()
         var B = bias.to_tile_tensor[dtype]()
 
-        causal_conv1d_update[target](
+        causal_conv1d_update(
             O, CS, X, CS_IN, W, B, Self.activation == "silu", ctx
         )
 
 
 def causal_conv1d_update[
-    dtype: DType, //, target: StaticString
+    dtype: DType,
+    //,
 ](
     output: MutTileTensor[dtype, address_space=.GENERIC, ...],
     conv_state: MutTileTensor[dtype, address_space=.GENERIC, ...],
@@ -445,7 +444,6 @@ def causal_conv1d_update[
 
     Parameters:
         dtype: Element type of every tensor.
-        target: Device to run on, `"cpu"` or `"gpu"`.
 
     Args:
         output: Convolution output with the shape of `input`.
@@ -457,8 +455,6 @@ def causal_conv1d_update[
         silu_activation: Whether to apply SiLU after the convolution.
         ctx: Device context to run on.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     var batch_size = Int(input.dim[0]())
     var dim = Int(input.dim[1]())
     var seqlen = Int(input.dim[2]())
@@ -469,7 +465,7 @@ def causal_conv1d_update[
     # read old values and write updates into the same allocation.
     var total_state_elements = batch_size * dim * state_len
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         unsafe_memcpy(
             dest=conv_state.unsafe_ptr(),
             src=conv_state_in.unsafe_ptr(),
@@ -494,7 +490,7 @@ def causal_conv1d_update[
             bias,
             silu_activation,
         )
-    elif is_gpu[target]():
+    elif ctx.target.is_gpu():
         var gpu_ctx = ctx
         enqueue_causal_conv1d_update_gpu[separate_state=True](
             gpu_ctx,

@@ -322,9 +322,7 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
         k_buffer_device, row_major(Int64(inflated_length), Idx[OUT_DIM])
     )
 
-    generic_flare_mla_decompress_k_cache_ragged_paged[
-        target="gpu", dtype=DType.bfloat16
-    ](
+    generic_flare_mla_decompress_k_cache_ragged_paged[dtype=DType.bfloat16,](
         buffer_row_offsets_1d_tt,
         cache_offsets_1d_tt,
         Int32(inflated_length),

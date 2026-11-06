@@ -141,7 +141,6 @@ def index_tensor[
     dtype: DType,
     indices_type: DType,
     batch_dims: Int,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
@@ -156,7 +155,6 @@ def index_tensor[
         indices_type: Type of indices tensor.
         batch_dims: Number of batch dimensions. The gather of indexing
                     starts from dimension of data[batch_dims:].
-        target: The target architecture to execute on.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -167,16 +165,15 @@ def index_tensor[
         ctx: The device context as prepared by the graph compiler.
 
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         return _index_tensor_1d[batch_dims,](
             data, indices, output, Optional(ctx.assert_cpu_target())
         )
     else:
         return _index_tensor_impl[
             batch_dims,
-            target=target,
+            target=ctx.target.device_kind_label(),
         ](data, indices, output, ctx)
 
 

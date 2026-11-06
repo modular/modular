@@ -235,7 +235,7 @@ def execute_kv_cache_ragged_matmul[
     }:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[]) raises {imm}:
-            _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
+            _fused_qkv_matmul_kv_cache_ragged_impl(
                 hidden_state_device.as_imm().as_unsafe_any_origin(),
                 prefix_sums_device_tensor.as_imm(),
                 weight_device.as_imm().as_unsafe_any_origin(),

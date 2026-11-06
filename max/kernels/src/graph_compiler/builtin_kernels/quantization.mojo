@@ -872,7 +872,7 @@ struct QMatmulGPU_b4_g128:
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b).rank == 2
 
-        matmul_gpu_qint4[128, target](
+        matmul_gpu_qint4[128](
             c.to_tile_tensor[.bfloat16](),
             a.to_tile_tensor[.bfloat16](),
             b.to_tile_tensor[.uint8](),
@@ -912,7 +912,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         comptime assert type_of(b_packed).rank == 2
         comptime assert type_of(b).rank == 2
 
-        gpu_qint4_repack_GPTQ[128, target](
+        gpu_qint4_repack_GPTQ[128](
             b.to_tile_tensor[.uint8](),
             b_packed.to_tile_tensor[.uint8](),
             ctx=ctx,
@@ -957,7 +957,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         # The helper takes the permutation as a pointer-backed tile, so rebuild
         # one over the argument's data; a non-pointer storage policy aborts
         # here at run time.
-        gpu_qint4_repack_GPTQ[128, target](
+        gpu_qint4_repack_GPTQ[128](
             b.to_tile_tensor[.uint8](),
             b_packed.to_tile_tensor[.uint8](),
             rebind[

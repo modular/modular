@@ -1489,7 +1489,6 @@ def mla_prefill_branch_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     mask_str: StaticString,
-    target: StaticString = "cpu",
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
@@ -1536,7 +1535,6 @@ def mla_prefill_branch_fp8[
         k_scale_granularity: Granularity of the scale for K dimension of the
             matrix multiplication.
         mask_str: Mask variant.
-        target: Target device.
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
@@ -1572,8 +1570,6 @@ def mla_prefill_branch_fp8[
             it captures.
         ctx: Device context.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
     comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
@@ -1737,7 +1733,6 @@ def mla_prefill_branch_fp8[
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         transpose_b=True,
-        target=target,
     ](
         k_flat,
         fp8_k_latent,
@@ -1775,7 +1770,6 @@ def mla_prefill_branch_fp8[
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         transpose_b=True,
-        target=target,
     ](
         v_flat,
         fp8_k_latent,
@@ -3410,7 +3404,6 @@ def mla_prefill_decode_graph_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     mask_str: StaticString,
-    target: StaticString = "cpu",
     sparse_mla: Bool = False,
     sparse_indices_stride: Int = 0,
     # Read-once shared-index MTP fold; threaded to flare_mla_decoding (fp8-KV
@@ -3491,7 +3484,6 @@ def mla_prefill_decode_graph_fp8[
         k_scale_granularity: Granularity of the scale for K dimension of the
             matrix multiplication.
         mask_str: Mask variant.
-        target: Target device (defaults to "cpu").
         sparse_mla: Whether to use sparse MLA (defaults to False).
         sparse_indices_stride: Row stride of the sparse decode index buffer
             (defaults to 0).
@@ -3578,7 +3570,6 @@ def mla_prefill_decode_graph_fp8[
             computed for and the token that reads it; read by the decode
             branch only.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     var seq_len = q.dim(0)
 
@@ -3720,7 +3711,6 @@ def mla_prefill_decode_graph_fp8[
             n_scale_granularity=n_scale_granularity,
             k_scale_granularity=k_scale_granularity,
             mask_str=mask_str,
-            target=target,
             kernels=kernels,
         ](
             output,
@@ -3814,7 +3804,6 @@ def mla_prefill_branch_bf16[
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
     //,
     mask_str: StaticString,
-    target: StaticString = "cpu",
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
@@ -3846,7 +3835,6 @@ def mla_prefill_branch_bf16[
         KVInputFnType: Type of the closure that loads the KV latent
             values (inferred).
         mask_str: Mask variant.
-        target: Target device (defaults to "cpu").
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
@@ -3880,8 +3868,6 @@ def mla_prefill_branch_bf16[
             it captures.
         ctx: Device context.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
     comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
@@ -3993,7 +3979,7 @@ def mla_prefill_branch_bf16[
 
         # K matmul with internal FP8 conversion
         matmul[
-            target=target,
+            target=ctx.target.device_kind_label(),
             transpose_b=True,
         ](
             k_fp8_flat,
@@ -4008,7 +3994,7 @@ def mla_prefill_branch_bf16[
 
         # V matmul with internal FP8 conversion
         matmul[
-            target=target,
+            target=ctx.target.device_kind_label(),
             transpose_b=True,
         ](
             v_fp8_flat,
@@ -4063,7 +4049,7 @@ def mla_prefill_branch_bf16[
             k_buf,
             row_major((buffer_length, Idx[num_heads * qk_nope_head_dim])),
         )
-        matmul[target=target, transpose_b=True](
+        matmul[target=ctx.target.device_kind_label(), transpose_b=True](
             k_flat,
             k_latent,
             w_k,
@@ -4080,7 +4066,7 @@ def mla_prefill_branch_bf16[
             v_buf,
             row_major(buffer_length, Idx[num_heads * v_head_dim]),
         )
-        matmul[target=target, transpose_b=True](
+        matmul[target=ctx.target.device_kind_label(), transpose_b=True](
             v_flat,
             k_latent,
             w_v,
@@ -4659,7 +4645,6 @@ def mla_prefill_decode_graph_bf16[
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
     //,
     mask_str: StaticString,
-    target: StaticString = "cpu",
     sparse_mla: Bool = False,
     sparse_indices_stride: Int = 0,
     # Whether the sparse indices are paged physical rows rather than token
@@ -4716,7 +4701,6 @@ def mla_prefill_decode_graph_bf16[
         KVInputFnType: Type of the closure that loads the KV latent
             values (inferred).
         mask_str: Mask variant.
-        target: Target device (defaults to "cpu").
         sparse_mla: Whether to use sparse MLA (defaults to False).
         sparse_indices_stride: Row stride of the sparse decode index buffer
             (defaults to 0).
@@ -4792,8 +4776,6 @@ def mla_prefill_decode_graph_bf16[
             computed for and the token that reads it; read by the decode
             branch only.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     var seq_len = q.dim(0)
 
     if seq_len == 0:
@@ -4925,7 +4907,6 @@ def mla_prefill_decode_graph_bf16[
         # fp8 caches) is handled by the sparse branch above.
         mla_prefill_branch_bf16[
             mask_str=mask_str,
-            target=target,
             kernels=kernels,
         ](
             output,

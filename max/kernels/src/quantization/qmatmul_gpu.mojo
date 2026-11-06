@@ -1658,7 +1658,6 @@ def matmul_gpu_qint4[
     a_type: DType,
     //,
     group_size: Int,
-    target: StaticString,
 ](
     c_tt: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -1671,7 +1670,6 @@ def matmul_gpu_qint4[
         c_type: The dtype of the output matrix.
         a_type: The dtype of the A matrix elements.
         group_size: The number of K elements sharing a single scale.
-        target: The target platform string, which must identify a GPU.
 
     Args:
         c_tt: The output tile tensor in global memory.
@@ -1686,12 +1684,10 @@ def matmul_gpu_qint4[
         Requires an NVIDIA GPU target. `a_type` and `c_type` must both be
         `bfloat16`.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert c_tt.rank == 2
     comptime assert a_tt.rank == 2
     comptime assert b_tt.rank == 2
-    comptime assert is_gpu[target](), "unsupported target"
+    comptime assert ctx.target.is_gpu(), "unsupported target"
 
     matmul_gpu_qint4_impl[group_size](c_tt, a_tt, b_tt, ctx)
 
@@ -1703,7 +1699,6 @@ def matmul_gpu_qint4[
     EpilogueFnType: ElementwiseEpilogueFn,
     //,
     group_size: Int,
-    target: StaticString,
 ](
     c_tt: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -1718,7 +1713,6 @@ def matmul_gpu_qint4[
         a_type: The dtype of the A matrix elements.
         EpilogueFnType: Type of `epilogue_fn` (inferred).
         group_size: The number of K elements sharing a single scale.
-        target: The target platform string, which must identify a GPU.
 
     Args:
         c_tt: The output tile tensor; the kernel does not write it.
@@ -1734,12 +1728,10 @@ def matmul_gpu_qint4[
         Requires an NVIDIA GPU target. `a_type` and `c_type` must both be
         `bfloat16`.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert c_tt.rank == 2
     comptime assert a_tt.rank == 2
     comptime assert b_tt.rank == 2
-    comptime assert is_gpu[target](), "unsupported target"
+    comptime assert ctx.target.is_gpu(), "unsupported target"
 
     matmul_gpu_qint4_impl[group_size, has_epilogue_fn=True](
         c_tt, a_tt, b_tt, ctx, epilogue_fn
@@ -2287,17 +2279,12 @@ def matmul_gpu_qint4_impl[
 
 
 @inline(.always)
-def gpu_qint4_repack_Q4_0[
-    target: StaticString,
-](
+def gpu_qint4_repack_Q4_0(
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launches the GPU kernel that repacks Q4_0 weights into the packed GEMM layout.
-
-    Parameters:
-        target: The target platform string, which must identify a GPU.
 
     Args:
         b_tt: The input Q4_0 quantized weight tile tensor in global memory.
@@ -2307,11 +2294,9 @@ def gpu_qint4_repack_Q4_0[
     Raises:
         An error if the input tensors are not rank-2 or the target is not a GPU.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert b_tt.rank == 2
     comptime assert b_packed_tt.rank == 2
-    comptime assert is_gpu[target](), "unsupported target"
+    comptime assert ctx.target.is_gpu(), "unsupported target"
 
     comptime pack_factor = 8
     comptime group_size = 32
@@ -2347,7 +2332,6 @@ def gpu_qint4_repack_Q4_0[
 @inline(.always)
 def gpu_qint4_repack_GPTQ[
     group_size: Int,
-    target: StaticString,
 ](
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
@@ -2359,7 +2343,6 @@ def gpu_qint4_repack_GPTQ[
 
     Parameters:
         group_size: The number of K elements sharing a single scale.
-        target: The target platform string, which must identify a GPU.
 
     Args:
         b_tt: The input GPTQ quantized weight tile tensor in global memory.
@@ -2370,8 +2353,6 @@ def gpu_qint4_repack_GPTQ[
     Raises:
         An error if the input tensors are not rank-2, the target is not a GPU, or the input and output dimensions are mismatched.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     var b = rebind[
         TileTensor[.uint8, type_of(b_tt).LayoutType, ImmutAnyOrigin]
     ](b_tt.reshape(b_tt.layout))
@@ -2381,7 +2362,7 @@ def gpu_qint4_repack_GPTQ[
 
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
-    comptime assert is_gpu[target](), "unsupported target"
+    comptime assert ctx.target.is_gpu(), "unsupported target"
 
     comptime pack_factor = 8
     comptime group_bytes = 2 + (group_size // 2)

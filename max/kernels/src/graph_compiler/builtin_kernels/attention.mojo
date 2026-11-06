@@ -1590,7 +1590,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        generic_fused_qkv_matmul_kv_cache_bshd_paged[target=target](
+        generic_fused_qkv_matmul_kv_cache_bshd_paged(
             hidden_state.to_tile_tensor[dtype](),
             weight.to_tile_tensor[dtype](),
             kv_collection,
@@ -1652,7 +1652,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
             max_prompt_length.to_tile_tensor[.uint32](),
             max_cache_length.to_tile_tensor[.uint32](),
         )
-        return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged(
             hidden_state.to_tile_tensor[type_of(output).dtype](),
             input_row_offsets.to_tile_tensor[.uint32](),
             weight.to_tile_tensor(),
@@ -1723,7 +1723,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged[
-            target=target,
             group_size=group_size,
             has_zp=has_zp,
         ](
@@ -1791,9 +1790,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
             max_prompt_length.to_tile_tensor[.uint32](),
             max_cache_length.to_tile_tensor[.uint32](),
         )
-        return generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
-            target=target
-        ](
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_bias(
             hidden_state.to_tile_tensor[type_of(output).dtype](),
             input_row_offsets.to_tile_tensor[.uint32](),
             weight.to_tile_tensor(),
@@ -1876,7 +1873,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
                 n_scale_granularity,
                 k_scale_granularity,
             ),
-            target=target,
         ](
             hidden_state.to_tile_tensor(),
             input_row_offsets.to_tile_tensor[.uint32](),
@@ -1983,7 +1979,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            target=target,
         ](
             _imm_pointer_tile(hidden_state.to_tile_tensor[dtype]().as_imm()),
             input_row_offsets.to_tile_tensor[.uint32](),
@@ -2072,7 +2067,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            target=target,
         ](
             _imm_pointer_tile(hidden_state.to_tile_tensor[dtype]().as_imm()),
             input_row_offsets.to_tile_tensor[.uint32](),
@@ -2164,7 +2158,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            target=target,
         ](
             _imm_pointer_tile(hidden_state.to_tile_tensor[dtype]().as_imm()),
             input_row_offsets.to_tile_tensor[.uint32](),
@@ -2259,7 +2252,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp6_amd:
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            target=target,
             mx_format=fmt,
         ](
             _imm_pointer_tile(hidden_state.to_tile_tensor[dtype]().as_imm()),
@@ -2403,7 +2395,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         return (
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                target=target,
             ](
                 _imm_pointer_tile(
                     hidden_state.to_tile_tensor[dtype]().as_imm()
@@ -2552,7 +2543,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
         return (
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                target=target,
             ](
                 _imm_pointer_tile(
                     hidden_state.to_tile_tensor[dtype]().as_imm()
@@ -2695,7 +2685,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
         return (
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                target=target,
                 mx_format=fmt,
             ](
                 _imm_pointer_tile(
@@ -2824,9 +2813,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
             index_max_prompt_length.to_tile_tensor[.uint32](),
             index_max_cache_length.to_tile_tensor[.uint32](),
         )
-        return generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
-            target=target,
-        ](
+        return generic_fused_qkv_index_matmul_kv_cache_paged_ragged(
             hidden_state.to_tile_tensor[dtype](),
             input_row_offsets.to_tile_tensor[.uint32](),
             weight.to_tile_tensor[dtype](),
@@ -2924,7 +2911,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
                 n_scale_granularity,
                 k_scale_granularity,
             ),
-            target=target,
         ](
             hidden_state.to_tile_tensor(),
             input_row_offsets.to_tile_tensor[.uint32](),
@@ -3002,7 +2988,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
             max_cache_length.to_tile_tensor[.uint32](),
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
-            target=target,
             group_size=group_size,
             has_zp=has_zp,
         ](
@@ -4145,7 +4130,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
             max_prompt_length.to_tile_tensor[.uint32](),
             max_cache_length.to_tile_tensor[.uint32](),
         )
-        generic_flare_mla_decompress_k_cache_ragged_paged[target=target](
+        generic_flare_mla_decompress_k_cache_ragged_paged(
             buffer_row_offsets_1d.to_tile_tensor[.uint32](),
             cache_offsets_1d.to_tile_tensor[.uint32](),
             buffer_length,
@@ -4272,7 +4257,6 @@ trait _MLAPrefillGraphPagedOp:
             n_scale_granularity=n_scale_granularity,
             k_scale_granularity=k_scale_granularity,
             mask_str=mask_str,
-            target=target,
             kernels=Self.kernels,
         ](
             output.to_tile_tensor(),
@@ -5001,7 +4985,6 @@ trait _MLAPrefillGraphBF16PagedOp:
 
         mla_prefill_branch_bf16[
             mask_str=mask_str,
-            target=target,
             kernels=Self.kernels,
         ](
             output.to_tile_tensor[.bfloat16](),
@@ -5725,7 +5708,6 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                target=target,
                 kernels=Self.kernels,
             ](
                 output.to_tile_tensor(),
@@ -5947,7 +5929,6 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                target=target,
                 sparse_mla=True,
                 sparse_indices_stride=indices_stride,
                 physical_indices=physical_indices,
@@ -6167,7 +6148,6 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         ):
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                target=target,
                 kernels=Self.kernels,
             ](
                 output.to_tile_tensor[.bfloat16](),
@@ -6487,7 +6467,6 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
             var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                target=target,
                 sparse_mla=True,
                 sparse_indices_stride=indices_stride,
                 physical_indices=decode_physical,
@@ -6713,7 +6692,6 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
             )
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                target=target,
                 sparse_mla=True,
                 sparse_indices_stride=indices_stride,
                 physical_indices=physical_indices,
@@ -6929,7 +6907,6 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
         ):
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                target=target,
                 kernels=Self.kernels,
             ](
                 output.to_tile_tensor[.bfloat16](),

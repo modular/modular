@@ -147,7 +147,7 @@ def _run[
     )
     comptime if registered:
         comptime assert not strided and not alias_state
-        causal_conv1d_update[target="gpu"](
+        causal_conv1d_update(
             candidate_output_tt,
             dest_tt,
             input_tt,

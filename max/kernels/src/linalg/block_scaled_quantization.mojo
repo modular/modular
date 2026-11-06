@@ -2970,7 +2970,6 @@ def block_scaled_matmul[
     compute_fn_col_start: Int = 0,
     pdl_level: PDLLevel = PDLLevel.ON,
     _trace_description: StaticString = "",
-    target: StaticString = "cpu",
 ](
     c_device: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_device: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -3024,8 +3023,6 @@ def block_scaled_matmul[
             its predecessor at entry and releases its dependents at exit.
         _trace_description: Extra label appended to the trace event
             for profiling (defaults to `""`).
-        target: Trace target string identifying the device in
-            profiling output (defaults to `"cpu"`).
     Args:
         c_device: Output matrix of shape `[M, N]`.
         a_device: LHS input matrix of shape `[M, K]` for FP8 or
@@ -3043,8 +3040,6 @@ def block_scaled_matmul[
         compute_fn: With `has_compute_fn`, maps each output value before it
             is stored into `c_device`.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert c_device.rank == 2 and c_device.flat_rank == 2
     comptime assert a_device.rank == 2 and a_device.flat_rank == 2
     comptime assert b_device.rank == 2 and b_device.flat_rank == 2
@@ -3215,7 +3210,7 @@ def block_scaled_matmul[
         # fmt: off
         return String(
             "(",
-            target,
+            ctx.target.device_kind_label(),
             ";", trace_arg("A", (m, k), a_type),
             ";", trace_arg("B", (k, n), b_type),
             ";", trace_arg("C", (m, n), c_type),
@@ -3228,7 +3223,7 @@ def block_scaled_matmul[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         # Create a string literal so that the event label works with the
         # AsyncRT profiler, whose event labels must be `StaticString`s.
         get_static_string[

@@ -382,7 +382,7 @@ def bench_shape[
         )
         comptime if HAS_INDEXER:
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             ](
                 hs,
                 iro_tt,
@@ -400,7 +400,7 @@ def bench_shape[
             )
         else:
             generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             ](
                 hs,
                 iro_tt,

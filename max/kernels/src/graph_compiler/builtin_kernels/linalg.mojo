@@ -1856,7 +1856,6 @@ struct Struct_matmul_dynamic_block_scaled:
             transpose_b=True,
             has_epilogue_fn=has_epilogue_fusion and not has_compute_lambda,
             has_compute_fn=has_epilogue_fusion and has_compute_lambda,
-            target=target,
         ](
             c.to_tile_tensor[.int64](),
             a.to_tile_tensor[.int64](),
@@ -2439,7 +2438,6 @@ struct MatmulDynamicScaledFloat8:
             n_scale_granularity,
             k_scale_granularity,
             transpose_b=True,
-            target=target,
         ](
             output.to_tile_tensor(),
             a.to_tile_tensor(),

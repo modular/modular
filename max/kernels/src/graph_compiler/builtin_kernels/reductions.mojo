@@ -343,7 +343,7 @@ struct RowMeanOfSquares:
                 rebind[SIMD[output_tile.dtype, width]](val),
             )
 
-        row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
+        row_mean_of_squares[in_dtype, out_dtype, 2](
             input_fn, output_fn, input.shape().flatten(), ctx
         )
 
@@ -424,7 +424,7 @@ struct RowMeanOfSquaresQK:
 
         # `k` is bitcast to `q`'s dtype to unify the single `in_dtype` kernel
         # parameter (q and k share a dtype, asserted above).
-        row_mean_of_squares_qk[target=target](
+        row_mean_of_squares_qk(
             output_tile,
             q_tile,
             k_tile.bitcast[in_dtype](),

@@ -618,7 +618,6 @@ def run_dense[
             mask_str="causal",
             sparse_mla=True,
             sparse_indices_stride=TOP_K,
-            target="gpu",
             kernels=SM100MLAGraph,
         ](
             out_tt,
@@ -1022,7 +1021,6 @@ def run_nvfp4[
             sparse_indices_stride=indices_stride,
             nvfp4_convert_ratio=NVFP4_CONVERT_RATIO,
             nvfp4_convert_max_rows=NVFP4_CONVERT_MAX_ROWS,
-            target="gpu",
             kernels=SM100MLAGraph,
         ](
             packed_tt,
@@ -1058,7 +1056,6 @@ def run_nvfp4[
             mask_str="causal",
             sparse_mla=True,
             sparse_indices_stride=TOP_K,
-            target="gpu",
             kernels=SM100MLAGraph,
         ](
             mirror_decode_tt,

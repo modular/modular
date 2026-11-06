@@ -1350,7 +1350,7 @@ struct Struct_kv_matmul_ragged_paged:
             max_prompt_length.to_tile_tensor[.uint32](),
             max_cache_length.to_tile_tensor[.uint32](),
         )
-        kv_matmul_ragged_paged[target=target](
+        kv_matmul_ragged_paged(
             hidden_state.to_tile_tensor[dtype](),
             input_row_offsets.to_tile_tensor[.uint32](),
             weight.to_tile_tensor[dtype](),
@@ -1409,7 +1409,7 @@ struct Struct_k_matmul_ragged_paged:
             max_prompt_length.to_tile_tensor[.uint32](),
             max_cache_length.to_tile_tensor[.uint32](),
         )
-        k_matmul_ragged_paged[target=target](
+        k_matmul_ragged_paged(
             hidden_state.to_tile_tensor[dtype](),
             input_row_offsets.to_tile_tensor[.uint32](),
             weight.to_tile_tensor[dtype](),

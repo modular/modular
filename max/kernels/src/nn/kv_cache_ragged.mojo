@@ -108,7 +108,6 @@ from max.runtime.tracing import Trace, TraceLevel, trace_arg
 def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     dtype: DType,
     weight_dtype: DType,
-    target: StaticString = "cpu",
     group_size: Optional[Int] = None,
     has_zp: Optional[Bool] = None,
 ](
@@ -128,8 +127,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     Parameters:
         dtype: Element type of the `hidden_state` input and `output` tensors.
         weight_dtype: Element type of the `weight` tensor.
-        target: Compilation target string used to dispatch GPU versus CPU
-            paths (defaults to "cpu").
         group_size: Block size for GPTQ-style quantization of `weight`; when
             set, `weight` must be `uint8` (defaults to `None` for no
             quantization).
@@ -150,7 +147,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -172,14 +168,13 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     comptime name = String(
         t"kv_cache.fused_qkv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged[
             kv_collection.CacheType,
-            target=target,
             group_size=group_size,
             has_zp=has_zp,
         ](
@@ -197,7 +192,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
 def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     dtype: DType,
     weight_dtype: DType,
-    target: StaticString = "cpu",
     group_size: Optional[Int] = None,
     has_zp: Optional[Bool] = None,
 ](
@@ -218,8 +212,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     Parameters:
         dtype: Element type of the `hidden_state` input and `output` tensors.
         weight_dtype: Element type of the `weight` tensor.
-        target: Compilation target string used to dispatch GPU versus CPU
-            paths (defaults to "cpu").
         group_size: Block size for GPTQ-style quantization of `weight`; when
             set, `weight` must be `uint8` (defaults to `None` for no
             quantization).
@@ -240,7 +232,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
         bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -262,14 +253,13 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     comptime name = String(
         t"kv_cache.fused_qkv_matmul.ragged.paged.bias.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_bias[
             kv_collection.CacheType,
-            target=target,
             group_size=group_size,
             has_zp=has_zp,
         ](
@@ -291,7 +281,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     output_dtype: DType,
     scale_dtype: DType,
     scales_granularity_mnk: Coord[Int, Int, Int],
-    target: StaticString = "cpu",
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -331,8 +320,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             dimensions used to tile the scale application; `-1` selects
             per-tensor scaling, `1` selects per-channel scaling, and any
             other value selects blockwise scaling.
-        target: Compilation target string used to dispatch GPU versus CPU
-            paths (defaults to "cpu").
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), hidden_size).
@@ -353,7 +340,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
         bias: Optional bias in projection order: Q, K for MLA, or Q, K, V
             otherwise.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -379,7 +365,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     comptime name = String(
         t"kv_cache.fused_qkv_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}.m_scale_granularity_{scales_granularity_mnk[0]}.n_scale_granularity_{scales_granularity_mnk[1]}.k_scale_granularity_{scales_granularity_mnk[2]}"
     )
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
@@ -387,7 +373,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
         return _fused_qkv_matmul_kv_cache_ragged_scale[
             kv_collection.CacheType,
             scales_granularity_mnk=scales_granularity_mnk,
-            target=target,
         ](
             hidden_state,
             input_row_offsets,
@@ -413,7 +398,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     sfa_layout: TensorLayout,
     sfb_layout: TensorLayout,
     SF_VECTOR_SIZE: Int,
-    target: StaticString = "cpu",
     mx_format: MXFormat = MXFormat.FP8_E4M3,
     preshuffled_b: Bool = False,
 ](
@@ -446,8 +430,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         sfb_layout: Memory layout of the `weight_scale` tensor.
         SF_VECTOR_SIZE: Number of scale elements packed per scaling-factor
             vector; `32` for MXFP8 E8M0 scaling and `16` for NVFP4 scaling.
-        target: Compilation target string used to dispatch GPU versus CPU
-            paths (defaults to "cpu").
         mx_format: Element encoding of both operands. The lane width follows
             from it, so the two cannot disagree; FP4 and FP6 both arrive as
             `uint8` and nothing downstream can recover the encoding from the
@@ -476,7 +458,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -503,7 +484,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     comptime name = String(
         t"kv_cache.fused_qkv_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
@@ -511,7 +492,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         return _fused_qkv_matmul_kv_cache_ragged_scale_float4[
             kv_collection.CacheType,
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            target=target,
             mx_format=mx_format,
             preshuffled_b=preshuffled_b,
         ](
@@ -536,7 +516,6 @@ def _fused_qkv_matmul_kv_cache_ragged[
     //,
     cache_t: KVCacheT,
     *,
-    target: StaticString,
     group_size: Optional[Int] = None,
     has_zp: Optional[Bool] = None,
 ](
@@ -566,8 +545,6 @@ def _fused_qkv_matmul_kv_cache_ragged[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -577,7 +554,6 @@ def _fused_qkv_matmul_kv_cache_ragged[
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     return _fused_qkv_matmul_kv_cache_ragged_impl[
-        target=target,
         group_size=group_size,
         has_zp=has_zp,
     ](
@@ -599,7 +575,6 @@ def _fused_qkv_matmul_kv_cache_ragged_bias[
     //,
     cache_t: KVCacheT,
     *,
-    target: StaticString,
     group_size: Optional[Int] = None,
     has_zp: Optional[Bool] = None,
 ](
@@ -630,14 +605,11 @@ def _fused_qkv_matmul_kv_cache_ragged_bias[
         bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
         context: The call context pointer, passed by the graph compiler.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_bias[
-        target=target,
         group_size=group_size,
         has_zp=has_zp,
     ](
@@ -663,7 +635,6 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
     cache_t: KVCacheT,
     scales_granularity_mnk: Coord[Int, Int, Int],
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -710,8 +681,6 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
         bias: Optional bias in projection order: Q, K for MLA, or Q, K, V
             otherwise.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -721,7 +690,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_scale[
-        scales_granularity_mnk=scales_granularity_mnk, target=target
+        scales_granularity_mnk=scales_granularity_mnk,
     ](
         hidden_state,
         input_row_offsets,
@@ -751,7 +720,6 @@ def _fused_qkv_matmul_kv_cache_ragged_scale_float4[
     cache_t: KVCacheT,
     SF_VECTOR_SIZE: Int,
     *,
-    target: StaticString,
     mx_format: MXFormat = MXFormat.FP8_E4M3,
     preshuffled_b: Bool = False,
 ](
@@ -791,8 +759,6 @@ def _fused_qkv_matmul_kv_cache_ragged_scale_float4[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -803,7 +769,6 @@ def _fused_qkv_matmul_kv_cache_ragged_scale_float4[
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        target=target,
         mx_format=mx_format,
         preshuffled_b=preshuffled_b,
     ](
@@ -900,7 +865,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
     cache_t: KVCacheT,
     //,
     *,
-    target: StaticString,
     group_size: Optional[Int] = None,
     has_zp: Optional[Bool] = None,
 ](
@@ -933,8 +897,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             Shape is (sum(seq_lens), num_heads * head_size)
         context: The DeviceContext.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 2
     comptime kv_type = cache_t.dtype
@@ -983,7 +945,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             weight_dtype == .uint8
         ), "Expect GPTQ weights in an uint8 tensor."
 
-        _qmatmul_common[group_size=group_size, target=target](
+        _qmatmul_common[group_size=group_size](
             hidden_state,
             weight.bitcast[.uint8](),
             context,
@@ -995,7 +957,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             weight_dtype == dtype
         ), "Mismatch in dtype between weight and QKV tensors"
 
-        _matmul_common[target=target](
+        _matmul_common(
             hidden_state,
             weight.bitcast[dtype](),
             context,
@@ -1010,7 +972,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     cache_t: KVCacheT,
     //,
     *,
-    target: StaticString,
     group_size: Optional[Int] = None,
     has_zp: Optional[Bool] = None,
 ](
@@ -1044,8 +1005,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
         context: The DeviceContext.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert input_row_offsets.rank == input_row_offsets.flat_rank == 1
     comptime assert bias.rank == bias.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 2
@@ -1100,7 +1059,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             weight_dtype == .uint8
         ), "Expect GPTQ weights to be a 'uint8' tensor."
 
-        _qmatmul_common[group_size=group_size, target=target](
+        _qmatmul_common[group_size=group_size](
             hidden_state,
             weight.bitcast[.uint8](),
             context,
@@ -1112,7 +1071,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             weight_dtype == dtype
         ), "Mismatch in dtype between weight and QKV tensors"
 
-        _matmul_common[target=target](
+        _matmul_common(
             hidden_state,
             weight.bitcast[dtype](),
             context,
@@ -1130,7 +1089,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     //,
     scales_granularity_mnk: Coord[Int, Int, Int],
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -1178,8 +1136,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         bias: Optional bias in projection order: Q, K for MLA, or Q, K, V
             otherwise.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert input_row_offsets.rank == input_row_offsets.flat_rank == 1
     comptime assert input_scale.rank == input_scale.flat_rank == 2
     comptime assert weight_scale.rank == weight_scale.flat_rank == 2
@@ -1300,9 +1256,9 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     ), "Mismatch in dtype between weight and QKV tensors"
 
     comptime if use_block_wise:
-        comptime assert is_gpu[
-            target
-        ](), "Blockwise scaled fp8 matmul only works on GPU."
+        comptime assert (
+            context.target.is_gpu()
+        ), "Blockwise scaled fp8 matmul only works on GPU."
 
         # TODO(MOCO-4720): `_matmul_common` still takes only the legacy
         # `write_to_cache`; once it takes a value closure, this one serves both
@@ -1390,7 +1346,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             context,
         )
     else:
-        _matmul_common[target=target, output_dtype=output_dtype](
+        _matmul_common[output_dtype=output_dtype](
             hidden_state,
             weight.bitcast[dtype](),
             context,
@@ -1412,7 +1368,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     //,
     SF_VECTOR_SIZE: Int,
     *,
-    target: StaticString,
     mx_format: MXFormat = MXFormat.FP8_E4M3,
     preshuffled_b: Bool = False,
 ](
@@ -1454,8 +1409,6 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             Shape is (sum(seq_lens), num_heads * head_size)
         context: The DeviceContext.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert output.flat_rank == 2
     comptime kv_type = cache_t.dtype
@@ -1539,13 +1492,12 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
         weight_dtype == dtype
     ), "Mismatch in dtype between weight and QKV tensors"
 
-    comptime assert is_gpu[
-        target
-    ](), "Blockwise scaled fp4 matmul only works on GPU."
+    comptime assert (
+        context.target.is_gpu()
+    ), "Blockwise scaled fp4 matmul only works on GPU."
 
     _matmul_blockwise_scaled_fp4_common[
         output_dtype=output_dtype,
-        target=target,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         mx_format=mx_format,
         preshuffled_b=preshuffled_b,
@@ -1614,7 +1566,6 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     sfa_layout: TensorLayout,
     sfb_layout: TensorLayout,
     SF_VECTOR_SIZE: Int,
-    target: StaticString = "cpu",
     mx_format: MXFormat = MXFormat.FP8_E4M3,
     preshuffled_b: Bool = False,
 ](
@@ -1652,8 +1603,6 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
             tensor.
         SF_VECTOR_SIZE: Scale-factor vector size of the block-scaled format:
             32 for MXFP8 or 16 for NVFP4.
-        target: Compilation target string used to dispatch GPU versus CPU
-            paths (defaults to "cpu").
         mx_format: Element encoding of both operands. The lane width follows
             from it, so the two cannot disagree; FP4 and FP6 both arrive as
             `uint8` and nothing downstream can recover the encoding from the
@@ -1686,7 +1635,6 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
             Shape: (sum(seq_lens), iq_dim).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -1716,14 +1664,13 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     comptime name = String(
         t"kv_cache.fused_qkv_index_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            target=target,
             mx_format=mx_format,
             preshuffled_b=preshuffled_b,
         ](
@@ -1758,7 +1705,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
     //,
     SF_VECTOR_SIZE: Int,
     *,
-    target: StaticString,
     mx_format: MXFormat = MXFormat.FP8_E4M3,
     preshuffled_b: Bool = False,
 ](
@@ -1781,8 +1727,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
     """Resolves both KVCache objects from their collections and dispatches the
     dual-cache impl. K/V come from the MAIN (non-MLA) collection, IndexK from
     the INDEX (MLA, single latent head) collection."""
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime kv_params = collection_t.kv_params
 
     # The MAIN cache is GQA/MHA — it has a real K and V side scattered per
@@ -1801,7 +1745,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
 
     return _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        target=target,
         mx_format=mx_format,
         preshuffled_b=preshuffled_b,
     ](
@@ -1836,7 +1779,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     //,
     SF_VECTOR_SIZE: Int,
     *,
-    target: StaticString,
     mx_format: MXFormat = MXFormat.FP8_E4M3,
     preshuffled_b: Bool = False,
 ](
@@ -1862,8 +1804,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     into the main `k_cache`/`v_cache`; IndexK is scattered into the MLA
     `index_k_cache` (single latent head, head 0).
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert q_output.flat_rank == iq_output.flat_rank == 2
     comptime kv_type = cache_t.dtype
@@ -2005,13 +1945,12 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
         weight_dtype == dtype
     ), "Mismatch in dtype between weight and QKV tensors"
 
-    comptime assert is_gpu[
-        target
-    ](), "Blockwise scaled fp4 matmul only works on GPU."
+    comptime assert (
+        context.target.is_gpu()
+    ), "Blockwise scaled fp4 matmul only works on GPU."
 
     _matmul_blockwise_scaled_fp4_common[
         output_dtype=output_dtype,
-        target=target,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         mx_format=mx_format,
         preshuffled_b=preshuffled_b,
@@ -2050,7 +1989,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
 def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
     dtype: DType,
     weight_dtype: DType,
-    target: StaticString = "cpu",
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2086,7 +2024,6 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
             projections. Shape: (sum(seq_lens), q_dim + iq_dim).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -2114,12 +2051,12 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
     comptime name = String(
         t"kv_cache.fused_qkv_index_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
-        return _fused_qkv_index_matmul_kv_cache_ragged[target=target,](
+        return _fused_qkv_index_matmul_kv_cache_ragged(
             hidden_state,
             input_row_offsets,
             weight,
@@ -2140,7 +2077,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged[
     index_collection_t: KVCollectionT,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2157,8 +2093,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged[
     """Resolves both KVCache objects from their collections and dispatches the
     dual-cache impl. K/V come from the MAIN (non-MLA) collection, IndexK from
     the INDEX (MLA, single latent head) collection."""
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime kv_params = collection_t.kv_params
 
     # The MAIN cache is GQA/MHA — it has a real K and V side scattered per
@@ -2175,7 +2109,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged[
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
     var index_k_cache = index_kv_collection.get_key_cache(layer_idx_cast)
 
-    return _fused_qkv_index_matmul_kv_cache_ragged_impl[target=target](
+    return _fused_qkv_index_matmul_kv_cache_ragged_impl(
         hidden_state,
         input_row_offsets,
         weight,
@@ -2196,7 +2130,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     index_cache_t: KVCacheT,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2217,8 +2150,6 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     the main `k_cache`/`v_cache`; IndexK is scattered into the MLA
     `index_k_cache` (single latent head, head 0).
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 2
     comptime kv_type = cache_t.dtype
@@ -2366,7 +2297,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
         weight_dtype == dtype
     ), "Mismatch in dtype between weight and QKV tensors"
 
-    _matmul_common[target=target](
+    _matmul_common(
         hidden_state,
         weight.bitcast[dtype](),
         context,
@@ -2380,7 +2311,6 @@ def _matmul_common[
     EpilogueFnType: ElementwiseEpilogueFn,
     //,
     *,
-    target: StaticString,
     output_dtype: DType = dtype,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -2388,8 +2318,6 @@ def _matmul_common[
     context: DeviceContext,
     epilogue_fn: EpilogueFnType,
 ) raises:
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
     comptime N = weight.static_shape[0]
 
@@ -2400,7 +2328,7 @@ def _matmul_common[
         MutPointer[Scalar[output_dtype], MutUntrackedOrigin]
     ] = None
 
-    comptime if is_cpu[target]():
+    comptime if context.target.is_cpu():
         # CPU matmul uses C as workspace even when an epilogue owns the output.
         c_ptr = alloc(c_alloc_layout).unsafe_leak()
 
@@ -2410,11 +2338,11 @@ def _matmul_common[
         c_ptr._unsafe_nullable(), row_major(TOTAL_SEQ_LEN, Idx[N])
     )
 
-    matmul[target=target, transpose_b=True](
+    matmul[target=context.target.device_kind_label(), transpose_b=True](
         c_nd, hidden_state, weight, epilogue_fn, context
     )
 
-    comptime if is_cpu[target]():
+    comptime if context.target.is_cpu():
         dealloc(
             ThinAllocation(unsafe_owned_ptr=c_ptr.value()).unsafe_with_layout(
                 c_alloc_layout
@@ -2429,16 +2357,15 @@ def _qmatmul_common[
     //,
     *,
     group_size: Int,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     context: DeviceContext,
     epilogue_fn: EpilogueFnType,
 ) raises:
-    context._comptime_assert_matches_target_is_cpu[target]()
-
-    comptime assert is_gpu[target](), "GPTQ quantization only works on GPU."
+    comptime assert (
+        context.target.is_gpu()
+    ), "GPTQ quantization only works on GPU."
 
     var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
     comptime N = weight.static_shape[0]
@@ -2529,7 +2456,6 @@ def _matmul_blockwise_scaled_fp4_common[
     EpilogueFnType: ElementwiseEpilogueFn,
     //,
     *,
-    target: StaticString,
     SF_VECTOR_SIZE: Int = 16,
     mx_format: MXFormat = MXFormat.FP8_E4M3,
     preshuffled_b: Bool = False,
@@ -2544,11 +2470,9 @@ def _matmul_blockwise_scaled_fp4_common[
     *,
     unfuse_epilogue: Bool = True,
 ) raises:
-    context._comptime_assert_matches_target_is_cpu[target]()
-
-    comptime assert is_gpu[
-        target
-    ](), "Blockwise scaled fp4 matmul only works on GPU."
+    comptime assert (
+        context.target.is_gpu()
+    ), "Blockwise scaled fp4 matmul only works on GPU."
 
     var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
     comptime N = type_of(weight).static_shape[0]
@@ -2645,7 +2569,6 @@ def _matmul_blockwise_scaled_fp4_common[
             block_scaled_matmul[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=True,
-                target=target,
                 pdl_level=PDLLevel.ON,
             ](
                 c_tt,
@@ -2679,7 +2602,6 @@ def _matmul_blockwise_scaled_fp4_common[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
             has_epilogue_fn=True,
-            target=target,
             pdl_level=PDLLevel.ON,
         ](
             c_tt,
@@ -2703,7 +2625,6 @@ def kv_matmul_ragged_paged[
     params: KVCacheStaticParams,
     page_size: Int,
     //,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2727,8 +2648,6 @@ def kv_matmul_ragged_paged[
         params: Static shape parameters of the paged KV cache, including the
             attention-head count, per-head size, and MLA flag (inferred).
         page_size: Number of tokens stored per cache page (inferred).
-        target: Compilation target string used to dispatch GPU versus CPU
-            paths.
 
     Args:
         hidden_state: Ragged input tensor with shape (sum(seq_lens), hidden_size).
@@ -2742,7 +2661,6 @@ def kv_matmul_ragged_paged[
             for the given layer from kv_collection.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -2757,14 +2675,14 @@ def kv_matmul_ragged_paged[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         String(
             t"kv_cache.kv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
-        return _matmul_kv_cache_ragged[target=target](
+        return _matmul_kv_cache_ragged(
             hidden_state,
             input_row_offsets,
             weight,
@@ -2776,7 +2694,9 @@ def kv_matmul_ragged_paged[
 
 @inline(.always)
 def _matmul_kv_cache_ragged[
-    dtype: DType, //, *, target: StaticString
+    dtype: DType,
+    //,
+    *,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2801,13 +2721,11 @@ def _matmul_kv_cache_ragged[
             for the given layer from kv_collection.
         context: Pointer containing the runtime context for the target device.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    _matmul_kv_cache_ragged_impl[target=target](
+    _matmul_kv_cache_ragged_impl(
         hidden_state,
         input_row_offsets,
         weight,
@@ -2831,7 +2749,6 @@ def _matmul_kv_cache_ragged_impl[
     cache_t: KVCacheT,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2856,8 +2773,6 @@ def _matmul_kv_cache_ragged_impl[
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: Pointer containing the runtime context for the target device.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     if hidden_state.num_elements() == 0:
         # Nothing to do.
         return
@@ -2893,9 +2808,7 @@ def _matmul_kv_cache_ragged_impl[
                 val,
             )
 
-    _matmul_common[target=target](
-        hidden_state, weight, ctx, write_to_cache_continuous
-    )
+    _matmul_common(hidden_state, weight, ctx, write_to_cache_continuous)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2908,7 +2821,6 @@ def k_matmul_ragged_paged[
     params: KVCacheStaticParams,
     page_size: Int,
     //,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2933,8 +2845,6 @@ def k_matmul_ragged_paged[
             as head count and head dimension (inferred).
         page_size: Number of tokens stored per cache page in the paged KV
             cache (inferred).
-        target: Compilation target string used to dispatch GPU versus CPU
-            paths.
 
     Args:
         hidden_state: Ragged input tensor with shape (sum(seq_lens), hidden_size).
@@ -2948,7 +2858,6 @@ def k_matmul_ragged_paged[
             for the given layer from kv_collection.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -2961,14 +2870,14 @@ def k_matmul_ragged_paged[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         String(
             t"kv_cache.k_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
-        return _matmul_k_cache_ragged[target=target](
+        return _matmul_k_cache_ragged(
             hidden_state,
             input_row_offsets,
             weight,
@@ -2983,7 +2892,6 @@ def _matmul_k_cache_ragged[
     dtype: DType,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3008,12 +2916,10 @@ def _matmul_k_cache_ragged[
             for the given layer from kv_collection.
         context: Pointer containing the runtime context for the target device.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
 
-    _matmul_k_cache_ragged_impl[target=target](
+    _matmul_k_cache_ragged_impl(
         hidden_state,
         input_row_offsets,
         weight,
@@ -3028,7 +2934,6 @@ def _matmul_k_cache_ragged_impl[
     cache_t: KVCacheT,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3050,8 +2955,6 @@ def _matmul_k_cache_ragged_impl[
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: Pointer containing the runtime context for the target device.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     if hidden_state.num_elements() == 0:
         # Nothing to do.
         return
@@ -3065,7 +2968,7 @@ def _matmul_k_cache_ragged_impl[
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         _store_ragged_k_or_v_element(k_cache, input_row_offsets, idx, val)
 
-    _matmul_common[target=target](hidden_state, weight, ctx, write_to_cache)
+    _matmul_common(hidden_state, weight, ctx, write_to_cache)
 
 
 def k_matmul_ragged_paged_scale[
@@ -4805,7 +4708,7 @@ def kv_cache_row_offsets_ragged_paged_kernel[
 
 @inline(.always)
 def generic_flare_mla_decompress_k_cache_ragged_paged[
-    target: StaticString, dtype: DType
+    dtype: DType
 ](
     buffer_row_offsets_1d: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
@@ -4828,8 +4731,6 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     by the down-projection weight to produce the decompressed K buffer.
 
     Parameters:
-        target: Target device string for kernel dispatch; must be a GPU
-            target.
         dtype: Data type of the weight and K buffers (inferred).
 
     Args:
@@ -4848,9 +4749,7 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         k_buffer: Mutable output buffer receiving the decompressed K vectors.
         context: The call context pointer, passed by the graph compiler.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
-    comptime assert is_gpu[target](), "MLA is only supported on GPU"
+    comptime assert context.target.is_gpu(), "MLA is only supported on GPU"
 
     var buffer_length_int = Int(buffer_length)
     var layer_idx_cast = Int(layer_idx)
@@ -4874,7 +4773,7 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         Coord(buffer_length_int, Idx[k_last_dim]), Coord(0, 0)
     )
 
-    matmul[target=target, transpose_b=True](
+    matmul[target=context.target.device_kind_label(), transpose_b=True](
         k_tile,
         k_latent_tile,
         weight,

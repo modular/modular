@@ -468,7 +468,6 @@ def verify_matmul[
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
-            target="gpu",
         ](
             c_device_nd,
             a_device_nd,
@@ -810,7 +809,6 @@ def bench_matmul[
             block_scaled_matmul[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
-                target="gpu",
             ](
                 c,
                 a,

@@ -145,7 +145,6 @@ def run_case[
         n_scale_granularity=n_g,
         k_scale_granularity=BLOCK,
         transpose_b=True,
-        target="gpu",
     ](c_ref_t, a_src_t, b_t, as_src_t, bs_t, ctx)
     ctx.synchronize()
     var want = List[Scalar[out_type]](unsafe_uninit_length=c_elems)
@@ -177,7 +176,6 @@ def run_case[
             n_scale_granularity=n_g,
             k_scale_granularity=BLOCK,
             transpose_b=True,
-            target="gpu",
             pdl_level=pdl_level,
         ](c_t, a_dst_t, b_t, as_dst_t, bs_t, ctx)
         ctx.enqueue_function[consumer](

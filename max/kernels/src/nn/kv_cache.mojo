@@ -94,7 +94,6 @@ from extensibility import (
 @inline(.always)
 def generic_fused_qkv_matmul_kv_cache_bshd_paged[
     dtype: DType,
-    target: StaticString = "cpu",
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -122,7 +121,6 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -144,16 +142,14 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         String(
             t"kv_cache.fused_qkv_matmul.padded.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
-        return _fused_qkv_matmul_kv_cache[
-            kv_collection.CacheType, target=target
-        ](
+        return _fused_qkv_matmul_kv_cache[kv_collection.CacheType,](
             hidden_state,
             weight,
             kv_collection,
@@ -171,7 +167,6 @@ def _fused_qkv_matmul_kv_cache[
     //,
     cache_t: KVCacheT,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -199,9 +194,7 @@ def _fused_qkv_matmul_kv_cache[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
-    return _fused_qkv_matmul_kv_cache_impl[target=target](
+    return _fused_qkv_matmul_kv_cache_impl(
         hidden_state,
         weight,
         kv_collection,
@@ -218,7 +211,6 @@ def _fused_qkv_matmul_kv_cache_impl[
     collection_t: KVCollectionT,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -247,8 +239,6 @@ def _fused_qkv_matmul_kv_cache_impl[
             projections are written in-place to k_cache and v_cache.
         context: The DeviceContext.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert valid_lengths.rank == valid_lengths.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 3
     comptime cache_t = collection_t.CacheType
@@ -319,7 +309,7 @@ def _fused_qkv_matmul_kv_cache_impl[
             rebind[SIMD[cache_dtype, width]](output_val),
         )
 
-    _matmul_common[target=target](hidden_state, weight, write_to_cache, context)
+    _matmul_common(hidden_state, weight, write_to_cache, context)
 
 
 @inline(.always)
@@ -328,15 +318,12 @@ def _matmul_common[
     EpilogueFnType: ElementwiseEpilogueFn,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
     context: DeviceContext,
 ) raises:
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert hidden_state.rank == hidden_state.flat_rank == 3
     comptime assert weight.rank == weight.flat_rank == 2
     comptime assert hidden_state.is_row_major
@@ -351,7 +338,7 @@ def _matmul_common[
 
     var hidden_state_2d = hidden_state.reshape(Coord(BS * SEQ_LEN, Idx[K]))
 
-    comptime if is_cpu[target]():
+    comptime if context.target.is_cpu():
         var c_alloc = alloc(
             AllocLayout[Scalar[dtype]](length=BS * SEQ_LEN * N)
         ).into_managed()
@@ -360,7 +347,7 @@ def _matmul_common[
         ] = c_alloc.unsafe_ptr()
         var c_nd = TileTensor(c_ptr, row_major(BS * SEQ_LEN, Idx[N]))
 
-        matmul[transpose_b=True, target=target](
+        matmul[transpose_b=True, target=context.target.device_kind_label()](
             c_nd, hidden_state_2d, weight, epilogue_fn, context
         )
 
@@ -374,7 +361,7 @@ def _matmul_common[
         )
         var c_nd = TileTensor(c_device_buffer, row_major(BS * SEQ_LEN, Idx[N]))
 
-        matmul[transpose_b=True, target=target](
+        matmul[transpose_b=True, target=context.target.device_kind_label()](
             c_nd, hidden_state_2d, weight, epilogue_fn, context
         )
 

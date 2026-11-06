@@ -162,7 +162,6 @@ def test_blockwise_fp8_matmul_amd[
             n_scale_granularity=BLOCK_SCALE_N,
             k_scale_granularity=BLOCK_SCALE_K,
             transpose_b=transpose_b,
-            target="gpu",
         ](c_my_dev, a_dev, b_dev, a_scale_dev, b_scale_dev, ctx)
     else:
         blockwise_scaled_fp8_matmul_amd[

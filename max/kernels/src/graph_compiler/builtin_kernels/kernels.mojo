@@ -1576,7 +1576,6 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         )
         return rope_split_store_paged_ragged[
             q_out_dtype=out_dtype,
-            target=target,
             interleaved=Self.interleaved,
         ](
             qkv.to_tile_tensor(),
@@ -1655,7 +1654,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
 
         comptime if mrope_section == "":
             return rope_split_store_paged_ragged_with_position_ids[
-                target=target,
                 interleaved=Self.interleaved,
             ](
                 qkv.to_tile_tensor(),
@@ -1670,7 +1668,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
         else:
             comptime mrope = _unsafe_str_to_coord[mrope_section]()
             return rope_split_store_paged_ragged_with_position_ids[
-                target=target,
                 interleaved=Self.interleaved,
                 mrope_types=mrope.element_types,
                 mrope_section=mrope,
@@ -1783,7 +1780,6 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
 
         rope_ragged[
             interleaved=Self.interleaved,
-            target=target,
             rope_first=Self.rope_first,
         ](
             x_tensor,
@@ -1877,10 +1873,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         comptime assert freqs_cis_tensor.flat_rank == 2
         comptime assert position_ids_tensor.flat_rank == 2
 
-        rope_ragged[
-            interleaved=Self.interleaved,
-            target=target,
-        ](
+        rope_ragged[interleaved=Self.interleaved,](
             x_tensor,
             row_offsets_tensor,
             start_tensor,

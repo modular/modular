@@ -56,9 +56,7 @@ def run_row_mean_of_squares_qk_gpu[
     ctx.enqueue_copy(q_d, q_h)
     ctx.enqueue_copy(k_d, k_h)
 
-    row_mean_of_squares_qk[target="gpu"](
-        out_buf, q_buf, k_buf, rows, q_cols, k_cols, ctx
-    )
+    row_mean_of_squares_qk(out_buf, q_buf, k_buf, rows, q_cols, k_cols, ctx)
     ctx.enqueue_copy(out_h, out_d)
     ctx.synchronize()
 

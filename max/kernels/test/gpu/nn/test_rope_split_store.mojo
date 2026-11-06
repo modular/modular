@@ -259,7 +259,7 @@ def execute_test[
         fused_output_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -669,9 +669,7 @@ def execute_test_with_position_ids[
         pos_ids_device, row_major(num_sections, total_length)
     )
 
-    _rope_split_store_ragged_with_position_ids[
-        target="gpu", interleaved=interleaved
-    ](
+    _rope_split_store_ragged_with_position_ids[interleaved=interleaved,](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -1060,7 +1058,7 @@ def execute_test_fp8[
         bf16_q_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -1079,7 +1077,7 @@ def execute_test_fp8[
         fp8_q_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
