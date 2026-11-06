@@ -14,7 +14,7 @@
 
 from std.collections import OptionalReg
 from std.math import gcd
-from std.sys.info import CompilationTarget, align_of, simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.utils.numerics import get_accum_type
@@ -526,13 +526,7 @@ def fused_qk_rope_ragged[
         num_q_heads + num_k_heads,  # concat q and k along head dim
         q_head_size,
     )
-    comptime target_simd_width = (
-        simd_width_of[
-            dtype, target=CompilationTarget.current()
-        ]() if context.target.is_cpu() else simd_width_of[
-            dtype, target=context.target
-        ]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=context.target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     comptime if case .Some(sections) = mrope_section:

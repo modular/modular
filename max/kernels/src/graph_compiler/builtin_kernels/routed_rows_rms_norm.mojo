@@ -90,7 +90,7 @@ struct RoutedRowsRMSNorm:
         comptime accum = get_accum_type[dtype]()
         comptime simd_width = rowwise.pick_simd_width[
             ReduceSum[accum, 1],
-            ctx.target.device_kind_label(),
+            ctx.target,
             64,
             dtype,
             accum,

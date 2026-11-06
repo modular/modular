@@ -272,7 +272,7 @@ def _rowwise_prologue[
     comptime heads = n_q_heads + 2 * n_kv_heads
     comptime accum = get_accum_type[dtype]()
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], ctx.target.device_kind_label(), 64, dtype, accum
+        ReduceSum[accum, 1], ctx.target, 64, dtype, accum
     ]()
     # A tile must sit wholly in one half of the head to find its partner.
     comptime assert half % simd_width == 0, "head_dim / 2 % simd width"

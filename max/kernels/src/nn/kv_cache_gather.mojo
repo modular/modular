@@ -24,7 +24,7 @@ This is a pure copy in the cache's own dtype, so the result is bit-identical
 to indexing the block buffer by hand, on every target.
 """
 
-from std.sys.info import CompilationTarget, simd_width_of
+from std.sys.info import simd_width_of
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
@@ -97,13 +97,7 @@ def kv_cache_gather_rows_ragged[
             rebind[SIMD[dtype, width]](cache.load[width=width](b, 0, slot, d)),
         )
 
-    comptime simd_width = (
-        simd_width_of[
-            cache_t.dtype, target=CompilationTarget.current()
-        ]() if ctx.target.is_cpu() else simd_width_of[
-            cache_t.dtype, target=ctx.target
-        ]()
-    )
+    comptime simd_width = simd_width_of[cache_t.dtype, target=ctx.target]()
 
     elementwise[
         simd_width,

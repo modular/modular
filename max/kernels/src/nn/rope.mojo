@@ -13,7 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import gcd
-from std.sys.info import CompilationTarget, align_of, simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.complex import ComplexSIMD
@@ -209,13 +209,7 @@ def rope_ragged[
         pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_imm())
         pos_ids_stride = 0
 
-    comptime target_simd_width = (
-        simd_width_of[
-            dtype, target=CompilationTarget.current()
-        ]() if context.target.is_cpu() else simd_width_of[
-            dtype, target=context.target
-        ]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=context.target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     # Each access starts at a multiple of the width, so vector loads are

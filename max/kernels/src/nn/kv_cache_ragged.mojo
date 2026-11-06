@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements KV-cache kernels for ragged (variable-length) sequences used in continuous batching."""
 
-from std.sys.info import CompilationTarget, simd_width_of
+from std.sys.info import simd_width_of
 from std.sys import align_of, size_of
 from std.math import ceildiv
 from std.math.uutils import udivmod
@@ -5089,16 +5089,9 @@ def generic_kv_cache_radd_dispatch[
             a_val + old_val,
         )
 
-    comptime if ctx.target.is_gpu():
-        comptime compile_target = ctx.target
-        comptime simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
-        elementwise[simd_width](do_radd, a.layout.shape_coord(), ctx)
-    else:
-        comptime compile_target = CompilationTarget.current()
-        comptime simd_width = simd_width_of[dtype, target=compile_target]()
-
-        elementwise[simd_width](do_radd, a.layout.shape_coord(), ctx)
+    elementwise[simd_width](do_radd, a.layout.shape_coord(), ctx)
 
 
 def kv_cache_store_ragged[
@@ -5176,13 +5169,7 @@ def kv_cache_store_ragged[
             loaded_val,
         )
 
-    comptime simd_width = (
-        simd_width_of[
-            cache_t.dtype, target=CompilationTarget.current()
-        ]() if context.target.is_cpu() else simd_width_of[
-            cache_t.dtype, target=context.target
-        ]()
-    )
+    comptime simd_width = simd_width_of[cache_t.dtype, target=context.target]()
 
     elementwise[simd_width, _trace_description="kv_cache_store_ragged"](
         write_to_cache, input_shape, context
@@ -5247,13 +5234,7 @@ def kv_cache_store_padded[
             loaded_val,
         )
 
-    comptime simd_width = (
-        simd_width_of[
-            cache_t.dtype, target=CompilationTarget.current()
-        ]() if context.target.is_cpu() else simd_width_of[
-            cache_t.dtype, target=context.target
-        ]()
-    )
+    comptime simd_width = simd_width_of[cache_t.dtype, target=context.target]()
 
     elementwise[simd_width, _trace_description="kv_cache_store_padded"](
         write_to_cache, input_shape, context
@@ -5374,17 +5355,13 @@ def kv_cache_2m_iadd_dispatch[
             a_val + old_val,
         )
 
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
+
     comptime if ctx.target.is_gpu():
         with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
             "kv-cache-2m-iadd",
             task_id=Int(ctx.device().id),
         ):
-            comptime compile_target = ctx.target
-            comptime simd_width = simd_width_of[dtype, target=compile_target]()
-
             elementwise[simd_width](iadd, elementwise_shape, ctx)
     else:
-        comptime compile_target = CompilationTarget.current()
-        comptime simd_width = simd_width_of[dtype, target=compile_target]()
-
         elementwise[simd_width](iadd, elementwise_shape, ctx)

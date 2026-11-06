@@ -14,11 +14,10 @@
 
 from std.math import ceildiv
 from std.sys import simd_width_of
-from std.sys.info import CompilationTarget
 
 from nn.reshape import reshape
 from max.algorithm import elementwise, sync_parallelize
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from max.runtime.asyncrt import parallelism_level
@@ -312,13 +311,7 @@ def _index_tensor_impl[
             out_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
-    comptime target_simd_width = (
-        simd_width_of[
-            dtype, target=CompilationTarget.current()
-        ]() if ctx.T.target.is_cpu() else simd_width_of[
-            dtype, target=get_gpu_target()
-        ]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=ctx.T.target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous

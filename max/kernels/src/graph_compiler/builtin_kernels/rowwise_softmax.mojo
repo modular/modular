@@ -72,7 +72,7 @@ def softmax[
     comptime assert accum.is_floating_point(), "softmax requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
         ReduceSum[accum, 1],
-        context.T.target.device_kind_label(),
+        context.T.target,
         64,
         dtype,
         accum,

@@ -108,7 +108,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu import barrier, syncwarp
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv, iota
 from std.memory import stack_allocation
@@ -286,7 +286,7 @@ def once[
 @inline(.always)
 def pick_simd_width[
     M: ReduceOp,
-    target: StaticString = "cpu",
+    target: CompilationTarget = CompilationTarget.current(),
     PER_THREAD_BUDGET: Int = 64,
     *Ts: DType,
 ]() -> Int:
@@ -313,7 +313,7 @@ def pick_simd_width[
     Parameters:
         M: The monoid type at `W=1` (`sizeof` proxy for the GPU
             storage-budget check).
-        target: `"cpu"` or `"gpu"` (anything non-CPU = GPU).
+        target: The compilation target the body launches on.
         PER_THREAD_BUDGET: GPU per-thread storage cap in bytes.
             Tunable; default 64B is an empirically reasonable
             register-pressure ceiling on B200-class GPUs.
@@ -325,19 +325,13 @@ def pick_simd_width[
         The SIMD width for the monoid `M[dtype, W]`, `simd_width=W` in
         `ContextParams`, and `tile_fn[ws]` calls. Always at least `1`.
     """
-    comptime is_gpu_target = (target != StaticString("cpu"))
+    comptime is_gpu_target = not target.is_cpu()
     # `simd_width_of` defaults to `_current_target()` (host = CPU),
     # giving wrong widths for a GPU-bound body. Resolve against the
     # actual launch target.
     var w_out = 1
     comptime for T in Ts:
-        comptime wi = (
-            simd_width_of[
-                T, get_gpu_target()
-            ]() if is_gpu_target else simd_width_of[
-                T, CompilationTarget.current()
-            ]()
-        )
+        comptime wi = simd_width_of[T, target]()
         if wi > w_out:
             w_out = wi
 

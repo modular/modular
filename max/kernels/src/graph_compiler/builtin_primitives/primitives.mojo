@@ -2393,7 +2393,7 @@ def _rowwise[
         ctx: The call context (forward this from the custom operation).
     """
     comptime simd_width = pick_simd_width[
-        SimdMonoid, ctx.target.device_kind_label(), 64, dtype, accum
+        SimdMonoid, ctx.target, 64, dtype, accum
     ]()
     launch[
         axis=axis,

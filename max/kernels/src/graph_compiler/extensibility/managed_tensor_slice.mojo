@@ -2737,7 +2737,7 @@ def get_kernel_simd_width[dtype: DType, target: CompilationTarget]() -> Int:
 
         return simd_width_of[dtype, target=target]()
 
-    return simd_width_of[dtype]()
+    return simd_width_of[dtype, target=target]()
 
 
 @doc_hidden

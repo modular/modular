@@ -95,7 +95,7 @@ def rms_norm_residual_add[
     comptime assert shape.is_flat, "shape must be flat"
     comptime simd_width = rowwise.pick_simd_width[
         ReduceSum[accum, 1],
-        context.T.target.device_kind_label(),
+        context.T.target,
         64,
         dtype,
         accum,
@@ -250,7 +250,7 @@ def rms_norm_rope[
         ), "rope requires an even row width"
     comptime simd_width_cand = rowwise.pick_simd_width[
         ReduceSum[accum, 1],
-        context.T.target.device_kind_label(),
+        context.T.target,
         64,
         input_dtype,
         accum,
@@ -470,7 +470,7 @@ def layer_norm[
     # (natural width already <= 4).
     comptime simd_width = rowwise.pick_simd_width[
         Welford[accum, 1],
-        context.T.target.device_kind_label(),
+        context.T.target,
         96,
         dtype,
         accum,
@@ -620,7 +620,7 @@ def layer_norm_rope_ragged[
     comptime rope_dim = Int(freqs_cis.static_shape[1])
     comptime simd_width_cand = rowwise.pick_simd_width[
         Welford[accum, 1],
-        context.T.target.device_kind_label(),
+        context.T.target,
         96,
         input_dtype,
         accum,
@@ -845,7 +845,7 @@ def row_mean_of_squares[
         accum.is_floating_point()
     ), "row_mean_of_squares requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], ctx.target.device_kind_label(), 64, in_dtype, accum
+        ReduceSum[accum, 1], ctx.target, 64, in_dtype, accum
     ]()
     var axis_size = Int(shape[reduce_dim])
     var axis_size_accum = Scalar[accum](axis_size)
@@ -1041,7 +1041,7 @@ def rms_norm_fused_residual_add[
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
         ReduceSum[accum, 1],
-        context.T.target.device_kind_label(),
+        context.T.target,
         64,
         dtype,
         accum,
@@ -1265,7 +1265,7 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
     comptime simd_width = rowwise.pick_simd_width[
         ReduceSum[accum, 1],
-        context.T.target.device_kind_label(),
+        context.T.target,
         64,
         in_dtype,
         accum,
