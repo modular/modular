@@ -447,7 +447,6 @@ modular_cc_library(
         ":Base",
         ":SymbolExport",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:IR",
     ],
 )
 
