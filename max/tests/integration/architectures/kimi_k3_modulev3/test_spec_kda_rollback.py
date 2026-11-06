@@ -158,15 +158,17 @@ def _build_layers(mesh: DeviceMesh) -> list[KimiK3KDAAttention]:
             gate_lower_bound=-5.0,
             pin_fma=True,
         )
-        # The merged projection is laid down as [q ; k ; v] rows at a
+        # The merged projection is laid down as [q ; k ; v ; g] rows at a
         # tensor-parallel degree of one, and interleaved per rank the way
         # the weight adapter writes them at a degree of two, so the TP pass
-        # below can split each rank's slice of every q/k/v block.
-        layer.qkv_proj.weight = Tensor(
+        # below can split each rank's slice of every q/k/v/g block.
+        g_proj = _sparse(rng, _INNER, _HIDDEN, 0.5)
+        b_proj = _sparse(rng, _HEADS, _HIDDEN, 0.5)
+        layer.qkvg_proj.weight = Tensor(
             (
-                np.concatenate(qkv, axis=0)
+                np.concatenate([*qkv, g_proj, b_proj], axis=0)
                 if num_devices == 1
-                else interleave_for_tp(qkv, num_devices)
+                else interleave_for_tp([*qkv, g_proj, b_proj], num_devices)
             ),
             dtype=DType.float32,
         )
@@ -183,12 +185,6 @@ def _build_layers(mesh: DeviceMesh) -> list[KimiK3KDAAttention]:
         )
         layer.f_b_proj.weight = Tensor(
             _sparse(rng, _INNER, _HEAD_DIM, 0.25), dtype=DType.float32
-        )
-        layer.b_proj.weight = Tensor(
-            _sparse(rng, _HEADS, _HIDDEN, 0.5), dtype=DType.float32
-        )
-        layer.g_proj.weight = Tensor(
-            _sparse(rng, _INNER, _HIDDEN, 0.5), dtype=DType.float32
         )
         layer.o_proj.weight = Tensor(
             _sparse(rng, _HIDDEN, _INNER, 0.5), dtype=DType.float32

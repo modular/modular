@@ -837,6 +837,7 @@ modular_eager_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
