@@ -20,7 +20,7 @@
 #define CACHE_SUPPORT_KEYS_H
 
 #include "Support/Buffer.h"
-#include "Support/HashUtils.h"
+#include "Support/BytecodeHash.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/BLAKE3.h"

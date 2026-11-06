@@ -189,6 +189,7 @@ modular_cc_test(
     name = "HashUtilsTest",
     srcs = ["HashUtilsTest.cpp"],
     deps = [
+        "//Support:BytecodeHash",
         "//Support:HashUtils",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",

@@ -105,15 +105,25 @@ modular_cc_library(
     srcs = ["lib/HashUtils.cpp"],
     hdrs = ["include/Support/HashUtils.h"],
     deps = [
+        ":SymbolExport",
+        "@llvm-project//llvm:Support",
+        "@xxhash",
+    ],
+)
+
+modular_cc_library(
+    name = "BytecodeHash",
+    srcs = ["lib/BytecodeHash.cpp"],
+    hdrs = ["include/Support/BytecodeHash.h"],
+    deps = [
         ":Base",
         ":Compiler",
-        ":SymbolExport",
+        ":HashUtils",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
-        "@xxhash",
     ],
 )
 

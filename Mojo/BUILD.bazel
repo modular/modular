@@ -1012,7 +1012,6 @@ modular_shared_library(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     exports_filter = [
         "@fmt//:__subpackages__",
