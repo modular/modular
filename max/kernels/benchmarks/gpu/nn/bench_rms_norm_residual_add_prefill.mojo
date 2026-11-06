@@ -129,7 +129,6 @@ def run[ROWS: Int](ctx: DeviceContext, axis_size: Some[CoordLike]) raises:
         rms_norm_residual_add[
             dtype,
             2,
-            target="gpu",
             epsilon=EPS,
             weight_offset=Float32(0),
         ](

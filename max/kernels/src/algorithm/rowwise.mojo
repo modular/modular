@@ -649,7 +649,6 @@ def launch[
     //,
     axis: Int,
     simd_width: Int,
-    target: StaticString,
     num_phases: Int,
     computationally_expensive: Bool = False,
     dtype_size: Int = 0,
@@ -670,8 +669,6 @@ def launch[
         axis: Axis being reduced.
         simd_width: SIMD width for tile dispatch. Bodies compute this
             via `rowwise.pick_simd_width[...]` and pass it directly.
-        target: `"cpu"` or `"gpu"` (anything non-CPU routes through the
-            GPU backend).
         num_phases: Total phase count — `1` for reduce-shaped bodies
             (the reduce's own result is the final output); `> 1` for
             normalize-shaped bodies (`num_phases - 1` dependent
@@ -705,14 +702,12 @@ def launch[
     Raises:
         On launch or worker failure.
     """
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert num_phases > 0, "num_phases must be > 0"
 
     comptime if num_phases == 1:
         # Reduce-shaped: output collapses the reduced axis, one value per
         # row. Terminal is `emit`.
-        comptime if is_cpu[target]():
+        comptime if ctx.T.target.is_cpu():
             _cpu_launch[
                 axis=axis,
                 simd_width=simd_width,
@@ -721,7 +716,7 @@ def launch[
                 supports_splitk=True,
             ](body, shape)
         else:
-            comptime assert is_gpu[target](), "unknown rowwise target"
+            comptime assert ctx.T.target.is_gpu(), "unknown rowwise target"
             # GPU launch geometry: no caller has ever needed a different
             # block/warp size than these, so they are internal to this
             # function rather than forwarded from the public signature.
@@ -742,7 +737,7 @@ def launch[
     else:
         # Normalize-shaped: output keeps the input shape, per-element
         # emission along the axis. Terminal is `elementwise`.
-        comptime if is_cpu[target]():
+        comptime if ctx.T.target.is_cpu():
             _cpu_launch[
                 axis=axis,
                 simd_width=simd_width,
@@ -750,7 +745,7 @@ def launch[
                 num_phases=num_phases if dtype_size > 0 else 0,
             ](body, shape)
         else:
-            comptime assert is_gpu[target](), "unknown rowwise target"
+            comptime assert ctx.T.target.is_gpu(), "unknown rowwise target"
             # GPU launch geometry: no caller has ever needed a different
             # block/warp size than these, so they are internal to this
             # function rather than forwarded from the public signature.

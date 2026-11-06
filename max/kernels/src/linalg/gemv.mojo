@@ -2383,7 +2383,7 @@ comptime _GEMV_MULTIROW_MAX_K_ITERS = 2
 
 
 @inline(.always)
-def _amd_small_m_gemv_widened[]() -> Bool:
+def _amd_small_m_gemv_widened() -> Bool:
     """Returns whether the gfx950-only small-M GEMV widenings apply.
 
     An autotuning build keeps them off: `AUTOTUNING_MODE` and

@@ -323,7 +323,6 @@ struct MatmulCPU:
             transpose_b=transpose_b,
             b_packed=packed_b,
             _trace_description=_trace_name,
-            target=ctx.target.device_kind_label(),
         ](
             TileTensor(c_ptr, c_layout),
             a.to_tile_tensor(),
@@ -353,7 +352,6 @@ struct MatmulCPU:
             transpose_b=transpose_b,
             b_packed=packed_b,
             _trace_description=_trace_name,
-            target=ctx.target.device_kind_label(),
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -431,7 +429,6 @@ struct MatmulGPU:
                 transpose_a=False,
                 transpose_b=transpose_b,
                 _trace_description=_trace_name,
-                target=ctx.target.device_kind_label(),
             ](
                 c_view.to_tile_tensor(),
                 a.to_tile_tensor(),
@@ -466,7 +463,6 @@ struct MatmulGPU:
                 transpose_a=False,
                 transpose_b=transpose_b,
                 _trace_description=_trace_name,
-                target=ctx.target.device_kind_label(),
             ](
                 TileTensor(c_ptr._unsafe_nullable(), row_major(c.shape())),
                 a.to_tile_tensor(),
@@ -491,7 +487,6 @@ struct MatmulGPU:
             transpose_a=False,
             transpose_b=transpose_b,
             _trace_description=_trace_name,
-            target=ctx.target.device_kind_label(),
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -537,7 +532,6 @@ struct BatchMatmulCPU:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
-                target=ctx.target.device_kind_label(),
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -549,7 +543,6 @@ struct BatchMatmulCPU:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
-                target=ctx.target.device_kind_label(),
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -595,7 +588,6 @@ struct BatchMatmulGPU:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
-                target=ctx.target.device_kind_label(),
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -607,7 +599,6 @@ struct BatchMatmulGPU:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
-                target=ctx.target.device_kind_label(),
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -2504,7 +2495,7 @@ struct MatmulStaticScaledFloat8:
                 var scaled_val = val.cast[.float32]() * scale
                 return scaled_val.cast[dtype]()
 
-            matmul[target=ctx.target.device_kind_label(), transpose_b=True](
+            matmul[transpose_b=True](
                 output_tt,
                 input_tt,
                 weight_tt,
@@ -2546,7 +2537,7 @@ struct MatmulStaticScaledFloat8:
                 row_major(Int64(M), Idx[N]),
             )
 
-            matmul[target=ctx.target.device_kind_label(), transpose_b=True](
+            matmul[transpose_b=True](
                 output_scratch,
                 input_tt,
                 weight_tt,
@@ -2995,7 +2986,7 @@ struct Struct_router_gate_mixed_gemv:
             _cast_bf16_to_fp32, Coord(M, Idx[K]), context
         )
 
-        matmul[transpose_b=True, target=context.target.device_kind_label()](
+        matmul[transpose_b=True](
             c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
         )
         _ = a_f32^
@@ -3102,7 +3093,7 @@ struct Struct_smallm_streaming_matmul:
             )
             return
 
-        matmul[transpose_b=True, target=context.target.device_kind_label()](
+        matmul[transpose_b=True](
             c.to_tile_tensor[.bfloat16](),
             a.to_tile_tensor[.bfloat16](),
             b.to_tile_tensor[.bfloat16](),

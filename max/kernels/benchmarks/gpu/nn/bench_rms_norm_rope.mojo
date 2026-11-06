@@ -108,7 +108,6 @@ def bench_rms_norm_rope_gpu[
                 dtype,
                 dtype,
                 rank,
-                target="gpu",
                 multiply_before_cast=False,
             ](
                 input_fn,

@@ -132,7 +132,7 @@ def run_one_case[
             coords, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm[dtype, 2, target="gpu"](
+    layer_norm[dtype, 2](
         input_fn,
         output_fn,
         Coord(shape),

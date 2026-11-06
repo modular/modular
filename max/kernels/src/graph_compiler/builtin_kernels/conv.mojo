@@ -140,9 +140,7 @@ struct AvgPool:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        avg_pool[
-            count_boundary=count_boundary, target=ctx.target.device_kind_label()
-        ](
+        avg_pool[count_boundary=count_boundary](
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -215,9 +213,7 @@ struct AvgPoolCeilModeTrue:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        avg_pool[
-            count_boundary=count_boundary, target=ctx.target.device_kind_label()
-        ](
+        avg_pool[count_boundary=count_boundary](
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),

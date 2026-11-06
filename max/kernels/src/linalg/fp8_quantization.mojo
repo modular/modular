@@ -1486,7 +1486,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
             comptime if input_scale_granularity == "tensor":
                 matmul[
-                    target=ctx.target.device_kind_label(),
                     transpose_b=transpose_b,
                     _trace_description=_trace_string,
                 ](
@@ -1498,7 +1497,6 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
             else:
                 matmul[
-                    target=ctx.target.device_kind_label(),
                     transpose_b=transpose_b,
                     _trace_description=_trace_string,
                 ](
@@ -1576,7 +1574,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
                 comptime if input_scale_granularity == "tensor":
                     matmul[
-                        target=ctx.target.device_kind_label(),
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1588,7 +1585,6 @@ def _matmul_dynamic_scaled_fp8_impl[
                     )
                 else:
                     matmul[
-                        target=ctx.target.device_kind_label(),
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1610,7 +1606,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
                 comptime if input_scale_granularity == "tensor":
                     matmul[
-                        target=ctx.target.device_kind_label(),
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1622,7 +1617,6 @@ def _matmul_dynamic_scaled_fp8_impl[
                     )
                 else:
                     matmul[
-                        target=ctx.target.device_kind_label(),
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](

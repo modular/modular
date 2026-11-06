@@ -347,7 +347,7 @@ def _matmul_common[
         ] = c_alloc.unsafe_ptr()
         var c_nd = TileTensor(c_ptr, row_major(BS * SEQ_LEN, Idx[N]))
 
-        matmul[transpose_b=True, target=context.target.device_kind_label()](
+        matmul[transpose_b=True](
             c_nd, hidden_state_2d, weight, epilogue_fn, context
         )
 
@@ -361,7 +361,7 @@ def _matmul_common[
         )
         var c_nd = TileTensor(c_device_buffer, row_major(BS * SEQ_LEN, Idx[N]))
 
-        matmul[transpose_b=True, target=context.target.device_kind_label()](
+        matmul[transpose_b=True](
             c_nd, hidden_state_2d, weight, epilogue_fn, context
         )
 
@@ -467,7 +467,7 @@ def _flash_attention_dispatch[
                 sink_weights,
             )
         else:
-            gpu_flash_attention[](
+            gpu_flash_attention(
                 output,
                 q,
                 k,

@@ -180,7 +180,7 @@ def run(ctx: DeviceContext, m: Int, layer: Int) raises:
         )
 
     def matmul_only() raises {imm}:
-        matmul[transpose_b=True, target="gpu"](c_base_tt, a_f32_tt, w_tt, ctx)
+        matmul[transpose_b=True](c_base_tt, a_f32_tt, w_tt, ctx)
 
     def vendor_only() raises {imm}:
         vendor_blas.matmul(

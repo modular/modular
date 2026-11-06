@@ -2338,9 +2338,7 @@ def _matmul_common[
         c_ptr._unsafe_nullable(), row_major(TOTAL_SEQ_LEN, Idx[N])
     )
 
-    matmul[target=context.target.device_kind_label(), transpose_b=True](
-        c_nd, hidden_state, weight, epilogue_fn, context
-    )
+    matmul[transpose_b=True](c_nd, hidden_state, weight, epilogue_fn, context)
 
     comptime if context.target.is_cpu():
         dealloc(
@@ -4773,7 +4771,7 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         Coord(buffer_length_int, Idx[k_last_dim]), Coord(0, 0)
     )
 
-    matmul[target=context.target.device_kind_label(), transpose_b=True](
+    matmul[transpose_b=True](
         k_tile,
         k_latent_tile,
         weight,

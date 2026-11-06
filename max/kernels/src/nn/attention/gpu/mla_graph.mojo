@@ -3978,10 +3978,7 @@ def mla_prefill_branch_bf16[
         )
 
         # K matmul with internal FP8 conversion
-        matmul[
-            target=ctx.target.device_kind_label(),
-            transpose_b=True,
-        ](
+        matmul[transpose_b=True,](
             k_fp8_flat,
             k_latent,
             w_k,
@@ -3993,10 +3990,7 @@ def mla_prefill_branch_bf16[
         )
 
         # V matmul with internal FP8 conversion
-        matmul[
-            target=ctx.target.device_kind_label(),
-            transpose_b=True,
-        ](
+        matmul[transpose_b=True,](
             v_fp8_flat,
             k_latent,
             w_v,
@@ -4049,7 +4043,7 @@ def mla_prefill_branch_bf16[
             k_buf,
             row_major((buffer_length, Idx[num_heads * qk_nope_head_dim])),
         )
-        matmul[target=ctx.target.device_kind_label(), transpose_b=True](
+        matmul[transpose_b=True](
             k_flat,
             k_latent,
             w_k,
@@ -4066,7 +4060,7 @@ def mla_prefill_branch_bf16[
             v_buf,
             row_major(buffer_length, Idx[num_heads * v_head_dim]),
         )
-        matmul[target=ctx.target.device_kind_label(), transpose_b=True](
+        matmul[transpose_b=True](
             v_flat,
             k_latent,
             w_v,

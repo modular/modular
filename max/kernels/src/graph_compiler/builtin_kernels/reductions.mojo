@@ -150,7 +150,6 @@ struct ArgMax:
 
         reduce_argmax[
             dtype,
-            target=ctx.target.device_kind_label(),
             reduce_dim=reduce_dim,
             name=_trace_name,
         ](input_fn, output_fn, input.shape().flatten(), ctx)
@@ -218,7 +217,6 @@ struct ArgMin:
 
         reduce_argmin[
             dtype,
-            target=ctx.target.device_kind_label(),
             reduce_dim=reduce_dim,
             name=_trace_name,
         ](input_fn, output_fn, input.shape().flatten(), ctx)
@@ -626,7 +624,6 @@ struct ReduceMul:
 
         reduce_product[
             dtype,
-            target=ctx.target.device_kind_label(),
             reduce_dim=axis,
             name=_trace_name,
         ](input_fn, output_fn, input.shape().flatten(), ctx)
@@ -732,7 +729,7 @@ struct LayerNorm:
         comptime ln_cols = type_of(input)._shape_types[rank - 1].static_value
 
         comptime if ln_cols != UNKNOWN_VALUE:
-            layer_norm[dtype, rank, target=ctx.target.device_kind_label()](
+            layer_norm[dtype, rank](
                 input_fn,
                 output_fn,
                 input.shape().flatten(),
@@ -743,7 +740,7 @@ struct LayerNorm:
                 ctx,
             )
         else:
-            layer_norm[dtype, rank, target=ctx.target.device_kind_label()](
+            layer_norm[dtype, rank](
                 input_fn,
                 output_fn,
                 input.shape().flatten(),
@@ -887,7 +884,6 @@ struct ReduceRMSNormRoPE:
                 output_dtype,
                 cos_sin_dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 multiply_before_cast=multiply_before_cast,
             ](
                 input_fn,
@@ -907,7 +903,6 @@ struct ReduceRMSNormRoPE:
                 output_dtype,
                 cos_sin_dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 multiply_before_cast=multiply_before_cast,
             ](
                 input_fn,
@@ -1046,7 +1041,6 @@ struct LayerNormRopeRagged:
                 output_dtype,
                 freq_dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 interleaved=interleaved,
             ](
                 input_fn,
@@ -1067,7 +1061,6 @@ struct LayerNormRopeRagged:
                 output_dtype,
                 freq_dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 interleaved=interleaved,
             ](
                 input_fn,
@@ -1319,7 +1312,6 @@ struct ReduceMinAndMax:
 
         reduce_min_and_max[
             dtype,
-            target=ctx.target.device_kind_label(),
             reduce_dim=norm_axis,
             name=_trace_name,
         ](
@@ -1477,7 +1469,6 @@ struct ReduceRMSNormFusedResidualAdd:
             rms_norm_fused_residual_add[
                 dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 epsilon1=epsilon1,
                 weight_offset1=weight_offset1,
                 epsilon2=epsilon2,
@@ -1498,7 +1489,6 @@ struct ReduceRMSNormFusedResidualAdd:
             rms_norm_fused_residual_add[
                 dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 epsilon1=epsilon1,
                 weight_offset1=weight_offset1,
                 epsilon2=epsilon2,
@@ -1668,7 +1658,6 @@ struct RMSNormResidualAdd:
                 rms_norm_residual_add[
                     dtype,
                     rank,
-                    target=ctx.target.device_kind_label(),
                     epsilon=epsilon,
                     weight_offset=weight_offset,
                     multiply_before_cast=multiply_before_cast,
@@ -1686,7 +1675,6 @@ struct RMSNormResidualAdd:
                 rms_norm_residual_add[
                     dtype,
                     rank,
-                    target=ctx.target.device_kind_label(),
                     epsilon=epsilon,
                     weight_offset=weight_offset,
                     multiply_before_cast=multiply_before_cast,
@@ -2066,7 +2054,6 @@ struct Softmax:
             softmax[
                 dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 reduce_dim=axis,
             ](
                 input_fn,
@@ -2080,7 +2067,6 @@ struct Softmax:
             softmax[
                 dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 reduce_dim=axis,
             ](
                 input_fn,
@@ -2147,7 +2133,6 @@ struct LogSoftmax:
             softmax[
                 dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 logsoftmax=True,
                 reduce_dim=axis,
             ](
@@ -2162,7 +2147,6 @@ struct LogSoftmax:
             softmax[
                 dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
                 logsoftmax=True,
                 reduce_dim=axis,
             ](

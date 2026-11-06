@@ -167,7 +167,6 @@ struct RoutedRowsRMSNorm:
         rowwise.launch[
             axis=1,
             simd_width=simd_width,
-            target=ctx.target.device_kind_label(),
             num_phases=2,
             dtype_size=size_of[dtype](),
             computationally_expensive=True,

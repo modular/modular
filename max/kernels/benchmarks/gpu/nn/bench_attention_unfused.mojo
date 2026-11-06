@@ -418,7 +418,7 @@ def bench_manual[
                 s_base.unsafe_offset(h * seq_len * num_keys),
                 row_major((seq_len, num_keys)),
             )
-            matmul[transpose_b=True, target="gpu"](
+            matmul[transpose_b=True](
                 s_2d, q_2d, k_2d, scale_compute_lambda, ctx
             )
 
@@ -433,7 +433,7 @@ def bench_manual[
         ](coords: Coord) {var score_3d} -> SIMD[qkv_type, _simd_width]:
             return score_3d.load[width=_simd_width, alignment=1](coords)
 
-        softmax_inline[qkv_type, 1, 3, target="gpu"](
+        softmax_inline[qkv_type, 1, 3](
             input_fn,
             Coord(total_heads, seq_len, num_keys),
             score_3d,
@@ -455,7 +455,7 @@ def bench_manual[
                 o_base.unsafe_offset(h * seq_len * depth),
                 row_major((seq_len, Idx[depth])),
             )
-            matmul[target="gpu"](o_2d, s_2d, v_2d, ctx)
+            matmul(o_2d, s_2d, v_2d, ctx)
 
     def _kernel_launch(
         ctx: DeviceContext[], iteration: Int

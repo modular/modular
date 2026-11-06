@@ -150,7 +150,7 @@ def _probe_layer_norm[
         # Static cols (`ComptimeInt`) matches the graph op's static-shape
         # branch, which is what models hit: it enables the Row register
         # cache (`is_cached` fuse path).
-        layer_norm[dtype, 2, target="gpu"](
+        layer_norm[dtype, 2](
             input_fn,
             output_fn,
             Coord(shape),
@@ -206,7 +206,7 @@ def _probe_softmax[
     var nans = 0
     for _run in range(_NUM_RUNS):
         ctx.enqueue_memset(out_d, Scalar[dtype](0))
-        softmax[dtype, 2, target="gpu"](
+        softmax[dtype, 2](
             input_fn,
             Coord(shape),
             ComptimeInt[cols](),

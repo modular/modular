@@ -70,7 +70,6 @@ def rms_norm_residual_add[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     epsilon: Float32,
     weight_offset: Float32,
     multiply_before_cast: Bool = True,
@@ -90,14 +89,16 @@ def rms_norm_residual_add[
     The residual add is fused into the row's load, so the sum is read once,
     cached, normalized, and stored as the residual output on the way out.
     """
-    context.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     comptime assert shape.is_flat, "shape must be flat"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target.device_kind_label(),
+        64,
+        dtype,
+        accum,
     ]()
     var axis_size_accum = Scalar[accum](Int(axis_size))
 
@@ -184,7 +185,6 @@ def rms_norm_residual_add[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         dtype_size=size_of[dtype](),
         computationally_expensive=True,
@@ -225,7 +225,6 @@ def rms_norm_rope[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     multiply_before_cast: Bool = True,
     reduce_dim: Int = rank - 1,
 ](
@@ -240,8 +239,6 @@ def rms_norm_rope[
     weight_offset: Scalar[input_dtype],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
-    context.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime accum = get_accum_type[input_dtype]()
     comptime assert accum.is_floating_point(), "rope requires fp accum"
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
@@ -252,7 +249,11 @@ def rms_norm_rope[
             AxisSizeT.static_value % 2 == 0
         ), "rope requires an even row width"
     comptime simd_width_cand = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, input_dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target.device_kind_label(),
+        64,
+        input_dtype,
+        accum,
     ]()
     # Rotate-half needs each SIMD tile to sit wholly in one half and align to
     # the partner offset, i.e. `half` must be a multiple of the SIMD width. That
@@ -421,7 +422,6 @@ def rms_norm_rope[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
@@ -448,7 +448,6 @@ def layer_norm[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     reduce_dim: Int = rank - 1,
 ](
     input_fn: InputFn,
@@ -460,8 +459,6 @@ def layer_norm[
     epsilon: Scalar[dtype],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
-    context.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "layer_norm requires fp accum"
     # Welford's triple-field state is 12B at W=1, so the default 64B
@@ -472,7 +469,11 @@ def layer_norm[
     # than raising the global default. fp32/fp64 inputs are unaffected
     # (natural width already <= 4).
     comptime simd_width = rowwise.pick_simd_width[
-        Welford[accum, 1], target, 96, dtype, accum
+        Welford[accum, 1],
+        context.T.target.device_kind_label(),
+        96,
+        dtype,
+        accum,
     ]()
 
     @inline(.always)
@@ -559,7 +560,6 @@ def layer_norm[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
@@ -592,7 +592,6 @@ def layer_norm_rope_ragged[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     interleaved: Bool,
     reduce_dim: Int = rank - 1,
 ](
@@ -608,8 +607,6 @@ def layer_norm_rope_ragged[
     freqs_cis: TileTensor[freq_dtype, ...],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
-    context.T._comptime_assert_matches_target_is_cpu[target]()
-
     # TODO(feras): non-interleaved RoPE needs the far-partner row-cache
     # lookup rms_norm_rope uses for its rotate-half, not yet implemented here.
     comptime assert (
@@ -622,7 +619,11 @@ def layer_norm_rope_ragged[
     ].is_static_value, "Need static rope_dim for freqs_cis"
     comptime rope_dim = Int(freqs_cis.static_shape[1])
     comptime simd_width_cand = rowwise.pick_simd_width[
-        Welford[accum, 1], target, 96, input_dtype, accum
+        Welford[accum, 1],
+        context.T.target.device_kind_label(),
+        96,
+        input_dtype,
+        accum,
     ]()
     # A SIMD tile must sit wholly within the roped region or wholly within
     # the passthrough region -- never straddle the boundary -- so `rope_dim`
@@ -802,7 +803,6 @@ def layer_norm_rope_ragged[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
@@ -910,7 +910,6 @@ def row_mean_of_squares[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=ctx.target.device_kind_label(),
         num_phases=1,
     ](body, shape, ctx)
 
@@ -1021,7 +1020,6 @@ def rms_norm_fused_residual_add[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     epsilon1: Float32,
     weight_offset1: Float32,
     epsilon2: Float32,
@@ -1039,12 +1037,14 @@ def rms_norm_fused_residual_add[
     gamma2: TileTensor[mut=False, dtype, ...],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
-    context.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target.device_kind_label(),
+        64,
+        dtype,
+        accum,
     ]()
     var axis_size_int = Int(axis_size)
     var axis_size_accum = Scalar[accum](axis_size_int)
@@ -1212,7 +1212,6 @@ def rms_norm_fused_residual_add[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
@@ -1245,7 +1244,6 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
     & (def(Coord, Scalar[scale_dtype]) -> None),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     reduce_dim: Int = rank - 1,
 ](
     input_fn: InputFn,
@@ -1259,8 +1257,6 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
     scale_ub: Float32,
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
-    context.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime accum = get_accum_type[in_dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
     comptime assert out_dtype in (
@@ -1268,7 +1264,11 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         DType.float8_e4m3fnuz,
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, in_dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target.device_kind_label(),
+        64,
+        in_dtype,
+        accum,
     ]()
     var axis_size_accum = Scalar[accum](Int(axis_size))
 
@@ -1411,7 +1411,6 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=3,
         computationally_expensive=True,
     ](body, shape, context)

@@ -49,7 +49,6 @@ def matmul[
     b_packed: Bool = False,
     saturated_vnni: Bool = False,
     _trace_description: StaticString = "",
-    target: StaticString = "cpu",
     # Kept last so positional-parameter callers are unaffected; set it by
     # keyword.
     use_tf32: Bool = True,
@@ -76,8 +75,6 @@ def matmul[
             defaults to `False`).
         _trace_description: Extra string folded into the op trace label
             (defaults to an empty string).
-        target: Target platform string such as `"cpu"` or a GPU target
-            (defaults to `"cpu"`).
         use_tf32: On GPU, allow TF32 tensor-core truncation for fp32 inputs
             (defaults to `True`).
 
@@ -88,15 +85,12 @@ def matmul[
         ctx: Optional `DeviceContext` required for GPU targets and used for
             CPU tracing (defaults to `None`).
     """
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
-
     _matmul_impl[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
         b_packed=b_packed,
         saturated_vnni=saturated_vnni,
         _trace_description=_trace_description,
-        target=target,
         use_tf32=use_tf32,
         has_epilogue_fn=False,
         has_compute_fn=False,
@@ -113,7 +107,6 @@ def matmul[
     b_packed: Bool = False,
     saturated_vnni: Bool = False,
     _trace_description: StaticString = "",
-    target: StaticString = "cpu",
     use_tf32: Bool = True,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -135,8 +128,6 @@ def matmul[
             defaults to `False`).
         _trace_description: Extra string folded into the op trace label
             (defaults to an empty string).
-        target: Target platform string such as `"cpu"` or a GPU target
-            (defaults to `"cpu"`).
         use_tf32: On GPU, allow TF32 tensor-core truncation for fp32 inputs
             (defaults to `True`).
 
@@ -149,15 +140,12 @@ def matmul[
         ctx: Optional `DeviceContext` required for GPU targets and used for
             CPU tracing (defaults to `None`).
     """
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
-
     _matmul_impl[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
         b_packed=b_packed,
         saturated_vnni=saturated_vnni,
         _trace_description=_trace_description,
-        target=target,
         use_tf32=use_tf32,
         has_epilogue_fn=True,
         has_compute_fn=False,
@@ -174,7 +162,6 @@ def matmul[
     b_packed: Bool = False,
     saturated_vnni: Bool = False,
     _trace_description: StaticString = "",
-    target: StaticString = "cpu",
     use_tf32: Bool = True,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -196,8 +183,6 @@ def matmul[
             defaults to `False`).
         _trace_description: Extra string folded into the op trace label
             (defaults to an empty string).
-        target: Target platform string such as `"cpu"` or a GPU target
-            (defaults to `"cpu"`).
         use_tf32: On GPU, allow TF32 tensor-core truncation for fp32 inputs
             (defaults to `True`).
 
@@ -209,15 +194,12 @@ def matmul[
         ctx: Optional `DeviceContext` required for GPU targets and used for
             CPU tracing (defaults to `None`).
     """
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
-
     _matmul_impl[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
         b_packed=b_packed,
         saturated_vnni=saturated_vnni,
         _trace_description=_trace_description,
-        target=target,
         use_tf32=use_tf32,
         has_epilogue_fn=False,
         has_compute_fn=True,
@@ -235,7 +217,6 @@ def _matmul_impl[
     b_packed: Bool,
     saturated_vnni: Bool,
     _trace_description: StaticString,
-    target: StaticString,
     use_tf32: Bool,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
@@ -247,8 +228,6 @@ def _matmul_impl[
     compute_fn: ComputeFnType,
     ctx: DeviceContext.Optional,
 ) raises:
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
@@ -256,7 +235,7 @@ def _matmul_impl[
     comptime assert a.flat_rank == 2, "a must have a non-nested layout"
     comptime assert b.flat_rank == 2, "b must have a non-nested layout"
 
-    comptime if not is_cpu[target]():
+    comptime if not ctx.T.target.is_cpu():
         # GPU path: call _matmul_gpu directly with tracing. CPU-only params
         # (b_packed, saturated_vnni) are intentionally not forwarded here.
         comptime assert not transpose_a, "transpose_a not yet supported"
@@ -271,7 +250,7 @@ def _matmul_impl[
             # fmt: off
             return String(
                 "(",
-                target,
+                ctx.T.target.device_kind_label(),
                 ";", trace_arg("A", (shape.M, shape.K), a.dtype),
                 ";", trace_arg("B", (shape.K, shape.N), b.dtype),
                 ";", trace_arg("C", (shape.M, shape.N), c.dtype),
@@ -281,7 +260,7 @@ def _matmul_impl[
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=ctx.T.target.device_kind_label()](
             get_static_string[
                 "matmul",
                 _trace_description if _trace_description else "",
@@ -310,7 +289,9 @@ def _matmul_impl[
     else:
         # CPU path: handle tracing and compute lambda wrapping, then
         # delegate to TileTensor cpu.matmul overload.
-        comptime assert is_valid_target[target](), "unsupported target"
+        comptime assert is_valid_target[
+            ctx.T.target.device_kind_label()
+        ](), "unsupported target"
         comptime assert not transpose_a, "transpose_a not yet supported"
 
         if Int(c.dim[0]()) == 0 or Int(c.dim[1]()) == 0:
@@ -322,7 +303,7 @@ def _matmul_impl[
             # fmt: off
             return String(
                 "(",
-                target,
+                ctx.T.target.device_kind_label(),
                 ";", trace_arg("A", (shape.M, shape.K), a.dtype),
                 ";", trace_arg("B", (shape.K, shape.N), b.dtype),
                 ";", trace_arg("C", (shape.M, shape.N), c.dtype),
@@ -333,7 +314,7 @@ def _matmul_impl[
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=ctx.T.target.device_kind_label()](
             get_static_string[
                 "matmul",
                 _trace_description if _trace_description else "",

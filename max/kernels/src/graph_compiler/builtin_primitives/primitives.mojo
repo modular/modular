@@ -2409,7 +2409,6 @@ def _rowwise[
     launch[
         axis=axis,
         simd_width=simd_width,
-        target=target,
         num_phases=num_phases,
         computationally_expensive=computationally_expensive,
         dtype_size=dtype_size,

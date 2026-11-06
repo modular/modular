@@ -174,7 +174,6 @@ def _reduce_generator[
         SIMD[ty, width], SIMD[ty, width]
     ) -> SIMD[ty, width],
     //,
-    target: StaticString = "cpu",
     *,
     reduce_dim: Int,
 ](
@@ -196,7 +195,6 @@ def _reduce_generator[
         InputFnType: The type of `input_0_fn` (inferred).
         OutputFnType: The type of `output_0_fn` (inferred).
         ReduceFnType: The type of `reduce_function` (inferred).
-        target: The target to run on.
         reduce_dim: The dimension we are reducing.
 
     Args:
@@ -207,9 +205,9 @@ def _reduce_generator[
         reduce_function: The lambda implementing the reduction.
         context: The pointer to DeviceContext.
     """
-    context.T._comptime_assert_matches_target_is_cpu[target]()
-
-    comptime assert is_valid_target[target](), "unsupported target"
+    comptime assert is_valid_target[
+        context.T.target.device_kind_label()
+    ](), "unsupported target"
 
     # The plugin hook only accepts an `IndexList`, and the empty-dimension
     # check below needs runtime indexing that a `Coord` does not support, so
@@ -220,7 +218,7 @@ def _reduce_generator[
         if shape_index_list[i] == 0:
             return
 
-    comptime if is_cpu[target]():
+    comptime if context.T.target.is_cpu():
         _reduce_generator_cpu[reduce_dim=reduce_dim](
             shape, init, input_0_fn, output_0_fn, reduce_function
         )
@@ -260,7 +258,6 @@ def _reduce_generator[
         SIMD[ty, width], SIMD[ty, width]
     ) -> SIMD[ty, width],
     //,
-    target: StaticString = "cpu",
     *,
     reduce_dim: Int,
 ](
@@ -277,7 +274,6 @@ def _reduce_generator[
         InputFnType: The type of `input_0_fn` (inferred).
         OutputFnType: The type of `output_0_fn` (inferred).
         ReduceFnType: The type of `reduce_function` (inferred).
-        target: The target to run on.
         reduce_dim: The dimension we are reducing.
 
     Args:
@@ -288,8 +284,6 @@ def _reduce_generator[
         reduce_function: The lambda implementing the reduction.
         context: The pointer to DeviceContext.
     """
-    context.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime num_reductions = 1
 
     @inline(.always)
@@ -312,7 +306,7 @@ def _reduce_generator[
         return reduce_function[dtype, width](val, acc)
 
     var init_wrapped = StaticTuple[Scalar[init.dtype], num_reductions](init)
-    return _reduce_generator[target=target, reduce_dim=reduce_dim](
+    return _reduce_generator[reduce_dim=reduce_dim](
         shape,
         init_wrapped,
         input_0_fn,

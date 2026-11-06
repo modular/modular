@@ -203,7 +203,6 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 output_dtype,
                 scale_dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
             ](
                 input_fn,
                 output_fn,
@@ -222,7 +221,6 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 output_dtype,
                 scale_dtype,
                 rank,
-                target=ctx.target.device_kind_label(),
             ](
                 input_fn,
                 output_fn,

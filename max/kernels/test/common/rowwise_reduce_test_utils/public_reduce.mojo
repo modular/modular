@@ -81,7 +81,7 @@ def check_sums(ctx: DeviceContext, rows: Int, cols: Int) raises:
 
         rowwise.once(emit, ctx_p)
 
-    rowwise.launch[axis=1, simd_width=simd_width, target=target, num_phases=1](
+    rowwise.launch[axis=1, simd_width=simd_width, num_phases=1](
         body, Coord(rows, cols), ctx
     )
     ctx.enqueue_copy(out_h, out_d)
@@ -133,7 +133,7 @@ def check_doubled(ctx: DeviceContext, rows: Int, cols: Int) raises:
 
         rowwise.reduce(coords, cols, ctx_p, tile_fn)
 
-    rowwise.launch[axis=1, simd_width=simd_width, target=target, num_phases=1](
+    rowwise.launch[axis=1, simd_width=simd_width, num_phases=1](
         body, Coord(rows, cols), ctx
     )
     ctx.enqueue_copy(out_h, out_d)

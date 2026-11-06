@@ -524,7 +524,7 @@ struct MaxPool:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        max_pool[target=ctx.target.device_kind_label()](
+        max_pool(
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -607,7 +607,7 @@ struct MaxPoolCeilModeTrue:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        max_pool[target=ctx.target.device_kind_label()](
+        max_pool(
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),

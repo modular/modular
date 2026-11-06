@@ -117,7 +117,7 @@ def _test_reduce_argmax_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
             out_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
         # Run 1: real winner at `winner_idx`.
-        reduce_argmax[dtype, target="gpu", reduce_dim=1](
+        reduce_argmax[dtype, reduce_dim=1](
             input_fn, output_fn, Coord(num_rows, real_axis_size), ctx
         )
         ctx.enqueue_copy(out_h, out_d)
@@ -127,7 +127,7 @@ def _test_reduce_argmax_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
 
         # Run 2: SAME `out_d`, empty axis. Must become `0` (the
         # `_in_range_index`-clamped identity), not the stale `winner_idx`.
-        reduce_argmax[dtype, target="gpu", reduce_dim=1](
+        reduce_argmax[dtype, reduce_dim=1](
             input_fn, output_fn, Coord(num_rows, 0), ctx
         )
         ctx.enqueue_copy(out_h, out_d)
@@ -209,7 +209,7 @@ def _test_reduce_argmax_empty_non_inner_axis_gpu[
             )
 
         # Run 1: real winner at `winner_idx` in every row.
-        reduce_argmax[dtype, target="gpu", reduce_dim=1](
+        reduce_argmax[dtype, reduce_dim=1](
             input_fn, output_fn, Coord(outer, real_axis_size, inner), ctx
         )
         ctx.enqueue_copy(out_h, out_d)
@@ -219,7 +219,7 @@ def _test_reduce_argmax_empty_non_inner_axis_gpu[
 
         # Run 2: SAME `out_d`, empty axis. Every output must become `0`
         # (the `_in_range_index`-clamped identity), not the stale winner.
-        reduce_argmax[dtype, target="gpu", reduce_dim=1](
+        reduce_argmax[dtype, reduce_dim=1](
             input_fn, output_fn, Coord(outer, 0, inner), ctx
         )
         ctx.enqueue_copy(out_h, out_d)

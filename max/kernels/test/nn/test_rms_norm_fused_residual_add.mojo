@@ -121,7 +121,6 @@ def run_rms_norm_fused_residual_add_gpu[
     rms_norm_fused_residual_add[
         dtype,
         rank,
-        target="cpu",
         epsilon1=epsilon1,
         weight_offset1=weight_offset1,
         epsilon2=epsilon2,

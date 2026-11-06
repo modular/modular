@@ -410,7 +410,6 @@ def _rowwise_prologue[
     rowwise.launch[
         axis=2,
         simd_width=simd_width,
-        target=ctx.target.device_kind_label(),
         num_phases=2,
         computationally_expensive=True,
         name="qk_rms_norm_rope_split_store",

@@ -171,10 +171,7 @@ def index_tensor[
             data, indices, output, Optional(ctx.assert_cpu_target())
         )
     else:
-        return _index_tensor_impl[
-            batch_dims,
-            target=ctx.target.device_kind_label(),
-        ](data, indices, output, ctx)
+        return _index_tensor_impl[batch_dims,](data, indices, output, ctx)
 
 
 # Note: this is an extremely specialized version of the kernel that only handles
@@ -266,15 +263,12 @@ def _index_tensor_impl[
     indices_type: DType,
     //,
     batch_dims: Int,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert (
         data.flat_rank >= 2 and indices.flat_rank >= 2
     ), "Constraint: data_rank >= 2 and indices_rank >= 2"
@@ -319,9 +313,11 @@ def _index_tensor_impl[
         )
 
     comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+        simd_width_of[
+            dtype, target=CompilationTarget.current()
+        ]() if ctx.T.target.is_cpu() else simd_width_of[
+            dtype, target=get_gpu_target()
+        ]()
     )
 
     # Only use SIMD if:
@@ -341,7 +337,7 @@ def _index_tensor_impl[
         == 0
     )
 
-    comptime if is_cpu[target]():
+    comptime if ctx.T.target.is_cpu():
         var cpu_ctx = DeviceContext.cpu()
         if use_simd:
             elementwise[target_simd_width,](

@@ -56,7 +56,7 @@ def _check_softmax[cols: Int, logsoftmax: Bool = False](rows: Int) raises:
         var i = Int(c[0]) * cols + Int(c[1])
         return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
 
-    softmax[dtype, 2, target="cpu", logsoftmax=logsoftmax](
+    softmax[dtype, 2, logsoftmax=logsoftmax](
         input_fn, Coord(Index(rows, cols)), cols, out_t, 1
     )
 

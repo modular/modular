@@ -230,7 +230,7 @@ def run_case[
         )
 
         comptime if kind == Kind.LAYER:
-            layer_norm[dtype, 2, target="gpu"](
+            layer_norm[dtype, 2](
                 input_fn,
                 output_fn,
                 Coord(shape),
@@ -241,9 +241,7 @@ def run_case[
                 ctx,
             )
         else:
-            softmax[dtype, 2, target="gpu"](
-                input_fn, Coord(shape), cols, out_t, 1, ctx
-            )
+            softmax[dtype, 2](input_fn, Coord(shape), cols, out_t, 1, ctx)
 
         ctx.enqueue_function[consumer[dtype]](
             out_d,
@@ -393,7 +391,7 @@ def run_argmax_case[
             block_dim=64,
             attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_END),
         )
-        reduce_argmax[adt, target="gpu", reduce_dim=reduce_dim](
+        reduce_argmax[adt, reduce_dim=reduce_dim](
             input_fn, output_fn, Coord(Index(rows, cols)), ctx
         )
         ctx.enqueue_function[consumer[DType.int64]](
@@ -542,7 +540,7 @@ def run_release_case[
     ctx.enqueue_memset[DType.int32](flags_d, 0)
     ctx.synchronize()
     comptime if kind == Kind.LAYER:
-        layer_norm[dtype, 2, target="gpu"](
+        layer_norm[dtype, 2](
             input_fn,
             output_fn,
             Coord(shape),
@@ -553,9 +551,7 @@ def run_release_case[
             ctx,
         )
     else:
-        softmax[dtype, 2, target="gpu"](
-            input_fn, Coord(shape), cols, out_t, 1, ctx
-        )
+        softmax[dtype, 2](input_fn, Coord(shape), cols, out_t, 1, ctx)
     ctx.enqueue_function[release_probe](
         flags,
         grid_dim=1,
@@ -618,7 +614,7 @@ def run_release_argmax_case[
 
     ctx.enqueue_memset[DType.int32](flags_d, 0)
     ctx.synchronize()
-    reduce_argmax[adt, target="gpu", reduce_dim=reduce_dim](
+    reduce_argmax[adt, reduce_dim=reduce_dim](
         input_fn, output_fn, Coord(Index(rows, cols)), ctx
     )
     ctx.enqueue_function[release_probe](
