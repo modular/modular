@@ -797,12 +797,6 @@ _FILECHECK_TESTS = [
             "_mla_paged_variable_shell.mojo",
             "test_mla_decode_paged_variable_amd.mojo",
             "test_mla_decode_paged_variable_sm100.mojo",
-            # MLA decode fold at M > 64: needs //max:kv_cache; declared
-            # explicitly below (MI355 + B200).
-            "test_mla_decode_fold.mojo",
-            # Host-only heuristic pins; declared explicitly below at
-            # size = "small" so they don't hold a large GPU slot.
-            "test_mla_decode_partition_policy_amd.mojo",
             "test_mla_prefill_generic_paged.mojo",
             "test_mla_prefill_blockscale_paged.mojo",
             "test_mla_prefill_blockscale_large_cache.mojo",
@@ -2400,53 +2394,6 @@ mojo_test(
         "//max:kv_cache",
         "//max:linalg",
         "//max:nn",
-        "@mojo//:std",
-    ],
-)
-
-# AMD MLA decode MTP fold at M = H*S > 64. The MI355-enabled paged-variable
-# target covers the fold only up to M=64; the M > 64 shapes (the K3
-# target-verify nqh12/S=6..8 and the H=16 fold-cap edge S=5..8) plus the
-# H=8/S<=8 BM=64 control are exercised here through the production paged KV
-# + ragged-Q layout, uniform and mixed-width, against the independent
-# mha_gpu_naive reference.
-mojo_test(
-    name = "test_mla_decode_fold.mojo.test",
-    size = "large",
-    srcs = ["test_mla_decode_fold.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    exec_properties = {
-        "test.resources:gpu-memory": "4",
-    },
-    tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:mi355_gpu": [],
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "@mojo//:std",
-    ],
-)
-
-# Host-side pins for the AMD MLA decode split-K heuristic: pure
-# arithmetic over the heuristic's inputs (no DeviceContext, no GPU), so it
-# runs on any executor — no GPU reservation, tags, or platform constraints.
-mojo_test(
-    name = "test_mla_decode_partition_policy_amd.mojo.test",
-    size = "small",
-    srcs = ["test_mla_decode_partition_policy_amd.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    enable_assertions = True,
-    deps = [
-        "//max:internal_utils",
-        "//max:linalg",
-        "//max:nn",
-        "//max:testdata",
         "@mojo//:std",
     ],
 )

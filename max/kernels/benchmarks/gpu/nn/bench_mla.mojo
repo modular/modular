@@ -79,19 +79,6 @@ def bench_decode[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var o_size = batch_size * num_heads * seq_len * v_depth
 
-    # 0 = let the dispatch heuristic pick the production default; any other
-    # value pins the split explicitly (the bench otherwise bypasses the
-    # heuristic entirely). 0 is the arg default, so a bare run measures the
-    # production arm. The report line labels the arm rather than restating
-    # the heuristic's choice: re-deriving it here would be a second copy of
-    # the dispatch's split rule, free to drift from the real one.
-    var np_selection: Optional[Int] = (
-        None if num_partitions == 0 else num_partitions
-    )
-    var np_label = String("auto") if num_partitions == 0 else String(
-        num_partitions
-    )
-
     # For cache busting: calculate strides and larger buffer sizes.
     comptime simd_size = 4
     var cb_q = CacheBustingBuffer[qkv_type](
@@ -146,7 +133,7 @@ def bench_decode[
                 scale,
                 ctx,
                 scalar_args_tt,
-                num_partitions=np_selection,
+                num_partitions=num_partitions,
             )
 
         bencher_iter_custom(b, _kernel_launch, ctx)
@@ -166,7 +153,6 @@ def bench_decode[
             "/num_keys=", num_keys,
             "/batch_size=", batch_size,
             "/mode=", mode,
-            "/num_partitions=", np_label,
             "/cache_busting=", cache_busting,
         ),
             # fmt: on
@@ -667,7 +653,7 @@ def main() raises:
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))
     var batch_size = Int(arg_parse("batch_size", 1))
-    var num_partitions = Int(arg_parse("num_partitions", 0))
+    var num_partitions = Int(arg_parse("num_partitions", 1))
     var mode = String(arg_parse("mode", "decode"))
 
     comptime cfg = MLA_cfg(
