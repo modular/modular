@@ -1663,7 +1663,7 @@ def matmul_gpu_qint4[
     c_tt: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
-    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
+    ctx: DeviceContext,
 ) raises where (a_type == .bfloat16 and c_type == .bfloat16):
     """Launches a GPU int4 quantized matrix multiplication for the given tile tensors.
 
@@ -1686,15 +1686,14 @@ def matmul_gpu_qint4[
         Requires an NVIDIA GPU target. `a_type` and `c_type` must both be
         `bfloat16`.
     """
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     comptime assert c_tt.rank == 2
     comptime assert a_tt.rank == 2
     comptime assert b_tt.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
-    var cuda_ctx = ctx.value()
 
-    matmul_gpu_qint4_impl[group_size](c_tt, a_tt, b_tt, cuda_ctx)
+    matmul_gpu_qint4_impl[group_size](c_tt, a_tt, b_tt, ctx)
 
 
 @inline(.always)
@@ -1710,7 +1709,7 @@ def matmul_gpu_qint4[
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
-    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
+    ctx: DeviceContext,
 ) raises where (a_type == .bfloat16 and c_type == .bfloat16):
     """Same as the plain overload, storing the output through `epilogue_fn`.
 
@@ -1735,16 +1734,15 @@ def matmul_gpu_qint4[
         Requires an NVIDIA GPU target. `a_type` and `c_type` must both be
         `bfloat16`.
     """
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     comptime assert c_tt.rank == 2
     comptime assert a_tt.rank == 2
     comptime assert b_tt.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
-    var cuda_ctx = ctx.value()
 
     matmul_gpu_qint4_impl[group_size, has_epilogue_fn=True](
-        c_tt, a_tt, b_tt, cuda_ctx, epilogue_fn
+        c_tt, a_tt, b_tt, ctx, epilogue_fn
     )
 
 
@@ -1761,7 +1759,7 @@ def matmul_gpu_qint4_impl[
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
-    ctx: DeviceContext.Optional,
+    ctx: DeviceContext,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,
 ) raises:
     """Dispatches a GPU int4 quantized matrix multiplication to the tuned kernel configuration for the runtime M dimension.
@@ -1792,7 +1790,6 @@ def matmul_gpu_qint4_impl[
     comptime assert a.rank == 2
     comptime assert b.rank == 2
     # comptime assert is_gpu[target](), "unsupported target"
-    var cuda_ctx = ctx.value()
 
     comptime pack_factor = 8
 
@@ -1823,7 +1820,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M16_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -1847,7 +1844,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M32_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -1871,7 +1868,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M64_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -1895,7 +1892,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M128_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -1919,7 +1916,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M512_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -1945,7 +1942,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M16_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -1969,7 +1966,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M32_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -1993,7 +1990,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M64_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2017,7 +2014,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M128_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2041,7 +2038,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M256_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2067,7 +2064,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M16_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2091,7 +2088,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M32_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2115,7 +2112,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M64_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2139,7 +2136,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M128_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2165,7 +2162,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M16_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2189,7 +2186,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M32_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2213,7 +2210,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M64_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2237,7 +2234,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M128_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2261,7 +2258,7 @@ def matmul_gpu_qint4_impl[
                 a,
                 b,
                 M512_config,
-                cuda_ctx,
+                ctx,
                 epilogue_fn,
             )
             return
@@ -2284,7 +2281,7 @@ def matmul_gpu_qint4_impl[
         a,
         b,
         default_config,
-        cuda_ctx,
+        ctx,
         epilogue_fn,
     )
 
@@ -2295,7 +2292,7 @@ def gpu_qint4_repack_Q4_0[
 ](
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
-    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
+    ctx: DeviceContext,
 ) raises:
     """Launches the GPU kernel that repacks Q4_0 weights into the packed GEMM layout.
 
@@ -2310,12 +2307,11 @@ def gpu_qint4_repack_Q4_0[
     Raises:
         An error if the input tensors are not rank-2 or the target is not a GPU.
     """
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     comptime assert b_tt.rank == 2
     comptime assert b_packed_tt.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
-    var cuda_ctx = ctx.value()
 
     comptime pack_factor = 8
     comptime group_size = 32
@@ -2339,7 +2335,7 @@ def gpu_qint4_repack_Q4_0[
         b.LayoutType, b_packed.LayoutType, DType.bfloat16
     ]
 
-    cuda_ctx.enqueue_function[repack](
+    ctx.enqueue_function[repack](
         b,
         b_packed,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
@@ -2356,7 +2352,8 @@ def gpu_qint4_repack_GPTQ[
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
     perm_idx: OptionalReg[_PermutationTensor] = None,
-    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
+    *,
+    ctx: DeviceContext,
 ) raises:
     """Launches the GPU kernel that repacks GPTQ weights into the packed GEMM layout.
 
@@ -2373,7 +2370,7 @@ def gpu_qint4_repack_GPTQ[
     Raises:
         An error if the input tensors are not rank-2, the target is not a GPU, or the input and output dimensions are mismatched.
     """
-    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     var b = rebind[
         TileTensor[.uint8, type_of(b_tt).LayoutType, ImmutAnyOrigin]
@@ -2385,7 +2382,6 @@ def gpu_qint4_repack_GPTQ[
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
-    var cuda_ctx = ctx.value()
 
     comptime pack_factor = 8
     comptime group_bytes = 2 + (group_size // 2)
@@ -2413,7 +2409,7 @@ def gpu_qint4_repack_GPTQ[
             True,
         ]
 
-        cuda_ctx.enqueue_function[repack](
+        ctx.enqueue_function[repack](
             b,
             b_packed,
             perm_idx,
@@ -2432,7 +2428,7 @@ def gpu_qint4_repack_GPTQ[
 
         var empty_permutation = b.bitcast[.int32]().reshape(row_major(Int(0)))
 
-        cuda_ctx.enqueue_function[repack](
+        ctx.enqueue_function[repack](
             b,
             b_packed,
             empty_permutation,

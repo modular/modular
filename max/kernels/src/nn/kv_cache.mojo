@@ -198,11 +198,6 @@ def _fused_qkv_matmul_kv_cache[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
-    var cuda_ctx: Optional[DeviceContext[context.target]] = None
-
-    comptime if is_gpu[target]():
-        cuda_ctx = context
-
     return _fused_qkv_matmul_kv_cache_impl[target=target](
         hidden_state,
         weight,
@@ -210,7 +205,7 @@ def _fused_qkv_matmul_kv_cache[
         layer_idx,
         valid_lengths,
         output,
-        cuda_ctx,
+        context,
     )
 
 
@@ -228,7 +223,7 @@ def _fused_qkv_matmul_kv_cache_impl[
     layer_idx: UInt32,
     valid_lengths: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     output: TileTensor[mut=True, dtype, ...],
-    context: DeviceContext.Optional,
+    context: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -247,9 +242,9 @@ def _fused_qkv_matmul_kv_cache_impl[
             sequence. K and V are only written to cache for positions within these lengths.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
-        context: The DeviceContext. This is unused if is_cpu[target]().
+        context: The DeviceContext.
     """
-    context.T._comptime_assert_matches_target_is_cpu[target]()
+    context._comptime_assert_matches_target_is_cpu[target]()
 
     comptime assert valid_lengths.rank == valid_lengths.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 3
@@ -335,9 +330,9 @@ def _matmul_common[
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
-    context: DeviceContext.Optional,
+    context: DeviceContext,
 ) raises:
-    context.T._comptime_assert_matches_target_is_cpu[target]()
+    context._comptime_assert_matches_target_is_cpu[target]()
 
     comptime assert hidden_state.rank == hidden_state.flat_rank == 3
     comptime assert weight.rank == weight.flat_rank == 2
@@ -371,7 +366,7 @@ def _matmul_common[
         # Allocate a device-local scratch for the matmul accumulator; the
         # epilogue lambda reads from it and scatters Q/K/V to the real
         # output and KV cache.
-        var c_device_buffer = context.value().enqueue_create_buffer[dtype](
+        var c_device_buffer = context.enqueue_create_buffer[dtype](
             BS * SEQ_LEN * N
         )
         var c_nd = TileTensor(c_device_buffer, row_major(BS * SEQ_LEN, Idx[N]))

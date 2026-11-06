@@ -79,7 +79,7 @@ def test_repack_gptq[
             input_tensor.as_imm(),
             result_tensor,
             perm_tensor.as_imm().as_unsafe_any_origin(),
-            ctx,
+            ctx=ctx,
         )
     else:
         gpu_qint4_repack_GPTQ[group_size, "gpu"](
