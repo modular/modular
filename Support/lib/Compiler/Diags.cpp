@@ -27,7 +27,9 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -546,6 +548,9 @@ struct InflightDiag::Message {
   // If non-empty, overrides the line contents automatically filled out by the
   // diagnostic manager.
   std::string customLineContents;
+  // Text formatted on emission, with the offset in `text` that it goes at,
+  // in increasing order of offset.
+  std::vector<std::pair<size_t, std::function<std::string()>>> lazyDiagText;
 };
 
 InflightDiag::InflightDiag(InflightDiag &&other)
@@ -568,7 +573,7 @@ InflightDiag &InflightDiag::operator=(InflightDiag &&other) {
 InflightDiag::InflightDiag(Location loc, Diags &diags, bool isWarning)
     : diags(&diags), isWarning(isWarning) {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{},
-                      /*customLineContents=*/{}});
+                      /*customLineContents=*/{}, /*lazyDiagText=*/{}});
 }
 
 InflightDiag::~InflightDiag() {
@@ -590,12 +595,31 @@ InflightDiag::~InflightDiag() {
   diags->diagnosticEmitted = true;
   if (!isWarning)
     diags->errorEmitted = true;
+  lazyFormatText();
   if (diags->useMLIRDiagnostics)
     emitMLIRDiagnostic();
   else if (diags->autoFixItHandler)
     emitAutoFixItDiagnostic();
   else
     emitSourceMgrDiagnostic();
+}
+
+/// Format the lazy text of each message into its text.
+void InflightDiag::lazyFormatText() {
+  for (Message &message : messages) {
+    if (message.lazyDiagText.empty())
+      continue;
+    std::string text;
+    size_t pos = 0;
+    for (auto &[offset, getText] : message.lazyDiagText) {
+      text.append(message.text, pos, offset - pos);
+      text += getText();
+      pos = offset;
+    }
+    text.append(message.text, pos);
+    message.text = std::move(text);
+    message.lazyDiagText.clear();
+  }
 }
 
 /// Build the MLIR diagnostic and hand it off to its diagnostic machinery.
@@ -745,12 +769,12 @@ void InflightDiag::emitSourceMgrDiagnostic() {
 /// emission point to start filling it in.
 InflightDiag InflightDiag::attachNote(Location loc) && {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{},
-                      /*customLineContents=*/{}});
+                      /*customLineContents=*/{}, /*lazyDiagText=*/{}});
   return std::move(*this);
 }
 InflightDiag &InflightDiag::attachNote(Location loc) & {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{},
-                      /*customLineContents=*/{}});
+                      /*customLineContents=*/{}, /*lazyDiagText=*/{}});
   return *this;
 }
 
@@ -774,6 +798,9 @@ void InflightDiag::addDiag(InflightDiag &&otherDiag) {
   auto otherMessages = std::move(otherDiag.messages);
   Message &otherPrimary = otherMessages[0];
   Message &lastMsg = messages.back();
+  for (auto &[offset, getText] : otherPrimary.lazyDiagText)
+    lastMsg.lazyDiagText.emplace_back(lastMsg.text.size() + offset,
+                                      std::move(getText));
   lastMsg.text += otherPrimary.text;
   lastMsg.customLineContents += otherPrimary.customLineContents;
   llvm::append_range(lastMsg.ranges, std::move(otherPrimary.ranges));
@@ -784,6 +811,11 @@ void InflightDiag::addDiag(InflightDiag &&otherDiag) {
 
 void InflightDiag::addText(const Twine &text) {
   messages.back().text += text.str();
+}
+
+void InflightDiag::addLazyText(std::function<std::string()> getText) {
+  Message &message = messages.back();
+  message.lazyDiagText.emplace_back(message.text.size(), std::move(getText));
 }
 
 void InflightDiag::addCustomLineText(const Twine &text) {

@@ -287,6 +287,8 @@ public:
   /// These methods can be used by addToDiagnostic impls to add things to the
   /// diagnostic.
   void addText(const Twine &text);
+  /// Add text that `getText` formats only if the diagnostic is emitted.
+  void addLazyText(std::function<std::string()> getText);
   void addCustomLineText(const Twine &text);
   void addSourceRange(SourceRange range);
   void addFixIt(FixIt fixIt);
@@ -296,6 +298,7 @@ public:
   Diags *getDiags() const { return diags; }
 
 private:
+  void lazyFormatText();
   void emitMLIRDiagnostic();
   void emitSourceMgrDiagnostic();
   void emitAutoFixItDiagnostic();
