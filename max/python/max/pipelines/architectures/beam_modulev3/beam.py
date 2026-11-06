@@ -19,21 +19,25 @@ reaches the subgraph as an operand.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
 from typing import ClassVar
 
 from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import DimLike
+from max.graph import BufferValue, DimLike, TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
@@ -100,7 +104,13 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
         if config.mesh is None:
             raise ValueError("Beam needs a mesh: apply the runtime first")
         return_logits = config.return_logits
-        if return_logits not in (ReturnLogits.LAST_TOKEN, ReturnLogits.ALL):
+        # A speculative target scores variable logits in its verify, which
+        # calls `run_layers` rather than `forward`.
+        if return_logits not in (
+            ReturnLogits.LAST_TOKEN,
+            ReturnLogits.ALL,
+            ReturnLogits.VARIABLE,
+        ):
             raise NotImplementedError(
                 f"Beam does not return {return_logits} logits."
             )
@@ -166,8 +176,11 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Runs the model and returns float32 logits."""
+        if self.return_logits == ReturnLogits.VARIABLE:
+            raise NotImplementedError(
+                "Beam scores variable logits only in a speculative verify."
+            )
         kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
-        kv_leaves = self.kv_params.unflatten_basic_kv_tree(kv_inputs)
         comm_buffers = (
             self.ep_batch_manager.comm_buffers(
                 [x._graph_value for x in tree.leaves(inputs.ep)]
@@ -175,6 +188,51 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
             if self.ep_batch_manager is not None
             else None
         )
+        h, input_row_offsets, _ = self.run_layers(
+            inputs.tokens,
+            inputs.input_row_offsets,
+            self.kv_params.unflatten_basic_kv_tree(kv_inputs),
+            comm_buffers,
+        )
+
+        # The logits are replicated after the vocabulary gather, and the
+        # sampler reads device 0's copy.
+        last_logits = self._logits(
+            F.gather(h, input_row_offsets[1:] - 1, axis=0)
+        ).local_shards[0]
+        if self.return_logits == ReturnLogits.ALL:
+            return DecoderOutputs(
+                next_token_logits=last_logits,
+                logits=self._logits(h).local_shards[0],
+                logit_offsets=input_row_offsets.local_shards[0],
+            )
+        return DecoderOutputs(next_token_logits=last_logits)
+
+    def run_layers(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        kv_leaves: Sequence[
+            Sequence[KVCacheInputsPerDevice[TensorValue, BufferValue]]
+        ],
+        comm_buffers: EPCommBuffers | None,
+        taps: Collection[int] = (),
+    ) -> tuple[Tensor, Tensor, list[Tensor]]:
+        """Runs the decoder stack over a ragged batch.
+
+        Args:
+            tokens: The ragged tokens, on one device.
+            input_row_offsets: Their row offsets, on one device.
+            kv_leaves: Each KV child's per-device caches, in the order of
+                ``kv_params.children``.
+            comm_buffers: The EP buffers, for expert-parallel experts.
+            taps: The layers whose output residual streams to return.
+
+        Returns:
+            The last layer's residual stream, the row offsets placed on the
+            mesh, and the residual stream after each layer in ``taps``, in
+            layer order; all replicated over the mesh.
+        """
         # Each device owns a whole cache, so the cache inputs are replicated
         # over the mesh.
         kv_mapping = DeviceMapping.replicated(self.mesh)
@@ -184,9 +242,9 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
                 self.kv_params.children, kv_leaves, strict=True
             )
         }
-        tokens = F.distributed_broadcast(inputs.tokens, self.mesh)
+        tokens = F.distributed_broadcast(tokens, self.mesh)
         input_row_offsets = F.distributed_broadcast(
-            inputs.input_row_offsets, self.mesh
+            input_row_offsets, self.mesh
         )
 
         h = self.embed_tokens(tokens)
@@ -198,6 +256,7 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
                 tokens.shape[0],
             ),
         }
+        tapped: list[Tensor] = []
         for idx, layer in enumerate(self.layers):
             layer_type = self._layer_types[idx]
             call: Callable[..., Tensor] = layer
@@ -216,19 +275,9 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
                 ),
                 comm_buffers,
             )
-
-        # The logits are replicated after the vocabulary gather, and the
-        # sampler reads device 0's copy.
-        last_logits = self._logits(
-            F.gather(h, input_row_offsets[1:] - 1, axis=0)
-        ).local_shards[0]
-        if self.return_logits == ReturnLogits.ALL:
-            return DecoderOutputs(
-                next_token_logits=last_logits,
-                logits=self._logits(h).local_shards[0],
-                logit_offsets=input_row_offsets.local_shards[0],
-            )
-        return DecoderOutputs(next_token_logits=last_logits)
+            if idx in taps:
+                tapped.append(h)
+        return h, input_row_offsets, tapped
 
     def _logits(self, h: Tensor) -> Tensor:
         logits = F.allgather(self.lm_head(self.norm(h)), tensor_axis=-1)
