@@ -187,8 +187,17 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
         )
         _add_muse_parts(self, config)
 
-    def forward(self, x: Tensor, comm: EPCommBuffers | None = None) -> Tensor:
-        """Exchanges each device's rows to their experts and combines them."""
+    def forward(
+        self,
+        x: Tensor,
+        comm: EPCommBuffers | None = None,
+        layer_idx: Tensor | None = None,
+    ) -> Tensor:
+        """Exchanges each device's rows to their experts and combines them.
+
+        ``layer_idx`` is the int32 ``[1]`` MoE layer index, one shard per
+        device, required when the EP config counts expert load.
+        """
         router_idx, router_weight = self.gate(x)
         h = self.pre_expert_norm(self.pre_expert_proj(x))
         batch_mgr = self.ep_batch_manager
@@ -210,6 +219,11 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
             [ids.cast(DType.int32) for ids in router_idx.local_shards],
             device_ids,
             input_scales=input_scales,
+            layer_idx_per_device=(
+                [TensorValue(shard) for shard in layer_idx.local_shards]
+                if layer_idx is not None
+                else None
+            ),
         )
         total_tokens = F.shape_to_tensor(tokens[0].shape)[0]
         for shard in tokens[1:]:

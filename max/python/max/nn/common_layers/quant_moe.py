@@ -836,11 +836,19 @@ class ExpertParallelMoE(QuantizedMoE):
 
         return outputs
 
-    def forward(self, x: Tensor, comm: EPCommBuffers | None = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        comm: EPCommBuffers | None = None,
+        layer_idx: Tensor | None = None,
+    ) -> Tensor:
         """Expert-parallel forward: gate -> dispatch -> local compute -> combine.
 
         ``comm`` is optional only to keep the override compatible with the base
-        ``forward(self, x)``; the EP path always supplies it.
+        ``forward(self, x)``; the EP path always supplies it. ``layer_idx`` is
+        the int32 ``[1]`` MoE layer index, one shard per device; it is required
+        when the EP config counts expert load, and it is an operand rather than
+        a constant because layers can share one subgraph body.
         """
         assert comm is not None, (
             "ExpertParallelMoE.forward requires comm buffers"
@@ -857,6 +865,14 @@ class ExpertParallelMoE(QuantizedMoE):
         topk_id_shards = list(router_idx.local_shards)
         router_weight_shards = list(router_weight.local_shards)
         device_ids = [d.id for d in self.mesh.devices]
+        layer_idx_per_device = (
+            [TensorValue(shard) for shard in layer_idx.local_shards]
+            if layer_idx is not None
+            else None
+        )
+
+        def device_layer_idx(i: int) -> TensorValue | None:
+            return layer_idx_per_device[i] if layer_idx_per_device else None
 
         if ep_requires_dispatch_scales(self.quant_config):
             global_scale = self._nvfp4_global_input_scale()
@@ -890,6 +906,7 @@ class ExpertParallelMoE(QuantizedMoE):
                     topk_id_shards[i],
                     device_ids[i],
                     input_scales=input_scales[i] if input_scales else None,
+                    layer_idx=device_layer_idx(i),
                 )
                 for i in range(self.mesh.num_devices)
             ]
@@ -912,13 +929,19 @@ class ExpertParallelMoE(QuantizedMoE):
             dispatch_results = [
                 tuple(
                     Tensor.from_graph_value(value)
-                    for value in batch_mgr.ep_dispatch_wait(device_ids[i])
+                    for value in batch_mgr.ep_dispatch_wait(
+                        device_ids[i], device_layer_idx(i)
+                    )
                 )
                 for i in range(self.mesh.num_devices)
             ]
         else:
             dispatch_results = batch_mgr.ep_dispatch_all(
-                x_shards, topk_id_shards, device_ids, input_scales=input_scales
+                x_shards,
+                topk_id_shards,
+                device_ids,
+                input_scales=input_scales,
+                layer_idx_per_device=layer_idx_per_device,
             )
 
         # Under allreduce, combine outputs are per-device partial sums that get
