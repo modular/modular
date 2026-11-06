@@ -13,7 +13,6 @@
 """Helpers for dispatching collective operations across devices."""
 
 from std.collections import Array, Optional
-from std.ffi import external_call
 from std.runtime._asyncrt import TaskGroup
 from std.sys.info import CompilationTarget
 
@@ -23,6 +22,11 @@ from max.gpu.host import (
     CollectiveGate,
 )
 from max.runtime.asyncrt import task_id_for_device
+from max.runtime.tracing import (
+    _capture_label_adopt,
+    _capture_label_current,
+    _capture_label_pop,
+)
 
 
 @inline(.always)
@@ -75,20 +79,12 @@ def _launch_device_collective[
     # The tasks run on other threads; while a device graph is being captured
     # they adopt the dispatching thread's op, so the kernels they launch are
     # attributed to it when the graph is replayed.
-    var capture_op = external_call[
-        "KGEN_CompilerRT_CaptureLabelCurrent", UInt64
-    ]()
+    var capture_op = _capture_label_current()
 
     # Wrap the launch function in a Mojo async function which does not raise.
     @inline(.always)
     __async def wrapper[index: Int]() {mut errors, mut gate, imm} -> None:
-        var adopted = (
-            capture_op != 0
-            and external_call["KGEN_CompilerRT_CaptureLabelAdopt", Int](
-                capture_op
-            )
-            != 0
-        )
+        var adopted = capture_op != 0 and _capture_label_adopt(capture_op)
         # Lets this worker's own loads through the gate its collective holds.
         with CollectiveEnqueueScope(dev_ctxs[index]):
             try:
@@ -96,7 +92,7 @@ def _launch_device_collective[
             except e:
                 errors[index] = e^
         if adopted:
-            external_call["KGEN_CompilerRT_CaptureLabelPop", NoneType]()
+            _capture_label_pop()
         gate.enqueue_done()
 
     # Dispatch to the worker threads that have affinity for each device.

@@ -331,6 +331,184 @@ def _is_tracy_enabled() -> Bool:
 
 
 @inline(.always)
+def _capture_label_push(name: StringSpan) -> Bool:
+    """Names the kernels launched on this thread while a device graph is being
+    captured.
+
+    Returns:
+        True iff a label was pushed, so the caller must pair it with
+        `_capture_label_pop`.
+    """
+    return (
+        external_call["KGEN_CompilerRT_CaptureLabelPush", Int](
+            name.unsafe_ptr(), name.byte_length()
+        )
+        != 0
+    )
+
+
+@inline(.always)
+def _capture_label_current() -> UInt64:
+    """Returns a token for this thread's current capture label, or 0 when none
+    is pushed. Hand it to `_capture_label_adopt` on a worker thread.
+    """
+    return external_call["KGEN_CompilerRT_CaptureLabelCurrent", UInt64]()
+
+
+@inline(.always)
+def _capture_label_adopt(token: UInt64) -> Bool:
+    """Adopts the capture label behind `token` on this thread.
+
+    Returns:
+        True iff the label was adopted, so the caller must pair it with
+        `_capture_label_pop`.
+    """
+    return external_call["KGEN_CompilerRT_CaptureLabelAdopt", Int](token) != 0
+
+
+@inline(.always)
+def _capture_label_pop():
+    """Pops the label that `_capture_label_push` or `_capture_label_adopt`
+    pushed on this thread.
+    """
+    external_call["KGEN_CompilerRT_CaptureLabelPop", NoneType]()
+
+
+@inline(.always)
+def _range_begin(name: StringSpan, color: UInt32):
+    """Opens a MAX profiler range; pair with `_range_end` on this thread."""
+    external_call["KGEN_CompilerRT_RangeBegin", NoneType](
+        name.unsafe_ptr(), name.byte_length(), color
+    )
+
+
+@inline(.always)
+def _range_end():
+    """Closes the MAX profiler range `_range_begin` opened on this thread."""
+    external_call["KGEN_CompilerRT_RangeEnd", NoneType]()
+
+
+@inline(.always)
+def _tool_annotation_is_enabled() -> Bool:
+    """Returns whether the external profiler annotation bridge is enabled."""
+    return (
+        external_call[
+            "KGEN_CompilerRT_ExternalProfilerAnnotationIsEnabled", Int
+        ]()
+        != 0
+    )
+
+
+@inline(.always)
+def _tool_annotation_push(name: StringSpan, color: UInt32) -> Bool:
+    """Pushes an external profiler annotation range.
+
+    Returns:
+        True iff a range was pushed, so the caller must pair it with
+        `_tool_annotation_pop`.
+    """
+    return (
+        external_call["KGEN_CompilerRT_ExternalProfilerAnnotationPush", Int](
+            name.unsafe_ptr(), name.byte_length(), color
+        )
+        != 0
+    )
+
+
+@inline(.always)
+def _tool_annotation_pop():
+    """Pops the range `_tool_annotation_push` pushed on this thread."""
+    external_call["KGEN_CompilerRT_ExternalProfilerAnnotationPop", NoneType]()
+
+
+@inline(.always)
+def _tool_annotation_mark(message: StringSpan, color: UInt32):
+    """Emits a point event on the external profiler annotation bridge."""
+    external_call["KGEN_CompilerRT_ExternalProfilerAnnotationMark", NoneType](
+        message.unsafe_ptr(), message.byte_length(), color
+    )
+
+
+@inline(.always)
+def _tracy_zone_begin(name: StringSpan, color: UInt32) -> UInt64:
+    """Opens a Tracy zone and returns its context for `_tracy_zone_end`."""
+    return external_call["KGEN_CompilerRT_TracyZoneBegin", UInt64](
+        name.unsafe_ptr(), name.byte_length(), color
+    )
+
+
+@inline(.always)
+def _tracy_zone_end(ctx: UInt64):
+    """Closes the Tracy zone behind `ctx`."""
+    external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](ctx)
+
+
+@inline(.always)
+def _next_op_id() -> Int:
+    """Returns the next process-wide op id for the op log."""
+    return external_call["KGEN_CompilerRT_GetNextOpId", Int]()
+
+
+@inline(.always)
+def _time_trace_begin(name: StaticString, parent_id: Int) -> Int:
+    """Begins an AsyncRT profiler event and returns its id.
+
+    The profiler keeps `name`'s pointer past this call, so it must be static.
+    """
+    return external_call["KGEN_CompilerRT_TimeTraceProfilerBegin", Int](
+        name.as_bytes().unsafe_ptr(), name.byte_length(), parent_id
+    )
+
+
+@inline(.always)
+def _time_trace_begin_task(
+    name: StaticString, parent_id: Int, task_id: Int
+) -> Int:
+    """Begins an AsyncRT profiler event labelled `name:task_id` and returns
+    its id.
+    """
+    return external_call["KGEN_CompilerRT_TimeTraceProfilerBeginTask", Int](
+        name.as_bytes().unsafe_ptr(), name.byte_length(), parent_id, task_id
+    )
+
+
+@inline(.always)
+def _time_trace_begin_detail(
+    name: StaticString, detail: StringSpan, parent_id: Int
+) -> Int:
+    """Begins an AsyncRT profiler event with a runtime `detail` string and
+    returns its id.
+    """
+    return external_call["KGEN_CompilerRT_TimeTraceProfilerBeginDetail", Int](
+        name.as_bytes().unsafe_ptr(),
+        name.byte_length(),
+        detail.as_bytes().unsafe_ptr(),
+        detail.byte_length(),
+        parent_id,
+    )
+
+
+@inline(.always)
+def _time_trace_end(event_id: Int):
+    """Ends the AsyncRT profiler event `event_id`."""
+    external_call["KGEN_CompilerRT_TimeTraceProfilerEnd", NoneType](event_id)
+
+
+@inline(.always)
+def _time_trace_set_current_id(event_id: Int):
+    """Records `event_id` as this thread's current AsyncRT profiler event."""
+    external_call["KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType](
+        event_id
+    )
+
+
+@inline(.always)
+def _time_trace_current_id() -> Int:
+    """Returns this thread's current AsyncRT profiler event id."""
+    return external_call["KGEN_CompilerRT_TimeTraceProfilerGetCurrentId", Int]()
+
+
+@inline(.always)
 def _is_range_recording() -> Bool:
     """Returns whether the MAX profiler is actively recording ranges.
 
@@ -515,32 +693,18 @@ def _enter_bridges(
         tracy_ctx=0,
     )
     if record_range and _is_range_recording():
-        external_call["KGEN_CompilerRT_RangeBegin", NoneType](
-            name.unsafe_ptr(), name.byte_length(), color
-        )
+        _range_begin(name, color)
         state.range_opened = True
     # Name the kernels this op launches into a device graph being captured,
     # so a profiler can attribute them when the graph is replayed without
     # running this span again.
     if record_range:
-        state.label_pushed = (
-            external_call["KGEN_CompilerRT_CaptureLabelPush", Int](
-                name.unsafe_ptr(), name.byte_length()
-            )
-            != 0
-        )
+        state.label_pushed = _capture_label_push(name)
     if push_tool:
-        state.tool_pushed = (
-            external_call[
-                "KGEN_CompilerRT_ExternalProfilerAnnotationPush", Int
-            ](name.unsafe_ptr(), name.byte_length(), color)
-            != 0
-        )
+        state.tool_pushed = _tool_annotation_push(name, color)
     if _is_tracy_enabled():
         state.tracy_enabled = True
-        state.tracy_ctx = external_call[
-            "KGEN_CompilerRT_TracyZoneBegin", UInt64
-        ](name.unsafe_ptr(), name.byte_length(), color)
+        state.tracy_ctx = _tracy_zone_begin(name, color)
     return state
 
 
@@ -558,17 +722,15 @@ def _exit_bridges(
         the same way an enabled Tracy zone ended `Trace.__enter__`.
     """
     if range_opened:
-        external_call["KGEN_CompilerRT_RangeEnd", NoneType]()
+        _range_end()
     if label_pushed:
-        external_call["KGEN_CompilerRT_CaptureLabelPop", NoneType]()
+        _capture_label_pop()
     # Pop-iff-pushed: popping without a matching push would close an
     # unrelated outer range on this thread's vendor annotation stack.
     if tool_pushed:
-        external_call[
-            "KGEN_CompilerRT_ExternalProfilerAnnotationPop", NoneType
-        ]()
+        _tool_annotation_pop()
     if tracy_ctx != 0:
-        external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](tracy_ctx)
+        _tracy_zone_end(tracy_ctx)
         return True
     return False
 
@@ -807,7 +969,7 @@ struct Trace[
         comptime if _is_op_logging_enabled[Self.level]():
             # Since Mojo does not support module-level globals yet, we need to
             # put this atomic counter variable in C++ code.
-            self.event_id = external_call["KGEN_CompilerRT_GetNextOpId", Int]()
+            self.event_id = _next_op_id()
             self._emit_op_log("LAUNCH")
             return
 
@@ -883,17 +1045,9 @@ struct Trace[
         comptime if is_profiling_disabled[Self.category, Self.level]():
             return
 
-        # The tracing builtins below expect the string to live beyond begin/end
-        # calls, so we have to pass an inner pointer into the representation.
-        #
         # IMPORTANT: since the AsyncRT profiler only supports `StaticString`
         # names, `self._name_value` must be `StaticString` when
         # `is_profiling_enabled()` is set.
-        var name_str_ptr = (
-            self._name_value[StaticString].as_bytes().unsafe_ptr()
-        )
-        var name_str_len = self._name_value[StaticString].byte_length()
-
         if self.detail:
             # 1. If there is a detail string we must heap allocate the string
             #    because it presumably contains information only known at
@@ -901,40 +1055,23 @@ struct Trace[
 
             # Begins recording the trace range from the stack. This is only enabled if the AsyncRT
             # profiling is enabled.
-            self.event_id = external_call[
-                "KGEN_CompilerRT_TimeTraceProfilerBeginDetail", Int
-            ](
-                name_str_ptr,
-                name_str_len,
-                self.detail.as_bytes().unsafe_ptr(),
-                self.detail.byte_length(),
-                self.parent_id,
+            self.event_id = _time_trace_begin_detail(
+                self._name_value[StaticString], self.detail, self.parent_id
             )
         elif case .Some(int_payload) = self.int_payload:
             # 2. If there is a task id, use the profiler API to create task:id
             #    labels without copying.
-            self.event_id = external_call[
-                "KGEN_CompilerRT_TimeTraceProfilerBeginTask", Int
-            ](
-                name_str_ptr,
-                name_str_len,
-                self.parent_id,
-                int_payload,
+            self.event_id = _time_trace_begin_task(
+                self._name_value[StaticString], self.parent_id, int_payload
             )
         else:
             # 3. In the common case without a task id or detail string, create
             #    a profiler event without copying until explicit intern call.
-            self.event_id = external_call[
-                "KGEN_CompilerRT_TimeTraceProfilerBegin", Int
-            ](
-                name_str_ptr,
-                name_str_len,
-                self.parent_id,
+            self.event_id = _time_trace_begin(
+                self._name_value[StaticString], self.parent_id
             )
 
-        external_call[
-            "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
-        ](self.event_id)
+        _time_trace_set_current_id(self.event_id)
 
     @inline(.always)
     def __exit__(self):
@@ -969,12 +1106,8 @@ struct Trace[
             return
         if self.event_id == 0:
             return
-        external_call["KGEN_CompilerRT_TimeTraceProfilerEnd", NoneType](
-            self.event_id
-        )
-        external_call[
-            "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
-        ](0)
+        _time_trace_end(self.event_id)
+        _time_trace_set_current_id(0)
 
     @inline(.always)
     def mark(self) raises:
@@ -1001,18 +1134,10 @@ struct Trace[
             # Forward to the external profiler annotation bridge in builds
             # without the direct GPU-profiler marker above. The enabled
             # probe keeps the message materialization off the disabled path.
-            if (
-                external_call[
-                    "KGEN_CompilerRT_ExternalProfilerAnnotationIsEnabled", Int
-                ]()
-                != 0
-            ):
+            if _tool_annotation_is_enabled():
                 var message = self.name()
-                external_call[
-                    "KGEN_CompilerRT_ExternalProfilerAnnotationMark", NoneType
-                ](
-                    message.as_bytes().unsafe_ptr(),
-                    message.byte_length(),
+                _tool_annotation_mark(
+                    message,
                     self.color.map(
                         lambda (var c: Color) -> UInt32: UInt32(Int(c))
                     ).or_else(0),
@@ -1096,8 +1221,6 @@ def get_current_trace_id[level: TraceLevel]() -> Int:
     """
 
     comptime if _is_mojo_profiling_enabled[level]():
-        return external_call[
-            "KGEN_CompilerRT_TimeTraceProfilerGetCurrentId", Int
-        ]()
+        return _time_trace_current_id()
     else:
         return 0
