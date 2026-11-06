@@ -245,6 +245,9 @@ modular_eager_py_test(
         "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:mi355_gpu"],
+    # Each token count compiles both layers on the GPU, and together they
+    # outlast the per-action budget.
+    shard_count = 2,
     tags = [
         "gpu",
     ],
