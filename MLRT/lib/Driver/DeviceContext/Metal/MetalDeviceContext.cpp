@@ -44,12 +44,6 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 
-#define CHECK_IS_METAL_ERR(dev)                                                \
-  do {                                                                         \
-    if ((dev).api() != Device::metalAPI)                                       \
-      RETURN_ERROR("Not a Metal device.");                                     \
-  } while (0)
-
 // Copy paths only, as on CUDA: kernel launches and event waits stay
 // asynchronous even under `device-sync-mode`.
 #define METAL_MAYBE_SYNC(ctx)                                                  \

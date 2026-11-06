@@ -50,19 +50,6 @@ struct TypeKey<llvm::StringRef> {
 using StringKey = TypeKey<llvm::StringRef>;
 
 template <>
-struct TypeKey<llvm::ArrayRef<uint8_t>> {
-  using KeyTy = llvm::ArrayRef<uint8_t>;
-  static std::string hashKey(KeyTy key) {
-
-    llvm::BLAKE3 hashState{};
-    hashState.update(key);
-
-    auto hash = hashState.final();
-    return {hash.begin(), hash.end()};
-  }
-};
-using ArrayKey = TypeKey<llvm::ArrayRef<uint8_t>>;
-template <>
 struct TypeKey<M::BufferRef> {
   using KeyTy = M::BufferRef;
   static std::string hashKey(KeyTy key) {
@@ -74,13 +61,6 @@ struct TypeKey<M::BufferRef> {
   }
 };
 using BufferKey = TypeKey<M::BufferRef>;
-
-template <>
-struct TypeKey<mlir::Operation *> {
-  using KeyTy = mlir::Operation *;
-  static std::string hashKey(KeyTy key) { return *M::getBytecodeHash(key); }
-};
-using OperationKey = TypeKey<mlir::Operation *>;
 
 template <typename... Ts>
 struct VariantTypeKey {
