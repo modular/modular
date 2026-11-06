@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Validation for Kimi K3's AMD CDNA4 W4A8 compute path.
+"""Selection and validation for Kimi K3's AMD CDNA4 W4A8 compute path.
 
 Copied from ``kimi_k3.layers.moe_latent`` (V2) rather than imported, so this
 ModuleV3 port has no build dependency on the V2 package.
@@ -24,17 +24,11 @@ import os
 from max.driver import accelerator_architecture_name
 from max.dtype import DType
 
-# Opt-in for the W4A4 measurement path. Named for what it costs rather than for
-# the kernel it reaches, so setting it without reading the docs still says so.
-_LOSSY_W4A4_ENV = "MAX_KIMI_K3_LOSSY_MXFP4_ACTIVATIONS"
-
 # Opt-in for the pre-shuffled gate/up weights. Off by default because it is
 # unmeasured on this model and because a producer/consumer layout disagreement
 # here is the failure that runs, reads fluently and scores zero -- so it wants
 # an accuracy gate, not a smoke test, before it becomes the default.
 _PRESHUFFLE_B_ENV = "MAX_KIMI_K3_PRESHUFFLE_MOE_B"
-
-_AMD_W4A8_ENV = "MAX_KIMI_K3_AMD_W4A8"
 
 # K elements the CDNA 4 block-scaled GEMM tiles at: it reads 64 packed
 # MXFP4 bytes per BK step, so a K below this leaves a trailing chunk the
@@ -42,21 +36,11 @@ _AMD_W4A8_ENV = "MAX_KIMI_K3_AMD_W4A8"
 _AMD_K_GRANULE = 128
 
 
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").lower() in ("1", "true", "yes")
-
-
-def amd_tp_w4a8_requested() -> bool:
-    """Whether the operator selected the dense AMD TP W4A8 path."""
-    return _env_flag(_AMD_W4A8_ENV)
-
-
 @functools.cache
 def preshuffled_gate_up_requested() -> bool:
     """Whether the operator opted the gate/up experts into the CDNA 4 preb layout.
 
-    Gated the same way :func:`amd_tp_w4a8_requested` is, and cached for the
-    same reasons: the env var and the accelerator are both fixed for the
+    Cached because the env var and the accelerator are both fixed for the
     process.
     """
     requested = os.environ.get(_PRESHUFFLE_B_ENV, "").lower() in (
@@ -82,10 +66,10 @@ def validate_amd_tp_w4a8(
     dtype: DType,
     requested: bool | None = None,
 ) -> bool:
-    """Resolve the opt-in before pricing memory or mutating weight layouts.
+    """Resolves whether the routed experts run as AMD CDNA4 W4A8.
 
-    This compute eligibility is separate from NVIDIA's quantized EP transport.
-    Unsupported requested combinations fail rather than changing dispatch.
+    It is this port's only MXFP4 expert path, so an MXFP4 checkpoint selects
+    it and a configuration that cannot run it fails here.
 
     Args:
         mxfp4: Whether the routed experts ship MXFP4, which is what W4A8
@@ -93,60 +77,49 @@ def validate_amd_tp_w4a8(
         expert_parallel: Whether the layer runs under expert parallelism,
             which needs its own dispatch transport.
         dtype: The weight dtype the graph runs at.
-        requested: ``None`` reads the opt-in env var and requires a CDNA 4
-            host. An explicit value skips both, so a graph builds anywhere,
-            but still rejects layouts the dispatch cannot consume.
+        requested: ``None`` selects W4A8 for an MXFP4 checkpoint and requires
+            a CDNA 4 target. An explicit value skips the target check, so a
+            graph builds anywhere.
+
+    Raises:
+        ValueError: If W4A8 is selected for a layout or target it cannot run.
     """
-    if requested is None:
-        if not amd_tp_w4a8_requested():
-            return False
-        # Read raw rather than through `lossy_mxfp4_activations_available`,
-        # which is cached and warns that W4A4 is about to run.
-        if _env_flag(_LOSSY_W4A4_ENV):
-            raise ValueError(
-                f"{_AMD_W4A8_ENV} and {_LOSSY_W4A4_ENV} select different"
-                " activation formats; set only one"
-            )
-    elif not requested:
+    if requested is False or (requested is None and not mxfp4):
         return False
     if expert_parallel:
-        raise ValueError(f"{_AMD_W4A8_ENV} supports tensor parallelism only")
+        raise ValueError("Kimi K3 AMD TP W4A8 supports tensor parallelism only")
     if preshuffled_gate_up_requested():
         raise ValueError(
-            f"{_AMD_W4A8_ENV} requires row-major weights and scales"
+            "Kimi K3 AMD TP W4A8 requires row-major weights and scales;"
+            f" unset {_PRESHUFFLE_B_ENV}"
         )
     if not mxfp4 or dtype != DType.bfloat16:
         raise ValueError(
-            f"{_AMD_W4A8_ENV} requires MXFP4 weights and BF16 activations"
+            "Kimi K3 AMD TP W4A8 requires MXFP4 weights and BF16 activations"
         )
-    if requested is not None:
+    if requested:
         return True
     try:
         architecture = accelerator_architecture_name()
-    except Exception as error:
-        raise ValueError(f"{_AMD_W4A8_ENV} requires AMD CDNA4") from error
+    except Exception:
+        architecture = "unknown"
     if not architecture.startswith("gfx95"):
         raise ValueError(
-            f"{_AMD_W4A8_ENV} requires AMD CDNA4, got {architecture}"
+            "Kimi K3's MXFP4 routed experts need an AMD CDNA4 target;"
+            f" got {architecture!r}"
         )
     return True
 
 
-def validate_amd_packed_k(
-    *, latent_size: int, per_device_ffn: int, opt_in_env: str
-) -> None:
+def validate_amd_packed_k(*, latent_size: int, per_device_ffn: int) -> None:
     """Rejects K widths the CDNA 4 block-scaled GEMM cannot tile.
 
-    The latent is replicated under every split, so only turning the opt-in
-    off clears it; the expert FFN slice also clears under another split.
+    The latent is replicated under every split, so no split clears it; the
+    expert FFN slice clears under another split.
     """
     for name, k_elems, recovery in (
-        ("routed latent", latent_size, f"unset {opt_in_env}"),
-        (
-            "per-device expert FFN",
-            per_device_ffn,
-            f"unset {opt_in_env} or change the split",
-        ),
+        ("routed latent", latent_size, "no split clears it"),
+        ("per-device expert FFN", per_device_ffn, "change the split"),
     ):
         if k_elems % _AMD_K_GRANULE:
             raise ValueError(

@@ -407,10 +407,10 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             quant_config: When MXFP4, the routed experts are packed uint8 with
             E8M0 block scales; see the module docstring for the compute
             arm this selects.
-            amd_w4a8: Whether to run the AMD CDNA4 W4A8 path. ``None`` derives
-            it from the host accelerator via :func:`validate_amd_tp_w4a8`;
-            pass a value to build the graph on a host without one (e.g. a
-            shape-only CPU test).
+            amd_w4a8: Whether to run the AMD CDNA4 W4A8 path. ``None`` selects
+            it for MXFP4 routed experts via :func:`validate_amd_tp_w4a8`,
+            which requires a CDNA 4 target; pass a value to build the graph
+            for another target (e.g. a shape-only CPU test).
             max_tokens_per_expert: Rows the W4A8 grouped GEMM sizes its M grid
             for, per expert -- pass ``KimiK3Config.routed_expert_row_bound``.
             Too small silently drops an expert's tail.
@@ -820,7 +820,6 @@ def tensor_parallel_latent_moe(
         validate_amd_packed_k(
             latent_size=layer.latent_size,
             per_device_ffn=layer.moe_intermediate_size // tp_size,
-            opt_in_env="MAX_KIMI_K3_AMD_W4A8",
         )
     # The routed experts stay per-expert on the host; `_stacked` gives each
     # device its share.
