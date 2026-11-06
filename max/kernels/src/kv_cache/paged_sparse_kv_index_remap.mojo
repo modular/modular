@@ -33,10 +33,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 
-from extensibility import InputTensor
-from extensibility import (
-    _MutableInputTensor as MutableInputTensor,
-)
+from layout import TileTensor
 
 
 @inline(.always)
@@ -586,25 +583,23 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
 def paged_sparse_kv_index_remap[
     page_size: Int,
     indices_stride: Int,
-    cache_dtype: DType,
 ](
     physical_out: MutPointer[Int32, _],
-    sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    sparse_indices: TileTensor[DType.int32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_lookup_table: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_blocks: TileTensor,
     ctx: DeviceContext,
 ) raises:
     """High-level remap for sparse MLA MOGG ops (logical indices → physical rows).
 
-    Unpacks graph tensors, sets ``invalid_block_id`` from ``kv_blocks.dim_size(0)``,
+    Unpacks graph tensors, sets ``invalid_block_id`` from ``kv_blocks.dim[0]()``,
     derives batch count from row offsets, and dispatches
     ``paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch``.
 
     Parameters:
         page_size: Number of tokens per KV cache page.
         indices_stride: Stride used to split a flat slot index into row and column.
-        cache_dtype: DType of the ``kv_blocks`` tensor.
 
     Args:
         physical_out: Output buffer of physical row indices, one per sparse slot.
@@ -612,29 +607,34 @@ def paged_sparse_kv_index_remap[
         input_row_offsets: Rank-1 ``uint32`` tensor of per-batch row offsets.
         kv_lookup_table: Rank-2 ``uint32`` lookup table mapping logical page index
             to physical block id.
-        kv_blocks: Rank-6 KV cache blocks; ``dim_size(0)`` supplies the invalid
+        kv_blocks: Rank-6 KV cache blocks; ``dim[0]()`` supplies the invalid
             block id sentinel.
         ctx: Device context used to enqueue the GPU kernel.
     """
-    var si_tt = sparse_indices.to_tile_tensor()
-    var num_batches = input_row_offsets.dim_size(0) - 1
-    var invalid_block_id = UInt32(kv_blocks.dim_size(0))
-    var log_stride0 = Int(si_tt.dynamic_stride(0))
-    var log_stride1 = Int(si_tt.dynamic_stride(1))
+    comptime assert sparse_indices.rank == 2
+    comptime assert input_row_offsets.rank == 1
+    comptime assert kv_lookup_table.rank == 2
+    comptime assert kv_blocks.rank == 6
+    var num_batches = Int(input_row_offsets.dim[0]()) - 1
+    var invalid_block_id = UInt32(Int(kv_blocks.dim[0]()))
+    var log_stride0 = Int(sparse_indices.dynamic_stride(0))
+    var log_stride1 = Int(sparse_indices.dynamic_stride(1))
     paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
         page_size
     ](
         physical_out,
-        rebind[MutPointer[Int32, MutAnyOrigin]](si_tt.ptr),
-        rebind[MutPointer[UInt32, MutAnyOrigin]](
-            input_row_offsets.to_tile_tensor().ptr,
-        ),
-        rebind[MutPointer[UInt32, MutAnyOrigin]](
-            kv_lookup_table.to_tile_tensor().ptr,
-        ),
-        sparse_indices.size(),
-        kv_lookup_table.dim_size(1),
-        kv_lookup_table.dim_size(0),
+        sparse_indices.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+            MutAnyOrigin
+        ](),
+        input_row_offsets.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+            MutAnyOrigin
+        ](),
+        kv_lookup_table.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+            MutAnyOrigin
+        ](),
+        sparse_indices.num_elements(),
+        Int(kv_lookup_table.dim[1]()),
+        Int(kv_lookup_table.dim[0]()),
         indices_stride,
         invalid_block_id,
         num_batches,

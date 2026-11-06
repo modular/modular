@@ -4487,7 +4487,7 @@ struct Struct_mla_decode_graph_paged_fp8_sm103(_MLADecodeGraphPagedFP8Op):
 def _sparse_indices_ptr[
     indices_stride: Int
 ](
-    sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
+    sparse_indices: TileTensor[DType.int32, address_space=.GENERIC, ...],
     num_tokens: Int,
 ) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Returns the sparse indices after checking their shape.
@@ -4495,34 +4495,36 @@ def _sparse_indices_ptr[
     The kernels index the buffer flat, `row * indices_stride + slot`, one row
     per query token.
     """
+    comptime assert sparse_indices.rank == 2
     if (
-        sparse_indices.dim_size(0) != num_tokens
-        or sparse_indices.dim_size(1) != indices_stride
+        Int(sparse_indices.dim[0]()) != num_tokens
+        or Int(sparse_indices.dim[1]()) != indices_stride
     ):
         raise Error("sparse_indices must be [query tokens, indices_stride]")
-    return sparse_indices.unsafe_ptr()
+    return sparse_indices.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+        MutAnyOrigin
+    ]()
 
 
 @inline(.always)
 def _sparse_gather_indices[
     page_size: Int,
     indices_stride: Int,
-    cache_dtype: DType,
 ](
     mut scratch: Optional[DeviceBuffer[DType.int32]],
-    sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    sparse_indices: TileTensor[DType.int32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_lookup_table: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_blocks: TileTensor,
     ctx: DeviceContext,
 ) raises -> MutPointer[Int32, MutAnyOrigin]:
     """Remaps the logical `sparse_indices` to physical rows in `scratch`.
 
     The caller keeps `scratch` alive until its kernels are enqueued.
     """
-    var buf = ctx.enqueue_create_buffer[.int32](sparse_indices.size())
+    var buf = ctx.enqueue_create_buffer[.int32](sparse_indices.num_elements())
     var ptr = buf.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
-    paged_sparse_kv_index_remap[page_size, indices_stride, cache_dtype](
+    paged_sparse_kv_index_remap[page_size, indices_stride](
         ptr,
         sparse_indices,
         input_row_offsets,
@@ -4538,14 +4540,13 @@ def _sparse_gather_indices[
 def _sparse_decode_indices[
     page_size: Int,
     indices_stride: Int,
-    cache_dtype: DType,
     physical_indices: Bool,
 ](
     mut scratch: Optional[DeviceBuffer[DType.int32]],
-    sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    sparse_indices: TileTensor[DType.int32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_lookup_table: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_blocks: TileTensor,
     num_tokens: Int,
     ctx: DeviceContext,
 ) raises -> MutPointer[Int32, MutAnyOrigin]:
@@ -4559,7 +4560,7 @@ def _sparse_decode_indices[
         sparse_indices, num_tokens
     )
     comptime if ctx.target.is_amd_gpu() and not physical_indices:
-        return _sparse_gather_indices[page_size, indices_stride, cache_dtype](
+        return _sparse_gather_indices[page_size, indices_stride](
             scratch,
             sparse_indices,
             input_row_offsets,
@@ -4586,10 +4587,10 @@ def _sparse_prefill_indices[
     q_dtype: DType = DType.bfloat16,
 ](
     mut scratch: Optional[DeviceBuffer[DType.int32]],
-    sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    sparse_indices: TileTensor[DType.int32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_lookup_table: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_blocks: TileTensor[cache_dtype, ...],
     max_seq_len: Int,
     ctx: DeviceContext,
 ) raises -> OptionalReg[MutPointer[Int32, MutAnyOrigin]]:
@@ -4605,9 +4606,7 @@ def _sparse_prefill_indices[
         if not mla_graph_takes_decode_branch[
             cache_dtype, num_heads, sparse_mla=True
         ](max_seq_len):
-            return _sparse_gather_indices[
-                page_size, indices_stride, cache_dtype
-            ](
+            return _sparse_gather_indices[page_size, indices_stride](
                 scratch,
                 sparse_indices,
                 input_row_offsets,
@@ -4651,13 +4650,6 @@ trait _MLADecodeGraphPagedFP8SparseOp:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        freq_dtype: DType,
-        gamma_dtype: DType,
-        fp8_dtype: DType,
-        fp8_scale_dtype: DType,
-        cache_dtype: DType,
-        //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -4687,40 +4679,87 @@ trait _MLADecodeGraphPagedFP8SparseOp:
         # the sink is inert (-1e38); the AMD sparse arms reject a live one.
         attn_sink_inert: Bool = False,
     ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=dtype, rank=3, ...],
-        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
-        w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        kv: Some[Input & Fused & LoadAccess],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_norm_gamma: Some[Input & Tensor],
+        w_uk: Some[Input & Tensor],
+        w_uv: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
-        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
-        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
-        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
-        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-        topk_lengths: InputTensor[dtype=.int32, rank=1, ...],
-        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
-        num_partitions_scalar: InputTensor[dtype=.int64, rank=1, ...],
+        w_uk_scale: Some[Input & Tensor],
+        w_uv_scale: Some[Input & Tensor],
+        scalar_args: Some[Input & Tensor],
+        sparse_indices: Some[Input & Tensor],
+        topk_lengths: Some[Input & Tensor],
+        attn_sink: Some[Input & Tensor],
+        num_partitions_scalar: Some[Input & Tensor],
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(w_uk), TileTensorable)
+        comptime assert conforms_to(type_of(w_uv), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(w_uk_scale), TileTensorable)
+        comptime assert conforms_to(type_of(w_uv_scale), TileTensorable)
+        comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
+        comptime assert conforms_to(type_of(topk_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(attn_sink), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime fp8_dtype = type_of(w_uk).dtype
+        comptime fp8_scale_dtype = type_of(w_uk_scale).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_norm_gamma).rank == 1
+        comptime assert type_of(w_uk).rank == 3
+        comptime assert type_of(w_uv).rank == 3
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(w_uk_scale).rank == 3
+        comptime assert type_of(w_uv_scale).rank == 3
+        comptime assert type_of(scalar_args).rank == 1
+        comptime assert type_of(sparse_indices).rank == 2
+        comptime assert type_of(topk_lengths).rank == 1
+        comptime assert type_of(attn_sink).rank == 1
+        comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(q).dtype == dtype
+        comptime assert type_of(w_uv).dtype == fp8_dtype
+        comptime assert type_of(w_uv_scale).dtype == fp8_scale_dtype
+        comptime assert type_of(kv).dtype == DType.bfloat16
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
 
         comptime assert context.target.is_gpu(), (
@@ -4732,24 +4771,33 @@ trait _MLADecodeGraphPagedFP8SparseOp:
             " needs logical sparse_indices"
         )
 
+        comptime assert conforms_to(type_of(kv), UnsafeFusedView)
+        var kv_view = unsafe_fused_view(kv)
+        comptime assert conforms_to(type_of(kv_view), Loadable)
+
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
-            return kv._lambda_load[width=width, element_alignment=width](coords)
+        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+            return rebind[SIMD[.bfloat16, width]](
+                kv_view.load[width=width, element_alignment=width](
+                    Coord(coords)
+                )
+            )
 
+        var num_tokens = Int(q.shape()[0].value())
         comptime if has_topk_lengths:
-            var required_lengths = Int(input_row_offsets.dim_size(0)) - 1
-            if topk_lengths.dim_size(0) < required_lengths:
+            var required_lengths = Int(input_row_offsets.shape()[0].value()) - 1
+            if Int(topk_lengths.shape()[0].value()) < required_lengths:
                 raise Error(
                     "topk_lengths does not cover its batch/token domain"
                 )
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.unsafe_ptr()
+            topk_lengths.to_tile_tensor[.int32]().ptr
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.unsafe_ptr()
+            attn_sink.to_tile_tensor[.float32]().ptr
         )
         # Rows the indexer computed for their own token are packed to a
         # closed-form length (`SparseRowLayout`), which the mask applies
@@ -4759,17 +4807,20 @@ trait _MLADecodeGraphPagedFP8SparseOp:
         # `selection_lag` bounds, and the fold does not launch.
         var logical_indices_ptr = OptionalReg[MutPointer[Int32, MutAnyOrigin]]()
         comptime if index_share:
-            if max_prompt_length.unsafe_ptr()[0] > 1:
-                logical_indices_ptr = sparse_indices.unsafe_ptr()
+            if max_prompt_length.to_tile_tensor[.uint32]().ptr[0] > 1:
+                logical_indices_ptr = (
+                    sparse_indices.to_tile_tensor[.int32]()
+                    .ptr.unsafe_mut_cast[True]()
+                    .unsafe_origin_cast[MutAnyOrigin]()
+                )
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.fp8.sparse",
             task_id=get_safe_task_id(context),
         ):
             var gather_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices, q.dim_size(0)
+                sparse_indices.to_tile_tensor[.int32](), num_tokens
             )
-            var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
             mla_decode_branch_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -4786,19 +4837,19 @@ trait _MLADecodeGraphPagedFP8SparseOp:
                 attn_sink_inert=attn_sink_inert,
                 kernels=Self.kernels,
             ](
-                output.to_tile_tensor[.int64](),
-                q.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
-                kv_norm_gamma.to_tile_tensor[.int64](),
+                output.to_tile_tensor[dtype](),
+                q.to_tile_tensor[dtype](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
+                kv_norm_gamma.to_tile_tensor(),
                 kv_collection,
                 layer_idx,
                 scale,
                 epsilon,
-                w_uk.to_tile_tensor[.int64](),
-                w_uk_scale.to_tile_tensor[.int64](),
-                w_uv.to_tile_tensor[.int64](),
-                w_uv_scale.to_tile_tensor[.int64](),
+                w_uk.to_tile_tensor[fp8_dtype](),
+                w_uk_scale.to_tile_tensor[fp8_scale_dtype](),
+                w_uv.to_tile_tensor[fp8_dtype](),
+                w_uv_scale.to_tile_tensor[fp8_scale_dtype](),
                 scalar_args.to_tile_tensor[.int64](),
                 kv_input_fn,
                 context,
@@ -4807,9 +4858,9 @@ trait _MLADecodeGraphPagedFP8SparseOp:
                 topk_lengths_ptr,
                 attn_sink_ptr,
                 num_partitions_in=_amd_sparse_decode_partitions(
-                    q.dim_size(0),
+                    num_tokens,
                     indices_stride,
-                    Int(q.static_spec.shape_tuple[1]),
+                    type_of(q)._shape_types[1].static_value,
                     context,
                 ),
                 logical_indices=logical_indices_ptr,
@@ -5190,10 +5241,6 @@ trait _MLADecodeGraphBF16PagedSparseOp:
     @inline(.always)
     @staticmethod
     def execute[
-        kv_dtype: DType,
-        freq_dtype: DType,
-        gamma_dtype: DType,
-        //,
         mask_str: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
@@ -5212,65 +5259,112 @@ trait _MLADecodeGraphBF16PagedSparseOp:
         has_topk_lengths: Bool = True,
         has_attn_sink: Bool = True,
     ](
-        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
-        q: InputTensor[dtype=.bfloat16, rank=3, ...],
-        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
-        w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        kv: Some[Input & Fused & LoadAccess],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_norm_gamma: Some[Input & Tensor],
+        w_uk: Some[Input & Tensor],
+        w_uv: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
-        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
-        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-        topk_lengths: InputTensor[dtype=.int32, rank=1, ...],
-        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
-        num_partitions_scalar: InputTensor[dtype=.int64, rank=1, ...],
+        scalar_args: Some[Input & Tensor],
+        sparse_indices: Some[Input & Tensor],
+        topk_lengths: Some[Input & Tensor],
+        attn_sink: Some[Input & Tensor],
+        num_partitions_scalar: Some[Input & Tensor],
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(w_uk), TileTensorable)
+        comptime assert conforms_to(type_of(w_uv), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
+        comptime assert conforms_to(type_of(topk_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(attn_sink), TileTensorable)
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_norm_gamma).rank == 1
+        comptime assert type_of(w_uk).rank == 3
+        comptime assert type_of(w_uv).rank == 3
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(scalar_args).rank == 1
+        comptime assert type_of(sparse_indices).rank == 2
+        comptime assert type_of(topk_lengths).rank == 1
+        comptime assert type_of(attn_sink).rank == 1
+        comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(kv).dtype == DType.bfloat16
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
 
         comptime assert (
             context.target.is_gpu()
         ), "attention.mla.graph.decode.paged.sparse is only supported on GPU"
 
+        comptime assert conforms_to(type_of(kv), UnsafeFusedView)
+        var kv_view = unsafe_fused_view(kv)
+        comptime assert conforms_to(type_of(kv_view), Loadable)
+
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
-            return kv._lambda_load[width=width, element_alignment=width](coords)
+        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+            return rebind[SIMD[.bfloat16, width]](
+                kv_view.load[width=width, element_alignment=width](
+                    Coord(coords)
+                )
+            )
+
+        var num_tokens = Int(q.shape()[0].value())
 
         comptime if has_topk_lengths:
-            var required_lengths = Int(input_row_offsets.dim_size(0)) - 1
-            if topk_lengths.dim_size(0) < required_lengths:
+            var required_lengths = Int(input_row_offsets.shape()[0].value()) - 1
+            if Int(topk_lengths.shape()[0].value()) < required_lengths:
                 raise Error(
                     "topk_lengths does not cover its batch/token domain"
                 )
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.unsafe_ptr()
+            topk_lengths.to_tile_tensor[.int32]().ptr
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.unsafe_ptr()
+            attn_sink.to_tile_tensor[.float32]().ptr
         )
 
-        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime mla_page_size = type_of(kv_blocks)._shape_types[3].static_value
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.decode.paged.sparse",
@@ -5280,15 +5374,14 @@ trait _MLADecodeGraphBF16PagedSparseOp:
             var gather_indices = _sparse_decode_indices[
                 mla_page_size,
                 indices_stride,
-                kv_dtype,
                 physical_indices,
             ](
                 scratch_sparse_indices,
-                sparse_indices,
-                input_row_offsets,
-                kv_lookup_table,
-                kv_blocks,
-                q.dim_size(0),
+                sparse_indices.to_tile_tensor[.int32](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                kv_lookup_table.to_tile_tensor[.uint32](),
+                kv_blocks.to_tile_tensor(),
+                num_tokens,
                 context,
             )
             mla_decode_branch_bf16[
@@ -5302,17 +5395,17 @@ trait _MLADecodeGraphBF16PagedSparseOp:
                 ),
                 kernels=Self.kernels,
             ](
-                output.to_tile_tensor[.int64](),
-                q.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
-                kv_norm_gamma.to_tile_tensor[.int64](),
+                output.to_tile_tensor[.bfloat16](),
+                q.to_tile_tensor[.bfloat16](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
+                kv_norm_gamma.to_tile_tensor(),
                 kv_collection,
                 layer_idx,
                 scale,
                 epsilon,
-                w_uk.to_tile_tensor[.int64](),
-                w_uv.to_tile_tensor[.int64](),
+                w_uk.to_tile_tensor[.bfloat16](),
+                w_uv.to_tile_tensor[.bfloat16](),
                 scalar_args.to_tile_tensor[.int64](),
                 kv_input_fn,
                 context,
@@ -5385,9 +5478,6 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
     @inline(.always)
     @staticmethod
     def execute[
-        freq_dtype: DType,
-        gamma_dtype: DType,
-        //,
         mask_str: StaticString,
         indices_stride: Int,
         physical_indices: Bool,
@@ -5397,31 +5487,31 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
         has_topk_lengths: Bool = True,
         has_attn_sink: Bool = True,
     ](
-        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
-        q: InputTensor[dtype=.bfloat16, rank=3, ...],
-        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
-        w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=.uint8, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_scales: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        kv: Some[Input & Fused & LoadAccess],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_norm_gamma: Some[Input & Tensor],
+        w_uk: Some[Input & Tensor],
+        w_uv: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        kv_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
-        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
-        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-        topk_lengths: InputTensor[dtype=.int32, rank=1, ...],
-        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
-        num_partitions_scalar: InputTensor[dtype=.int64, rank=1, ...],
+        scalar_args: Some[Input & Tensor],
+        sparse_indices: Some[Input & Tensor],
+        topk_lengths: Some[Input & Tensor],
+        attn_sink: Some[Input & Tensor],
+        num_partitions_scalar: Some[Input & Tensor],
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
@@ -5433,29 +5523,84 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
             "an NVFP4 MLA cache needs the indexer's physical and scale rows,"
             " not token positions"
         )
-        var kv_collection = generic_get_paged_cache_with_scales(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
-            kv_scales,
-            scales_page_stride,
-            scales_lookup_table,
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(w_uk), TileTensorable)
+        comptime assert conforms_to(type_of(w_uv), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(kv_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(scales_lookup_table), TileTensorable
         )
+        comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
+        comptime assert conforms_to(type_of(topk_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(attn_sink), TileTensorable)
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_norm_gamma).rank == 1
+        comptime assert type_of(w_uk).rank == 3
+        comptime assert type_of(w_uv).rank == 3
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(kv_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(scales_lookup_table).rank == 2
+        comptime assert type_of(scalar_args).rank == 1
+        comptime assert type_of(sparse_indices).rank == 2
+        comptime assert type_of(topk_lengths).rank == 1
+        comptime assert type_of(attn_sink).rank == 1
+        comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(kv).dtype == DType.bfloat16
+        var kv_collection = generic_get_paged_cache_with_scales(
+            kv_blocks.to_tile_tensor[.uint8](),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+            kv_scales.to_tile_tensor[.float8_e4m3fn](),
+            scales_page_stride.to_tile_tensor[.int64](),
+            scales_lookup_table.to_tile_tensor[.uint32](),
+        )
+
+        comptime assert conforms_to(type_of(kv), UnsafeFusedView)
+        var kv_view = unsafe_fused_view(kv)
+        comptime assert conforms_to(type_of(kv_view), Loadable)
 
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
-            return kv._lambda_load[width=width, element_alignment=width](coords)
+        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+            return rebind[SIMD[.bfloat16, width]](
+                kv_view.load[width=width, element_alignment=width](
+                    Coord(coords)
+                )
+            )
+
+        var num_tokens = Int(q.shape()[0].value())
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.unsafe_ptr()
+            topk_lengths.to_tile_tensor[.int32]().ptr
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.unsafe_ptr()
+            attn_sink.to_tile_tensor[.float32]().ptr
         )
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
@@ -5463,7 +5608,7 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
             task_id=get_safe_task_id(context),
         ):
             var gather_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices, q.dim_size(0)
+                sparse_indices.to_tile_tensor[.int32](), num_tokens
             )
             mla_decode_branch_bf16[
                 mask_str=mask_str,
@@ -5476,17 +5621,17 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
                 ),
                 kernels=Self.kernels,
             ](
-                output.to_tile_tensor[.int64](),
-                q.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
-                kv_norm_gamma.to_tile_tensor[.int64](),
+                output.to_tile_tensor[.bfloat16](),
+                q.to_tile_tensor[.bfloat16](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
+                kv_norm_gamma.to_tile_tensor(),
                 kv_collection,
                 layer_idx,
                 scale,
                 epsilon,
-                w_uk.to_tile_tensor[.int64](),
-                w_uv.to_tile_tensor[.int64](),
+                w_uk.to_tile_tensor[.bfloat16](),
+                w_uv.to_tile_tensor[.bfloat16](),
                 scalar_args.to_tile_tensor[.int64](),
                 kv_input_fn,
                 context,
@@ -5880,7 +6025,7 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
             task_id=get_safe_task_id(context),
         ):
             var decode_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices, q.dim_size(0)
+                sparse_indices.to_tile_tensor(), q.dim_size(0)
             )
             var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
             var prefill_indices = _sparse_prefill_indices[
@@ -5892,10 +6037,10 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
                 q_dtype=dtype,
             ](
                 scratch_sparse_indices,
-                sparse_indices,
-                input_row_offsets,
-                kv_lookup_table,
-                kv_blocks,
+                sparse_indices.to_tile_tensor(),
+                input_row_offsets.to_tile_tensor(),
+                kv_lookup_table.to_tile_tensor(),
+                kv_blocks.to_tile_tensor(),
                 Int(kv_collection.max_seq_length),
                 context,
             )
@@ -6411,14 +6556,13 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
             var decode_indices = _sparse_decode_indices[
                 mla_page_size,
                 indices_stride,
-                cache_dtype,
                 physical_indices,
             ](
                 scratch_decode_indices,
-                sparse_indices,
-                input_row_offsets,
-                kv_lookup_table,
-                kv_blocks,
+                sparse_indices.to_tile_tensor(),
+                input_row_offsets.to_tile_tensor(),
+                kv_lookup_table.to_tile_tensor(),
+                kv_blocks.to_tile_tensor(),
                 q.dim_size(0),
                 context,
             )
@@ -6431,10 +6575,10 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
                 decode_physical,
             ](
                 scratch_sparse_indices,
-                sparse_indices,
-                input_row_offsets,
-                kv_lookup_table,
-                kv_blocks,
+                sparse_indices.to_tile_tensor(),
+                input_row_offsets.to_tile_tensor(),
+                kv_lookup_table.to_tile_tensor(),
+                kv_blocks.to_tile_tensor(),
                 Int(kv_collection.max_seq_length),
                 context,
             )
@@ -6645,7 +6789,7 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
             task_id=get_safe_task_id(context),
         ):
             var decode_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices, q.dim_size(0)
+                sparse_indices.to_tile_tensor(), q.dim_size(0)
             )
             var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
             var prefill_indices = _sparse_prefill_indices[
@@ -6656,10 +6800,10 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
                 physical_indices,
             ](
                 scratch_sparse_indices,
-                sparse_indices,
-                input_row_offsets,
-                kv_lookup_table,
-                kv_blocks,
+                sparse_indices.to_tile_tensor(),
+                input_row_offsets.to_tile_tensor(),
+                kv_lookup_table.to_tile_tensor(),
+                kv_blocks.to_tile_tensor(),
                 Int(kv_collection.max_seq_length),
                 context,
             )
