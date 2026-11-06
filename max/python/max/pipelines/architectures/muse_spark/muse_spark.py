@@ -157,6 +157,8 @@ class MuseSparkTextModel(MuseTextModelBase):
                 )
             )
             layer_type_counts[layer_type] += 1
+        for layer in layers[:-1]:
+            layer.defer_join = True
         self.layers = ModuleList(layers)
         self._layer_kv_key = list(text_config.layer_types)
         self.return_logits = text_config.return_logits

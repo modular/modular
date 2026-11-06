@@ -18,7 +18,7 @@ from __future__ import annotations
 import contextlib
 import os
 from collections.abc import Callable, Sequence
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, NamedTuple, TypeVar
 
 from max import functional as F
 from max import tree
@@ -34,7 +34,12 @@ from max.nn import Module
 from max.nn._graph_ops.ep import _SHARED_EXPERT_STREAM_ID
 from max.nn.common_layers._sharding import shard_and_stack
 from max.nn.common_layers.moe import MoEGate
-from max.nn.kernels import moe_create_indices, moe_finalize
+from max.nn.kernels import (
+    grouped_quantize_dynamic_block_scaled,
+    moe_create_indices,
+    moe_create_indices_packed,
+    moe_finalize,
+)
 from max.nn.kernels.quant import moe_fp8_host_usage_stats
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.quant_config import QuantConfig, QuantFormat
@@ -58,6 +63,7 @@ from . import quant_ops
 from .quant_linear import QuantizedMLP, tensor_parallel_mlp
 from .quant_ops import (
     EPDispatchPayload,
+    NVFP4ExpertScales,
     ep_requires_dispatch_scales,
     moe_requires_scales_offsets,
     routed_weight_dtype,
@@ -66,6 +72,7 @@ from .quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
     MXFP8Tensor,
+    NVFP4Activation,
     NVFP4Tensor,
     QuantAwareTensor,
 )
@@ -135,6 +142,40 @@ def _stack_experts(
     return stacked.to(DeviceMapping(mesh, (Sharded(axis=shard_axis),)))
 
 
+class ExpertStacks(NamedTuple):
+    """What each device's expert matmuls read that no step changes."""
+
+    gate_up: list[QuantAwareTensor]
+    down: list[QuantAwareTensor]
+    global_scale: list[Tensor] | None
+    """The NVFP4 dispatch scale."""
+    usage_stats: list[Tensor] | None
+    """The exchange's bf16 matmul bounds, which its kernel reads on device."""
+    dispatch_scale: list[Tensor] | None = None
+    """``1 / global_scale`` for each local expert, quantizing local rows."""
+    nvfp4_scales: list[NVFP4ExpertScales] | None = None
+    """The NVFP4 matmuls' weight-only scalars."""
+
+
+def _with_kernel_scales(weight: QuantAwareTensor) -> QuantAwareTensor:
+    """``weight`` as the matmuls take it, with its scalars on its device.
+
+    NVFP4 block scales come interleaved for the kernel.
+    """
+    if not isinstance(weight, NVFP4Tensor):
+        return weight
+    device = weight.weight.device
+    return NVFP4Tensor(
+        weight=weight.weight,
+        weight_scale=quant_ops.kernel_grouped_scales(
+            weight.weight_scale, sf_vector_size=weight.block_size[1]
+        ),
+        weight_scale_2=weight.weight_scale_2.to(device),
+        input_scale=weight.input_scale.to(device),
+        block_size=weight.block_size,
+    )
+
+
 def _local_expert_matmul(
     tokens: QuantAwareTensor,
     gate_up: QuantAwareTensor,
@@ -148,6 +189,7 @@ def _local_expert_matmul(
     accum_dtype: DType | None = None,
     decode_grid_m_cap: int = 0,
     swiglu_limit: float = 0.0,
+    scales: NVFP4ExpertScales | None = None,
 ) -> Tensor:
     """Runs local expert matmuls on dispatched tokens."""
     down_in = quant_ops.grouped_matmul_silu(
@@ -163,6 +205,7 @@ def _local_expert_matmul(
         accum_dtype=accum_dtype,
         decode_grid_m_cap=decode_grid_m_cap,
         swiglu_limit=swiglu_limit,
+        scales=scales,
     )
     return quant_ops.grouped_matmul(
         down_in,
@@ -173,6 +216,7 @@ def _local_expert_matmul(
         scales_offset=scales_offset,
         estimated_total_m=estimated_total_m,
         decode_grid_m_cap=decode_grid_m_cap,
+        expert_scales=scales.down if scales else None,
     )
 
 
@@ -731,19 +775,69 @@ class ExpertParallelMoE(QuantizedMoE):
             and _blockwise_mega_ffn_amd_is_registered()
         )
 
+    def expert_stacks(self) -> ExpertStacks:
+        """Each device's expert stacks, ready for the grouped matmuls.
+
+        Weight-only work, which init runs once when it is built outside
+        control flow; built inside a cond's branch, it runs every step, and
+        its host scalars' copies to the devices stop a graph capture.
+        """
+        devices = self.mesh.devices
+        gate_up = [_with_kernel_scales(w) for w in self.gate_up_proj]
+        down = [_with_kernel_scales(w) for w in self.down_proj]
+        global_scale = usage_stats = dispatch_scale = nvfp4_scales = None
+        if ep_requires_dispatch_scales(self.quant_config):
+            scale = self._nvfp4_global_input_scale()
+            global_scale = [scale.to(d) for d in devices]
+            dispatch_scale = [
+                F.broadcast_to(1.0 / s, [self._num_local_experts])
+                for s in global_scale
+            ]
+            pairs = [
+                (g, d)
+                for g, d in zip(gate_up, down, strict=True)
+                if isinstance(g, NVFP4Tensor) and isinstance(d, NVFP4Tensor)
+            ]
+            if len(pairs) == len(devices):
+                nvfp4_scales = [
+                    NVFP4ExpertScales.of(g, d, s)
+                    for (g, d), s in zip(pairs, global_scale, strict=True)
+                ]
+        if self.quant_config is None:
+            stats = Tensor.from_graph_value(
+                self.ep_batch_manager._common_grouped_matmul_metadata()
+            )
+            usage_stats = [stats.to(d) for d in devices]
+        return ExpertStacks(
+            gate_up,
+            down,
+            global_scale,
+            usage_stats,
+            dispatch_scale,
+            nvfp4_scales,
+        )
+
     def _local_compute(
         self,
         payload: EPDispatchPayload,
         global_scale: Tensor | None,
         estimated_total_m: Tensor,
+        stacks: ExpertStacks | None = None,
     ) -> list[Tensor]:
         """Runs the per-device expert matmuls on dispatched tokens."""
         # The EP dispatch hands back one bundle per device, so each device's
         # expert matmuls run on its own entries.
-        tokens = payload.per_device_tokens(nvfp4_global_scale=global_scale)
-        gate_up = self.gate_up_proj
-        down = self.down_proj
         usage_stats = payload.usage_stats
+        scales = None
+        if stacks is None:
+            gate_up, down = self.gate_up_proj, self.down_proj
+            tokens = payload.per_device_tokens(nvfp4_global_scale=global_scale)
+        else:
+            gate_up, down, global_scales, stats, _, scales = stacks
+            tokens = payload.per_device_tokens(
+                nvfp4_global_scale=global_scales or global_scale
+            )
+            usage_stats = stats or usage_stats
         config = self.ep_batch_manager.config
         if self._blockwise_mega_ffn_amd_eligible():
             assert usage_stats is not None
@@ -801,9 +895,150 @@ class ExpertParallelMoE(QuantizedMoE):
                     accum_dtype=self.gate_up_accum_dtype,
                     decode_grid_m_cap=decode_grid_m_cap,
                     swiglu_limit=self.swiglu_limit,
+                    scales=scales[i] if scales else None,
                 )
                 for i in range(len(tokens))
             ]
+
+    def _local_expert_rows(
+        self, down: Tensor, expert_start: Tensor, device: int
+    ) -> Tensor:
+        """Hook on each device's expert outputs before they are weighed.
+
+        ``down`` holds the routed rows below ``expert_start[-1]``; the rows
+        past it may hold anything.
+        """
+        return down
+
+    def _local_expert_sum(
+        self,
+        down: Tensor,
+        expert_start: Tensor,
+        routed: Tensor,
+        restore: Tensor,
+        router_weight: Tensor,
+        device: int,
+    ) -> Tensor:
+        """Returns each token's float32 sum of its routed rows by weight.
+
+        ``routed`` marks the rows of ``down`` below ``expert_start[-1]``.
+        """
+        down = self._local_expert_rows(down, expert_start, device)
+        # A where, not a zero weight: the trailing rows may hold NaN.
+        down = F.where(F.unsqueeze(routed, -1), down, 0.0)
+        return moe_finalize(down, restore, router_weight, DType.float32)
+
+    def local_expert_partial_sums(
+        self,
+        x: Tensor,
+        routing: Tensor,
+        stacks: ExpertStacks | None = None,
+    ) -> Tensor:
+        """Runs each device's own experts over every row of a replicated ``x``.
+
+        No token exchange: given the replicated routing of all rows, every
+        device multiplies only the slots of its own experts and returns their
+        weighted float32 sum. ``routing`` holds each row's expert ids, as
+        float32, then their weights (:func:`moe_single_group_router_packed`).
+        The result is a :class:`~max.tensor.sharding.Partial` sum,
+        which one all-reduce completes.
+        """
+        config = self.ep_batch_manager.config
+        if config.fused_shared_expert:
+            raise ValueError(
+                "local_expert_partial_sums does not run a fused shared expert"
+            )
+        n_local = self._num_local_experts
+        top_k = self.num_experts_per_token
+        estimated_total_m = (
+            F.shape_to_tensor(x.shape)[0] * top_k // self.mesh.num_devices
+        ).cast(DType.uint32)
+        gate_up, down, global_scales, _, dispatch_scale, expert_scales = (
+            stacks or self.expert_stacks()
+        )
+
+        def local_sum(i: int) -> Tensor:
+            x_d = x.local_shards[i]
+            routing_d = routing.local_shards[i]
+            global_scale = global_scales[i] if global_scales else None
+            first = i * n_local
+            # Other devices' slots sort last, into a trailing group that the
+            # matmuls are not given.
+            order, start, restore, expert_ids, stats, offset, weight = (
+                moe_create_indices_packed(
+                    routing_d,
+                    top_k,
+                    expert_offset=first,
+                    local_experts=n_local,
+                )
+            )
+            start, expert_ids = start[: n_local + 1], expert_ids[:n_local]
+            scales_offset = (
+                offset[:n_local] if global_scale is not None else None
+            )
+            # The largest group, a bound for the local ones, and the local
+            # groups, kept on the device: a host value here is a per-step
+            # copy, which a graph capture rejects.
+            usage = F.concat(
+                [
+                    stats[:1],
+                    F.constant([n_local], DType.uint32, device=x_d.device),
+                ],
+                axis=0,
+            )
+            tokens: QuantAwareTensor
+            if global_scale is None:
+                tokens = F.gather(
+                    x_d, (order // top_k).cast(DType.int32), axis=0
+                )
+            else:
+                assert scales_offset is not None and dispatch_scale is not None
+                # Quantized as the exchange quantizes, with the one scale the
+                # fused SwiGLU's gate/up epilogue expects. The quantize reads
+                # each slot's token row through the order itself, so neither
+                # the token rows nor the sorted copy of x materialize.
+                data, scales = grouped_quantize_dynamic_block_scaled(
+                    x_d,
+                    row_offsets=start,
+                    scales_offsets=scales_offset,
+                    expert_ids=expert_ids,
+                    sf_tensor=dispatch_scale[i],
+                    indices=order,
+                    indices_divisor=top_k,
+                )
+                tokens = NVFP4Activation(
+                    data=data,
+                    scales=scales,
+                    input_scale=global_scale,
+                    scales_offset=scales_offset,
+                )
+            out = _local_expert_matmul(
+                tokens,
+                gate_up[i],
+                down[i],
+                start,
+                expert_ids,
+                usage,
+                quant_config=self.quant_config,
+                scales_offset=scales_offset,
+                estimated_total_m=estimated_total_m,
+                accum_dtype=self.gate_up_accum_dtype,
+                swiglu_limit=self.swiglu_limit,
+                scales=expert_scales[i] if expert_scales else None,
+            )
+            ids = F.reshape(routing_d[:, :top_k], [-1])
+            is_local = (ids >= first) & (ids < first + n_local)
+            routed = F.gather(is_local, order.cast(DType.int32), axis=0)
+            return self._local_expert_sum(
+                out, start, routed, restore, weight, i
+            )
+
+        with ensure_context():
+            sums = [local_sum(i) for i in range(self.mesh.num_devices)]
+        return Tensor.from_shard_values(
+            [TensorValue(s) for s in sums],
+            mapping=DeviceMapping(self.mesh, (Partial(),)),
+        )
 
     def _compute_shared_experts(
         self, x: Tensor, devices: Sequence[int]
