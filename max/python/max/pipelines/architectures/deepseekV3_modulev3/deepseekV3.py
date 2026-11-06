@@ -80,8 +80,13 @@ def split_replicated_batch(
     input_row_offsets_i64: Tensor,
     data_parallel_splits: Tensor,
     mapping: DeviceMapping,
+    group_size: int = 1,
 ) -> tuple[Tensor, Tensor]:
-    """Splits a replicated batch into data-parallel shards."""
+    """Splits a replicated batch into data-parallel shards.
+
+    ``group_size`` consecutive devices form one replica and take the same
+    split: the ``tp`` axis of a ``(dp, tp)`` mesh.
+    """
     devices = mapping.mesh.devices
 
     h_shards, input_row_offsets_shards = split_batch_replicated(
@@ -90,6 +95,7 @@ def split_replicated_batch(
         [TensorValue(shard) for shard in input_row_offsets.local_shards],
         TensorValue(input_row_offsets_i64),
         TensorValue(data_parallel_splits),
+        group_size=group_size,
     )
     return (
         Tensor.from_shard_values(h_shards, mapping),

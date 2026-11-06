@@ -2561,6 +2561,8 @@ def mla_decode_sm100_dispatch[
     fp8_scale_bf16: Bool = False,
     scale_block_size_override: Int = -1,
     prepared_bounds: Bool = False,
+    # Presence of `lse_out` (inferred from it).
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
 ](
     q: TileTensor[q_type, address_space=.GENERIC, ...],
     k: k_t,
@@ -2596,7 +2598,33 @@ def mla_decode_sm100_dispatch[
     # Positions between the token each sparse row was computed for and
     # the token that reads it.
     selection_lag: Int = 0,
+    # Optional `[total_q_tokens, num_heads]` float32 output for each (token,
+    # head)'s attention LSE in base 2 (`log2(sum(exp2(score * scale *
+    # log2e)))`), written by the split-K combine or, unsplit, by the decode
+    # kernel. A token with no keys gets `-inf` and an O of zero. Decode
+    # context parallelism merges the ranks' partial attention with it.
+    # Requires `skip_masked_tiles`, whose `topk_lengths` are per token.
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+    # With `lse_out`, an upper bound on any token's sparse top-k length that
+    # sizes the split-K partitions in place of the index row stride (0 keeps
+    # the stride). Correctness comes from the per-token lengths, so a loose
+    # bound only costs performance.
+    split_len_bound: Int = 0,
 ) raises:
+    comptime if not LseOutPtrType.is_null:
+        comptime assert sparse and skip_masked_tiles, (
+            "the LSE output needs sparse decode with per-token lengths"
+            " (skip_masked_tiles)"
+        )
+        comptime assert (
+            AttnSinkPtrType.is_null
+        ), "the LSE output does not support an attention sink"
+        comptime assert (
+            not fold_shared_index and not has_extra_k
+        ), "the LSE output does not support the shared-index fold or extra KV"
+        comptime assert (
+            LseOutPtrType.dtype == DType.float32
+        ), "the LSE output is float32"
     comptime assert not prepared_bounds or sparse
     comptime if not prepared_bounds:
         if not scalar_args_buf.ptr:
@@ -2633,6 +2661,13 @@ def mla_decode_sm100_dispatch[
 
     comptime sm_count = ctx.default_device_info.sm_count
     comptime _half_sms = sm_count // 2
+    # With the LSE output, a bound on the per-token lengths sizes the split
+    # in place of the row stride (both halves of an NVFP4 row).
+    var split_stride = indices_stride
+    comptime if not LseOutPtrType.is_null:
+        comptime _row_parts = 2 if mla_kv_is_nvfp4[k_t]() else 1
+        if split_len_bound > 0:
+            split_stride = min(indices_stride, split_len_bound * _row_parts)
     var _split = _mla_decode_split[
         q_type,
         k_t.dtype,
@@ -2657,7 +2692,7 @@ def mla_decode_sm100_dispatch[
         batch_size,
         q_max_seq_len,
         max_cache_valid_length,
-        indices_stride,
+        split_stride,
         extra_indices_stride,
         k_t.page_size,
         sm_count,
@@ -2730,6 +2765,7 @@ def mla_decode_sm100_dispatch[
             extra_scales_ptr=extra_scales_ptr,
             logical_indices=logical_indices,
             selection_lag=selection_lag,
+            lse_out=lse_out,
         )
 
     comptime if k_t.page_size == 0 or k_t.page_size >= 128:
@@ -2841,6 +2877,8 @@ def _mla_decode_sm100_dispatch_impl[
     fp8_scale_bf16: Bool = False,
     scale_block_size_override: Int = -1,
     prepared_bounds: Bool = False,
+    # Presence of `lse_out` (inferred from it).
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
 ](
     q: TileTensor[q_type, address_space=.GENERIC, ...],
     k: k_t,
@@ -2872,6 +2910,8 @@ def _mla_decode_sm100_dispatch_impl[
     # Positions between the token each sparse row was computed for and
     # the token that reads it.
     selection_lag: Int = 0,
+    # See mla_decode_sm100_dispatch.
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
 ) raises:
     comptime hw_info = ctx.default_device_info
     comptime sm_count = hw_info.sm_count
@@ -3020,6 +3060,7 @@ def _mla_decode_sm100_dispatch_impl[
                     q_max_seq_len,
                     Int(num_heads),
                     ctx,
+                    lse_out,
                 )
 
             def launch_combine_split_parallel[n_splits: Int]() raises {imm}:
@@ -3207,8 +3248,18 @@ def _mla_decode_sm100_dispatch_impl[
 
         _launch_split_k_path()
     else:
-        comptime SplitAccumType = NullPointer[AccumType]
-        var lse_accum_split_ptr: SplitAccumType = {}
+        # Unsplit, the LSE output (if any) takes the split-K workspace's slot,
+        # which tells the kernel to write the final LSE per query token.
+        comptime SplitAccumType = NullPointer[
+            AccumType
+        ] if LseOutPtrType.is_null else LseOutPtrType
+        var lse_accum_split_ptr: SplitAccumType
+        comptime if LseOutPtrType.is_null:
+            lse_accum_split_ptr = rebind[SplitAccumType](
+                NullPointer[AccumType]()
+            )
+        else:
+            lse_accum_split_ptr = rebind[SplitAccumType](lse_out)
 
         def _launch_no_split_path() raises {imm}:
             mla_decode_sm100_sink_split_k[

@@ -1085,6 +1085,12 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 Self.Common_MLA_Op.store_empty(
                     o_tma, offset_position.out_row_offset
                 )
+                # With an LSE output (decode context parallelism) an empty
+                # shard also writes `-inf`, so a cross-rank merge weights it 0.
+                comptime if not Self.SplitAccumType.is_null:
+                    Self.Common_MLA_Op.store_empty_lse(
+                        offset_position.q_token_idx, lse_accum_split_ptr
+                    )
                 return
 
         stamp_cta_event(CTA_OFFSETS)
@@ -1921,6 +1927,12 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 Self.Common_MLA_Op.store_empty(
                     o_tma, offset_position.out_row_offset
                 )
+                # With an LSE output (decode context parallelism) an empty
+                # shard also writes `-inf`, so a cross-rank merge weights it 0.
+                comptime if not Self.SplitAccumType.is_null:
+                    Self.Common_MLA_Op.store_empty_lse(
+                        offset_position.q_token_idx, lse_accum_split_ptr
+                    )
                 return
 
         stamp_cta_event(CTA_OFFSETS)

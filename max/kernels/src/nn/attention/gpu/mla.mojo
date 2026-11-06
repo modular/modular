@@ -263,6 +263,8 @@ trait MLAKernels:
         # How the sparse index producer packs each row; SM100 bounds each row by
         # its closed-form valid length. See mla_decode_utils.mojo.
         sparse_row: SparseRowLayout = SparseRowLayout(),
+        # Presence of `lse_out` (inferred from it).
+        LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
         *,
         skip_masked_tiles: Bool = False,
     ](
@@ -302,6 +304,11 @@ trait MLAKernels:
         # Positions between the token each sparse row was computed for and the
         # token that reads it, for a selection reused at a later position.
         selection_lag: Int = 0,
+        # Optional `[total_q_tokens, num_heads]` float32 output for each (token,
+        # head)'s attention LSE in base 2, and the split-K sizing bound that goes
+        # with it; see `mla_decode_sm100_dispatch`.
+        lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+        split_len_bound: Int = 0,
     ) raises:
         """Dispatches an MLA decoding request to the vendor's kernels.
 
@@ -357,6 +364,8 @@ trait MLAKernels:
             sparse_row: How the sparse index producer packs each row; SM100
                 masks the `-1` padding past each row's closed-form valid length
                 (defaults to plain top-k, which adds no bound).
+            LseOutPtrType: `OptionalPointer` type of `lse_out` (inferred,
+                defaults to `NullPointer`).
             skip_masked_tiles: Whether each query token stops at the slots its
                 causal key count covers instead of walking the sequence-wide
                 slot count; SM100 only, and requires one query token per CTA.
@@ -423,6 +432,13 @@ trait MLAKernels:
                 masking; `None` keeps the prior slot-count behavior.
             selection_lag: Positions between the token each sparse row was
                 computed for and the token that reads it (defaults to 0).
+            lse_out: Optional `[total_q_tokens, num_heads]` float32 output for
+                each (token, head)'s attention LSE in base 2; SM100 sparse with
+                `skip_masked_tiles` only. A token with no keys gets `-inf` and an
+                O of zero.
+            split_len_bound: With `lse_out`, an upper bound on the per-token
+                lengths that sizes split-K in place of `indices_stride` (0 keeps
+                the stride).
         """
         ...
 
@@ -541,6 +557,8 @@ struct AMDMLA(MLAKernels):
         # How the sparse index producer packs each row; SM100 bounds each row by
         # its closed-form valid length. See mla_decode_utils.mojo.
         sparse_row: SparseRowLayout = SparseRowLayout(),
+        # Presence of `lse_out` (inferred from it).
+        LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
         *,
         skip_masked_tiles: Bool = False,
     ](
@@ -580,6 +598,11 @@ struct AMDMLA(MLAKernels):
         # Positions between the token each sparse row was computed for and the
         # token that reads it, for a selection reused at a later position.
         selection_lag: Int = 0,
+        # Optional `[total_q_tokens, num_heads]` float32 output for each (token,
+        # head)'s attention LSE in base 2, and the split-K sizing bound that goes
+        # with it; see `mla_decode_sm100_dispatch`.
+        lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+        split_len_bound: Int = 0,
     ) raises:
         """Dispatches an MLA decoding request to the AMD kernels."""
         comptime num_heads = config.num_heads
@@ -679,6 +702,9 @@ struct AMDMLA(MLAKernels):
         ), "skip_masked_tiles is only implemented for SM100."
         if selection_lag != 0:
             raise Error("selection_lag is only implemented for SM100.")
+        comptime assert (
+            LseOutPtrType.is_null
+        ), "the MLA decode LSE output is only implemented for SM100."
         var batch_size: Int
         comptime if ragged:
             batch_size = Int(valid_length.dim[0]()) - 1
@@ -1277,6 +1303,8 @@ struct SM100MLA(MLAKernels):
         # How the sparse index producer packs each row; SM100 bounds each row by
         # its closed-form valid length. See mla_decode_utils.mojo.
         sparse_row: SparseRowLayout = SparseRowLayout(),
+        # Presence of `lse_out` (inferred from it).
+        LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
         *,
         skip_masked_tiles: Bool = False,
     ](
@@ -1316,6 +1344,11 @@ struct SM100MLA(MLAKernels):
         # Positions between the token each sparse row was computed for and the
         # token that reads it, for a selection reused at a later position.
         selection_lag: Int = 0,
+        # Optional `[total_q_tokens, num_heads]` float32 output for each (token,
+        # head)'s attention LSE in base 2, and the split-K sizing bound that goes
+        # with it; see `mla_decode_sm100_dispatch`.
+        lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+        split_len_bound: Int = 0,
     ) raises:
         """Dispatches an MLA decoding request to the SM100 kernels."""
         comptime num_heads = config.num_heads
@@ -1422,6 +1455,8 @@ struct SM100MLA(MLAKernels):
                 num_partitions_in=sm100_num_partitions,
                 logical_indices=logical_indices,
                 selection_lag=selection_lag,
+                lse_out=lse_out,
+                split_len_bound=split_len_bound,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -1492,6 +1527,8 @@ struct SM100MLA(MLAKernels):
                 num_partitions_in=sm100_num_partitions,
                 logical_indices=logical_indices,
                 selection_lag=selection_lag,
+                lse_out=lse_out,
+                split_len_bound=split_len_bound,
             )
             _ = local_args^
 
@@ -1606,6 +1643,8 @@ struct LegacyNVMLA(MLAKernels):
         # How the sparse index producer packs each row; SM100 bounds each row by
         # its closed-form valid length. See mla_decode_utils.mojo.
         sparse_row: SparseRowLayout = SparseRowLayout(),
+        # Presence of `lse_out` (inferred from it).
+        LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
         *,
         skip_masked_tiles: Bool = False,
     ](
@@ -1645,6 +1684,11 @@ struct LegacyNVMLA(MLAKernels):
         # Positions between the token each sparse row was computed for and the
         # token that reads it, for a selection reused at a later position.
         selection_lag: Int = 0,
+        # Optional `[total_q_tokens, num_heads]` float32 output for each (token,
+        # head)'s attention LSE in base 2, and the split-K sizing bound that goes
+        # with it; see `mla_decode_sm100_dispatch`.
+        lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+        split_len_bound: Int = 0,
     ) raises:
         """Dispatches an MLA decode to the pre-Blackwell NVIDIA kernels."""
         comptime num_heads = config.num_heads
@@ -1702,6 +1746,9 @@ struct LegacyNVMLA(MLAKernels):
         ), "skip_masked_tiles is only implemented for SM100."
         if selection_lag != 0:
             raise Error("selection_lag is only implemented for SM100.")
+        comptime assert (
+            LseOutPtrType.is_null
+        ), "the MLA decode LSE output is only implemented for SM100."
         var batch_size: Int
         comptime if ragged:
             batch_size = Int(valid_length.dim[0]()) - 1
@@ -2065,6 +2112,8 @@ def flare_mla_decoding[
     # How the sparse index producer packs each row; SM100 bounds each row by
     # its closed-form valid length. See mla_decode_utils.mojo.
     sparse_row: SparseRowLayout = SparseRowLayout(),
+    # Presence of `lse_out` (inferred from it).
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
     *,
     skip_masked_tiles: Bool = False,
     kernels: MLAKernels,
@@ -2114,6 +2163,11 @@ def flare_mla_decoding[
     # Positions between the token each sparse row was computed for and the
     # token that reads it, for a selection reused at a later position.
     selection_lag: Int = 0,
+    # Optional `[total_q_tokens, num_heads]` float32 output for each (token,
+    # head)'s attention LSE in base 2, and the split-K sizing bound that goes
+    # with it; see `mla_decode_sm100_dispatch`.
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+    split_len_bound: Int = 0,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -2173,6 +2227,8 @@ def flare_mla_decoding[
         sparse_row: How the sparse index producer packs each row; SM100
             masks the `-1` padding past each row's closed-form valid length
             (defaults to plain top-k, which adds no bound).
+        LseOutPtrType: `OptionalPointer` type of `lse_out` (inferred,
+            defaults to `NullPointer`).
         skip_masked_tiles: Whether each query token stops at the slots its
             causal key count covers instead of walking the sequence-wide
             slot count; SM100 only, and requires one query token per CTA.
@@ -2240,6 +2296,13 @@ def flare_mla_decoding[
             masking; `None` keeps the prior slot-count behavior.
         selection_lag: Positions between the token each sparse row was
             computed for and the token that reads it (defaults to 0).
+        lse_out: Optional `[total_q_tokens, num_heads]` float32 output for
+            each (token, head)'s attention LSE in base 2; SM100 sparse with
+            `skip_masked_tiles` only. A token with no keys gets `-inf` and an
+            O of zero.
+        split_len_bound: With `lse_out`, an upper bound on the per-token
+            lengths that sizes split-K in place of `indices_stride` (0 keeps
+            the stride).
     """
     comptime assert (
         ragged or rank == 4
@@ -2339,6 +2402,8 @@ def flare_mla_decoding[
                 num_partitions_in=num_partitions_in,
                 logical_indices=logical_indices,
                 selection_lag=selection_lag,
+                lse_out=lse_out,
+                split_len_bound=split_len_bound,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
@@ -2384,6 +2449,8 @@ def flare_mla_decoding[
                 num_partitions_in=num_partitions_in,
                 logical_indices=logical_indices,
                 selection_lag=selection_lag,
+                lse_out=lse_out,
+                split_len_bound=split_len_bound,
             )
 
 

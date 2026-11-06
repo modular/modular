@@ -125,6 +125,7 @@ MO_AbsOp                                             # AbsOp
 MO_AddOp                                             # AddOp
 MO_AllGatherOp                                       # DistributedAllgatherOp
 MO_AllReduceSumOp                                    # DistributedAllreduceSumOp
+MO_AllToAllOp                                        # DistributedAllToAllOp
 MO_AndOp                                             # AndOp
 MO_ArgMaxOp                                          # ReduceArgMaxOp
 MO_ArgMinOp                                          # ReduceArgMinOp

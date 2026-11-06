@@ -124,6 +124,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.sparse_index_fp8_sm100_prefill import (
+    CPRankPtr,
     _KEYSPLIT_MAX_TOKEN_TILES,
     _PREFILL_MIN_TOKEN_TILES,
     _ctas_per_sm,
@@ -890,6 +891,8 @@ def fp8_index_score_sm100[
     kpool: Int = 1,
     pool_row_tokens: Int = 1,
     k_box_rows: Int = _BM_KEY,
+    cp_size: Int = 1,
+    cp_interleave: Int = 1,
 ](
     output: MutTileTensor[out_dtype, output_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
@@ -904,6 +907,7 @@ def fp8_index_score_sm100[
     causal: Bool,
     ctx: DeviceContext,
     out_row_begin: Int = 0,
+    cp_rank: CPRankPtr = CPRankPtr.unsafe_dangling(),
 ) raises:
     """Launch the SM100 tensor-core FP8 indexer scorer into `output`.
 
@@ -946,6 +950,10 @@ def fp8_index_score_sm100[
         k_box_rows: Key rows per `k_tma` copy. One copy covers a whole key
             tile unless a pooled page holds fewer keys, in which case the
             tile is staged one page at a time.
+        cp_size: Ranks of a decode context-parallel group sharing each
+            request's positions; `1` disables it. Above `1` every shape takes
+            the K-streaming kernel, the only one that maps local slots.
+        cp_interleave: Consecutive positions a rank owns in turn.
 
     Args:
         output: Score buffer `[total_seq, max_num_keys]`, f32 or bf16.
@@ -973,6 +981,8 @@ def fp8_index_score_sm100[
             matrix scores it a row-window at a time. The default covers every
             row, and every quantity the window touches then reduces to its
             unwindowed form.
+        cp_rank: This rank, one `int32` on the device; read only when
+            `cp_size > 1`. See `fp8_index_score_sm100_prefill`.
     """
     # The N-tile packs N_TOKENS = 128 // num_heads whole query tokens, so any
     # divisor of 128 is structurally admissible; the gate lists the validated
@@ -1065,6 +1075,8 @@ def fp8_index_score_sm100[
         to_prefill = to_prefill or _is_keysplit_shape[num_heads, BM_key](
             max_seq_len, max_num_keys
         )
+        comptime if cp_size > 1:
+            to_prefill = True
         if to_prefill:
             # Optional alternate N-tile, taken when it divides the run and the default
             # does not. The default packs `128 // num_heads` whole tokens, so an MTP
@@ -1152,6 +1164,8 @@ def fp8_index_score_sm100[
                         kpool,
                         pool_row_tokens=pool_row_tokens,
                         k_box_rows=K_BOX,
+                        cp_size=cp_size,
+                        cp_interleave=cp_interleave,
                     ](
                         q_ptr,
                         num_q_tokens,
@@ -1167,6 +1181,7 @@ def fp8_index_score_sm100[
                         Int(causal),
                         ctx,
                         out_row_begin,
+                        cp_rank=cp_rank,
                     )
                     return
             fp8_index_score_sm100_prefill[
@@ -1181,6 +1196,8 @@ def fp8_index_score_sm100[
                 kpool,
                 pool_row_tokens=pool_row_tokens,
                 k_box_rows=K_BOX,
+                cp_size=cp_size,
+                cp_interleave=cp_interleave,
             ](
                 q_ptr,
                 num_q_tokens,
@@ -1196,6 +1213,7 @@ def fp8_index_score_sm100[
                 Int(causal),
                 ctx,
                 out_row_begin,
+                cp_rank=cp_rank,
             )
             return
 
@@ -1204,7 +1222,7 @@ def fp8_index_score_sm100[
     # its kernels, so without this `comptime if` a unified nh=32 build would
     # keep compiling two kernel families it can never launch. With it, "the
     # scorer never runs for GLM-5.2" is checkable from the emitted blob set.
-    comptime if not UNIFY:
+    comptime if not UNIFY and cp_size == 1:
         # Only the K-resident scorer reads this descriptor; the prefill routes
         # above build their own in the row order they fold in.
         var q_tma_tile = create_split_tma[

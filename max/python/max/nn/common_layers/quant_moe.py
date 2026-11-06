@@ -618,11 +618,9 @@ class ExpertParallelMoE(QuantizedMoE):
 
     @staticmethod
     def _check_mesh(mesh: DeviceMesh, num_experts: int) -> None:
-        if mesh.ndim != 1:
-            raise ValueError(
-                "Mesh used with ExpertParallelMoE must have exactly one device"
-                f" axis, but got {mesh}"
-            )
+        # The experts span every device of the mesh, in row-major order,
+        # whatever its axes: on a ``(dp, tp)`` mesh of attention replicas,
+        # each device dispatches its own tokens to all of them.
         if num_experts % mesh.num_devices != 0:
             raise ValueError(
                 f"num_experts ({num_experts}) must be divisible by the "

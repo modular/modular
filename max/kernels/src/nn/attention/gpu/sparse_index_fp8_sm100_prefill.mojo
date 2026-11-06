@@ -180,6 +180,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     store_global_pred,
 )
 from nn.attention.mha_operand import MHAOperand
+from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import flat_scale_window, scale_align_elems
 from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 
@@ -1073,6 +1074,28 @@ struct _Item(TrivialRegisterPassable):
     var n_tiles: Int32
 
 
+comptime CPRankPtr = ImmPointer[Int32, ImmUntrackedOrigin]
+"""Device pointer to a context-parallel rank, one `int32`.
+
+Kernels take it as an argument, so its origin is untracked; host entry points
+take an `ImmPointer[Int32, _]` and convert it once.
+"""
+
+
+@inline(.always)
+def _cp_layout[
+    cp_size: Int, cp_interleave: Int
+](cp_rank: CPRankPtr) -> ContextParallelLayout[cp_size, cp_interleave]:
+    """Returns this rank's position map, reading `cp_rank[0]` only under CP.
+
+    Without CP the pointer is never dereferenced, so callers pass a dangling
+    one.
+    """
+    comptime if cp_size > 1:
+        return ContextParallelLayout[cp_size, cp_interleave](Int(cp_rank[0]))
+    return ContextParallelLayout[cp_size, cp_interleave](0)
+
+
 @inline(.always)
 def _decode_item[
     KOperand: MHAOperand,
@@ -1081,6 +1104,8 @@ def _decode_item[
     cta_token_stride: Int,
     kpool: Int,
     _is_cache_length_accurate: Bool,
+    cp_size: Int = 1,
+    cp_interleave: Int = 1,
 ](
     b: Int,
     token_block: Int32,
@@ -1092,13 +1117,23 @@ def _decode_item[
     num_key_parts: Int32,
     out_row_begin: Int32,
     out_row_end: Int32,
+    cp_rank: CPRankPtr = CPRankPtr.unsafe_dangling(),
 ) -> _Item:
     """Decodes the work item at grid coordinates `(b, token_block, key_part)`.
 
     Every input is CTA-uniform, so every role derives the same item and the
     same trip count from it. That is load-bearing: windowing one role alone
     unbalances the k/s mbar handshakes and HANGS.
+
+    Under decode context parallelism (`cp_size > 1`) `num_keys` stays the
+    GLOBAL key count, from which every causal bound is formed, while the key
+    tiles walk this rank's local slots: a global bound `L` covers the slots
+    `[0, local_len(L))`.
     """
+    comptime assert (
+        cp_size == 1 or kpool == 1
+    ), "context-parallel slots are token positions, not pools"
+    var cp = _cp_layout[cp_size, cp_interleave](cp_rank)
     var start_of_seq = Int32(valid_length[b])
     var end_of_seq = Int32(valid_length[b + 1])
     var seq_len = end_of_seq - start_of_seq
@@ -1130,6 +1165,8 @@ def _decode_item[
     # this kernel pulls in `vprintf`, which inflates the emitted PTX and
     # perturbs register allocation.
     var num_rows = num_keys // Int32(kpool)
+    comptime if cp_size > 1:
+        num_rows = Int32(cp.local_len(Int(num_keys)))
     debug_assert(
         num_rows <= max_num_keys,
         "fp8 index prefill: per-entry candidate rows exceed max_num_keys",
@@ -1147,6 +1184,10 @@ def _decode_item[
     var block_key_bound = (
         num_keys - (seq_len - 1 - last_tok) * causal
     ) // Int32(kpool)
+    comptime if cp_size > 1:
+        block_key_bound = Int32(
+            cp.local_len(Int(max(block_key_bound, Int32(0))))
+        )
     # `block_key_bound` can be <= 0 (a causal bound that trims the whole
     # block), so the SUBTRACTION above stays signed. The `ceildiv` does not:
     # `SIMD.__ceildiv__` branches at COMPTIME on the dtype -- signed lowers to
@@ -1257,6 +1298,8 @@ def _fp8_index_score_prefill_kernel_sm100[
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
     H: IndexerScoreHook = NoScoreHook,
+    cp_size: Int = 1,
+    cp_interleave: Int = 1,
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, k_box_rows, depth],
@@ -1275,7 +1318,14 @@ def _fp8_index_score_prefill_kernel_sm100[
     out_row_end_dev: Int32,
     evict_k_dev: Int32,
     score_hook: H,
+    cp_rank: CPRankPtr,
 ):
+    """The K-streaming scorer, plain and context-parallel.
+
+    `cp_rank` is read only when `cp_size > 1`, so the plain launch passes a
+    dangling pointer; see `_decode_item` for how the rank's local slots relate
+    to the global causal bounds.
+    """
     comptime assert valid_length.flat_rank == 1
     comptime MMA_N = N_TOKENS * num_heads
     # The whole derived pipeline shape, in one object. Every stage count,
@@ -1678,7 +1728,12 @@ def _fp8_index_score_prefill_kernel_sm100[
         # last-first: a causal block's key range grows with its index, and the
         # longest items then start first rather than forming the tail.
         return _decode_item[
-            BM_key, CTA_TOKEN_STRIDE, kpool, _is_cache_length_accurate
+            BM_key,
+            CTA_TOKEN_STRIDE,
+            kpool,
+            _is_cache_length_accurate,
+            cp_size,
+            cp_interleave,
         ](
             bb,
             Int32(grid_dim.y) - 1 - token_block,
@@ -1690,6 +1745,7 @@ def _fp8_index_score_prefill_kernel_sm100[
             num_key_parts_dev,
             out_row_begin_dev,
             out_row_end_dev,
+            cp_rank,
         )
 
     # Warp-collective: one elected lane arms the barrier and issues.
@@ -1728,6 +1784,9 @@ def _fp8_index_score_prefill_kernel_sm100[
             issue_cancel()
 
     with PDL():
+        # Identity without CP. Under it, key tiles walk this rank's local
+        # slots while `num_keys` and every causal bound stay global.
+        var cp = _cp_layout[cp_size, cp_interleave](cp_rank)
         var item = decode(b, Int32(block_idx.y), UInt32(block_idx.z))
         var start_of_seq = item.start_of_seq
         var seq_len = item.seq_len
@@ -1873,6 +1932,11 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # rule requires.
                 for tile_i in range(n_tiles_local):
                     var key_local = (tile_begin + tile_i) * Int32(BM_key) + row
+                    # The global position this slot holds, which the causal
+                    # bounds compare against. Local slots are ordered by
+                    # position, so slot `s` is below a global bound `L` exactly
+                    # when `s < local_len(L)`.
+                    var key_pos = Int32(cp.global_pos(Int(key_local)))
 
                     # `PipelineState.index()` is already `UInt32`; keep it that way
                     # rather than round-tripping through 64-bit `Int`.
@@ -2036,7 +2100,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                                 # (32x32->64) rather than a 64-bit multiply. Do NOT
                                 # narrow it.
                                 var out_row = out_row0 + tok_local
-                                var key_live = key_local < key_bound
+                                var key_live = key_pos < key_bound
                                 var row_live = tok_local < tok_hi
                                 var value = (k_scale * tok_sum).cast[
                                     out_dtype
@@ -2375,6 +2439,8 @@ def _fp8_index_score_prefill_kernel_sm100[
                 def issue_k(it: Int32, state: PipelineState[NSTAGE]) {imm}:
                     var s = state.index()
                     var num_rows = num_keys // Int32(kpool)
+                    comptime if cp_size > 1:
+                        num_rows = Int32(cp.local_len(Int(num_keys)))
                     expect_bytes_pred(
                         k_full.unsafe_offset(s), Int32(k_bytes + ks_bytes), e
                     )
@@ -2770,6 +2836,8 @@ def fp8_index_score_sm100_prefill[
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
+    cp_size: Int = 1,
+    cp_interleave: Int = 1,
 ](
     q_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     num_q_tokens: Int,
@@ -2786,6 +2854,7 @@ def fp8_index_score_sm100_prefill[
     ctx: DeviceContext,
     out_row_begin: Int = 0,
     q_sf: Optional[Pointer[UInt32, ImmutAnyOrigin]] = None,
+    cp_rank: CPRankPtr = CPRankPtr.unsafe_dangling(),
 ) raises:
     """Enqueue the warp-specialized K-streaming prefill scorer into `output`.
 
@@ -2810,6 +2879,11 @@ def fp8_index_score_sm100_prefill[
     four UE8M0 block scales, `q_s` as the per-head weights, and K scales of
     the same four-scale word per key. The score is then
     `sum_head relu(q . k) * q_s[token, head]`, with no per-key factor.
+
+    With `cp_size > 1` the cache holds only the positions rank `cp_rank[0]`
+    of a decode context-parallel group owns (`ContextParallelLayout`), at
+    their local slots. `max_num_keys` then bounds local slots, the cache
+    lengths stay global, and score column `s` is local slot `s`.
     """
     fp8_index_score_sm100_prefill[
         dtype,
@@ -2826,6 +2900,8 @@ def fp8_index_score_sm100_prefill[
         VLEngine=VLEngine,
         QSEngine=QSEngine,
         OutEngine=OutEngine,
+        cp_size=cp_size,
+        cp_interleave=cp_interleave,
     ](
         q_ptr,
         num_q_tokens,
@@ -2843,6 +2919,7 @@ def fp8_index_score_sm100_prefill[
         out_row_begin,
         q_sf,
         NoScoreHook(),
+        cp_rank,
     )
 
 
@@ -2865,6 +2942,8 @@ def fp8_index_score_sm100_prefill[
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
+    cp_size: Int = 1,
+    cp_interleave: Int = 1,
 ](
     q_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     num_q_tokens: Int,
@@ -2882,12 +2961,17 @@ def fp8_index_score_sm100_prefill[
     out_row_begin: Int,
     q_sf: Optional[Pointer[UInt32, ImmutAnyOrigin]],
     score_hook: H,
+    cp_rank: CPRankPtr = CPRankPtr.unsafe_dangling(),
 ) raises:
     """Enqueue the K-streaming prefill scorer into `output` with a score hook.
 
     `score_hook` runs on every score the epilogue stores. Its rows count from
-    the window's first row, so its row 0 is `output`'s row 0.
+    the window's first row, so its row 0 is `output`'s row 0. `cp_size`,
+    `cp_interleave` and `cp_rank` are as in the overload without a hook.
     """
+    comptime assert cp_size == 1 or (
+        not _is_mxfp4[dtype]() and kpool == 1 and not H.enabled
+    ), "the context-parallel scorer is FP8, unpooled and hook-free"
     # The window bounds the token blocks any entry can contribute, so a chunked
     # launch does not pay for a grid sized to the whole batch.
     var out_rows = Int(output.dim[0]())
@@ -2989,6 +3073,8 @@ def fp8_index_score_sm100_prefill[
         QSEngine=q_s.Engine,
         OutEngine=output.Engine,
         H=H,
+        cp_size=cp_size,
+        cp_interleave=cp_interleave,
     ]
     # Validate where the config is BUILT, ahead of the derived asserts below --
     # the SMEM check fires on an over-forced ring depth first and reports only a
@@ -3093,4 +3179,5 @@ def fp8_index_score_sm100_prefill[
         Int32(out_row_begin + out_rows),
         Int32(evict_k),
         score_hook,
+        cp_rank,
     )

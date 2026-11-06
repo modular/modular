@@ -895,6 +895,29 @@ def test_replicas_span_devices_only_where_the_decoder_supports_it() -> None:
     )._device_mesh().mesh_shape == (4,)
 
 
+class _TakesContextLengths(DeploymentConfig):
+    takes_batch_context_lengths: ClassVar[bool] = True
+
+
+def test_multi_device_replicas_take_a_context_length_per_device() -> None:
+    config = _TakesContextLengths()
+    # Two replicas of four: one int32 per device, each its replica's.
+    shared = _data_parallel_model(
+        SharedReplicaDecoder, 2, 8
+    )._batch_context_length_types(config)
+    assert shared is not None
+    assert len(shared) == 8
+    assert {(t.dtype, t.device) for t in shared} == {
+        (DType.int32, DeviceRef.CPU())
+    }
+    # One replica per device: one per replica.
+    per_replica = _data_parallel_model(
+        SharedReplicaDecoder, 4, 4
+    )._batch_context_length_types(config)
+    assert per_replica is not None
+    assert len(per_replica) == 4
+
+
 def test_graph_name_defaults_to_the_class_name() -> None:
     assert graph_name(PlainDecoder) == "PlainDecoder"
     assert graph_name(ToyDecoder) == "toy"

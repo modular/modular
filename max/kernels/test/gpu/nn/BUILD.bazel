@@ -7,6 +7,11 @@ package(default_visibility = ["//max:consumers"])
 exports_files(["attention/test_dsmem_cluster_smoke.mojo"])
 
 _EXTRA_CONSTRAINTS = {
+    # The decode context-parallel indexer runs on the SM100 FP8 scorer only.
+    "test_mla_index_fp8_cp.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla_sparse_sentinel_mask.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -133,6 +138,11 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_fused_rope_rmsnorm_nvfp4.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Covers the NVFP4 latent cache too, which needs the SM100 e2m1 convert.
+    "test_mla_fused_rope_rmsnorm_cp.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -294,6 +304,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_prefill_sparse_nvfp4_convert_once.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_cp.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -640,6 +654,7 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _EXTRA_DEPS = {
+    "test_mla_index_fp8_cp.mojo": ["//max:kv_cache"],
     "test_mla_index_windowed_keep.mojo": ["//max:kv_cache"],
     "attention/test_mha_sm100_depth512_sink.mojo": ["//max:kv_cache"],
     "test_mla_layout_g_mma_smoke.mojo": ["//max:max_mojo"],

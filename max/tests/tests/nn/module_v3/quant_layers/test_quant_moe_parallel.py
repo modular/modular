@@ -28,7 +28,7 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, KernelLibrary
 from max.nn.common_layers import quant_moe, quant_ops
-from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.common_layers.quant_moe import (
     ExpertParallelMoE,
@@ -70,6 +70,7 @@ from max.tensor.sharding import (
     DeviceMesh,
     Partial,
     Replicated,
+    Sharded,
 )
 
 _HIDDEN_DIM = 256
@@ -477,6 +478,53 @@ def test_expert_parallel_moe_without_counting_is_unchanged(
     ir = _trace_ep_moe_ir(mock_accelerator, False, pass_layer=True)
     assert ".expert_load" not in ir
     assert "mo.distributed.ep.dispatch" in ir
+
+
+def test_expert_parallel_moe_on_a_dp_tp_mesh(
+    mock_accelerator: MagicMock,
+) -> None:
+    """EP spans every device of a ``(dp, tp)`` mesh of attention replicas.
+
+    After attention reduce-scatters each replica's tokens over its ``tp``
+    axis, every device dispatches its own rows; the output keeps that
+    placement.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(i) for i in range(8)]
+        mesh = DeviceMesh(tuple(devices), (2, 4), (DP, TP))
+        num_experts = 8
+        config = EPConfig(
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            hidden_size=_HIDDEN_DIM,
+            top_k=_NUM_EXPERTS_PER_TOKEN,
+            n_experts=num_experts,
+            max_tokens_per_rank=_SEQ_LEN,
+            n_gpus_per_node=len(devices),
+            n_nodes=1,
+        )
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            config, devices
+        )
+        with default_dtype(DType.bfloat16), default_device(mesh):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=num_experts,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                ep_batch_manager=ep_batch_manager,
+            )
+            assert len(layer.gate_up_proj) == len(devices)
+            sequence_parallel = DeviceMapping(mesh, (Sharded(0), Sharded(0)))
+            x = Tensor.zeros(
+                [2 * len(devices), _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=sequence_parallel,
+            )
+            out = layer(x, comm_buffers)
+
+        assert out.mapping == sequence_parallel
+        assert [int(shard.shape[0]) for shard in out.local_shards] == [2] * 8
 
 
 def test_expert_parallel_moe_allreduce_shared_expert_on_side_stream(

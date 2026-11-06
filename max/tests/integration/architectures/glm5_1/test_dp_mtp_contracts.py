@@ -50,6 +50,7 @@ from max.pipelines.architectures.glm5_1_modulev3.glm5_1 import Glm5_1Decoder
 from max.pipelines.speculative.driver import (
     DistributedInputs,
     DraftStepInput,
+    ReuseSpec,
     SequentialBatch,
 )
 from max.tensor import default_device
@@ -318,6 +319,9 @@ def test_step_returns_global_hidden_for_driver_last_per_device_slicing() -> (
     proposer.mesh = mesh
     proposer.draft = object.__new__(DeepseekV3_2NextN)
     proposer.draft.config = _config(mesh)
+    # What __init__ declares outside decode context parallelism: reuse step
+    # 0's selection.
+    proposer.reuse = ReuseSpec(dim=1, split_prefix="mtp_topk")
     with (
         patch.object(
             proposer.draft,

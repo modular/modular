@@ -63,6 +63,7 @@ from . import (
     random,
     reducescatter,
 )
+from .all_to_all import all_to_all
 from .allgather import allgather, allgather_rows_slice
 from .allgather_rms_norm import (
     allgather_gated_residual_rms_norm,

@@ -259,11 +259,21 @@ class Glm5_1MTPProposer(TensorAdapter):
         assert mesh is not None
         self.mesh = mesh
         self.hidden_dim: DimLike = draft.config.hidden_size
-        self.reuse: ReuseSpec | None = ReuseSpec(
-            dim=sparse_selection_width(
-                draft.config.mla_kv_params, draft.config.index_topk
-            ),
-            split_prefix="mtp_topk",
+        config = draft.config
+        # Under decode context parallelism every draft step runs its own
+        # indexer instead of reusing step 0's selection: the lagged reuse
+        # measurably lowers acceptance there (2.7 accepted tokens per step
+        # against 3.5 at TP8, K = 5), while each step's own selection, which
+        # also sees the drafts before it, recovers most of it (3.3).
+        self.reuse: ReuseSpec | None = (
+            None
+            if config.decode_context_parallel_degree > 1
+            else ReuseSpec(
+                dim=sparse_selection_width(
+                    config.mla_kv_params, config.index_topk
+                ),
+                split_prefix="mtp_topk",
+            )
         )
 
     def prefill(
@@ -287,7 +297,7 @@ class Glm5_1MTPProposer(TensorAdapter):
         return Proposed(
             logits=self._project(rows),
             hidden=list(h.local_shards),
-            reuse=list(topk.local_shards),
+            reuse=list(topk.local_shards) if self.reuse is not None else [],
         )
 
     def step(
@@ -301,13 +311,14 @@ class Glm5_1MTPProposer(TensorAdapter):
             Tensor.from_shard_values(draft_input.hidden, self._rows(batch))
         )
         # Every step reuses step 0's selection, made for the token one
-        # position before step 1's.
+        # position before step 1's, unless the proposer declares no reuse.
+        reuse = draft_input.reuse if self.reuse is not None else None
         h, _, offsets = self._decode(
             batch,
             draft_input.tokens,
             hidden,
-            draft_input.reuse,
-            selection_lag=index,
+            reuse,
+            selection_lag=index if reuse is not None else 0,
             split_prefix=f"mtp_step_{index}",
         )
         last = gather_last_tokens(h, offsets)

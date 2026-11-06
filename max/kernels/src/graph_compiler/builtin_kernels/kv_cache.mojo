@@ -18,17 +18,14 @@
 
 """Registers KV-cache graph ops backed by the `kv_cache` and `nn.kv_cache` kernels."""
 
-from std.sys.info import simd_width_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from max.algorithm import elementwise
 
 from max.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
-from max.gpu.host.info import is_gpu
 from kv_cache.types import KVCacheStaticParams, KVCollectionT
 from layout import (
     Coord,
@@ -37,7 +34,6 @@ from layout import (
     row_major,
 )
 from internal_utils.fp8_utils import cast_saturating
-from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged,
     fused_dual_qk_rms_norm_rope_ragged_paged,
@@ -57,6 +53,7 @@ from nn.kv_cache_ragged import (
     kv_cache_2m_iadd_dispatch,
     kv_cache_store_ragged,
     kv_cache_store_padded,
+    kv_cache_store_scales_ragged,
     kv_matmul_ragged_paged,
 )
 from extensibility import (
@@ -108,6 +105,13 @@ def _imm_pointer_tile(
 @extensibility.register("kv_cache.store.paged.ragged")
 struct Struct_kv_cache_store_paged:
     """Registers the `kv_cache.store.paged.ragged` graph op with the graph compiler.
+
+    Under decode context parallelism (`dcp_size > 1`) every rank of the
+    group receives the same lookup table and global `cache_lengths`; a row is
+    stored only on the rank that owns its position
+    (`ContextParallelLayout[dcp_size, dcp_interleave]`), at that rank's local
+    slot. `dcp_rank` is a host scalar after `layer_idx`; outside a group
+    (`dcp_size == 1`) the caller passes 0 and the layout never reads it.
     """
 
     @inline(.always)
@@ -115,6 +119,8 @@ struct Struct_kv_cache_store_paged:
     def execute[
         key_or_value: Int,
         v_head_dim: Int = -1,
+        dcp_size: Int = 1,
+        dcp_interleave: Int = 1,
     ](
         inputs: Some[Input & Fused & LoadAccess],
         kv_blocks: Some[MutableInput & Tensor],
@@ -125,6 +131,7 @@ struct Struct_kv_cache_store_paged:
         max_prompt_length: Some[Input & Tensor],
         max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
+        dcp_rank: Int32,
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
@@ -144,6 +151,12 @@ struct Struct_kv_cache_store_paged:
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(max_prompt_length).rank == 1
         comptime assert type_of(max_cache_length).rank == 1
+
+        comptime if dcp_size > 1:
+            if dcp_rank < 0 or Int(dcp_rank) >= dcp_size:
+                raise Error(
+                    t"dcp_rank {dcp_rank} is outside a group of {dcp_size}"
+                )
 
         # Project the host proxy to its access-enabled view so the closure can
         # load on the GPU lane.
@@ -201,12 +214,17 @@ struct Struct_kv_cache_store_paged:
                 )
             )
 
-        kv_cache_store_ragged[head_dim_offset=head_dim_offset](
+        kv_cache_store_ragged[
+            head_dim_offset=head_dim_offset,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
+        ](
             cache,
             inputs.shape(),
             input_row_offsets.to_tile_tensor[.uint32](),
             input_fn,
             context,
+            Int(dcp_rank),
         )
 
 
@@ -282,12 +300,21 @@ struct Struct_kv_cache_gather_rows_ragged_paged:
 @extensibility.register("kv_cache.store_k_scales.paged.ragged")
 struct Struct_kv_cache_store_k_scales_paged:
     """Registers the `kv_cache.store_k_scales.paged.ragged` graph op with the graph compiler.
+
+    Under decode context parallelism (`dcp_size > 1`) every rank of the
+    group receives the same lookup table and global `cache_lengths`; a row is
+    stored only on the rank that owns its position
+    (`ContextParallelLayout[dcp_size, dcp_interleave]`), at that rank's local
+    slot. `dcp_rank` is a host scalar after `layer_idx`; outside a group
+    (`dcp_size == 1`) the caller passes 0 and the layout never reads it.
     """
 
     @inline(.always)
     @staticmethod
     def execute[
         quantization_granularity: Int,
+        dcp_size: Int = 1,
+        dcp_interleave: Int = 1,
     ](
         input_k_scales: Some[Input & Fused & LoadAccess],
         kv_blocks: Some[MutableInput & Tensor],
@@ -304,6 +331,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         # when they are paged independently.
         k_scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
+        dcp_rank: Int32,
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
@@ -332,6 +360,12 @@ struct Struct_kv_cache_store_k_scales_paged:
         comptime assert type_of(k_scales_blocks).rank == 6
         comptime assert type_of(scales_page_stride).rank == 1
         comptime assert type_of(k_scales_lookup_table).rank == 2
+
+        comptime if dcp_size > 1:
+            if dcp_rank < 0 or Int(dcp_rank) >= dcp_size:
+                raise Error(
+                    t"dcp_rank {dcp_rank} is outside a group of {dcp_size}"
+                )
 
         # Project the host proxy to its access-enabled view so the closure can
         # load on the GPU lane.
@@ -365,58 +399,25 @@ struct Struct_kv_cache_store_k_scales_paged:
             _imm_pointer_tile(k_scales_lookup_table.to_tile_tensor[.uint32]()),
         )
 
-        var k_cache = k_collection.get_key_cache(Int(layer_idx))
-
-        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.uint32]()
-
-        def write_scale_to_cache[
-            width: Int,
-            alignment: Int = 1,
-        ](idx: Coord) {
-            var k_cache,
-            var input_row_offsets_tt,
-            var input_k_scales_view,
-        }:
-            var row = Int(idx[0])
-            # Same bound as the value store: a row past the last offset
-            # belongs to no request, and the search below would answer with
-            # the last one and write it past the end of that request's span.
-            if row >= Int(
-                input_row_offsets_tt.load[width=1](
-                    Coord(input_row_offsets_tt.num_elements() - 1)
-                )
-            ):
-                return
-            var loaded_val = rebind[SIMD[scale_dtype, width]](
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](idx: Coord) {var input_k_scales_view} -> SIMD[scale_dtype, width]:
+            return rebind[SIMD[scale_dtype, width]](
                 input_k_scales_view.load[
                     width=width, element_alignment=alignment
-                ](Coord(row, Int(idx[1]), Int(idx[2])))
-            )
-            var batch_idx = get_batch_from_row_offsets(
-                input_row_offsets_tt, row
-            )
-            var token_idx = Int(
-                UInt32(row)
-                - input_row_offsets_tt.load[width=1](Coord(batch_idx))
-            )
-            var h_idx = Int(idx[1])
-            var hd_idx = Int(idx[2])
-            var cache_length = k_cache.cache_length(batch_idx)
-            var cache_token_idx = token_idx + cache_length
-            k_cache.store_scale(
-                batch_idx,
-                h_idx,
-                cache_token_idx,
-                hd_idx,
-                loaded_val,
+                ](idx)
             )
 
-        comptime simd_width = simd_width_of[
-            scale_dtype, target=context.target
-        ]()
-
-        elementwise[simd_width=simd_width](
-            write_scale_to_cache, input_k_scales.shape(), context
+        kv_cache_store_scales_ragged[
+            dcp_size=dcp_size, dcp_interleave=dcp_interleave
+        ](
+            k_collection.get_key_cache(Int(layer_idx)),
+            input_k_scales.shape(),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            input_fn,
+            context,
+            Int(dcp_rank),
         )
 
 

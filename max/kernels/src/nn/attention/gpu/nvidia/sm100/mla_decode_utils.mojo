@@ -4913,6 +4913,30 @@ struct MLA_SM100_Decode_Common[
         launch_dependent_grids()
 
     # --------------------------------------------------------------------------
+    # Unsplit LSE for a query token with no keys, when the caller asked for
+    # the LSE. `lse_out_ptr` is then the ragged `[total_q_tokens, num_heads]`
+    # LSE output; the token's O rows are zeroed by `store_empty`.
+    # --------------------------------------------------------------------------
+    @staticmethod
+    @inline(.always)
+    def store_empty_lse(q_token_idx: Int, lse_out_ptr: Self.SplitAccumType):
+        """Writes `-inf` LSE for this CTA's heads of an empty query token.
+
+        Args:
+            q_token_idx: Global index of the query token.
+            lse_out_ptr: The ragged `[total_q_tokens, num_heads]` LSE output.
+        """
+        var tid = Int(thread_idx.x)
+        var head_idx = decode_head_tile[Self.config]() * Self.config.BM + tid
+        if tid < Self.config.BM and head_idx < Self.config.num_q_heads:
+            var lse_ptr = rebind[
+                Pointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
+            ](lse_out_ptr.value())
+            lse_ptr[
+                q_token_idx * Self.config.num_q_heads + head_idx
+            ] = min_or_neg_inf[Self.AccumType]()
+
+    # --------------------------------------------------------------------------
     # MLA decoding load_q and load_kv function
     # --------------------------------------------------------------------------
     @staticmethod
@@ -6554,6 +6578,29 @@ struct MLA_SM100_Decode_Common[
                         Pointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
                     ](lse_accum_split_ptr.value())
                     lse_ptr[lse_offset] = partial_lse
+        elif not Self.SplitAccumType.is_null:
+            # No split, but the caller asked for the LSE (decode context
+            # parallelism merges ranks with it). The pointer is then the op's
+            # ragged `[total_q_tokens, num_heads]` output, not a split-K
+            # workspace, and the LSE is final, so no sink may be folded into
+            # O behind it.
+            comptime assert not fold_q, "the LSE output does not support fold_q"
+            comptime assert (
+                not has_attn_sink
+            ), "the LSE output does not support an attention sink"
+            var head_idx = (
+                decode_head_tile[Self.config]() * Self.config.BM + row
+            )
+            if (lane_id >> (5 if layout_g else 6)) == 0 and (
+                head_idx < Self.config.num_q_heads
+            ):
+                var lse_ptr = rebind[
+                    Pointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
+                ](lse_accum_split_ptr.value())
+                lse_ptr[
+                    offset_position.q_token_idx * Self.config.num_q_heads
+                    + head_idx
+                ] = (log2(max(li[0], Scalar[Self.AccumType](0))) + p_ref)
 
         # --------------------------------------------------------------------------
         # Epilogue: scale output by recip(li) and write to shared memory as bf16

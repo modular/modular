@@ -32,6 +32,7 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.collections import Optional, OptionalReg
+from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import (
     KVCacheStaticParams,
     KVCacheT,
@@ -4012,6 +4013,8 @@ def generic_flare_mla_decode_kv_cache_ragged[
     physical_indices: Bool = True,
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    # Presence of `lse_out` (inferred from it); see flare_mla_decoding.
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
     *,
     # Selects the vendor's decode and prefill kernels; see `MLAKernels`.
     kernels: MLAKernels,
@@ -4046,6 +4049,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
     logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     # See flare_mla_decoding.
     selection_lag: Int = 0,
+    # See flare_mla_decoding.
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+    split_len_bound: Int = 0,
 ) raises:
     """Dispatches MLA decode attention over a ragged batch against a paged KV cache.
 
@@ -4075,6 +4081,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             (inferred).
         TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
             `extra_topk_lengths` (inferred).
+        LseOutPtrType: `OptionalPointer` type of `lse_out` (inferred).
         kernels: The vendor's MLA kernels; see `MLAKernels`.
 
     Args:
@@ -4110,6 +4117,10 @@ def generic_flare_mla_decode_kv_cache_ragged[
             masking; `None` keeps the prior slot-count behavior.
         selection_lag: Positions between the token each sparse row was
             computed for and the token that reads it.
+        lse_out: Optional `[total_q_tokens, num_heads]` float32 LSE output,
+            base 2; see `flare_mla_decoding`.
+        split_len_bound: With `lse_out`, the split-K sizing bound; see
+            `flare_mla_decoding`.
     """
 
     @inline(.always)
@@ -4170,6 +4181,8 @@ def generic_flare_mla_decode_kv_cache_ragged[
             num_partitions_in,
             logical_indices,
             selection_lag,
+            lse_out=lse_out,
+            split_len_bound=split_len_bound,
         )
 
 
@@ -4193,6 +4206,8 @@ def _flare_mla_decode_kv_cache_ragged[
     physical_indices: Bool = True,
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    # Presence of `lse_out` (inferred from it); see flare_mla_decoding.
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
     *,
     # Selects the vendor's decode and prefill kernels; see `MLAKernels`.
     kernels: MLAKernels,
@@ -4229,6 +4244,9 @@ def _flare_mla_decode_kv_cache_ragged[
     logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     # See flare_mla_decoding.
     selection_lag: Int = 0,
+    # See flare_mla_decoding.
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+    split_len_bound: Int = 0,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -4260,6 +4278,10 @@ def _flare_mla_decode_kv_cache_ragged[
             masking; `None` keeps the prior slot-count behavior.
         selection_lag: Positions between the token each sparse row was
             computed for and the token that reads it.
+        lse_out: Optional `[total_q_tokens, num_heads]` float32 LSE output,
+            base 2; see `flare_mla_decoding`.
+        split_len_bound: With `lse_out`, the split-K sizing bound; see
+            `flare_mla_decoding`.
     """
     comptime assert context.target.is_gpu(), "MLA is only supported on GPU"
 
@@ -4302,6 +4324,8 @@ def _flare_mla_decode_kv_cache_ragged[
         var num_partitions_val,
         var logical_indices,
         var selection_lag,
+        var lse_out,
+        var split_len_bound,
         imm,
     }:
         var _num_partitions_in: Optional[Int] = Optional[Int](
@@ -4341,6 +4365,8 @@ def _flare_mla_decode_kv_cache_ragged[
             num_partitions_in=_num_partitions_in,
             logical_indices=logical_indices,
             selection_lag=selection_lag,
+            lse_out=lse_out,
+            split_len_bound=split_len_bound,
         )
 
     dispatch_mask[
@@ -5102,6 +5128,8 @@ def kv_cache_store_ragged[
     & def[width: Int, alignment: Int](Coord) -> SIMD[cache_t.dtype, width],
     *,
     head_dim_offset: Int = 0,
+    dcp_size: Int = 1,
+    dcp_interleave: Int = 1,
 ](
     cache: cache_t,
     input_shape: Coord,
@@ -5110,6 +5138,7 @@ def kv_cache_store_ragged[
     ],
     input_fn: InputFnType,
     context: DeviceContext,
+    dcp_rank: Int = 0,
 ) raises:
     """Stores ragged input values into a paged KV cache via an elementwise kernel.
 
@@ -5123,6 +5152,10 @@ def kv_cache_store_ragged[
         InputFnType: Type of `input_fn` (inferred).
         head_dim_offset: Cache column of the input's first column: the
             value's `v_col_base()` in a split cache, else 0.
+        dcp_size: Ranks of the decode context-parallel group sharing each
+            request's KV positions; 1 stores every row.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn (see `ContextParallelLayout`).
 
     Args:
         cache: The KVCache object to write key or value entries into.
@@ -5133,11 +5166,18 @@ def kv_cache_store_ragged[
         input_fn: Callback that loads a SIMD vector of cache-typed elements
             at the given 3D index.
         context: The call context pointer, passed by the graph compiler.
+        dcp_rank: This rank's index in the decode context-parallel group.
+            `cache_lengths` stay global; a row is stored only if this rank
+            owns its position, at the rank's local slot.
     """
     comptime assert input_row_offsets.flat_rank == 1, (
         "Expected input_row_offsets to be a 1D tensor of shape `(batch_size"
         " + 1,)`"
     )
+
+    # At `dcp_size == 1`, `owns` is a comptime `True` and `local_slot` the
+    # identity, so this is the plain store.
+    var cp = ContextParallelLayout[dcp_size, dcp_interleave](dcp_rank)
 
     def write_to_cache[
         width: Int,
@@ -5153,20 +5193,18 @@ def kv_cache_store_ragged[
         # pages follow.
         if row >= Int(input_row_offsets[input_row_offsets.num_elements() - 1]):
             return
-        var input_idx = Coord(row, Int(idx[1]), Int(idx[2]))
-        var loaded_val = input_fn[width=width, alignment=alignment](input_idx)
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row)
         var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
-        var h_idx = Int(idx[1])
-        var hd_idx = Int(idx[2]) + head_dim_offset
-        var cache_length = cache.cache_length(batch_idx)
-        var cache_token_idx = token_idx + cache_length
+        var pos = cache.cache_length(batch_idx) + token_idx
+        if not cp.owns(pos):
+            return
+        var input_idx = Coord(row, Int(idx[1]), Int(idx[2]))
         cache.store(
             batch_idx,
-            h_idx,
-            cache_token_idx,
-            hd_idx,
-            loaded_val,
+            Int(idx[1]),
+            cp.local_slot(pos),
+            Int(idx[2]) + head_dim_offset,
+            input_fn[width=width, alignment=alignment](input_idx),
         )
 
     comptime simd_width = simd_width_of[cache_t.dtype, target=context.target]()
@@ -5174,6 +5212,85 @@ def kv_cache_store_ragged[
     elementwise[simd_width, _trace_description="kv_cache_store_ragged"](
         write_to_cache, input_shape, context
     )
+
+
+def kv_cache_store_scales_ragged[
+    cache_t: KVCacheT,
+    scale_dtype: DType,
+    //,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](Coord) -> SIMD[scale_dtype, width],
+    *,
+    dcp_size: Int = 1,
+    dcp_interleave: Int = 1,
+](
+    cache: cache_t,
+    input_shape: Coord,
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    input_fn: InputFnType,
+    context: DeviceContext,
+    dcp_rank: Int = 0,
+) raises:
+    """Stores ragged per-token quantization scales into a paged KV cache.
+
+    The scale counterpart of `kv_cache_store_ragged`: a row lands at the same
+    position its values do, through the cache's scale lookup table.
+
+    Parameters:
+        cache_t: The quantized KV cache type (inferred).
+        scale_dtype: Element type of the scales (inferred).
+        InputFnType: Type of `input_fn` (inferred).
+        dcp_size: Ranks of the decode context-parallel group sharing each
+            request's KV positions; 1 stores every row.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn (see `ContextParallelLayout`).
+
+    Args:
+        cache: The KVCache object whose scales to write.
+        input_shape: Shape of the scales as a 3D coordinate (tokens, heads,
+            scale groups).
+        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each sequence along the ragged sequence dimension.
+        input_fn: Callback that loads a SIMD vector of scales at the given 3D
+            index.
+        context: The call context pointer, passed by the graph compiler.
+        dcp_rank: This rank's index in the decode context-parallel group; see
+            `kv_cache_store_ragged`.
+    """
+    var cp = ContextParallelLayout[dcp_size, dcp_interleave](dcp_rank)
+
+    def write_scale_to_cache[
+        width: Int,
+        alignment: Int = 1,
+    ](idx: Coord) {var}:
+        var row = Int(idx[0])
+        # Same bound as the value store: a row past the last offset belongs
+        # to no request.
+        if row >= Int(input_row_offsets[input_row_offsets.num_elements() - 1]):
+            return
+        var batch_idx = get_batch_from_row_offsets(input_row_offsets, row)
+        var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
+        var pos = cache.cache_length(batch_idx) + token_idx
+        if not cp.owns(pos):
+            return
+        var input_idx = Coord(row, Int(idx[1]), Int(idx[2]))
+        cache.store_scale[scales_dtype=scale_dtype, width=width](
+            batch_idx,
+            Int(idx[1]),
+            cp.local_slot(pos),
+            Int(idx[2]),
+            input_fn[width=width, alignment=alignment](input_idx),
+        )
+
+    comptime simd_width = simd_width_of[scale_dtype, target=context.target]()
+
+    elementwise[
+        simd_width,
+        _trace_description="kv_cache_store_scales_ragged",
+    ](write_scale_to_cache, input_shape, context)
 
 
 def kv_cache_store_padded[

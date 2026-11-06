@@ -5205,6 +5205,41 @@ def MO_ReduceScatterSumOp : MO_DistributedOp<"distributed.reducescatter.sum", [
 }
 
 
+def MO_AllToAllOp : MO_DistributedOp<"distributed.all_to_all", [
+  MO_MultiDevice,
+]> {
+  let summary = "All-to-all across N devices.";
+  let description = [{
+    Each device splits its input into `group_size` equal chunks along
+    `split_axis` and sends chunk `j` to rank `j` of its group; each device's
+    output concatenates the chunks it receives, in source rank order, along
+    `concat_axis`. An output has its input's shape with `split_axis` divided
+    by `group_size` and `concat_axis` multiplied by it.
+
+    `group_size` splits the devices into contiguous independent groups (e.g.
+    the TP groups of DP replicas); inputs must have the same shape within a
+    group.
+  }];
+  let hasVerifier = 1;
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    MO_Chain:$inChain,
+    I64Attr:$split_axis,
+    I64Attr:$concat_axis,
+    I64Attr:$group_size
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$outputs,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)` `{` `split_axis` `=` $split_axis `,` `concat_axis` `=`
+    $concat_axis `,` `group_size` `=` $group_size `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
 def MO_DistributedScatterOp : MO_DistributedOp<"distributed.scatter", [
   MO_MultiDevice,
 ]> {

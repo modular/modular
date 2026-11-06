@@ -73,6 +73,7 @@ from linalg.fp4_utils import (
 )
 from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
+from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import KVCacheStaticParams
 from nn.kv_cache import KVCollectionT, KVCacheT
 from kv_cache.types import PagedKVCache
@@ -972,6 +973,232 @@ def fused_rope_rmsnorm_kernel[
                     )
 
 
+@inline(.always)
+def _fused_rope_rmsnorm_quantization_body[
+    dtype: DType,
+    freq_dtype: DType,
+    gamma_dtype: DType,
+    QRopeOutputLayoutType: TensorLayout,
+    QRopeLayoutType: TensorLayout,
+    InputRowOffsetsLayoutType: TensorLayout,
+    FreqsCisLayoutType: TensorLayout,
+    GammaLayoutType: TensorLayout,
+    cache_t: KVCacheT,
+    block_size: Int,
+    n_rope_blocks: Int,
+    n_rms_blocks: Int,
+    out_rope_dtype: DType,
+    store_only: Bool,
+    KVInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    *,
+    QRopeOutputEngine: TensorEngine,
+    QRopeEngine: TensorEngine,
+    InputRowOffsetsEngine: TensorEngine,
+    FreqsCisEngine: TensorEngine,
+    GammaEngine: TensorEngine,
+    dcp_size: Int,
+    dcp_interleave: Int,
+](
+    q_rope_output: TileTensor[
+        mut=True,
+        out_rope_dtype,
+        QRopeOutputLayoutType,
+        MutUntrackedOrigin,
+        Engine=QRopeOutputEngine,
+    ],
+    q_rope: TileTensor[
+        dtype, QRopeLayoutType, ImmUntrackedOrigin, Engine=QRopeEngine
+    ],
+    input_row_offsets: TileTensor[
+        .uint32,
+        InputRowOffsetsLayoutType,
+        ImmUntrackedOrigin,
+        Engine=InputRowOffsetsEngine,
+    ],
+    freqs_cis: TileTensor[
+        freq_dtype,
+        FreqsCisLayoutType,
+        ImmUntrackedOrigin,
+        Engine=FreqsCisEngine,
+    ],
+    gamma: TileTensor[
+        gamma_dtype, GammaLayoutType, ImmUntrackedOrigin, Engine=GammaEngine
+    ],
+    k_cache: cache_t,
+    epsilon: Float32,
+    kv_input_fn: KVInputFnType,
+    cp: ContextParallelLayout[dcp_size, dcp_interleave],
+) -> None:
+    """Body of `fused_rope_rmsnorm_quantization_kernel` and its
+    context-parallel variant; see the kernel for the operands.
+
+    `cp` maps each token's global position to the rank that stores it and to
+    that rank's local cache slot. RoPE uses the global position on every rank;
+    only the owning rank writes the latent row. At `dcp_size == 1` every
+    token is owned and its slot is its position.
+    """
+    comptime assert (
+        cache_t.kv_params.num_heads == 1
+    ), "num_heads should be 1 for MLA"
+    comptime assert q_rope_output.flat_rank == 3
+    comptime assert q_rope.flat_rank == 3
+    comptime assert input_row_offsets.flat_rank == 1
+    comptime assert freqs_cis.flat_rank == 2
+    comptime assert gamma.flat_rank == 1
+
+    # Evidence asserts for TileTensor load/store Coord constraints.
+    comptime assert (
+        TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin].flat_rank
+        >= 2
+    )
+    comptime assert (
+        TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin].flat_rank
+        >= 1
+    )
+
+    comptime num_q_heads = 0 if store_only else q_rope.static_shape[1]
+    comptime rope_dim = q_rope.static_shape[2]
+    comptime kv_norm_dim = gamma.static_shape[0]
+    comptime cache_dtype = cache_t.dtype
+    comptime k_width = simd_width_of[dtype]()
+
+    var worker_idx = block_idx.y
+    var num_workers = grid_dim.y
+    var num_tokens = q_rope.dim(0)
+
+    with PDL():
+        for global_token_idx in range(worker_idx, Int(num_tokens), num_workers):
+            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
+                input_row_offsets, global_token_idx
+            )
+            var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
+            # Under decode context parallelism only the owning rank stores the
+            # row, at its local slot; RoPE keeps the global position.
+            var owned = cp.owns(post_seq_idx)
+            var cache_idx = cp.local_slot(post_seq_idx)
+
+            # First n_rope_blocks blocks of this worker process RoPE.
+            if block_idx.x < n_rope_blocks:
+                comptime q_width = simd_width_of[dtype]()
+                comptime assert (
+                    rope_dim % q_width == 0
+                ), "rope_dim should be divisible by q_width"
+
+                var head_idx, head_dim_idx = divmod(
+                    global_idx.x * q_width, rope_dim
+                )
+                var f_c = freqs_cis.load[width=q_width](
+                    (post_seq_idx, head_dim_idx)
+                )
+
+                if head_idx < num_q_heads:
+                    # One `alignment` covers both the load and the store, so it
+                    # must hold for the narrower of the two element types.
+                    rope_q_proj[
+                        interleaved=True,
+                        alignment=align_of[SIMD[out_rope_dtype, q_width]](),
+                    ](
+                        q_rope,
+                        q_rope_output,
+                        (global_token_idx, head_idx, head_dim_idx),
+                        f_c,
+                        rope_dim,
+                    )
+                elif head_idx == num_q_heads and owned:
+                    var val = kv_input_fn[width=k_width](
+                        {global_token_idx, kv_norm_dim + head_dim_idx}
+                    )
+                    var roped_val = rope_value(val, f_c).cast[dtype]()
+                    comptime if cache_dtype == DType.uint8:
+                        # NVFP4: the rope dims stay FP8, exactly as an FP8
+                        # cache stores them, in the bytes after the packed
+                        # latent. Rope dominates the attention scores, so e2m1
+                        # there costs accuracy.
+                        comptime assert (
+                            cache_t.kv_params.fp8_tail_size == rope_dim
+                        ), "an NVFP4 MLA row ends in its FP8 rope dims"
+                        k_cache.store(
+                            batch_idx,
+                            0,  # num_k_heads is 1 for MLA
+                            cache_idx,
+                            kv_norm_dim // 2 + head_dim_idx,
+                            rebind[SIMD[cache_dtype, k_width]](
+                                bitcast[DType.uint8, k_width](
+                                    cast_saturating[DType.float8_e4m3fn](
+                                        roped_val
+                                    )
+                                )
+                            ),
+                        )
+                    else:
+                        k_cache.store(
+                            batch_idx,
+                            0,  # num_k_heads is 1 for MLA
+                            cache_idx,
+                            head_dim_idx + kv_norm_dim,
+                            cast_saturating[cache_dtype](roped_val),
+                        )
+
+            # The last block of this worker processes RMSNorm.
+            elif owned:
+                comptime accum_type = get_accum_type[dtype]()
+                comptime warps_per_block = block_size // WARP_SIZE
+
+                comptime assert (
+                    kv_norm_dim % k_width == 0
+                ), "kv_norm_dim should be divisible by k_width"
+
+                var vec_data = SIMD[accum_type, k_width](0)
+                var gamma_val = SIMD[gamma_dtype, k_width](0)
+
+                var idx = thread_idx.x * k_width
+                if idx < kv_norm_dim:
+                    vec_data = kv_input_fn[width=k_width](
+                        {global_token_idx, idx}
+                    ).cast[accum_type]()
+                    # Prefetch gamma before reduction.
+                    gamma_val = gamma.load[
+                        width=k_width,
+                        alignment=align_of[SIMD[gamma_dtype, k_width]](),
+                    ](Coord(idx))
+
+                var norm_val = _rms_norm_warp_tiling_subkernel[
+                    warps_per_block,
+                    False,  # Do not multiply the gamma before casting.
+                ](
+                    global_token_idx,
+                    idx,
+                    vec_data,
+                    gamma_val,
+                    epsilon,
+                    0.0,
+                    kv_norm_dim,
+                )
+
+                comptime if cache_dtype == DType.uint8:
+                    # NVFP4 quantizes the row rounded to the compute dtype,
+                    # and every thread takes part in the group-amax shuffle.
+                    _store_nvfp4_latent_slice(
+                        k_cache,
+                        batch_idx,
+                        cache_idx,
+                        idx,
+                        norm_val.cast[dtype](),
+                        idx < kv_norm_dim,
+                    )
+                else:
+                    if idx < kv_norm_dim:
+                        k_cache.store(
+                            batch_idx,
+                            0,  # num_k_heads is 1 for MLA
+                            cache_idx,
+                            idx,
+                            cast_saturating[cache_dtype](norm_val),
+                        )
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
@@ -1078,160 +1305,144 @@ def fused_rope_rmsnorm_quantization_kernel[
             [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
             + qk_rope_head_dim.
     """
-    comptime assert (
-        cache_t.kv_params.num_heads == 1
-    ), "num_heads should be 1 for MLA"
-    comptime assert q_rope_output.flat_rank == 3
-    comptime assert q_rope.flat_rank == 3
-    comptime assert input_row_offsets.flat_rank == 1
-    comptime assert freqs_cis.flat_rank == 2
-    comptime assert gamma.flat_rank == 1
-
-    # Evidence asserts for TileTensor load/store Coord constraints.
-    comptime assert (
-        TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin].flat_rank
-        >= 2
+    _fused_rope_rmsnorm_quantization_body[
+        dtype,
+        freq_dtype,
+        gamma_dtype,
+        QRopeOutputLayoutType,
+        QRopeLayoutType,
+        InputRowOffsetsLayoutType,
+        FreqsCisLayoutType,
+        GammaLayoutType,
+        cache_t,
+        block_size,
+        n_rope_blocks,
+        n_rms_blocks,
+        out_rope_dtype,
+        store_only,
+        KVInputFnType,
+        QRopeOutputEngine=QRopeOutputEngine,
+        QRopeEngine=QRopeEngine,
+        InputRowOffsetsEngine=InputRowOffsetsEngine,
+        FreqsCisEngine=FreqsCisEngine,
+        GammaEngine=GammaEngine,
+        dcp_size=1,
+        dcp_interleave=1,
+    ](
+        q_rope_output,
+        q_rope,
+        input_row_offsets,
+        freqs_cis,
+        gamma,
+        k_cache,
+        epsilon,
+        kv_input_fn,
+        ContextParallelLayout(0),
     )
-    comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin].flat_rank
-        >= 1
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
+@__name(
+    t"fused_rope_rmsnorm_quantization_cp{dcp_size}x{dcp_interleave}_{dtype}_{out_rope_dtype}_{store_only}"
+)
+def _fused_rope_rmsnorm_quantization_cp_kernel[
+    dtype: DType,
+    freq_dtype: DType,
+    gamma_dtype: DType,
+    QRopeOutputLayoutType: TensorLayout,
+    QRopeLayoutType: TensorLayout,
+    InputRowOffsetsLayoutType: TensorLayout,
+    FreqsCisLayoutType: TensorLayout,
+    GammaLayoutType: TensorLayout,
+    cache_t: KVCacheT,
+    block_size: Int,
+    n_rope_blocks: Int,
+    n_rms_blocks: Int,
+    out_rope_dtype: DType,
+    store_only: Bool,
+    KVInputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    *,
+    QRopeOutputEngine: TensorEngine,
+    QRopeEngine: TensorEngine,
+    InputRowOffsetsEngine: TensorEngine,
+    FreqsCisEngine: TensorEngine,
+    GammaEngine: TensorEngine,
+    dcp_size: Int,
+    dcp_interleave: Int,
+](
+    q_rope_output: TileTensor[
+        mut=True,
+        out_rope_dtype,
+        QRopeOutputLayoutType,
+        MutUntrackedOrigin,
+        Engine=QRopeOutputEngine,
+    ],
+    q_rope: TileTensor[
+        dtype, QRopeLayoutType, ImmUntrackedOrigin, Engine=QRopeEngine
+    ],
+    input_row_offsets: TileTensor[
+        .uint32,
+        InputRowOffsetsLayoutType,
+        ImmUntrackedOrigin,
+        Engine=InputRowOffsetsEngine,
+    ],
+    freqs_cis: TileTensor[
+        freq_dtype,
+        FreqsCisLayoutType,
+        ImmUntrackedOrigin,
+        Engine=FreqsCisEngine,
+    ],
+    gamma: TileTensor[
+        gamma_dtype, GammaLayoutType, ImmUntrackedOrigin, Engine=GammaEngine
+    ],
+    k_cache: cache_t,
+    epsilon: Float32,
+    # Precedes `kv_input_fn`, whose captures the launch appends as host args.
+    dcp_rank: Int32,
+    kv_input_fn: KVInputFnType,
+) -> None:
+    """`fused_rope_rmsnorm_quantization_kernel` for rank `dcp_rank` of a decode
+    context-parallel group of `dcp_size` ranks that own `dcp_interleave`
+    consecutive positions in turn.
+    """
+    _fused_rope_rmsnorm_quantization_body[
+        dtype,
+        freq_dtype,
+        gamma_dtype,
+        QRopeOutputLayoutType,
+        QRopeLayoutType,
+        InputRowOffsetsLayoutType,
+        FreqsCisLayoutType,
+        GammaLayoutType,
+        cache_t,
+        block_size,
+        n_rope_blocks,
+        n_rms_blocks,
+        out_rope_dtype,
+        store_only,
+        KVInputFnType,
+        QRopeOutputEngine=QRopeOutputEngine,
+        QRopeEngine=QRopeEngine,
+        InputRowOffsetsEngine=InputRowOffsetsEngine,
+        FreqsCisEngine=FreqsCisEngine,
+        GammaEngine=GammaEngine,
+        dcp_size=dcp_size,
+        dcp_interleave=dcp_interleave,
+    ](
+        q_rope_output,
+        q_rope,
+        input_row_offsets,
+        freqs_cis,
+        gamma,
+        k_cache,
+        epsilon,
+        kv_input_fn,
+        ContextParallelLayout[dcp_size, dcp_interleave](Int(dcp_rank)),
     )
-
-    comptime num_q_heads = 0 if store_only else q_rope.static_shape[1]
-    comptime rope_dim = q_rope.static_shape[2]
-    comptime kv_norm_dim = gamma.static_shape[0]
-    comptime cache_dtype = cache_t.dtype
-    comptime k_width = simd_width_of[dtype]()
-
-    var worker_idx = block_idx.y
-    var num_workers = grid_dim.y
-    var num_tokens = q_rope.dim(0)
-
-    with PDL():
-        for global_token_idx in range(worker_idx, Int(num_tokens), num_workers):
-            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
-                input_row_offsets, global_token_idx
-            )
-            var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
-
-            # First n_rope_blocks blocks of this worker process RoPE.
-            if block_idx.x < n_rope_blocks:
-                comptime q_width = simd_width_of[dtype]()
-                comptime assert (
-                    rope_dim % q_width == 0
-                ), "rope_dim should be divisible by q_width"
-
-                var head_idx, head_dim_idx = divmod(
-                    global_idx.x * q_width, rope_dim
-                )
-                var f_c = freqs_cis.load[width=q_width](
-                    (post_seq_idx, head_dim_idx)
-                )
-
-                if head_idx < num_q_heads:
-                    # One `alignment` covers both the load and the store, so it
-                    # must hold for the narrower of the two element types.
-                    rope_q_proj[
-                        interleaved=True,
-                        alignment=align_of[SIMD[out_rope_dtype, q_width]](),
-                    ](
-                        q_rope,
-                        q_rope_output,
-                        (global_token_idx, head_idx, head_dim_idx),
-                        f_c,
-                        rope_dim,
-                    )
-                elif head_idx == num_q_heads:
-                    var val = kv_input_fn[width=k_width](
-                        {global_token_idx, kv_norm_dim + head_dim_idx}
-                    )
-                    var roped_val = rope_value(val, f_c).cast[dtype]()
-                    comptime if cache_dtype == DType.uint8:
-                        # NVFP4: the rope dims stay FP8, exactly as an FP8
-                        # cache stores them, in the bytes after the packed
-                        # latent. Rope dominates the attention scores, so e2m1
-                        # there costs accuracy.
-                        comptime assert (
-                            cache_t.kv_params.fp8_tail_size == rope_dim
-                        ), "an NVFP4 MLA row ends in its FP8 rope dims"
-                        k_cache.store(
-                            batch_idx,
-                            0,  # num_k_heads is 1 for MLA
-                            post_seq_idx,
-                            kv_norm_dim // 2 + head_dim_idx,
-                            rebind[SIMD[cache_dtype, k_width]](
-                                bitcast[DType.uint8, k_width](
-                                    cast_saturating[DType.float8_e4m3fn](
-                                        roped_val
-                                    )
-                                )
-                            ),
-                        )
-                    else:
-                        k_cache.store(
-                            batch_idx,
-                            0,  # num_k_heads is 1 for MLA
-                            post_seq_idx,
-                            head_dim_idx + kv_norm_dim,
-                            cast_saturating[cache_dtype](roped_val),
-                        )
-
-            # The last block of this worker processes RMSNorm.
-            else:
-                comptime accum_type = get_accum_type[dtype]()
-                comptime warps_per_block = block_size // WARP_SIZE
-
-                comptime assert (
-                    kv_norm_dim % k_width == 0
-                ), "kv_norm_dim should be divisible by k_width"
-
-                var vec_data = SIMD[accum_type, k_width](0)
-                var gamma_val = SIMD[gamma_dtype, k_width](0)
-
-                var idx = thread_idx.x * k_width
-                if idx < kv_norm_dim:
-                    vec_data = kv_input_fn[width=k_width](
-                        {global_token_idx, idx}
-                    ).cast[accum_type]()
-                    # Prefetch gamma before reduction.
-                    gamma_val = gamma.load[
-                        width=k_width,
-                        alignment=align_of[SIMD[gamma_dtype, k_width]](),
-                    ](Coord(idx))
-
-                var norm_val = _rms_norm_warp_tiling_subkernel[
-                    warps_per_block,
-                    False,  # Do not multiply the gamma before casting.
-                ](
-                    global_token_idx,
-                    idx,
-                    vec_data,
-                    gamma_val,
-                    epsilon,
-                    0.0,
-                    kv_norm_dim,
-                )
-
-                comptime if cache_dtype == DType.uint8:
-                    # NVFP4 quantizes the row rounded to the compute dtype,
-                    # and every thread takes part in the group-amax shuffle.
-                    _store_nvfp4_latent_slice(
-                        k_cache,
-                        batch_idx,
-                        post_seq_idx,
-                        idx,
-                        norm_val.cast[dtype](),
-                        idx < kv_norm_dim,
-                    )
-                else:
-                    if idx < kv_norm_dim:
-                        k_cache.store(
-                            batch_idx,
-                            0,  # num_k_heads is 1 for MLA
-                            post_seq_idx,
-                            idx,
-                            cast_saturating[cache_dtype](norm_val),
-                        )
 
 
 @inline(.always)
@@ -1246,6 +1457,8 @@ def mla_fused_rope_rmsnorm_quantization[
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
     //,
     store_only: Bool = False,
+    dcp_size: Int = 1,
+    dcp_interleave: Int = 1,
 ](
     q_rope_output: TileTensor[mut=True, out_rope_dtype, ...],
     q_rope: TileTensor[mut=False, dtype, ...],
@@ -1257,6 +1470,7 @@ def mla_fused_rope_rmsnorm_quantization[
     epsilon: Float32,
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
+    dcp_rank: Int = 0,
 ) raises:
     """Launches the fused RoPE and RMSNorm kernel for MLA attention.
 
@@ -1274,6 +1488,10 @@ def mla_fused_rope_rmsnorm_quantization[
         KVInputFnType: Type of the closure that loads the KV latent values
             (inferred).
         store_only: Skip the query projection when storing cache rows.
+        dcp_size: Ranks of the decode context-parallel group that shares
+            each request's KV positions; 1 stores every row.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn (see `ContextParallelLayout`).
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -1291,6 +1509,9 @@ def mla_fused_rope_rmsnorm_quantization[
             + qk_rope_head_dim. It runs on the device, so it must copy what
             it captures.
         ctx: Device context for kernel execution.
+        dcp_rank: This rank's index in the decode context-parallel group.
+            RoPE uses every token's global position; only the rank that owns
+            a position stores its row, at its local slot.
     """
     comptime hw_info = ctx.default_device_info
     comptime sm_count = hw_info.sm_count
@@ -1335,6 +1556,48 @@ def mla_fused_rope_rmsnorm_quantization[
     var num_workers = min(max_workers, Int(q_rope.dim(0)))
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+
+    comptime if ContextParallelLayout[dcp_size, dcp_interleave].enabled:
+        comptime kernel = _fused_rope_rmsnorm_quantization_cp_kernel[
+            dtype,
+            freq_dtype,
+            gamma_dtype,
+            q_rope_output.LayoutType,
+            q_rope.LayoutType,
+            input_row_offsets.LayoutType,
+            freqs_cis.LayoutType,
+            gamma.LayoutType,
+            type_of(k_cache),
+            block_size,
+            n_rope_blocks,
+            n_rms_blocks,
+            out_rope_dtype,
+            store_only,
+            KVInputFnType=KVInputFnType,
+            QRopeOutputEngine=q_rope_output.Engine,
+            QRopeEngine=q_rope.Engine,
+            InputRowOffsetsEngine=input_row_offsets.Engine,
+            FreqsCisEngine=freqs_cis.Engine,
+            GammaEngine=gamma.Engine,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
+        ]
+
+        ctx.enqueue_function[kernel](
+            q_rope_output,
+            q_rope.as_imm(),
+            input_row_offsets.as_imm(),
+            freqs_cis.as_imm(),
+            gamma.as_imm(),
+            k_cache,
+            epsilon,
+            Int32(dcp_rank),
+            host_args=(kv_input_fn,),
+            grid_dim=(n_rope_blocks + n_rms_blocks, num_workers, 1),
+            block_dim=block_size,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+        return
 
     comptime kernel = fused_rope_rmsnorm_quantization_kernel[
         dtype,
@@ -2396,6 +2659,12 @@ def mla_decode_branch_fp8[
     # Set only by a caller that knows the sink is the inert -1e38 constant; the
     # AMD sparse arm never reads it, so a live sink must fail loudly.
     attn_sink_inert: Bool = False,
+    # Decode context parallelism: the latent store keeps only the positions
+    # rank `dcp_rank` owns. The defaults store every position.
+    dcp_size: Int = 1,
+    dcp_interleave: Int = 1,
+    # Presence of `lse_out` (inferred from it).
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
@@ -2434,6 +2703,12 @@ def mla_decode_branch_fp8[
     logical_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     # See flare_mla_decoding.
     selection_lag: Int = 0,
+    dcp_rank: Int = 0,
+    # Optional per-(token, head) LSE output of the attention (before W_UV,
+    # which leaves it unchanged) and its split-K sizing bound; see
+    # flare_mla_decoding.
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+    split_len_bound: Int = 0,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -2486,6 +2761,12 @@ def mla_decode_branch_fp8[
         attn_sink_inert: Whether the caller guarantees `attn_sink_ptr` holds
             the inert -1e38 constant. The AMD sparse arm never reads the sink
             and rejects one otherwise.
+        dcp_size: Ranks of the decode context-parallel group sharing each
+            request's KV positions (defaults to 1, which stores them all).
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn (defaults to 1).
+        LseOutPtrType: `OptionalPointer` type of `lse_out` (inferred,
+            defaults to `NullPointer`).
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
@@ -2532,6 +2813,13 @@ def mla_decode_branch_fp8[
             masking; `None` keeps the prior slot-count behavior.
         selection_lag: Positions between the token each sparse row was
             computed for and the token that reads it.
+        dcp_rank: This rank's index in the decode context-parallel group;
+            the fused latent store writes only the positions it owns.
+        lse_out: Optional `[tot_seq_len, num_heads]` float32 output for the
+            attention LSE, base 2 (SM100 sparse with `skip_masked_tiles`
+            only); see `flare_mla_decoding`.
+        split_len_bound: With `lse_out`, an upper bound on the per-token
+            lengths that sizes split-K (0 keeps `indices_stride`).
     """
 
     comptime kv_params = collection_t.kv_params
@@ -2565,6 +2853,9 @@ def mla_decode_branch_fp8[
         return
 
     comptime if ctx.target.is_amd_gpu() and sparse_mla:
+        comptime assert (
+            LseOutPtrType.is_null
+        ), "AMD sparse MLA decode does not produce the LSE output"
         # Gather top-k rows into scratch, reuse the dense decode kernel (top-k
         # selection gives causality). Guards reject unsupported features first.
         if d_indices is None:
@@ -2702,7 +2993,9 @@ def mla_decode_branch_fp8[
         )
     )
 
-    mla_fused_rope_rmsnorm_quantization(
+    mla_fused_rope_rmsnorm_quantization[
+        dcp_size=dcp_size, dcp_interleave=dcp_interleave
+    ](
         mla_decode_input_rope,
         q_rope,
         input_row_offsets,
@@ -2713,6 +3006,7 @@ def mla_decode_branch_fp8[
         epsilon,
         kv_input_fn,
         ctx,
+        dcp_rank,
     )
 
     # =========================================================================#
@@ -2728,6 +3022,9 @@ def mla_decode_branch_fp8[
     )
 
     comptime if ctx.target.is_amd_gpu() and sparse_mla:
+        comptime assert (
+            LseOutPtrType.is_null
+        ), "AMD sparse MLA decode does not produce the LSE output"
         # Guards for this arm (d_indices presence, extra_k,
         # attn_sink_ptr, logical_indices, fold_shared_index, S=1) already
         # ran above, before the up-projection/RoPE preamble.
@@ -2910,6 +3207,8 @@ def mla_decode_branch_fp8[
             num_partitions_in=num_partitions_in,
             logical_indices=logical_indices,
             selection_lag=selection_lag,
+            lse_out=lse_out,
+            split_len_bound=split_len_bound,
         )
 
     # Create a view of the output tensor with logical shape
@@ -4099,6 +4398,37 @@ def mla_prefill_branch_bf16[
 # ===-----------------------------------------------------------------------===#
 
 
+@inline(.always)
+def _copy_latent_q(
+    dst: TileTensor[mut=True, address_space=.GENERIC, ...],
+    src: TileTensor[.bfloat16, address_space=.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """Copies an absorbed query's latent columns into the decode input.
+
+    Both are `[num_heads, seq_len, kv_latent_dim]` views. `dst` is in the
+    decode input's dtype; an FP8 one saturates.
+    """
+
+    @inline(.always)
+    def copy_kernel[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == 3, "rank should be 3"
+        var x = src.load[width](idx)
+        comptime if dst.dtype == DType.bfloat16:
+            dst.store(idx, rebind[SIMD[dst.dtype, width]](x))
+        else:
+            dst.store(idx, cast_saturating[dst.dtype](x))
+
+    _elementwise_impl_gpu[
+        simd_width=simd_width_of[DType.bfloat16, target=ctx.target](),
+        trace_description="mla_copy_latent_q",
+    ](
+        copy_kernel,
+        shape=(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]())),
+        ctx=ctx,
+    )
+
+
 def mla_decode_branch_bf16[
     collection_t: KVCollectionT,
     KVInputFnType: ImplicitlyCopyable
@@ -4115,6 +4445,18 @@ def mla_decode_branch_bf16[
     # (inferred from those arguments).
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    # Decode context parallelism: the latent store keeps only the positions
+    # rank `dcp_rank` owns. The defaults store every position.
+    dcp_size: Int = 1,
+    dcp_interleave: Int = 1,
+    # Presence of `lse_out` (inferred from it).
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
+    # Whether `q` is already absorbed into the latent space,
+    # `[q_nope @ w_uk, q_rope]`, so the branch skips the `w_uk` projection.
+    q_absorbed: Bool = False,
+    # Whether `output` is the attention's latent output, `[.., kv_latent_dim]`,
+    # so the branch skips the `w_uv` projection.
+    latent_output: Bool = False,
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
@@ -4141,6 +4483,12 @@ def mla_decode_branch_bf16[
     num_partitions_in: Optional[Int] = None,
     # See flare_mla_decoding.
     selection_lag: Int = 0,
+    dcp_rank: Int = 0,
+    # Optional per-(token, head) LSE output of the attention (before W_UV,
+    # which leaves it unchanged) and its split-K sizing bound; see
+    # flare_mla_decoding.
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
+    split_len_bound: Int = 0,
 ) raises:
     """BF16 MLA decode path.
 
@@ -4164,12 +4512,27 @@ def mla_decode_branch_bf16[
             (inferred, defaults to `NullPointer`).
         TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
             `extra_topk_lengths` (inferred, defaults to `NullPointer`).
+        dcp_size: Ranks of the decode context-parallel group sharing each
+            request's KV positions (defaults to 1, which stores them all).
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn (defaults to 1).
+        LseOutPtrType: `OptionalPointer` type of `lse_out` (inferred,
+            defaults to `NullPointer`).
+        q_absorbed: Whether `q` already holds each head's latent query,
+            `[q_nope @ w_uk, q_rope]` with `q_rope` not yet rotated, so `w_uk`
+            is not read (defaults to `False`).
+        latent_output: Whether `output` receives the attention's latent
+            output, before `w_uv`, so `w_uv` is not read (defaults to
+            `False`).
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
-        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim],
+            or [tot_seq_len, num_heads, kv_latent_dim] with `latent_output`.
         q: Combined query tensor containing both nope and rope parts. Shape:
-            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim],
+            or [tot_seq_len, num_heads, kv_latent_dim + qk_rope_head_dim]
+            with `q_absorbed`.
         input_row_offsets: Indicates where each request starts and ends in
             `q`. Shape: [num_batches + 1].
         freqs_cis: Precomputed RoPE frequency values for rotary position
@@ -4199,6 +4562,13 @@ def mla_decode_branch_bf16[
         num_partitions_in: Capturable-graph num_partitions override.
         selection_lag: Positions between the token each sparse row was
             computed for and the token that reads it.
+        dcp_rank: This rank's index in the decode context-parallel group;
+            the fused latent store writes only the positions it owns.
+        lse_out: Optional `[tot_seq_len, num_heads]` float32 output for the
+            attention LSE, base 2 (SM100 sparse with `skip_masked_tiles`
+            only); see `flare_mla_decoding`.
+        split_len_bound: With `lse_out`, an upper bound on the per-token
+            lengths that sizes split-K (0 keeps `indices_stride`).
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -4220,15 +4590,25 @@ def mla_decode_branch_bf16[
     comptime assert (
         qk_rope_head_dim == 0 or freqs_cis.static_shape[1] == qk_rope_head_dim
     ), "freqs_cis's width should be k_cache_dim - kv_latent_dim."
-    comptime assert (
-        w_uk.static_shape[2] == qk_nope_head_dim
-    ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
-    comptime assert (
-        w_uv.static_shape[2] == kv_latent_dim
-    ), "w_uv.static_shape[2] should be equal to kv_latent_dim"
-    comptime assert (
-        w_uv.static_shape[1] == v_head_dim
-    ), "w_uv.static_shape[1] should be equal to v_head_dim"
+    comptime if q_absorbed:
+        comptime assert (
+            qk_nope_head_dim == kv_latent_dim
+        ), "an absorbed q holds kv_latent_dim columns before its rope part"
+    else:
+        comptime assert (
+            w_uk.static_shape[2] == qk_nope_head_dim
+        ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
+    comptime if latent_output:
+        comptime assert (
+            v_head_dim == kv_latent_dim
+        ), "a latent output is kv_latent_dim wide"
+    else:
+        comptime assert (
+            w_uv.static_shape[2] == kv_latent_dim
+        ), "w_uv.static_shape[2] should be equal to kv_latent_dim"
+        comptime assert (
+            w_uv.static_shape[1] == v_head_dim
+        ), "w_uv.static_shape[1] should be equal to v_head_dim"
 
     var seq_len = Int(q.dim(0))
     if seq_len == 0:
@@ -4284,7 +4664,9 @@ def mla_decode_branch_bf16[
         )
     )
 
-    mla_fused_rope_rmsnorm_quantization(
+    mla_fused_rope_rmsnorm_quantization[
+        dcp_size=dcp_size, dcp_interleave=dcp_interleave
+    ](
         mla_decode_input_rope,
         q_rope,
         input_row_offsets,
@@ -4295,6 +4677,7 @@ def mla_decode_branch_bf16[
         epsilon,
         kv_input_fn,
         ctx,
+        dcp_rank,
     )
 
     # =========================================================================#
@@ -4320,20 +4703,30 @@ def mla_decode_branch_bf16[
         )
     )
 
-    _batched_matmul_gpu[
-        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
-    ](mla_decode_input_nope, q_nope_t, w_uk, ctx)
+    comptime if q_absorbed:
+        _copy_latent_q(mla_decode_input_nope, q_nope_t, ctx)
+    else:
+        _batched_matmul_gpu[
+            transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+        ](mla_decode_input_nope, q_nope_t, w_uk, ctx)
 
-    # Perform MLA decode
+    # Perform MLA decode. A latent output is the attention's own output, so
+    # it needs no staging buffer.
     var raw_output_buf = ctx.enqueue_create_buffer[.bfloat16](
-        seq_len * num_heads * kv_latent_dim
+        1 if latent_output else seq_len * num_heads * kv_latent_dim
     )
+    var raw_output_ptr = raw_output_buf.unsafe_ptr()
+    comptime if latent_output:
+        raw_output_ptr = rebind[type_of(raw_output_ptr)](output.ptr)
     var raw_output = TileTensor(
-        raw_output_buf,
+        raw_output_ptr,
         row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
     )
 
     comptime if ctx.target.is_amd_gpu() and sparse_mla:
+        comptime assert (
+            LseOutPtrType.is_null
+        ), "AMD sparse MLA decode does not produce the LSE output"
         comptime assert (
             collection_t.CacheType.dtype == DType.bfloat16
         ), "the BF16 AMD sparse MLA arm requires a BF16 latent cache"
@@ -4401,6 +4794,8 @@ def mla_decode_branch_bf16[
             attn_sink_ptr=attn_sink_ptr,
             num_partitions_in=num_partitions_in,
             selection_lag=selection_lag,
+            lse_out=lse_out,
+            split_len_bound=split_len_bound,
         )
 
     # Create a view of the raw output tensor with logical shape
@@ -4424,9 +4819,10 @@ def mla_decode_branch_bf16[
         )
     )
 
-    _batched_matmul_gpu[
-        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
-    ](output_t, raw_output_t, w_uv, ctx)
+    comptime if not latent_output:
+        _batched_matmul_gpu[
+            transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+        ](output_t, raw_output_t, w_uv, ctx)
 
 
 # ===-----------------------------------------------------------------------===#

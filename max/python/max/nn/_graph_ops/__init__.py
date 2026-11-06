@@ -689,6 +689,76 @@ def rope_split_store_ragged(
     )[0].tensor
 
 
+def _decode_context_parallel_operands(
+    op_name: str,
+    parameters: MutableMapping[str, Any],
+    values: MutableSequence[Value[Any]],
+    *,
+    dcp_size: int,
+    dcp_interleave: int,
+    dcp_rank: TensorValue | int,
+) -> None:
+    """Adds the decode context-parallel operands of a KV-storing op.
+
+    Under decode context parallelism every rank of a group of ``dcp_size``
+    receives the same lookup table and global ``cache_lengths``, and stores a
+    new token only if it owns the token's position: rank
+    ``(pos // dcp_interleave) % dcp_size``, at its local slot. The op takes
+    the rank as its last operand. With ``dcp_size == 1`` that operand is a
+    constant 0 the op never reads and the parameters keep their defaults, so
+    the op specializes exactly as without context parallelism.
+
+    Args:
+        op_name: The op, for error messages.
+        parameters: The op parameters; gains ``dcp_size`` and
+            ``dcp_interleave`` when ``dcp_size > 1``.
+        values: The op operands; gains the rank as the last operand.
+        dcp_size: Ranks in the decode context-parallel group.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn: 1 stripes tokens, the page size stripes pages.
+        dcp_rank: This device's rank in the group, as a Python int or an
+            ``int32`` scalar on the host.
+
+    Raises:
+        ValueError: If the group or the rank is invalid.
+    """
+    if dcp_size < 1 or dcp_interleave < 1:
+        raise ValueError(
+            "dcp_size and dcp_interleave must be positive; got"
+            f" dcp_size={dcp_size}, dcp_interleave={dcp_interleave}"
+        )
+    if dcp_size == 1:
+        if not isinstance(dcp_rank, int) or dcp_rank != 0:
+            raise ValueError(f"{op_name} with dcp_size=1 takes dcp_rank=0")
+        values.append(_no_dcp_rank())
+        return
+    if isinstance(dcp_rank, int):
+        if not 0 <= dcp_rank < dcp_size:
+            raise ValueError(
+                f"dcp_rank {dcp_rank} is outside a group of {dcp_size}"
+            )
+        rank = ops.constant(dcp_rank, DType.int32, device=DeviceRef.CPU())
+    else:
+        if (
+            dcp_rank.dtype != DType.int32
+            or dcp_rank.rank != 0
+            or dcp_rank.device != DeviceRef.CPU()
+        ):
+            raise ValueError(
+                "dcp_rank must be an int32 scalar on the host; got"
+                f" {dcp_rank.type}"
+            )
+        rank = dcp_rank
+    parameters["dcp_size"] = dcp_size
+    parameters["dcp_interleave"] = dcp_interleave
+    values.append(rank)
+
+
+def _no_dcp_rank() -> TensorValue:
+    """The rank operand of a KV-storing op outside a context-parallel group."""
+    return ops.constant(0, DType.int32, device=DeviceRef.CPU())
+
+
 @_rejects_split_head_dims
 def store_k_scale_cache_ragged(
     kv_collection: PagedCacheValues,
@@ -696,8 +766,17 @@ def store_k_scale_cache_ragged(
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
     quantization_granularity: int,
+    *,
+    dcp_size: int = 1,
+    dcp_interleave: int = 1,
+    dcp_rank: TensorValue | int = 0,
 ) -> None:
-    """Store key scale tensor into the paged KV cache."""
+    """Store key scale tensor into the paged KV cache.
+
+    With ``dcp_size > 1`` this device is rank ``dcp_rank`` of a decode
+    context-parallel group and stores only the positions it owns; see
+    :func:`store_k_cache_ragged`.
+    """
     if kv_collection.kv_scales is None:
         raise ValueError(
             "kv_collection.kv_scales is None, expected a buffer value"
@@ -710,26 +789,37 @@ def store_k_scale_cache_ragged(
         raise ValueError(
             "kv_collection.scales_lookup_table is None, expected a tensor value"
         )
+    values: MutableSequence[Value[Any]] = [
+        x_k_scale,
+        kv_collection.kv_blocks,
+        kv_collection.page_stride,
+        kv_collection.cache_lengths,
+        kv_collection.lookup_table,
+        input_row_offsets,
+        kv_collection.max_prompt_length,
+        kv_collection.max_cache_length,
+        kv_collection.kv_scales,
+        kv_collection.scales_page_stride,
+        kv_collection.scales_lookup_table,
+        layer_idx,
+    ]
+    parameters: dict[str, Any] = {
+        "quantization_granularity": quantization_granularity,
+    }
+    op_name = "kv_cache.store_k_scales.paged.ragged"
+    _decode_context_parallel_operands(
+        op_name,
+        parameters,
+        values,
+        dcp_size=dcp_size,
+        dcp_interleave=dcp_interleave,
+        dcp_rank=dcp_rank,
+    )
     ops.inplace_custom(
-        "kv_cache.store_k_scales.paged.ragged",
+        op_name,
         device=x_k_scale.device,
-        values=[
-            x_k_scale,
-            kv_collection.kv_blocks,
-            kv_collection.page_stride,
-            kv_collection.cache_lengths,
-            kv_collection.lookup_table,
-            input_row_offsets,
-            kv_collection.max_prompt_length,
-            kv_collection.max_cache_length,
-            kv_collection.kv_scales,
-            kv_collection.scales_page_stride,
-            kv_collection.scales_lookup_table,
-            layer_idx,
-        ],
-        parameters={
-            "quantization_granularity": quantization_granularity,
-        },
+        values=values,
+        parameters=parameters,
     )
 
 
@@ -799,6 +889,7 @@ def _rope_split_store_ragged_unfused(
             max_prompt_length,
             max_cache_length,
             layer_idx,
+            _no_dcp_rank(),
         ],
         parameters={"key_or_value": 0},
     )
@@ -815,6 +906,7 @@ def _rope_split_store_ragged_unfused(
             max_prompt_length,
             max_cache_length,
             layer_idx,
+            _no_dcp_rank(),
         ],
         parameters={"key_or_value": 1},
     )
@@ -2781,6 +2873,9 @@ def kv_cache_store_paged_ragged(
     *,
     key_or_value: int,
     v_head_dim: int | None = None,
+    dcp_size: int = 1,
+    dcp_interleave: int = 1,
+    dcp_rank: TensorValue | int = 0,
 ) -> None:
     """Stores key or value tensor into the paged KV cache (ragged inputs).
 
@@ -2795,6 +2890,14 @@ def kv_cache_store_paged_ragged(
             (:attr:`~max.nn.legacy.kv_cache.KVCacheParams.v_head_dim`). Required
             for exactly those caches; ``x_cache`` is then as wide as the key
             or the value it stores.
+        dcp_size: Ranks in the decode context-parallel group sharing each
+            request's KV positions. Every rank receives the same lookup table
+            and global ``cache_lengths``; a row is stored only on the rank
+            that owns its position, at that rank's local slot.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn: 1 stripes tokens, the page size stripes pages.
+        dcp_rank: This device's rank in the group, as a Python int or an
+            ``int32`` scalar on the host.
     """
     split = kv_collection.split_head_dims is not None
     if split != (v_head_dim is not None):
@@ -2823,20 +2926,30 @@ def kv_cache_store_paged_ragged(
             )
         parameters["v_head_dim"] = v_head_dim
 
+    values: MutableSequence[Value[Any]] = [
+        x_cache,
+        kv_collection.kv_blocks,
+        kv_collection.page_stride,
+        kv_collection.cache_lengths,
+        kv_collection.lookup_table,
+        input_row_offsets,
+        kv_collection.max_prompt_length,
+        kv_collection.max_cache_length,
+        layer_idx,
+    ]
+    op_name = "kv_cache.store.paged.ragged"
+    _decode_context_parallel_operands(
+        op_name,
+        parameters,
+        values,
+        dcp_size=dcp_size,
+        dcp_interleave=dcp_interleave,
+        dcp_rank=dcp_rank,
+    )
     ops.inplace_custom(
-        "kv_cache.store.paged.ragged",
+        op_name,
         device=x_cache.device,
-        values=[
-            x_cache,
-            kv_collection.kv_blocks,
-            kv_collection.page_stride,
-            kv_collection.cache_lengths,
-            kv_collection.lookup_table,
-            input_row_offsets,
-            kv_collection.max_prompt_length,
-            kv_collection.max_cache_length,
-            layer_idx,
-        ],
+        values=values,
         parameters=parameters,
     )
 
@@ -2848,6 +2961,9 @@ def store_k_cache_ragged(
     layer_idx: TensorValue,
     *,
     v_head_dim: int | None = None,
+    dcp_size: int = 1,
+    dcp_interleave: int = 1,
+    dcp_rank: TensorValue | int = 0,
 ) -> None:
     """Stores the key tensor into the paged KV cache for ragged inputs.
 
@@ -2861,6 +2977,10 @@ def store_k_cache_ragged(
             transformer layer's cache to update.
         v_head_dim: The value width of a split cache; see
             :func:`kv_cache_store_paged_ragged`.
+        dcp_size: Ranks in the decode context-parallel group; see
+            :func:`kv_cache_store_paged_ragged`.
+        dcp_interleave: Consecutive positions a rank owns in turn.
+        dcp_rank: This device's rank in the group.
     """
     kv_cache_store_paged_ragged(
         kv_collection,
@@ -2869,6 +2989,9 @@ def store_k_cache_ragged(
         layer_idx,
         key_or_value=KEY_CACHE_INDEX,
         v_head_dim=v_head_dim,
+        dcp_size=dcp_size,
+        dcp_interleave=dcp_interleave,
+        dcp_rank=dcp_rank,
     )
 
 
@@ -3376,20 +3499,16 @@ def _validate_argument_tensor(
 
 
 @_rejects_split_head_dims
-def _mla_fp8_index_top_k(
+def _validate_mla_fp8_index_top_k(
     q: TensorValue,
     q_s: TensorValue,
     input_row_offsets: TensorValue,
     k_collection: PagedCacheValues,
     layer_idx: TensorValue,
     top_k: int,
-    quantization_granularity: int,
     mask_variant: MHAMaskVariant,
     kpool: int,
-    mla_collection: PagedCacheValues | None,
-    *,
-    write_logical: bool,
-) -> list[TensorValue]:
+) -> None:
     _validate_argument_tensor(
         "q", q, dtype=DType.float8_e4m3fn, rank=3, device_type=DeviceKind.GPU
     )
@@ -3442,6 +3561,32 @@ def _mla_fp8_index_top_k(
         raise ValueError(
             f"mask_variant must be NULL_MASK or CAUSAL_MASK, got {mask_variant}"
         )
+
+
+def _mla_fp8_index_top_k(
+    q: TensorValue,
+    q_s: TensorValue,
+    input_row_offsets: TensorValue,
+    k_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    top_k: int,
+    quantization_granularity: int,
+    mask_variant: MHAMaskVariant,
+    kpool: int,
+    mla_collection: PagedCacheValues | None,
+    *,
+    write_logical: bool,
+) -> list[TensorValue]:
+    _validate_mla_fp8_index_top_k(
+        q,
+        q_s,
+        input_row_offsets,
+        k_collection,
+        layer_idx,
+        top_k,
+        mask_variant,
+        kpool,
+    )
 
     mask_str = _mask_str(mask_variant)
     # An NVFP4 MLA cache pages its scales apart from its values, so its rows
@@ -3680,6 +3825,205 @@ def mla_fp8_index_top_k_physical(
         mla_collection=mla_collection,
         write_logical=False,
     )[1]
+
+
+@_rejects_split_head_dims
+def mla_fp8_index_top_k_physical_cp(
+    q: TensorValue,
+    q_s: TensorValue,
+    input_row_offsets: TensorValue,
+    k_collection: PagedCacheValues,
+    mla_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    dcp_rank: TensorValue,
+    top_k: int,
+    quantization_granularity: int,
+    dcp_size: int,
+    dcp_interleave: int,
+    mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+) -> tuple[TensorValue, TensorValue]:
+    """Selects one decode context-parallel rank's local top-k, with scores.
+
+    Under decode context parallelism (DCP) a rank's caches hold only the
+    positions it owns, at their local slots, behind the group's shared lookup
+    tables and global cache lengths. This is
+    :func:`mla_fp8_index_top_k_physical` over those local slots: it scores
+    only them, bounds each query by the slots below its global causal bound,
+    and also returns each selection's score. All-gather the scores over the
+    group (rank-major) and pass them to :func:`cp_merge_topk`.
+
+    Args:
+        q: Query tensor of shape [total_seq_len, num_heads, head_dim] in FP8.
+        q_s: Query scales tensor of shape [total_seq_len, num_heads] in float32.
+        input_row_offsets: Input row offsets tensor of shape [batch_size + 1].
+        k_collection: This rank's paged indexer K cache. Must be FP8 with
+            scales.
+        mla_collection: This rank's MLA cache the physical rows index. Must
+            not be NVFP4.
+        layer_idx: Layer index for cache lookup.
+        dcp_rank: This rank in ``[0, dcp_size)``, int32 ``[1]`` on the
+            device of ``q``.
+        top_k: Local selections per token, at most 2048.
+        quantization_granularity: Quantization granularity for the K cache.
+        dcp_size: Ranks in the decode context-parallel group.
+        dcp_interleave: Consecutive positions a rank owns in turn.
+        mask_variant: The mask variant to use (NULL or CAUSAL_MASK).
+
+    Returns:
+        ``(rows, scores)``: ``[total_seq_len, top_k]`` int32 physical rows in
+        ``mla_collection``, ``-1`` past a token's local candidates or where a
+        page is unmapped, and ``[total_seq_len, top_k]`` bfloat16 scores,
+        ``-inf`` past a token's local candidates.
+
+    Raises:
+        ValueError: If an argument is out of range, ``mla_collection`` is
+            NVFP4, or ``mask_variant`` is neither NULL nor CAUSAL.
+    """
+    if dcp_size < 1 or dcp_interleave < 1:
+        raise ValueError(
+            "dcp_size and dcp_interleave must be positive, got"
+            f" {dcp_size} and {dcp_interleave}"
+        )
+    if mla_collection.kv_blocks.dtype == DType.uint8:
+        raise ValueError("the context-parallel indexer has no NVFP4 remap")
+    _validate_argument_tensor(
+        "dcp_rank", dcp_rank, dtype=DType.int32, rank=1, device=q.device
+    )
+    _validate_mla_fp8_index_top_k(
+        q,
+        q_s,
+        input_row_offsets,
+        k_collection,
+        layer_idx,
+        top_k,
+        mask_variant,
+        kpool=1,
+    )
+    rows_type = TensorType(
+        dtype=DType.int32, shape=(q.shape[0], top_k), device=q.device
+    )
+    results = ops.inplace_custom(
+        "attention.mla.indexer.ragged.float8.paged.remap.cp",
+        device=q.device,
+        values=[
+            q,
+            q_s,
+            input_row_offsets,
+            *k_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+            mla_collection.kv_blocks,
+            mla_collection.lookup_table,
+            dcp_rank,
+        ],
+        out_types=[
+            # The logical slots are not written, so they have no rows.
+            TensorType(dtype=DType.int32, shape=(0, top_k), device=q.device),
+            rows_type,
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=(q.shape[0], top_k),
+                device=q.device,
+            ),
+        ],
+        parameters={
+            "num_heads": int(q.shape[1]),
+            "depth": int(q.shape[2]),
+            "k": top_k,
+            "quantization_granularity": quantization_granularity,
+            "mask_str": _mask_str(mask_variant),
+            "dcp_size": dcp_size,
+            "dcp_interleave": dcp_interleave,
+        },
+    )
+    return results[1].tensor, results[2].tensor
+
+
+def cp_merge_topk(
+    local_rows: TensorValue,
+    scores: TensorValue,
+    dcp_rank: TensorValue,
+    dcp_size: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Keeps this rank's indexer selections that are in its group's top-k.
+
+    Each rank of a decode context-parallel group selected the top-k of its
+    own key slots (:func:`mla_fp8_index_top_k_physical_cp`). Given every
+    rank's selection scores, this picks the ``min(k, candidates)`` highest of
+    the ``dcp_size * k`` -- ties at the threshold go to the lowest columns, so
+    every rank makes the same choice -- and returns this rank's rows among
+    them. The result is exact up to ties: a token in the group's top-k is in
+    its owner's local top-k.
+
+    Args:
+        local_rows: ``[T, k]`` int32 this rank's local selections.
+        scores: ``[T, dcp_size * k]`` bfloat16 every rank's selection scores,
+            rank-major (rank ``r``'s at columns ``[r * k, (r + 1) * k)``), as
+            an all-gather over the group's ranks produces them.
+        dcp_rank: This rank in ``[0, dcp_size)``, int32 ``[1]`` on the
+            device of ``local_rows``.
+        dcp_size: Ranks in the decode context-parallel group.
+
+    Returns:
+        ``(rows, lengths)``: ``[T, k]`` int32 this rank's selected rows,
+        compacted to the front of each row, then ``-1``; and ``[T]`` int32
+        how many of each row are selected.
+
+    Raises:
+        ValueError: If a shape, dtype or device disagrees, or ``dcp_size *
+            k`` exceeds 16384.
+    """
+    _validate_argument_tensor(
+        "local_rows",
+        local_rows,
+        dtype=DType.int32,
+        rank=2,
+        device_type=DeviceKind.GPU,
+    )
+    _validate_argument_tensor(
+        "scores",
+        scores,
+        dtype=DType.bfloat16,
+        rank=2,
+        device=local_rows.device,
+    )
+    _validate_argument_tensor(
+        "dcp_rank",
+        dcp_rank,
+        dtype=DType.int32,
+        rank=1,
+        device=local_rows.device,
+    )
+    k = int(local_rows.shape[1])
+    if dcp_size < 1:
+        raise ValueError(f"dcp_size must be positive, got {dcp_size}")
+    if dcp_size * k > 16384:
+        raise ValueError(
+            f"dcp_size * k must be at most 16384, got {dcp_size} * {k}"
+        )
+    if int(scores.shape[1]) != dcp_size * k:
+        raise ValueError(
+            f"scores must be [T, dcp_size * k] = [T, {dcp_size * k}], got"
+            f" {scores.shape}"
+        )
+    rows, lengths = ops.custom(
+        "attention.mla.cp_merge_topk",
+        device=local_rows.device,
+        values=[local_rows, scores, dcp_rank],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=local_rows.shape,
+                device=local_rows.device,
+            ),
+            TensorType(
+                dtype=DType.int32,
+                shape=(local_rows.shape[0],),
+                device=local_rows.device,
+            ),
+        ],
+        parameters={"dcp_size": dcp_size, "k": k},
+    )
+    return rows.tensor, lengths.tensor
 
 
 def mla_kpool_compress(
@@ -6305,6 +6649,9 @@ def mla_decode_graph(
     index_pool_topk: int = 0,
     index_kpool_select_tail: bool = True,
     selection_lag: int = 0,
+    dcp_size: int = 1,
+    dcp_interleave: int = 1,
+    dcp_rank: TensorValue | int = 0,
 ) -> TensorValue:
     """A manually fused kernel that performs the following operations.
 
@@ -6387,6 +6734,17 @@ def mla_decode_graph(
         selection_lag: Positions between the token each row of
             ``sparse_indices`` was computed for and the token that reads it,
             for a selection reused at a later position.
+        dcp_size: Ranks in the decode context-parallel group sharing each
+            request's latent cache. Every rank receives the same lookup table
+            and global ``cache_lengths``; the fused store writes a new latent
+            row only on the rank that owns its position, at that rank's local
+            slot, while RoPE uses the global position. Requires
+            ``sparse_indices``. This changes only the store: the attention
+            still reads the rows ``sparse_indices`` names.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn: 1 stripes tokens, the page size stripes pages.
+        dcp_rank: This device's rank in the group, as a Python int or an
+            ``int32`` scalar on the host.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -6487,6 +6845,19 @@ def mla_decode_graph(
         input_values.append(
             ops.constant(selection_lag, DType.int32, device=DeviceRef.CPU())
         )
+        _decode_context_parallel_operands(
+            op_name,
+            parameters,
+            input_values,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
+            dcp_rank=dcp_rank,
+        )
+    elif dcp_size != 1:
+        raise ValueError(
+            "mla_decode_graph under decode context parallelism needs"
+            " sparse_indices"
+        )
 
     return ops.inplace_custom(
         op_name,
@@ -6495,6 +6866,242 @@ def mla_decode_graph(
         out_types=[_build_mla_prefill_decode_out_type(q, v_head_dim)],
         parameters=parameters,
     )[0].tensor
+
+
+@_rejects_split_head_dims
+def mla_decode_graph_cp(
+    q: TensorValue,
+    kv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_norm_gamma: TensorValue,
+    w_uk: TensorValue,
+    w_uv: TensorValue,
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    epsilon: float,
+    v_head_dim: int,
+    scalar_args: TensorValue,
+    *,
+    sparse_indices: TensorValue,
+    sparse_lengths: TensorValue,
+    sparse_indices_stride: int,
+    split_len_bound: int,
+    physical_indices: bool = True,
+    w_uk_scale: TensorValue | None = None,
+    w_uv_scale: TensorValue | None = None,
+    quant_config: QuantConfig | None = None,
+    scale_granularity_override: int | None = None,
+    dcp_size: int = 1,
+    dcp_interleave: int = 1,
+    dcp_rank: TensorValue | int = 0,
+    q_absorbed: bool = False,
+    latent_output: bool = False,
+) -> tuple[TensorValue, TensorValue]:
+    """Sparse MLA decode for decode context parallelism, returning O and LSE.
+
+    The fused op of :func:`mla_decode_graph` with ``sparse_indices``, for a
+    rank that holds a slice of the latent cache. Each query token ``t`` attends
+    over the first ``sparse_lengths[t]`` entries of its ``sparse_indices`` row,
+    the selected rows this rank owns compacted to the front; entries past that
+    are never read and may hold anything. A length of 0 is allowed. Every
+    token of a ragged row, including the rows of a multi-token prefill chunk
+    run through this decode op, has its own length.
+
+    The second output is the attention log-sum-exp per (token, head) in base
+    2, ``log2(sum_k exp2(q.k * scale * log2(e)))``, which ``W_UV`` leaves
+    unchanged. A token with no keys gets ``-inf`` and an output of zero. Ranks
+    merge exactly with ``w_r = exp2(lse_r - max_r lse_r)`` and ``O = sum_r w_r
+    O_r / sum_r w_r``. The op takes no attention sink: GLM's sink is inert,
+    and a live one would have to be folded into the merge on one rank only.
+
+    The fused latent store is context-parallel as in :func:`mla_decode_graph`:
+    rank ``dcp_rank`` of a group of ``dcp_size`` stores a new token only if it
+    owns the token's position, rank ``(pos // dcp_interleave) % dcp_size``,
+    at its local slot. With the defaults it stores every position, so the op
+    is the single one a decode context-parallel rank needs.
+
+    Args:
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        kv: KV latent tensor from the first projection. Shape:
+            [num_tokens, cache_head_dim].
+        input_row_offsets: Where each request starts and ends in ``q``,
+            [num_batches + 1].
+        freqs_cis: RoPE frequency values, [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma applied to the KV tensor before it is
+            cached.
+        w_uk: Weight projecting q_nope to kv_latent_dim,
+            [num_heads, kv_latent_dim, qk_nope_head_dim].
+        w_uv: Weight projecting the attention output to v_head_dim,
+            [num_heads, v_head_dim, kv_latent_dim].
+        kv_params: KVCacheParams.
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        mask_variant: The attention mask variant.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        v_head_dim: Dimension of the V heads.
+        scalar_args: Pre-computed dispatch scalar args (GPU buffer).
+        sparse_indices: ``int32`` [tot_seq_len, sparse_indices_stride] rows of
+            the selected cache rows, valid entries first. Over an NVFP4 cache
+            a row is the value rows then the scale-pool rows, each half
+            compacted the same way, so ``sparse_indices_stride`` is twice the
+            top-k.
+        sparse_lengths: ``int32`` [tot_seq_len] valid entries per token (per
+            half of the row over an NVFP4 cache), each at most the top-k.
+        sparse_indices_stride: Row stride in ``sparse_indices``.
+        split_len_bound: Host-side upper bound on ``sparse_lengths`` that
+            sizes the split-K partitions in place of the top-k, for example
+            ``ceil(top_k / dcp)`` plus slack. Lengths above it stay correct;
+            only the partition count, so performance, depends on it. 0 or
+            less sizes from the top-k.
+        physical_indices: Whether ``sparse_indices`` holds physical MLA cache
+            rows rather than logical token positions. Must be true when
+            ``dcp_size > 1``: a rank stores a position at its local slot, so
+            a logical position would read another position's row.
+        w_uk_scale: Optional FP8 scale tensor for ``w_uk``.
+        w_uv_scale: Optional FP8 scale tensor for ``w_uv``.
+        quant_config: Optional quantization config. When set, scales are
+            required.
+        scale_granularity_override: Overrides the FP8 scale granularity from
+            ``quant_config``.
+        dcp_size: Ranks in the decode context-parallel group.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn: 1 stripes tokens, the page size stripes pages.
+        dcp_rank: This device's rank in the group, as a Python int or an
+            ``int32`` scalar on the host.
+        q_absorbed: Whether ``q`` is already in the latent space,
+            ``[tot_seq_len, num_heads, kv_lora_rank + qk_rope_head_dim]``:
+            each head's ``q_nope @ w_uk`` followed by its unrotated rope
+            part. The op then does not read ``w_uk``. A decode
+            context-parallel rank with a gathered query absorbs its own heads
+            before the all-gather. BF16 weights only.
+        latent_output: Whether to return the latent attention output,
+            ``[tot_seq_len, num_heads, kv_lora_rank]``, without applying
+            ``w_uv``, which the LSE merge leaves unchanged: decode
+            context-parallel ranks merge latents and each applies ``w_uv``
+            to its own heads. BF16 weights only.
+
+    Returns:
+        ``(output, lse)``: output of shape [tot_seq_len, num_heads,
+        v_head_dim] (``kv_lora_rank`` with ``latent_output``) and ``float32``
+        lse of shape [tot_seq_len, num_heads].
+    """
+    _validate_mla_prefill_decode_graph_inputs(
+        q,
+        kv,
+        input_row_offsets,
+        kv_params,
+        layer_idx,
+        op_name="mla_decode_graph_cp",
+        expected_dtype=kv_params.dtype,
+    )
+    if sparse_indices.dtype != DType.int32:
+        raise ValueError(
+            f"sparse_indices must be int32, got {sparse_indices.dtype}"
+        )
+    if sparse_lengths.dtype != DType.int32 or sparse_lengths.rank != 1:
+        raise ValueError(
+            "sparse_lengths must be a rank-1 int32 tensor, got"
+            f" {sparse_lengths.dtype} of rank {sparse_lengths.rank}"
+        )
+    if dcp_size > 1 and not physical_indices:
+        raise ValueError(
+            "mla_decode_graph_cp with dcp_size > 1 requires physical_indices:"
+            " the cache holds each position at its rank-local slot"
+        )
+    if (q_absorbed or latent_output) and quant_config is not None:
+        raise ValueError(
+            "mla_decode_graph_cp takes q_absorbed and latent_output only with"
+            " BF16 weights"
+        )
+    kv_lora_rank = int(w_uk.shape[1])
+    if q_absorbed and int(q.shape[2]) != int(kv.shape[1]):
+        raise ValueError(
+            "an absorbed q is kv_lora_rank + qk_rope_head_dim ="
+            f" {int(kv.shape[1])} wide, got {q.shape[2]}"
+        )
+    parameters = _mha_parameters(mask_variant)
+    parameters["physical_indices"] = physical_indices
+    parameters["indices_stride"] = sparse_indices_stride
+    # Emitted only when set, so the default op is unchanged.
+    if q_absorbed:
+        parameters["q_absorbed"] = True
+    if latent_output:
+        parameters["latent_output"] = True
+
+    input_values: MutableSequence[Value[Any]] = [
+        q,
+        kv,
+        input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
+        w_uk,
+        w_uv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    op_name = "attention.mla.graph.decode.paged"
+    if quant_config is not None:
+        assert w_uk_scale is not None and w_uv_scale is not None
+        parameters.update(
+            _fp8_mla_scale_params(quant_config, scale_granularity_override)
+        )
+        op_name += ".fp8"
+        input_values += [w_uk_scale, w_uv_scale]
+    op_name += ".sparse"
+    op_name += _nvfp4_mla_op_suffix(
+        kv_params,
+        "mla_decode_graph_cp",
+        sparse=True,
+        quant_config=quant_config,
+        physical_indices=physical_indices,
+        sparse_indices_stride=sparse_indices_stride,
+    )
+    op_name += ".cp"
+    input_values += [
+        scalar_args,
+        sparse_indices,
+        sparse_lengths,
+        ops.constant(
+            max(split_len_bound, 0), DType.int32, device=DeviceRef.CPU()
+        ),
+    ]
+    _decode_context_parallel_operands(
+        op_name,
+        parameters,
+        input_values,
+        dcp_size=dcp_size,
+        dcp_interleave=dcp_interleave,
+        dcp_rank=dcp_rank,
+    )
+    # The `.cp` ops have no defaults for the group, so a group of one names it.
+    parameters.setdefault("dcp_size", 1)
+    parameters.setdefault("dcp_interleave", 1)
+
+    results = ops.inplace_custom(
+        op_name,
+        device=q.device,
+        values=input_values,
+        out_types=[
+            _build_mla_prefill_decode_out_type(
+                q, kv_lora_rank if latent_output else v_head_dim
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=[q.shape[0], q.shape[1]],
+                device=q.device,
+            ),
+        ],
+        parameters=parameters,
+    )
+    return results[0].tensor, results[1].tensor
 
 
 @_rejects_split_head_dims

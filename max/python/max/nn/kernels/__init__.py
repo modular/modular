@@ -33,10 +33,13 @@ from .attention import (
 )
 from .hyper_connection import hyper_connection_gates, mhc_post, mhc_pre
 from .mla import (
+    cp_merge_topk,
     flare_mla_prefill_plan,
     mla_decode_graph,
+    mla_decode_graph_cp,
     mla_fp8_index_top_k,
     mla_fp8_index_top_k_physical,
+    mla_fp8_index_top_k_physical_cp,
     mla_prefill_decode_graph,
     mla_prefill_graph,
     store_mla_latent_ragged,
@@ -77,6 +80,7 @@ from .quant import (
 
 __all__ = [
     "block_scales_interleave",
+    "cp_merge_topk",
     "dynamic_block_scaled_matmul",
     "dynamic_block_scaled_matmul_amd",
     "dynamic_scaled_matmul",
@@ -99,8 +103,10 @@ __all__ = [
     "mhc_post",
     "mhc_pre",
     "mla_decode_graph",
+    "mla_decode_graph_cp",
     "mla_fp8_index_top_k",
     "mla_fp8_index_top_k_physical",
+    "mla_fp8_index_top_k_physical_cp",
     "mla_prefill_decode_graph",
     "mla_prefill_graph",
     "moe_create_indices",

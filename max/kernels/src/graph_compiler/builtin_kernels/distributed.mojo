@@ -29,6 +29,7 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 from comm.allgather import allgather, allgather_rows_slice
 from comm.allreduce import allreduce
+from comm.alltoall import all_to_all
 
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
 from comm.allreduce_residual_rmsnorm import (
@@ -574,6 +575,153 @@ struct DistributedReduceScatterSum:
 
         _launch_device_collective[num_devices](
             launch_reducescatter, dev_ctxs_input.copy()
+        )
+
+
+@extensibility.register("mo.distributed.all_to_all")
+struct DistributedAllToAll:
+    """Registers the `mo.distributed.all_to_all` graph op with the graph compiler.
+    """
+
+    @staticmethod
+    def execute[
+        Outs: TypeList[Trait=Output & Tensor, ...],
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        Sigs: TypeList[Trait=MutableInput & Tensor, ...],
+        //,
+        _trace_name: StaticString,
+        split_axis: Int,
+        concat_axis: Int,
+        group_size: Int,
+    ](
+        outputs: TensorTuple[*Outs],
+        inputs: TensorTuple[*Ins],
+        signal_buffers: TensorTuple[*Sigs],
+        dev_ctxs_input: DeviceContextArray[_, _],
+    ) raises:
+        """Distributed all-to-all implementation.
+
+        Each device splits its input into `group_size` chunks along
+        `split_axis`, sends chunk `j` to its group's rank `j`, and
+        concatenates the chunks it receives in source rank order along
+        `concat_axis`.
+
+        Parameters:
+            Outs: The element types of `outputs` (inferred).
+            Ins: The element types of `inputs` (inferred).
+            Sigs: The element types of `signal_buffers` (inferred).
+            _trace_name: Trace name for profiling.
+            split_axis: The input axis split into one chunk per peer.
+            concat_axis: The output axis the received chunks concatenate on.
+            group_size: Number of contiguous devices per all-to-all group;
+                must be at least 2 and evenly divide the number of devices.
+
+        Args:
+            outputs: Output tensors, one per GPU.
+            inputs: Input tensors, one per GPU; same shape within a group.
+            signal_buffers: Preallocated synchronization buffers.
+            dev_ctxs_input: Device contexts for participating GPUs.
+        """
+        comptime num_devices = len(Ins)
+        comptime dtype = Ins[0].dtype
+        comptime rank = Ins[0].rank
+        _check_tensor_tuple[num_devices, dtype, rank, *Ins]()
+        _check_tensor_tuple[num_devices, dtype, rank, *Outs]()
+        _check_tensor_tuple[num_devices, .uint8, 1, *Sigs]()
+        comptime assert group_size >= 2, "group_size must be at least 2"
+        comptime assert (
+            num_devices % group_size == 0
+        ), "group_size must evenly divide the number of devices"
+        comptime assert (
+            0 <= split_axis < rank and 0 <= concat_axis < rank
+        ), "all_to_all axes must be in range"
+
+        var scratch_buffer_size_bytes = 0  # all_to_all uses no scratch
+        _check_signal_buffer_size(
+            Int(signal_buffers[0].shape().product()), scratch_buffer_size_bytes
+        )
+
+        comptime InPtr = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
+        var in_ptrs = Array[InPtr, num_devices](uninitialized=True)
+        var out_ptrs = Array[
+            MutPointer[Scalar[dtype], MutAnyOrigin], num_devices
+        ](uninitialized=True)
+        var num_elements = Array[Int, num_devices](uninitialized=True)
+        var in_inner = Array[Int, num_devices](uninitialized=True)
+        var out_inner = Array[Int, num_devices](uninitialized=True)
+        comptime for i in range(num_devices):
+            comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+            comptime assert conforms_to(type_of(outputs[i]), TileTensorable)
+            in_ptrs[i] = rebind[InPtr](inputs[i].to_tile_tensor[dtype]().ptr)
+            out_ptrs[i] = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                outputs[i].to_tile_tensor[dtype]().ptr
+            )
+            var in_shape = inputs[i].shape()
+            var out_shape = outputs[i].shape()
+            num_elements[i] = Int(in_shape.product())
+            if Int(out_shape.product()) != num_elements[i]:
+                raise Error(
+                    "all_to_all: an output does not hold its input's elements"
+                )
+            if Int(in_shape[split_axis].value()) % group_size != 0:
+                raise Error(
+                    String(
+                        "all_to_all: split axis of size ",
+                        Int(in_shape[split_axis].value()),
+                        " does not divide into ",
+                        group_size,
+                        " chunks",
+                    )
+                )
+            var inner_in = 1
+            comptime for d in range(split_axis, rank):
+                inner_in *= Int(in_shape[d].value())
+            in_inner[i] = inner_in // group_size
+            var inner_out = 1
+            comptime for d in range(concat_axis, rank):
+                inner_out *= Int(out_shape[d].value())
+            out_inner[i] = inner_out // group_size
+
+        def rank_sig[
+            i: Int
+        ]() {imm signal_buffers} -> Pointer[Signal, MutAnyOrigin]:
+            comptime assert conforms_to(
+                type_of(signal_buffers[i]), TileTensorable
+            )
+            return (
+                signal_buffers[i]
+                .to_tile_tensor()
+                .ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
+
+        var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
+
+        @inline(.always)
+        def launch_all_to_all[
+            index: Int
+        ]() raises {
+            imm in_ptrs,
+            imm out_ptrs,
+            imm num_elements,
+            imm in_inner,
+            imm out_inner,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+        }:
+            all_to_all[ngpus=num_devices, group_size=group_size](
+                in_ptrs,
+                out_ptrs[index],
+                num_elements[index],
+                in_inner[index],
+                out_inner[index],
+                rank_sigs,
+                dev_ctxs_input[index],
+                index,
+            )
+
+        _launch_device_collective[num_devices](
+            launch_all_to_all, dev_ctxs_input.copy()
         )
 
 
