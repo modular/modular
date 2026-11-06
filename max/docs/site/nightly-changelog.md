@@ -218,6 +218,10 @@ This version is still a work in progress.
   `PipelineModel`, return the module from `graph_specs()` under
   `GraphRole.ENCODER`, and load it with `load_graphs()` instead.
 
+- Removed the `LLM` class, deprecated in 26.5 when `max.entrypoints` became
+  private. To generate in-process, use `AutoModel` or `AutoPipeline` from
+  `max.pipelines`.
+
 - `Buffer.to(device)` for a buffer on another queue of that device requires an
   `after` event and no longer syncs implicitly. Mojo's `reassign_ownership_to()`
   is removed; use `enqueue_wait_for()` and keep buffers alive until synced.

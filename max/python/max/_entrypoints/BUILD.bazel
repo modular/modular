@@ -51,7 +51,6 @@ modular_py_library(
         requirement("requests"),
         requirement("sse-starlette"),
         requirement("typing-extensions"),
-        requirement("tqdm"),
         requirement("pyyaml"),
         requirement("uvicorn"),
         requirement("uvloop"),
