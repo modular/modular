@@ -463,6 +463,22 @@ class TextGenerationRequest:
     best-effort under ``ahash64``. Capped at 512 chars at the OpenAI
     schema layer.
     """
+    token_prompt_media_validated: bool = False
+    """
+    Skips the check that :attr:`images` and :attr:`videos` match
+    :attr:`messages` for a token :attr:`prompt`, whose placeholders are
+    already expanded. Set by the chat route only when the served tokenizer
+    declares ``accepts_token_prompt_media``; other callers leave it ``False``.
+    """
+    token_prompt_messages: list[TextGenerationRequestMessage] = field(
+        default_factory=list
+    )
+    """
+    The messages a token :attr:`prompt` was rendered from, set by the chat
+    route with :attr:`token_prompt_media_validated` so the tokenizer reads
+    each media part's size and sampling hints as it would from
+    :attr:`messages`. API-process-only, like :attr:`decoded_images`.
+    """
 
     def __str__(self) -> str:
         return str(self.request_id)
@@ -524,15 +540,21 @@ class TextGenerationRequest:
                 "string prompts cannot be provided, when videos are provided, use messages"
             )
 
-        if self.images and self.number_of_images != len(self.images):
-            raise ValueError(
-                f"number of images provided in TextGenerationRequest do not match messages:\n{self.messages}"
-            )
+        counts_media_against_messages = not (
+            self.token_prompt_media_validated
+            and self.prompt
+            and not isinstance(self.prompt, str)
+        )
+        if counts_media_against_messages:
+            if self.images and self.number_of_images != len(self.images):
+                raise ValueError(
+                    f"number of images provided in TextGenerationRequest do not match messages:\n{self.messages}"
+                )
 
-        if self.videos and self.number_of_videos != len(self.videos):
-            raise ValueError(
-                f"number of videos provided in TextGenerationRequest do not match messages:\n{self.messages}"
-            )
+            if self.videos and self.number_of_videos != len(self.videos):
+                raise ValueError(
+                    f"number of videos provided in TextGenerationRequest do not match messages:\n{self.messages}"
+                )
 
     @cached_property
     def number_of_images(self) -> int:

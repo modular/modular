@@ -22,7 +22,7 @@ from collections.abc import Generator
 from pathlib import Path
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any, Literal, TypeVar
+from typing import Any, ClassVar, Literal, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
@@ -566,6 +566,128 @@ async def test_chat_prompt_tokens_out_of_range_returns_400(
 
     assert response.status_code == 400
     assert "out of range" in response.json()["error"]["message"]
+
+
+class _MediaEchoTokenizer(EchoPipelineTokenizer):
+    """An echo tokenizer that asks for content parts, so the route parses
+    image parts into media. It ignores the media itself."""
+
+    @property
+    def expects_content_wrapping(self) -> bool:
+        return True
+
+
+class _TokenPromptMediaTokenizer(_MediaEchoTokenizer):
+    """A media echo tokenizer that opts into the route's token-prompt media
+    gate and records each request it is handed. It checks nothing."""
+
+    accepts_token_prompt_media: ClassVar[bool] = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[TextGenerationRequest] = []
+
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
+        self.requests.append(request)
+        return await super().new_context(request)
+
+
+class _MismatchedTokenPromptTokenizer(_TokenPromptMediaTokenizer):
+    """Refuses every request, as a vision tokenizer refuses a token prompt
+    whose media runs do not match the media."""
+
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
+        raise InputError("prompt_tokens do not match the request's media")
+
+
+async def _post_image_with_prompt_tokens(
+    tokenizer: EchoPipelineTokenizer,
+    pipeline_config: PipelineConfig,
+    stream: bool = False,
+) -> Any:
+    """Posts a one-image chat request with ``prompt_tokens`` set."""
+    app = fastapi_app(
+        Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
+        ServingTokenGeneratorSettings(
+            model_factory=EchoTokenGenerator,
+            pipeline_config=pipeline_config,
+            tokenizer=tokenizer,
+        ),
+    )
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8)).save(buf, format="PNG")
+    url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    request = {
+        "model": "echo",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "hi"},
+                    {"type": "image_url", "image_url": {"url": url}},
+                ],
+            }
+        ],
+        "prompt_tokens": [104, 105],
+        "max_tokens": 1,
+        "stream": stream,
+    }
+    async with AsyncTestClient(app) as client:
+        return await client.post("/v1/chat/completions", json=request)
+
+
+@pytest.mark.asyncio
+async def test_chat_prompt_tokens_with_media_needs_a_tokenizer_that_reads_them(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    """A tokenizer that does not opt in keeps refusing media with tokens."""
+    response = await _post_image_with_prompt_tokens(
+        _MediaEchoTokenizer(), mock_pipeline_config
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == (
+        "prompt_tokens cannot carry images or videos for this model; "
+        "send them in messages"
+    )
+
+
+@pytest.mark.asyncio
+async def test_chat_prompt_tokens_with_media_reach_a_tokenizer_that_reads_them(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    """The tokenizer gets the token prompt, the media and the messages the
+    prompt was rendered from, with no messages to count the media against."""
+    tokenizer = _TokenPromptMediaTokenizer()
+    response = await _post_image_with_prompt_tokens(
+        tokenizer, mock_pipeline_config
+    )
+
+    assert response.status_code == 200, response.json()
+    [request] = tokenizer.requests
+    assert request.prompt == [104, 105]
+    assert request.messages == []
+    assert len(request.images) == 1
+    assert request.token_prompt_media_validated is True
+    [message] = request.token_prompt_messages
+    assert message.number_of_images == 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.asyncio
+async def test_chat_prompt_tokens_with_mismatched_media_are_a_400(
+    mock_pipeline_config: PipelineConfig, stream: bool
+) -> None:
+    """A token prompt whose media runs do not match is the client's fault,
+    whether or not the response streams."""
+    response = await _post_image_with_prompt_tokens(
+        _MismatchedTokenPromptTokenizer(), mock_pipeline_config, stream=stream
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == (
+        "prompt_tokens do not match the request's media"
+    )
 
 
 @pytest.mark.asyncio
