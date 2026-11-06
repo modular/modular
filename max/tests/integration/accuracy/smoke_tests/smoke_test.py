@@ -146,6 +146,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
+    "reflection/Beam-1.0-501B-A23B-NVFP4": "max/pipelines/architectures/beam_modulev3/recipes/beam_1_0_nvfp4_tp4_ep4_4x_b200.yaml",
     "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_rust_tiered_kvconnector.yaml",
 })
 # fmt: on

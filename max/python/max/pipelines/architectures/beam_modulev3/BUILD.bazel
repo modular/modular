@@ -2,10 +2,18 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
+filegroup(
+    name = "recipe_configs",
+    srcs = glob(["**/recipes/**/*.yaml"]),
+)
+
 modular_py_library(
     name = "beam_modulev3",
     srcs = glob(["**/*.py"]),
-    data = ["formatspec.json"],
+    data = [
+        "formatspec.json",
+        ":recipe_configs",
+    ],
     deps = [
         requirement("transformers"),
         requirement("typing-extensions"),
