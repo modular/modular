@@ -79,6 +79,35 @@ def test_no_snapshot_leaves_config_alone(
     assert runtime.remap_weights(LayerList([]), state_dict) is state_dict
 
 
+def test_counting_sizes_the_tally_by_histogram_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Counting needs no placement; its rows follow the histogram's, one per
+    profiled layer with dense layers kept, so the layer index the model
+    passes the router also indexes the tally."""
+    monkeypatch.delenv(EPLB_STATS_ENV, raising=False)
+    runtime = EplbRuntime(
+        PipelineRuntimeConfig(eplb_count_expert_load=True),
+        _METADATA,
+        devices=[],
+    )
+    config = _ep_config()
+
+    assert runtime.install_placement(config, n_groups=1) is None
+    assert config.eplb_count_expert_load
+    assert config.num_moe_layers == _METADATA.num_layers
+    assert not config.eplb_enabled
+
+
+def test_counting_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(EPLB_STATS_ENV, raising=False)
+    config = _ep_config()
+    EplbRuntime(
+        PipelineRuntimeConfig(), _METADATA, devices=[]
+    ).install_placement(config, n_groups=1)
+    assert not config.eplb_count_expert_load
+
+
 def test_snapshot_installs_per_layer_placement(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
