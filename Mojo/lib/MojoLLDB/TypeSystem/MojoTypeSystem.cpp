@@ -104,6 +104,9 @@ struct MojoTypeSystem::Impl {
   Impl(ContextRef ctx, Target *target, const ArchSpec &archSpec)
       : cpuDevice(*ctx->get<AsyncRT::CPUDevice>()), target(target),
         archSpec(archSpec) {
+    // LLDB's own threads (DWARF indexing among them) reach this context;
+    // keep its uniquers locked even though MLIR threading stays off.
+    mlirContext.enableThreadSafeLocking();
     // Register all of the various dialect state.
     DialectRegistry registry;
     registerAllKGENDialects(registry);
@@ -384,6 +387,12 @@ MojoTypeSystem::GetPointeeType(lldb::opaque_compiler_type_t type) {
   if (auto ptrType = dyn_cast<PointerType>(astType.mlirType))
     return createCompilerType(ptrType.getElementType());
   return {};
+}
+
+lldb_private::CompilerType
+MojoTypeSystem::AddAddressSpaceModifier(lldb::opaque_compiler_type_t type,
+                                        uint32_t addressSpace) {
+  return {weak_from_this(), type};
 }
 
 lldb_private::CompilerType
@@ -1258,7 +1267,7 @@ ConstString MojoTypeSystem::DeclContextGetName(void *opaqueDeclCtx) {
 void MojoTypeSystem::Dump(llvm::raw_ostream &output, llvm::StringRef filter,
                           bool show_color) {
   // FIXME: handle filtering and color output
-  impl->parserContext->getModule()->dump();
+  impl->parserContext->getModule()->print(output);
 }
 
 bool MojoTypeSystem::DumpTypeValue(

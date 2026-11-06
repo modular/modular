@@ -315,12 +315,14 @@ public:
   }
 
   // Debug Util.
-  void dump() {
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+  LLVM_DUMP_METHOD void dump() {
     if (auto fnGen = getIfFnTypeGenerator())
       fnGen.dump();
 
     getIfFnLiteralTypeGenerator().dump();
   }
+#endif
 };
 
 //===----------------------------------------------------------------------===//

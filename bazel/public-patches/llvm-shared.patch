@@ -1,8 +1,8 @@
 diff --git a/llvm/include/llvm/ADT/SmallVector.h b/llvm/include/llvm/ADT/SmallVector.h
-index c6469f6..38b2395 100644
+index 9fb90e0b1ed4..d411f3ef59cb 100644
 --- a/llvm/include/llvm/ADT/SmallVector.h
 +++ b/llvm/include/llvm/ADT/SmallVector.h
-@@ -1382,9 +1382,9 @@ template <typename Out, typename R> SmallVector<Out> to_vector_of(R &&Range) {
+@@ -1406,9 +1406,9 @@ template <typename Out, typename R> SmallVector<Out> to_vector_of(R &&Range) {
  }
  
  // Explicit instantiations
@@ -15,7 +15,7 @@ index c6469f6..38b2395 100644
  
  // Provide DenseMapInfo for SmallVector of a type which has info.
 diff --git a/llvm/include/llvm/Analysis/CGSCCPassManager.h b/llvm/include/llvm/Analysis/CGSCCPassManager.h
-index f2ce815..6496f7e 100644
+index f2ce8158675a..6496f7ed6f62 100644
 --- a/llvm/include/llvm/Analysis/CGSCCPassManager.h
 +++ b/llvm/include/llvm/Analysis/CGSCCPassManager.h
 @@ -132,8 +132,9 @@ PassManager<LazyCallGraph::SCC, CGSCCAnalysisManager, LazyCallGraph &,
@@ -41,10 +41,10 @@ index f2ce815..6496f7e 100644
  extern template class LLVM_TEMPLATE_ABI OuterAnalysisManagerProxy<
      ModuleAnalysisManager, LazyCallGraph::SCC, LazyCallGraph &>;
 diff --git a/llvm/lib/Analysis/CGSCCPassManager.cpp b/llvm/lib/Analysis/CGSCCPassManager.cpp
-index 81c9604..1e9e9ab 100644
+index fa2c5abc0718..49500f888aa8 100644
 --- a/llvm/lib/Analysis/CGSCCPassManager.cpp
 +++ b/llvm/lib/Analysis/CGSCCPassManager.cpp
-@@ -51,8 +51,9 @@ AnalysisKey ShouldNotRunFunctionPassesAnalysis::Key;
+@@ -46,8 +46,9 @@ AnalysisKey ShouldNotRunFunctionPassesAnalysis::Key;
  template class LLVM_EXPORT_TEMPLATE AllAnalysesOn<LazyCallGraph::SCC>;
  template class LLVM_EXPORT_TEMPLATE
      AnalysisManager<LazyCallGraph::SCC, LazyCallGraph &>;
@@ -56,21 +56,8 @@ index 81c9604..1e9e9ab 100644
  template class LLVM_EXPORT_TEMPLATE
      InnerAnalysisManagerProxy<CGSCCAnalysisManager, Module>;
  template class LLVM_EXPORT_TEMPLATE OuterAnalysisManagerProxy<
-diff --git a/llvm/lib/Analysis/ModuleSummaryAnalysis.cpp b/llvm/lib/Analysis/ModuleSummaryAnalysis.cpp
-index 4eae3e0..6be45e9 100644
---- a/llvm/lib/Analysis/ModuleSummaryAnalysis.cpp
-+++ b/llvm/lib/Analysis/ModuleSummaryAnalysis.cpp
-@@ -67,7 +67,7 @@ using namespace llvm::memprof;
- // Option to force edges cold which will block importing when the
- // -import-cold-multiplier is set to 0. Useful for debugging.
- namespace llvm {
--FunctionSummary::ForceSummaryHotnessType ForceSummaryEdgesCold =
-+LLVM_ABI FunctionSummary::ForceSummaryHotnessType ForceSummaryEdgesCold =
-     FunctionSummary::FSHT_None;
- 
- static cl::opt<FunctionSummary::ForceSummaryHotnessType, true> FSEC(
 diff --git a/llvm/lib/MC/MCContext.cpp b/llvm/lib/MC/MCContext.cpp
-index 935b088..fd87f01 100644
+index a0031e18fec2..71c51b033e9a 100644
 --- a/llvm/lib/MC/MCContext.cpp
 +++ b/llvm/lib/MC/MCContext.cpp
 @@ -272,7 +272,8 @@ MCSymbol *MCContext::getOrCreateLSDASymbol(const Twine &FuncName) {
@@ -84,7 +71,7 @@ index 935b088..fd87f01 100644
  }
  
 diff --git a/llvm/lib/Support/SmallVector.cpp b/llvm/lib/Support/SmallVector.cpp
-index dceea4f..ccccf22 100644
+index dceea4fbc630..ccccf226404c 100644
 --- a/llvm/lib/Support/SmallVector.cpp
 +++ b/llvm/lib/Support/SmallVector.cpp
 @@ -164,14 +164,14 @@ void SmallVectorBase<Size_T>::grow_pod(void *FirstEl, size_t MinSize,
@@ -105,10 +92,10 @@ index dceea4f..ccccf22 100644
  // Assertions to ensure this #if stays in sync with SmallVectorSizeType.
  static_assert(sizeof(SmallVectorSizeType<char>) == sizeof(uint64_t),
 diff --git a/utils/bazel/llvm-project-overlay/clang/BUILD.bazel b/utils/bazel/llvm-project-overlay/clang/BUILD.bazel
-index 95c1940..1a4be27 100644
+index 3bcf9319143a..f790fb3bcb97 100644
 --- a/utils/bazel/llvm-project-overlay/clang/BUILD.bazel
 +++ b/utils/bazel/llvm-project-overlay/clang/BUILD.bazel
-@@ -5,7 +5,7 @@
+@@ -6,7 +6,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
  load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
  load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
  load("@bazel_skylib//rules:write_file.bzl", "write_file")
@@ -117,15 +104,15 @@ index 95c1940..1a4be27 100644
  load("@rules_python//python:defs.bzl", "py_binary")
  load(
      "//:vars.bzl",
-@@ -18,6 +18,7 @@ load("//:workspace_root.bzl", "workspace_root")
+@@ -19,6 +19,7 @@ load("//:workspace_root.bzl", "workspace_root")
  load("//llvm:binary_alias.bzl", "binary_alias")
  load("//llvm:cc_plugin_library.bzl", "cc_plugin_library")
  load("//llvm:driver.bzl", "llvm_driver_cc_binary")
 +load("//llvm:dylib.bzl", "llvm_dylib_deps")
- load("//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+ load("//mlir:tblgen.bzl", "gentbl_cc_library", "gentbl_sharded_op_defs", "td_library")
  
  package(
-@@ -2276,6 +2277,20 @@ cc_library(
+@@ -2320,6 +2321,20 @@ cc_library(
      ],
  )
  
@@ -147,7 +134,7 @@ index 95c1940..1a4be27 100644
      name = "directory_watcher",
      srcs = glob([
 diff --git a/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel b/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
-index 568c56c..b878e75 100644
+index b03c9984bfba..d1d0d830f708 100644
 --- a/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
 +++ b/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
 @@ -12,6 +12,7 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library", "objc_lib
@@ -158,7 +145,7 @@ index 568c56c..b878e75 100644
  load("//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
  
  package(
-@@ -833,6 +834,14 @@ genrule(
+@@ -788,6 +789,14 @@ genrule(
  # cc_binary instead of cc_shared_library since the latter expects you to
  # re-export all transitive dependencies vs them being relinked into other
  # binaries.
@@ -173,7 +160,7 @@ index 568c56c..b878e75 100644
  cc_binary(
      name = "lldb{}".format(PACKAGE_VERSION),
      additional_linker_inputs = select({
-@@ -844,6 +853,7 @@ cc_binary(
+@@ -799,6 +808,7 @@ cc_binary(
          ],
          "//conditions:default": [],
      }),
@@ -181,7 +168,7 @@ index 568c56c..b878e75 100644
      linkopts = select({
          "@platforms//os:linux": [
              "-Wl,--export-dynamic-symbol-list=$(location :gen_exports_file_linux)",
-@@ -866,6 +876,13 @@ cc_binary(
+@@ -821,6 +831,13 @@ cc_binary(
  cc_import(
      name = "liblldb.wrapper",
      shared_library = "lldb{}".format(PACKAGE_VERSION),
@@ -195,7 +182,7 @@ index 568c56c..b878e75 100644
  )
  
  gentbl_cc_library(
-@@ -891,6 +908,7 @@ cc_binary(
+@@ -846,6 +863,7 @@ cc_binary(
          "tools/driver/*.cpp",
          "tools/driver/*.h",
      ]),
@@ -203,7 +190,7 @@ index 568c56c..b878e75 100644
      deps = [
          ":Headers",
          ":liblldb.wrapper",
-@@ -1119,6 +1137,7 @@ cc_binary(
+@@ -1102,6 +1120,7 @@ cc_binary(
      additional_linker_inputs = [
          ":lldb-dap-plist",
      ],
@@ -211,7 +198,7 @@ index 568c56c..b878e75 100644
      includes = ["tools/lldb-dap"],
      linkopts = select({
          "@platforms//os:macos": [
-@@ -1157,6 +1176,7 @@ cc_binary(
+@@ -1140,6 +1159,7 @@ cc_binary(
      additional_linker_inputs = [
          ":lldb-mcp-plist",
      ],
@@ -220,7 +207,7 @@ index 568c56c..b878e75 100644
      linkopts = select({
          "@platforms//os:macos": [
 diff --git a/utils/bazel/llvm-project-overlay/lldb/source/Plugins/plugin_config.bzl b/utils/bazel/llvm-project-overlay/lldb/source/Plugins/plugin_config.bzl
-index 9a64cb6..a482441 100644
+index 10d58c41c926..c726666c4861 100644
 --- a/utils/bazel/llvm-project-overlay/lldb/source/Plugins/plugin_config.bzl
 +++ b/utils/bazel/llvm-project-overlay/lldb/source/Plugins/plugin_config.bzl
 @@ -5,8 +5,9 @@
@@ -233,8 +220,8 @@ index 9a64cb6..a482441 100644
 +_ALL_DEFAULT_PLUGINS = [
      "ABIAArch64",
      "ABIARM",
-     "ABIHexagon",
-@@ -103,6 +104,28 @@ DEFAULT_PLUGINS = [
+     "ABILoongArch",
+@@ -114,6 +115,28 @@ DEFAULT_PLUGINS = [
      "UnwindAssemblyX86",
  ]
  
@@ -264,7 +251,7 @@ index 9a64cb6..a482441 100644
  # including optional ones selected in BUILD.bazel. These are kept separate so
  # that reordering DEFAULT_PLUGINS cannot move them earlier.
 diff --git a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
-index 9a4e13e..929305b 100644
+index 709ad691ad51..08f52a12a880 100644
 --- a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
 +++ b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
 @@ -8,12 +8,14 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
@@ -280,9 +267,9 @@ index 9a4e13e..929305b 100644
  load(":driver.bzl", "generate_driver_selects", "generate_driver_tools_def", "llvm_driver_cc_binary")
 +load(":dylib.bzl", "llvm_dylib_deps")
  load(":enum_targets_gen.bzl", "enum_targets_gen")
+ load(":instrumentor.bzl", "INSTRUMENTOR_RUNTIME_HELPER")
  load(":targets.bzl", "llvm_targets")
- 
-@@ -53,6 +55,19 @@ config_setting(
+@@ -54,6 +56,19 @@ config_setting(
      flag_values = {":use_libunwind_for_eh_frame_registration": "true"},
  )
  
@@ -302,7 +289,7 @@ index 9a4e13e..929305b 100644
  exports_files([
      "LICENSE.TXT",
      "cmake/modules/llvm-driver-template.cpp.in",
-@@ -947,6 +962,9 @@ cc_library(
+@@ -950,6 +965,9 @@ cc_library(
  cc_binary(
      name = "llvm",
      srcs = glob(["tools/llvm-driver/*.cpp"]),
@@ -312,7 +299,7 @@ index 9a4e13e..929305b 100644
      deps = [
          ":Support",
          ":llvm_driver_tools_def_lib",
-@@ -4581,6 +4599,142 @@ cc_library(
+@@ -4621,6 +4639,142 @@ cc_library(
      ],
  )
  
@@ -455,7 +442,7 @@ index 9a4e13e..929305b 100644
  cc_library(
      name = "pass_registry_def",
      copts = llvm_copts,
-@@ -5402,6 +5556,7 @@ cc_binary(
+@@ -5443,6 +5597,7 @@ cc_binary(
      name = "llc",
      srcs = ["tools/llc/llc.cpp"],
      copts = llvm_copts,
@@ -463,7 +450,7 @@ index 9a4e13e..929305b 100644
      stamp = 0,
      deps = [
          ":Support",
-@@ -5525,6 +5680,7 @@ cc_binary(
+@@ -5566,6 +5721,7 @@ cc_binary(
          "tools/llvm-as/*.cpp",
      ]),
      copts = llvm_copts,
@@ -471,7 +458,7 @@ index 9a4e13e..929305b 100644
      stamp = 0,
      deps = [
          ":Analysis",
-@@ -5779,6 +5935,9 @@ cc_library(
+@@ -5820,6 +5976,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-debuginfod-find",
@@ -481,7 +468,7 @@ index 9a4e13e..929305b 100644
      stamp = 0,
      deps = [":llvm-debuginfod-find-lib"],
  )
-@@ -5789,6 +5948,7 @@ cc_binary(
+@@ -5830,6 +5989,7 @@ cc_binary(
          "tools/llvm-dis/*.cpp",
      ]),
      copts = llvm_copts,
@@ -489,7 +476,7 @@ index 9a4e13e..929305b 100644
      stamp = 0,
      deps = [
          ":Analysis",
-@@ -6505,6 +6665,9 @@ cc_library(
+@@ -6546,6 +6706,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-objdump",
@@ -499,7 +486,7 @@ index 9a4e13e..929305b 100644
      stamp = 0,
      deps = [":llvm-objdump-lib"],
  )
-@@ -6918,6 +7081,9 @@ cc_library(
+@@ -6959,6 +7122,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-symbolizer",
@@ -509,7 +496,7 @@ index 9a4e13e..929305b 100644
      stamp = 0,
      deps = [":llvm-symbolizer-lib"],
  )
-@@ -6998,6 +7164,7 @@ cc_library(
+@@ -7039,6 +7205,7 @@ cc_library(
  
  cc_binary(
      name = "opt",
@@ -518,7 +505,7 @@ index 9a4e13e..929305b 100644
      deps = [":opt-driver"],
  )
 diff --git a/utils/bazel/llvm-project-overlay/llvm/binary_alias.bzl b/utils/bazel/llvm-project-overlay/llvm/binary_alias.bzl
-index 0108742..6bc0ea0 100644
+index 0108742f345e..6bc0ea0e1c9b 100644
 --- a/utils/bazel/llvm-project-overlay/llvm/binary_alias.bzl
 +++ b/utils/bazel/llvm-project-overlay/llvm/binary_alias.bzl
 @@ -17,8 +17,18 @@ def _binary_alias_impl(ctx):
@@ -541,7 +528,7 @@ index 0108742..6bc0ea0 100644
      )]
  
 diff --git a/utils/bazel/llvm-project-overlay/llvm/config.bzl b/utils/bazel/llvm-project-overlay/llvm/config.bzl
-index c6fe876..03e7521 100644
+index c6fe876f4b5e..03e7521a5dff 100644
 --- a/utils/bazel/llvm-project-overlay/llvm/config.bzl
 +++ b/utils/bazel/llvm-project-overlay/llvm/config.bzl
 @@ -28,6 +28,7 @@ def native_arch_defines(arch, triple):
@@ -561,7 +548,7 @@ index c6fe876..03e7521 100644
      "LLVM_ENABLE_PLUGINS=0",
      "LLVM_ENABLE_THREADS=0",
 diff --git a/utils/bazel/llvm-project-overlay/llvm/driver.bzl b/utils/bazel/llvm-project-overlay/llvm/driver.bzl
-index 3cbff1b..e328d74 100644
+index 3cbff1b1de5c..e328d7486a4e 100644
 --- a/utils/bazel/llvm-project-overlay/llvm/driver.bzl
 +++ b/utils/bazel/llvm-project-overlay/llvm/driver.bzl
 @@ -7,6 +7,7 @@
@@ -598,7 +585,7 @@ index 3cbff1b..e328d74 100644
      )
 diff --git a/utils/bazel/llvm-project-overlay/llvm/dylib.bzl b/utils/bazel/llvm-project-overlay/llvm/dylib.bzl
 new file mode 100644
-index 0000000..61dca15
+index 000000000000..61dca15e8bc7
 --- /dev/null
 +++ b/utils/bazel/llvm-project-overlay/llvm/dylib.bzl
 @@ -0,0 +1,61 @@
@@ -664,7 +651,7 @@ index 0000000..61dca15
 +    provides = [CcInfo],
 +)
 diff --git a/utils/bazel/llvm-project-overlay/llvm/include/llvm/Config/llvm-config.h b/utils/bazel/llvm-project-overlay/llvm/include/llvm/Config/llvm-config.h
-index 55bc3a1..ff484a1 100644
+index 55bc3a1f2e0e..ff484a16433e 100644
 --- a/utils/bazel/llvm-project-overlay/llvm/include/llvm/Config/llvm-config.h
 +++ b/utils/bazel/llvm-project-overlay/llvm/include/llvm/Config/llvm-config.h
 @@ -117,7 +117,7 @@
@@ -677,7 +664,7 @@ index 55bc3a1..ff484a1 100644
  /* Define if building LLVM with LLVM_FORCE_USE_OLD_TOOLCHAIN_LIBS */
  /* #undef LLVM_FORCE_USE_OLD_TOOLCHAIN ${LLVM_FORCE_USE_OLD_TOOLCHAIN} */
 diff --git a/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel b/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
-index d9e1bd4..1fca9ac 100644
+index 717411eac9fc..098a67837a40 100644
 --- a/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
 +++ b/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
 @@ -7,8 +7,10 @@
@@ -699,7 +686,7 @@ index d9e1bd4..1fca9ac 100644
  load(":linalggen.bzl", "genlinalg")
  load(":tblgen.bzl", "gentbl_cc_library", "gentbl_sharded_op_defs", "gentbl_sharded_ops", "td_library")
  
-@@ -5356,14 +5359,61 @@ cc_library(
+@@ -5363,14 +5366,61 @@ cc_library(
      ],
  )
  
@@ -767,7 +754,7 @@ index d9e1bd4..1fca9ac 100644
  cc_library(
 diff --git a/utils/bazel/llvm-project-overlay/mlir/dylib.bzl b/utils/bazel/llvm-project-overlay/mlir/dylib.bzl
 new file mode 100644
-index 0000000..bf3be22
+index 000000000000..bf3be222d71e
 --- /dev/null
 +++ b/utils/bazel/llvm-project-overlay/mlir/dylib.bzl
 @@ -0,0 +1,493 @@
@@ -1265,10 +1252,10 @@ index 0000000..bf3be22
 +    ":config",
 +]
 diff --git a/utils/bazel/llvm-project-overlay/third-party/BUILD.bazel b/utils/bazel/llvm-project-overlay/third-party/BUILD.bazel
-index 323b1e7..a0a4b4b 100644
+index cec651d356e6..0ede95edbe03 100644
 --- a/utils/bazel/llvm-project-overlay/third-party/BUILD.bazel
 +++ b/utils/bazel/llvm-project-overlay/third-party/BUILD.bazel
-@@ -29,7 +29,6 @@ config_setting(
+@@ -30,7 +30,6 @@ config_setting(
      name = "llvm_libxml2_auto_macos",
      constraint_values = ["@platforms//os:macos"],
      flag_values = {":llvm_enable_libxml2": "auto"},

@@ -218,7 +218,8 @@ public:
       llvm::errs() << "value: " << value << "\n";
       llvm::errs() << "operands: " << operands << "\n";
       llvm::errs() << "\n";
-      func.dump();
+      func->print(llvm::errs());
+      llvm::errs() << "\n";
     }
 
     assert(result == value && "non-deterministic interpreter results");

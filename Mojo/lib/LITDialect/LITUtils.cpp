@@ -317,7 +317,7 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  param.dump();
+  llvm::errs() << param << "\n";
   llvm_unreachable("unknown origin parameter");
 }
 
