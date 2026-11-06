@@ -90,11 +90,9 @@ struct AddOneCustom:
                 x_tile.load[width=width, alignment=align_of[dtype]()](idx) + 1,
             )
 
-        elementwise[
-            simd_width=get_kernel_simd_width[
-                dtype, ctx.target.device_kind_label()
-            ]()
-        ](add_one, output.shape(), ctx)
+        elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
+            add_one, output.shape(), ctx
+        )
 
 
 @extensibility.register_shape_function("add_one_custom")

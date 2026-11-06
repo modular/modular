@@ -28,12 +28,7 @@ from max.algorithm.functional import elementwise
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
-from max.gpu.host import (
-    DeviceBuffer,
-    DeviceContext,
-    get_gpu_target,
-    default_accelerator,
-)
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import is_cpu
 from max.gpu.host.info import is_gpu as _is_gpu
 from std.math import ceil, fma
@@ -2727,20 +2722,20 @@ struct _FusedOutputVariadicTensors[
 
 
 @doc_hidden
-def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
+def get_kernel_simd_width[dtype: DType, target: CompilationTarget]() -> Int:
     """Get the simd width used in lambda functions.
 
     For non-simd arch like GPU, this is the width in terms of number of elements
     used per load/store instruction.
     """
 
-    comptime if _is_gpu[target]():
+    comptime if target.is_gpu():
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        comptime if default_accelerator()._is_arch["sm_100a"]():
+        comptime if target.is_nvidia_gpu["sm_100a"]():
             return 32 // size_of[dtype]()
 
-        return simd_width_of[dtype, target=get_gpu_target()]()
+        return simd_width_of[dtype, target=target]()
 
     return simd_width_of[dtype]()
 
@@ -2774,9 +2769,7 @@ def foreach[
     & RegisterPassable
     & (def[width: Int](Coord) -> SIMD[dtype, width]),
     *,
-    simd_width: Int = get_kernel_simd_width[
-        dtype, ctx_target.device_kind_label()
-    ](),
+    simd_width: Int = get_kernel_simd_width[dtype, ctx_target](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var func: FuncType,

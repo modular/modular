@@ -411,6 +411,6 @@ struct Mxf353Relu:
             var v = x_tile.load[width=width, alignment=align](idx)
             out_tile.store[alignment=align](idx, max(v, 0))
 
-        elementwise[
-            get_kernel_simd_width[dtype, ctx.target.device_kind_label()]()
-        ](relu, output.shape(), ctx)
+        elementwise[get_kernel_simd_width[dtype, ctx.target]()](
+            relu, output.shape(), ctx
+        )

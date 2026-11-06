@@ -5028,14 +5028,12 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
     return failure();
   SmallVector<FusedCaptureInfo> captureInfos = *captureInfosOr;
 
-  MojoValue targetStr = MojoValue(("\"" + getDevice() + "\"").str());
-
   // Infer simd_width from all dtypes touched anywhere in the closure body.
   FailureOr<MojoValue> dtypesTuple = collectDtypesTuple(state, getBody());
   if (failed(dtypesTuple))
     return emitOpError("mogg.call.foreach: could not determine capture dtype");
-  MojoValue simdWidth =
-      MojoValue(kFnGetSimdWidthForDtypes)[{*dtypesTuple, targetStr}]({}, {});
+  MojoValue simdWidth = MojoValue(
+      kFnGetSimdWidthForDtypes)[{*dtypesTuple, context.get("target")}]({}, {});
 
   bool errOccurred = false;
   // Blanket `{var}` capture -- see the capture-convention note above.

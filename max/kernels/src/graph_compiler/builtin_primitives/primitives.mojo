@@ -1350,7 +1350,7 @@ def mgp_debug_tensor_print[
 
 @inline(.always)
 def get_simd_width_for_dtypes[
-    dtypes: StaticTuple[DType, _], target: StaticString
+    dtypes: StaticTuple[DType, _], target: CompilationTarget
 ]() -> Int:
     comptime assert dtypes.size > 0
 
@@ -2275,9 +2275,7 @@ def foreach[
         dtype, width
     ],
     *,
-    simd_width: Int = get_kernel_simd_width[
-        dtype, ctx_target.device_kind_label()
-    ](),
+    simd_width: Int = get_kernel_simd_width[dtype, ctx_target](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var func: FuncType,
@@ -3088,9 +3086,7 @@ def foreach_out_func[
     & def[width: Int](IndexList[rank]) -> None,
     //,
     *,
-    simd_width: Int = get_kernel_simd_width[
-        dtype, ctx_target.device_kind_label()
-    ](),
+    simd_width: Int = get_kernel_simd_width[dtype, ctx_target](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var out_func: OutFuncType,

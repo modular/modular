@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import align_of
+from std.sys.info import CompilationTarget
 
 from extensibility import register
 from max.algorithm import elementwise
@@ -113,11 +114,9 @@ struct MyAdd:
                 ),
             ](idx, a + b)
 
-        elementwise[
-            simd_width=get_kernel_simd_width[
-                type, ctx.target.device_kind_label()
-            ]()
-        ](doit, C.shape(), ctx)
+        elementwise[simd_width=get_kernel_simd_width[type, ctx.target]()](
+            doit, C.shape(), ctx
+        )
 
 
 @register("parameter_increment")
@@ -152,11 +151,9 @@ struct ParameterIncrement:
                 ),
             ](idx, a + type_of(a)(increment))
 
-        elementwise[
-            simd_width=get_kernel_simd_width[
-                type, ctx.target.device_kind_label()
-            ]()
-        ](doit, B.shape(), ctx)
+        elementwise[simd_width=get_kernel_simd_width[type, ctx.target]()](
+            doit, B.shape(), ctx
+        )
 
 
 @register("scalar_add")
@@ -207,6 +204,8 @@ struct UnsupportedTypeOp:
                 ),
             )
 
-        elementwise[simd_width=get_kernel_simd_width[dtype, "cpu"]()](
-            copy, output.shape(), ctx
-        )
+        elementwise[
+            simd_width=get_kernel_simd_width[
+                dtype, CompilationTarget.current()
+            ]()
+        ](copy, output.shape(), ctx)

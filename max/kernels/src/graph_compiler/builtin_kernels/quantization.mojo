@@ -2044,9 +2044,7 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
             ](idx, fp8_quantize[output_type, use_clamp=True](v, inversed_scale))
 
         elementwise[
-            simd_width=get_kernel_simd_width[
-                output_type, ctx.target.device_kind_label()
-            ](),
+            simd_width=get_kernel_simd_width[output_type, ctx.target](),
             _trace_description="scaled_fp8_quant",
         ](quant_fn, output.shape().flatten(), ctx)
 

@@ -21,7 +21,7 @@ from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.os import getenv
 from std.random import seed
-from std.sys.info import _accelerator_arch, size_of
+from std.sys.info import CompilationTarget, _accelerator_arch, size_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -307,7 +307,7 @@ struct Range:
             )
 
         elementwise[
-            get_kernel_simd_width[dtype, ctx.target.device_kind_label()](),
+            get_kernel_simd_width[dtype, ctx.target](),
             _trace_description=_trace_name,
         ](body, output.shape().flatten(), ctx)
 
@@ -375,7 +375,7 @@ struct Copy:
             )
 
         elementwise[
-            get_kernel_simd_width[dtype, "cpu"](),
+            get_kernel_simd_width[dtype, CompilationTarget.current()](),
             _trace_description="mogg.for_each",
         ](body, output.shape().flatten(), ctx)
 

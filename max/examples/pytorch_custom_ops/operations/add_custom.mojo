@@ -60,8 +60,6 @@ struct AddConstantCustom[value: Int]:
                 + Scalar[dtype](Self.value),
             )
 
-        elementwise[
-            simd_width=get_kernel_simd_width[
-                dtype, ctx.target.device_kind_label()
-            ]()
-        ](add_constant, outp.shape(), ctx)
+        elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
+            add_constant, outp.shape(), ctx
+        )
