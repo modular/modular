@@ -2847,16 +2847,6 @@ def atof(str_slice: StringSpan) raises -> Float64:
 # ===----------------------------------------------------------------------=== #
 
 
-def _toggle_ascii_case(char: UInt8) -> UInt8:
-    """Assuming char is a cased ASCII character, this function will return the
-    opposite-cased letter.
-    """
-
-    # ASCII defines A-Z and a-z as differing only in their 6th bit,
-    # so converting is as easy as a bit flip.
-    return char ^ (1 << 5)
-
-
 def _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
