@@ -589,8 +589,8 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var x = [1, 2, 3]
-        var y = [1, 2, 3]
+        var x: List = [1, 2, 3]
+        var y: List = [1, 2, 3]
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
@@ -633,7 +633,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var x = [1, 2, 3]
+        var x: List = [1, 2, 3]
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
