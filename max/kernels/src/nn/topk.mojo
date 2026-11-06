@@ -290,7 +290,6 @@ def top_k[
     //,
     KEngine: TensorEngine,
     largest: Bool = True,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     max_k: Int,
@@ -314,7 +313,6 @@ def top_k[
         out_idx_type: The data dtype of the output indices (default == .int64).
         KEngine: Engine policy of the `k` tensor.
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
-        target: The target to run on.
 
     Args:
         input: The input tensor.
@@ -347,7 +345,7 @@ def top_k[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "top_k",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.device().id),
@@ -357,7 +355,7 @@ def top_k[
         # Clamp max_k
         var bound_max_k = 255 if max_k == -1 else max_k
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert (
                 out_idx_type == .int64
             ), "out_idx_type must be int64 for cpu"

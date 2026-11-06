@@ -21,6 +21,7 @@
 
 #include "Support/AlignedAlloc.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/SymbolExport.h"
 #include "Support/Threading/HWInfo.h"
 
 #include <memory>
@@ -102,22 +103,23 @@ private:
 };
 
 /// Create an allocator that just calls malloc/free.
-std::unique_ptr<Allocator> createMallocAllocator();
+MODULAR_CXX_EXPORT std::unique_ptr<Allocator> createMallocAllocator();
 
 /// Create an allocator that uses tcmalloc
-std::unique_ptr<Allocator> createTCMallocAllocator();
+MODULAR_CXX_EXPORT std::unique_ptr<Allocator> createTCMallocAllocator();
 
 /// Create a TCMalloc-backed allocator bound to a specified NUMA node.
-std::unique_ptr<Allocator> createTCMallocAllocator(int numaPlacement);
+MODULAR_CXX_EXPORT std::unique_ptr<Allocator>
+createTCMallocAllocator(int numaPlacement);
 
 /// Create a wrapper allocator that checks to make sure all memory is
 /// deallocated when the allocator itself is destroyed.
-std::unique_ptr<Allocator>
+MODULAR_CXX_EXPORT std::unique_ptr<Allocator>
 createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator);
 
 /// Create a wrapper allocator that prints memory profiling information when it
 /// is destroyed.  This also performs leak checks.
-std::unique_ptr<Allocator>
+MODULAR_CXX_EXPORT std::unique_ptr<Allocator>
 createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
 
 #if !defined(_WIN64) && !defined(_WIN32)
@@ -133,7 +135,7 @@ createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
 /// the allocator is freed.
 ///
 /// For use when ASAN build is not available. Expensive!
-std::unique_ptr<Allocator> createUseAfterFreeAllocator();
+MODULAR_CXX_EXPORT std::unique_ptr<Allocator> createUseAfterFreeAllocator();
 #endif
 
 /// As for std::memcpy, but wrapped by profiling if enabled. There's no

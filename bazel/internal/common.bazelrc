@@ -107,7 +107,6 @@ build --remote_timeout=10m
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
 build --remote_cache_async
-build --experimental_remote_cache_lease_extension=true
 build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
@@ -116,7 +115,7 @@ build --rewind_lost_inputs
 
 # Local disk cache, tools/bazel opts developers in
 build:disk-cache --disk_cache=~/.cache/bazel-disk-cache
-build:disk-cache --experimental_disk_cache_gc_max_size=100G
+build:disk-cache --disk_cache_gc_max_size=100G
 
 # Include full test log in failed tests
 build --test_output=errors
@@ -141,9 +140,6 @@ build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY=true
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE=0
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT=100
 
-# Allow --modify_execution_info to be passed any number of times
-common --incompatible_modify_execution_info_additive
-
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
 build --modify_execution_info=CcLtoBackendCompile=+supports-path-mapping
@@ -159,6 +155,34 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
+build --per_file_copt=external/.*llvm-project/.*@-ULLVM_BUILD_STATIC
+build --host_per_file_copt=external/.*llvm-project/.*@-ULLVM_BUILD_STATIC
+# clang has almost no export annotations, so its Basic layer, which liblldb
+# shares through @llvm-project//clang:clangBasic, exports everything.
+build --per_file_copt=external/.*llvm-project/clang/lib/(Basic|Support)/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/clang/lib/(Basic|Support)/.*@-fvisibility=default
+# Nor do LLVM's Debuginfod and HTTP libraries yet, which lldb uses from libLLVM.
+build --per_file_copt=external/.*llvm-project/llvm/lib/(Debuginfod|HTTP)/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/llvm/lib/(Debuginfod|HTTP)/.*@-fvisibility=default
+# MLIR has no export annotations either, so @llvm-project//mlir:MLIR exports
+# it the way CMake's libMLIR does, with default visibility. The toolchain's
+# -fvisibility=hidden is what makes this necessary.
+build --per_file_copt=external/.*llvm-project/mlir/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/mlir/.*@-fvisibility=default
+# abseil and rules_cc's runfiles library are exported from
+# libAsyncRTRuntimeGlobals, and xxhash from libKGENCompilerRTShared. None of
+# them has an export macro outside Windows.
+build --per_file_copt=external/(abseil-cpp|xxhash)[+]/.*@-fvisibility=default
+build --host_per_file_copt=external/(abseil-cpp|xxhash)[+]/.*@-fvisibility=default
+build --per_file_copt=external/rules_cc[+]/cc/runfiles/.*@-fvisibility=default
+build --host_per_file_copt=external/rules_cc[+]/cc/runfiles/.*@-fvisibility=default
+# libxml2 is linked into libLLVM, and lldb calls it directly. It has no export
+# macro outside Windows.
+build --per_file_copt=external/libxml2[+]/.*@-fvisibility=default
+build --host_per_file_copt=external/libxml2[+]/.*@-fvisibility=default
+# zlib-ng is linked into libLLVM, and lld calls it directly.
+build '--per_file_copt=external/zlib-ng[+]/.*@-DZ_EXTERN=extern __attribute__((visibility("default")))'
+build '--host_per_file_copt=external/zlib-ng[+]/.*@-DZ_EXTERN=extern __attribute__((visibility("default")))'
 
 # Upstream NIXL (github.com/ai-dynamo/nixl) uses exceptions internally for
 # error reporting. Public API still surfaces nixl_status_t codes.

@@ -40,7 +40,7 @@ from typing import Any
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, Value, ops
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.tensor import Tensor
 
 __all__ = [

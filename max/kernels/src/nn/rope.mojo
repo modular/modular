@@ -13,7 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import gcd
-from std.sys.info import CompilationTarget, align_of, simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.complex import ComplexSIMD
@@ -127,7 +127,6 @@ def rope_ragged[
     freq_dtype: DType,
     *,
     interleaved: Bool,
-    target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength, alignment: Int](
@@ -163,8 +162,6 @@ def rope_ragged[
     and start_pos.flat_rank == 1
     and freqs_cis.flat_rank == 2
 ):
-    context._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert freqs_cis.LayoutType._shape_types[
         1
     ].is_static_value, "Need static rope_dim for freqs_cis"
@@ -212,11 +209,7 @@ def rope_ragged[
         pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_imm())
         pos_ids_stride = 0
 
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=context.target]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=context.target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     # Each access starts at a multiple of the width, so vector loads are
@@ -345,7 +338,7 @@ def rope_ragged[
         " of your target hardware."
     )
 
-    comptime if is_cpu[target]():
+    comptime if context.target.is_cpu():
         elementwise[simd_width=kernel_simd_width](
             rope_fn, x.layout.shape_coord(), context
         )

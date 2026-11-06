@@ -23,7 +23,6 @@ from std.utils.coord import Coord
 def random_uniform[
     dtype: DType,
     //,
-    target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength](idx: Coord, val: SIMD[dtype, width]),
@@ -41,7 +40,6 @@ def random_uniform[
 
     Parameters:
         dtype: The data type to generate.
-        target: The target to run on.
         OutputFn: The type of the function which stores the generated values.
 
     Args:
@@ -53,7 +51,6 @@ def random_uniform[
         ctx: The device context.
         output_fn: The function which stores the generated values.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     if lower_bound > upper_bound:
         raise Error("lower_bound must be less than upper_bound")
@@ -81,9 +78,7 @@ def random_uniform[
     elementwise[simd_width=4](generate, shape, ctx)
 
 
-def keyed_uniform[
-    target: StaticString,
-](
+def keyed_uniform(
     output: TileTensor[mut=True, .float32, ...],
     seed: TileTensor[mut=False, .uint64, ...],
     ctx: DeviceContext,
@@ -98,9 +93,6 @@ def keyed_uniform[
     it sits among them. Speculative decoding keys its accept coin per
     (request, draft position) this way.
 
-    Parameters:
-        target: The target to run on.
-
     Args:
         output: The drawn values, one per row.
         seed: The Philox seed for each row, one per output row.
@@ -109,7 +101,6 @@ def keyed_uniform[
     Raises:
         Error: If the seed does not carry exactly one entry per output row.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
     comptime assert output.flat_rank == 1, "output must be of rank 1"
     comptime assert seed.flat_rank == 1, "seed must be of rank 1"
 

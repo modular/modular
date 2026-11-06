@@ -31,18 +31,16 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn import Linear, Module
+from max.nn._graph_ops import moe_create_indices, moe_finalize
+from max.nn._graph_ops.ep import fused_silu
+from max.nn._graph_ops.moe_quant import NvMxf4f8Strategy
+from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.functional_kernels import (
-    moe_router_group_limited,
-)
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_tensor import FP8BlockTensor
-from max.nn.legacy.activation import GatedActivation
+from max.nn.kernels import moe_router_group_limited
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.comm.ep.ep_kernels import fused_silu
-from max.nn.legacy.kernels import moe_create_indices, moe_finalize
-from max.nn.legacy.moe import NvMxf4f8Strategy
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context

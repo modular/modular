@@ -22,7 +22,7 @@ from max.nn import TransparentModule
 from max.nn.common_layers.attention import AttentionWithRope
 from max.nn.common_layers.linear import QKVLinear
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.tensor import Tensor, default_dtype
 
 HEAD_DIM = 16

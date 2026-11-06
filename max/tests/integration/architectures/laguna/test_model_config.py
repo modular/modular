@@ -39,11 +39,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-    MultiKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.hf_config_shims import LagunaHFConfig
 from max.pipelines.architectures.laguna.model_config import LagunaConfig

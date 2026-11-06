@@ -36,7 +36,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     MultiKVCacheParams,
@@ -44,8 +44,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
 )
 from max.nn.legacy.layer import Module
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.glm5_next.glm5_next import Glm5Next
 from max.pipelines.architectures.glm5_next.layers import kimi_delta_attention
@@ -384,9 +384,20 @@ def test_only_a_draft_free_verify_takes_kda_chunk(
 
 
 def test_the_conv_window_is_left_for_the_rollback(fused: Graph) -> None:
-    # The verify's launch and the rollback's, per KDA layer.
-    assert _symbol_count(fused, "gated_delta_conv1d_verify_fwd") == 2 * NUM_KDA
+    # Only the verify's forward launch, one per KDA layer: the rollback places
+    # the windows inside the fold's launch instead.
+    assert _symbol_count(fused, "gated_delta_conv1d_verify_fwd") == NUM_KDA
     assert _symbol_count(fused, "gated_delta_conv1d_fwd") == 0
+
+
+def test_the_rollback_folds_the_conv_windows_in_the_folds_launch(
+    fused: Graph,
+) -> None:
+    """Checks the rollback holds one fold op and no per-layer conv replay."""
+    assert _symbol_count(fused, "kda_state_fold") == 1
+    # One forward conv-verify per layer is all the conv-verify ops the graph
+    # holds; a per-layer replay in the roll-forward would double it.
+    assert _symbol_count(fused, "gated_delta_conv1d_verify_fwd") == NUM_KDA
 
 
 def test_every_indexer_seeds_its_tail_twice(fused: Graph) -> None:

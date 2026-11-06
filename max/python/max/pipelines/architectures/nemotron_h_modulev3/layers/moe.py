@@ -21,15 +21,12 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn import Module
-from max.nn.common_layers.functional_kernels import (
-    moe_router_group_limited,
-    moe_sigmoid_gemv_router,
-)
+from max.nn import _graph_ops as kernels
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_ops import (
     interleave_grouped_scales,
 )
-from max.nn.legacy import kernels
+from max.nn.kernels import moe_router_group_limited, moe_sigmoid_gemv_router
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context
 from max.tensor.sharding import (

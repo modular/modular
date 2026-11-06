@@ -19,6 +19,7 @@
 #ifndef SUPPORT_BUMPALLOCATOR_H
 #define SUPPORT_BUMPALLOCATOR_H
 
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -43,7 +44,7 @@ namespace M {
 /// Individual allocations cannot be freed. All allocations remain valid until
 /// the allocator is reset or destroyed. Allocations larger than the size
 /// threshold receive dedicated slabs.
-class BumpAllocator {
+class MODULAR_CXX_EXPORT BumpAllocator {
 public:
   static constexpr size_t slabSize = 4096;
   static constexpr size_t sizeThreshold = slabSize;

@@ -256,7 +256,6 @@ struct MatmulTileSM100:
         transpose_b: Bool,
         packed_b: Bool,
         has_epilogue_fusion: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: _FusedComputeOutputTileTensor[rank=2, ...],
@@ -269,7 +268,7 @@ struct MatmulTileSM100:
         # this sm_100a registration. Naive, correctness-only GPU matmul on MAX's
         # own Mojo kernel (no vendor BLAS); see `_NaiveMatmulTileAdapter`. Tested
         # at (M, N, K) = (256, 256, 256) f32 on B200.
-        comptime assert is_gpu[target](), "tile-codegen matmul is GPU-only"
+        comptime assert ctx.target.is_gpu(), "tile-codegen matmul is GPU-only"
         comptime assert (
             not transpose_b
         ), "tile-codegen matmul only supports transpose_b=False"
@@ -282,7 +281,9 @@ struct MatmulTileSM100:
         # `get_kernel_tile_shape` default, and that shape must be threaded into
         # the fusion emitter so the epilogue conforms to it — instead of the
         # driver and emitter each independently reading `get_kernel_tile_shape`.
-        comptime tile_shape = get_kernel_tile_shape[c.dtype, target]()
+        comptime tile_shape = get_kernel_tile_shape[
+            c.dtype, ctx.target.device_kind_label()
+        ]()
         comptime TM = tile_shape[0]
         comptime TN = tile_shape[1]
 

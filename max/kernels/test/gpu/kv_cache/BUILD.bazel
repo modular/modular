@@ -26,6 +26,17 @@ _APPLE_GPU_INCOMPATIBLE = select({
 })
 
 _EXTRA_CONSTRAINTS = {
+    # One file per route so each binary reaches only its kernels; the shared
+    # shell's trait indirection cost B200 5-8 s of pre-elaboration.
+    # The portable kernel, on every GPU without the SM100 route.
+    "test_latent_sparse_attention_portable.mojo": select({
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_latent_sparse_attention_sm100.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_batch_kv_cache_flash_attention.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506

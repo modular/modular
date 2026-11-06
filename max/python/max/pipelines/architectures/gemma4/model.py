@@ -38,9 +38,9 @@ from max.graph import (
     Module,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.legacy.image_preprocess import image_preprocess_input_types
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -225,13 +225,9 @@ def gemma4_vision_metadata(
     )
 
 
-def _processor_config(model: Any) -> dict[str, Any]:
-    """Returns the checkpoint's ``processor_config.json``.
-
-    A function rather than a method, so the export tools' stand-ins for the
-    model, which carry only its pipeline config, can call it.
-    """
-    path = model.pipeline_config.model
+def _processor_config(pipeline_config: PipelineConfig) -> dict[str, Any]:
+    """Returns the checkpoint's ``processor_config.json``."""
+    path = pipeline_config.model
     return load_processor_config(
         path.model_path, revision=path.huggingface_model_revision
     )
@@ -436,10 +432,8 @@ class Gemma3_MultiModalModel(
         return [gemma4_weight_entry(context.adapter)]
 
     @classmethod
-    def build_vision_graph(
-        cls, context: ModelLoadContext
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Builds the vision tower's graph.
+    def build_vision_spec(cls, context: ModelLoadContext) -> GraphSpec:
+        """Returns the vision tower's graph spec.
 
         Raises:
             ValueError: If the checkpoint has no vision tower.
@@ -451,7 +445,18 @@ class Gemma3_MultiModalModel(
         if config.vision_config is None:
             raise ValueError("This Gemma 4 checkpoint has no vision tower.")
         _, vision_weights = adapt_gemma4_checkpoint(context.adapter, weights)
-        spec = cls._vision_spec(config, vision_weights)
+        return cls._vision_spec(config, vision_weights)
+
+    @classmethod
+    def build_vision_graph(
+        cls, context: ModelLoadContext
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the vision tower's graph.
+
+        Raises:
+            ValueError: If the checkpoint has no vision tower.
+        """
+        spec = cls.build_vision_spec(context)
         return spec.trace(), dict(spec.weights_registry())
 
     @classmethod
@@ -501,28 +506,48 @@ class Gemma3_MultiModalModel(
         self.config = model_config
         return model_config
 
-    def vision_metadata(self) -> VisionMetadata | None:
+    def vision_preprocess_spec(self) -> GraphSpec | None:
+        """Returns the graph that preprocesses one image for the tower.
+
+        It reads the config the model was finalized with, whose unquantized
+        dtype is the checkpoint's.
+        """
+        return self.vision_preprocess_spec_for(
+            self.pipeline_config, self.config
+        )
+
+    @classmethod
+    def vision_metadata_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> VisionMetadata | None:
         """Returns the media layout the checkpoint is served with."""
-        processor_config = _processor_config(self)
+        del config
+        huggingface_config = pipeline_config.model.huggingface_config
+        assert huggingface_config is not None
+        processor_config = _processor_config(pipeline_config)
         return gemma4_vision_metadata(
-            self.huggingface_config,
+            huggingface_config,
             Gemma4ImageProcessor(**processor_config.get("image_processor", {})),
             Gemma4VideoProcessor(**processor_config.get("video_processor", {})),
         )
 
-    def vision_preprocess_spec(self) -> GraphSpec | None:
+    @classmethod
+    def vision_preprocess_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
         """Returns the graph that preprocesses one image for the tower.
 
         It does what the tokenizer's image processor and the vision input
         packing do.
         """
-        if self.config.vision_config is None:
+        assert isinstance(config, Gemma4ForConditionalGenerationConfig)
+        if config.vision_config is None:
             return None
         processor = Gemma4ImageProcessor(
-            **_processor_config(self).get("image_processor", {})
+            **_processor_config(pipeline_config).get("image_processor", {})
         )
         return GraphSpec(
-            Gemma4ImagePreprocess(processor, self.config.unquantized_dtype),
+            Gemma4ImagePreprocess(processor, config.unquantized_dtype),
             "gemma4_vision_preprocess",
             image_preprocess_input_types(),
             weights={},

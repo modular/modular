@@ -20,8 +20,8 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.legacy.kv_cache import (
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -129,6 +129,68 @@ def num_indexer_cache_layers(
     return sum(t == "full" for t in indexer_types[:num_layers])
 
 
+def check_replica_layout(
+    config: DeepseekV3_2Config, runtime: ModuleRuntime
+) -> None:
+    """Raises unless the deployment's replicas and DCP group fit the decoder.
+
+    Data parallelism runs one attention replica per device or, under
+    peer-to-peer expert parallelism, tensor-parallel replicas on a
+    ``(dp, tp)`` mesh whose experts span every device. A decode context
+    parallel group spans one replica's ``tp`` axis (``dcp == tp``).
+
+    Allreduce EP can't back a ``(dp, tp)`` mesh: each device's MoE output
+    is a partial over its own experts (the shared expert added on device 0
+    only), complete only after a sum over every device, while each replica's
+    collectives reduce over its own ``tp`` group.
+
+    Raises:
+        NotImplementedError: If replicas of several devices run without
+            expert parallelism or with allreduce EP, or the DCP degree is
+            not the attention tensor-parallel degree.
+    """
+    n_devices = len(runtime.mesh.devices)
+    dp = max(1, runtime.data_parallel_degree)
+    if 1 < dp < n_devices and runtime.ep is None:
+        raise NotImplementedError(
+            f"data_parallel_degree={dp} over {n_devices} devices runs "
+            "tensor-parallel replicas on a (dp, tp) mesh, which needs expert "
+            "parallelism; without it, use one replica per device."
+        )
+    if 1 < dp < n_devices and (
+        runtime.ep_use_allreduce
+        or (runtime.ep is not None and runtime.ep.use_allreduce)
+    ):
+        raise NotImplementedError(
+            f"data_parallel_degree={dp} over {n_devices} devices runs "
+            "tensor-parallel replicas on a (dp, tp) mesh, which needs "
+            "peer-to-peer expert parallelism: allreduce EP "
+            "(ep_use_allreduce) sums each device's local-expert partials "
+            "over every device, and the replicas reduce within their own "
+            "tp group. Turn off ep_use_allreduce, or use one replica per "
+            "device."
+        )
+    attention_tp = n_devices // dp
+    dcp = config.decode_context_parallel_degree
+    if dcp > 1 and dcp != attention_tp:
+        raise NotImplementedError(
+            f"decode_context_parallel_degree={dcp} must equal the attention "
+            f"tensor-parallel degree ({attention_tp}: {n_devices} devices "
+            f"over {dp} replicas); a smaller group needs a (tp / dcp, dcp) "
+            "mesh, which is not supported yet."
+        )
+
+
+def resolve_dcp_q_replicate(value: bool | None) -> bool:
+    """Returns whether DCP ranks replicate the query, given the export flag.
+
+    ``None`` (no ``--dcp-q-replicate`` / ``--no-dcp-q-replicate``) means
+    True, a replicated query, for every architecture, as vLLM defaults
+    GLM-5.x. A gathered query is the explicit opt-out.
+    """
+    return True if value is None else value
+
+
 @dataclass(kw_only=True)
 class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     """Configuration for DeepseekV3.2 models (ModuleV3)."""
@@ -154,9 +216,40 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     indexer_types: list[str] = field(default_factory=list)
     # GLM-5.x sets indexer_rope_interleave=true.
     indexer_rope_interleave: bool = False
+    decode_context_parallel_degree: int = 1
+    """Attention ranks that split each request's KV positions (1 = off).
+
+    Under decode context parallelism the MLA latent and indexer caches hold
+    only each rank's positions (``kv_cache.context_parallel``), every rank
+    attends all its replica's heads over its share, and the partial results
+    merge by their log-sum-exp. Ranks own positions round-robin, one at a
+    time (interleave 1, the only layout the export contract describes).
+    """
+
+    dcp_q_replicate: bool = True
+    """Whether every DCP rank computes all its group's query heads itself.
+
+    False shards ``q_b_proj`` and ``kv_b_proj`` by head as under tensor
+    parallelism: each rank absorbs its own heads' queries and
+    the group all-gathers them. True keeps ``q_b_proj`` and ``kv_b_proj``
+    replicated so every rank absorbs all heads itself, trading weight
+    memory for the all-gather. Either way each rank applies its own heads'
+    ``w_vc`` after the merge. Named after vLLM's
+    ``ParallelConfig.dcp_q_replicate``; True is the default (see
+    :func:`resolve_dcp_q_replicate`).
+    """
 
     def __post_init__(self) -> None:
         super().__post_init__()
+        dcp = self.decode_context_parallel_degree
+        if dcp < 1:
+            raise ValueError(
+                f"decode_context_parallel_degree must be positive (got {dcp})."
+            )
+        # MTP runs under DCP too: the NextN layer shards its own caches like
+        # the target's, and each draft step runs its own indexer rather than
+        # reusing a lagged selection, which the DCP attention path refuses
+        # (``QuantizedSparseLatentAttentionWithRope``).
         # A ``shared`` layer reuses the top-k from the most recent ``full``
         # layer, so the first layer must be ``full``. An empty schedule means
         # every layer is full.
@@ -253,16 +346,11 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
         """Returns the config placed on the deployment's mesh.
 
         Raises:
-            NotImplementedError: If data parallelism runs over fewer
-                replicas than devices.
+            NotImplementedError: If the replicas or the decode context
+                parallel group don't fit the mesh (see
+                :func:`check_replica_layout`).
         """
-        n_devices = len(runtime.mesh.devices)
-        if 1 < runtime.data_parallel_degree != n_devices:
-            raise NotImplementedError(
-                f"data_parallel_degree={runtime.data_parallel_degree} must "
-                f"equal the device count ({n_devices}); dp x tp meshes are "
-                "not supported yet."
-            )
+        check_replica_layout(self, runtime)
         return replace(
             self,
             mesh=runtime.mesh,
@@ -452,6 +540,12 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             attention_dropout=config.attention_dropout,
             graph_mode=graph_mode,
             data_parallel_degree=model_config.data_parallel_degree,
+            decode_context_parallel_degree=(
+                model_config.decode_context_parallel_degree
+            ),
+            dcp_q_replicate=resolve_dcp_q_replicate(
+                model_config.dcp_q_replicate
+            ),
             # DeepseekV3.2 specific fields
             index_head_dim=config.index_head_dim,
             index_n_heads=config.index_n_heads,

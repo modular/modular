@@ -59,8 +59,8 @@ from max.graph import BufferValue, TensorType, TensorValue
 from max.nn import Embedding, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     MLAKVCacheParams,
@@ -69,8 +69,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor
@@ -404,6 +404,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         mla_rope_table_rows: int | None = None,
         quant_config: QuantConfig | None = None,
         ep_config: EPConfig | None = None,
+        max_tokens_per_expert: int = 8192,
     ) -> None:
         """Builds the model's layers and weights.
 
@@ -448,6 +449,9 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             weight, so ``forward`` reads them off the tail of ``kv_inputs``
             instead of a stored attribute (which ``Module.stage`` would
             otherwise declare as one).
+            max_tokens_per_expert: Rows one forward can route to an expert
+            (``KimiK3Config.max_tokens_per_expert``), a serving-time bound
+            like ``mla_buffer_size``.
         """
         super().__init__()
         self.config = config
@@ -526,6 +530,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     topk_group=config.topk_group,
                     moe_renormalize=config.moe_renormalize,
                     quant_config=quant_config,
+                    max_tokens_per_expert=max_tokens_per_expert,
                 )
 
             layers.append(

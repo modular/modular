@@ -94,7 +94,6 @@ from extensibility import (
 @inline(.always)
 def generic_fused_qkv_matmul_kv_cache_bshd_paged[
     dtype: DType,
-    target: StaticString = "cpu",
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -143,16 +142,14 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         String(
             t"kv_cache.fused_qkv_matmul.padded.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
-        return _fused_qkv_matmul_kv_cache[
-            kv_collection.CacheType, target=target
-        ](
+        return _fused_qkv_matmul_kv_cache[kv_collection.CacheType,](
             hidden_state,
             weight,
             kv_collection,
@@ -170,7 +167,6 @@ def _fused_qkv_matmul_kv_cache[
     //,
     cache_t: KVCacheT,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -198,19 +194,14 @@ def _fused_qkv_matmul_kv_cache[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
-    var cuda_ctx: Optional[DeviceContext[context.target]] = None
-
-    comptime if is_gpu[target]():
-        cuda_ctx = context
-
-    return _fused_qkv_matmul_kv_cache_impl[target=target](
+    return _fused_qkv_matmul_kv_cache_impl(
         hidden_state,
         weight,
         kv_collection,
         layer_idx,
         valid_lengths,
         output,
-        cuda_ctx,
+        context,
     )
 
 
@@ -220,7 +211,6 @@ def _fused_qkv_matmul_kv_cache_impl[
     collection_t: KVCollectionT,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -228,7 +218,7 @@ def _fused_qkv_matmul_kv_cache_impl[
     layer_idx: UInt32,
     valid_lengths: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     output: TileTensor[mut=True, dtype, ...],
-    context: DeviceContext.Optional,
+    context: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -247,7 +237,7 @@ def _fused_qkv_matmul_kv_cache_impl[
             sequence. K and V are only written to cache for positions within these lengths.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
-        context: The DeviceContext. This is unused if is_cpu[target]().
+        context: The DeviceContext.
     """
     comptime assert valid_lengths.rank == valid_lengths.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 3
@@ -319,7 +309,7 @@ def _fused_qkv_matmul_kv_cache_impl[
             rebind[SIMD[cache_dtype, width]](output_val),
         )
 
-    _matmul_common[target=target](hidden_state, weight, write_to_cache, context)
+    _matmul_common(hidden_state, weight, write_to_cache, context)
 
 
 @inline(.always)
@@ -328,12 +318,11 @@ def _matmul_common[
     EpilogueFnType: ElementwiseEpilogueFn,
     //,
     *,
-    target: StaticString,
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
-    context: DeviceContext.Optional,
+    context: DeviceContext,
 ) raises:
     comptime assert hidden_state.rank == hidden_state.flat_rank == 3
     comptime assert weight.rank == weight.flat_rank == 2
@@ -349,7 +338,7 @@ def _matmul_common[
 
     var hidden_state_2d = hidden_state.reshape(Coord(BS * SEQ_LEN, Idx[K]))
 
-    comptime if is_cpu[target]():
+    comptime if context.target.is_cpu():
         var c_alloc = alloc(
             AllocLayout[Scalar[dtype]](length=BS * SEQ_LEN * N)
         ).into_managed()
@@ -358,7 +347,7 @@ def _matmul_common[
         ] = c_alloc.unsafe_ptr()
         var c_nd = TileTensor(c_ptr, row_major(BS * SEQ_LEN, Idx[N]))
 
-        matmul[transpose_b=True, target=target](
+        matmul[transpose_b=True](
             c_nd, hidden_state_2d, weight, epilogue_fn, context
         )
 
@@ -367,12 +356,12 @@ def _matmul_common[
         # Allocate a device-local scratch for the matmul accumulator; the
         # epilogue lambda reads from it and scatters Q/K/V to the real
         # output and KV cache.
-        var c_device_buffer = context.value().enqueue_create_buffer[dtype](
+        var c_device_buffer = context.enqueue_create_buffer[dtype](
             BS * SEQ_LEN * N
         )
         var c_nd = TileTensor(c_device_buffer, row_major(BS * SEQ_LEN, Idx[N]))
 
-        matmul[transpose_b=True, target=target](
+        matmul[transpose_b=True](
             c_nd, hidden_state_2d, weight, epilogue_fn, context
         )
 
@@ -388,7 +377,6 @@ def generic_flash_attention_kv_cache_padded[
     dtype: DType,
     //,
     *,
-    target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
@@ -419,7 +407,7 @@ def generic_flash_attention_kv_cache_padded[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "attention.mha.padded."
         + collection_t.name_str
         + "."
@@ -431,7 +419,6 @@ def generic_flash_attention_kv_cache_padded[
         task_id=get_safe_task_id(context),
     ):
         return _flash_attention_dispatch[
-            target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
         ](
@@ -451,7 +438,6 @@ def _flash_attention_dispatch[
     collection_t: KVCollectionT,
     //,
     *,
-    target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
 ](
@@ -470,7 +456,7 @@ def _flash_attention_dispatch[
     def _dispatch_flash_attention[
         mask_t: MHAMask
     ](mask: mask_t) raises {var k, var v, imm}:
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             return flash_attention_kv_cache_cpu(
                 q,
                 k,
@@ -481,7 +467,7 @@ def _flash_attention_dispatch[
                 sink_weights,
             )
         else:
-            gpu_flash_attention[](
+            gpu_flash_attention(
                 output,
                 q,
                 k,
@@ -640,7 +626,6 @@ def fused_qk_rms_norm_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
 ](
     q_proj: TileTensor[mut=False, dtype, ...],
@@ -661,9 +646,9 @@ def fused_qk_rms_norm_ragged_paged[
 ) raises:
     """Applies per-head RMSNorm to Q and new K-cache entries in one GPU launch.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_qk_rms_norm_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_qk_rms_norm_ragged_paged is GPU-only"
     comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
     comptime assert q_output.flat_rank == 3, "q_output must be rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must be rank 1"
@@ -702,7 +687,7 @@ def fused_qk_rms_norm_ragged_paged[
             t";layer_idx={layer_idx};num_heads={params.num_heads};head_size={params.head_size}"
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_qk_rms_norm_ragged_paged_nhead_{params.num_heads}.hdim_{params.head_size}"
         ),
@@ -1126,7 +1111,6 @@ def fused_qk_rms_norm_rope_ragged_paged[
         dtype, width
     ],
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
 ](
@@ -1163,9 +1147,9 @@ def fused_qk_rms_norm_rope_ragged_paged[
     `[0, rope_dim)` of each head (non-interleaved layout) and the suffix is left
     un-roped, matching `fused_qk_rope_ragged`'s `has_nope_prefix` path.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_qk_rms_norm_rope_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_qk_rms_norm_rope_ragged_paged is GPU-only"
     comptime assert q_output.flat_rank == 3, "q_output must be rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must be rank 1"
     comptime assert k_gamma.flat_rank == 1, "k_gamma must be rank 1"
@@ -1220,7 +1204,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             t";layer_idx={layer_idx};num_heads={params.num_heads};head_size={params.head_size};rope_dim={rope_dim}"
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_qk_rms_norm_rope_ragged_paged_nhead_{params.num_heads}.hdim_{params.head_size}.rope_{rope_dim}"
         ),
@@ -1516,7 +1500,6 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
         dtype, width
     ],
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
 ](
@@ -1569,9 +1552,9 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     indexer stays partial-64) trips a compile-time assert rather than silently
     mis-roping a band.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_dual_qk_rms_norm_rope_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_dual_qk_rms_norm_rope_ragged_paged is GPU-only"
     comptime assert q_main_output.flat_rank == 3, "q_main_output must be rank 3"
     comptime assert (
         q_index_output.flat_rank == 3
@@ -1660,7 +1643,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             t";layer_idx={layer_idx};main_num_heads={main_params.num_heads};index_num_heads={index_params.num_heads};head_size={main_params.head_size};rope_dim={rope_dim}"
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_dual_qk_rms_norm_rope_ragged_paged_nhead_{main_params.num_heads}.hdim_{main_params.head_size}.rope_{rope_dim}"
         ),
@@ -2829,7 +2812,6 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
         dtype, width
     ],
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
     launch: Int = NVFP4_QK_LAUNCH_AUTO,
@@ -2896,9 +2878,9 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
     Raises:
         If the kernel launch fails.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged is GPU-only"
     comptime assert q_main_output.flat_rank == 3, "q_main_output must be rank 3"
     comptime assert (
         q_index_output.flat_rank == 3
@@ -2948,7 +2930,7 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
             t";layer_idx={layer_idx};main_num_heads={main_collection_t.kv_params.num_heads};index_num_heads={index_collection_t.kv_params.num_heads};head_dim={head_dim};rope_dim={rope_dim}"
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_nhead_{main_collection_t.kv_params.num_heads}.hdim_{head_dim}.rope_{rope_dim}"
         ),
@@ -3144,7 +3126,6 @@ def rms_norm_kv_cache_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
     epsilon: Float32,
@@ -3276,7 +3257,7 @@ def rms_norm_kv_cache_ragged_paged[
             val=val.cast[cache_dtype](),
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"rms_norm_kv_cache_ragged_paged_nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),
@@ -3303,7 +3284,6 @@ def rms_norm_value_cache_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
     epsilon: Float32,
@@ -3416,7 +3396,7 @@ def rms_norm_value_cache_ragged_paged[
             val=val.cast[cache_dtype](),
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"rms_norm_value_cache_ragged_paged_nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
         ),

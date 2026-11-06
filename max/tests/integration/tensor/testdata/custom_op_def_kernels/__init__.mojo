@@ -251,9 +251,7 @@ struct Mxf353NVFP4Quantize:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         packed: Some[Output & Tensor],
         scales: Some[Output & Tensor],
         x: Some[Input & Tensor],
@@ -317,9 +315,7 @@ struct Mxf353NVFP4Matmul:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         out_tensor: Some[Output & Tensor],
         a_packed: Some[Input & Tensor],
         a_scales: Some[Input & Tensor],
@@ -394,9 +390,7 @@ struct Mxf353Relu:
     """Shape- and dtype-preserving ReLU, the pipeline's activation."""
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -417,6 +411,6 @@ struct Mxf353Relu:
             var v = x_tile.load[width=width, alignment=align](idx)
             out_tile.store[alignment=align](idx, max(v, 0))
 
-        elementwise[get_kernel_simd_width[dtype, target]()](
+        elementwise[get_kernel_simd_width[dtype, ctx.target]()](
             relu, output.shape(), ctx
         )

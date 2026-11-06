@@ -75,14 +75,13 @@ def test[
     dtype: DType,
     /,
     *,
+    N: Int,
+    K: Int,
     transpose_b: Bool = False,
     arange_a: Bool = False,
     arange_b: Bool = False,
     lambda_fn: Optional[epilogue_func_type] = None,
     config: Optional[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
-    M: Optional[Int] = None,
-    N: Optional[Int] = None,
-    K: Optional[Int] = None,
 ](
     ctx: DeviceContext,
     m: Int,
@@ -91,10 +90,6 @@ def test[
     rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
-    comptime assert Bool(N) and Bool(
-        K
-    ), "This test currently requires static N and K."
-
     print(m, "x", n, "x", k)
 
     var a_size = m * k
@@ -109,22 +104,22 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(m, Idx[K.value()]),
+        row_major(m, Idx[K]),
     )
     var b_host = TileTensor(
         b_host_ptr,
         row_major(
-            Idx[N.value() if transpose_b else K.value()],
-            Idx[K.value() if transpose_b else N.value()],
+            Idx[N if transpose_b else K],
+            Idx[K if transpose_b else N],
         ),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(m, Idx[N.value()]),
+        row_major(m, Idx[N]),
     )
     var c_host_ref = TileTensor(
         c_host_ref_ptr,
-        row_major(m, Idx[N.value()]),
+        row_major(m, Idx[N]),
     )
 
     # Device allocations
@@ -135,22 +130,22 @@ def test[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(m, Idx[K.value()]),
+        row_major(m, Idx[K]),
     )
     var b_device = TileTensor(
         b_device_buffer,
         row_major(
-            Idx[N.value() if transpose_b else K.value()],
-            Idx[K.value() if transpose_b else N.value()],
+            Idx[N if transpose_b else K],
+            Idx[K if transpose_b else N],
         ),
     )
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(m, Idx[N.value()]),
+        row_major(m, Idx[N]),
     )
     var c_device_ref = TileTensor(
         c_device_ref_buffer,
-        row_major(m, Idx[N.value()]),
+        row_major(m, Idx[N]),
     )
 
     # Initialize matmul operands

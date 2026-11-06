@@ -12,190 +12,164 @@
 # ===----------------------------------------------------------------------=== #
 """Maps a GLM-5.3-Flash checkpoint onto the ModuleV3 module tree.
 
-The DeepSeek ModuleV3 adapter cannot be reused as-is: it decides how to name a
-projection from the projection's *name* alone, and GLM-5.3-Flash has a ``q_proj``
-in every KDA layer that is a plain BF16 linear, not the raw MLA projection that
-name means to DeepSeek. Here an FP8 weight is recognized by its scale instead,
-since the checkpoint is mixed precision layer by layer.
+The modules hold every tensor as the checkpoint stores it, in its dtype and
+shape, so the rules only rename and drop.
 """
 
 from __future__ import annotations
 
-from max.driver import Buffer
-from max.dtype import DType
-from max.graph import DeviceRef
-from max.graph.weights import WeightData, Weights
-from max.graph.weights.weights import Shape
-from max.pipelines.lib import PipelineConfig
-from max.pipelines.weights import resolve_hf_quant_config
-from transformers import AutoConfig
+import re
+from collections.abc import Sequence
 
-from .checkpoint import (
-    _hc_fn_dtype,
-    _stored_hc_fn_dtype,
-    cast_hc_fn_weights,
-    checkpoint_quant_scheme,
-)
-from .model_config import _declared_dtype
+from max.pipelines.lib import Ignore, WeightRenaming, WeightRule
+from transformers import PretrainedConfig
 
-__all__ = ["convert_glm5_next_state_dict"]
+__all__ = [
+    "glm5_next_mtp_weight_rules",
+    "glm5_next_weight_rules",
+    "glm5_next_with_mtp_weight_rules",
+]
 
-_LM_PREFIXES = (
-    ("model.language_model.", "language_model."),
-    ("model.", "language_model."),
-    ("lm_head.", "language_model.lm_head."),
-)
-
-# MLA projections the module holds as raw (unwrapped) weights.
 _MLA_RAW = ("q_a_proj", "q_b_proj", "kv_a_proj_with_mqa", "kv_b_proj")
+"""MLA projections the module holds as raw tensors."""
 
-# Parameters the model reads in float32. `hc_*_fn` is left as the checkpoint
-# stores it: the model picks its dtype per device.
-_FLOAT32_SUFFIXES = (
-    ".A_log",
-    ".dt_bias",
-    ".o_norm.weight",
-    ".hc_base",
-    ".hc_scale",
+_UNQUANTIZED_RAW = re.compile(
+    rf"layers\.(\d+)\.self_attn\.({'|'.join(_MLA_RAW)})$"
+)
+
+_PREFIX_RULES: tuple[WeightRule, ...] = (
+    WeightRenaming(r"^model\.language_model\.", "language_model."),
+    WeightRenaming(r"^model\.", "language_model."),
+    WeightRenaming(r"^lm_head\.", "language_model.lm_head."),
 )
 
 
-def _lm_name(name: str) -> str | None:
-    for before, after in _LM_PREFIXES:
-        if name.startswith(before):
-            return after + name[len(before) :]
-    return None
+def _num_hidden_layers(huggingface_config: PretrainedConfig) -> int:
+    text_config = getattr(huggingface_config, "text_config", huggingface_config)
+    return int(text_config.num_hidden_layers)
 
 
-def _rename(name: str) -> str:
-    # The mHC sites are flat tensors in the checkpoint and modules here.
-    for site in ("hc_attn", "hc_ffn"):
-        for part in ("fn", "base", "scale"):
-            name = name.replace(f".{site}_{part}", f".{site}.hc_{part}")
-    name = name.replace("mlp.gate.weight", "mlp.gate.gate_score.weight")
-    name = name.replace(
-        "self_attn.kv_a_layernorm.weight", "self_attn.kv_a_proj_layernorm"
-    )
-    # The k-pool gate is a bare `[128, 4096]` tensor applied as a linear.
-    name = name.replace(
-        "indexer.index_kpool_compress_gate",
-        "indexer.index_kpool_compress_gate.weight",
-    )
-    # KDA's depthwise convs are held as raw `[channels, kernel]` tensors.
-    for which in "qkv":
-        name = name.replace(
-            f"self_attn.{which}_conv1d.weight", f"self_attn.{which}_conv1d"
+def _raw_projection_rules(
+    huggingface_config: PretrainedConfig,
+) -> tuple[WeightRule, ...]:
+    """Returns the renames of the MLA projections held as bare tensors.
+
+    A quantized projection keeps its checkpoint names beside its scales. An
+    FP8 checkpoint is mixed precision layer by layer and lists the
+    projections it leaves unquantized; any other checkpoint quantizes none.
+    """
+    quantization = getattr(huggingface_config, "quantization_config", None)
+    if not quantization or quantization.get("quant_method") != "fp8":
+        return (
+            WeightRenaming(
+                rf"(\.self_attn\.(?:{'|'.join(_MLA_RAW)}))\.weight$", r"\1"
+            ),
         )
-    return name
-
-
-def _squeeze_conv(weight: WeightData) -> WeightData:
-    """Drops the singleton group axis of a ``[C, 1, K]`` depthwise conv."""
-    if len(weight.shape) != 3:
-        return weight
-    channels, _, kernel = (int(d) for d in weight.shape)
-    return WeightData(
-        data=Buffer.from_dlpack(weight.data).view(
-            dtype=weight.dtype, shape=(channels, kernel)
-        ),
-        name=weight.name,
-        dtype=weight.dtype,
-        shape=Shape([channels, kernel]),
-        quantization_encoding=weight.quantization_encoding,
+    layers: dict[str, set[str]] = {}
+    for module in quantization.get("modules_to_not_convert") or ():
+        if (match := _UNQUANTIZED_RAW.search(module)) is not None:
+            layers.setdefault(match.group(2), set()).add(match.group(1))
+    return tuple(
+        WeightRenaming(
+            rf"(\.layers\.(?:{'|'.join(sorted(ids, key=int))})"
+            rf"\.self_attn\.{projection})\.weight$",
+            r"\1",
+        )
+        for projection, ids in sorted(layers.items())
     )
 
 
-def convert_glm5_next_state_dict(
-    state_dict: dict[str, Weights],
-    huggingface_config: AutoConfig,
-    *,
-    keep_mtp_layer: bool = False,
-    **unused_kwargs: object,
-) -> dict[str, WeightData]:
-    """Converts a GLM-5.3-Flash checkpoint to the ModuleV3 weight names.
+def _layer_rules(
+    huggingface_config: PretrainedConfig,
+) -> tuple[WeightRule, ...]:
+    """Returns the renames of a decoder layer's weights."""
+    return (
+        # The mHC sites are flat tensors in the checkpoint, modules here.
+        WeightRenaming(r"\.(hc_attn|hc_ffn)_(fn|base|scale)$", r".\1.hc_\2"),
+        WeightRenaming(r"\.mlp\.gate\.weight$", ".mlp.gate.gate_score.weight"),
+        WeightRenaming(
+            r"\.self_attn\.kv_a_layernorm\.weight$",
+            ".self_attn.kv_a_proj_layernorm",
+        ),
+        # The k-pool gate is a bare `[128, 4096]` tensor applied as a linear.
+        WeightRenaming(
+            r"\.indexer\.index_kpool_compress_gate$",
+            ".indexer.index_kpool_compress_gate.weight",
+        ),
+        # KDA's depthwise convs are held as raw tensors.
+        WeightRenaming(
+            r"\.self_attn\.([qkv])_conv1d\.weight$", r".self_attn.\1_conv1d"
+        ),
+        *_raw_projection_rules(huggingface_config),
+    )
+
+
+def glm5_next_with_mtp_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the decoder's rules, keeping the checkpoint's MTP layer.
+
+    The layer stays under ``language_model.layers.{num_hidden_layers}.``, so
+    the draft's builder reads the precision map off the whole checkpoint.
 
     Args:
-        state_dict: The raw checkpoint weights.
-        huggingface_config: The checkpoint's config, read for the layer count
-            that identifies the MTP draft layer.
-        keep_mtp_layer: Whether to keep the MTP draft layer, under
-            ``language_model.layers.{num_hidden_layers}.``, for the draft.
-        **unused_kwargs: Accepted so every adapter shares one signature.
-
-    Returns:
-        The renamed weights. The vision tower is dropped, since the graph is
-        text-only, and so is the MTP draft layer unless it is kept.
+        huggingface_config: The checkpoint's config.
     """
-    text_config = getattr(huggingface_config, "text_config", huggingface_config)
-    mtp_prefix = f"language_model.layers.{text_config.num_hidden_layers}."
-    scaled = {
-        name[: -len(".weight_scale_inv")]
-        for name in state_dict
-        if name.endswith(".weight_scale_inv")
-    }
-
-    out: dict[str, WeightData] = {}
-    for checkpoint_name, value in state_dict.items():
-        if checkpoint_name.startswith("model.visual."):
-            continue
-        name = _lm_name(checkpoint_name)
-        if name is None or (name.startswith(mtp_prefix) and not keep_mtp_layer):
-            continue
-        weight = value.data()
-
-        is_scale = checkpoint_name.endswith(".weight_scale_inv")
-        base = None
-        if is_scale:
-            base = checkpoint_name[: -len(".weight_scale_inv")]
-        elif checkpoint_name.endswith(".weight"):
-            base = checkpoint_name[: -len(".weight")]
-
-        if base is not None and base in scaled:
-            # An FP8 weight keeps its checkpoint name: the FP8BlockTensor keys
-            # its packed data `weight` beside `weight_scale_inv`, for a raw
-            # MLA projection and a linear alike.
-            module = _rename(_lm_name(base) or base)
-            name = f"{module}.{'weight_scale_inv' if is_scale else 'weight'}"
-        else:
-            name = _rename(name)
-            stem = name.removesuffix(".weight")
-            if stem != name and stem.rsplit(".", 1)[-1] in _MLA_RAW:
-                # A BF16 raw projection, `kv_b_proj` on this checkpoint.
-                name = stem
-            if name.endswith("_conv1d"):
-                weight = _squeeze_conv(weight)
-        if name.endswith(_FLOAT32_SUFFIXES) and weight.dtype != DType.float32:
-            weight = weight.astype(DType.float32)
-        out[name] = weight
-    return out
+    return (
+        Ignore(
+            r"^model\.visual\.",
+            reason="the vision tower, which the text-only graph does not build",
+        ),
+        *_layer_rules(huggingface_config),
+        *_PREFIX_RULES,
+    )
 
 
-def convert_registered_state_dict(
-    state_dict: dict[str, Weights],
-    huggingface_config: AutoConfig,
-    pipeline_config: PipelineConfig,
-    **unused_kwargs: object,
-) -> dict[str, WeightData]:
-    """Adapts the checkpoint and explicitly casts the device-selected mHC weights.
+def glm5_next_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the rules that map a GLM-5.3-Flash checkpoint onto the decoder.
 
-    This cast is part of the architecture's precision policy even when the
-    generic automatic weight cast is disabled.
+    The checkpoint's MTP layer, past the decoder's last one, is left out:
+    the draft loads it.
+
+    Args:
+        huggingface_config: The checkpoint's config.
     """
-    adapted = convert_glm5_next_state_dict(state_dict, huggingface_config)
-    text_config = getattr(huggingface_config, "text_config", huggingface_config)
-    scheme = checkpoint_quant_scheme(
-        resolve_hf_quant_config(huggingface_config, {}),
-        _declared_dtype(text_config),
-        adapted,
+    return (
+        Ignore(
+            rf"^model\.(?:language_model\.)?layers\."
+            rf"{_num_hidden_layers(huggingface_config)}\.",
+            reason="the MTP layer, which the draft loads",
+        ),
+        *glm5_next_with_mtp_weight_rules(huggingface_config),
     )
-    spec = pipeline_config.model.device_specs[0]
-    dtype = _hc_fn_dtype(
-        _stored_hc_fn_dtype(adapted),
-        getattr(text_config, "hc_mult", 4),
-        text_config.hidden_size,
-        scheme.compute_dtype
-        if scheme is not None
-        else (_declared_dtype(text_config) or DType.bfloat16),
-        DeviceRef(spec.device_type, spec.id).to_device(),
+
+
+def glm5_next_mtp_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the rules that name the MTP layer as the draft's module does.
+
+    The layer ships in the target's checkpoint, past the target's last
+    layer. Its own embedding and head are left to the target's.
+
+    Args:
+        huggingface_config: The checkpoint's config.
+    """
+    layer = (
+        rf"^model\.(?:language_model\.)?layers\."
+        rf"{_num_hidden_layers(huggingface_config)}\."
     )
-    return cast_hc_fn_weights(adapted, dtype)
+    return (
+        # Before the layer moves, while the unquantized projections still
+        # carry its index.
+        *_layer_rules(huggingface_config),
+        WeightRenaming(layer + r"shared_head\.norm\.", "shared_head_norm."),
+        WeightRenaming(layer + r"(enorm|hnorm|eh_proj)\.", r"\1."),
+        WeightRenaming(layer, "decoder_layer."),
+        Ignore(
+            r"^(?:model|lm_head)\.",
+            reason="the target's weights, which the target's rules name",
+        ),
+    )

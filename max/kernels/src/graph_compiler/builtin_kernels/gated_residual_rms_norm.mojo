@@ -20,7 +20,7 @@ Both match the unfused ops bit for bit.
 """
 
 import extensibility
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 
@@ -35,17 +35,19 @@ from nn.gated_residual_rms_norm import (
 
 
 @always_inline
-def _in[T: DType](t: InputTensor[dtype=T, ...]) -> In[T]:
+def _in[T: DType](t: Some[Input & Tensor]) -> In[T]:
+    comptime assert conforms_to(type_of(t), TileTensorable)
     return (
-        t.unsafe_ptr()
-        .unsafe_mut_cast[False]()
+        t.to_tile_tensor[T]()
+        .ptr.unsafe_mut_cast[False]()
         .unsafe_origin_cast[ImmUntrackedOrigin]()
     )
 
 
 @always_inline
-def _out[T: DType](t: OutputTensor[dtype=T, ...]) -> Out[T]:
-    return t.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+def _out[T: DType](t: Some[Output & Tensor]) -> Out[T]:
+    comptime assert conforms_to(type_of(t), TileTensorable)
+    return t.to_tile_tensor[T]().ptr.unsafe_origin_cast[MutUntrackedOrigin]()
 
 
 @extensibility.register("gated_residual_rms_norm")
@@ -54,17 +56,15 @@ struct GatedResidualRMSNorm:
 
     @staticmethod
     def execute[
-        target: StaticString,
-        //,
         scale_branch: Bool,
     ](
-        stream_out: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
-        normed_out: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
-        branch: InputTensor[dtype=DType.bfloat16, rank=2, ...],
-        residual: InputTensor[dtype=DType.bfloat16, rank=2, ...],
-        post_weight: InputTensor[dtype=DType.bfloat16, rank=1, ...],
-        gate: InputTensor[dtype=DType.bfloat16, rank=1, ...],
-        norm_weight: InputTensor[dtype=DType.bfloat16, rank=1, ...],
+        stream_out: Some[Output & Tensor],
+        normed_out: Some[Output & Tensor],
+        branch: Some[Input & Tensor],
+        residual: Some[Input & Tensor],
+        post_weight: Some[Input & Tensor],
+        gate: Some[Input & Tensor],
+        norm_weight: Some[Input & Tensor],
         post_eps: Float32,
         norm_eps: Float32,
         temperature: Float32,
@@ -74,7 +74,6 @@ struct GatedResidualRMSNorm:
         """Writes the gated residual stream and its next pre-norm.
 
         Parameters:
-            target: Compilation target.
             scale_branch: Whether the branch is scaled by `1 + post_weight`
                 before its norm; otherwise `post_weight` is not read.
 
@@ -95,25 +94,36 @@ struct GatedResidualRMSNorm:
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[target](), "gated_residual_rms_norm is GPU only"
         comptime assert (
-            Int(branch.static_spec.shape_tuple[1]) == HIDDEN
+            ctx.target.is_gpu()
+        ), "gated_residual_rms_norm is GPU only"
+        comptime assert type_of(stream_out).rank == 2
+        comptime assert type_of(normed_out).rank == 2
+        comptime assert type_of(branch).rank == 2
+        comptime assert type_of(residual).rank == 2
+        comptime assert type_of(post_weight).rank == 1
+        comptime assert type_of(gate).rank == 1
+        comptime assert type_of(norm_weight).rank == 1
+        comptime assert (
+            type_of(branch)._shape_types[1].static_value == HIDDEN
         ), "gated_residual_rms_norm takes 8192 channels"
+        comptime bf16 = DType.bfloat16
+        var rows = Int(branch.shape()[0].value())
         var args = GatedResidualArgs(
-            _in(branch),
-            _in(residual),
-            _in(post_weight),
-            _in(gate),
-            _in(norm_weight),
-            _out(stream_out),
-            _out(normed_out),
-            Int64(branch.dim_size[0]()),
+            _in[bf16](branch),
+            _in[bf16](residual),
+            _in[bf16](post_weight),
+            _in[bf16](gate),
+            _in[bf16](norm_weight),
+            _out[bf16](stream_out),
+            _out[bf16](normed_out),
+            Int64(rows),
             post_eps,
             norm_eps,
             temperature,
             gate_eps,
         )
-        if branch.dim_size[0]() < ctx.default_device_info.sm_count:
+        if rows < ctx.default_device_info.sm_count:
             gated_residual_rms_norm_split[scale_branch](args, ctx)
         else:
             gated_residual_rms_norm[scale_branch](args, ctx)

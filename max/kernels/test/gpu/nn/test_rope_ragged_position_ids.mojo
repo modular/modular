@@ -98,7 +98,6 @@ def test_rope_ragged_position_ids[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("gpu"),
     ](
         x=x_t,
         input_row_offsets=ro_t,

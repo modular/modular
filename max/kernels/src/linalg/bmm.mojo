@@ -39,7 +39,7 @@ from max.gpu import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host.info import A100, is_cpu, is_valid_target
+from max.gpu.host.info import A100, is_cpu
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import (
     coord,
@@ -1291,7 +1291,6 @@ def batched_matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1309,7 +1308,6 @@ def batched_matmul[
             `False`).
         saturated_vnni: Whether to use saturated VNNI accumulation on CPU
             (defaults to `False`; not applicable on GPU).
-        target: Target hardware for the operation (defaults to `"cpu"`).
         pdl_level: Programmatic dependent launch level for the SM100 GPU
             kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
             releases dependent grids at kernel entry, so every dependent must
@@ -1335,7 +1333,6 @@ def batched_matmul[
         has_epilogue_fn=False,
         has_compute_fn=False,
         saturated_vnni=saturated_vnni,
-        target=target,
         pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, no_epilogue_fn, no_compute_fn, context)
 
@@ -1348,7 +1345,6 @@ def batched_matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1368,7 +1364,6 @@ def batched_matmul[
             `False`).
         saturated_vnni: Whether to use saturated VNNI accumulation on CPU
             (defaults to `False`; not applicable on GPU).
-        target: Target hardware for the operation (defaults to `"cpu"`).
         pdl_level: Programmatic dependent launch level for the SM100 GPU
             kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
             releases dependent grids at kernel entry, so every dependent must
@@ -1398,7 +1393,6 @@ def batched_matmul[
         has_epilogue_fn=True,
         has_compute_fn=False,
         saturated_vnni=saturated_vnni,
-        target=target,
         pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, epilogue_fn, no_compute_fn, context)
 
@@ -1411,7 +1405,6 @@ def batched_matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1432,7 +1425,6 @@ def batched_matmul[
             `False`).
         saturated_vnni: Whether to use saturated VNNI accumulation on CPU
             (defaults to `False`; not applicable on GPU).
-        target: Target hardware for the operation (defaults to `"cpu"`).
         pdl_level: Programmatic dependent launch level for the SM100 GPU
             kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
             releases dependent grids at kernel entry, so every dependent must
@@ -1461,7 +1453,6 @@ def batched_matmul[
         has_epilogue_fn=False,
         has_compute_fn=True,
         saturated_vnni=saturated_vnni,
-        target=target,
         pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, no_epilogue_fn, compute_fn, context)
 
@@ -1477,7 +1468,6 @@ def _batched_matmul[
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
     saturated_vnni: Bool,
-    target: StaticString,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1530,14 +1520,12 @@ def _batched_matmul[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.T.target.device_kind_label()](
         "batched_matmul",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        comptime assert is_valid_target[target](), "unsupported target"
-
-        comptime if is_cpu[target]():
+        comptime if context.T.target.is_cpu():
             var cpu_ctx = DeviceContext._map_assert_cpu_target(context)
             _batched_matmul_cpu_impl[
                 rank,

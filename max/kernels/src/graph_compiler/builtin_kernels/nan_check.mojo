@@ -85,7 +85,6 @@ def _nan_check_gpu_kernel[
 def nan_check_count[
     dtype: DType,
     //,
-    target: StaticString,
 ](
     nan_count_out: TileTensor[mut=True, .int32, ...],
     inf_count_out: TileTensor[mut=True, .int32, ...],
@@ -106,7 +105,7 @@ def nan_check_count[
     var out_nan_ptr = nan_count_out.unsafe_ptr()
     var out_inf_ptr = inf_count_out.unsafe_ptr()
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         # CPU path: vectorized scan using elementwise with atomic accumulators.
         var nan_acc = alloc(AllocLayout[Int32](length=1)).into_managed()
         var inf_acc = alloc(AllocLayout[Int32](length=1)).into_managed()

@@ -46,14 +46,10 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
+from max.nn.kv_cache import KVCacheParams, KVConnectorType, MultiKVCacheParams
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVConnectorType,
-    MultiKVCacheParams,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.arch import (
     dflash_mimo_v2_modulev3_draft_arch,
 )

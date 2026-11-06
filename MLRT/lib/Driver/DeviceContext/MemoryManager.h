@@ -19,6 +19,7 @@
 #define MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
 
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MathExtras.h"
@@ -159,25 +160,25 @@ enum class VmmOomCategory {
 // Requiring a shortfall on the axis being tested keeps a miss with neither
 // short (physical held outside this manager) from buying a stall nothing here
 // can resolve. Pure.
-bool pendingRetryWorthwhile(const VmmOomSnapshot &snapshot);
+MODULAR_CXX_EXPORT bool pendingRetryWorthwhile(const VmmOomSnapshot &snapshot);
 
 // Classify a failure from the snapshot and (if known) why backing failed.
 // `duringCapture` says whether a graph capture was in progress when the
 // backing step failed; it only changes the verdict for a refused map, which is
 // illegal mid-capture. Pure.
-VmmOomCategory classifyVmmOom(const VmmOomSnapshot &snapshot,
-                              VmmBackingFailure backingFailure,
-                              bool duringCapture = false);
+MODULAR_CXX_EXPORT VmmOomCategory
+classifyVmmOom(const VmmOomSnapshot &snapshot, VmmBackingFailure backingFailure,
+               bool duringCapture = false);
 
 // One-line human-readable summary naming the category and the recovery lever.
 // Levers are phrased as bounded suggestions. Pure.
-std::string describeVmmOom(const VmmOomSnapshot &snapshot,
-                           VmmOomCategory category);
+MODULAR_CXX_EXPORT std::string describeVmmOom(const VmmOomSnapshot &snapshot,
+                                              VmmOomCategory category);
 
 // Full multi-field dump of the snapshot for the verbose log. Pure.
-std::string dumpVmmOom(const VmmOomSnapshot &snapshot);
+MODULAR_CXX_EXPORT std::string dumpVmmOom(const VmmOomSnapshot &snapshot);
 
-class MemoryManager {
+class MODULAR_CXX_EXPORT MemoryManager {
 public:
   class Chunk;
   class Desc;
@@ -572,7 +573,7 @@ private:
   mutable std::string deviceDescription_;
 };
 
-class MemoryManagerFreeList {
+class MODULAR_CXX_EXPORT MemoryManagerFreeList {
 public:
   MemoryManagerFreeList(DeviceContext *context, MemoryManager &memoryManager,
                         MemoryManagerFreeList *parent,

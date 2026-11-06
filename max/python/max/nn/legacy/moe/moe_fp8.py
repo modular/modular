@@ -24,15 +24,13 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorValue, ops
-
-from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import (
+from max.nn._graph_ops import (
     amd_mega_ffn_workspace_words,
     moe_create_indices,
     moe_fp8_host_usage_stats,
 )
-from .moe import MoE
-from .quant_strategy import (
+from max.nn._graph_ops.ep import fused_silu
+from max.nn._graph_ops.moe_quant import (
     BlockScaledStrategy,
     Fp8Strategy,
     Mxfp6Strategy,
@@ -40,6 +38,8 @@ from .quant_strategy import (
     NvMxf4f8Strategy,
     QuantStrategy,
 )
+
+from .moe import MoE
 
 _T = TypeVar("_T")
 
@@ -454,6 +454,7 @@ class MoEQuantized(MoE):
         x: TensorValue,
         topk_ids: TensorValue,
         router_weights: TensorValue,
+        layer_idx: TensorValue | None = None,
     ) -> TensorValue:
         """Routed-expert output of the one-launch fused EP MoE.
 
@@ -501,6 +502,7 @@ class MoEQuantized(MoE):
             down_expert_scales=down_expert_scales,
             c_input_scales=c_input_scales,
             activation=self.activation,
+            layer_idx=layer_idx,
         )
 
     def _local_ep_compute(

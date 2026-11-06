@@ -20,7 +20,7 @@ from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.registration_runtime import (

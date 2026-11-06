@@ -36,8 +36,8 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.nn._graph_ops import learnable_2d_interp_pos_emb
 from max.nn.legacy.conv import Conv2d
-from max.nn.legacy.kernels import learnable_2d_interp_pos_emb
 from max.nn.legacy.layer import Module, Shardable
 
 

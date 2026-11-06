@@ -74,14 +74,13 @@ def bench_resize_gpu[
                 resize_nearest_neighbor[
                     CoordinateTransformationMode.HalfPixel,
                     RoundMode.HalfDown,
-                    target="gpu",
                 ](input, output, ctx)
             elif op == "linear":
                 resize_linear_gpu[
                     CoordinateTransformationMode.HalfPixel, False
                 ](input, output, ctx)
             else:
-                resize_bicubic[target="gpu"](output, input, ctx)
+                resize_bicubic(output, input, ctx)
 
         bencher_iter_custom(b, kernel_launch, ctx)
 

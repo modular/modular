@@ -65,6 +65,7 @@ modular_py_test(
     srcs = ["test_memory_estimation.py"],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
@@ -102,7 +103,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -326,7 +327,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
         "//max/python/max/support",
     ],
@@ -485,7 +486,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         # conftest.py imports generate_local_model_path.
         "//max/python/max/pipelines/lib",
     ],
@@ -512,7 +513,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -564,7 +565,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -591,7 +592,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -617,7 +618,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -646,7 +647,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -672,7 +673,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -698,7 +699,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -725,7 +726,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -751,7 +752,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/request",

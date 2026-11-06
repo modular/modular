@@ -111,6 +111,15 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.1",
         timeout=120,
     ),
+    # Mirrors glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml.
+    PipelineEntry(
+        pipeline="zai-org/GLM-5.3-Flash-FP8-ep-tp",
+        model_path="zai-org/GLM-5.3-Flash",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=120,
+    ),
     PipelineEntry(
         pipeline="amd/MiniMax-M3-MXFP4-ep-tp",
         model_path="amd/MiniMax-M3-MXFP4",

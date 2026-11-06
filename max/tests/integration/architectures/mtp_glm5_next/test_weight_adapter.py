@@ -18,17 +18,13 @@ from types import SimpleNamespace
 from unittest.mock import NonCallableMock
 
 import numpy as np
-import pytest
 from max.graph.weights import WeightData, Weights
 from max.pipelines.architectures.glm5_next.weight_adapters import (
-    convert_glm5_next_state_dict,
+    glm5_next_mtp_weight_rules,
+    glm5_next_weight_rules,
+    glm5_next_with_mtp_weight_rules,
 )
-from max.pipelines.architectures.mtp_glm5_next.model import (
-    draft_weight_name,
-)
-from max.pipelines.architectures.mtp_glm5_next.weight_adapters import (
-    convert_glm5_next_with_mtp_state_dict,
-)
+from max.pipelines.lib import WeightTransform
 
 NUM_HIDDEN_LAYERS = 4
 
@@ -66,17 +62,23 @@ def _hf_config() -> SimpleNamespace:
     return SimpleNamespace(num_hidden_layers=NUM_HIDDEN_LAYERS)
 
 
-def test_the_base_adapter_drops_the_mtp_layer() -> None:
+def _base(checkpoint: dict[str, Weights]) -> dict[str, WeightData]:
+    return WeightTransform(glm5_next_weight_rules(_hf_config()))(checkpoint)
+
+
+def test_the_base_rules_drop_the_mtp_layer() -> None:
     """Checks the base graph's strict load sees no MTP layer."""
-    out = convert_glm5_next_state_dict(_checkpoint(), _hf_config())
+    out = _base(_checkpoint())
     assert not [name for name in out if name.startswith("layers.4.")]
     assert "layers.3.self_attn.q_a_proj.weight" in out
 
 
-def test_the_mtp_adapter_keeps_the_mtp_layer() -> None:
+def test_the_mtp_rules_keep_the_mtp_layer() -> None:
     """Checks the draft's weights survive under the checkpoint's layer index,
     renamed like every other layer's."""
-    out = convert_glm5_next_with_mtp_state_dict(_checkpoint(), _hf_config())
+    out = WeightTransform(glm5_next_with_mtp_weight_rules(_hf_config()))(
+        _checkpoint()
+    )
     mtp = {name for name in out if name.startswith("layers.4.")}
     assert mtp == {
         "layers.4.enorm.weight",
@@ -88,30 +90,22 @@ def test_the_mtp_adapter_keeps_the_mtp_layer() -> None:
         "layers.4.self_attn.q_a_proj.weight_scale",
         "layers.4.mlp.experts.0.gate_proj.weight",
     }
-    base = convert_glm5_next_state_dict(_checkpoint(), _hf_config())
-    assert set(out) - mtp == set(base)
+    assert set(out) - mtp == set(_base(_checkpoint()))
 
 
-@pytest.mark.parametrize(
-    ("suffix", "expected"),
-    [
-        ("enorm.weight", "enorm.weight"),
-        ("hnorm.weight", "hnorm.weight"),
-        ("eh_proj.weight", "eh_proj.weight"),
-        ("shared_head.norm.weight", "shared_head_norm.weight"),
-        ("input_layernorm.weight", "decoder_layer.input_layernorm.weight"),
-        (
-            "self_attn.indexer.wk.weight",
-            "decoder_layer.self_attn.indexer.wk.weight",
-        ),
-        (
-            "mlp.experts.0.down_proj.weight_scale",
-            "decoder_layer.mlp.experts.0.down_proj.weight_scale",
-        ),
-    ],
-)
-def test_the_draft_names_its_layer_like_the_target(
-    suffix: str, expected: str
-) -> None:
-    """Checks the MTP layer's own modules sit beside its decoder layer."""
-    assert draft_weight_name(suffix) == expected
+def test_the_draft_rules_name_only_the_mtp_layer() -> None:
+    """Checks the MTP layer's own modules sit beside its decoder layer, which
+    is renamed like the target's, and the target's weights are left out."""
+    out = WeightTransform(glm5_next_mtp_weight_rules(_hf_config()))(
+        _checkpoint()
+    )
+    assert set(out) == {
+        "enorm.weight",
+        "hnorm.weight",
+        "eh_proj.weight",
+        "shared_head_norm.weight",
+        "decoder_layer.input_layernorm.weight",
+        "decoder_layer.self_attn.q_a_proj.weight",
+        "decoder_layer.self_attn.q_a_proj.weight_scale",
+        "decoder_layer.mlp.experts.0.gate_proj.weight",
+    }

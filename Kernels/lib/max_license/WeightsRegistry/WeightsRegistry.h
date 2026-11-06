@@ -17,6 +17,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 #include "weights_registry_c_api.h"
 #include <cstddef>
 
@@ -28,7 +29,8 @@ using MojoWeightsRegistryPtr =
 class WeightsRegistry;
 using WeightsRegistryRef = RCRef<WeightsRegistry>;
 
-class WeightsRegistry : public ReferenceCounted<WeightsRegistry> {
+class MODULAR_CXX_EXPORT WeightsRegistry
+    : public ReferenceCounted<WeightsRegistry> {
 public:
   /// Fallible constructor for the weights registry.
   static ErrorOr<WeightsRegistryRef> create(ArrayRef<const char *> names,

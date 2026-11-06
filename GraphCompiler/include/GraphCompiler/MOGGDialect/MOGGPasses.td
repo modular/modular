@@ -244,7 +244,7 @@ def LegalizeRowwiseKernels
     : Pass<"mogg-legalize-rowwise-kernels", "ModuleOp"> {
   let summary = "Fill in what each rowwise kernel needs to print as Mojo.";
   let description = [{
-    Runs `mogg-rowwise-select-primary-input`, `mogg-rowwise-bind-monoids`,
+    Runs `mogg-rowwise-create-cache`, `mogg-rowwise-bind-monoids`,
     `mogg-rowwise-group-row-stores` and `mogg-rowwise-set-launch-params`, in
     that order, on every `mogg.call.rowwise`.
   }];
@@ -260,15 +260,16 @@ def LegalizeRowwiseKernels
   let dependentDialects = ["MOGG::MOGGDialect", "M::MO::MODialect"];
 }
 
-def RowwiseSelectPrimaryInput
-    : Pass<"mogg-rowwise-select-primary-input", "ModuleOp"> {
-  let summary = "Pick the input each rowwise kernel reads element by element. "
-                "For testing only.";
+def RowwiseCreateCache
+    : Pass<"mogg-rowwise-create-cache", "ModuleOp"> {
+  let summary = "Give each rowwise kernel the cache its phases read. For "
+                "testing only.";
   let description = [{
-    Sets `primary` on each `mogg.call.rowwise` to the capture its first fold
-    loads at the element index, and turns those loads, in every fold, into
-    `mogg.rowwise.primary`. Also sets `dtype` (the primary input's element
-    type) and `is_cached` (whether more than one fold reads it).
+    Gives each `mogg.call.rowwise` without a `mogg.rowwise.cache` (one that
+    skipped `map-rcse`) a cache that loads the capture its first fold reads
+    at the element index, and turns those loads, in every phase, into
+    `mogg.rowwise.cache.load`. Sets `is_cached` when more than one phase
+    reads the cache.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];
@@ -288,8 +289,11 @@ def RowwiseBindMonoids: Pass<"mogg-rowwise-bind-monoids", "ModuleOp"> {
 def RowwiseGroupRowStores: Pass<"mogg-rowwise-group-row-stores", "ModuleOp"> {
   let summary = "Move per-row stores into one emit. For testing only.";
   let description = [{
-    Moves the stores at the row index of each `mogg.call.rowwise` into one
-    `mogg.rowwise.emit` at the end of its body.
+    Moves the stores at the row index of each `mogg.call.rowwise`, and the
+    row-level ops only they read, into one `mogg.rowwise.emit` at the end of
+    its body. A load at the row index left in the body, which feeds a value a
+    phase reads, becomes a `mogg.rowwise.load_lane` spread by a
+    `mogg.rowwise.splat_lane`.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];
@@ -300,10 +304,20 @@ def RowwiseSetLaunchParams
   let summary = "Set each rowwise kernel's launch parameters. For testing "
                 "only.";
   let description = [{
-    Sets the launch parameters of each `mogg.call.rowwise`, and `cols` when
-    the reduced axis is static. Runs after `mogg-rowwise-group-row-stores`: a
-    body is reduce-shaped when all its stores are in the emit. Only
-    reduce-shaped bodies are supported.
+    Sets the launch parameters of each `mogg.call.rowwise` as the
+    hand-written kernels set them, and `cols` when the reduced axis is
+    static:
+
+    - A body that writes one value per row has `num_phases` 1 and
+      `dtype_size` 0, and is expensive when its per-element cost reaches
+      the threshold.
+    - A body that writes every element has `num_phases` folds + 1, and is
+      expensive. `dtype_size` is the row's element size, which lets a long
+      row split, when every fold keeps one field (as in rms_norm and
+      softmax), else 0 (as in layer_norm).
+
+    Runs after `mogg-rowwise-group-row-stores`, which leaves no store
+    directly in the body.
   }];
 
   let options = [
@@ -532,6 +546,44 @@ def VerifyKernels: Pass<"mogg-verify-kernels", "ModuleOp"> {
     (missing `execute`, mismatched shape/execute inputs, ...), located at the
     offending Mojo argument or entry point when the decl records it.
   }];
+}
+
+def TestKernelRegistrations
+    : Pass<"mogg-test-kernel-registrations", "ModuleOp"> {
+  let summary = "Test-only: evaluates and compares kernel registrations";
+  let description = [{
+    Prints the platform of each `mogg.kernel.decl` with a
+    `platform_predicate`, and its value for each device in the
+    `mogg.test_device_infos` module attribute. Then it prints how the
+    platforms of each pair of those decls with the same registration
+    compare. The output goes to stderr:
+
+    ```
+    platform @Kernel = type("gpu") & api("cuda")
+    platform @Kernel on #M.device_info<"gpu", "cuda", "sm_100a", ""> = true
+    compare @Kernel @Other = first narrower
+    ```
+  }];
+}
+
+def ValidateKernelRegistry
+    : Pass<"mogg-validate-kernel-registry", "ModuleOp"> {
+  let summary = "Checks that no kernel selection is ambiguous";
+  let description = [{
+    For each op with more than one `mogg.kernel.decl`, applies kernel
+    selection on every representative device of the registrations'
+    platforms, and reports an error for each op and set of kernels that tie.
+    A device that no registration matches is not an error.
+
+    With `builtins-only`, only built-in registrations take part, as in a
+    registry without user packages. User registrations only shadow built-ins,
+    so they can hide an ambiguity among built-ins but never cause or resolve
+    one within the built-in group.
+  }];
+  let options = [
+    Option<"builtinsOnly", "builtins-only", "bool", /*default=*/"false",
+           "Consider only built-in registrations">,
+  ];
 }
 
 def DumpKernels: Pass<"mogg-dump-kernels", "ModuleOp"> {

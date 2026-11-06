@@ -15,6 +15,7 @@
 #define SUPPORT_ADT_CONCATENATIONTREE_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include <cstddef>
@@ -31,7 +32,7 @@ class ConcatTreeBaseNode;
 ///
 /// When the final structure is finished, you can use the `traverse` method to
 /// emit the data to a file or flatten it into a buffer of your choice once.
-class ConcatenationTree {
+class MODULAR_CXX_EXPORT ConcatenationTree {
 public:
   ConcatenationTree() : node(nullptr) {}
   ConcatenationTree(ConcatenationTree &&rhs);

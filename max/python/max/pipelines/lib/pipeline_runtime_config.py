@@ -146,6 +146,28 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    ep_combine_quant: Literal["none", "fp8"] = Field(
+        default="none",
+        description=(
+            "Send the expert-parallel combine of a prefill-sized step back as "
+            "MXFP8 (E4M3 values with an E8M0 scale per 32 elements), about "
+            "half the bytes of bfloat16, at some accuracy cost. Small decode "
+            "steps stay exact. Only models that run the split combine read it."
+        ),
+    )
+
+    tp_reduce_scatter_quant: Literal["none", "int4", "fp8"] = Field(
+        default="none",
+        description=(
+            "Quantize each device's contribution to the tensor-parallel "
+            "reduce-scatter of a prefill-sized batch, in groups of 32 "
+            "elements: symmetric INT4 with a bf16 scale, or MXFP8. It cuts the "
+            "bytes the collective moves at the cost of accuracy; small decode "
+            "batches stay exact. Only models whose blocks reduce-scatter the "
+            "attention output read it."
+        ),
+    )
+
     eplb_profile: bool = Field(
         default_factory=lambda: (
             os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
@@ -520,12 +542,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     prefer_module_v3: bool = Field(
-        default=False,
+        default=True,
         description=(
             "Whether to prefer the ModuleV3 architecture over the graph API architecture. "
-            "When ``False`` (default), the inference server uses the graph API architecture. "
-            "When ``True``, the server uses the ModuleV3 architecture when available and "
-            "falls back to the graph API architecture."
+            "When ``True`` (default), the server uses the ModuleV3 architecture when "
+            "available and falls back to the graph API architecture. When ``False``, "
+            "the server uses the graph API architecture when available."
         ),
     )
 

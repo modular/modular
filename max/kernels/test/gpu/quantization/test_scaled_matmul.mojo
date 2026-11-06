@@ -104,7 +104,6 @@ def test_matmul_dynamic_scaled_fp8[
         n_scale_granularity=1,
         k_scale_granularity=k_dim,
         transpose_b=transpose_b,
-        target="gpu",
     ](
         c_tile,
         a_tile,
@@ -227,7 +226,6 @@ def test_matmul_dynamic_scaled_fp8_tensor[
         n_scale_granularity=1,
         k_scale_granularity=k_dim,
         transpose_b=transpose_b,
-        target="gpu",
     ](
         c_tile,
         a_tile,

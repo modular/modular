@@ -65,7 +65,6 @@ from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
-from std.utils import IndexList
 
 from layout import Idx, TensorEngine, TileTensor
 from layout.coord import Coord
@@ -138,7 +137,7 @@ def frag_col_base(lane: Int) -> Int:
 
 
 @inline(.always)
-def a_frag_coord(lane: Int, i: Int) -> IndexList[2]:
+def a_frag_coord(lane: Int, i: Int) -> Tuple[Int, Int]:
     """(row, col) in the 16x16 A tile for this lane's A element `i` (0..7).
 
     Args:
@@ -147,13 +146,14 @@ def a_frag_coord(lane: Int, i: Int) -> IndexList[2]:
         i: A-fragment element index in `[0, 8)`; selects which of this lane's
             8 held A elements to map to `(row, col)`.
     """
-    return IndexList[2](
-        frag_row_base(lane) + (i >> 2) * 8, frag_col_base(lane) + (i % 4)
+    return (
+        frag_row_base(lane) + (i >> 2) * 8,
+        frag_col_base(lane) + (i % 4),
     )
 
 
 @inline(.always)
-def bc_frag_coord(lane: Int, i: Int) -> IndexList[2]:
+def bc_frag_coord(lane: Int, i: Int) -> Tuple[Int, Int]:
     """(row, col) in the 16x32 B/C tile for this lane's element `i` (0..15).
 
     Args:
@@ -163,14 +163,14 @@ def bc_frag_coord(lane: Int, i: Int) -> IndexList[2]:
             lane's 16 held B/C elements to map to `(row, col)`.
     """
     var half, sub = divmod(i, 8)
-    return IndexList[2](
+    return (
         frag_row_base(lane) + (sub >> 2) * 8,
         frag_col_base(lane) + (sub % 4) + half * 16,
     )
 
 
 @inline(.always)
-def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
+def bt_frag_coord(lane: Int, i: Int) -> Tuple[Int, Int]:
     """(n, k) in the 16x32 right operand for element `i` under `transpose_right=1`.
 
     Under `transpose_right=1` the op reads the right operand as `(N, K)` instead
@@ -190,7 +190,7 @@ def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
             16 held B elements to map to `(n, k)` under `transpose_right=1`.
     """
     var half, sub = divmod(i, 8)
-    return IndexList[2](
+    return (
         frag_row_base(lane) + (sub >> 2) * 8 + half * 16,  # n (0..31)
         frag_col_base(lane) + (sub % 4),  # k (0..15, contiguous)
     )
@@ -381,7 +381,7 @@ struct Fp4WeightLoader[
         self,
         arow0: Int,
         k0: Int,
-        a_rc: Array[IndexList[2], 8],
+        a_rc: Array[Tuple[Int, Int], 8],
     ) -> SIMD[
         Self.in_type, 8
     ]:
@@ -661,15 +661,15 @@ struct Matmul2dFp4[
 
         # A frag: base map. B frag: transpose_right map (n, k) w/ k contiguous.
         var a_rc = Array[_, 8](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: a_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: a_frag_coord(lane, i)
         )
         # C store: UNCHANGED base bc map (transpose_right permutes only B).
         var c_rc = Array[_, 16](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: bc_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: bc_frag_coord(lane, i)
         )
 
         # This lane's fragment (n, k) base for the transpose_right B map. The 16
@@ -838,20 +838,20 @@ struct Matmul2dFp4[
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 
         var a_rc = Array[_, 8](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: a_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: a_frag_coord(lane, i)
         )
         # B fragment (n, k) local coords under transpose_right; k contiguous.
         var b_nk = Array[_, 16](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: bt_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: bt_frag_coord(lane, i)
         )
         var c_rc = Array[_, 16](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: bc_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: bc_frag_coord(lane, i)
         )
 
         # The FP4 decode / A-gather owner: all packed/scale/A/SMEM addressing

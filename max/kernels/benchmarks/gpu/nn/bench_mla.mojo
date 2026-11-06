@@ -46,6 +46,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
+from nn.attention.gpu.mla import AMDMLA, LegacyNVMLA, MLAKernels, SM100MLA
 
 
 def bench_decode[
@@ -56,6 +57,8 @@ def bench_decode[
     group: Int = 1,
     decoding_warp_split_k: Bool = False,
     cache_busting: Bool = True,
+    *,
+    kernels: MLAKernels,
 ](
     mut m: Bench,
     seq_len: Int,
@@ -75,6 +78,19 @@ def bench_decode[
     var q_size = batch_size * num_heads * seq_len * depth
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var o_size = batch_size * num_heads * seq_len * v_depth
+
+    # 0 = let the dispatch heuristic pick the production default; any other
+    # value pins the split explicitly (the bench otherwise bypasses the
+    # heuristic entirely). 0 is the arg default, so a bare run measures the
+    # production arm. The report line labels the arm rather than restating
+    # the heuristic's choice: re-deriving it here would be a second copy of
+    # the dispatch's split rule, free to drift from the real one.
+    var np_selection: Optional[Int] = (
+        None if num_partitions == 0 else num_partitions
+    )
+    var np_label = String("auto") if num_partitions == 0 else String(
+        num_partitions
+    )
 
     # For cache busting: calculate strides and larger buffer sizes.
     comptime simd_size = 4
@@ -121,6 +137,7 @@ def bench_decode[
             flare_mla_decoding[
                 config=MHAConfig[qkv_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
+                kernels=kernels,
             ](
                 output_device.as_unsafe_any_origin(),
                 q_device,
@@ -129,7 +146,7 @@ def bench_decode[
                 scale,
                 ctx,
                 scalar_args_tt,
-                num_partitions=num_partitions,
+                num_partitions=np_selection,
             )
 
         bencher_iter_custom(b, _kernel_launch, ctx)
@@ -149,6 +166,7 @@ def bench_decode[
             "/num_keys=", num_keys,
             "/batch_size=", batch_size,
             "/mode=", mode,
+            "/num_partitions=", np_label,
             "/cache_busting=", cache_busting,
         ),
             # fmt: on
@@ -173,6 +191,8 @@ def bench_prefill[
     cache_depth: Int,
     cache_num_heads: Int,
     cache_busting: Bool = True,
+    *,
+    kernels: MLAKernels,
 ](
     mut m: Bench,
     seq_len: Int,
@@ -287,7 +307,7 @@ def bench_prefill[
                 row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
             )
 
-            flare_mla_prefill[rank=q_device.rank](
+            flare_mla_prefill[rank=q_device.rank, kernels=kernels](
                 output_device,
                 q_device,
                 k_device,
@@ -581,6 +601,49 @@ struct MLA_cfg(ImplicitlyCopyable, Writable):
     var sparse_q_tmem_depth: Int
 
 
+def bench_dense[
+    cfg: MLA_cfg, kernels: MLAKernels
+](
+    mut m: Bench,
+    seq_len: Int,
+    num_keys: Int,
+    batch_size: Int,
+    num_partitions: Int,
+    mode: String,
+    ctx: DeviceContext[],
+) raises:
+    bench_decode[
+        cfg.qkv_type,
+        cfg.output_type,
+        cfg.depth,
+        cfg.num_heads,
+        cfg.group,
+        cfg.decoding_warp_split_k,
+        cfg.cache_busting,
+        kernels=kernels,
+    ](
+        m,
+        seq_len,
+        num_keys,
+        batch_size,
+        num_partitions,
+        mode,
+        ctx,
+    )
+
+    bench_prefill[
+        cfg.qkv_type,
+        cfg.output_type,
+        cfg.prefill_depth,
+        cfg.num_heads,
+        cfg.kv_depth,
+        cfg.cache_depth,
+        cfg.cache_num_heads,
+        cache_busting=cfg.cache_busting,
+        kernels=kernels,
+    ](m, seq_len, num_keys, batch_size, ctx)
+
+
 def main() raises:
     comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
     comptime output_type = get_defined_dtype["output_type", .bfloat16]()
@@ -604,7 +667,7 @@ def main() raises:
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))
     var batch_size = Int(arg_parse("batch_size", 1))
-    var num_partitions = Int(arg_parse("num_partitions", 1))
+    var num_partitions = Int(arg_parse("num_partitions", 0))
     var mode = String(arg_parse("mode", "decode"))
 
     comptime cfg = MLA_cfg(
@@ -629,34 +692,18 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         if mode != "sparse_prefill":
-            bench_decode[
-                cfg.qkv_type,
-                cfg.output_type,
-                cfg.depth,
-                cfg.num_heads,
-                cfg.group,
-                cfg.decoding_warp_split_k,
-                cfg.cache_busting,
-            ](
-                m,
-                seq_len,
-                num_keys,
-                batch_size,
-                num_partitions,
-                mode,
-                ctx,
-            )
-
-            bench_prefill[
-                cfg.qkv_type,
-                cfg.output_type,
-                cfg.prefill_depth,
-                cfg.num_heads,
-                cfg.kv_depth,
-                cfg.cache_depth,
-                cfg.cache_num_heads,
-                cache_busting=cfg.cache_busting,
-            ](m, seq_len, num_keys, batch_size, ctx)
+            comptime if _is_sm10x_gpu(ctx.default_device_info):
+                bench_dense[cfg, SM100MLA](
+                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+                )
+            elif ctx.target.is_amd_gpu():
+                bench_dense[cfg, AMDMLA](
+                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+                )
+            else:
+                bench_dense[cfg, LegacyNVMLA](
+                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+                )
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
             bench_prefill_sparse[

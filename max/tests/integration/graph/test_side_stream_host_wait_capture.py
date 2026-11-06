@@ -44,7 +44,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.kernels import inplace_memcpy, wait_host_value_with_dep
+from max.nn._graph_ops import inplace_memcpy, wait_host_value_with_dep
 
 _DOT_DIR = Path(tempfile.mkdtemp(dir=os.environ.get("TEST_TMPDIR")))
 os.environ["MODULAR_DEVICE_CONTEXT_LOG_GRAPH_CAPTURE"] = str(_DOT_DIR)

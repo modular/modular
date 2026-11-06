@@ -259,7 +259,6 @@ def _mhc_comb_gate[
 def hyper_connection_gates[
     hc_mult: Int,
     hc_sinkhorn_iters: Int,
-    target: StaticString,
     warps_per_block: Int = 4,
 ](
     pre: TileTensor[mut=True, .float32, ...],
@@ -276,7 +275,6 @@ def hyper_connection_gates[
     Parameters:
         hc_mult: Number of parallel residual streams.
         hc_sinkhorn_iters: Sinkhorn-Knopp iterations used to project `comb`.
-        target: The target device to run the kernel on.
         warps_per_block: Warps per block. Each carries
             `WARP_SIZE // hc_mult**2` rows.
 
@@ -296,9 +294,9 @@ def hyper_connection_gates[
     Raises:
         If the target is not a GPU or the input widths disagree with `hc_mult`.
     """
-    comptime assert is_gpu[
-        target
-    ](), "hyper_connection_gates is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "hyper_connection_gates is only supported on GPU"
 
     comptime mix_width = 2 * hc_mult + hc_mult * hc_mult
 
@@ -333,7 +331,7 @@ def hyper_connection_gates[
 
     var gpu_ctx = context
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "hyper_connection.gates", task_id=Int(gpu_ctx.device().id)
     ):
         comptime kernel = hyper_connection_gates_kernel[
@@ -1446,7 +1444,6 @@ def mhc_pre[
     hidden_size: Int,
     hc_sinkhorn_iters: Int,
     has_norm: Bool,
-    target: StaticString,
     fn_terms: Int = 3,
 ](
     post: TileTensor[mut=True, .float32, ...],
@@ -1493,7 +1490,6 @@ def mhc_pre[
             `[1024, 8192]`.
         hc_sinkhorn_iters: Sinkhorn-Knopp iterations used to project `comb`.
         has_norm: Whether to RMS-normalize the collapsed row by `gamma`.
-        target: The target device to run the kernel on.
         fn_terms: Test-only: number of bf16 terms per fp32 `hc_fn` weight,
             1 to 3. Callers keep the default 3; fewer drop precision and exist
             so tests can check that every term matters. Ignored for a bf16
@@ -1525,9 +1521,9 @@ def mhc_pre[
         `streams`, or a tensor is not laid out for the kernel's 16-byte
         vector accesses.
     """
-    comptime assert is_gpu[target](), "mhc_pre is only supported on GPU"
+    comptime assert context.target.is_gpu(), "mhc_pre is only supported on GPU"
     # NOTE: keep these in sync with `mhc_pre_supports` in
-    # max/python/max/nn/legacy/kernels.py, which routes only shapes they
+    # max/python/max/nn/_graph_ops/__init__.py, which routes only shapes they
     # accept.
     comptime assert hc_mult == _mhc_pre_hc_mult, "mhc_pre supports hc_mult == 4"
     comptime assert (
@@ -1614,7 +1610,7 @@ def mhc_pre[
         )
     var gpu_ctx = context
     comptime fn_terms_used = 1 if hc_fn.dtype == .bfloat16 else fn_terms
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "hyper_connection.mhc.pre", task_id=Int(gpu_ctx.device().id)
     ):
         if k_splits == 1:
@@ -1928,7 +1924,6 @@ def _is_vec_ok(t: TileTensor) -> Bool:
 def mhc_post[
     hc_mult: Int,
     hidden_size: Int,
-    target: StaticString,
     block_size: Int = 256,
 ](
     output: TileTensor[mut=True, ...],
@@ -1950,7 +1945,6 @@ def mhc_post[
     Parameters:
         hc_mult: Number of parallel residual streams.
         hidden_size: Width of one stream.
-        target: The target device to run the kernel on.
         block_size: Threads per block.
 
     Args:
@@ -1970,7 +1964,7 @@ def mhc_post[
         count of `streams`, or a tensor is not laid out for the kernel's
         16-byte vector accesses.
     """
-    comptime assert is_gpu[target](), "mhc_post is only supported on GPU"
+    comptime assert context.target.is_gpu(), "mhc_post is only supported on GPU"
 
     comptime width = 16 // size_of[output.dtype]()
     comptime chunk = block_size * width
@@ -2037,7 +2031,7 @@ def mhc_post[
     if force_non_temporal:
         non_temporal = force_non_temporal.value()
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "hyper_connection.mhc.post", task_id=Int(gpu_ctx.device().id)
     ):
 

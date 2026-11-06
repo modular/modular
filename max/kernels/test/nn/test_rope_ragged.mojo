@@ -148,7 +148,6 @@ def test_rope_ragged[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
     ](
         x=q_tensor,
         input_row_offsets=input_row_offsets_tensor,
@@ -287,7 +286,6 @@ def test_rope_ragged_non_interleaved[
         dtype,
         dtype,
         interleaved=False,
-        target=StaticString("cpu"),
     ](
         x=q_tensor,
         input_row_offsets=input_row_offsets_tensor,
@@ -434,7 +432,6 @@ def test_rope_ragged_rope_first[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
         rope_first=True,
     ](
         x=q_tensor,
@@ -449,7 +446,6 @@ def test_rope_ragged_rope_first[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
     ](
         x=prefix_tensor,
         input_row_offsets=input_row_offsets_tensor,

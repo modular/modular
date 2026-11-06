@@ -32,7 +32,7 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -48,7 +48,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -67,16 +67,45 @@ modular_py_test(
     ],
 )
 
+modular_eager_py_test(
+    name = "kda_decode_conv_raw_tests_gpu",
+    size = "enormous",
+    srcs = ["test_kda_decode_conv_raw.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
 modular_py_test(
     name = "memory_planner_tests_cpu",
     srcs = ["test_memory_planner.py"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/support",
     ],
 )
 
@@ -87,9 +116,10 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
     ],
 )
 
@@ -107,7 +137,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/support",
     ],
@@ -202,6 +232,31 @@ modular_eager_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "moe_latent_megaffn_tests_gpu",
+    size = "enormous",
+    srcs = ["test_moe_latent_megaffn_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    tags = [
+        "gpu",
+    ],
+    # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":moe_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
@@ -249,8 +304,283 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+# CPU checks for the draft-aware sizing helpers themselves: the width the
+# MLA cache leaf's wiring passes through, the plan-cap formula, and the
+# block-manager accounting that consumes it.
+modular_py_test(
+    name = "spec_mla_verify_helpers_tests_cpu",
+    srcs = ["test_spec_mla_verify_helpers.py"],
+    deps = [
+        ":tp_model_test_utils",
+        requirement("numpy"),
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/support",
+    ],
+)
+
+# The 8-rows-per-request verify of DSpark spec decode, postsubmit only (it
+# runs past the 4-minute presubmit budget on both vendors): one GPU runs the
+# production fold arm, its RED control and the plan-extent check; the
+# 96-head prefill arm runs in its own postsubmit target below on both
+# vendors (one more kernel family to JIT, and on B200 the SM100 dispatch
+# table routes 96 heads through an entry the 12-head fold never takes),
+# and the TP2 parity runs on the 2-GPU targets below.
+modular_eager_py_test(
+    name = "spec_mla_verify8_tests_gpu",
+    size = "enormous",
+    srcs = ["test_spec_mla_verify8.py"],
+    args = [
+        "-k",
+        "'not tp2 and not prefill_arm_matches_stepwise'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":tp_model_test_utils",
+        "//max/python/max:tree",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+# NULL-mask parity for the MLA attention arms at the DSpark drafter's block
+# geometry (SERVOPT-1757), postsubmit only (past the 4-minute presubmit
+# budget). This target: the production fp8 TP8 fold arm
+# (whose parity case embeds its own causal-where-null RED) plus the
+# dropped-key control. The yarn real-rope case and the prefill arms (bf16
+# latent, TP1/TP2 head counts 64/32) are postsubmit siblings -- each one
+# another kernel family to JIT, past the presubmit budget but every one
+# of them re-run by a postsubmit job.
+modular_eager_py_test(
+    name = "spec_mla_null_mask_tests_gpu",
+    size = "enormous",
+    srcs = ["test_spec_mla_null_mask.py"],
+    args = [
+        "-k",
+        "'fold_fp8_h8 or dropped_last_key'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        ":paged_cache_test_utils",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+# The prefill arms of the null-mask parity: bf16-latent H=8 and the fp8
+# TP1/TP2 head counts 64/32. Postsubmit per AGENTS.md's GPU-cost rule --
+# three more kernel-family JIT compiles on top of the presubmit target's.
+# Sharded one arm per action: the b200 run of the three together ran
+# past the flavor's 800 s enormous-test timeout, and each arm fits alone.
+modular_eager_py_test(
+    name = "spec_mla_null_mask_prefill_tests_gpu",
+    size = "enormous",
+    srcs = ["test_spec_mla_null_mask.py"],
+    args = [
+        "-k",
+        "'prefill'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    shard_count = 3,
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        ":paged_cache_test_utils",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+# The prefill arm of the same oracle: 96 heads, the full model as
+# TP1/TP2 serve it. Postsubmit on both vendors -- one more kernel
+# family to JIT on top of the presubmit target's, and on B200 the SM100
+# dispatch table (compute_mla_dispatch_scalars_runtime) routes 96 heads
+# through an entry the presubmit target's 12-head fold never takes. On
+# gfx9 it is the only 8-row-verify-vs-stepwise test of the one-shot
+# decompression prefill branch and its plan-cap RED.
+modular_eager_py_test(
+    name = "spec_mla_verify8_prefill_postsubmit_tests_gpu",
+    size = "enormous",
+    srcs = ["test_spec_mla_verify8.py"],
+    args = [
+        "-k",
+        "'prefill_arm_matches_stepwise and not tp2'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":tp_model_test_utils",
+        "//max/python/max:tree",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+# The yarn case of the same file: the fold's null mask under the drafter's
+# REAL rope table -- positional semantics against a float32 reference,
+# plus kernel-vs-kernel position and mask controls. Postsubmit: a distinct
+# rope-path JIT on top of the presubmit target's fold family.
+modular_eager_py_test(
+    name = "spec_mla_null_mask_yarn_postsubmit_tests_gpu",
+    size = "enormous",
+    srcs = ["test_spec_mla_null_mask.py"],
+    args = [
+        "-k",
+        "'yarn'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        ":paged_cache_test_utils",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+# Postsubmit: the 2-GPU prefill-arm comparison (~193 s on two MI355s,
+# ~416 s on two B200s, per run) grades the TP2 geometry against the
+# same arm at TP1, not against the stepwise oracle, so a defect both
+# legs share passes it; the arm runs against stepwise on the 1-GPU
+# targets above, per vendor. The pairing's TP2 presence in presubmit
+# is the drafter-numerics smoke in dspark/BUILD.bazel, the cheapest
+# absolute TP2 oracle.
+modular_eager_py_test(
+    name = "spec_mla_verify8_tp2_tests_2gpu",
+    size = "enormous",
+    srcs = ["test_spec_mla_verify8.py"],
+    args = [
+        "-k",
+        "'tp2 and prefill'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        ":tp_model_test_utils",
+        "//max/python/max:tree",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
     ],
 )
 
@@ -258,6 +588,9 @@ modular_eager_py_test(
     name = "mla_attention_latent_ragged_tests_gpu",
     size = "enormous",
     srcs = ["test_mla_attention_latent_ragged.py"],
+    # On gfx9 presubmit keeps the capture-across-pages replay and
+    # stale-extent RED; on NVIDIA it also runs the oversized-extent
+    # forward control.
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -276,7 +609,39 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+# The latent-ragged cases left out of presubmit on each vendor.
+modular_eager_py_test(
+    name = "mla_attention_latent_ragged_full_postsubmit_tests_gpu",
+    size = "enormous",
+    srcs = ["test_mla_attention_latent_ragged.py"],
+    env = {"K3_LATENT_RAGGED_FULL_SWEEP": "1"},
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":paged_cache_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -305,7 +670,7 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/support",
     ],
 )
@@ -330,7 +695,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -356,7 +721,8 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/lib",
     ],
@@ -458,6 +824,111 @@ modular_eager_py_test(
     ],
 )
 
+# Presubmit keeps the ragged-batch pool oracle (the bit-exact verify +
+# fold + conv replay against the plain decode), the fold-past-the-count
+# RED that proves that oracle can fail, and the host-side contract
+# checks; the committed-window landing and the live/ring row-swap RED
+# run in the postsubmit sibling below.
+modular_eager_py_test(
+    name = "spec_kda_rollback_tests_gpu",
+    size = "enormous",
+    srcs = ["test_spec_kda_rollback.py"],
+    args = [
+        "-k",
+        "'not tp2 and not tp1_committed and not live_ring_row_swap'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+# The two one-GPU cases the presubmit target above leaves out: the
+# committed-window landing and the live/ring row-table swap RED that
+# proves it can fail. A postsubmit job runs this sibling alongside the
+# untagged presubmit target, so every one-GPU case runs exactly once.
+modular_eager_py_test(
+    name = "spec_kda_rollback_committed_postsubmit_tests_gpu",
+    size = "enormous",
+    srcs = ["test_spec_kda_rollback.py"],
+    args = [
+        "-k",
+        "'tp1_committed or live_ring_row_swap'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+# The TP=2 arms of the same oracle need two GPUs of one mesh. Postsubmit:
+# ~261 s on two MI355s per run, and the 1-GPU target above keeps the
+# per-device rollback oracle in presubmit; the pairing's TP2 presence in
+# presubmit is the drafter-numerics smoke in dspark/BUILD.bazel.
+modular_eager_py_test(
+    name = "spec_kda_rollback_tp2_tests_2gpu",
+    size = "enormous",
+    srcs = ["test_spec_kda_rollback.py"],
+    args = [
+        "-k",
+        "tp2",
+    ],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = ["//:has_multi_gpu"] + REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
 modular_eager_py_test(
     name = "output_head_tests_gpu",
     size = "enormous",
@@ -476,7 +947,7 @@ modular_eager_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -589,7 +1060,7 @@ modular_eager_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -650,8 +1121,9 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/context",
     ],
 )
 
@@ -755,5 +1227,49 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+# Six heads per rank is not a production geometry (K3 serves 12 per rank
+# at TP8, 48 at TP2), so the fold arm's TP2-vs-TP1 comparison runs in
+# postsubmit only; the prefill arm above covers the production TP2 shape.
+modular_eager_py_test(
+    name = "spec_mla_verify8_tp2_fold_postsubmit_tests_2gpu",
+    size = "enormous",
+    srcs = ["test_spec_mla_verify8.py"],
+    args = [
+        "-k",
+        "'tp2 and fold'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    # MI355-only: 12 heads split across TP2 is 6 MLA heads per rank, a count
+    # the NVIDIA SM100 dispatch table (compute_mla_dispatch_scalars_runtime)
+    # does not bind.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        ":tp_model_test_utils",
+        "//max/python/max:tree",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
     ],
 )

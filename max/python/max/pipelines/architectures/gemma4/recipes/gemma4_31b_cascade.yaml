@@ -13,3 +13,6 @@
 cascade: true
 model:
   model_path: google/gemma-4-31B-it
+
+runtime:
+  prefer_module_v3: false

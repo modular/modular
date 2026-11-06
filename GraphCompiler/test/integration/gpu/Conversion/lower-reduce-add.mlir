@@ -1,4 +1,4 @@
-// RUN: mo-opt --gc-pipeline="compiled-framework-label=mof constant-fold=false default-device-label=gpu" %s | FileCheck --check-prefix=CHECK-IR %s
+// RUN: mo-opt --gc-pipeline="constant-fold=false default-device-label=gpu" %s | FileCheck --check-prefix=CHECK-IR %s
 // RUN: mt --execute --default-device-label=gpu --model-inputs=ones --result-output-style=compact %s | FileCheck --check-prefix=CHECK-MT %s
 
 // CHECK-IR: %{{.*}} = "mgp.generic.execute"{{.*}}reduce.add

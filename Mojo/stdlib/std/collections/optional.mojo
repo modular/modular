@@ -181,6 +181,10 @@ struct Optional[T: AnyType](
     comptime _type = Variant[_NoneType, Self.T]
     var _value: Self._type
 
+    comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
+        "value"
+    ]
+
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
@@ -494,10 +498,13 @@ struct Optional[T: AnyType](
         """
         return not self
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self,
-    ) raises EmptyOptionalError[Self.T] -> ref[self._value] Self.T:
+    ) raises EmptyOptionalError[Self.T] -> ref[
+        Self._InteriorOrigin[origin_of(self)]
+    ] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
 
         Returns:
@@ -608,8 +615,9 @@ struct Optional[T: AnyType](
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
-    def value(ref self) -> ref[self._value] Self.T:
+    def value(ref self) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
         """Retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -641,9 +649,14 @@ struct Optional[T: AnyType](
 
         return self._unsafe_unchecked_value()
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
-    def _unsafe_unchecked_value(ref self) -> ref[self._value] Self.T:
-        return self._value._unsafe_unchecked_get[Self.T]()
+    def _unsafe_unchecked_value(
+        ref self,
+    ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
+        return self._value._unsafe_ptr[
+            Self.T
+        ]()._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
     # ===-------------------------------------------------------------------===#
     # EnumLike
@@ -671,15 +684,20 @@ struct Optional[T: AnyType](
 
         Only valid when the discriminant is `1` (`Some`).
         """
+        # TODO: Return `Self._InteriorOrigin[origin_of(self)]` like `value()`
+        # once `EnumLike` payload accessors can vend interior origins.
         comptime assert id != 0, "cannot get payload for None case"
         return rebind[TypeList[Trait=AnyType, Self._enum_case_types]()[id]](
-            Pointer(to=self._unsafe_unchecked_value()).unsafe_origin_cast[
+            self._value._unsafe_ptr[Self.T]().unsafe_origin_cast[
                 origin_of(self)
             ]()[]
         )
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
-    def unsafe_value(ref self) -> ref[self._value] Self.T:
+    def unsafe_value(
+        ref self,
+    ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
         """Unsafely retrieve a reference to the value of the `Optional`.
 
         Returns:

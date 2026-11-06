@@ -2308,8 +2308,9 @@ def bulk_mma_ws_ts[
     """
     # Full-tile TS, warp-specialized. `a` is a single TMEM base ($7); `_build_mma`
     # computes each k-tile's column offset in-PTX (`add.s32 %ra, $7, k*stride`),
-    # so the old per-tile operand ladder is gone.
-    comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
+    # so the old per-tile operand ladder is gone, and with it any cap on
+    # num_k_mmas (the 576-wide FP8 Q-from-TMEM QK needs 18).
+    comptime assert num_k_mmas >= 1
     comptime mma_string = _ws_ts_mma_string[
         b_dtype,
         b_BMN,

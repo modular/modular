@@ -26,23 +26,25 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.attention import MHAMaskVariant, num_heads_for_device
+from max.nn._graph_ops import cross_attention_ragged, rope_ragged
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.attention import num_heads_for_device
 from max.nn.legacy.comm.allreduce import Allreduce
 from max.nn.legacy.graph_groups import HiddenStates
-from max.nn.legacy.kernels import cross_attention_ragged, rope_ragged
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.rotary_embedding import (
     Llama3RotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.legacy.transformer import DecoderOutputs, ReturnHiddenStates
+from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.distributed_transformer import (
     distributed_logits_postprocess,
     forward_sharded_layers,
 )
 from max.nn.legacy.transformer.transformer import extract_hs
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
 )

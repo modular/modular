@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.nn import Embedding, Linear, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs

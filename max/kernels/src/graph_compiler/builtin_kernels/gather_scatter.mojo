@@ -18,6 +18,7 @@
 
 """Registers gather, scatter, and indexed-access graph ops backed by the `nn.gather_scatter` kernels."""
 
+from std.collections import Array
 from std.math import ceildiv, gcd
 from std.sys import align_of
 from std.sys.info import simd_width_of
@@ -63,25 +64,24 @@ from nn.index_tensor import index_tensor
 from nn.reshape import reshape, reshape_shape
 from nn.slice import (
     copy_to_slice,
-    slice_as_view,
     slice_shape,
     sliced_add,
 )
-from nn.shard_and_stack import shard_and_stack
+from nn.shard_and_stack import (
+    ShardStackInput,
+    ShardStackOutput,
+    shard_and_stack,
+)
 from nn.split import split
 from nn.tile import tile, tile_shape
 from extensibility import (
     ElementwiseUnaryOp,
     Fused,
     Input,
-    InputTensor,
-    InputVariadicTensors,
     LoadAccess,
     Loadable,
     MutableInput,
     Output,
-    OutputTensor,
-    OutputVariadicTensors,
     Storable,
     StoreAccess,
     Tensor,
@@ -89,10 +89,6 @@ from extensibility import (
     TileTensorable,
     UnsafeFusedView,
     unsafe_fused_view,
-)
-from builtin_primitives.primitives import (
-    _dense_row_major_anchor_stride,
-    view_copy_impl,
 )
 from std.logger import Logger
 
@@ -102,10 +98,7 @@ from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
-from .kernels import (
-    _SliceStrideTypes,
-    _TransposeStrideTypes,
-)
+from .kernels import _check_tensor_tuple
 
 
 @inline(.always)
@@ -488,9 +481,7 @@ struct SqueezeShape:
     """Registers the `mo.squeeze_shape` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output_shape: Some[Output & Tensor],
         input_shape: Some[Input & Tensor],
         remove_indices: Some[Input & Tensor],
@@ -526,7 +517,7 @@ struct SqueezeShape:
         var indices_ptr = remove_tt.unsafe_ptr().as_imm()
         var indices_stride = Int(remove_tt.dynamic_stride(0))
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             _squeeze_shape(
                 output_ptr,
                 output_stride,
@@ -578,9 +569,7 @@ struct UnsqueezeShape:
     """Registers the `mo.unsqueeze_shape` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output_shape: Some[Output & Tensor],
         input_shape: Some[Input & Tensor],
         padding_indices: Some[Input & Tensor],
@@ -616,7 +605,7 @@ struct UnsqueezeShape:
         var indices_ptr = padding_tt.unsafe_ptr().as_imm()
         var indices_stride = Int(padding_tt.dynamic_stride(0))
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             _unsqueeze_shape(
                 output_ptr,
                 output_stride,
@@ -1504,162 +1493,6 @@ def broadcast_shape_fn(
     return IndexList[1](max(lhs_dim, rhs_dim))
 
 
-@extensibility.register("mo.static.broadcast_to")
-struct StaticBroadcastTo:
-    """Registers the `mo.static.broadcast_to` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def build_view[
-        out_rank: Int,
-    ](x: InputTensor) -> IndexList[out_rank]:
-        var new_strides = IndexList[out_rank]()
-        comptime delta = out_rank - x.rank
-
-        comptime for i in range(out_rank):
-            comptime if i < delta:
-                new_strides[i] = 0
-            else:
-                if x.dim_size[i - delta]() <= 1:
-                    new_strides[i] = 0
-                else:
-                    new_strides[i] = x.stride_length[i - delta]()
-
-        return new_strides
-
-    @staticmethod
-    def get_view_strides_list[
-        out_rank: Int,
-        in_rank: Int,
-        input_shape: TypeList[Trait=CoordLike, ...],
-        input_strides: TypeList[Trait=CoordLike, ...],
-    ]() -> IndexList[out_rank]:
-        var new_strides = IndexList[out_rank]()
-        comptime delta = out_rank - in_rank
-
-        comptime for i in range(out_rank):
-            comptime if i < delta:
-                new_strides[i] = 0
-            else:
-                if not input_shape[i - delta].is_static_value:
-                    new_strides[i] = -1
-                elif input_shape[i - delta].static_value <= 1:
-                    new_strides[i] = 0
-                else:
-                    new_strides[i] = (
-                        input_strides[i - delta]
-                        .static_value if input_strides[i - delta]
-                        .is_static_value else -1
-                    )
-        return new_strides
-
-    @staticmethod
-    def input_view[
-        dtype: DType,
-        in_rank: Int,
-        out_rank: Int,
-        //,
-        output_static_shape: Coord,
-    ](
-        x: InputTensor[dtype=dtype, rank=in_rank, ...],
-        output_shape: IndexList[out_rank],
-        out result: InputTensor[
-            static_spec=x.static_spec.with_coord_layout[
-                out_rank,
-                output_static_shape,
-                Self.get_view_strides_list[
-                    out_rank,
-                    x.rank,
-                    x.static_spec.static_layout._shape_types,
-                    x.static_spec.static_layout._stride_types,
-                ](),
-            ]()
-        ],
-    ):
-        var x_runtime_strides = Self.build_view[out_rank](x)
-        return {x.unsafe_ptr(), output_shape, x_runtime_strides}
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-        dtype: DType,
-        in_rank: Int,
-        out_rank: Int,
-        _trace_name: StaticString,
-    ](
-        z: OutputTensor[dtype=dtype, rank=out_rank, ...],
-        x: InputTensor[dtype=dtype, rank=in_rank, ...],
-        output_shape: IndexList[out_rank],
-        ctx: DeviceContext,
-    ) raises:
-        # We need the extra output_shape argument.
-        # Using `z.shape` instead will prevent the compiler from fusing the kernels.
-
-        var x_view = Self.input_view[z._static_shape_tuple](x, output_shape)
-
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=target,
-        ](z, x_view, ctx)
-
-
-@extensibility.register("mo.static.reshape")
-struct StaticReshape:
-    """Registers the `mo.static.reshape` graph op with the graph compiler."""
-
-    @staticmethod
-    def input_view[
-        dtype: DType,
-        output_rank: Int,
-        //,
-        output_static_shape: Coord,
-    ](
-        input: InputTensor[dtype=dtype, ...],
-        shape: IndexList[output_rank],
-        out result: InputTensor[
-            static_spec=input.static_spec.with_row_major_coord_layout[
-                output_rank, output_static_shape
-            ]()
-        ],
-    ):
-        var view_buffer = reshape(
-            input.to_tile_tensor[.int64](),
-            shape,
-        )
-
-        return {
-            view_buffer._storage,
-            rebind[IndexList[output_rank]](
-                coord_to_index_list(view_buffer.layout.shape_coord())
-            ),
-            rebind[IndexList[output_rank]](
-                coord_to_index_list(view_buffer.layout.stride_coord())
-            ),
-        }
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-        dtype: DType,
-        output_rank: Int,
-    ](
-        output: OutputTensor[dtype=dtype, rank=output_rank, ...],
-        input: InputTensor[dtype=dtype, ...],
-        shape: IndexList[output_rank],
-        ctx: DeviceContext,
-    ) raises:
-        var view_tensor = Self.input_view[output._static_shape_tuple](
-            input, shape
-        )
-
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=target,
-        ](output, view_tensor, ctx)
-
-
 @extensibility.register("mo.reshape")
 struct Reshape:
     """Registers the `mo.reshape` graph op with the graph compiler."""
@@ -1691,270 +1524,35 @@ def reshape_shape_fn[
     )
 
 
-@extensibility.register("mo.transpose")
-struct Transpose:
-    """Registers the `mo.transpose` graph op with the graph compiler."""
-
-    @inline(.always)
-    @staticmethod
-    def transpose_in_place(
-        input: InputTensor,
-        permutations: InputTensor[rank=1, ...],
-        out result: Tuple[IndexList[input.rank], IndexList[input.rank]],
-    ):
-        var new_shape = IndexList[input.rank]()
-        var new_stride = IndexList[input.rank]()
-
-        comptime for i in range(input.rank):
-            var dim = Int(permutations[i])
-            new_shape[i] = input.dim_size(dim)
-            new_stride[i] = input.stride_length(dim)
-
-        return {new_shape, new_stride}
-
-    @staticmethod
-    def input_view[
-        dtype: DType,
-        rank: Int,
-        //,
-        output_static_shape: Coord,
-        static_permutations: Coord,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        permutations: InputTensor[rank=1, ...],
-        out result: InputTensor[
-            static_spec=input.static_spec.with_tile_layout[
-                rank,
-                Layout[
-                    shape_types=output_static_shape.element_types,
-                    stride_types=_TransposeStrideTypes[
-                        static_permutations,
-                        rank,
-                        input.static_spec.static_layout._stride_types,
-                    ],
-                ],
-            ]()
-        ],
-    ):
-        var shape, strides = Self.transpose_in_place(input, permutations)
-        return {input.unsafe_ptr(), shape, strides}
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-        static_permutations: Coord,
-        dtype: DType,
-        rank: Int,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        permutations: InputTensor[rank=1, ...],
-        ctx: DeviceContext,
-    ) raises:
-        var view = Self.input_view[
-            output._static_shape_tuple, static_permutations
-        ](input, permutations)
-
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=target,
-        ](output, view, ctx)
-
-    # TODO(GEX-1033) Make it possible to have multiple raises.
-    @inline(.never)
-    @staticmethod
-    def shape_impl(
-        input: Some[Tensor],
-        permutations: Some[TileTensorable],
-    ) raises -> IndexList[type_of(input).rank]:
-        comptime rank = type_of(input).rank
-        comptime assert (
-            type_of(permutations).rank == 1
-        ), "permutations must be rank 1"
-        var perms = permutations.to_tile_tensor()
-        if Int(perms.dim(0)) != rank:
-            raise Error("[transpose] permutation size must match input rank")
-
-        comptime for i in range(rank):
-            var perm = Int(perms[i])
-            if perm < 0 or rank <= perm:
-                raise Error(
-                    "[transpose] each permutation must be within range [0,"
-                    " rank)"
-                )
-
-        var input_shape = coord_to_index_list(input.shape())
-        var out = IndexList[rank]()
-
-        comptime for i in range(rank):
-            out[i] = input_shape[Int(perms[i])]
-
-        return out
-
-
+# TODO(GEX-1033) Make it possible to have multiple raises.
 @extensibility.register_shape_function("mo.transpose")
 def transpose_shape_fn(
     input: Some[Tensor],
     permutations: Some[TileTensorable],
 ) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.transpose` graph op."""
-    return Transpose.shape_impl(input, permutations)
+    comptime rank = type_of(input).rank
+    comptime assert (
+        type_of(permutations).rank == 1
+    ), "permutations must be rank 1"
+    var perms = permutations.to_tile_tensor()
+    if Int(perms.dim(0)) != rank:
+        raise Error("[transpose] permutation size must match input rank")
 
-
-@extensibility.register("mo.slice")
-struct Slice:
-    """Registers the `mo.slice` graph op with the graph compiler."""
-
-    @staticmethod
-    def get_view_alignment[
-        rank: Int,
-        dtype: DType,
-        input_shape: TypeList[Trait=CoordLike, ...],
-        input_strides: TypeList[Trait=CoordLike, ...],
-        static_starts: Coord,
-        static_steps: Coord,
-    ](input_alignment: Int) -> Int:
-        comptime stride_types = input_strides
-        comptime start_types = static_starts.element_types
-        comptime step_types = static_steps.element_types
-
-        # A stride that is only known at runtime still moves the pointer by a
-        # whole multiple of this one, so it bounds the alignment the same way a
-        # static stride does. 0 when nothing can be established.
-        comptime anchor = _dense_row_major_anchor_stride[
-            rank, input_shape, input_strides
-        ]()
-
-        var alignment = input_alignment
-        comptime for i in range(rank):
-            # Bail if step is unknown or negative.
-            comptime if not step_types[i].is_static_value or step_types[
-                i
-            ].static_value < 0:
-                return 1
-
-            # The offset for dimension `i` is `start[i] * strides[i]`. If the
-            # start is not statically known the offset is unknown.
-            comptime if not start_types[i].is_static_value:
-                return 1
-
-            comptime if start_types[i].static_value != 0:
-                comptime if stride_types[i].is_static_value:
-                    alignment = gcd(
-                        alignment,
-                        start_types[i].static_value
-                        * stride_types[i].static_value
-                        * align_of[dtype](),
-                    )
-                else:
-                    comptime if anchor == 0:
-                        return 1
-                    alignment = gcd(
-                        alignment,
-                        start_types[i].static_value
-                        * anchor
-                        * align_of[dtype](),
-                    )
-
-            # Stepping along a non-innermost dimension moves the pointer by
-            # `step[i] * strides[i]` elements, so that stride bounds the
-            # alignment.
-            comptime if i != rank - 1:
-                comptime if stride_types[i].is_static_value:
-                    alignment = gcd(
-                        alignment,
-                        step_types[i].static_value
-                        * stride_types[i].static_value
-                        * align_of[dtype](),
-                    )
-                else:
-                    comptime if anchor == 0:
-                        return 1
-                    alignment = gcd(
-                        alignment,
-                        step_types[i].static_value * anchor * align_of[dtype](),
-                    )
-
-        return alignment
-
-    @staticmethod
-    def input_view[
-        dtype: DType,
-        rank: Int,
-        //,
-        output_static_shape: Coord,
-        static_starts: Coord,
-        static_steps: Coord,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        starts: InputTensor[rank=1, ...],
-        stops: InputTensor[rank=1, ...],
-        steps: InputTensor[rank=1, ...],
-        out result: InputTensor[
-            static_spec=input.static_spec.with_tile_layout_and_alignment[
-                rank,
-                Layout[
-                    shape_types=output_static_shape.element_types,
-                    stride_types=_SliceStrideTypes[
-                        rank,
-                        input.static_spec.static_layout._stride_types,
-                        static_steps.element_types,
-                    ],
-                ],
-            ](
-                Self.get_view_alignment[
-                    rank,
-                    dtype,
-                    input.static_spec.static_layout._shape_types,
-                    input.static_spec.static_layout._stride_types,
-                    static_starts,
-                    static_steps,
-                ](input.alignment),
+    comptime for i in range(rank):
+        var perm = Int(perms[i])
+        if perm < 0 or rank <= perm:
+            raise Error(
+                "[transpose] each permutation must be within range [0, rank)"
             )
-        ],
-    ):
-        var view_buffer = slice_as_view(
-            input.to_tile_tensor[.int64](),
-            starts.to_tile_tensor[.int64](),
-            stops.to_tile_tensor[.int64](),
-            steps.to_tile_tensor[.int64](),
-        )
 
-        result = {
-            view_buffer._storage,
-            rebind[IndexList[rank]](
-                coord_to_index_list(view_buffer.layout.shape_coord())
-            ),
-            rebind[IndexList[rank]](
-                coord_to_index_list(view_buffer.layout.stride_coord())
-            ),
-        }
+    var input_shape = coord_to_index_list(input.shape())
+    var out = IndexList[rank]()
 
-    @staticmethod
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-        static_starts: Coord,
-        static_steps: Coord,
-        dtype: DType,
-        rank: Int,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        starts: InputTensor[rank=1, ...],
-        stops: InputTensor[rank=1, ...],
-        steps: InputTensor[rank=1, ...],
-        ctx: DeviceContext,
-    ) raises:
-        var view_tensor = Self.input_view[
-            output._static_shape_tuple, static_starts, static_steps
-        ](input, starts, stops, steps)
+    comptime for i in range(rank):
+        out[i] = input_shape[Int(perms[i])]
 
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=target,
-        ](output, view_tensor, ctx)
+    return out
 
 
 # TODO(GEX-4377): Bind `input` as `Some[Tensor]` once `slice_shape` takes its
@@ -2258,17 +1856,42 @@ struct ShardWeights:
 
     @staticmethod
     def execute[
+        Outs: TypeList[Trait=Output & Tensor, ...],
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        //,
         axis: Int,
     ](
-        outputs: OutputVariadicTensors,
-        inputs: InputVariadicTensors[
-            dtype=outputs.dtype,
-            rank=outputs.rank - 1,
-            ...,
-        ],
+        outputs: TensorTuple[*Outs],
+        inputs: TensorTuple[*Ins],
         dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
-        shard_and_stack[axis](outputs, inputs, dev_ctxs_input)
+        comptime num_outputs = len(Outs)
+        comptime num_inputs = len(Ins)
+        comptime assert num_inputs > 0, "must have one or more inputs"
+        comptime dtype = Ins[0].dtype
+        comptime rank = Ins[0].rank
+        _check_tensor_tuple[num_inputs, dtype, rank, *Ins]()
+        _check_tensor_tuple[num_outputs, dtype, rank + 1, *Outs]()
+
+        def input_tile[i: Int]() {imm inputs} -> ShardStackInput[dtype, rank]:
+            comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+            return rebind[ShardStackInput[dtype, rank]](
+                inputs[i].to_tile_tensor[dtype]().make_dynamic[.int64]()
+            )
+
+        def output_tile[
+            i: Int
+        ]() {imm outputs} -> ShardStackOutput[dtype, rank + 1]:
+            comptime assert conforms_to(type_of(outputs[i]), TileTensorable)
+            return rebind[ShardStackOutput[dtype, rank + 1]](
+                outputs[i].to_tile_tensor[dtype]().make_dynamic[.int64]()
+            )
+
+        shard_and_stack[dtype, rank, axis](
+            Array[_, num_outputs](fill_with_unrolled=output_tile),
+            Array[_, num_inputs](fill_with_unrolled=input_tile),
+            dev_ctxs_input,
+        )
 
 
 @extensibility.register("mo.concat")
@@ -2490,7 +2113,6 @@ struct IndexTensor:
     @staticmethod
     def execute[
         batch_dims: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         data: Some[Input & Tensor],
@@ -2502,7 +2124,7 @@ struct IndexTensor:
         comptime assert conforms_to(type_of(indices), TileTensorable)
         comptime dtype = type_of(output).dtype
         comptime indices_type = type_of(indices).dtype
-        index_tensor[dtype, indices_type, batch_dims, target=target](
+        index_tensor[dtype, indices_type, batch_dims](
             data.to_tile_tensor[dtype](),
             indices.to_tile_tensor(),
             output.to_tile_tensor(),

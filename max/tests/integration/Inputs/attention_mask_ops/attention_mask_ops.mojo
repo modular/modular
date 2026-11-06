@@ -69,7 +69,6 @@ struct RaggedAttentionLoadMask:
     def execute[
         MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
         mask: StaticString,
         window: Int,
     ](
@@ -83,7 +82,7 @@ struct RaggedAttentionLoadMask:
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
         comptime match mask:
             case "causal":
                 _ragged_attention[CausalMask](
@@ -145,7 +144,6 @@ struct RaggedAttentionPointerMask:
     def execute[
         MaskIns: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
         mask: StaticString,
         window: Int,
     ](
@@ -159,7 +157,7 @@ struct RaggedAttentionPointerMask:
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
         var output_buffer = output.to_tile_tensor()
         var q_buffer = q.to_tile_tensor()
         var k_buffer = k.to_tile_tensor()
@@ -209,9 +207,7 @@ struct DenseAttentionPointerMask:
     its pointer, as `attention.masked_flash_attention_gpu` did."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & TileTensorable],
         q: Some[Input & TileTensorable],
         k: Some[Input & TileTensorable],
@@ -220,7 +216,7 @@ struct DenseAttentionPointerMask:
         mask: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
         flash_attention(
             output.to_tile_tensor(),
             q.to_tile_tensor(),

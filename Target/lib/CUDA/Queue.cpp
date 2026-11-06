@@ -287,7 +287,7 @@ M_driver_status_t M_driver_queue::waitValue64(uint64_t device_address,
   // device-mapped pinned alias without it.
   if (CUresult r = context.device.driver.rawCuda.cuStreamWaitValue64(
           stream, static_cast<CUdeviceptr>(device_address), value,
-          CU_STREAM_WAIT_VALUE_EQ);
+          CU_STREAM_WAIT_VALUE_GEQ);
       r != CUDA_SUCCESS)
     return cudaErrorStatus(&context.device.driver, r, "cuStreamWaitValue64");
   return M_DRIVER_STATUS_SUCCESS;

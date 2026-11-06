@@ -21,6 +21,7 @@ model:
     device_memory_utilization: 0.95
 
 runtime:
+  prefer_module_v3: false
   max_batch_size: 64
 
 speculative:

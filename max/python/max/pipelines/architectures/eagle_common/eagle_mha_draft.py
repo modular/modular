@@ -40,34 +40,30 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops.data_parallel import split_batch_replicated
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.attention.attention_with_rope import (
     AttentionWithRope,
     DataParallelAttentionWithRope,
     TensorParallelAttentionWithRope,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnHiddenStates,
-    ReturnLogits,
-    logits_outputs,
-)
+from max.nn.legacy.transformer import DecoderOutputs, logits_outputs
 from max.nn.legacy.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
 from max.nn.legacy.transformer.transformer import fuse_captured_hidden_states
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 
 
 @dataclass(kw_only=True)
@@ -185,7 +181,7 @@ class Eagle3MHADraft(Module):
         from max.driver import Accelerator, accelerator_count
         from max.dtype import DType
         from max.graph import DeviceRef
-        from max.nn.legacy.kv_cache import MHAKVCacheParams
+        from max.nn.kv_cache import MHAKVCacheParams
         from max.pipelines.architectures.eagle_common.eagle_mha_draft import (
             Eagle3MHADraft,
             Eagle3MHADraftConfig,

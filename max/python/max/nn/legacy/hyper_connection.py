@@ -18,8 +18,8 @@ from __future__ import annotations
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.nn._graph_ops import hyper_connection_gates, mhc_pre, mhc_pre_supports
 
-from .kernels import hyper_connection_gates, mhc_pre, mhc_pre_supports
 from .layer import Module
 
 
@@ -55,7 +55,7 @@ class HyperConnection(Module):
     The gate math always runs in float32, regardless of ``dtype``, matching the
     reference implementation. ``collapsed`` is cast back to the input's dtype.
     On gfx950, a call without ``pre_mix`` on bfloat16 streams runs as one
-    fused op (:func:`~max.nn.legacy.kernels.mhc_pre`) where the shape allows it.
+    fused op (:func:`~max.nn._graph_ops.mhc_pre`) where the shape allows it.
 
     .. code-block:: python
 

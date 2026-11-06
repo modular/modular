@@ -603,7 +603,7 @@ def test_quantized[
             c_dev_tt.store[alignment=alignment](idx, value.cast[a_type]())
 
         # The helper supplies a null output view; only the epilogue may write.
-        _qmatmul_common[group_size=group_size, target="gpu"](
+        _qmatmul_common[group_size=group_size](
             a_dev_tt.as_imm(),
             b_dev_tt.bitcast[.uint8]().as_imm(),
             ctx,
@@ -611,7 +611,7 @@ def test_quantized[
         )
     elif use_dispatch:
         comptime assert dtype == .uint8
-        matmul_gpu_qint4[group_size, "gpu"](
+        matmul_gpu_qint4[group_size](
             c_dev_tt, a_dev_tt, b_dev_tt.bitcast[.uint8](), ctx
         )
     else:

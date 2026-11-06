@@ -18,37 +18,39 @@ from typing import ClassVar
 
 from max import functional as F
 from max import tree
-from max.driver import CPU
 from max.dtype import DType
-from max.graph import TensorValue
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import DP
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import (
     DeviceMapping,
-    DeviceMesh,
     Replicated,
     Unknown,
 )
 
-from ..deepseekV3_2_modulev3.deepseekV3_2 import DeepseekV3_2TextModel
+from ..deepseekV3_2_modulev3.deepseekV3_2 import (
+    DeepseekV3_2TextModel,
+    replica_context_lengths,
+)
 from .model_config import Glm5_1Config
 
 
 class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
     """GLM-5.x's sparse-MLA decoder, shared with DeepSeek-V3.2.
 
-    It runs tensor-parallel attention over a ``tp`` mesh, or one attention
-    replica per device over a ``dp`` mesh, with its experts tensor-parallel
-    or, under expert parallelism, spread across the devices.
+    It runs tensor-parallel attention over a ``tp`` mesh, one attention
+    replica per device over a ``dp`` mesh, or, under expert parallelism,
+    tensor-parallel replicas over a ``(dp, tp)`` mesh, with its experts
+    tensor-parallel or, under expert parallelism, spread across the devices.
     """
 
     graph_name: ClassVar[str] = "DeepseekV3_2"
     supports_data_parallel: ClassVar[bool] = True
+    supports_multi_device_replicas: ClassVar[bool] = True
 
     def __init__(self, config: Glm5_1Config) -> None:
         super().__init__()
@@ -80,14 +82,9 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
         input_row_offsets_i64: Tensor | None = None
         dp_degree = self.config.data_parallel_degree
         if dp_degree > 1:
-            assert dp_degree == mesh.num_devices
             assert inputs.host_input_row_offsets is not None
-            cpu_mesh = DeviceMesh(
-                tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
-            )
-            batch_context_length = Tensor.from_shard_values(
-                [TensorValue(shard) for shard in inputs.batch_context_lengths],
-                DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
+            batch_context_length = replica_context_lengths(
+                inputs.batch_context_lengths, mesh
             )
             data_parallel_splits = inputs.data_parallel_splits
             input_row_offsets_i64 = F.cast(

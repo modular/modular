@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import extensibility
-from extensibility import OutputTensor
+from extensibility import Output, Tensor
 from std.collections.string.string_span import _get_kgen_string
 from std.collections.string import StaticString
 
@@ -29,9 +29,7 @@ def constrained[cond: Bool, msg: StaticString]():
 @extensibility.register("fails_to_elaborate")
 struct InvalidOwnedArgConvention:
     @staticmethod
-    def execute[
-        target: StaticString, dtype: DType, rank: Int
-    ](output: OutputTensor[dtype=dtype, rank=rank, ...]):
+    def execute[target: StaticString](output: Some[Output & Tensor]):
         comptime assert (
             False
         ), "oops"  # expected-error {{call expansion failed}}

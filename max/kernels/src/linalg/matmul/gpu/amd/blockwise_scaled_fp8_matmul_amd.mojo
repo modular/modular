@@ -621,7 +621,7 @@ def _pick_split_k_num_splits[
         BK: Block tile K (a whole number of K scale blocks).
         base_ctas: CTAs the plain launch already runs at this M bucket —
             `ceildiv(N, BN) * ceildiv(M, BM)`.
-        cta_cap: CTA budget, ~2 waves (all CUs + one for latency hiding).
+        cta_cap: CTA budget (`sm_count * SK_CTA_WAVES` single-wave CTAs).
     """
     comptime assert K % BK == 0, "split-K requires K % BK == 0"
     comptime total_slabs = K // BK
@@ -820,11 +820,11 @@ def blockwise_scaled_fp8_matmul_amd[
 
     Decode regime (small M): the launch geometry is
     `(ceildiv(N, BN), ceildiv(M, BM))`, which at M <= 64 is one or a few
-    M-tiles — only `ceildiv(N, BN)` CTAs against ~2 waves of CUs. This
+    M-tiles — only `ceildiv(N, BN)` CTAs against ~256 CUs. This
     launcher then transparently splits K across `grid.z` (fp32 partials +
     deterministic reduce; see `_launch_blockwise_split_k`) with a
     comptime-picked `num_splits` that lifts the CTA count toward
-    `sm_count * 2`. No tile-shape change can fix this: CTAs cannot be
+    `sm_count * 8`. No tile-shape change can fix this: CTAs cannot be
     manufactured in the M direction at M <= 64, only in K.
     """
     comptime assert transpose_b, "transpose_b must be True"
@@ -859,10 +859,12 @@ def blockwise_scaled_fp8_matmul_amd[
     #     the CTA cap with 2-4 M-tiles in flight.
     # Both return 1 (no split) when the shape already fills the GPU or no
     # legal factor exists, so the plain launch below is unchanged there.
-    # The cap is `sm_count * 2` — every CU plus a second wave for latency
-    # hiding.
+    # The cap is `sm_count * SK_CTA_WAVES` single-wave CTAs.
     comptime _gpu = ctx.default_device_info
-    comptime SK_CTA_WAVES = 2
+    # The CTAs are one wave each, so ~2 per CU leaves HBM underused: at
+    # 8 per CU the dense N=24576 K=4096 decode GEMM drops from 43 to 27 us
+    # and N=4096 K=12288 from 25 to 17.5 us (MI355X, weights from HBM).
+    comptime SK_CTA_WAVES = 8
     comptime _sk_cta_cap = _gpu.sm_count * SK_CTA_WAVES
     # Decode band only: above it the f32 workspace traffic outweighs the
     # parallelism win, so larger M keeps the single-launch path.
@@ -875,6 +877,41 @@ def blockwise_scaled_fp8_matmul_amd[
         K, BK, ceildiv(N, BN) * ceildiv(SK_MAX_M, BM), _sk_cta_cap
     ]() if K % BK == 0 else 1
 
+    # The fp32 partials cost `8 * M * N * num_splits` bytes of traffic
+    # (written, then read by the reduce) against `N * K` weight bytes. Where
+    # that exceeds the weights, a split capped at `K // (8 * BM)` keeps the
+    # partials under the weight bytes for the whole tile: N = K = 4096 at
+    # M = 48 runs 8 splits in 14.8 us against 16.5 us for 16, and
+    # N = 4096, K = 12288 at M = 64 runs 24 in 24.8 us against 26.6 us for
+    # 32 (MI355X, weights from HBM). Shapes with no legal smaller split keep
+    # `_sk_splits_1m`.
+    comptime _sk_splits_1m_deep = _pick_split_k_num_splits[
+        K, BK, ceildiv(N, BN), ceildiv(N, BN) * (K // (8 * BM))
+    ]() if K % BK == 0 else 1
+    comptime if 1 < _sk_splits_1m_deep < _sk_splits_1m:
+        comptime _ws_max_m = SK_MAX_WORKSPACE_BYTES // (
+            _sk_splits_1m_deep * N * size_of[DType.float32]()
+        )
+        if M <= min(BM, _ws_max_m) and 8 * M * _sk_splits_1m > K:
+            _launch_blockwise_split_k[
+                c_type,
+                a_type,
+                b_type,
+                a_scales_type,
+                b_scales_type,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                MMA_K=MMA_K,
+                N_SCALE=N_SCALE,
+                K_SCALE=K_SCALE,
+                num_splits=_sk_splits_1m_deep,
+            ](c, a, b, a_scales, b_scales, ctx)
+            return
     comptime if _sk_splits_1m > 1:
         comptime _ws_max_m = SK_MAX_WORKSPACE_BYTES // (
             _sk_splits_1m * N * size_of[DType.float32]()

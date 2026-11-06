@@ -19,10 +19,11 @@ from std.python.bindings import PythonModuleBuilder
 
 
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    amd_mla_decode_dispatch_scalars,
     mha_decoding_num_partitions,
 )
-from nn.attention.gpu.mla_decode_dispatch_scalars import (
-    mla_decode_dispatch_key,
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    compute_mla_dispatch_key_runtime,
 )
 from nn.attention.gpu.nvidia.sm100.dispatch import (
     mha_split_kv_decode_num_partitions as _split_kv_decode_num_partitions,
@@ -206,20 +207,42 @@ def mla_dispatch_args_scalar(
 
     var device_ctx = DeviceContext(ctx)
 
-    var scalars = mla_decode_dispatch_key(
-        batch_size,
-        max_cache_valid_length,
-        q_max_seq_len,
-        num_heads,
-        is_fp8_kv,
-        device_ctx,
-        sparse_indices_stride=sparse_indices_stride,
-        kv_form=kv_form,
-        page_size=page_size,
-        fixed_topk=fixed_topk,
-        physical_indices=physical_indices,
-        depth=depth,
-    )
+    # The variant separates capture keys whose launches share a split count;
+    # only the SM100 sparse decode has more than one.
+    var scalars: Tuple[Int, Int, Int, Int]
+    if device_ctx.api() == "hip":
+        var amd = amd_mla_decode_dispatch_scalars(
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            num_heads,
+            is_fp8_kv,
+            device_ctx,
+            sparse_indices_stride=sparse_indices_stride,
+        )
+        scalars = (amd[0], amd[1], amd[2], 0)
+    elif device_ctx.api() == "cuda":
+        scalars = compute_mla_dispatch_key_runtime(
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            num_heads,
+            is_fp8_kv,
+            sparse_indices_stride,
+            device_ctx.device().get_attribute(
+                DeviceAttribute.MULTIPROCESSOR_COUNT
+            ),
+            kv_form=kv_form,
+            page_size=page_size,
+            fixed_topk=fixed_topk,
+            physical_indices=physical_indices,
+            depth=depth,
+        )
+    else:
+        raise Error(
+            "MLA decode dispatch metadata supports only HIP (AMD) and CUDA"
+            " (NVIDIA) devices."
+        )
     var result: Array[Int, 4] = [
         scalars[0],
         scalars[1],

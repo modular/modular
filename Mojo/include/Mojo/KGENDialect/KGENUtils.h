@@ -157,7 +157,7 @@ ExportMap getExportedSymbols(ModuleOp module);
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file. In diagnostics contexts, MLIR and KGEN keywords
 /// are not escaped with *"...".
-std::string getParamAsString(Attribute value);
+MODULAR_CXX_EXPORT std::string getParamAsString(Attribute value);
 
 /// Print the value as colon type parameter value into a string.
 StringAttr getParamTypeAsString(TypedAttr value);
@@ -166,14 +166,15 @@ StringAttr getParamTypeAsString(TypedAttr value);
 StringAttr getTypeAsString(Type type);
 
 /// Parse a parameter of type kgen.string.
-ParseResult parseStringParam(AsmParser &p, TypedAttr &value);
+MODULAR_CXX_EXPORT ParseResult parseStringParam(AsmParser &p, TypedAttr &value);
 
 /// Print a parameter of type kgen.string.
-void printStringParam(AsmPrinter &p, Operation *, Attribute value);
+MODULAR_CXX_EXPORT void printStringParam(AsmPrinter &p, Operation *,
+                                         Attribute value);
 
 /// Parse a type in a KGEN context, handling sugar like "dtype" for
 /// "!kgen.dtype" etc.
-ParseResult parseKGENType(AsmParser &parser, Type &type);
+MODULAR_CXX_EXPORT ParseResult parseKGENType(AsmParser &parser, Type &type);
 OptionalParseResult parseOptionalKGENType(AsmParser &parser, Type &type);
 
 /// Try to parse a specific KGEN type.
@@ -189,20 +190,22 @@ ParseResult parseKGENType(AsmParser &parser, T &type) {
 }
 
 /// Print `type` using KGEN specific type sugars.
-void printKGENType(AsmPrinter &p, Type type);
+MODULAR_CXX_EXPORT void printKGENType(AsmPrinter &p, Type type);
 void printKGENType(raw_ostream &os, Type type);
 
 /// Parse a "colon type" production if present or default to `defaultType` type
 /// if not.
-ParseResult parseColonTypeOrDefault(AsmParser &parser, Type &type,
-                                    Type defaultType);
+MODULAR_CXX_EXPORT ParseResult parseColonTypeOrDefault(AsmParser &parser,
+                                                       Type &type,
+                                                       Type defaultType);
 
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
 ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
 
 /// Print `: <type>` or elide it entirely if type is `defaultType` type.
-void printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType);
+MODULAR_CXX_EXPORT void printColonTypeOrDefault(AsmPrinter &p, Type type,
+                                                Type defaultType);
 
 /// Print `: <type>` or elide it entirely if type is an `index` type.
 void printColonTypeOrIndex(AsmPrinter &p, Type type);
@@ -242,12 +245,12 @@ EnvAttr getModularEnvAttr(MLIRContext *ctx, CompilationContext *compileCtx);
 /// known as `-D` defines) for the given module. This includes things like
 /// `BUILD_TYPE`, AsyncRT profiling level, etc. Note that
 /// the existing EnvAttr module values take precedence here.
-void extendWithModularEnvAttr(ModuleOp moduleOp,
-                              CompilationContext *compileCtx);
+MODULAR_CXX_EXPORT void
+extendWithModularEnvAttr(ModuleOp moduleOp, CompilationContext *compileCtx);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given module.
-EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
+MODULAR_CXX_EXPORT EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
 
 /// Parser & printer for the isMemoryOnly field on struct types. Handles:
 ///   (absent)          -> BoolAttr(false), register-passable
@@ -295,7 +298,7 @@ DenseBoolArrayAttr getDenseBoolArrayAttr(MLIRContext *context,
 /// prevent collision with other parameter values, particularly types.
 void printParamName(AsmPrinter &p, StringAttr name, bool isRef = false);
 /// Parse a parameter name as either a keyword or double quoted string.
-ParseResult parseParamName(AsmParser &p, StringAttr &name);
+MODULAR_CXX_EXPORT ParseResult parseParamName(AsmParser &p, StringAttr &name);
 
 /// Print & parse a list of parameter names.
 void printParamNames(AsmPrinter &p, ArrayRef<StringAttr> names,
@@ -307,14 +310,16 @@ ParseResult parseParamNames(AsmParser &p, SmallVector<StringAttr> &names);
 /// context where printing for diagnostics, we do not use the double quoted
 /// syntax to escape MLIR and KGEN keywords. Prints every subexpression in
 /// full; use `KGENParamPrinter` with a `DedupContext` to label repeats.
-void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+MODULAR_CXX_EXPORT void printParamValue(AsmPrinter &p, TypedAttr value,
+                                        Type type = {});
 void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
                      Type type = {});
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type,
-                            bool disableTypeParser = false);
+MODULAR_CXX_EXPORT ParseResult parseParamValue(AsmParser &p, TypedAttr &value,
+                                               Type type,
+                                               bool disableTypeParser = false);
 
 /// Parse a parameter declaration of the form `name = value`.
 ParseResult parseParamDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
@@ -457,15 +462,17 @@ void printParamDeclAttrs(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls);
 /// information. If the element printing hook is provided, it is called by the
 /// given parser for each element in the list, and is responsible for printing
 /// the decl.
-void printParamDecls(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls,
-                     ParamDeclPrintHookTy printElt = {});
+MODULAR_CXX_EXPORT void printParamDecls(AsmPrinter &p,
+                                        ArrayRef<ParamDeclAttr> decls,
+                                        ParamDeclPrintHookTy printElt = {});
 
 /// Parse a ParamDeclArrayAttr as a canonical list of comma separated
 /// information. If the element parsing hook is provided, it is called by the
 /// given parser for each element in the list, and is responsible for parsing
 /// the decl and placing it in the provided array.
-ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result,
-                            ParamDeclParseHookTy parseElt = {});
+MODULAR_CXX_EXPORT ParseResult
+parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result,
+                ParamDeclParseHookTy parseElt = {});
 
 /// Parse and print a parameter specification on a generator or region type. The
 /// parameter spec includes input parameter declarations and types and
@@ -544,20 +551,18 @@ ParseResult parseKGENFuncTypeGenerator(AsmParser &p, FunctionType &functionType,
 /// the SSA value names are optional in the argument list. If they are present,
 /// they are populated in `args`. The `parseNames` flag control whether the
 /// signature should include the argument names.
-ParseResult parseFunctionFuncTypeGenerator(
+MODULAR_CXX_EXPORT ParseResult parseFunctionFuncTypeGenerator(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
     FunctionType &functionType, FuncTypeGeneratorType &signature,
     ParamDeclParseHookTy parseDeclElt = {});
 /// Print a function signature with optional metadata. If `region` is
 /// non-null, then the SSA value names of the region arguments are printed.
-void printFunctionFuncTypeGenerator(OpAsmPrinter &p, Region *region,
-                                    ArrayRef<ParamDeclAttr> inputParams,
-                                    ArrayRef<ParamDeclAttr> resultParams,
-                                    FunctionType functionType,
-                                    FuncTypeGeneratorType signature,
-                                    ParamDeclPrintHookTy printInputElt = {},
-                                    ParamDeclPrintHookTy printResultElt = {});
+MODULAR_CXX_EXPORT void printFunctionFuncTypeGenerator(
+    OpAsmPrinter &p, Region *region, ArrayRef<ParamDeclAttr> inputParams,
+    ArrayRef<ParamDeclAttr> resultParams, FunctionType functionType,
+    FuncTypeGeneratorType signature, ParamDeclPrintHookTy printInputElt = {},
+    ParamDeclPrintHookTy printResultElt = {});
 
 /// Parse the always_inline related keywords if present.
 ParseResult parseOptionalInline(OpAsmParser &parser, Attribute &attr);
@@ -679,7 +684,8 @@ void printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region);
 /// special characters supported in Lexer::getStringLiteralValue are taken into
 /// account. It is *not* intended to be a general alternative to
 /// llvm::printEscapedString.
-void printAsMojoStringLiteral(StringRef Name, raw_ostream &Out);
+MODULAR_CXX_EXPORT void printAsMojoStringLiteral(StringRef Name,
+                                                 raw_ostream &Out);
 
 std::string
 printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
@@ -728,7 +734,8 @@ SIMDType getEquivalentSIMDType(Type type);
 /// Splat a value of a builtin type to a SIMD type of the given size.
 TypedAttr splatBuiltinToSIMD(TypedAttr builtinScalarVal, TypedAttr simdSize);
 TypedAttr splatFloatLiteralToSIMD(double literal, SIMDType target);
-TypedAttr splatIntLiteralToSIMD(uint64_t literal, SIMDType target);
+MODULAR_CXX_EXPORT TypedAttr splatIntLiteralToSIMD(uint64_t literal,
+                                                   SIMDType target);
 
 // Whether all elements of the SIMD attribute are zero/one.
 inline bool isAllIntLikeZero(SIMDAttr simdAttr) {
@@ -785,5 +792,6 @@ inline ConstraintAttr getUnconditionalConstraint(MLIRContext *ctx) {
 } // namespace M::KGEN
 
 #include "Support/ADT/DenseStringMap.h" // IWYU pragma: keep
+#include "Support/SymbolExport.h"
 
 #endif // KGEN_KGENDIALECT_KGENUTILS_H

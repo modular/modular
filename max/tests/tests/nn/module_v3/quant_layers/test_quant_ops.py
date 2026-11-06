@@ -31,8 +31,8 @@ from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn._graph_ops import ep as ep_kernels
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.quant_kernels import stack_blockwise_mega_ffn_b
 from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
@@ -46,8 +46,9 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4TensorQuantizer,
     QuantAwareTensor,
 )
-from max.nn.legacy.comm.ep import EPConfig, ep_kernels
-from max.nn.legacy.quant_config import QuantConfig, QuantFormat
+from max.nn.ep_config import EPConfig
+from max.nn.kernels.quant import stack_blockwise_mega_ffn_b
+from max.nn.quant_config import QuantConfig, QuantFormat
 from max.tensor import Tensor, default_dtype
 
 _HIDDEN_DIM = 256

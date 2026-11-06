@@ -1,7 +1,7 @@
 // RUN: mo-opt %s --allow-unregistered-dialect --mgp-fixup-overhangs | FileCheck %s
 
 // This test case is based on mgp-check-overhangs-errors.mlir
-mgp.model @if : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @if devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   %2 = grt.chain.create (%0, %1 : !mgp.context)

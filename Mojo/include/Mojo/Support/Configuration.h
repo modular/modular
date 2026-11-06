@@ -17,6 +17,7 @@
 #include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 
 #include <filesystem>
 #include <variant>
@@ -33,7 +34,7 @@ namespace M::KGEN {
 
 /// This class provides easy and type-safe access to values in the Mojo section
 /// of the modular configuration file.
-class MojoConfig {
+class MODULAR_CXX_EXPORT MojoConfig {
 public:
   /// Returns the path to the modular.cfg file.
   ErrorOr<std::filesystem::path> getConfigFilePath() const;

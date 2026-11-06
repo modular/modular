@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from max import tree
+from max._artifact.vision import VisionMetadata
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import CompiledModel, InferenceSession, Model
@@ -57,9 +58,9 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn import Module as ModuleV3
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops.sampling import LogitPenalties
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheInputs,
     KVCacheInputsPerDevice,
@@ -68,8 +69,10 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.sampling.penalties import LogitPenalties
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.legacy.graph_groups import DecoderGraphInputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
@@ -92,7 +95,10 @@ from max.pipelines.speculative.spec_adapters import STAGE_BOUNDARY
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     ReplayBatching,
 )
-from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeInputTypeSpec,
+    spec_decode_outputs,
+)
 from max.profiler import traced
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable
@@ -100,7 +106,12 @@ from max.tensor.realization_context import current_realization_context
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture
-from ..graph_specs import GraphRole, compile_and_init_graphs, graph_callable
+from ..graph_specs import (
+    GraphRole,
+    GraphSpec,
+    compile_and_init_graphs,
+    graph_callable,
+)
 from ..interfaces.arch_config import ArchConfigWithVisionCache
 from ..interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -964,7 +975,6 @@ class _Inputs(UnifiedSpecDecodeInputs):
     target_inputs: Any = None
     """The target's own prepared inputs, kept only where its batching takes
     part in replay; ``None`` otherwise."""
-    spec: SpecDecodeInputTypeSpec | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -975,53 +985,18 @@ class _Inputs(UnifiedSpecDecodeInputs):
         """
         spec = self.spec
         assert spec is not None
-        kv = tree.leaves(self.kv_cache_inputs) if self.kv_cache_inputs else ()
-        traced = spec.trace_owns_signal_buffers
-        signals = [] if traced else self.signal_buffers
-        # The pipeline sets the images' embeddings and merge positions on
-        # every batch of a target that encodes images.
-        vision = (
-            (*self.vision_embeddings, *self.vision_scatter_indices)
-            if spec.enable_vision
-            else ()
+        buffers = self._spec_decode_buffers(
+            tokens=self.tokens,
+            input_row_offsets=self.input_row_offsets,
+            return_n_logits=self.return_n_logits,
+            host_input_row_offsets=self.host_input_row_offsets,
+            data_parallel_splits=self.data_parallel_splits,
+            signal_buffers=self.signal_buffers,
+            batch_context_lengths=self.batch_context_lengths,
+            ep_inputs=self.ep_inputs,
+            trailing=(*self.trailing, *self.replay_trailing),
         )
-        prefix: tuple[Buffer, ...]
-        if spec.distributed:
-            assert self.host_input_row_offsets is not None
-            assert self.data_parallel_splits is not None
-            prefix = (
-                self.tokens,
-                *vision,
-                self.input_row_offsets,
-                self.host_input_row_offsets,
-                self.return_n_logits,
-                self.data_parallel_splits,
-                *signals,
-                *kv,
-                *self.batch_context_lengths,
-                *self.ep_inputs,
-            )
-        else:
-            if not spec.include_signal_buffers:
-                signals = []
-            prefix = (
-                self.tokens,
-                *vision,
-                self.input_row_offsets,
-                self.return_n_logits,
-                *signals,
-                *kv,
-            )
-        buffers = (
-            *prefix,
-            *self._spec_decode_tail_buffers(
-                include_in_thinking_phase=spec.include_in_thinking_phase,
-            ),
-            *(() if spec.distributed else self.ep_inputs),
-            *self.trailing,
-            *self.replay_trailing,
-        )
-        if not traced:
+        if not spec.trace_owns_signal_buffers:
             return buffers
         at = (
             len(buffers)
@@ -1220,7 +1195,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=target.kv_cache_inputs,
             seed=self._next_seed(self.runtime.devices[0]),
-            structured_output=spec.enable_structured_output,
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
                 self._pairing.adapter_arch,
@@ -1281,7 +1255,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             ep_inputs=tuple(ep_inputs),
             kv_cache_inputs=target.kv_cache_inputs,
             seed=self._next_seed(self.runtime.devices[0]),
-            structured_output=spec.enable_structured_output,
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
                 self._pairing.adapter_arch,
@@ -1390,7 +1363,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=kv_cache_inputs,
             seed=seed,
-            structured_output=spec.enable_structured_output,
             spec=spec,
         )
 
@@ -1424,6 +1396,8 @@ class SpecDecodePipelineModel(
     weights, when the target's adapter enables one."""
     _weight_loads: list[WeightLoad]
     """The weight loads the modules deferred to the compile."""
+    _target_config: Any = None
+    """The target's model config, which describes its media for export."""
 
     def __init__(
         self,
@@ -1529,12 +1503,17 @@ class SpecDecodePipelineModel(
 
     @property
     def routed_expert_row_bound(self) -> int | None:
-        """The target's compiled routed-expert row grid, if it sizes one.
-
-        It an export's sidecar records.
-        """
+        """Returns the target's compiled routed-expert row grid, if any."""
+        compiled = getattr(self, "_compiled_routed_expert_row_bound", None)
+        if compiled is not None:
+            return compiled
         config = self.arch_config_as(SpecDecodeArchConfig)
-        return getattr(config.target, "routed_expert_row_bound", None)
+        bound = getattr(config.target, "routed_expert_row_bound", None)
+        return (
+            bound
+            if isinstance(bound, int) and not isinstance(bound, bool)
+            else None
+        )
 
     def release(self, request_id: RequestID) -> None:
         """Frees what the target's batching holds for a finished request."""
@@ -1569,15 +1548,24 @@ class SpecDecodePipelineModel(
         return _Pairing.from_pipeline_config(self.pipeline_config)
 
     @cached_property
-    def signal_buffers(self) -> list[Buffer]:
-        """Returns the signal buffers the target's collectives need."""
+    def takes_signal_buffers(self) -> bool:
+        """Returns whether the graph takes signal buffers.
+
+        The graph's signature depends on this, not on :attr:`signal_buffers`,
+        which is empty under virtual devices.
+        """
         model = self.pairing.target.pipeline_model
         always = (
             model is not None and issubclass(model, AlwaysSignalBuffersMixin)
         ) or spec_adapters.signal_buffer_index(
             self.pairing.adapter_arch
         ) is not None
-        if len(self.devices) <= 1 and not always:
+        return len(self.devices) > 1 or always
+
+    @cached_property
+    def signal_buffers(self) -> list[Buffer]:
+        """Returns the signal buffers the target's collectives need."""
+        if not self.takes_signal_buffers:
             return []
         return Signals.allocate(self.devices)
 
@@ -1591,7 +1579,16 @@ class SpecDecodePipelineModel(
         )
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
+        self._target_config = modules.target_config
         target, draft = modules.target, modules.draft
+        self._compiled_routed_expert_row_bound = next(
+            (
+                layer.ffn.max_tokens_per_expert
+                for layer in getattr(target, "layers", ())
+                if getattr(getattr(layer, "ffn", None), "amd_tp_w4a8", False)
+            ),
+            None,
+        )
         # A draft without its own embedding or head reads the target's, so
         # those weights load once. Drafts declare it as vLLM's do.
         registration = self.pairing.draft.draft
@@ -1633,7 +1630,7 @@ class SpecDecodePipelineModel(
             self.pipeline_config,
             config.kv_params,
             self.device_refs,
-            include_signal_buffers=bool(self.signal_buffers),
+            include_signal_buffers=self.takes_signal_buffers,
             target=target,
             target_config=modules.target_config,
             draft=draft,
@@ -1666,9 +1663,11 @@ class SpecDecodePipelineModel(
         if compiled is not None:
             self.compiled_modules = {
                 GraphRole.SPEC_DECODER: _graph_callable(
-                    spec.graph, compiled, model
+                    spec.graph, compiled, model, spec.input_tree
                 )
             }
+        if spec.input_tree is not None:
+            self._batching.bind_input_tree(spec.input_tree)
         config.input_spec = spec.input_spec
         self.export_input_types = spec.input_types
         self.export_contract = spec.export_contract
@@ -1869,11 +1868,23 @@ def _forget_traced_weights(*modules: Any) -> None:
 
 
 def _graph_callable(
-    graph: Graph, compiled: CompiledModel, model: Model
+    graph: Graph,
+    compiled: CompiledModel,
+    model: Model,
+    input_tree: Mapping[str, object] | None = None,
 ) -> CompiledCallable[..., Any]:
-    """Wraps the compiled ``graph`` as the callable an artifact exports."""
+    """Wraps the compiled ``graph`` as the callable an artifact exports.
+
+    The callable takes ``input_tree``, the graph's inputs named by group,
+    when there is one, and the graph's inputs in order otherwise.
+    """
     input_types = [value.type for value in graph.inputs]
-    return graph_callable(compiled, model, input_types, graph.output_tree)
+    return graph_callable(
+        compiled,
+        model,
+        input_types if input_tree is None else input_tree,
+        graph.output_tree,
+    )
 
 
 @dataclass(frozen=True)
@@ -1890,6 +1901,9 @@ class SpecGraph:
     export_contract: Mapping[str, object] | None
     """What the target's engine checks the export's inputs against, if it
     keeps a record of its own."""
+    input_tree: DecoderGraphInputs | None
+    """The graph's inputs named by group, or ``None`` for a signature with
+    inputs no group names."""
 
 
 def build_spec_graph(
@@ -1974,7 +1988,9 @@ def build_spec_graph(
         module=module,
     ) as graph:
         graph.output(
-            *call(nn_model.decode_inputs(graph.inputs, call.kv_params))
+            spec_decode_outputs(
+                call(nn_model.decode_inputs(graph.inputs, call.kv_params))
+            )
         )
 
     return SpecGraph(
@@ -1983,6 +1999,18 @@ def build_spec_graph(
         input_spec=nn_model.input_spec,
         input_types=call.input_types,
         export_contract=call.export_contract,
+        # Penalties, a later stage's boundary and the replay graph's own
+        # inputs have no names, so a graph that takes any stays unnamed.
+        input_tree=(
+            None
+            if call.penalties or call.boundary_count or call.replay_count
+            else nn_model.input_tree(
+                call.kv_params,
+                trailing=spec_adapters.trailing_input_tree(
+                    call.target_arch, call.method, call.target_config
+                ),
+            )
+        ),
     )
 
 
@@ -2334,6 +2362,30 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
 
     vision_model: Model
 
+    def vision_metadata(self) -> VisionMetadata | None:
+        """Returns the target's vision metadata.
+
+        The fused graph takes the target's images.
+        """
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_metadata_for(
+            self.pipeline_config, self._target_config
+        )
+
+    def vision_preprocess_spec(self) -> GraphSpec | None:
+        """Returns the target's image preprocessing graph."""
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_preprocess_spec_for(
+            self.pipeline_config, self._target_config
+        )
+
+    def vision_preprocess_video_spec(self) -> GraphSpec | None:
+        """Returns the target's video preprocessing graph."""
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_preprocess_video_spec_for(
+            self.pipeline_config, self._target_config
+        )
+
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         """Compiles the fused graph, then the target's vision graph.
@@ -2352,7 +2404,17 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
             return model
         target = _pipeline_model(self.pairing.target)
         with CompilationTimer("vision model") as timer:
-            graph, weights_registry = target.build_vision_graph(context)
+            # A target that names its vision graph's inputs exports them
+            # named, so a serving engine binds them by group.
+            spec = target.build_vision_spec(context)
+            input_tree: Mapping[str, object] | None = None
+            if spec is None:
+                graph, weights_registry = target.build_vision_graph(context)
+            else:
+                graph = spec.trace()
+                weights_registry = dict(spec.weights_registry())
+                assert isinstance(spec.input_types, Mapping)
+                input_tree = spec.input_types
             timer.mark_build_complete()
             compiled = session.compile_reusing_mefs(graph)
             self.vision_model = session.init(
@@ -2361,7 +2423,7 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
         self.compiled_modules = {
             **self.compiled_modules,
             GraphRole.VISION: _graph_callable(
-                graph, compiled, self.vision_model
+                graph, compiled, self.vision_model, input_tree
             ),
         }
         # The target's rules name its whole checkpoint, vision tower included.
@@ -2471,7 +2533,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
                 self.pipeline_config,
                 config.kv_params,
                 self.device_refs,
-                include_signal_buffers=bool(self.signal_buffers),
+                include_signal_buffers=self.takes_signal_buffers,
                 target_config=modules.target_config,
                 draft_config=modules.draft_config,
                 hidden_states=modules.hidden_states,

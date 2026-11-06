@@ -46,18 +46,15 @@ from max.graph import (
     ops,
 )
 from max.nn import Module as ModuleV3
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _dspark_draft_sample,
     _is_amd_gpu,
     _is_sm10x_gpu,
     gumbel_argmax_from_probs,
 )
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn._graph_ops.sampling import AcceptanceSampler, _draft_step_seed
+from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.layer import Module
-from max.nn.legacy.sampling.rejection_sampler import (
-    AcceptanceSampler,
-    _draft_step_seed,
-)
 from max.tensor import Tensor
 from max.tensor.realization_context import current_realization_context
 from typing_extensions import override

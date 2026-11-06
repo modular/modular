@@ -103,7 +103,6 @@ def _run[
     rms_norm_residual_add[
         dtype,
         2,
-        target="gpu",
         epsilon=epsilon,
         weight_offset=weight_offset,
         multiply_before_cast=multiply_before_cast,

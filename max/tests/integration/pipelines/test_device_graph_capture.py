@@ -33,12 +33,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
-    AttnKeyInterface,
-    BatchCharacteristics,
-    MHAAttnKey,
-)
-from max.nn.legacy.kv_cache.utils import MultiAttnKey
+from max.nn.kv_cache import AttnKeyInterface, BatchCharacteristics, MHAAttnKey
+from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.lib import MemoryPlan, ModelInputs, ModelOutputs
 from max.pipelines.lib.graph_capture import (
     _HOST_INPUT_GUARD_ENV,

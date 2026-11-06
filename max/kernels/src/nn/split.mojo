@@ -14,7 +14,6 @@
 
 from std.collections.string import StaticString
 from std.sys import align_of, simd_width_of
-from std.sys.info import CompilationTarget
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
@@ -141,13 +140,7 @@ def split[
 
     # Can vectorize only if not splitting over last dim.
     if axis != input.rank - 1:
-        comptime target_simd_width = (
-            simd_width_of[
-                dtype, target=CompilationTarget.current()
-            ]() if ctx.target.is_cpu() else simd_width_of[
-                dtype, target=ctx.target
-            ]()
-        )
+        comptime target_simd_width = simd_width_of[dtype, target=ctx.target]()
 
         elementwise[
             simd_width=target_simd_width,

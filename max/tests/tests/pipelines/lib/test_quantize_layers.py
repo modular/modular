@@ -32,7 +32,7 @@ from max.nn.common_layers.quant_linear import (
     QuantizedQKVLinear,
 )
 from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
-from max.nn.legacy.quant_config import QuantFormat, WeightSource
+from max.nn.quant_config import QuantFormat, WeightSource
 from max.tensor import Tensor
 
 

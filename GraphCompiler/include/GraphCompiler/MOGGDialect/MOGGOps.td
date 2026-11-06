@@ -912,6 +912,10 @@ def MOGG_KernelDeclOp
     built-ins with the same registration. The shape function lives in a
     separate `mogg.shape_func.decl`.
 
+    `platform_predicate` is the set of devices that the decl applies to, as a
+    `#kgen.gen` over the device's label, API, architecture, and model (see
+    `PlatformPredicate`).
+
     `build_graph` has the same tensor signature as `execute` but takes a
     `DeviceGraphBuilder` in place of the `DeviceContext`.
 
@@ -937,6 +941,7 @@ def MOGG_KernelDeclOp
     SymbolNameAttr:$sym_name,
     StrAttr:$registration,
     M_DeviceInfoAttr:$registration_device_info,
+    OptionalAttr<KGEN_GeneratorAttr>:$platform_predicate,
     OptionalAttr<MOGG_KernelFunctionAttr>:$execute,
     OptionalAttr<MOGG_KernelFunctionAttr>:$elementwise,
     OptionalAttr<MOGG_KernelFunctionAttr>:$tile_elementwise,
@@ -954,6 +959,7 @@ def MOGG_KernelDeclOp
     custom<SymbolVisibility>($sym_visibility) `` $sym_name
     `registration` `=` $registration
     `device_info` `=` $registration_device_info
+    (`platform_predicate` `=` qualified($platform_predicate)^)?
     (`execute` `=` $execute^)?
     (`elementwise` `=` $elementwise^)?
     (`tile_elementwise` `=` $tile_elementwise^)?
@@ -1394,7 +1400,7 @@ def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
   }];
   let arguments = (ins
     FlatSymbolRefAttr:$callee,
-    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$inputs,
+    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar]>>:$inputs,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$outputs,
     MOGG_Context:$device_context,
     OptionalAttr<DictionaryAttr>:$kernel_param
@@ -1733,23 +1739,27 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   let summary = "Run a fused reduction body once per row.";
   let description = [{
     Runs its body once per row of `$shape` along `$axis`. The body holds the
-    row's folds (`mogg.rowwise.reduce`), row-level ops and stores. Its
-    arguments are one per `$capturing` tensor, then the row index, which has
-    the `$axis` coordinate pinned to 0. Lowered from a `map.iter.opaque`
-    wrapping a `map.iter.rowwise.body`.
+    row's phases in order: folds (`mogg.rowwise.reduce`) and per-element
+    phases (`mogg.rowwise.map`), the row-level ops between them, and the
+    per-row stores. A fold can't follow a map phase, and a body with a map
+    phase has no per-row stores. Its arguments are one per `$capturing`
+    tensor, then the row index, which has the `$axis` coordinate pinned to
+    0. Lowered from a `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
 
-    `mogg-legalize-rowwise-kernels` sets the rest, which the Row API needs:
+    `mogg-legalize-rowwise-kernels` gives the body a `mogg.rowwise.cache`,
+    the value every phase reads of the row, and sets the rest, which the Row
+    API needs:
 
-    - `$primary`: the capture the folds walk along `$axis`.
-    - `$dtype`: `$primary`'s element type.
     - `$accum`: the type the folds' contributions are computed in.
-    - `$is_cached`: whether more than one fold reads the row.
+    - `$is_cached`: whether more than one phase reads the row.
     - `$cols`: the static size of `$axis`.
-    - `$num_phases`: 1 when the body is reduce-shaped.
-    - `$dtype_size`: `$primary`'s byte size when the body may split the
-      row, else 0.
-    - `$computationally_expensive`: whether the folds' per-element work
-      reaches the pass's cost threshold.
+    - `$num_phases`: 1 when the body writes one value per row, else one per
+      fold plus one for the map phases, which write every element.
+    - `$dtype_size`: the cached value's byte size when the body writes every
+      element and every fold keeps one field, which lets the Row API split
+      a long row; else 0.
+    - `$computationally_expensive`: whether the body writes every element,
+      or its per-element work reaches the pass's cost threshold.
     - `$simd_monoid`: the fold monoid that picks the SIMD width, the one
       with the largest state.
 
@@ -1773,8 +1783,6 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
     MOGG_Context:$context,
     Variadic<MOGG_TensorLike>:$capturing,
     StrAttr:$device,
-    OptionalAttr<I64Attr>:$primary,
-    OptionalAttr<TypeAttr>:$dtype,
     OptionalAttr<TypeAttr>:$accum,
     UnitAttr:$is_cached,
     OptionalAttr<I64Attr>:$cols,
@@ -1785,16 +1793,44 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   );
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    /// The body's `mogg.rowwise.cache`, once legalized.
+    RowwiseCacheOp getCache();
+  }];
 }
 
-def MOGG_RowwisePrimaryOp : MOGG_Op<"rowwise.primary", [
-  HasParent<"MOGG::RowwiseReduceOp">,
+def MOGG_RowwiseCacheOp : MOGG_Op<"rowwise.cache", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  SingleBlock,
+]> {
+  let summary = "Compute once the value every phase of the row reads.";
+  let description = [{
+    Computes, at the element index in its argument, the value each phase
+    reads with `mogg.rowwise.cache.load`: a load of an input, or a fused
+    computation on it, such as a producer of the reduction's input. It
+    prints as the Row's `load` closure, so the row computes it once per
+    element and caches it when more than one phase reads it.
+  }];
+  let results = (outs MOGG_Simd:$result);
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def MOGG_RowwiseCacheLoadOp : MOGG_Op<"rowwise.cache.load", [
+  ParentOneOf<["MOGG::RowwiseReduceOp", "MOGG::RowwiseMapOp"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
   Pure,
 ]> {
-  let summary = "The primary input's value at the current element.";
+  let summary = "Read the row's cache at the current element.";
   let description = [{
-    Stands for a load of the `primary` capture at the fold's own index. The
-    row is loaded once and handed to each fold.
+    Reads the value the kernel's `mogg.rowwise.cache` computes, at the
+    phase's own index. The Row computes it once per element, caches it, and
+    hands each phase the tile.
   }];
   let results = (outs MOGG_Simd:$result);
   let assemblyFormat = "attr-dict `:` qualified(type($result))";
@@ -1802,21 +1838,63 @@ def MOGG_RowwisePrimaryOp : MOGG_Op<"rowwise.primary", [
 
 def MOGG_RowwiseEmitOp : MOGG_Op<"rowwise.emit", [
   HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
   NoTerminator,
   SingleBlock,
 ]> {
   let summary = "The per-row stores of a rowwise kernel.";
   let description = [{
-    Holds the stores at the row index. Only one participant of a row writes.
+    Holds the stores at the row index, and the row-level ops only they read.
+    It runs once per row, one lane per output, and only one participant of a
+    row writes.
   }];
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = "attr-dict-with-keyword $body";
 }
 
+def MOGG_RowwiseLoadLaneOp : MOGG_Op<"rowwise.load_lane", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Load a per-row input into the row's lane.";
+  let description = [{
+    Loads `$tensor` at the row index once per row. Each row owns one lane: a
+    participant that handles several rows at once (the tiled tier) loads one
+    lane per row. `mogg.rowwise.splat_lane` then spreads it to the width the
+    row-level ops a phase reads run at. A per-row input only the per-row
+    stores read is a plain load in the emit instead.
+  }];
+  let arguments = (ins MOGG_TensorLike:$tensor, AnyType:$index);
+  let results = (outs MOGG_Simd:$result);
+  let assemblyFormat = [{
+    $tensor `[` $index `]` attr-dict `:`
+    qualified(type($tensor)) `,` qualified(type($index)) `->` qualified(type($result))
+  }];
+}
+
+def MOGG_RowwiseSplatLaneOp : MOGG_Op<"rowwise.splat_lane", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  Pure,
+  SameOperandsAndResultType,
+]> {
+  let summary = "Spread each row's lane over the folds' width.";
+  let description = [{
+    Spreads a value loaded by `mogg.rowwise.load_lane`, one lane per row, over
+    the width of the row's folds, at which row-level ops run: every lane for a
+    participant with one row, unchanged on the tiled tier.
+  }];
+  let arguments = (ins MOGG_Simd:$input);
+  let results = (outs MOGG_Simd:$result);
+  let assemblyFormat = "$input attr-dict `:` qualified(type($input))";
+}
+
 def MOGG_RowwiseReduceOp : MOGG_Op<"rowwise.reduce", [
   HasParent<"MOGG::CallRowwiseOp">,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
   SingleBlock,
+  MOGG_RowwisePhaseOpInterface,
 ]> {
   let summary = "Fold the current row with a monoid.";
   let description = [{
@@ -1833,6 +1911,25 @@ def MOGG_RowwiseReduceOp : MOGG_Op<"rowwise.reduce", [
     OptionalAttr<StrArrayAttr>:$fields
   );
   let results = (outs Variadic<MOGG_Simd>:$results);
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def MOGG_RowwiseMapOp : MOGG_Op<"rowwise.map", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  SingleBlock,
+  NoTerminator,
+  MOGG_RowwisePhaseOpInterface,
+]> {
+  let summary = "Run a body once per element of the current row.";
+  let description = [{
+    Runs its body once per element of the enclosing row, at the index in its
+    argument. It reads the row's values computed before it and stores each
+    element.
+  }];
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;

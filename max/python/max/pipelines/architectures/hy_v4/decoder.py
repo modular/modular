@@ -21,7 +21,7 @@ from max import tree
 from max.dtype import DType
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import default_dtype
 

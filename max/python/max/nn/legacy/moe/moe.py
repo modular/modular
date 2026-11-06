@@ -23,20 +23,20 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from typing_extensions import Self
-
-from .._identity import IdentityMap
-from ..activation import GatedActivation
-from ..comm.ep import EPBatchManager
-from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import (
+from max.nn._graph_ops import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
 )
+from max.nn._graph_ops.ep import fused_silu
+from max.nn._identity import IdentityMap
+from max.nn.activation import GatedActivation
+from max.nn.quant_config import QuantConfig
+from typing_extensions import Self
+
+from ..comm.ep import EPBatchManager
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
-from ..quant_config import QuantConfig
 
 
 def make_concatenated_gated_activation_fn(
@@ -787,10 +787,13 @@ class MoE(Module, Shardable):
         x: TensorValue,
         topk_ids: TensorValue,
         router_weights: TensorValue,
+        layer_idx: TensorValue | None = None,
     ) -> TensorValue:
         """Routed-expert output of the one-launch fused EP MoE.
 
         Only reached when :meth:`_can_fuse_megaffn_ep` is ``True``.
+        ``layer_idx`` is this device's MoE layer index, for expert-load
+        counting.
         """
         raise NotImplementedError(
             "the one-launch fused EP MoE needs quantized (NVFP4 or MXFP8)"

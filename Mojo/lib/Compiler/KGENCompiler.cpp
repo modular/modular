@@ -171,6 +171,19 @@ generateInstantiateStub(GeneratorOp func, FuncSymbolAttr symbol,
   ReturnOp::create(b, call.getResults());
 }
 
+// Appends the target's post-elaboration pipeline, or the default one when the
+// target has none.
+static void buildPostElaborationPipeline(mlir::PassManager &pm,
+                                         TargetInfoAttr target,
+                                         const CompilationOptions &options) {
+  ErrorOr<const TargetBackend *> backendOr =
+      TargetBackendRegistry::get().lookup(target.getTriple());
+  if (!backendOr.isError() &&
+      (*backendOr)->buildPostElaborationPipeline(pm, options))
+    return;
+  buildPostElaborationPipeline(pm, options);
+}
+
 /// Find a FuncOp in the module by its kgen.offload.kernelid LLVM metadata.
 /// Returns nullptr if no function with the given kernel ID is found.
 static FuncOp findFuncByKernelId(ModuleOp module, uint64_t kernelId) {
@@ -346,7 +359,7 @@ static ErrorOr<StringAttr> compileStandaloneKernel(
   pm.addPass(createElaborateGenerators(target, elaboratorOptions,
                                        compilationOptions, compileElaboratorAsm,
                                        compileOffloads));
-  buildPostElaborationPipeline(pm, compilationOptions);
+  ::buildPostElaborationPipeline(pm, target, compilationOptions);
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
@@ -756,7 +769,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           createElaborateGenerators(target, elabOptions, compilationOptions,
                                     compileElaboratorAsm, compileOffloads));
 
-      buildPostElaborationPipeline(pm, compilationOptions);
+      ::buildPostElaborationPipeline(pm, target, compilationOptions);
 
       if (failed(pm.run(*module)))
         return Error("failed to run the pass manager for offload functions");
@@ -966,7 +979,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          const CompilationOptions &options) {
   buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm,
                                compileOffloads);
-  buildPostElaborationPipeline(pm, options);
+  ::buildPostElaborationPipeline(pm, target, options);
 }
 
 //===----------------------------------------------------------------------===//

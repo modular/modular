@@ -26,8 +26,9 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferValue
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep import ep_kernels as kernels
+from max.nn._graph_ops import ep as kernels
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPCommInitializer
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context
 from max.tensor.sharding import (

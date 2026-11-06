@@ -1270,7 +1270,6 @@ def matmul_dynamic_scaled_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -1318,7 +1317,6 @@ def matmul_dynamic_scaled_fp8[
         n_scale_granularity,
         k_scale_granularity,
         transpose_b,
-        target,
         pdl_level,
     ](
         c,
@@ -1343,7 +1341,6 @@ def _matmul_dynamic_scaled_fp8_impl[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -1489,7 +1486,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
             comptime if input_scale_granularity == "tensor":
                 matmul[
-                    target=target,
                     transpose_b=transpose_b,
                     _trace_description=_trace_string,
                 ](
@@ -1501,7 +1497,6 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
             else:
                 matmul[
-                    target=target,
                     transpose_b=transpose_b,
                     _trace_description=_trace_string,
                 ](
@@ -1579,7 +1574,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
                 comptime if input_scale_granularity == "tensor":
                     matmul[
-                        target=target,
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1591,7 +1585,6 @@ def _matmul_dynamic_scaled_fp8_impl[
                     )
                 else:
                     matmul[
-                        target=target,
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1613,7 +1606,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
                 comptime if input_scale_granularity == "tensor":
                     matmul[
-                        target=target,
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1625,7 +1617,6 @@ def _matmul_dynamic_scaled_fp8_impl[
                     )
                 else:
                     matmul[
-                        target=target,
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](

@@ -43,8 +43,12 @@ __all__ = [
     "LogitsName",
     "MRoPEPositions",
     "RaggedBatch",
+    "RecurrentStateTail",
     "SparseIndices",
+    "SpecDecode",
+    "SpecDecodeOutputs",
     "TPSignals",
+    "TokenBitmask",
     "VisionEmbeddings",
     "VisionHostMax",
     "VisionMerge",
@@ -59,12 +63,16 @@ __all__ = [
 _K = TypeVar("_K", bound=str)
 _V = TypeVar("_V")
 # A ModuleV3 graph's groups hold tensor layouts and tensors in place of
-# graph-API types and values.
+# graph-API types and values, and a step packs some groups with its buffers.
 _TensorT = TypeVar("_TensorT", default=TensorValue)
 _MergeT = TypeVar(
     "_MergeT",
     default=tuple[TensorType, ...] | tuple[tuple[TensorType, ...], ...],
 )
+_SignalsT = TypeVar("_SignalsT", default=tuple[BufferType, ...])
+_ContextT = TypeVar("_ContextT", default=tuple[TensorType, ...])
+_SpecT = TypeVar("_SpecT", default=TensorType | tuple[TensorType, ...])
+_BitmaskT = TypeVar("_BitmaskT", default=TensorType | BufferType)
 
 
 class GraphGroup(OrderedDict[_K, _V]):
@@ -115,7 +123,7 @@ class RaggedBatch(GraphGroup[str, TensorType | tuple[TensorType, ...]]):
     kind = "ragged_batch"
 
 
-class TPSignals(GraphGroup[str, tuple[BufferType, ...]]):
+class TPSignals(GraphGroup[str, _SignalsT]):
     """The allreduce signal buffers, one per device."""
 
     kind = "tp_signals"
@@ -231,7 +239,7 @@ class ItemPositions(GraphGroup[str, TensorValue]):
     kind = "item_positions"
 
 
-class BatchContext(GraphGroup[str, tuple[TensorType, ...]]):
+class BatchContext(GraphGroup[str, _ContextT]):
     """Per-device host scalars summarizing the batch's context lengths."""
 
     kind = "batch_context"
@@ -302,6 +310,52 @@ class SparseIndices(GraphGroup[str, tuple[TensorValue, ...]]):
     """The rows a sparse-attention indexer selected, for a drafter to reuse."""
 
     kind = "sparse_indices"
+
+
+class SpecDecode(GraphGroup[str, _SpecT]):
+    """A speculative-decoding step's drafts and per-row sampling inputs.
+
+    The drafts to verify, any distributions the draft sampled them from, and
+    the seed, temperature, top-k and top-p each row samples with, as a fused
+    speculative-decoding graph takes them.
+    """
+
+    kind = "spec_decode"
+
+
+class TokenBitmask(GraphGroup[str, _BitmaskT]):
+    """The structured-output token bitmask and the handshake it arrives by.
+
+    The host writes each row's allowed tokens to ``pinned_bitmask`` and sets
+    the flag ``wait_payload`` points at; the graph waits on the flag, then
+    copies the bitmask to ``device_bitmask_scratch``.
+    """
+
+    kind = "token_bitmask"
+
+
+class RecurrentStateTail(
+    GraphGroup[str, tuple[tuple[TensorType | BufferType, ...], ...]]
+):
+    """A recurrent-state cache's inputs in a fused speculative graph's tail.
+
+    ``pool`` holds each region's pool and ``live_row_ids`` each region's
+    ``[num_layers, batch_size]`` rows, every region with one entry per
+    device. A serving engine binds them as it binds a decoder's
+    ``recurrent_state`` leaves.
+    """
+
+    kind = "recurrent_state_tail"
+
+
+class SpecDecodeOutputs(GraphGroup[str, _TensorT | tuple[_TensorT, ...]]):
+    """A speculative-decoding step's verdicts and the next step's drafts.
+
+    How many drafts each row accepted, the token that follows them, the next
+    step's drafts, and any distributions the draft sampled those from.
+    """
+
+    kind = "spec_decode_outputs"
 
 
 class DecoderGraphInputs(GraphGroup[str, Any]):

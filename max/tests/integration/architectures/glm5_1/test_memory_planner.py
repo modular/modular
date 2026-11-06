@@ -18,14 +18,14 @@ from unittest.mock import MagicMock, NonCallableMock
 import pytest
 from max.driver import DeviceSpec
 from max.dtype import DType
-from max.nn.legacy.comm.ep.ep_config import EPConfig
+from max.nn._graph_ops import (
+    NVFP4_MLA_PREFILL_CONVERT_MAX_ROWS,
+    NVFP4_MLA_PREFILL_CONVERT_RATIO,
+)
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.comm.ep.ep_manager import (
     _bound_fused_moe_workspace,
     _ep_sync_counter_bytes,
-)
-from max.nn.legacy.kernels import (
-    NVFP4_MLA_PREFILL_CONVERT_MAX_ROWS,
-    NVFP4_MLA_PREFILL_CONVERT_RATIO,
 )
 from max.pipelines.architectures.deepseekV3.memory_planner import (
     DeepseekV3MemoryPlanner,

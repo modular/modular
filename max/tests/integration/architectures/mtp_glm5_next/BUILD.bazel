@@ -18,7 +18,8 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/kv_cache",
@@ -33,7 +34,7 @@ modular_py_test(
     deps = [
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/glm5_next",
-        "//max/python/max/pipelines/architectures/mtp_glm5_next",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
@@ -78,7 +79,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/speculative",
@@ -110,6 +111,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/glm5_next",
@@ -136,7 +139,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/speculative",
         requirement("numpy"),
@@ -159,7 +162,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/speculative",
@@ -203,11 +206,17 @@ modular_py_test(
     # where that run first needs a GPU, so the plain run compiles here.
     precompile_device_count = 2,
     precompile_mefs = True,
-    tags = ["gpu"],
+    # Tagged manual since this test is 9+ minutes on 2xB200 in CI.
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/glm5_next",

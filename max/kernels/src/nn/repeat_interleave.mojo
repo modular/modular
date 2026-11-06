@@ -43,13 +43,13 @@ from std.utils import StaticTuple
 
 
 def _collapse_dims_around_axis(
-    shape: IndexList, axis: Int, out result: IndexList[3]
-) raises:
+    shape: IndexList, axis: Int
+) raises -> Tuple[Int, Int, Int]:
     if axis >= shape.size:
         raise Error("axis larger than provided shape")
 
     comptime if shape.size == 0:
-        return IndexList[3](1, 1, 1)
+        return (1, 1, 1)
 
     var split = shape[axis]
 
@@ -61,7 +61,7 @@ def _collapse_dims_around_axis(
     for i in range(axis + 1, shape.size):
         after *= shape[i]
 
-    return IndexList[3](before, split, after)
+    return (before, split, after)
 
 
 @inline(.always)
@@ -441,7 +441,6 @@ def repeat_interleave[
     dtype: DType,
     type_repeats: DType,
     //,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[dtype, ...],
     repeats: TileTensor[type_repeats, ...],
@@ -454,9 +453,8 @@ def repeat_interleave[
     Both scalar and per-element repeats run on CPU and GPU (see
     `_repeat_interleave_gpu` for the GPU decomposition).
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         _repeat_interleave_cpu(input, repeats, axis, output, ctx)
     else:
         _repeat_interleave_gpu[dtype, type_repeats](

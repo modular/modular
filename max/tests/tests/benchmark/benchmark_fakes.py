@@ -14,6 +14,10 @@
 
 from __future__ import annotations
 
+from max.benchmark.benchmark_shared.datasets.types import (
+    ChatSession,
+    SessionMessage,
+)
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
     RequestDriver,
@@ -83,3 +87,15 @@ class CapturingDriver(RequestDriver):
             prompt_len=request_func_input.prompt_len,
             generated_text="ok",
         )
+
+
+def make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
+    messages: list[SessionMessage] = []
+    for i in range(num_user_turns):
+        messages.append(
+            SessionMessage(source="user", content=f"turn {i}", num_tokens=10)
+        )
+        messages.append(
+            SessionMessage(source="assistant", content="", num_tokens=5)
+        )
+    return ChatSession(id=session_id, messages=messages)

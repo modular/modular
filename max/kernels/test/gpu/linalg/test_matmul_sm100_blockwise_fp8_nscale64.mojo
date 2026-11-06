@@ -142,7 +142,6 @@ def _run_one[
             n_scale_granularity=N_G,
             k_scale_granularity=K_G,
             transpose_b=True,
-            target="gpu",
         ](c_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
     else:
         comptime config = MatmulConfig[a_type, b_type, c_type, True](

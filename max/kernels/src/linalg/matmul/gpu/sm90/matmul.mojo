@@ -304,7 +304,7 @@ def warp_specialize_gemm_with_multicasting[
     raster_order: RasterOrder = RasterOrder.AlongM,
     swapAB: Bool = False,
 ](
-    c_shape: IndexList[2],
+    c_shape: Tuple[Int, Int],
     a_device: TileTensor[a_type, ...],
     b_device: TileTensor[b_type, ...],
     epilogue_fn: EpilogueFnType,

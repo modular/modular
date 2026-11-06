@@ -1,6 +1,6 @@
 // RUN: rm -rf %t && mkdir -p %t
 // RUN: env MODULAR_DEBUG=ir-output-dir=%t mo-opt %s \
-// RUN:   --mogg-import-packages \
+// RUN:   --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
 // RUN:   --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers \
 // RUN:   --map-outline-structured-kernel-bodies \
 // RUN:   --canonicalize --cse --map-to-mogg \
@@ -37,7 +37,7 @@ mo.graph @matmul_residual_add(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.te
   mo.output %1 : !mo.tensor<[256, 256], f32, gpu:0>
 }
 
-// The sm_100a tile `mo.reduce.rms_norm` takes a `_FusedOutputTileTensor`, so
+// The `tile_rms_norm` test kernel takes a `_FusedOutputTileTensor`, so
 // the fused mul becomes an `OutputFusionTile` whose `store` writes the product
 // into its output capture with the kernel's store copier.
 // STORE: struct FusionStruct_{{[0-9]+}}[{{.*}}](managed_tensor_slice.OutputFusionTile):
@@ -47,10 +47,10 @@ mo.graph @matmul_residual_add(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.te
 // STORE:     var [[OUT:.*]] = self.tile_0.tile[{{.*}}](layout.Coord(Int(tile_coords[0]), Int(tile_coords[1])))
 // STORE:     store_copier.copy([[OUT]].unsafe_address_space_cast[StoreCopier.dst_address_space](), [[PROD]].unsafe_address_space_cast[StoreCopier.src_address_space]())
 // STORE-CALL: var [[W:.*]] = {{.*}}._bind_to_fused_output_tile(var__{{[0-9]+}})
-// STORE-CALL: RMSNormTileSM100.execute[{{.*}}]([[W]], {{.*}})
+// STORE-CALL: TileRMSNormStub.execute([[W]], {{.*}})
 
 mo.graph @rms_norm_mul(%x: !mo.tensor<[256, 256], f32, gpu:0>, %gamma: !mo.tensor<[256], f32, gpu:0>, %scale: !mo.tensor<[256, 256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0> {
-  %0 = mo.reduce.rms_norm(%x, %gamma) {epsilon = #M.dense_array<1.0e-05> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[256, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0>
+  %0 = mo.custom [symbol = "tile_rms_norm", device = #M.device_ref<"gpu", 0>](%x, %gamma) : (!mo.tensor<[256, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0>
   %1 = mo.mul(%0, %scale) : !mo.tensor<[256, 256], f32, gpu:0>
   mo.output %1 : !mo.tensor<[256, 256], f32, gpu:0>
 }
@@ -65,7 +65,7 @@ mo.graph @rms_norm_mul(%x: !mo.tensor<[256, 256], f32, gpu:0>, %gamma: !mo.tenso
 // EW:     var [[SUM:.*]] = builtin_kernels.elementwise.Add.elementwise(
 // EW:     var [[PROD:.*]] = builtin_kernels.elementwise.Mul.elementwise([[SUM]],
 // EW:     return rebind[layout.TileTensor[dtype, LayoutType, MutAnyOrigin]]([[PROD]])
-// EW-CALL: builtin_primitives.primitives.foreach_fusion_tile[target = "gpu"](tensor = {{.*}}, elem = var__{{[0-9]+}}, ctx = {{.*}})
+// EW-CALL: builtin_primitives.primitives.foreach_fusion_tile(tensor = {{.*}}, elem = var__{{[0-9]+}}, ctx = {{.*}})
 
 mo.graph @add_mul(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.tensor<[256, 256], f32, gpu:0>, %c: !mo.tensor<[256, 256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0> {
   %0 = mo.add(%a, %b) : !mo.tensor<[256, 256], f32, gpu:0>

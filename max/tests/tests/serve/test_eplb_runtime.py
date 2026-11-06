@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.ep_config import EPConfig
 from max.nn.legacy.layer import LayerList
 from max.pipelines.lib.eplb_runtime import EPLB_STATS_ENV, EplbRuntime
 from max.pipelines.lib.eplb_stats import EplbStatsMetadata, EplbStatsSnapshot

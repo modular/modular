@@ -25,6 +25,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/MapVector.h"
@@ -80,7 +81,7 @@ class FixIt;
 /// - Apply mode (default): Directly modifies source files with fix-its
 /// - Export mode: Exports fix-its to a YAML file in clang-tidy format
 ///   The exported YAML is compatible with 'clang-apply-replacements'.
-class AutoFixItHandler {
+class MODULAR_CXX_EXPORT AutoFixItHandler {
 public:
   /// Create a handler that applies fix-its directly to files.
   AutoFixItHandler() = default;
@@ -124,7 +125,7 @@ private:
 // Diags
 //===----------------------------------------------------------------------===//
 
-class Diags {
+class MODULAR_CXX_EXPORT Diags {
 public:
   Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics,
         int maxNotesPerDiagnostic, StringRef stripFilenamePrefix,
@@ -239,7 +240,7 @@ private:
 ///
 /// Each diagnostic is made up of a primary message and is optionally followed
 /// by any number of note messages.
-class InflightDiag {
+class MODULAR_CXX_EXPORT InflightDiag {
 public:
   InflightDiag(Location loc, Diags &diags, bool isWarning);
   ~InflightDiag();
@@ -286,6 +287,8 @@ public:
   /// These methods can be used by addToDiagnostic impls to add things to the
   /// diagnostic.
   void addText(const Twine &text);
+  /// Add text that `getText` formats only if the diagnostic is emitted.
+  void addLazyText(std::function<std::string()> getText);
   void addCustomLineText(const Twine &text);
   void addSourceRange(SourceRange range);
   void addFixIt(FixIt fixIt);
@@ -295,6 +298,7 @@ public:
   Diags *getDiags() const { return diags; }
 
 private:
+  void lazyFormatText();
   void emitMLIRDiagnostic();
   void emitSourceMgrDiagnostic();
   void emitAutoFixItDiagnostic();
@@ -338,7 +342,7 @@ private:
 /// e.g. complaining about a format character in a string literal.  In those
 /// cases, you may use a 'byte-level' string, which uses a half-open range and
 /// is not extended to include the end of the token.
-class SourceRange {
+class MODULAR_CXX_EXPORT SourceRange {
 public:
   /// Build a null range.
   SourceRange() = default;
@@ -368,7 +372,7 @@ private:
 /// in the parser must always follow the logic that would have happened if the
 /// FixIt was applied so the user doesn't get a different downstream error after
 /// applying the FixIt hint.
-class FixIt {
+class MODULAR_CXX_EXPORT FixIt {
 public:
   FixIt(SourceRange range, const Twine &replacement);
 
@@ -397,24 +401,25 @@ public:
 };
 
 // These methods enable adding common types to the current diagnostic.
-void addToDiagnostic(const Twine &text, InflightDiag &diag);
-void addToDiagnostic(char text, InflightDiag &diag);
-void addToDiagnostic(size_t number, InflightDiag &diag);
-void addToDiagnostic(StringAttr attr, InflightDiag &diag);
+MODULAR_CXX_EXPORT void addToDiagnostic(const Twine &text, InflightDiag &diag);
+MODULAR_CXX_EXPORT void addToDiagnostic(char text, InflightDiag &diag);
+MODULAR_CXX_EXPORT void addToDiagnostic(size_t number, InflightDiag &diag);
+MODULAR_CXX_EXPORT void addToDiagnostic(StringAttr attr, InflightDiag &diag);
 
 /// This adds a source range highlight.
-void addToDiagnostic(SourceRange range, InflightDiag &diag);
+MODULAR_CXX_EXPORT void addToDiagnostic(SourceRange range, InflightDiag &diag);
 /// This adds a fixit hint.
-void addToDiagnostic(FixIt fixIt, InflightDiag &diag);
+MODULAR_CXX_EXPORT void addToDiagnostic(FixIt fixIt, InflightDiag &diag);
 /// This concatenates another diagnostic.
-void addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag);
+MODULAR_CXX_EXPORT void addToDiagnostic(InflightDiag &&otherDiag,
+                                        InflightDiag &diag);
 
 /// Compiler passes can emit warnings using MLIR diagnostics, and those
 /// warnings are not seen by the Diags class above. Instantiating this
 /// scoped handler in the driver (mojo-run, mojo-build, mojo-package) ensures
 /// that warning handling works consistently across all warning emission
 /// mechanisms.
-class ScopedMLIRWarningHandler {
+class MODULAR_CXX_EXPORT ScopedMLIRWarningHandler {
 public:
   ScopedMLIRWarningHandler(MLIRContext *ctx, bool disableWarnings,
                            bool warningsAsErrors);

@@ -72,15 +72,12 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.graph_groups import BatchContext
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.layer import Module as GraphApiModule
-from max.nn.legacy.transformer import (
-    ReturnHiddenStates,
-    ReturnLogits,
-    logits_outputs,
-)
+from max.nn.legacy.transformer import logits_outputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.modeling.types import PipelineTask

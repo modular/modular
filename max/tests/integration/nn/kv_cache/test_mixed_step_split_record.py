@@ -21,8 +21,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
-from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.paged_kv_cache._mixed_step_split import (
     MIXED_STEP_SPLIT_SWITCH,

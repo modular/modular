@@ -35,13 +35,13 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     BatchCharacteristics,
     MHAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm import Signals
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2.model_config import (
     FULL,
@@ -51,12 +51,13 @@ from max.pipelines.architectures.mimo_v2.model_config import (
     layer_types,
 )
 from max.pipelines.architectures.mimo_v2.weight_adapters import (
-    convert_safetensor_state_dict,
+    mimo_v2_weight_rules,
 )
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
     JengaKVCacheManager,
 )
+from max.pipelines.lib import WeightTransform
 from max.pipelines.modeling.types import RequestID
 from transformers.configuration_utils import PretrainedConfig
 
@@ -166,7 +167,9 @@ class Runner:
 
         t0 = time.time()
         weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-        state = convert_safetensor_state_dict(dict(weights.items()))
+        state = WeightTransform(mimo_v2_weight_rules(self.hf))(
+            dict(weights.items())
+        )
         print(f"adapted {len(state)} tensors in {time.time() - t0:.0f} s")
         if sabotage == "bias_bf16":
             for name in state:

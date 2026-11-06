@@ -24,6 +24,7 @@
 #include "Support/ADT/ConcurrentAppendingVector.h"
 #include "Support/Globals/Globals.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Compiler.h"
 
@@ -223,7 +224,7 @@ private:
 /// name collision.
 /// TODO: If this becomes an issue, we'll need to introduce a customization
 /// point for types to specify their 'pretty' name that is unique.
-class TypeID {
+class MODULAR_CXX_EXPORT TypeID {
 public:
   /// Constructs the 'invalid' type id.
   TypeID() = default;

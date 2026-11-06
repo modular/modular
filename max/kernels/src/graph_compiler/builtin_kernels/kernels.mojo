@@ -21,7 +21,7 @@ from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.os import getenv
 from std.random import seed
-from std.sys.info import _accelerator_arch, size_of
+from std.sys.info import CompilationTarget, _accelerator_arch, size_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -39,7 +39,7 @@ from max.gpu.host import (
     DeviceContextArray,
 )
 from layout.tile_tensor import row_major
-from max.gpu.host.info import is_cpu, is_gpu, is_valid_target
+from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
@@ -280,7 +280,6 @@ struct Range:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
@@ -308,7 +307,7 @@ struct Range:
             )
 
         elementwise[
-            get_kernel_simd_width[dtype, target](),
+            get_kernel_simd_width[dtype, ctx.target](),
             _trace_description=_trace_name,
         ](body, output.shape().flatten(), ctx)
 
@@ -376,7 +375,7 @@ struct Copy:
             )
 
         elementwise[
-            get_kernel_simd_width[dtype, "cpu"](),
+            get_kernel_simd_width[dtype, CompilationTarget.current()](),
             _trace_description="mogg.for_each",
         ](body, output.shape().flatten(), ctx)
 
@@ -390,7 +389,6 @@ struct NanCheckCountOp:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString = "",
     ](
         nan_count_out: Some[Output & Tensor],
@@ -405,7 +403,7 @@ struct NanCheckCountOp:
         comptime assert type_of(inf_count_out).rank == 1
         from .nan_check import nan_check_count
 
-        nan_check_count[target](
+        nan_check_count(
             nan_count_out.to_tile_tensor[.int32](),
             inf_count_out.to_tile_tensor[.int32](),
             input.to_tile_tensor(),
@@ -442,57 +440,6 @@ struct NanCheckRaiseOp:
         )
 
 
-# ===-----------------------------------------------------------------------===#
-# View op stride types
-# ===-----------------------------------------------------------------------===#
-
-
-# Type-level transpose stride computation. Permute input stride CoordLike
-# types according to a permutation Coord.
-comptime _TransposeStrideTypesTabulator[
-    permutations: Coord,
-    input_stride_types: TypeList[Trait=CoordLike, ...],
-    idx: Int,
-]: CoordLike = Scalar[DType.int] if not permutations.element_types[
-    idx
-].is_static_value else input_stride_types[
-    permutations.element_types[idx].static_value
-]
-
-
-comptime _TransposeStrideTypes[
-    permutations: Coord,
-    rank: Int,
-    input_stride_types: TypeList[Trait=CoordLike, ...],
-] = TypeList.tabulate[
-    rank, _TransposeStrideTypesTabulator[permutations, input_stride_types, _]
-]()
-
-
-# Type-level slice stride computation: multiplies input stride types by step
-# types element-wise.
-comptime _SliceStrideTypesTabulator[
-    input_stride_types: TypeList[Trait=CoordLike, ...],
-    step_types: TypeList[Trait=CoordLike, ...],
-    idx: Int,
-]: CoordLike = ComptimeInt[
-    input_stride_types[idx].static_value * step_types[idx].static_value
-] if input_stride_types[
-    idx
-].is_static_value and step_types[
-    idx
-].is_static_value else Scalar[
-    DType.int
-]
-
-comptime _SliceStrideTypes[
-    rank: Int,
-    input_stride_types: TypeList[Trait=CoordLike, ...],
-    step_types: TypeList[Trait=CoordLike, ...],
-] = TypeList.tabulate[
-    rank, _SliceStrideTypesTabulator[input_stride_types, step_types, _]
-]()
-
 # No shape function as we just directly embed the logic to check the shape
 # of the 'slice' operand of the MO op directly in the kernel.
 
@@ -507,9 +454,7 @@ struct MaxPool:
     """Registers the `mo.max_pool` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         filter: Some[Input & Tensor],
@@ -528,7 +473,7 @@ struct MaxPool:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        max_pool[target=target](
+        max_pool(
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -592,9 +537,7 @@ struct MaxPoolCeilModeTrue:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         filter: Some[Input & Tensor],
@@ -613,7 +556,7 @@ struct MaxPoolCeilModeTrue:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        max_pool[target=target](
+        max_pool(
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -682,9 +625,7 @@ struct NonMaximumSuppression:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         boxes: Some[Input & Tensor],
         scores: Some[Input & Tensor],
@@ -704,7 +645,7 @@ struct NonMaximumSuppression:
         var iou_threshold_float = iou_threshold
         var score_threshold_float = score_threshold
 
-        non_max_suppression[target=target](
+        non_max_suppression(
             boxes.to_tile_tensor[dtype, mut=False](),
             scores.to_tile_tensor[dtype, mut=False](),
             output.to_tile_tensor[.int64](),
@@ -774,7 +715,6 @@ struct ROIAlign:
     def execute[
         aligned: Bool,
         mode: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -792,7 +732,7 @@ struct ROIAlign:
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
         comptime assert type_of(rois).rank == 2
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             roi_align_nhwc[aligned, mode](
                 output.to_tile_tensor(),
                 input.to_tile_tensor[dtype](),
@@ -802,7 +742,7 @@ struct ROIAlign:
                 spatial_scale,
                 sampling_ratio,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             roi_align_gpu[
                 dtype,
                 aligned,
@@ -818,7 +758,7 @@ struct ROIAlign:
                 ctx,
             )
         else:
-            comptime assert False, "Unknown target " + target
+            comptime assert False, "Unknown target"
 
 
 @extensibility.register_shape_function("mo.roi_align")
@@ -874,9 +814,7 @@ struct RepeatInterleave:
     """Registers the `repeat_interleave` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         repeats: Some[Input & Tensor],
@@ -893,7 +831,7 @@ struct RepeatInterleave:
             axis.dtype.is_integral()
         ), "axis value must be integer type"
 
-        repeat_interleave[target=target](
+        repeat_interleave(
             input.to_tile_tensor[dtype](),
             repeats.to_tile_tensor(),
             Int(normalize_neg_index(axis, type_of(input).rank)),
@@ -941,9 +879,7 @@ struct RandomNormal:
     """Registers the `mo.random.normal` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Fused & StoreAccess],
         shape: Some[Input & Tensor],
         mean: Float32,
@@ -972,7 +908,7 @@ struct RandomNormal:
 
         # The seed is read through its flat pointer; a non-pointer storage
         # policy aborts here at run time.
-        random_normal[target=target](
+        random_normal(
             output.shape().flatten(),
             mean,
             variance,
@@ -1032,7 +968,6 @@ struct RandomUniform:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
         shape: Some[Input & Tensor],
@@ -1062,7 +997,7 @@ struct RandomUniform:
 
         # The seed is read through its flat pointer; a non-pointer storage
         # policy aborts here at run time.
-        random_uniform[target=target](
+        random_uniform(
             output.shape().flatten(),
             lower_bound,
             upper_bound,
@@ -1259,7 +1194,6 @@ struct Fold:
         dilation_w: Int,
         padding_h: Int,
         padding_w: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -1298,7 +1232,6 @@ struct Fold:
             stride=(stride_h, stride_w),
             dilation=(dilation_h, dilation_w),
             padding=(padding_h, padding_w),
-            target=target,
         ](
             input_tensor,
             output_tensor,
@@ -1375,7 +1308,6 @@ struct IRFFT:
 
     @staticmethod
     def execute[
-        target: StaticString,
         n: Int,
         buffer_size_mb: Int,
     ](
@@ -1385,7 +1317,7 @@ struct IRFFT:
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
         comptime dtype = type_of(output).dtype
         comptime assert type_of(input).rank == type_of(output).rank
 
@@ -1460,9 +1392,7 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         qkv: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1477,9 +1407,9 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         value_scale: Float32,
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_gpu[
-            target
-        ](), "chunked QKV preparation requires a GPU"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "chunked QKV preparation requires a GPU"
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(qkv), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1542,9 +1472,7 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         qkv: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1589,7 +1517,6 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         )
         return rope_split_store_paged_ragged[
             q_out_dtype=out_dtype,
-            target=target,
             interleaved=Self.interleaved,
         ](
             qkv.to_tile_tensor(),
@@ -1619,7 +1546,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
     @staticmethod
     def execute[
         mrope_section: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         qkv: Some[Input & Tensor],
@@ -1668,7 +1594,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
 
         comptime if mrope_section == "":
             return rope_split_store_paged_ragged_with_position_ids[
-                target=target,
                 interleaved=Self.interleaved,
             ](
                 qkv.to_tile_tensor(),
@@ -1683,7 +1608,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
         else:
             comptime mrope = _unsafe_str_to_coord[mrope_section]()
             return rope_split_store_paged_ragged_with_position_ids[
-                target=target,
                 interleaved=Self.interleaved,
                 mrope_types=mrope.element_types,
                 mrope_section=mrope,
@@ -1728,9 +1652,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Fused & StoreAccess],
         x: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1770,7 +1692,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
                         trace_arg("freqs_cis", freqs_cis.shape()),
                         String(t"interleaved={Self.interleaved}"),
                         String(t"rope_first={Self.rope_first}"),
-                        String(t"target={target}"),
+                        String(t"target={ctx.target.device_kind_label()}"),
                     ]
                 )
             )
@@ -1796,7 +1718,6 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
 
         rope_ragged[
             interleaved=Self.interleaved,
-            target=target,
             rope_first=Self.rope_first,
         ](
             x_tensor,
@@ -1821,9 +1742,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Fused & StoreAccess],
         x: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1866,7 +1785,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
                         trace_arg("freqs_cis", freqs_cis.shape()),
                         trace_arg("position_ids", position_ids.shape()),
                         String(t"interleaved={Self.interleaved}"),
-                        String(t"target={target}"),
+                        String(t"target={ctx.target.device_kind_label()}"),
                     ]
                 )
             )
@@ -1890,10 +1809,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         comptime assert freqs_cis_tensor.flat_rank == 2
         comptime assert position_ids_tensor.flat_rank == 2
 
-        rope_ragged[
-            interleaved=Self.interleaved,
-            target=target,
-        ](
+        rope_ragged[interleaved=Self.interleaved,](
             x_tensor,
             row_offsets_tensor,
             start_tensor,
@@ -1936,7 +1852,6 @@ def _execute_mha_ragged_paged_scalar_args[
     output_dtype: DType,
     MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
     //,
-    target: StaticString,
     mask_str: StaticString,
     sink: Bool = False,
     local_window_size: Int = -1,
@@ -1997,7 +1912,6 @@ def _execute_mha_ragged_paged_scalar_args[
             len(MaskIns) == 0
         ), "sink attention takes no mask operands"
         generic_flash_attention_kv_cache_ragged_sink[
-            target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
             output_dtype=output_dtype,
@@ -2014,7 +1928,6 @@ def _execute_mha_ragged_paged_scalar_args[
         )
     else:
         generic_flash_attention_kv_cache_ragged[
-            target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
             output_dtype=output_dtype,
@@ -2074,9 +1987,7 @@ struct Struct_moe_create_indices:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         token_expert_order: Some[Output & Tensor],
         expert_start_indices: Some[Output & Tensor],
         restore_token_order: Some[Output & Tensor],
@@ -2101,7 +2012,7 @@ struct Struct_moe_create_indices:
         comptime assert type_of(expert_ids).rank == 1
         comptime assert type_of(expert_usage_stats).rank == 1
         comptime assert type_of(topk_ids).rank == 1
-        moe_create_indices[target=target](
+        moe_create_indices(
             token_expert_order.to_tile_tensor[.uint32](),
             expert_start_indices.to_tile_tensor[.uint32](),
             restore_token_order.to_tile_tensor[.uint32](),
@@ -2118,9 +2029,7 @@ struct Struct_moe_finalize:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         down: Some[Input & Tensor],
         restore_token_order: Some[Input & Tensor],
@@ -2137,7 +2046,7 @@ struct Struct_moe_finalize:
         comptime assert type_of(down).rank == 2
         comptime assert type_of(restore_token_order).rank == 1
         comptime assert type_of(router_weight).rank == 2
-        moe_finalize[target=target](
+        moe_finalize(
             output.to_tile_tensor(),
             down.to_tile_tensor[mut=False](),
             restore_token_order.to_tile_tensor[.uint32, mut=False](),
@@ -2159,7 +2068,6 @@ struct Struct_moe_router_group_limited:
         n_groups: Int,
         topk_group: Int,
         norm_weights: Bool,
-        target: StaticString,
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
@@ -2200,7 +2108,6 @@ struct Struct_moe_router_group_limited:
             n_groups,
             topk_group,
             norm_weights,
-            target=target,
         ](
             expert_indices.to_tile_tensor[.int32](),
             expert_weights.to_tile_tensor[scores_type](),
@@ -2219,9 +2126,7 @@ struct Struct_moe_create_indices_with_scales_offset:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         token_expert_order: Some[Output & Tensor],
         expert_start_indices: Some[Output & Tensor],
         restore_token_order: Some[Output & Tensor],
@@ -2251,7 +2156,7 @@ struct Struct_moe_create_indices_with_scales_offset:
         comptime assert type_of(topk_ids).rank == 1
         # `scales_offset` is handed to the helper as a flat pointer; a
         # non-pointer storage policy aborts here at run time.
-        moe_create_indices[target=target](
+        moe_create_indices(
             token_expert_order.to_tile_tensor[.uint32](),
             expert_start_indices.to_tile_tensor[.uint32](),
             restore_token_order.to_tile_tensor[.uint32](),
@@ -2276,7 +2181,6 @@ struct Struct_moe_create_indices_with_slots:
         slot_stride: Int,
         expert_offset: Int,
         local_experts: Int,
-        target: StaticString,
     ](
         token_expert_order: Some[Output & Tensor],
         expert_start_indices: Some[Output & Tensor],
@@ -2321,7 +2225,7 @@ struct Struct_moe_create_indices_with_slots:
         # The slot maps are handed to the helper as flat pointers; a
         # non-pointer storage policy aborts here at run time. The helper takes
         # `slot_weights` as a mutable pointer but only reads it.
-        moe_create_indices_with_slots[slot_stride, target=target](
+        moe_create_indices_with_slots[slot_stride](
             token_expert_order.to_tile_tensor[.uint32](),
             expert_start_indices.to_tile_tensor[.uint32](),
             restore_token_order.to_tile_tensor[.int32](),
@@ -2353,7 +2257,6 @@ struct Struct_moe_create_indices_packed:
         top_k: Int,
         expert_offset: Int,
         local_experts: Int,
-        target: StaticString,
     ](
         token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
         expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
@@ -2365,9 +2268,9 @@ struct Struct_moe_create_indices_packed:
         routing: InputTensor[dtype=DType.float32, rank=2, ...],
         context: DeviceContext,
     ) raises:
-        comptime assert is_gpu[
-            target
-        ](), "moe.create.indices.packed is GPU only"
+        comptime assert (
+            context.target.is_gpu()
+        ), "moe.create.indices.packed is GPU only"
         moe_indices_packed[top_k, local_experts](
             PackedIndicesArgs(
                 routing.unsafe_ptr()
@@ -2413,7 +2316,6 @@ struct Struct_moe_single_group_router_eplb:
         num_log: Int,
         max_replicas: Int,
         hash_decorrelate: Bool,
-        target: StaticString,
     ](
         expert_indices: Some[Output & Tensor],
         expert_indices_log: Some[Output & Tensor],
@@ -2467,7 +2369,6 @@ struct Struct_moe_single_group_router_eplb:
             num_log=num_log,
             max_replicas=max_replicas,
             hash_decorrelate=hash_decorrelate,
-            target=target,
         ](
             expert_indices.to_tile_tensor[.int32](),
             expert_indices_log.to_tile_tensor[.int32](),
@@ -2494,7 +2395,6 @@ struct Struct_moe_single_group_router:
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
-        target: StaticString,
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
@@ -2533,7 +2433,6 @@ struct Struct_moe_single_group_router:
             n_routed_experts,
             n_experts_per_tok,
             norm_weights=norm_weights,
-            target=target,
         ](
             expert_indices.to_tile_tensor[.int32](),
             expert_weights.to_tile_tensor[scores_type](),
@@ -2563,7 +2462,6 @@ struct Struct_moe_single_group_router_packed:
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
-        target: StaticString,
     ](
         expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
         expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
@@ -2586,7 +2484,6 @@ struct Struct_moe_single_group_router_packed:
             n_routed_experts,
             n_experts_per_tok,
             norm_weights=norm_weights,
-            target=target,
             packed=True,
         ](
             expert_indices.to_tile_tensor[.int64](),
@@ -2615,7 +2512,6 @@ struct Struct_moe_single_group_router_image_bias:
         n_experts_per_tok: Int,
         norm_weights: Bool,
         image_token_id: Int,
-        target: StaticString,
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
@@ -2661,7 +2557,6 @@ struct Struct_moe_single_group_router_image_bias:
             n_routed_experts,
             n_experts_per_tok,
             norm_weights=norm_weights,
-            target=target,
         ](
             expert_indices.to_tile_tensor[.int32](),
             expert_weights.to_tile_tensor[scores_type](),
@@ -2689,7 +2584,6 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
-        target: StaticString,
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
@@ -2714,7 +2608,6 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
             n_routed_experts,
             n_experts_per_tok,
             norm_weights=norm_weights,
-            target=target,
         ](
             expert_indices.to_tile_tensor[.int32](),
             expert_weights.to_tile_tensor(),
@@ -2736,7 +2629,6 @@ struct Struct_moe_sink_gate_router:
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         n_shared_experts: Int,
-        target: StaticString,
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
@@ -2764,7 +2656,6 @@ struct Struct_moe_sink_gate_router:
             n_routed_experts,
             n_experts_per_tok,
             n_shared_experts,
-            target=target,
         ](
             expert_indices.to_tile_tensor[.int32](),
             expert_weights.to_tile_tensor(),
@@ -2788,7 +2679,6 @@ struct Struct_moe_eplb_remap:
         max_replicas: Int,
         K: Int,
         hash_decorrelate: Bool,
-        target: StaticString,
     ](
         phy_idx: Some[Output & Tensor],
         router_idx: Some[Input & Tensor],
@@ -2812,7 +2702,6 @@ struct Struct_moe_eplb_remap:
             max_replicas=max_replicas,
             K=K,
             hash_decorrelate=hash_decorrelate,
-            target=target,
         ](
             phy_idx.to_tile_tensor[.int32](),
             router_idx.to_tile_tensor[.int32, mut=False](),
@@ -2838,7 +2727,6 @@ struct Struct_hyper_connection_gates:
     def execute[
         hc_mult: Int,
         hc_sinkhorn_iters: Int,
-        target: StaticString,
     ](
         pre: Some[Output & Tensor],
         post: Some[Output & Tensor],
@@ -2866,7 +2754,6 @@ struct Struct_hyper_connection_gates:
         hyper_connection_gates[
             hc_mult=hc_mult,
             hc_sinkhorn_iters=hc_sinkhorn_iters,
-            target=target,
         ](
             pre.to_tile_tensor[.float32](),
             post.to_tile_tensor[.float32](),
@@ -2891,7 +2778,6 @@ struct Struct_mhc_pre:
         hidden_size: Int,
         hc_sinkhorn_iters: Int,
         has_norm: Bool,
-        target: StaticString,
     ](
         post: Some[Output & Tensor],
         comb: Some[Output & Tensor],
@@ -2936,7 +2822,6 @@ struct Struct_mhc_pre:
             hidden_size=hidden_size,
             hc_sinkhorn_iters=hc_sinkhorn_iters,
             has_norm=has_norm,
-            target=target,
         ](
             post.to_tile_tensor[.float32](),
             comb.to_tile_tensor[.float32](),
@@ -2964,7 +2849,6 @@ struct Struct_mhc_post:
     def execute[
         hc_mult: Int,
         hidden_size: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         streams: Some[Input & Tensor],
@@ -2987,7 +2871,6 @@ struct Struct_mhc_post:
         mhc_post[
             hc_mult=hc_mult,
             hidden_size=hidden_size,
-            target=target,
             block_size=mhc_post_block_size[dtype, hidden_size](),
         ](
             output.to_tile_tensor(),
@@ -3148,7 +3031,6 @@ struct Struct_fused_token_sampling:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         out_idxs: Some[Output & Tensor],
@@ -3177,9 +3059,8 @@ struct Struct_fused_token_sampling:
         comptime assert type_of(min_p).dtype == DType.float32
         comptime assert type_of(seed).rank == 1
         comptime assert type_of(input).rank == rank
-        comptime assert is_valid_target[target](), "not a valid target"
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             # When top_k == 1, argmax is equivalent to our topk_fused_sampling with k == 1
             # However, switching to just using our topk_fused_sampling leads to a -37% perf
             # drop in q4_k benchmarking for llama 3.
@@ -3244,7 +3125,6 @@ struct Struct_fused_token_sampling_with_dist:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         out_tokens: Some[Output & Tensor],
@@ -3272,9 +3152,9 @@ struct Struct_fused_token_sampling_with_dist:
         comptime assert type_of(top_p).rank == 1
         comptime assert type_of(seed).rank == 1
         comptime assert type_of(input).rank == 2
-        comptime assert is_gpu[
-            target
-        ](), "sampler.fused_token_sampling_with_dist is GPU-only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "sampler.fused_token_sampling_with_dist is GPU-only"
         topk_topp_sampling_from_prob[
             from_logits=True, emit_dist=True, dist_dtype=dist_dtype
         ](
@@ -3311,7 +3191,6 @@ struct Struct_topk_topp_masked_probs:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         probs: Some[Output & Tensor],
@@ -3331,9 +3210,9 @@ struct Struct_topk_topp_masked_probs:
         comptime assert type_of(temperature).rank == 1
         comptime assert type_of(top_p).rank == 1
         comptime assert type_of(input).rank == 2
-        comptime assert is_gpu[
-            target
-        ](), "sampler.topk_topp_masked_probs is GPU-only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "sampler.topk_topp_masked_probs is GPU-only"
         topk_topp_masked_probs(
             ctx,
             input.to_tile_tensor(),
@@ -3366,7 +3245,6 @@ struct Struct_dspark_draft_sample:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         out_tokens: Some[Output & Tensor],
@@ -3377,9 +3255,9 @@ struct Struct_dspark_draft_sample:
         seed: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_gpu[
-            target
-        ](), "sampler.dspark_draft_sample is GPU-only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "sampler.dspark_draft_sample is GPU-only"
         comptime assert conforms_to(type_of(out_tokens), TileTensorable)
         comptime assert conforms_to(type_of(out_dist), TileTensorable)
         comptime assert conforms_to(type_of(logits), TileTensorable)
@@ -3423,7 +3301,6 @@ struct Struct_gumbel_argmax_from_probs:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         out_tokens: Some[Output & Tensor],
@@ -3437,9 +3314,9 @@ struct Struct_gumbel_argmax_from_probs:
         comptime assert type_of(out_tokens).rank == 1
         comptime assert type_of(seed).rank == 1
         comptime assert type_of(probs).rank == 2
-        comptime assert is_gpu[
-            target
-        ](), "sampler.gumbel_argmax_from_probs is GPU-only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "sampler.gumbel_argmax_from_probs is GPU-only"
         gumbel_sampling_fused_gpu[from_probs=True](
             ctx,
             probs.to_tile_tensor[.float32](),
@@ -3461,7 +3338,6 @@ struct Struct_argmax_with_bias:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         out_tokens: Some[Output & Tensor],
@@ -3476,7 +3352,9 @@ struct Struct_argmax_with_bias:
         comptime assert type_of(out_tokens).rank == 1
         comptime assert type_of(logits).rank == 3
         comptime assert type_of(bias).rank == 2
-        comptime assert is_gpu[target](), "sampler.argmax_with_bias is GPU-only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "sampler.argmax_with_bias is GPU-only"
         argmax_with_bias_gpu(
             ctx,
             logits.to_tile_tensor(),
@@ -3501,7 +3379,6 @@ struct Struct_keyed_uniform:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         out_values: Some[Output & Tensor],
@@ -3512,7 +3389,7 @@ struct Struct_keyed_uniform:
         comptime assert conforms_to(type_of(seed), TileTensorable)
         comptime assert type_of(out_values).rank == 1
         comptime assert type_of(seed).rank == 1
-        keyed_uniform[target=target](
+        keyed_uniform(
             out_values.to_tile_tensor[.float32](),
             seed.to_tile_tensor[.uint64]().as_imm(),
             ctx,
@@ -3527,7 +3404,6 @@ struct Struct_min_p_sampling:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         out_token_ids: Some[Output & Tensor],
@@ -3542,9 +3418,8 @@ struct Struct_min_p_sampling:
         comptime rank = type_of(out_token_ids).rank
         comptime assert type_of(min_ps).rank == 1
         comptime assert type_of(input).rank == rank
-        comptime assert is_valid_target[target](), "not a valid target"
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             # The CPU helper writes probabilities back into its logits, which
             # the legacy input projection allowed. Rebuild a mutable view from
             # the pointer to keep that behavior; a non-pointer storage policy
@@ -3579,7 +3454,6 @@ struct Struct_sampler_apply_penalties:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         logits: Some[MutableInput & Tensor],
@@ -3598,7 +3472,6 @@ struct Struct_sampler_apply_penalties:
         comptime assert conforms_to(type_of(frequency_penalty), TileTensorable)
         comptime assert conforms_to(type_of(presence_penalty), TileTensorable)
         comptime assert conforms_to(type_of(repetition_penalty), TileTensorable)
-        comptime assert is_valid_target[target](), "not a valid target"
         comptime penalty_type = type_of(frequency_penalty).dtype
 
         apply_penalties_to_logits(
@@ -3624,7 +3497,6 @@ struct Struct_sampler_apply_packed_bitmask_with_penalties:
     def execute[
         dtype: DType,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: Some[Output & Tensor],
@@ -3654,7 +3526,6 @@ struct Struct_sampler_apply_packed_bitmask_with_penalties:
         comptime assert type_of(frequency_offsets).rank == 1
         comptime assert type_of(frequency_penalty).rank == 1
         comptime assert type_of(presence_penalty).rank == 1
-        comptime assert is_valid_target[target](), "not a valid target"
 
         apply_packed_bitmask(
             output.to_tile_tensor[dtype](),
@@ -3682,7 +3553,6 @@ struct Struct_sampler_update_frequency_data:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         compressed_frequency_data: Some[MutableInput & Tensor],
@@ -3695,9 +3565,8 @@ struct Struct_sampler_update_frequency_data:
         )
         comptime assert conforms_to(type_of(frequency_offsets), TileTensorable)
         comptime assert conforms_to(type_of(new_tokens), TileTensorable)
-        comptime assert is_valid_target[target](), "not a valid target"
 
-        update_frequency_data[target=target](
+        update_frequency_data(
             compressed_frequency_data.to_tile_tensor[.int32](),
             frequency_offsets.to_tile_tensor[.uint32](),
             new_tokens.to_tile_tensor(),
@@ -3802,9 +3671,7 @@ struct Learnable2DInterpPosEmb:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Tensor],
         weight: Some[Input & Tensor],
@@ -3817,9 +3684,9 @@ struct Learnable2DInterpPosEmb:
         comptime assert conforms_to(type_of(weight), TileTensorable)
         comptime assert conforms_to(type_of(grid_thws), TileTensorable)
         comptime assert conforms_to(type_of(time_weight), TileTensorable)
-        comptime assert is_gpu[
-            target
-        ](), "learnable_2d_interp_pos_emb only supported on GPUs"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "learnable_2d_interp_pos_emb only supported on GPUs"
         comptime dtype = type_of(output).dtype
         comptime assert type_of(output).rank == 2
         comptime assert type_of(x).rank == 2
@@ -3843,9 +3710,7 @@ struct SpatialMerge:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         grid_thw: Some[Input & Tensor],
@@ -3856,7 +3721,9 @@ struct SpatialMerge:
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(grid_thw), TileTensorable)
-        comptime assert is_gpu[target](), "spatial_merge only supported on GPUs"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "spatial_merge only supported on GPUs"
         comptime dtype = type_of(output).dtype
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
@@ -3878,9 +3745,7 @@ struct TPoolPatchMerger:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         grid_thws: Some[Input & Tensor],
@@ -3894,9 +3759,9 @@ struct TPoolPatchMerger:
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(grid_thws), TileTensorable)
-        comptime assert is_gpu[
-            target
-        ](), "tpool_patch_merger only supported on GPUs"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "tpool_patch_merger only supported on GPUs"
         comptime dtype = type_of(output).dtype
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
@@ -3981,9 +3846,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         conv_output_ragged: Some[Output & Tensor],
         qkv_input_ragged: Some[Input & Tensor],
         conv_weight: Some[Input & Tensor],
@@ -4005,7 +3868,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         comptime assert type_of(conv_state).rank == 3
         comptime assert type_of(slot_idx).rank == 1
         comptime assert type_of(input_row_offsets).rank == 1
-        Self.launch[target, capture_input=False](
+        Self.launch[capture_input=False](
             conv_output_ragged.to_tile_tensor(),
             qkv_input_ragged.to_tile_tensor[work_dtype](),
             conv_weight.to_tile_tensor[work_dtype](),
@@ -4021,7 +3884,6 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         work_dtype: DType,
         state_dtype: DType,
         //,
-        target: StaticString,
         capture_input: Bool,
     ](
         conv_output_ragged: TileTensor[mut=True, work_dtype, ...],
@@ -4085,9 +3947,9 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
             ),
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "gated_delta_conv1d_fwd is only supported on GPU."
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "gated_delta_conv1d_fwd is only supported on GPU."
 
         if batch_size == 0 or total_seq_len == 0:
             return
@@ -4237,9 +4099,7 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         conv_output_ragged: Some[Output & Tensor],
         qkv_window: Some[Output & Tensor],
         qkv_input_ragged: Some[Input & Tensor],
@@ -4292,7 +4152,7 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 Int(qkv_input_ragged.shape()[0].value()),
             )
         if committed or Self.rollback:
-            GatedDeltaConv1dFwd[write_state=True].execute[target](
+            GatedDeltaConv1dFwd[write_state=True].execute(
                 conv_output_ragged,
                 qkv_input_ragged,
                 conv_weight,
@@ -4302,9 +4162,7 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 ctx,
             )
         else:
-            GatedDeltaConv1dFwd[write_state=False].launch[
-                target, capture_input=True
-            ](
+            GatedDeltaConv1dFwd[write_state=False].launch[capture_input=True,](
                 conv_output_ragged.to_tile_tensor(),
                 qkv_input_ragged.to_tile_tensor[work_dtype](),
                 conv_weight.to_tile_tensor[work_dtype](),
@@ -4466,9 +4324,7 @@ struct GatedDeltaRecurrenceFwd:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         recurrence_output: Some[Output & Tensor],
         qkv_conv_output: Some[Input & Tensor],
         decay_per_token: Some[Input & Tensor],
@@ -4511,9 +4367,9 @@ struct GatedDeltaRecurrenceFwd:
             input_row_offsets_tt,
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "gated_delta_recurrence_fwd is only supported on GPU."
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "gated_delta_recurrence_fwd is only supported on GPU."
 
         # NOTE: Only (key_head_dim=128, value_head_dim=128) is currently
         # compiled (Qwen3.5 default). To support a new model with different
@@ -4657,9 +4513,7 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         recurrence_output: Some[Output & Tensor],
         qkv_conv_output: Some[Input & Tensor],
         decay_per_token: Some[Input & Tensor],
@@ -4698,7 +4552,7 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
         comptime assert type_of(verify_width).dtype == DType.int64
         var num_draft_tokens = Int(verify_width.shape()[0].value())
         if num_draft_tokens == 0:
-            GatedDeltaRecurrenceFwd.execute[target](
+            GatedDeltaRecurrenceFwd.execute(
                 recurrence_output,
                 qkv_conv_output,
                 decay_per_token,
@@ -4756,9 +4610,9 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
         var ring_tt = ring.to_tile_tensor()
         var ring_slot_idx_tt = ring_slot_idx.to_tile_tensor[.uint32]()
 
-        comptime assert is_gpu[
-            target
-        ](), "gated_delta_recurrence_verify_ring_fwd is only supported on GPU."
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "gated_delta_recurrence_verify_ring_fwd is only supported on GPU."
 
         var dispatched = False
         if shape.key_head_dim == 128 and shape.value_head_dim == 128:
@@ -4893,9 +4747,7 @@ struct GatedDeltaStateFold:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         recurrent_state: Some[MutableInput & Tensor],
         # Mutable, though only read, to order the fold after the verify.
         ring: Some[MutableInput & Tensor],
@@ -4960,9 +4812,9 @@ struct GatedDeltaStateFold:
         var ring_row_ids_tt = ring_row_ids.to_tile_tensor[.uint32]()
         var num_accepted_tt = num_accepted.to_tile_tensor[.uint32]()
 
-        comptime assert is_gpu[
-            target
-        ](), "gated_delta_state_fold is only supported on GPU."
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "gated_delta_state_fold is only supported on GPU."
 
         var dispatched = False
         if key_head_dim == 128 and value_head_dim == 128:
@@ -5077,9 +4929,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         y: Some[Output & Tensor],
         x: Some[Input & Fused & LoadAccess],
         dt: Some[Input & Fused & LoadAccess],
@@ -5251,7 +5101,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
 
         @inline(.always)
         def launch[DSTATE: Int]() raises {imm}:
-            comptime if is_cpu[target]():
+            comptime if ctx.target.is_cpu():
                 mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
                     DSTATE, dt_softplus=Self.dt_softplus
                 ](
@@ -5271,7 +5121,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     slot_fn,
                     Optional(ctx.assert_cpu_target()),
                 )
-            elif not is_gpu[target]():
+            elif not ctx.target.is_gpu():
                 raise Error("Unsupported target device")
             elif ctx.target.is_apple_gpu():
                 # One thread per channel; see the kernel docstring.
@@ -5632,7 +5482,6 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
     def execute[
         Layers: TypeList[Trait=Input & Tensor, ...],
         //,
-        target: StaticString,
     ](
         conv_pool: Some[MutableInput & Tensor],
         ssm_pool: Some[MutableInput & Tensor],
@@ -5642,7 +5491,7 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
         layers: TensorTuple[*Layers],
         ctx: DeviceContext,
     ) raises:
-        comptime if not is_gpu[target]():
+        comptime if not ctx.target.is_gpu():
             raise Error("mamba2_replay_fold runs on GPUs only")
         else:
             comptime assert conforms_to(type_of(conv_pool), TileTensorable)
@@ -5823,9 +5672,7 @@ struct CausalConv1DVarlenFwd[
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Fused & LoadAccess],
         weight: Some[Input & Tensor],
@@ -5933,7 +5780,7 @@ struct CausalConv1DVarlenFwd[
                     ](Coord(b))
                 )
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             causal_conv1d_varlen_fwd_cpu[
                 silu_activation,
                 use_residual=Self.use_residual,
@@ -5949,7 +5796,7 @@ struct CausalConv1DVarlenFwd[
                 x_fn,
                 slot_fn,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
 
             @inline(.always)
             def launch_gpu[WIDTH: Int]() raises {imm}:
@@ -6097,7 +5944,6 @@ struct GatedGroupRMSNorm[group_size: Int]:
     def execute[
         dtype: DType,
         gate_dtype: DType,
-        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         y: InputTensor[dtype=dtype, rank=2, ...],
@@ -6137,7 +5983,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
                 (n, col)
             )
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             gated_group_rmsnorm_cpu[dtype, gate_dtype](
                 output_tt,
                 y_tt,
@@ -6148,7 +5994,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
                 gs,
                 eps,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             gated_group_rmsnorm_gpu[dtype, gate_dtype, gs, type_of(gate_fn)](
                 output_tt,
                 y_tt,
@@ -6189,9 +6035,7 @@ struct Sleep:
     """Registers the `runtime.sleep` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         # In order to prevent this kernel from being DCE'd, we pass in a mutable
         # input buffer. A fix is tracked in GEX-3080.
         duration_sec_buffer: Some[MutableInput & Tensor],
@@ -6209,7 +6053,7 @@ struct Sleep:
                 "Sleep duration must be non-negative. Found: ", duration_sec
             )
 
-        comptime if is_gpu[target]():
+        comptime if ctx.target.is_gpu():
 
             @__name("sleep")
             def sleep_kernel(duration_sec: Float64):
@@ -6237,9 +6081,7 @@ struct StateSpaceCopyRows:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         dst: Some[MutableInput & Tensor],
         src: Some[MutableInput & Tensor],
         dst_rows: Some[Input & Tensor],
@@ -6300,7 +6142,7 @@ struct StateSpaceCopyRows:
                     Int(src_ids[row]) * row_width + col
                 ]
 
-        comptime if is_gpu[target]():
+        comptime if ctx.target.is_gpu():
             ctx.enqueue_function[copy_rows_kernel](
                 dst_tt.unsafe_ptr(),
                 src_tt.unsafe_ptr(),
@@ -6433,7 +6275,7 @@ struct WaitHostValue:
     """Stalls the stream until a host-visible flag reaches a given value.
 
     Lowers to CUDA's `cuStreamWaitValue64` via
-    `DeviceStream.wait_for_host_value`. Accepts a 1-D int64 buffer of
+    `DeviceStream.wait_for_flag`. Accepts a 1-D int64 buffer of
     shape `[2]`, mirroring `runtime.launch_host_func`'s payload shape:
 
     - `payload[0]`: raw address of a `M::Driver::CompletionFlag` (as
@@ -6468,7 +6310,7 @@ struct WaitHostValue:
             unsafe_from_address=Int(payload_tile.load[width=1](Coord(0)))
         )
         var value = UInt64(Int(payload_tile.load[width=1](Coord(1))))
-        ctx.stream().wait_for_host_value(flag, value)
+        ctx.stream().wait_for_flag(flag, value)
 
 
 @extensibility.register("runtime.wait_host_value_with_dep")
@@ -6507,7 +6349,7 @@ struct WaitHostValueWithDep:
             unsafe_from_address=Int(payload_tile.load[width=1](Coord(0)))
         )
         var value = UInt64(Int(payload_tile.load[width=1](Coord(1))))
-        ctx.stream().wait_for_host_value(flag, value)
+        ctx.stream().wait_for_flag(flag, value)
 
 
 # ===-----------------------------------------------------------------------===#

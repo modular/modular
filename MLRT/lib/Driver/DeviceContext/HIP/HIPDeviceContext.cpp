@@ -24,6 +24,7 @@
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/DeviceContext/PinnedCompletionFlag.h"
 #include "Support/ErrorOr.h"
 #include "Support/HashUtils.h"
 #include "Support/max_license/Tracy/Tracy.h"
@@ -1218,7 +1219,7 @@ internWaitValueNodeParams(hipCtx_t ctx, hipDeviceptr_t address,
     params->op.waitValue.address = address;
     params->op.waitValue.value64 = value;
     params->op.waitValue.flags = static_cast<unsigned int>(
-        hipStreamWaitValueFlags::hipStreamWaitValueEq);
+        hipStreamWaitValueFlags::hipStreamWaitValueGte);
     params->node.ctx = ctx;
     params->node.count = 1;
     params->node.paramArray = &params->op;
@@ -1227,14 +1228,14 @@ internWaitValueNodeParams(hipCtx_t ctx, hipDeviceptr_t address,
   return &params->node;
 }
 
-ErrorOrSuccess
-HIPDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const {
+ErrorOrSuccess HIPDeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                                  uint64_t value) const {
   const auto &hipDevice = HIPDevice::cast(this->device());
 
   HIP_WITH_DEV_ERR(hipDevice);
   const HIPDriver &driver = hipDevice.hipDriver();
-  auto address = reinterpret_cast<hipDeviceptr_t>(flag.devicePtr());
+  auto address = reinterpret_cast<hipDeviceptr_t>(
+      PinnedCompletionFlag::cast(flag).devicePtr());
 
   // Stream capture does not record hipStreamWaitValue64. Measured on ROCm
   // 7.2.4 / gfx950, under all three capture modes: the call returns success,
@@ -1251,7 +1252,7 @@ HIPDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
   if (getCaptureStatus() !=
       hipStreamCaptureStatus::hipStreamCaptureStatusActive) {
     HIP_CHECK_ERR(driver.hipStreamWaitValue64(
-        stream_, address, value, hipStreamWaitValueFlags::hipStreamWaitValueEq,
+        stream_, address, value, hipStreamWaitValueFlags::hipStreamWaitValueGte,
         /*mask*/ static_cast<uint64_t>(-1)));
     return success();
   }
@@ -1852,8 +1853,8 @@ ErrorOr<CompletionFlagRef> HIPDeviceContext::allocateCompletionFlag() {
   }
   // Initialize the flag to zero so the first wait observes a clean state.
   *static_cast<uint64_t *>(hostPtr) = 0;
-  return CompletionFlagRef::take(
-      new CompletionFlag(*this, hostPtr, reinterpret_cast<uint64_t>(devPtr)));
+  return CompletionFlagRef::take(new PinnedCompletionFlag(
+      *this, hostPtr, reinterpret_cast<uint64_t>(devPtr)));
 }
 
 ErrorOrSuccess HIPDeviceContext::freeCompletionFlag(void *hostPtr) {

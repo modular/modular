@@ -19,8 +19,8 @@ from std.sys.info import CompilationTarget
 
 from max.algorithm.functional import elementwise
 from algorithm.reduce_op import ReduceOp
-from algorithm.rowwise import launch, pick_simd_width
-from algorithm.rowwise_types import RowBody
+from algorithm.rowwise import Row, launch, pick_simd_width
+from algorithm.rowwise_types import ContextParams, RowBody
 
 from extensibility import GridBlockLaunchConfig, StaticTensorSpec
 from extensibility import (
@@ -665,7 +665,7 @@ def mgp_device_graph_stable_tensor[
     var ptr = (
         addr.ptr.unsafe_bitcast[Scalar[dtype]]()
         .unsafe_origin_cast[MutUntrackedOrigin]()
-        .unsafe_mut_cast[target_mut=True]()
+        .unsafe_mut_cast[True]()
     )
     comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
@@ -1350,7 +1350,7 @@ def mgp_debug_tensor_print[
 
 @inline(.always)
 def get_simd_width_for_dtypes[
-    dtypes: StaticTuple[DType, _], target: StaticString
+    dtypes: StaticTuple[DType, _], target: CompilationTarget
 ]() -> Int:
     comptime assert dtypes.size > 0
 
@@ -2267,6 +2267,7 @@ def simd_select[
 def foreach[
     dtype: DType,
     rank: Int,
+    ctx_target: CompilationTarget,
     //,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
@@ -2274,13 +2275,12 @@ def foreach[
         dtype, width
     ],
     *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    simd_width: Int = get_kernel_simd_width[dtype, ctx_target](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var func: FuncType,
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[ctx_target],
 ) raises:
     """Apply a `RegisterPassable` body to each element of the tensor slice.
 
@@ -2293,8 +2293,8 @@ def foreach[
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
+        ctx_target: The compilation target of `ctx` (inferred).
         FuncType: The type of the per-element body closure.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target.
         _trace_name: Name of the executed operation displayed in the trace.
 
@@ -2320,8 +2320,6 @@ def foreach[
     ](wrapper, tensor.shape_coord(), ctx)
 
 
-# TODO(MSTDL-3356): Remove the dead `target` parameter. The graph compiler
-# lowers `mogg.call.foreach` to this function and must stop passing it first.
 @register_internal("mogg.call.foreach")
 def _foreach[
     Lambda: ImplicitlyCopyable
@@ -2330,7 +2328,6 @@ def _foreach[
     //,
     *,
     simd_width: Int,
-    target: StaticString = "cpu",
     _trace_name: StaticString = "mogg.foreach",
 ](shape: Coord, lambda_: Lambda, ctx: DeviceContext,) raises:
     """Call `lambda_` once per index in `shape`; `lambda_` does its own store.
@@ -2342,7 +2339,6 @@ def _foreach[
     Parameters:
         Lambda: The per-index closure's concrete type.
         simd_width: The SIMD width to use.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         _trace_name: Name of the executed operation displayed in the trace.
 
     Args:
@@ -2366,7 +2362,6 @@ def _rowwise[
     accum: DType,
     *,
     axis: Int,
-    target: StaticString,
     num_phases: Int,
     computationally_expensive: Bool,
     dtype_size: Int,
@@ -2379,12 +2374,18 @@ def _rowwise[
         dtype: The element type of the input the folds walk.
         accum: The type the folds' contributions are computed in.
         axis: The reduced axis.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        num_phases: 1 for a reduce-shaped body.
-        computationally_expensive: Whether the folds' per-element work is
-            expensive enough to change the GPU block tier's threshold.
-        dtype_size: The byte size of `dtype` when the body may split the
-            row, else 0.
+        num_phases: 1 for a reduce-shaped body, which writes one value per
+            row; for a normalize-shaped body, which writes every element,
+            one per fold plus one for the write.
+        computationally_expensive: Whether the body's per-element work is
+            expensive enough to change the GPU block tier's threshold:
+            always for a normalize-shaped body, as every hand-written
+            normalization sets it; for a reduce-shaped body, when its
+            per-element cost reaches the compiler's threshold.
+        dtype_size: For a normalize-shaped body whose folds each keep one
+            field (as rms_norm and softmax), the byte size of `dtype`,
+            which lets a long row split across blocks; else 0 (as
+            layer_norm, and every reduce-shaped body).
 
     Args:
         body: The per-row body.
@@ -2392,16 +2393,53 @@ def _rowwise[
         ctx: The call context (forward this from the custom operation).
     """
     comptime simd_width = pick_simd_width[
-        SimdMonoid, target, 64, dtype, accum
+        SimdMonoid, ctx.target, 64, dtype, accum
     ]()
     launch[
         axis=axis,
         simd_width=simd_width,
-        target=target,
         num_phases=num_phases,
         computationally_expensive=computationally_expensive,
         dtype_size=dtype_size,
     ](body, shape, ctx)
+
+
+@register_internal("mogg.rowwise.splat_lane")
+@inline(.always)
+def _rowwise_splat_lane[
+    params: ContextParams,
+    accum: DType,
+    dtype: DType,
+    axis: Int,
+    rank: Int,
+    AxisSize: CoordLike,
+    is_cached: Bool,
+    value_dtype: DType,
+    //,
+](
+    row: Row[params, accum, dtype, axis, rank, AxisSize, is_cached],
+    value: SIMD[value_dtype, params.emit_tile_width],
+) -> SIMD[value_dtype, params.simd_width]:
+    """Spreads a per-row value over the width of the row's folds.
+
+    Parameters:
+        params: The launch's context parameters.
+        accum: The type the row's folds accumulate in.
+        dtype: The row's element type.
+        axis: The reduced axis.
+        rank: The rank of the iteration domain.
+        AxisSize: The reduced-axis length's type.
+        is_cached: Whether the row is cached.
+        value_dtype: The value's element type.
+
+    Args:
+        row: The row the value belongs to.
+        value: The per-row value, one lane per row.
+
+    Returns:
+        The value at the folds' width.
+    """
+    return row.splat_lane(value)
 
 
 comptime _MoggSliceStrideTypesTabulator[
@@ -2472,9 +2510,11 @@ def _mogg_slice_view_alignment[
     static_starts: Coord,
     static_steps: Coord,
 ](input_alignment: Int) -> Int:
-    """Same alignment derivation as `Slice.get_view_alignment` (mirrored here,
-    not called directly, since `builtin_kernels` already depends on
-    `builtin_primitives` and importing the other way would be circular).
+    """The alignment a `mo.slice` view can promise for itself: every address
+    it can produce is a multiple of the result. A stride that is only known
+    at runtime still moves the pointer by a whole multiple of a dense
+    row-major anchor stride, so that anchor bounds the alignment the same
+    way a static stride does; 0 when nothing can be established.
     """
     comptime stride_types = input_strides
     comptime start_types = static_starts.element_types
@@ -2511,9 +2551,8 @@ def _mogg_slice_view_alignment[
         # `step[i] * strides[i]` elements per step, so that stride bounds the
         # view's alignment too -- e.g. a slice that keeps the parent's row
         # stride (not a multiple of the vector width) leaves each row start
-        # under-aligned. Mirrors `Slice.get_view_alignment`; omitting it made a
-        # strided view over-report its alignment and emit a misaligned
-        # (faulting) vector load on GPU.
+        # under-aligned. Omitting this rule made a strided view over-report
+        # its alignment and emit a misaligned (faulting) vector load on GPU.
         comptime if i != rank - 1:
             comptime if stride_types[i].is_static_value:
                 alignment = gcd(
@@ -2617,12 +2656,10 @@ def _mogg_broadcast_view_strides[
     input_shape: TypeList[Trait=CoordLike, ...],
     input_strides: TypeList[Trait=CoordLike, ...],
 ]() -> IndexList[out_rank]:
-    """Same view-stride derivation as `StaticBroadcastTo.get_view_strides_list`
-    (mirrored here, not called directly, since `builtin_kernels` already
-    depends on `builtin_primitives` and importing the other way would be
-    circular): a dynamic dimension -- whose stride isn't statically known --
-    becomes a -1 entry, so `with_coord_layout` falls back to a dynamic
-    entry for it.
+    """The view strides of a broadcast: an axis the input doesn't have, or an
+    aligned dimension where the input's size is 1, gets stride 0. A dynamic
+    dimension -- whose stride isn't statically known -- becomes a -1 entry,
+    so `with_coord_layout` falls back to a dynamic entry for it.
     """
     var new_strides = IndexList[out_rank]()
     comptime delta = out_rank - in_rank
@@ -2669,8 +2706,7 @@ def mogg_tensor_create_broadcast[
     semantics) up to `output_static_shape` -- a leading dimension `input`
     doesn't have, or an aligned dimension where `input`'s size is 1, gets
     stride 0. Preserves whatever static shape/stride information is known
-    at compile time, mirroring
-    `StaticBroadcastTo.input_view`/`get_view_strides_list`.
+    at compile time.
 
     Parameters:
         dtype: The element type of `input`.
@@ -2720,8 +2756,7 @@ def mogg_tensor_create_reshape[
     `input` is contiguous, so de-linearizing/re-linearizing through one
     shared flat index produces row-major strides for the new shape.
     `output_static_shape` still types the return value's static layout with
-    whatever dims ARE known at compile time (mirroring
-    `StaticReshape.input_view`), but `output_shape` -- not a cast of
+    whatever dims ARE known at compile time, but `output_shape` -- not a cast of
     `output_static_shape` -- is what this op actually reshapes into: unlike
     broadcast/transpose, this op's own stride is a row-major
     de-linearization of the *output* shape's own values, with no input
@@ -2814,8 +2849,7 @@ def mogg_tensor_create_transpose[
     per dimension either at compile time (an entry of `static_permutations`)
     or, where that entry is dynamic, at runtime (the matching entry
     of the `permutations` operand). Preserves whatever static shape/stride
-    information is known at compile time, mirroring
-    `Transpose.input_view`/`_TransposeStrideTypes`.
+    information is known at compile time.
 
     Parameters:
         dtype: The element type of `input`.
@@ -2967,16 +3001,18 @@ struct _ElementwiseFusionTileAdapter[
 def foreach_fusion_tile[
     dtype: DType,
     rank: Int,
+    ctx_target: CompilationTarget,
     //,
     E: ElementwiseFusionTile,
     *,
-    target: StaticString = "cpu",
-    tile_shape: IndexList[2] = get_kernel_tile_shape[dtype, target](),
+    tile_shape: IndexList[2] = get_kernel_tile_shape[
+        dtype, ctx_target.device_kind_label()
+    ](),
     _trace_name: StaticString = "mogg.for_each_tile",
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     var elem: E,
-    ctx: DeviceContext,
+    ctx: DeviceContext[ctx_target],
 ) raises:
     """Apply a tile-based pure elementwise fusion to each tile of the tensor.
 
@@ -2991,8 +3027,8 @@ def foreach_fusion_tile[
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
+        ctx_target: The compilation target of `ctx` (inferred).
         E: The tile elementwise fusion struct type.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         tile_shape: The `(rows, cols)` shape of one output tile.
         _trace_name: Name of the executed operation displayed in the trace.
 
@@ -3006,9 +3042,9 @@ def foreach_fusion_tile[
         into `tile_shape`. Partial-tile / remainder handling and a CPU path are
         documented follow-ups.
     """
-    comptime assert is_accelerator[
-        target
-    ](), "foreach_fusion_tile currently supports GPU targets only"
+    comptime assert (
+        ctx.target.is_accelerator()
+    ), "foreach_fusion_tile currently supports GPU targets only"
     comptime assert (
         rank == 2
     ), "foreach_fusion_tile currently supports rank-2 tensors only"
@@ -3040,26 +3076,26 @@ def foreach_fusion_tile[
 def foreach_out_func[
     dtype: DType,
     rank: Int,
+    ctx_target: CompilationTarget,
     OutFuncType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](IndexList[rank]) -> None,
     //,
     *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    simd_width: Int = get_kernel_simd_width[dtype, ctx_target](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var out_func: OutFuncType,
     tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[ctx_target],
 ) raises:
     """Apply `out_func` to each index of the tensor slice.
 
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
+        ctx_target: The compilation target of `ctx` (inferred).
         OutFuncType: The type of the per-index closure.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
 
@@ -3096,7 +3132,6 @@ def view_copy_impl[
     spec: StaticTensorSpec[dtype, rank, _, InFusion, OutFusion, ComputeFusion],
     //,
     *,
-    target: StaticString,
     _trace_name: StaticString = "mogg.view_copy_impl",
 ](
     z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
@@ -3118,7 +3153,4 @@ def view_copy_impl[
             simd_width=width, element_alignment=element_alignment
         ](x, idx)
 
-    foreach[
-        target=target,
-        _trace_name=_trace_name,
-    ](func, z, ctx)
+    foreach[_trace_name=_trace_name](func, z, ctx)

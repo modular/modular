@@ -113,7 +113,7 @@ def run[ROWS: Int](ctx: DeviceContext, axis_size: Some[CoordLike]) raises:
         rb.store[alignment=alignment * align_of[dtype]()](c, v)
 
     def old_kernel() raises {imm}:
-        rms_norm_fused_residual[target="gpu"](
+        rms_norm_fused_residual(
             in0,
             in1,
             out_a_fn,
@@ -129,7 +129,6 @@ def run[ROWS: Int](ctx: DeviceContext, axis_size: Some[CoordLike]) raises:
         rms_norm_residual_add[
             dtype,
             2,
-            target="gpu",
             epsilon=EPS,
             weight_offset=Float32(0),
         ](

@@ -28,13 +28,19 @@ Both run `nn.head_rms_norm_rope` (the prologue below SM-count tokens runs a
 """
 
 from std.math import rsqrt
+from std.sys import size_of
 from std.utils.coord import ComptimeInt, Coord, DynamicCoord
 from std.utils.numerics import get_accum_type
 
 import extensibility
-from extensibility import InputTensor, OutputTensor
-from extensibility import _MutableInputTensor as MutableInputTensor
-from layout import UNKNOWN_VALUE
+from extensibility import (
+    Input,
+    MutableInput,
+    Output,
+    Tensor,
+    TileTensorable,
+)
+from layout import TileTensor
 from internal_utils.fp8_utils import cast_saturating
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
@@ -59,20 +65,22 @@ from .monoids import ReduceSum
 
 
 @always_inline
-def _in[T: DType, U: DType](t: InputTensor[dtype=T, ...]) -> In[U]:
+def _in[T: DType, U: DType](t: Some[Input & Tensor]) -> In[U]:
+    comptime assert conforms_to(type_of(t), TileTensorable)
     return (
-        t.unsafe_ptr()
-        .unsafe_mut_cast[False]()
+        t.to_tile_tensor[T]()
+        .ptr.unsafe_mut_cast[False]()
         .unsafe_origin_cast[ImmUntrackedOrigin]()
         .unsafe_bitcast[Scalar[U]]()
     )
 
 
 @always_inline
-def _out[T: DType](t: OutputTensor[dtype=T, ...]) -> Out[DType.bfloat16]:
+def _out[T: DType](t: Some[Output & Tensor]) -> Out[DType.bfloat16]:
+    comptime assert conforms_to(type_of(t), TileTensorable)
     return (
-        t.unsafe_ptr()
-        .unsafe_origin_cast[MutUntrackedOrigin]()
+        t.to_tile_tensor[T]()
+        .ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         .unsafe_bitcast[BFloat16]()
     )
 
@@ -84,23 +92,18 @@ struct QKRMSNormRopeSplitStore:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        freq_dtype: DType,
-        cache_dtype: DType,
-        target: StaticString,
-        //,
         n_q_heads: Int,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        qkv: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         epsilon: Float32,
         q_scale: Float32,
@@ -109,10 +112,6 @@ struct QKRMSNormRopeSplitStore:
         """Writes the roped Q and stores the roped K and the V to the cache.
 
         Parameters:
-            dtype: Element type of the projection and the Q output.
-            freq_dtype: Element type of `freqs_cis`.
-            cache_dtype: Element type of the KV cache.
-            target: Compilation target.
             n_q_heads: Query heads in `qkv` (this device's).
 
         Args:
@@ -129,28 +128,55 @@ struct QKRMSNormRopeSplitStore:
             max_cache_length: The batch's longest cache.
             layer_idx: The cache layer to store into.
             epsilon: The norm's epsilon.
-            q_scale: The factor on the normed Q, rounded to `dtype` first.
+            q_scale: The factor on the normed Q, rounded to the Q dtype
+                first.
             ctx: Device context.
 
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[
-            target
-        ](), "mo.qk_rms_norm_rope_split_store is GPU only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "mo.qk_rms_norm_rope_split_store is GPU only"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(qkv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime dtype = type_of(output).dtype
+        comptime freq_dtype = type_of(freqs_cis).dtype
+        comptime cache_dtype = type_of(kv_blocks).dtype
+        comptime assert type_of(qkv).dtype == dtype
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
         var v_cache = kv_collection.get_value_cache(Int(layer_idx))
         comptime n_kv = type_of(k_cache).kv_params.num_heads
-        comptime width = Int(qkv.static_spec.shape_tuple[1])
-        comptime assert width != UNKNOWN_VALUE, "the qkv width must be static"
+        comptime assert (
+            type_of(qkv)._shape_types[1].is_static_value
+        ), "the qkv width must be static"
+        comptime width = type_of(qkv)._shape_types[1].static_value
         comptime assert (
             width >= (n_q_heads + 2 * n_kv) * HEAD_DIM
         ), "qkv is not [q | k | v | ...]"
@@ -158,12 +184,18 @@ struct QKRMSNormRopeSplitStore:
             type_of(k_cache).kv_params.head_size == HEAD_DIM
         ), "64-channel heads only"
         comptime assert dtype == DType.bfloat16
-        if qkv.dim_size[0]() < ctx.default_device_info.sm_count:
-            _rowwise_prologue[target, n_q_heads](
-                output,
-                qkv,
-                input_row_offsets,
-                freqs_cis,
+        var qkv_tt = qkv.to_tile_tensor[dtype]()
+        var tokens = Int(qkv_tt.dim[0]())
+        if tokens < ctx.default_device_info.sm_count:
+            _rowwise_prologue[
+                n_q_heads,
+                type_of(output).alignment,
+                type_of(qkv).alignment,
+            ](
+                output.to_tile_tensor[dtype](),
+                qkv_tt,
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor[freq_dtype](),
                 k_cache,
                 v_cache,
                 epsilon,
@@ -174,17 +206,17 @@ struct QKRMSNormRopeSplitStore:
         qk_norm_rope_store[n_q_heads, n_kv, type_of(k_cache).page_size](
             QkArgs[cache_dtype, freq_dtype](
                 _in[dtype, DType.bfloat16](qkv),
-                _out(output),
+                _out[dtype](output),
                 _in[freq_dtype, freq_dtype](freqs_cis),
                 _in[DType.uint32, DType.uint32](input_row_offsets),
                 _in[DType.uint32, DType.uint32](cache_lengths),
                 _in[DType.uint32, DType.uint32](kv_lookup_table),
                 k_cache.blocks.ptr.unsafe_origin_cast[MutUntrackedOrigin](),
                 v_cache.blocks.ptr.unsafe_origin_cast[MutUntrackedOrigin](),
-                Int64(qkv.stride_length[0]()),
-                Int64(qkv.dim_size[0]()),
-                Int64(input_row_offsets.dim_size[0]() - 1),
-                Int64(kv_lookup_table.dim_size[1]()),
+                Int64(Int(qkv_tt.layout.stride_coord()[0])),
+                Int64(tokens),
+                Int64(input_row_offsets.shape()[0].value() - 1),
+                Int64(kv_lookup_table.shape()[1].value()),
                 Int64(k_cache._stride()),
                 epsilon,
                 q_scale.cast[dtype]().cast[DType.float32](),
@@ -199,14 +231,11 @@ struct HeadRMSNormSigmoidGate:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        target: StaticString,
-        //,
         n_heads: Int,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        qkvg: InputTensor[dtype=dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
+        qkvg: Some[Input & Tensor],
         epsilon: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -214,8 +243,6 @@ struct HeadRMSNormSigmoidGate:
         gate the last `n_heads * 64` columns of `qkvg`.
 
         Parameters:
-            dtype: Element type.
-            target: Compilation target.
             n_heads: Heads in `x` (this device's).
 
         Args:
@@ -228,22 +255,30 @@ struct HeadRMSNormSigmoidGate:
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[
-            target
-        ](), "norm.head_rms_norm_sigmoid_gate is GPU only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "norm.head_rms_norm_sigmoid_gate is GPU only"
         comptime width = n_heads * HEAD_DIM
-        comptime qkvg_width = Int(qkvg.static_spec.shape_tuple[1])
+        comptime assert conforms_to(type_of(qkvg), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(x).rank == 2
+        comptime assert type_of(qkvg).rank == 2
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(qkvg).dtype == dtype
+        comptime qkvg_width = type_of(qkvg)._shape_types[1].static_value
         comptime assert qkvg_width >= width, "qkvg has no gate"
         comptime assert dtype == DType.bfloat16
+        var qkvg_tt = qkvg.to_tile_tensor[dtype]()
         head_norm_gate[n_heads](
             GateArgs(
                 _in[dtype, DType.bfloat16](x),
                 _in[dtype, DType.bfloat16](qkvg).unsafe_offset(
                     qkvg_width - width
                 ),
-                _out(output),
-                Int64(qkvg.stride_length[0]()),
-                Int64(x.dim_size[0]()),
+                _out[dtype](output),
+                Int64(Int(qkvg_tt.layout.stride_coord()[0])),
+                Int64(x.shape()[0].value()),
                 epsilon,
             ),
             ctx,
@@ -255,13 +290,14 @@ def _rowwise_prologue[
     freq_dtype: DType,
     cache_t: KVCacheT,
     //,
-    target: StaticString,
     n_q_heads: Int,
+    output_alignment: Int,
+    qkv_alignment: Int,
 ](
-    output: OutputTensor[dtype=dtype, rank=2, ...],
-    qkv: InputTensor[dtype=dtype, rank=2, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: cache_t,
     epsilon: Float32,
@@ -277,14 +313,17 @@ def _rowwise_prologue[
     comptime heads = n_q_heads + 2 * n_kv_heads
     comptime accum = get_accum_type[dtype]()
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
+        ReduceSum[accum, 1], ctx.target, 64, dtype, accum
     ]()
     # A tile must sit wholly in one half of the head to find its partner.
     comptime assert half % simd_width == 0, "head_dim / 2 % simd width"
 
     var axis_size_accum = Scalar[accum](head_dim)
+    comptime assert output.rank == 2
+    comptime assert qkv.rank == 2
+    comptime assert offsets.rank == 1
+    comptime assert freqs_cis.rank == 2
     var scale = q_scale.cast[dtype]().cast[accum]()
-    var offsets = input_row_offsets.to_tile_tensor[.int64]()
 
     @inline(.always)
     def body[
@@ -305,7 +344,7 @@ def _rowwise_prologue[
         var head = Int(row_coords[1])
         var bi = get_batch_from_row_offsets(offsets, token)
         var pos = k_cache.cache_length(bi) + Int(
-            UInt32(token) - rebind[UInt32](offsets.load((bi,)))
+            UInt32(token) - rebind[UInt32](offsets.load[width=1](Coord(bi)))
         )
 
         @inline(.always)
@@ -314,7 +353,10 @@ def _rowwise_prologue[
         ](idx: DynamicCoord[DType.int, row_rank]) {var qkv} -> SIMD[
             dtype, width
         ]:
-            return qkv.load[width, element_alignment=alignment](
+            return qkv.load[
+                width=width,
+                alignment=min(qkv_alignment, alignment * size_of[dtype]()),
+            ](
                 Coord(
                     Int(idx[0]),
                     Int(idx[1]) * head_dim + Int(idx[2]),
@@ -392,15 +434,20 @@ def _rowwise_prologue[
             )
             var re = nc if lo else partner
             var im = partner if lo else nc
-            var freq = freqs_cis.load[width * 2](Coord(pos, 2 * (d % half)))
+            var freq = freqs_cis.load[
+                width=width * 2, alignment=size_of[freq_dtype]()
+            ](Coord(pos, 2 * (d % half)))
             var r = rope_value(re.interleave(im), freq)
             var r_re, r_im = r.deinterleave()
             var roped = rebind[SIMD[dtype, width]](r_re if lo else r_im)
             if head < n_q_heads:
                 comptime alignment = ctx_p.element_alignment[dtype, width]()
-                output.store[width, element_alignment=alignment](
-                    Coord(Int(idx[0]), head * head_dim + d), roped
-                )
+                output.store[
+                    width=width,
+                    alignment=min(
+                        output_alignment, alignment * size_of[dtype]()
+                    ),
+                ](Coord(Int(idx[0]), head * head_dim + d), roped)
             else:
                 k_cache.store(
                     bi,
@@ -415,14 +462,13 @@ def _rowwise_prologue[
     rowwise.launch[
         axis=2,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
         name="qk_rms_norm_rope_split_store",
     ](
         body,
         Coord(
-            Int(qkv.shape()[0]),
+            Int(qkv.dim[0]()),
             ComptimeInt[heads](),
             ComptimeInt[head_dim](),
         ),

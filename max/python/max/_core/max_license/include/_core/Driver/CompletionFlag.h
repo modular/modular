@@ -43,10 +43,6 @@ struct CompletionFlag {
   CompletionFlag(const CompletionFlag &) = delete;
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
-  /// Device-visible address of the 8-byte flag, suitable for
-  /// `DeviceStream::enqueueWaitOnHostValue`.
-  std::uint64_t devicePtr() const { return ref_->devicePtr(); }
-
   /// Convenience: relaxed store of 0 to the flag.
   void reset() { ref_->reset(); }
 

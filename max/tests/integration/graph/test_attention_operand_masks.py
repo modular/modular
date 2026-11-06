@@ -31,11 +31,11 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged_gpu,
     masked_flash_attention_gpu,
 )
+from max.nn.attention_mask import MHAMaskVariant
 
 HEADS = 4
 HEAD_DIM = 128

@@ -21,7 +21,7 @@ from typing import Any
 from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,

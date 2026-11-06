@@ -49,21 +49,7 @@ from max.graph import (
     ops,
 )
 from max.nn import Module
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.common_layers.quant_kernels import preshuffle_blockwise_fp8_b
-from max.nn.common_layers.quant_moe import ExpertParallelMoE
-from max.nn.common_layers.quant_ops import (
-    EPDispatchPayload,
-    amd_blockwise_mega_band_m,
-    amd_blockwise_mega_max_rows,
-    grouped_ffn_blockwise_fp8_amd_ep,
-)
-from max.nn.common_layers.quant_tensor import (
-    FP8BlockActivation,
-    FP8BlockTensor,
-)
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     BLOCKWISE_FP8_LANE_BYTES,
     amd_mega_ffn_workspace_words,
     block_scaled_preshuffle_grouped_scale_4d,
@@ -77,8 +63,23 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8,
     stack_blockwise_fp8_b,
 )
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_moe import ExpertParallelMoE
+from max.nn.common_layers.quant_ops import (
+    EPDispatchPayload,
+    amd_blockwise_mega_band_m,
+    amd_blockwise_mega_max_rows,
+    grouped_ffn_blockwise_fp8_amd_ep,
+)
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockActivation,
+    FP8BlockTensor,
+)
+from max.nn.ep_config import EPConfig
+from max.nn.kernels.quant import preshuffle_blockwise_fp8_b
+from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.moe.moe_fp8 import MoEQuantized
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

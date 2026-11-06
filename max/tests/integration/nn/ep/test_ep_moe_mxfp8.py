@@ -30,15 +30,17 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep.ep_kernels import (
+from max.nn._graph_ops import amd_mega_ffn_workspace_words
+from max.nn._graph_ops.ep import (
     _ep_dispatch_output_types,
     uses_mx_ep_token_format,
 )
-from max.nn.legacy.kernels import amd_mega_ffn_workspace_words
-from max.nn.legacy.moe import GatedActivation, MoEGate, MoEQuantized, moe_fp8
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
+from max.nn.legacy.moe import MoEGate, MoEQuantized, moe_fp8
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

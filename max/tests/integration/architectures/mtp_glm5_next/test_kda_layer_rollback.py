@@ -34,7 +34,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import verify_width_operand
+from max.nn._graph_ops.state_space import verify_width_operand
 from max.pipelines.architectures.glm5_next.layers.kda import (
     KdaReplayInputs,
     KdaRing,
@@ -50,11 +50,7 @@ from max.pipelines.architectures.glm5_next.state_cache import (
     state_regions,
     with_verify_ring,
 )
-from max.pipelines.speculative.gated_delta_rollback import (
-    accepted_lengths,
-    accepted_row_plan,
-    replay_conv_pools,
-)
+from max.pipelines.speculative.gated_delta_rollback import accepted_lengths
 
 HIDDEN = 256
 HEADS = 2
@@ -104,7 +100,7 @@ def _sparse(
 
 def _weights() -> dict[str, np.ndarray]:
     rng = np.random.default_rng(29)
-    return {
+    weights = {
         "q_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
         "k_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
         "v_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
@@ -121,6 +117,13 @@ def _weights() -> dict[str, np.ndarray]:
         "o_norm.weight": np.ones(HEAD_DIM, dtype=np.float32),
         "o_proj.weight": _sparse(rng, HIDDEN, QKV_DIM, 0.5),
     }
+    # The checkpoint's three conv tensors, in the layer's q, k, v order.
+    conv = np.split(weights.pop("conv1d.weight"), 3)
+    weights.update(
+        (f"{part}_conv1d.weight", np.ascontiguousarray(block))
+        for part, block in zip("qkv", conv, strict=True)
+    )
+    return weights
 
 
 def _layer() -> KimiDeltaAttention:
@@ -240,23 +243,14 @@ def _run_spec_against_decode(
             verify_width=verify_width,
         )
         num_drafts = ops.constant(NUM_DRAFTS, DType.int64, device=gpu)
-        row_indices, replay_offsets = accepted_row_plan(
-            offsets_v, accepted_v, num_drafts, x_v.shape[0], gpu
-        )
-        replay_conv_pools(
-            [captures],
-            [conv],
-            [conv_rows],
-            row_indices,
-            replay_offsets,
-            [],
-            verify_width,
-        )
         fold_kda_state_pools(
             [rec],
             [rec_rows],
             [ring],
             [ring_rows],
+            [conv],
+            [conv_rows],
+            [captures],
             accepted_lengths(offsets_v, accepted_v, num_drafts),
             [offsets_v],
             [],

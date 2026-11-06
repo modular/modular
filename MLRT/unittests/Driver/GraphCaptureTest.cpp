@@ -1151,7 +1151,7 @@ TEST_F(GraphCaptureTest, WaitOnHostValueIsRecordedIntoCapturedGraph) {
 
   ErrorOr<DeviceGraphCollection> captured =
       DeviceGraph::capture(*runtime_, {stream}, [&]() -> ErrorOrSuccess {
-        return stream->enqueueWaitOnHostValue(*flag, 1);
+        return stream->enqueueWaitOnFlag(*flag, 1);
       });
   ASSERT_FALSE(captured.isError()) << std::string(captured.getError());
 
@@ -1219,7 +1219,7 @@ TEST_F(GraphCaptureTest, WaitOnHostValueGatesReplayedGraph) {
 
   flag->reset();
   EXPECT_NO_ERR(stream->beginCapture());
-  EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+  EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
   EXPECT_NO_ERR(deviceDst->copyFrom(src));
   ASSIGN_NO_ERR(DeviceGraphRef, graph, stream->endCapture());
   EXPECT_NO_ERR(graph->instantiate());

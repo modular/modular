@@ -302,7 +302,6 @@ def gpu_bicubic_kernel[
 def resize_bicubic[
     dtype: DType,
     //,
-    target: StaticString,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -312,8 +311,6 @@ def resize_bicubic[
 
     Parameters:
         dtype: Element type of the input and output tensors (inferred).
-        target: `StaticString` identifying the execution platform, used to
-            select between the GPU and CPU code paths.
 
     Args:
         output: Output tensor with desired dimensions on host or device.
@@ -324,7 +321,7 @@ def resize_bicubic[
         output.flat_rank == 4 and input.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
 
-    comptime if is_gpu[target]():
+    comptime if ctx.target.is_gpu():
         var input_shape = coord_to_index_list(input.layout.shape_coord())
         var N = input_shape[0]
         var C = input_shape[1]

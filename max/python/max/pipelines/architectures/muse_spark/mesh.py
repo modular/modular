@@ -25,8 +25,7 @@ from typing import TYPE_CHECKING
 
 from max.driver import Device
 from max.dtype import DType
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from max.tensor.sharding import DeviceMesh
 
 if TYPE_CHECKING:

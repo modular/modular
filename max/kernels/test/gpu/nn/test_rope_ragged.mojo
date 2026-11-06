@@ -176,7 +176,6 @@ def _test_rope_ragged_gpu_impl[
             dtype,
             dtype,
             interleaved=True,
-            target=StaticString("gpu"),
         ](
             x=q_device_tensor.as_unsafe_any_origin(),
             input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
@@ -191,7 +190,6 @@ def _test_rope_ragged_gpu_impl[
             dtype,
             dtype,
             interleaved=True,
-            target=StaticString("gpu"),
         ](
             x=q_device_tensor.as_unsafe_any_origin(),
             input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
@@ -426,7 +424,6 @@ def test_rope_ragged_gpu_rope_first[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("gpu"),
         rope_first=True,
     ](
         x=q_device_tensor.as_unsafe_any_origin(),
@@ -441,7 +438,6 @@ def test_rope_ragged_gpu_rope_first[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("gpu"),
     ](
         x=prefix_device_tensor.as_unsafe_any_origin(),
         input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),

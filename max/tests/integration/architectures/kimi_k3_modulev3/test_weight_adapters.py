@@ -35,7 +35,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.kimi_k3_modulev3 import model as km
 from max.pipelines.architectures.kimi_k3_modulev3 import (
     weight_adapters as wa,
@@ -777,7 +777,10 @@ def test_interleave_for_tp_rejects_a_non_divisible_width() -> None:
 
 
 def _cpu_mesh_moe(tp_size: int) -> KimiK3LatentMoE:
-    """A packed latent MoE block whose replicated weights sit on a CPU mesh."""
+    """A packed latent MoE block whose replicated weights sit on a CPU mesh.
+
+    MegaFFN is off because its preshuffled stacking runs a GPU kernel.
+    """
     mesh = DeviceMesh((CPU(),) * tp_size, (tp_size,), ("tp",))
     # The E8M0 zeros the experts start with would compile eagerly.
     with F.lazy(), default_device(mesh):
@@ -797,6 +800,8 @@ def _cpu_mesh_moe(tp_size: int) -> KimiK3LatentMoE:
             moe_renormalize=True,
             dtype=DType.bfloat16,
             quant_config=QuantConfig.mxfp4(mlp_quantized_layers={0}),
+            amd_w4a8=True,
+            amd_mega_ffn=False,
         )
 
 

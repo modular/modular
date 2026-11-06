@@ -37,6 +37,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_mega_ffn_amd_gpu.py",
     "test_mega_ffn_amd_init_memory_gpu.py",
     "test_mega_ffn_amd_mxfp4_gpu.py",
+    "test_mega_ffn_amd_a8w4_gpu.py",
     "test_attention_operand_masks.py",
     "test_buffer_create_init.py",
     "test_buffer_create_init_gpu.py",
@@ -104,6 +105,8 @@ _GRAPH_COMMON_DEPS = [
     "//max/python/max/engine",
     "//max/python/max/graph",
     "//max/python/max/mlir",
+    "//max/python/max/nn:core",
+    "//max/python/max/nn/_graph_ops",
     "//max/python/max/nn/legacy",
     "//max/tests/integration/test_common:graph_utils",
     "//max/tests/integration/test_common:modular_graph_test",
@@ -188,7 +191,8 @@ modular_py_library(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         requirement("numpy"),
     ],
 )
@@ -265,7 +269,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -369,7 +374,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -389,8 +394,6 @@ modular_py_test(
     # MI355-only: the op's MegaFFN is the gfx950 decode kernel.
     precompile_mefs = True,
     tags = [
-        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
-        "exclusive-if-local",
         "gpu",
         "manual",
     ],
@@ -404,8 +407,40 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "mega_ffn_amd_a8w4_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_mega_ffn_amd_a8w4_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    # Needs moe.grouped.ffn.block.scaled.amd, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -422,7 +457,6 @@ modular_py_test(
     # No precompile_mefs: the model compiles in a spawned child, which needs
     # the capped pool from its start and which the record cannot see.
     tags = [
-        "exclusive-if-local",
         "gpu",
         "manual",
     ],
@@ -436,7 +470,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         requirement("numpy"),
     ],
 )
@@ -455,8 +489,6 @@ modular_py_test(
     # MI355-only: the op's MegaFFN is the gfx950 decode kernel.
     precompile_mefs = True,
     tags = [
-        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
-        "exclusive-if-local",
         "gpu",
         "manual",
     ],
@@ -468,7 +500,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -752,7 +785,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -905,6 +938,10 @@ modular_py_test(
         "conftest.py",
         "test_tile_based_fusion.py",
     ],
+    data = ["//max/tests/integration/graph/testdata/tile_store_ops"],
+    env = {
+        "MODULAR_TILE_STORE_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/tile_store_ops)",
+    },
     # NVIDIA-only: tile-based fusion is not yet validated on AMD/Apple GPUs —
     # a coverage gate, not a hardware incompatibility (the codegen path emits
     # generic Mojo via `foreach_fusion_tile` with no NVIDIA-specific branch).

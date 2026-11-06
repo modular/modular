@@ -38,6 +38,7 @@
 /bazel/public-patches/llvm-avx2-bf16-broadcast.patch @modular/sdlc
 /bazel/public-patches/llvm-flag-defaults.patch @modular/sdlc
 /bazel/public-patches/llvm-libxml2-config-setting-visibility.patch @modular/sdlc
+/bazel/public-patches/llvm-shared.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc
 /bazel/public-patches/protobuf-dev-dep.patch @modular/sdlc
 /bazel/public-patches/rules_mojo_toolchain.patch @modular/sdlc
@@ -58,7 +59,6 @@
 /bazel/public-patches/nixl-libfabric-release-inflight.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-vmm-cuda-ctx.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-src-addr-peer-limit.patch @modular/runtime
-/bazel/public-patches/llvm-fix-lldb-dap-console.patch @modular/mojo-tooling
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
 /bazel/public-patches/rules_mojo_bitcode_libs.patch @modular/stdlib
 /bazel/public-patches/libkineto-record-window-end-track.patch @modular/max-sdk

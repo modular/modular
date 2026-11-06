@@ -14,7 +14,7 @@
 
 from std.collections import OptionalReg
 from std.math import gcd
-from std.sys.info import CompilationTarget, align_of, simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.utils.numerics import get_accum_type
@@ -307,7 +307,6 @@ def fused_qk_rope_ragged[
     cache_t: KVCacheT,
     *,
     interleaved: Bool,
-    target: StaticString,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
         Trait=CoordLike
     ](),
@@ -349,7 +348,6 @@ def fused_qk_rope_ragged[
         cache_t: The KV cache type used to store and load key cache entries.
         interleaved: Whether the RoPE weights use interleaved real and
             imaginary layout.
-        target: The compilation target string for the kernel.
         mrope_types: The coordinate element types for multimodal RoPE
             sections (defaults to a single `CoordLike` type).
         mrope_section: Optional section boundaries splitting the head
@@ -372,7 +370,6 @@ def fused_qk_rope_ragged[
         output: Output tensor for Q with RoPE applied, same shape as `q_proj`.
         context: Device context for GPU execution.
     """
-    context._comptime_assert_matches_target_is_cpu[target]()
 
     comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
     comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
@@ -461,7 +458,7 @@ def fused_qk_rope_ragged[
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
             var is_q_proj = head_idx < num_q_heads
-            comptime _alignment = 1 if is_cpu[target]() else align_of[
+            comptime _alignment = 1 if context.target.is_cpu() else align_of[
                 SIMD[freq_dtype, width]
             ]()
 
@@ -529,11 +526,7 @@ def fused_qk_rope_ragged[
         num_q_heads + num_k_heads,  # concat q and k along head dim
         q_head_size,
     )
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=context.target]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=context.target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     comptime if case .Some(sections) = mrope_section:

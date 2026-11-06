@@ -36,7 +36,7 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/hy_v4",
         "//max/python/max/pipelines/lib",
     ],

@@ -2187,6 +2187,53 @@ def test_record_request_end_labels_token_counts_with_the_turn() -> None:
     metrics_mock.output_tokens_per_request.assert_called_once_with(3, "later")
 
 
+@pytest.mark.parametrize("turn", ["first", "later"])
+def test_record_request_end_splits_cached_and_uncached_input_tokens(
+    turn: ConversationTurn,
+) -> None:
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end(
+            "/v1/chat/completions", 1.0, 3, 8, turn, cached_tokens=6
+        )
+
+    metrics_mock.request_cached_input_tokens.assert_called_once_with(6, turn)
+    metrics_mock.request_uncached_input_tokens.assert_called_once_with(2, turn)
+
+
+def test_record_request_end_records_a_cold_cache_as_zero_cached_tokens() -> (
+    None
+):
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end(
+            "/v1/chat/completions", 1.0, 3, 8, "first", cached_tokens=0
+        )
+
+    metrics_mock.request_cached_input_tokens.assert_called_once_with(0, "first")
+    metrics_mock.request_uncached_input_tokens.assert_called_once_with(
+        8, "first"
+    )
+
+
+def test_record_request_end_clamps_a_cached_count_above_the_prompt() -> None:
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end(
+            "/v1/chat/completions", 1.0, 3, 8, "later", cached_tokens=9
+        )
+
+    metrics_mock.request_cached_input_tokens.assert_called_once_with(8, "later")
+    metrics_mock.request_uncached_input_tokens.assert_called_once_with(
+        0, "later"
+    )
+
+
+def test_record_request_end_skips_the_split_without_a_cached_count() -> None:
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end("/v1/chat/completions", 1.0, 3, 8, "first")
+
+    metrics_mock.request_cached_input_tokens.assert_not_called()
+    metrics_mock.request_uncached_input_tokens.assert_not_called()
+
+
 def test_record_request_end_without_a_turn_leaves_token_counts_unlabelled() -> (
     None
 ):

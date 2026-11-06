@@ -233,7 +233,7 @@ def _bench[
         imm output_tt,
         imm silu_activation,
     }:
-        causal_conv1d[target="gpu"](
+        causal_conv1d(
             output_tt, input_tt, weights_tt, bias_tt, silu_activation, lctx
         )
 

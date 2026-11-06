@@ -113,6 +113,7 @@ MOComposite_LayerNormRopeRaggedOp                    # CompositeLayerNormRopeRag
 MOComposite_QuantizeDynamicScaledFP8Op               # CompositeQuantizeDynamicScaledFp8Op
 MOComposite_RMSNormResidualAddOp                     # CompositeRmsNormResidualAddOp; declares output params; graph.py reaches it structurally
 MOComposite_ReduceRMSNormFusedResidualAddOp          # CompositeRmsNormFusedResidualAddOp; declares output params; graph.py reaches it structurally
+MOComposite_ReduceRMSNormOp                          # CompositeReduceRmsNormOp
 MOComposite_ReduceRMSNormRoPEOp                      # CompositeRmsNormRopeOp; declares output params; graph.py reaches it structurally
 MOComposite_RopeRaggedOp                             # CompositeRopeRaggedOp
 MODialect                                            # required: module docstring for mo.cpp
@@ -124,6 +125,7 @@ MO_AbsOp                                             # AbsOp
 MO_AddOp                                             # AddOp
 MO_AllGatherOp                                       # DistributedAllgatherOp
 MO_AllReduceSumOp                                    # DistributedAllreduceSumOp
+MO_AllToAllOp                                        # DistributedAllToAllOp
 MO_AndOp                                             # AndOp
 MO_ArgMaxOp                                          # ReduceArgMaxOp
 MO_ArgMinOp                                          # ReduceArgMinOp
@@ -224,7 +226,6 @@ MO_ReduceMaxOp                                       # ReduceMaxOp
 MO_ReduceMinAndMaxOp                                 # ReduceReduceMinAndMaxOp; declares output params; graph.py reaches it structurally
 MO_ReduceMinOp                                       # ReduceMinOp
 MO_ReduceMulOp                                       # ReduceMulOp
-MO_ReduceRMSNormOp                                   # ReduceRmsNormOp
 MO_ReduceScatterSumOp                                # DistributedReducescatterSumOp
 MO_ReluOp                                            # ReluOp; declares output params; graph.py reaches it structurally
 MO_ReshapeOp                                         # ReshapeOp

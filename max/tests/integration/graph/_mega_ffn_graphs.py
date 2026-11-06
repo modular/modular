@@ -21,12 +21,12 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
 )
+from max.nn.activation import GatedActivation
 
 # NVFP4 scale-tile geometry (mirrors kernels.py).
 NVFP4_SF_VECTOR_SIZE = 16

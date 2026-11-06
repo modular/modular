@@ -32,22 +32,22 @@ from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import BufferValue, DimLike, TensorType, TensorValue, ops
 from max.nn import Linear, Module, RMSNorm
-from max.nn.common_layers.linear import col_parallel, row_parallel
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     kda_chunk,
     kda_decode,
-    kda_verify_ring,
 )
-from max.nn.legacy.state_space.kimi_delta import (
+from max.nn._graph_ops.state_space.kimi_delta import (
     STATE_LAYOUT,
     KdaGateMode,
     kda_chunk_predicate,
     kda_chunk_servable,
     kda_gate_mode,
+    kda_verify_ring,
 )
+from max.nn.common_layers.linear import col_parallel, row_parallel
+from max.nn.common_layers.mesh_axis import TP
 from max.pipelines.architectures.glm5_next.layers.kda import KdaReplayInputs
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
@@ -107,7 +107,7 @@ class KdaVerify:
     """``[num_kda_layers, batch_size]`` ring rows."""
     verify_width: TensorValue
     """The speculative graph's
-    :func:`~max.nn.legacy.state_space.verify_width_operand`."""
+    :func:`~max.nn._graph_ops.state_space.verify_width_operand`."""
     captures: list[list[KdaReplayInputs]]
     """Per-device sink every KDA layer appends its replay inputs to, in
     schedule order."""
@@ -160,11 +160,12 @@ def _kda_core_graph(
     qkv_dim = q.shape[-1]
     head_shape = [-1, int(qkv_dim) // head_dim, head_dim]
 
-    # q, k, v in that order: the conv's channel layout.
+    # q, k, v in that order: the conv's channel layout. The module holds each
+    # conv weight as the checkpoint's depthwise `[channels, 1, kernel]`.
     qkv = ops.concat([q, k, v], axis=-1).cast(DType.float32)
-    conv_weight = ops.concat([q_conv, k_conv, v_conv], axis=0).cast(
-        DType.float32
-    )
+    conv_weight = ops.reshape(
+        ops.concat([q_conv, k_conv, v_conv], axis=0), [-1, q_conv.shape[-1]]
+    ).cast(DType.float32)
     conv_slots = _layer_rows(conv_rows, layer).cast(DType.uint32)
     qkv_window: TensorValue | None = None
     if verify_width is None:
@@ -338,7 +339,10 @@ def _kda_core_graph(
         core = verify_ring()
     # Normalize, scale, and only then gate.
     normed = ops.rms_norm(
-        core, norm_weight, norm_eps, multiply_before_cast=False
+        core,
+        norm_weight.cast(DType.float32),
+        norm_eps,
+        multiply_before_cast=False,
     ) * ops.sigmoid(ops.reshape(output_gate.cast(DType.float32), head_shape))
     return ops.reshape(normed.cast(dtype), [-1, qkv_dim])
 
@@ -367,9 +371,9 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         self.q_proj = head_rows(hidden, qkv_dim)
         self.k_proj = head_rows(hidden, qkv_dim)
         self.v_proj = head_rows(hidden, qkv_dim)
-        self.q_conv1d = _shard_rows(Tensor.zeros([qkv_dim, kernel]))
-        self.k_conv1d = _shard_rows(Tensor.zeros([qkv_dim, kernel]))
-        self.v_conv1d = _shard_rows(Tensor.zeros([qkv_dim, kernel]))
+        self.q_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
+        self.k_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
+        self.v_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
 
         # The low-rank gate projections bottom out at `head_dim`, which is not
         # a head axis, so their down halves are replicated.
@@ -385,9 +389,8 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         )
         # The reference's gated norm multiplies by the weight, not 1 + weight,
         # and holds everything in float32. It runs inside the per-device core
-        # below, which reads only its weight.
+        # below, which reads only its weight and widens it to float32.
         self.o_norm = RMSNorm(self.head_dim, eps=self.norm_eps)
-        self.o_norm.weight = Tensor.ones([self.head_dim], dtype=DType.float32)
         self.o_proj = row_parallel(Linear(qkv_dim, hidden, bias=False))
         self.verify: KdaVerify | None = None
         """Set by the speculative target around its verify, else ``None``."""

@@ -26,7 +26,10 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn._graph_ops import mla_decode_graph, mla_prefill_decode_graph
+from max.nn._graph_ops.quant import quantized_matmul
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
     MLAPrefillMetadata,
@@ -35,15 +38,9 @@ from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
 from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.kernels import (
-    mla_decode_graph,
-    mla_prefill_decode_graph,
-)
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.quant_ops import quantized_matmul
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.quant_config import QuantConfig
 
 from .indexer import Indexer
 

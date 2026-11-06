@@ -142,14 +142,14 @@ def run_case[
 
     comptime for kv in range(kv_dim):
         comptime if kv == 0:
-            kv_cache_gather_rows_ragged[target="gpu"](
+            kv_cache_gather_rows_ragged(
                 gpu_out.device_tensor(),
                 slots.device_tensor(),
                 offsets.device_tensor(),
                 device_collection.get_key_cache(LAYER),
                 ctx,
             )
-            kv_cache_gather_rows_ragged[target="cpu"](
+            kv_cache_gather_rows_ragged(
                 cpu_host,
                 slots_host,
                 offsets_host,
@@ -157,14 +157,14 @@ def run_case[
                 cpu_ctx,
             )
         else:
-            kv_cache_gather_rows_ragged[target="gpu"](
+            kv_cache_gather_rows_ragged(
                 gpu_out.device_tensor(),
                 slots.device_tensor(),
                 offsets.device_tensor(),
                 device_collection.get_value_cache(LAYER),
                 ctx,
             )
-            kv_cache_gather_rows_ragged[target="cpu"](
+            kv_cache_gather_rows_ragged(
                 cpu_host,
                 slots_host,
                 offsets_host,

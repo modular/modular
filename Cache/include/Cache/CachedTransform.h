@@ -25,6 +25,7 @@
 #include "Support/LogicalResult.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/RCRef.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/OpDefinition.h" // IWYU pragma: keep (incomplete type)
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/STLForwardCompat.h"
@@ -50,7 +51,7 @@ namespace M::Cache {
 /// struct defines the cache key as a BufferRef; the contents of which are
 /// hashed; this is to disambiguate it from StringRef keys, which generally
 /// have no hashing applied.
-struct TransformCacheKey {
+struct MODULAR_CXX_EXPORT TransformCacheKey {
   using KeyTy = BufferRef;
   static std::string hashKey(KeyTy key);
 };
@@ -300,8 +301,8 @@ using OpCacheHitFn =
     llvm::unique_function<AsyncRT::AnyAsyncValueRef(Operation *, BufferRef)>;
 
 /// Helper method to write the given operation to the provided cache key.
-LogicalResult writeOperationToCacheKey(Operation *op,
-                                       const WriteableBufferRef &key);
+MODULAR_CXX_EXPORT LogicalResult
+writeOperationToCacheKey(Operation *op, const WriteableBufferRef &key);
 
 /// Run the specified transform on the target operation. The transform must have
 /// a key of some kind that can be associated with the operation. The semantics

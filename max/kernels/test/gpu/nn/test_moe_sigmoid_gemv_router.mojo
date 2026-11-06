@@ -61,7 +61,7 @@ def test_sigmoid_gemv_router[
     ctx.enqueue_copy(weight_dev, weight_host)
     ctx.enqueue_copy(bias_dev, bias_host)
 
-    sigmoid_gemv_single_group_router[n_experts, topk, True, "gpu"](
+    sigmoid_gemv_single_group_router[n_experts, topk, True](
         TileTensor(indices_dev, row_major[num_tokens, topk]()),
         TileTensor(weights_dev, row_major[num_tokens, topk]()),
         TileTensor(hidden_dev, row_major[num_tokens, hidden_size]()).as_imm(),
@@ -139,7 +139,7 @@ def test_sigmoid_gemv_router_no_tokens(ctx: DeviceContext) raises:
     ctx.enqueue_copy(indices_dev, indices_host)
     ctx.enqueue_copy(weights_dev, weights_host)
 
-    sigmoid_gemv_single_group_router[n_experts, topk, True, "gpu"](
+    sigmoid_gemv_single_group_router[n_experts, topk, True](
         TileTensor(indices_dev, row_major((0, Idx[topk]))),
         TileTensor(weights_dev, row_major((0, Idx[topk]))),
         TileTensor(hidden_dev, row_major((0, Idx[hidden_size]))).as_imm(),
@@ -176,7 +176,7 @@ def test_sigmoid_gemv_router_bf16_weight[
         rand(w.unsafe_ptr(), n_experts * hidden_size, min=-0.05, max=0.05)
     bias_dev.enqueue_fill(0)
 
-    sigmoid_gemv_single_group_router[n_experts, topk, True, "gpu"](
+    sigmoid_gemv_single_group_router[n_experts, topk, True](
         TileTensor(indices_dev, row_major[num_tokens, topk]()),
         TileTensor(weights_dev, row_major[num_tokens, topk]()),
         TileTensor(hidden_dev, row_major[num_tokens, hidden_size]()).as_imm(),

@@ -2,9 +2,9 @@
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "9b2201bd0e353af4a4af95815d217d050527daab"
+LLVM_COMMIT = "fa8c67382e4fa68010fce98bbd267f91b397f80e"
 
-LLVM_SHA = "6567a8f6790681ea35ccfb1e655f37f699aeff096cb67a3c79b317463954fbe4"
+LLVM_SHA = "b4ab9e2d62be5eb4c0d90bc0cf4bffce8819560f77a7fa480073bd40fbb0f4ad"
 # END_GENERATED
 
 PATCHES = [
@@ -12,8 +12,6 @@ PATCHES = [
     # https://github.com/llvm/llvm-project/pull/153352
     # https://linear.app/modularml/issue/MOCO-2322/llvm-upstream-change-conflicting-with-internal-code-that-addresses
     "//bazel/public-patches:llvm-machinefunction-sti-ref-to-ptr.patch",
-    # https://github.com/llvm/llvm-project/pull/175650
-    "//bazel/public-patches:llvm-fix-lldb-dap-console.patch",
     # Fix heap corruption in ObjectFileELF::GetModuleSpecifications: use a
     # local DataExtractor copy instead of mutating the shared extractor_sp,
     # which invalidated other DataExtractors sharing the same buffer and
@@ -66,6 +64,9 @@ PATCHES = [
     # v16f16 patterns: select v8bf16/v16bf16 broadcasts to VPBROADCASTW(Y)
     # under [HasAVX2, NoVLX_Or_NoBWI].
     "//bazel/public-patches:llvm-avx2-bf16-broadcast.patch",
+    # Provides targets to enable use of `libLLVM.so` and related changes.
+    # TODO: Upstream
+    "//bazel/public-patches:llvm-shared.patch",
 ]
 
 # Upstream lit test inputs that no target reads: about three quarters of the
@@ -76,7 +77,6 @@ _EXCLUDED_DIRS = [
     "clang/test",
     "compiler-rt/test",
     "libcxx/test",
-    "lldb/test",
     "llvm/test",
 ]
 

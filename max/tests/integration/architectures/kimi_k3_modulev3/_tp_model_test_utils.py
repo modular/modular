@@ -23,7 +23,7 @@ from max import tree
 from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -36,6 +36,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.state_cache import (
     STATE_CACHE_KEY,
     kda_state_regions,
 )
+from max.pipelines.context import SpecDecodingState, TextContext, TokenBuffer
 from max.tensor import Tensor
 
 _RNG = np.random.default_rng(20261012)
@@ -43,6 +44,33 @@ _RNG = np.random.default_rng(20261012)
 
 def rel_error(got: np.ndarray, want: np.ndarray) -> float:
     return float(np.max(np.abs(got - want)) / max(np.max(np.abs(want)), 1e-12))
+
+
+def spec_decode_context(
+    cached: int, active: int, drafts: int, maybe_accepted: int = 0
+) -> TextContext:
+    """A request in the state a spec batch's fetch sees.
+
+    ``cached`` tokens are committed, ``maybe_accepted`` more may still be
+    committed by the step in flight, and this step schedules ``active``
+    new rows plus ``drafts`` drafts to verify -- the terms the cache
+    manager and the plan kernel both read.
+    """
+    context = TextContext(
+        max_length=cached + active + drafts + 100,
+        tokens=TokenBuffer(np.full(cached + active - 1, 3, dtype=np.int64)),
+        _spec_decoding_state=SpecDecodingState(
+            draft_tokens_to_verify=[0] * drafts,
+            maybe_accepted_draft_tokens=[0] * maybe_accepted,
+        ),
+    )
+    # ``update`` commits every token before it and appends one active row;
+    # rewinding re-exposes the rows this step is to schedule.
+    context.update(5)
+    context.tokens.rewind_processing(active - 1)
+    assert context.tokens.processed_length == cached
+    assert context.tokens.active_length == active
+    return context
 
 
 def tiny_model_config(hidden: int, vocab: int) -> KimiK3ModelConfig:

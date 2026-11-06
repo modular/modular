@@ -18,7 +18,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
 )

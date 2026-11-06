@@ -34,7 +34,7 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
     NVFP4TensorQuantizer,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor, default_dtype
 
 # Dimensions are multiples of the 128x128 weight block so the FP8 scale grid

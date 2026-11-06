@@ -39,12 +39,12 @@ from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.mlp import MLP
-from max.nn.common_layers.quant_kernels import nvfp4_dequant
 from max.nn.common_layers.quant_tensor import (
     MAX_E2M1,
     MAX_E4M3,
     NVFP4TensorQuantizer,
 )
+from max.nn.kernels import nvfp4_dequant
 from max.nn.module import Module, module_dataclass
 from max.pipelines.weights.fp4_quantization import (
     FP4Format,

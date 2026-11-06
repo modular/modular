@@ -2577,6 +2577,11 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
         diag << "has RegisterPassable type " << argType;
       else
         diag << "might expand to a RegisterPassable type";
+      // A 'ref' argument only replaces a borrow; owned arguments get no hint.
+      if (badArg.convention == ParsedArgument::kConventionMut)
+        diag << "; use a 'ref' argument with a MutOrigin instead";
+      else if (badArg.convention == ParsedArgument::kConventionImm)
+        diag << "; use a 'ref' argument with an ImmOrigin instead";
       diag << resultArg.typeExpr->getRange()
            << SourceRange(badArg.loc, badArg.loc);
       break;

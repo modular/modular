@@ -19,20 +19,31 @@ from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.kv_cache import KVCacheParams
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
 from ..model_config import MuseSparkTextConfig
 from .attention import MuseSparkAttention
-from .moe import MuseSparkEPMoE, MuseSparkMoE, expert_quant_config
+from .moe import (
+    MuseSparkEPMoE,
+    MuseSparkMoE,
+    MuseSparkMoEBranch,
+    expert_quant_config,
+)
 from .norms import CenteredRMSNorm, InputScaledRMSNorm, WeightlessRMSNorm
-from .residual_gate import MuseSparkResidualGate
+from .residual_gate import MuseSparkResidualBoundary, MuseSparkResidualGate
 
 
-class MuseSparkTransformerBlock(Module[..., Tensor]):
+class MuseSparkTransformerBlock(
+    Module[..., Tensor | MuseSparkResidualBoundary]
+):
     """Muse Spark decoder layer: normed attention and MoE, each joined by a residual gate."""
+
+    defer_join = False
+    """Whether to return the MoE branch unjoined, for the next layer's
+    input norm to join it in the same launch."""
 
     def __init__(
         self,
@@ -79,32 +90,42 @@ class MuseSparkTransformerBlock(Module[..., Tensor]):
             hidden, temperature
         )
 
-    def _moe(self, x: Tensor) -> Tensor:
+    def _moe(self, x: Tensor) -> Tensor | MuseSparkMoEBranch:
         # Each device routes its own rows; the residual stream stays whole.
         if x.mesh.num_devices == 1:
             return self.mlp(x)
+        if isinstance(self.mlp, MuseSparkEPMoE):
+            return self.mlp.branch(x)
         rows = DeviceMapping(x.mesh, (Sharded(0),))
         # The devices' row shards sum to t again.
         return F.rebind(self.mlp(x.to(rows)).to(x.mapping), x.shape)
 
     def forward(
         self,
-        x: Tensor,
+        x: Tensor | MuseSparkResidualBoundary,
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
-    ) -> Tensor:
+    ) -> Tensor | MuseSparkResidualBoundary:
         """Runs the block's attention, then its MLP."""
+        if isinstance(x, MuseSparkResidualBoundary):
+            x, attn_in = x.join_and_norm(self.input_layernorm)
+        else:
+            attn_in = self.input_layernorm(x)
         attn_out = self.self_attn(
-            self.input_layernorm(x),
-            kv_collection,
-            input_row_offsets=input_row_offsets,
+            attn_in, kv_collection, input_row_offsets=input_row_offsets
         )
         # o_proj leaves a partial sum under TP; the norm needs the whole row.
         attn_out = attn_out.to(DeviceMapping(x.mesh, (Replicated(),)))
-        h = self.post_attention_residual_gate(
-            x, self.post_attention_layernorm(attn_out)
+        h, mlp_in = MuseSparkResidualBoundary(
+            x,
+            attn_out,
+            self.post_attention_layernorm,
+            self.post_attention_residual_gate,
+        ).join_and_norm(self.pre_feedforward_layernorm)
+        out = MuseSparkResidualBoundary(
+            h,
+            self._moe(mlp_in),
+            self.post_feedforward_layernorm,
+            self.post_feedforward_residual_gate,
         )
-        mlp_out = self._moe(self.pre_feedforward_layernorm(h))
-        return self.post_feedforward_residual_gate(
-            h, self.post_feedforward_layernorm(mlp_out)
-        )
+        return out if self.defer_join else out.join()

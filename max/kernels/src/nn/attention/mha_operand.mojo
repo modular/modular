@@ -26,6 +26,7 @@ from kv_cache.types import (
     KVCacheT,
     PagedRowIndices,
     _populate_via_row_idx,
+    create_flat_kv_tma_tile,
     create_flat_scale_tma_tile,
     flat_scale_window,
     scale_align_elems,
@@ -408,6 +409,44 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         value must be used at the `tma_copy_k`/`tma_copy_v` issue site and the
         P@V MMA consumer descriptor."""
         ...
+
+    @inline(.always)
+    def create_paged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        depth: Int,
+        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            Self.dtype,
+            coord[1, BN, 1, BK],
+            swizzle_mode,
+        ],
+    ) raises:
+        """Creates the KV tile that :meth:`kv_tma_coords` addresses.
+
+        The split counterpart of :meth:`create_tma_tile`: a paged operand
+        returns its cache's `(block, row_in_block)` descriptor, and a
+        contiguous one the single-block form of it, so a kernel that reads
+        through this pair has one code path for both. The default refuses at
+        compile time, for operands no such kernel reads.
+
+        Parameters:
+            swizzle_mode: TMA swizzle for the innermost dimension.
+            BN: Rows per tile.
+            depth: Full depth of a head in global memory, in elements.
+            BK: Depth per tile, a multiple of the swizzle granularity.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+
+        Returns:
+            The TMA descriptor.
+        """
+        comptime assert False, "this operand has no split KV TMA descriptor"
 
     @inline(.always)
     def create_scale_tma_tile[
@@ -1270,6 +1309,42 @@ struct KVCacheMHAOperand[
         )
 
     @inline(.always)
+    def create_paged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        depth: Int,
+        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            Self.dtype,
+            coord[1, BN, 1, BK],
+            swizzle_mode,
+        ],
+    ) raises:
+        """Forwards to the cache, whose blocks the descriptor addresses.
+
+        Parameters:
+            swizzle_mode: TMA swizzle for the innermost dimension.
+            BN: Rows per tile.
+            depth: Full depth of a head in global memory, in elements.
+            BK: Depth per tile, a multiple of the swizzle granularity.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
+        # The cache's descriptor is one head wide. A key pooled over token
+        # rows is read through the cache's own `pool_row_tokens`.
+        comptime assert (
+            depth == Self.cache_t.kv_params.head_size
+        ), "depth must be the cache's head size"
+        tma = rebind[type_of(tma)](
+            self.cache.create_paged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
+        )
+
+    @inline(.always)
     def create_scale_tma_tile[
         BMN: Int
     ](
@@ -2040,6 +2115,41 @@ struct TileTensorMHAOperand[
         )
 
     @inline(.always)
+    def create_paged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        depth: Int,
+        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            Self.dtype,
+            coord[1, BN, 1, BK],
+            swizzle_mode,
+        ],
+    ) raises:
+        """Builds the one-block descriptor that `kv_tma_coords` addresses.
+
+        Parameters:
+            swizzle_mode: TMA swizzle for the innermost dimension.
+            BN: Rows per tile.
+            depth: Full depth of a head in global memory, in elements.
+            BK: Depth per tile, a multiple of the swizzle granularity.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
+        tma = create_flat_kv_tma_tile[BN=BN, BK=BK, swizzle_mode=swizzle_mode](
+            ctx,
+            self.buffer.ptr.as_imm().as_unsafe_any_origin(),
+            Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]()),
+            Int(self.buffer.dim[2]()),
+            depth,
+        )
+
+    @inline(.always)
     def create_scale_tma_tile[
         BMN: Int
     ](
@@ -2496,6 +2606,41 @@ struct RaggedMHAOperand[
             self.buffer.ptr.as_imm().as_unsafe_any_origin(),
             rows,
             Int(self.buffer.dim[1]()),
+        )
+
+    @inline(.always)
+    def create_paged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        depth: Int,
+        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            Self.dtype,
+            coord[1, BN, 1, BK],
+            swizzle_mode,
+        ],
+    ) raises:
+        """Builds the one-block descriptor that `kv_tma_coords` addresses.
+
+        Parameters:
+            swizzle_mode: TMA swizzle for the innermost dimension.
+            BN: Rows per tile.
+            depth: Full depth of a head in global memory, in elements.
+            BK: Depth per tile, a multiple of the swizzle granularity.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
+        tma = create_flat_kv_tma_tile[BN=BN, BK=BK, swizzle_mode=swizzle_mode](
+            ctx,
+            self.buffer.ptr.as_imm().as_unsafe_any_origin(),
+            Int(self.buffer.dim[0]()),
+            Int(self.buffer.dim[1]()),
+            depth,
         )
 
     @inline(.always)

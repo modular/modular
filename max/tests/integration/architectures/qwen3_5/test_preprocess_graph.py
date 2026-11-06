@@ -113,10 +113,9 @@ def preprocess() -> CompiledCallable[..., Any]:
 
 @pytest.fixture(scope="module")
 def preprocess_video() -> CompiledCallable[..., Any]:
-    model: Any = SimpleNamespace(
-        huggingface_config=SimpleNamespace(vision_config=_vision_config())
+    spec = Qwen3_5Model.vision_preprocess_video_spec_for(
+        _pipeline_config(SimpleNamespace(vision_config=_vision_config())), None
     )
-    spec = Qwen3_5Model.vision_preprocess_video_spec(model)
     assert spec is not None
     role = GraphRole.VISION_PREPROCESS_VIDEO
     session = InferenceSession(devices=[CPU()])
@@ -435,23 +434,29 @@ def _vision_config() -> SimpleNamespace:
     )
 
 
+def _pipeline_config(huggingface_config: object) -> Any:
+    """A stand-in for the pipeline config the spec methods read."""
+    return SimpleNamespace(
+        model=SimpleNamespace(huggingface_config=huggingface_config)
+    )
+
+
 @pytest.mark.parametrize(
     "spec_of",
     [
-        Qwen3_5Model.vision_preprocess_spec,
-        Qwen3_5Model.vision_preprocess_video_spec,
+        Qwen3_5Model.vision_preprocess_spec_for,
+        Qwen3_5Model.vision_preprocess_video_spec_for,
     ],
 )
 def test_vision_preprocess_returns_the_vision_inputs_by_path(
-    spec_of: Callable[[Any], GraphSpec | None],
+    spec_of: Callable[[Any, object], GraphSpec | None],
 ) -> None:
     """A serving engine feeds the preprocess graphs' outputs to the tower by
     path, so they are the tower's one-device inputs for an image or a
     temporal patch, all but the TP signal buffers the engine supplies."""
-    model: Any = SimpleNamespace(
-        huggingface_config=SimpleNamespace(vision_config=_vision_config())
+    spec = spec_of(
+        _pipeline_config(SimpleNamespace(vision_config=_vision_config())), None
     )
-    spec = spec_of(model)
     assert spec is not None
     outputs, out_tree = tree.flatten(spec.trace().output_tree)
     tower: Any = SimpleNamespace(
@@ -477,6 +482,11 @@ def test_vision_preprocess_returns_the_vision_inputs_by_path(
 
 
 def test_a_checkpoint_without_a_tower_has_no_preprocess_graph() -> None:
-    model: Any = SimpleNamespace(huggingface_config=SimpleNamespace())
-    assert Qwen3_5Model.vision_preprocess_spec(model) is None
-    assert Qwen3_5Model.vision_preprocess_video_spec(model) is None
+    pipeline_config = _pipeline_config(SimpleNamespace())
+    assert (
+        Qwen3_5Model.vision_preprocess_spec_for(pipeline_config, None) is None
+    )
+    assert (
+        Qwen3_5Model.vision_preprocess_video_spec_for(pipeline_config, None)
+        is None
+    )

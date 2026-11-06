@@ -13,10 +13,24 @@ filegroup(
         "no-inputs.mlir",
         "scalar-input.mlir",
     ],
+    # Extends the package default with plugin tests.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
 )
 
 filegroup(
     name = "inputs",
     testonly = True,
     srcs = glob(["**/*.mlir"]),
+    # Extends the package default with plugin tests.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
 )

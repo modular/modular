@@ -32,7 +32,10 @@ from max.gpu.host import (
     HostBuffer,
     default_accelerator,
 )
-from nn.attention.gpu.mla_graph import mla_prefill_branch_sparse_fp8
+from nn.attention.gpu.mla_graph import (
+    AMDMLAGraph,
+    mla_prefill_branch_sparse_fp8,
+)
 from std.testing import assert_equal, assert_true
 from std.utils import IndexList
 
@@ -271,6 +274,7 @@ def _run[
             k_scale_granularity=SCALE_GRAN,
             indices_stride=TOPK,
             attn_sink_inert=True,
+            kernels=AMDMLAGraph,
         ](
             out_tt,
             q_tt,

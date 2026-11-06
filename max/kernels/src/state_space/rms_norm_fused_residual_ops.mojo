@@ -63,7 +63,6 @@ struct RMSNormFusedResidual:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
         multiply_before_cast: Bool = True,
     ](
         output: Some[Output & Tensor],
@@ -103,7 +102,7 @@ struct RMSNormFusedResidual:
         var output_tt = output.to_tile_tensor[dtype]()
         var residual_output_tt = residual_output.to_tile_tensor[dtype]()
 
-        comptime if is_gpu[target]():
+        comptime if ctx.target.is_gpu():
 
             @inline(.always)
             def input_fn[
@@ -147,10 +146,7 @@ struct RMSNormFusedResidual:
                     ),
                 ](coords, val)
 
-            rms_norm_fused_residual[
-                target=target,
-                multiply_before_cast=multiply_before_cast,
-            ](
+            rms_norm_fused_residual[multiply_before_cast=multiply_before_cast,](
                 input_fn,
                 residual_input_fn,
                 output_fn,

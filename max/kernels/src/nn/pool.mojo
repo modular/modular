@@ -1264,7 +1264,6 @@ def avg_pool[
     dtype: DType,
     int_type: DType,
     count_boundary: Bool = False,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     filter: TileTensor[mut=False, int_type, ...],
@@ -1281,7 +1280,6 @@ def avg_pool[
         dtype: Data type of the input and output tensors.
         int_type: Data type of the filter, strides, dilations, and paddings tensors.
         count_boundary: Whether to count the boundary in the average computation.
-        target: Execution target, either "cpu" or "gpu".
 
     Args:
         input: Batched image input to the pool2d operator.
@@ -1297,11 +1295,11 @@ def avg_pool[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
         ctx: The DeviceContext to use for GPU execution.
     """
-    comptime if is_cpu[target]():
+    comptime if ctx.T.target.is_cpu():
         avg_pool_cpu[count_boundary=count_boundary](
             input, filter, strides, dilations, paddings, output, ceil_mode
         )
-    elif is_gpu[target]():
+    elif ctx.T.target.is_gpu():
         avg_pool_gpu[count_boundary=count_boundary](
             ctx.value(),
             input,
@@ -1313,14 +1311,15 @@ def avg_pool[
             ceil_mode,
         )
     else:
-        comptime assert False, "Unknown target " + target
+        comptime assert False, (
+            "Unknown target " + ctx.T.target.device_kind_label()
+        )
 
 
 @inline(.always)
 def max_pool[
     dtype: DType,
     int_type: DType,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     filter: TileTensor[mut=False, int_type, ...],
@@ -1336,7 +1335,6 @@ def max_pool[
     Parameters:
         dtype: Data type of the input and output tensors.
         int_type: Data type of the filter, strides, dilations, and paddings tensors.
-        target: Execution target, either "cpu" or "gpu".
 
     Args:
         input: Batched image input to the pool2d operator.
@@ -1352,11 +1350,11 @@ def max_pool[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
         ctx: The DeviceContext to use for GPU execution.
     """
-    comptime if is_cpu[target]():
+    comptime if ctx.T.target.is_cpu():
         max_pool_cpu(
             input, filter, strides, dilations, paddings, output, ceil_mode
         )
-    elif is_gpu[target]():
+    elif ctx.T.target.is_gpu():
         max_pool_gpu(
             ctx.value(),
             input,
@@ -1368,4 +1366,6 @@ def max_pool[
             ceil_mode,
         )
     else:
-        comptime assert False, "Unknown target " + target
+        comptime assert False, (
+            "Unknown target " + ctx.T.target.device_kind_label()
+        )

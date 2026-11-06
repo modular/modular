@@ -26,6 +26,7 @@ mixed-step split record.
 
 from __future__ import annotations
 
+import re
 from typing import cast
 
 import pytest
@@ -39,8 +40,8 @@ from dflash2_pairing_harness import (
 )
 from max.driver import Buffer
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.qwen3_5.spec_adapters import state_tail_types
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _Inputs,
@@ -156,6 +157,26 @@ def test_the_state_pool_tail_is_the_one_the_qwen3_5_graphs_declare(
     for got, want in zip(tail, expected, strict=True):
         assert got.dtype == want.dtype
         assert [str(d) for d in got.shape] == [str(d) for d in want.shape]
+
+
+def test_the_rollback_replays_the_conv_windows_per_layer(
+    fused: FusedGraph,
+) -> None:
+    """Checks Qwen3.5's rollback still runs one conv replay per linear layer.
+
+    GLM-5.3-Flash's KDA fold places its conv windows inside the state fold's
+    launch; Qwen3.5's Gated DeltaNet keeps the per-layer path, so its graph
+    holds a verify launch and a replay launch per linear layer and one fold.
+    """
+    linear = GEOMETRY.layer_types.count(LINEAR)
+    assert _symbol_count(fused.graph, "gated_delta_conv1d_verify_fwd") == (
+        2 * linear
+    )
+    assert _symbol_count(fused.graph, "gated_delta_state_fold") == 1
+
+
+def _symbol_count(graph: Graph, symbol: str) -> int:
+    return len(re.findall(rf'symbol\s*=\s*"{re.escape(symbol)}"', str(graph)))
 
 
 def test_structured_output_off_is_refused() -> None:

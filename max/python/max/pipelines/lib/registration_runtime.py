@@ -39,7 +39,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.pipelines.context import TextContext
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self

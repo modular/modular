@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -23,12 +24,18 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import TensorValue, ops
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.functional_kernels import (
-    mla_decode_graph,
-    mla_prefill_decode_graph,
+from max.nn.common_layers.context_parallel import (
+    check_dcp_mesh,
+    combine_partial_attention,
+    dcp_axis,
+    dcp_ranks,
+    gather_columns,
+    split_selection,
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
@@ -37,10 +44,14 @@ from max.nn.common_layers.quant_mla import (
     tensor_parallel_latent_attention_with_rope,
 )
 from max.nn.common_layers.quant_tensor import FP8BlockTensor
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.kernels import (
+    mla_decode_graph,
+    mla_decode_graph_cp,
+    mla_prefill_decode_graph,
+)
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping
+from max.tensor.sharding import DeviceMapping, NamedMapping, Sharded
 
 from ...deepseekV3_2.layers.sparse_mla import sparse_selection_width
 from .indexer import Indexer
@@ -147,13 +158,30 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         skip_topk: bool = False,
         indexer_rope_interleave: bool = False,
         indexer_quant_config: QuantConfig,
+        dcp_size: int = 1,
+        dcp_interleave: int = 1,
+        dcp_q_replicate: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        self.dcp_size = dcp_size
+        self.dcp_interleave = dcp_interleave
+        # Under DCP every rank attends all of its group's heads. With
+        # ``dcp_q_replicate`` it computes them itself from replicated ``q_b``
+        # and ``w_kc`` weights; otherwise each rank absorbs its own TP heads
+        # and the group all-gathers the absorbed queries, as vLLM's
+        # ``dcp_q_replicate=False`` does.
+        self.dcp_q_replicate = dcp_q_replicate
 
         if self.q_lora_rank is None:
             raise ValueError(
                 "q_lora_rank is required for sparse latent attention"
+            )
+        if dcp_size > 1 and not dcp_q_replicate and self.quantized:
+            raise NotImplementedError(
+                "decode context parallelism with a gathered query absorbs "
+                "each rank's heads with BF16 MLA up-projections; FP8 ones "
+                "need dcp_q_replicate=True"
             )
         self._b_scale_granularity = 0
         if self.quantized:
@@ -194,6 +222,8 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
                 q_lora_rank=self.q_lora_rank,
                 rope_interleaved=indexer_rope_interleave,
                 quant_config=indexer_quant_config,
+                dcp_size=dcp_size,
+                dcp_interleave=dcp_interleave,
             )
 
     @property
@@ -324,8 +354,11 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
     def _effective_graph_mode(self) -> str:
         """Graph mode after the sparse-prefill kernel's head-count gating."""
         mode = self.graph_mode
-        if mode == "decode":
-            return mode
+        if mode == "decode" or self.dcp_size > 1:
+            # Under decode context parallelism every step runs the decode
+            # kernel, the one that returns the LSE the ranks merge by and
+            # reads per-token selection lengths.
+            return "decode"
         if not _ENABLE_SPARSE_MLA_PREFILL_KERNEL:
             _warn_prefill_kernel_disabled()
             return "decode"
@@ -419,9 +452,25 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             attn_kwargs["w_uv_scale"] = w_uv_scale
         assert kv_collection.attention_dispatch_metadata is not None
         attn_kwargs["scalar_args"] = kv_collection.attention_dispatch_metadata
+
+        if self.dcp_size > 1:
+            # Under DCP every MTP draft step runs its own indexer
+            # (``Glm5_1MTPProposer`` declares no reuse), so no caller lags a
+            # selection here. A lagged reuse measurably lowered acceptance
+            # under DCP for a reason not yet understood, so it stays refused.
+            if selection_lag != 0:
+                raise NotImplementedError(
+                    "decode context parallelism takes no selection_lag: a "
+                    "draft step must run its own indexer, because reusing a "
+                    "lagged selection lowered MTP acceptance under DCP for an "
+                    "unexplained reason"
+                )
+            return self._mla_dcp(attn_kwargs, sparse_indices, xq)
+
+        # The split-K count only the non-DCP ops take; the DCP op sizes its
+        # partitions from ``split_len_bound``.
         assert kv_collection.mla_num_partitions is not None
         attn_kwargs["num_partitions_scalar"] = kv_collection.mla_num_partitions
-
         sparse_kw: dict[str, Any] = {
             "sparse_indices": sparse_indices,
             "physical_indices": True,
@@ -431,7 +480,6 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             # reject one unless it is declared inert.
             "sparse_attn_sink_inert": True,
         }
-
         if effective_graph_mode == "decode":
             result = mla_decode_graph(**attn_kwargs, **sparse_kw)
         else:
@@ -441,6 +489,113 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         result = result.rebind_mapping(xq.mapping)
 
         return result.reshape((result.shape[0], self.n_heads * self.v_head_dim))
+
+    def _mla_dcp(
+        self,
+        attn_kwargs: Mapping[str, Any],
+        selection: Tensor,
+        xq: Tensor,
+    ) -> Tensor:
+        """Attends this rank's share of the keys and merges the ranks.
+
+        ``selection`` packs each token's owned rows with their count (see
+        ``context_parallel.merge_topk``). Every rank attends all of its
+        group's heads over its own rows, stores only the positions it owns,
+        and returns its partial output and LSE; the merge leaves each rank
+        its TP heads for the head-sharded ``o_proj``.
+
+        With BF16 weights the ranks merge the latent outputs and each applies
+        its own heads' ``w_vc`` afterwards, as vLLM and SGLang do; FP8
+        weights apply ``w_vc`` in the kernel before the merge.
+        """
+        rows, lengths = split_selection(selection, self.index_topk)
+        latent = not self.quantized
+        kwargs = dict(attn_kwargs)
+        if not self.dcp_q_replicate:
+            kwargs["q"] = self._gathered_latent_q(xq, kwargs["w_uk"])
+        out, lse = mla_decode_graph_cp(
+            **kwargs,
+            sparse_indices=rows,
+            sparse_lengths=lengths,
+            sparse_indices_stride=self.index_topk,
+            # Each rank holds about 1/dcp of the selected rows; the split-K
+            # grid only needs a bound, correctness comes from the lengths.
+            split_len_bound=-(-self.index_topk // self.dcp_size) + 16,
+            dcp_size=self.dcp_size,
+            dcp_interleave=self.dcp_interleave,
+            dcp_rank=dcp_ranks(xq.mesh, self.dcp_size),
+            q_absorbed=not self.dcp_q_replicate,
+            latent_output=latent,
+        )
+        # The op claims ``xq``'s token placement for the partials, which lets
+        # the merged heads keep it for ``o_proj`` on a ``(dp, tp)`` mesh.
+        merged = combine_partial_attention(out, lse, self.dcp_size)
+        if latent:
+            merged = self._apply_w_vc(merged, attn_kwargs["w_uv"])
+        return merged.reshape(
+            (merged.shape[0], merged.shape[1] * self.v_head_dim)
+        )
+
+    def _gathered_latent_q(self, xq: Tensor, w_uk: Tensor) -> Tensor:
+        """Absorbs this rank's query heads and all-gathers the group's.
+
+        ``xq`` and ``w_uk`` are head-sharded as under tensor parallelism.
+        Each rank projects its heads' ``q_nope`` through ``w_kc`` and keeps
+        their unrotated rope part, ``[T, H / dcp, kv_lora_rank + rope]``;
+        the all-gather leaves every rank all ``H`` heads, which the decode
+        op rotates and attends without reading ``w_uk``.
+        """
+        nope = self.qk_nope_head_dim
+        width = self.kv_lora_rank + self.qk_rope_head_dim
+
+        def absorb(q: TensorValue, w: TensorValue) -> TensorValue:
+            # [h, T, nope] @ [h, nope, kv_lora_rank] -> [h, T, kv_lora_rank]
+            latent = ops.matmul(
+                ops.permute(q[:, :, :nope], [1, 0, 2]),
+                ops.permute(w, [0, 2, 1]),
+            )
+            absorbed = ops.concat(
+                [ops.permute(latent, [1, 0, 2]), q[:, :, nope:]], axis=2
+            )
+            return ops.reshape(absorbed, [q.shape[0], q.shape[1] * width])
+
+        axis = dcp_axis(xq.mesh)
+        local = F.call_on_mesh(
+            absorb,
+            xq.mesh,
+            out_specs=DeviceMapping(
+                xq.mesh,
+                tuple(
+                    Sharded(1) if i == axis else p
+                    for i, p in enumerate(xq.placements)
+                ),
+            ),
+        )(xq, w_uk)
+        gathered = gather_columns(local, self.dcp_size)
+        return gathered.reshape((gathered.shape[0], self.n_heads, width))
+
+    def _apply_w_vc(self, merged: Tensor, w_uv: Tensor) -> Tensor:
+        """Projects each rank's merged latent heads through their ``w_vc``.
+
+        ``merged`` is ``[T, H / dcp, kv_lora_rank]``, head-sharded over the
+        DCP axis. ``w_uv`` is ``[H, v_head_dim, kv_lora_rank]``: head-sharded
+        like ``merged`` with a gathered query, replicated with a replicated
+        one, in which case each rank takes its own heads' rows.
+        """
+        heads = self.n_heads // self.dcp_size
+
+        def project(x: TensorValue, w: TensorValue, rank: int) -> TensorValue:
+            if int(w.shape[0]) != heads:
+                w = w[rank * heads : (rank + 1) * heads]
+            # [h, T, kv_lora_rank] @ [h, kv_lora_rank, v] -> [h, T, v]
+            out = ops.matmul(
+                ops.permute(x, [1, 0, 2]), ops.permute(w, [0, 2, 1])
+            )
+            return ops.permute(out, [1, 0, 2])
+
+        return F.call_on_mesh(project, merged.mesh, out_specs=merged.mapping)(
+            merged, w_uv, dcp_ranks(merged.mesh, self.dcp_size)
+        )
 
     def forward(
         self,
@@ -537,6 +692,22 @@ def tensor_parallel_sparse_latent_attention_with_rope(
     ``num_devices`` only gates the changes that depend on the head axis really
     being split.
     """
+    if layer.dcp_size > 1 and layer.dcp_q_replicate:
+        # Decode context parallelism over the whole TP group with a
+        # replicated query: every rank computes all heads' queries and
+        # absorbs them itself, so the Q and KV up-projections stay replicated
+        # and only o_proj is head-sharded. Each rank applies only its own
+        # heads' rows of ``w_vc`` after the merge.
+        check_dcp_mesh(layer.o_proj.weight.mesh, layer.dcp_size)
+        layer.o_proj.weight = layer.o_proj.weight.to(
+            NamedMapping(layer.o_proj.weight.mesh, (None, TP))
+        )
+        return layer
+    if layer.dcp_size > 1:
+        # With a gathered query every weight shards as under tensor
+        # parallelism; the ranks all-gather their absorbed query heads.
+        check_dcp_mesh(layer.o_proj.weight.mesh, layer.dcp_size)
+
     tensor_parallel_latent_attention_with_rope(layer)
 
     if num_devices > 1 and layer._ragged_scales:

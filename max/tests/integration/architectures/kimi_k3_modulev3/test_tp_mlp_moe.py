@@ -224,7 +224,7 @@ def test_tp_latent_moe_graph_fuses_allreduce_with_routed_expert_norm() -> None:
     ``Module.stage``, the tracing half of production's ``Module.compile``,
     which threads the mesh's signal buffers in as graph inputs: the routed
     branch must be one ``mo.composite.distributed.allreduce_rms_norm`` with
-    no standalone ``mo.reduce.rms_norm`` left on the latent. The shared
+    no standalone ``mo.composite.reduce.rms_norm`` left on the latent. The shared
     branch keeps its plain allreduce.
     """
     mesh = _tp2_mesh()
@@ -242,7 +242,7 @@ def test_tp_latent_moe_graph_fuses_allreduce_with_routed_expert_norm() -> None:
 
     ir = str(staged)
     assert "mo.composite.distributed.allreduce_rms_norm" in ir
-    assert "mo.reduce.rms_norm" not in ir, (
+    assert "mo.composite.reduce.rms_norm" not in ir, (
         "the routed-expert norm must ride the allreduce, not run standalone"
     )
     # Only the shared branch keeps a plain allreduce.

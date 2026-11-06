@@ -17,7 +17,9 @@
 
 #include "gtest/gtest.h"
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -1215,7 +1217,8 @@ TEST_F(GPUDeviceContextTest, CompletionFlagAllocResetSignalLoad) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
   if (ctx->device().api() == Device::cudaAPI ||
-      ctx->device().api() == Device::hipAPI) {
+      ctx->device().api() == Device::hipAPI ||
+      ctx->device().api() == Device::metalAPI) {
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
     EXPECT_EQ(flag->load(), 0u) << "fresh allocation should be zero";
@@ -1238,18 +1241,19 @@ TEST_F(GPUDeviceContextTest, CompletionFlagAllocResetSignalLoad) {
 
 TEST_F(GPUDeviceContextTest,
        EnqueueWaitOnHostValuePreSignaledReturnsImmediately) {
-  // If the flag already holds the awaited value when the wait is
+  // If the flag is already past the awaited value when the wait is
   // enqueued, the wait should be a no-op and stream sync should complete.
   // Avoids timing-flakiness while still exercising the wait path end-to-end.
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
   if (ctx->device().api() == Device::cudaAPI ||
-      ctx->device().api() == Device::hipAPI) {
+      ctx->device().api() == Device::hipAPI ||
+      ctx->device().api() == Device::metalAPI) {
     ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
-    flag->signal(1);
-    EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+    flag->signal(2);
+    EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
     EXPECT_NO_ERR(stream->synchronize());
   }
 }
@@ -1263,11 +1267,12 @@ TEST_F(GPUDeviceContextTest, EnqueueWaitOnHostValueGatesUntilHostSignals) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
   if (ctx->device().api() == Device::cudaAPI ||
-      ctx->device().api() == Device::hipAPI) {
+      ctx->device().api() == Device::hipAPI ||
+      ctx->device().api() == Device::metalAPI) {
     ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
-    EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+    EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
 
     std::atomic<bool> workerDidRun{false};
     std::thread signaller([&] {
@@ -1305,15 +1310,54 @@ TEST_F(GPUDeviceContextTest, EnqueueWaitOnHostValueUnsupportedOnCpu) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
   if (ctx->device().api() == Device::cudaAPI ||
-      ctx->device().api() == Device::hipAPI) {
+      ctx->device().api() == Device::hipAPI ||
+      ctx->device().api() == Device::metalAPI) {
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
     ASSIGN_NO_ERR(DeviceContextRef, cpuCtx,
                   DeviceContext::create(Device::cpuAPI));
     ASSIGN_NO_ERR(DeviceStreamRef, cpuStream, cpuCtx->stream());
-    EXPECT_ERR_MSG(cpuStream->enqueueWaitOnHostValue(*flag, /*value=*/1),
+    EXPECT_ERR_MSG(cpuStream->enqueueWaitOnFlag(*flag, /*value=*/1),
                    "not supported");
   }
+}
+
+TEST_F(GPUDeviceContextTest, MetalHostCopyDoesNotBlockBehindFlagWait) {
+  // A host-to-device copy from pageable memory must not wait for the flag:
+  // the thread that would signal it may be the one copying.
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  if (ctx->device().api() != Device::metalAPI)
+    GTEST_SKIP() << "only Metal stages pageable host copies";
+
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
+  constexpr size_t kCount = 1024;
+  std::vector<uint32_t> host(kCount);
+  for (size_t i = 0; i < kCount; ++i)
+    host[i] = static_cast<uint32_t>(i + 1);
+  ASSIGN_NO_ERR(DeviceBufferRef, devBuf,
+                ctx->enqueueCreateBuffer(kCount * sizeof(uint32_t)));
+  EXPECT_NO_ERR(ctx->synchronize());
+
+  EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
+  std::thread watchdog([&] {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    flag->signal(1);
+  });
+  const auto start = std::chrono::steady_clock::now();
+  EXPECT_NO_ERR(ctx->enqueueCopyToDevice(*devBuf, host.data()));
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+  // The copy snapshots its source, so the caller may reuse it at once.
+  std::fill(host.begin(), host.end(), 0u);
+  watchdog.join();
+  EXPECT_LT(elapsed, std::chrono::milliseconds(500));
+
+  EXPECT_NO_ERR(ctx->synchronize());
+  std::vector<uint32_t> back(kCount, 0);
+  EXPECT_NO_ERR(ctx->enqueueCopyFromDevice(back.data(), *devBuf));
+  EXPECT_NO_ERR(ctx->synchronize());
+  for (size_t i = 0; i < kCount; ++i)
+    ASSERT_EQ(back[i], static_cast<uint32_t>(i + 1)) << "at index " << i;
 }
 
 } // namespace M::Driver

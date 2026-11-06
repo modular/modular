@@ -27,13 +27,10 @@ from typing import Any, ClassVar
 from max.driver import Buffer, accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.nn.legacy.kv_cache import (
-    KVCacheParamInterface,
-    spec_decode_cache_slack,
-)
-from max.nn.legacy.quant_config import (
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -41,7 +38,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding

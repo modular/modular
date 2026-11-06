@@ -6,10 +6,20 @@ modular_cc_binary(
     name = "example",
     testonly = True,
     srcs = ["example.c"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+        "//max/lib/max_license:max",
+    ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:CAPI.headers",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 
@@ -17,10 +27,20 @@ modular_cc_binary(
     name = "graph_capture",
     testonly = True,
     srcs = ["graph_capture.c"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+        "//max/lib/max_license:max",
+    ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:CAPI.headers",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 
@@ -77,9 +97,19 @@ modular_cc_binary(
     name = "weights_example",
     testonly = True,
     srcs = ["weights_example.c"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+        "//max/lib/max_license:max",
+    ],
     deps = [
         "//max:CAPI.headers",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 
@@ -105,9 +135,19 @@ modular_cc_binary(
     name = "safetensors_example",
     testonly = True,
     srcs = ["safetensors_example.c"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+        "//max/lib/max_license:max",
+    ],
     deps = [
         "//max:CAPI.headers",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 

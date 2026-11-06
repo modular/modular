@@ -108,7 +108,6 @@ from max.gpu.host import DeviceAttribute
 from max.gpu.host.info import (
     GPUInfo,
     get_gpu_info,
-    is_cpu,
     _device_type_encoder_target,
 )
 from max.gpu.host import Attribute, FuncAttribute
@@ -496,10 +495,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     This alias may be removed once Mojo supports nested auto-parameterization.
     """
 
-    comptime NoneValue = Optional[DeviceContext[]]()
+    comptime NoneValue = Optional[DeviceContext.CPU]()
     """Convenience helper for constructing a default value for
-    `DeviceContext.Optional` parameters. This guides type inference to a default
-    value for the `target` parameter when the default argument value is used.
+    `DeviceContext.Optional` parameters. This guides type inference to the CPU
+    `target` when the default argument value is used, so omitting the context
+    means "run on the CPU".
 
     Intended to be used like:
 
@@ -752,67 +752,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         except e:
             abort(t"unable to create CPU DeviceContext: {e}")
 
-    # ===-------------------------------------------------------------------===#
-    # TODO(MSTDL-3208): Temporary target parameterization helpers
-    # ===-------------------------------------------------------------------===#
-
-    # TODO(MSTDL-3265): Remove `target: StaticString` parameters from all
-    #   callers of this method after verifying all callers instead indicate
-    #   target device via `DeviceContext.target`.
-    @inline(.always)
-    def _comptime_assert_matches_target_is_cpu[
-        device_kind: StaticString
-    ](self,):
-        comptime assert Self.target.is_cpu() == is_cpu[device_kind](), String(
-            "`target` parameter '",
-            device_kind,
-            "' does not match the DeviceContext target, which is ",
-            "a CPU" if Self.target.is_cpu() else "not a CPU",
-            " (triple: ",
-            StaticString(Self.target.__triple()),
-            ", arch: ",
-            Self.target._arch(),
-            ")",
-        )
-
-    # The inverse of `CompilationTarget.device_kind_label()`: "cpu" maps to
-    # the host target and anything else to `Self.target`. The branches are
-    # distinct `CompilationTarget` types, so the choice has to be made on the
-    # raw `_mlir_value` rather than with a ternary over the targets themselves.
-    @staticmethod
-    @inline(.always)
-    def from_device_kind[
-        device_kind: StaticString
-    ](
-        out result: DeviceContext[
-            CompilationTarget[
-                _mlir_value=(
-                    CompilationTarget.current()._mlir_value if device_kind
-                    == "cpu" else Self.target._mlir_value
-                )
-            ]()
-        ]
-    ) raises:
-        """Creates a `DeviceContext` whose static target matches a device kind.
-
-        Parameters:
-            device_kind: The device kind, either "cpu" or "gpu". "cpu" gives a
-                `DeviceContext.CPU` and "gpu" gives a context for this type's
-                `target` (the default accelerator for a plain `DeviceContext`).
-
-        Returns:
-            A new device context with the target selected by `device_kind`.
-
-        Raises:
-            If device initialization fails.
-        """
-        comptime assert device_kind == "cpu" or device_kind == "gpu", String(
-            "unsupported device kind '",
-            device_kind,
-            "', expected 'cpu' or 'gpu'",
-        )
-        result = type_of(result)()
-
     @inline(.always)
     def assert_cpu_target(var self) -> DeviceContext.CPU:
         """Temporary function to assert and cast this DeviceContext to the CPU
@@ -1059,11 +998,32 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # Previous context is automatically restored
         ```
         """
-        return _DeviceContextScopeHAL(self.assert_default_target())
+        return _DeviceContextScopeHAL(self)
 
     @doc_hidden
     def stream(self) -> DeviceStreamBase[Self.target]:
         return DeviceStreamBase[Self.target](self)
+
+    def allocate_completion_flag(self) raises -> CompletionFlag:
+        """Allocates a `CompletionFlag`, initialized to 0, on this device.
+
+        Returns:
+            The new flag.
+
+        Raises:
+            Always, until the HAL supports completion flags.
+        """
+        # TODO(DRIV-688): allocate through the completion-flag extension.
+        raise Error("completion flags are not supported by the HAL yet")
+
+    def supports_flag_wait(self) -> Bool:
+        """Returns whether this device supports completion flags.
+
+        Returns:
+            False until the HAL supports completion flags.
+        """
+        # TODO(DRIV-688): true once Mojo can allocate flags under the HAL.
+        return False
 
     @doc_hidden
     def _hal_stream(
@@ -1795,7 +1755,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         # NOTE: The HAL supports doing this asynchronously, but to match
         # existing DeviceContext semantics we create a buffer immediately.
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def create_buffer_sync[
         dtype: DType
@@ -1814,7 +1774,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def enqueue_create_host_buffer[
         dtype: DType
@@ -1862,7 +1822,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        return HostBuffer[dtype](self.assert_default_target(), size)
+        return HostBuffer[dtype](self, size)
 
     def enqueue_copy[
         dtype: DType
@@ -1887,12 +1847,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         self.enqueue_copy(
-            DeviceBuffer[dtype](
-                self.assert_default_target(), dst_ptr, size, owning=False
-            ),
-            DeviceBuffer[dtype](
-                self.assert_default_target(), src_ptr, size, owning=False
-            ),
+            DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
+            DeviceBuffer[dtype](self, src_ptr, size, owning=False),
         )
 
     def enqueue_copy[
@@ -1973,7 +1929,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             self.enqueue_wait_for(src_ctx)
         self._enqueue_copy_device_to_device(dst_buf, src_buf)
         if sync:
-            src_ctx.enqueue_wait_for(self.assert_default_target())
+            src_ctx.enqueue_wait_for(self)
 
     def _check_device_to_device_copy[
         dtype: DType
@@ -2958,14 +2914,14 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
 
 struct _DeviceContextScopeHAL(Movable):
-    var _device_context: DeviceContext[]
+    var _device_context: DeviceContext.Unknown
     # Driver-context handle to restore on exit; only meaningful when `_active`
     # (any value, including zero, can be a live handle).
     var _prev_driver_ctx: Int
     var _active: Bool
 
-    def __init__(out self, device_context: DeviceContext[]):
-        self._device_context = device_context
+    def __init__(out self, device_context: DeviceContext):
+        self._device_context = device_context.into_unknown_target()
         self._prev_driver_ctx = 0
         self._active = False
 
@@ -2985,7 +2941,7 @@ struct _DeviceContextScopeHAL(Movable):
         )
         self._device_context._context[].set_current()
         self._active = True
-        return self._device_context
+        return rebind[DeviceContext[]](self._device_context)
 
     def __exit__(mut self) raises:
         if self._active:
@@ -4024,19 +3980,20 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         event._event[] = Optional(hal_event^)
 
     @doc_hidden
-    def wait_for_host_value(
+    def wait_for_flag(
         self,
         flag: CompletionFlag,
         value: UInt64,
     ) raises:
-        """Stalls the stream until a host-visible flag reaches a given value.
+        """Stalls the stream until `flag` holds at least `value`.
 
-        Corresponds to CUDA's `cuStreamWaitValue64` on the slot owned by
-        `flag`.
+        While the wait is pending, the thread that signals `flag` must not
+        block on this stream first: no `synchronize`, no copy into or out of
+        pageable host memory, and don't drop the flag.
 
         Args:
-            flag: A non-owning handle to a ``M::Driver::CompletionFlag``.
-            value: The 64-bit value to wait for.
+            flag: A ``M::Driver::CompletionFlag``.
+            value: The 64-bit value to wait for. Keep values below 2^63.
 
         Raises:
             If the underlying device does not support stream memory ops,
@@ -4046,6 +4003,24 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             "AsyncRT_CompletionFlag_devicePtr", UInt64
         ](flag._handle)
         self._stream[].wait_value64(device_addr, value)
+
+    @deprecated("Use `wait_for_flag` instead.")
+    @doc_hidden
+    def wait_for_host_value(
+        self,
+        flag: CompletionFlag,
+        value: UInt64,
+    ) raises:
+        """Stalls this stream until ``flag`` reaches ``value``.
+
+        Args:
+            flag: The flag to wait on.
+            value: The value to wait for.
+
+        Raises:
+            If the wait cannot be enqueued.
+        """
+        self.wait_for_flag(flag, value)
 
     def _native_stream[
         origin: Origin, //
@@ -4695,7 +4670,7 @@ struct DeviceBuffer[dtype: DType](
     var _device_ptr: Self._DevicePtr
     # Wrap the inner buffer in an ArcPointer so copies of this DeviceBuffer hold
     # a reference to the same underlying buffer.
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_HALBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -4714,7 +4689,7 @@ struct DeviceBuffer[dtype: DType](
         if byte_size > 0:
             addr = ctx._context[].memory_get_address(buffer)
         self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
-        self._ctx = ctx.assert_default_target()
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(
             _HALBufferInner(buffer^, ctx._context, addr, [], [])
         )
@@ -4755,8 +4730,15 @@ struct DeviceBuffer[dtype: DType](
             ) if addr == 0 else ctx._context[].wrap_memory(
                 addr, byte_size, owning=owning
             )
+            # The plugin may give the wrapped region an address of its own.
+            # If it can't report one, keep the address we were given.
+            if addr != 0:
+                try:
+                    addr = ctx._context[].memory_get_address(buffer)
+                except:
+                    pass
             self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
-            self._ctx = ctx.assert_default_target()
+            self._ctx = ctx.into_unknown_target()
             self._inner = ArcPointer(
                 _HALBufferInner(buffer^, ctx._context, addr, [], [])
             )
@@ -4855,7 +4837,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The device context associated with this buffer.
         """
-        return self._ctx
+        return rebind[DeviceContext[]](self._ctx)
 
     @doc_hidden
     @inline(.always)
@@ -5232,7 +5214,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_HostBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -5240,7 +5222,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext[], size: Int) raises:
+    def __init__(out self, ctx: DeviceContext, size: Int) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
@@ -5256,16 +5238,16 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
             host_ptr = Pointer[UInt8, MutUntrackedOrigin](
                 unsafe_from_address=Int(addr)
             )
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(
             _HostBufferInner(buffer^, ctx._context, host_ptr, [])
         )
 
     @doc_hidden
     def __init__(
-        out self, ctx: DeviceContext[], var inner: ArcPointer[_HostBufferInner]
+        out self, ctx: DeviceContext, var inner: ArcPointer[_HostBufferInner]
     ):
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = inner^
 
     # ===-------------------------------------------------------------------===#
@@ -5326,7 +5308,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         Returns:
             The device context associated with this buffer.
         """
-        return self._ctx
+        return rebind[DeviceContext[]](self._ctx)
 
     def unsafe_ptr(
         self,
@@ -6222,8 +6204,7 @@ struct DevicePointer[
 struct CompletionFlag(ImplicitlyCopyable):
     """Host-visible completion flag.
 
-    This struct is intentionally non-owning: it wraps the raw address of a
-    ``M::Driver::CompletionFlag`` created by the C++ driver layer.
+    Holds a reference to a C++ ``M::Driver::CompletionFlag``.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -6236,9 +6217,23 @@ struct CompletionFlag(ImplicitlyCopyable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @doc_hidden
+    def __init__(out self, *, copy: Self):
+        """Copies a flag by incrementing its reference count.
+
+        Args:
+            copy: The flag to copy.
+        """
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](copy._handle)
+        self._handle = copy._handle
+
+    def __deinit__(deinit self):
+        """Releases this flag's reference."""
+        external_call["AsyncRT_CompletionFlag_release", NoneType](self._handle)
+
     @inline(.always)
     def __init__(out self, *, unsafe_from_address: Int):
-        """Constructs a non-owning handle from an integer address.
+        """Wraps the C++ flag at an integer address, taking a reference.
 
         Intended for graph-op execute methods that extract a packed
         pointer from a payload buffer (mirroring how
@@ -6255,6 +6250,42 @@ struct CompletionFlag(ImplicitlyCopyable):
         self._handle = OpaquePointer[MutUntrackedOrigin](
             unsafe_from_address=unsafe_from_address
         )
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](self._handle)
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    @inline(.always)
+    def signal(self, value: UInt64):
+        """Stores ``value`` in the flag with release ordering.
+
+        Args:
+            value: The value to store.
+        """
+        external_call["AsyncRT_CompletionFlag_signal", NoneType](
+            self._handle, value
+        )
+
+    @inline(.always)
+    def load(self) -> UInt64:
+        """Loads the flag's value with acquire ordering.
+
+        Returns:
+            The value the flag holds.
+        """
+        return external_call["AsyncRT_CompletionFlag_load", UInt64](
+            self._handle
+        )
+
+    @inline(.always)
+    def reset(self):
+        """Stores 0 in the flag.
+
+        Don't reset while a stream is still waiting on the flag, and don't
+        signal a lower value without a reset.
+        """
+        external_call["AsyncRT_CompletionFlag_reset", NoneType](self._handle)
 
 
 struct DeviceContextArray[

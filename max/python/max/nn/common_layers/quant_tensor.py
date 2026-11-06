@@ -24,7 +24,7 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import Shape
 from max.nn import Module
-from max.nn.common_layers.quant_kernels import (
+from max.nn.kernels import (
     mxfp4_dequant,
     mxfp8_dequant,
     nvfp4_dequant,

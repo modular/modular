@@ -48,7 +48,7 @@ class DTypeSwitch;
 /// don't want to have conversions back and forth between enum types all the
 /// time.  Extensibility allows use of this generic type for those framework
 /// defined cases as well.
-class DType {
+class MODULAR_CXX_EXPORT DType {
 public:
   /// Note that many of these should be interpreted as type classes, i.e. the
   /// enum represents a mask, not a concrete enumerator.  These enum values
@@ -326,6 +326,7 @@ DECLARE_TYPE_MAPPING(ui64, uint64_t);
   DECLARE_TYPE_MAPPING(SHORT_NAME, CXX_TYPE);
 
 #include "Support/ML/FloatTypes.def"
+#include "Support/SymbolExport.h"
 
 #undef DECLARE_FLOAT
 

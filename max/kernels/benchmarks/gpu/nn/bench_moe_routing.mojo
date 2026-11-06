@@ -125,7 +125,6 @@ def bench_single_group_router_eplb[
                 num_log=num_log,
                 max_replicas=max_replicas,
                 hash_decorrelate=hash_decorrelate,
-                target="gpu",
             ](
                 expert_indices,
                 expert_indices_log,
@@ -219,7 +218,7 @@ def bench_moe_create_indices[
     }:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[]) raises {imm}:
-            moe_create_indices[input_type=DType.uint32, target="gpu"](
+            moe_create_indices[input_type=DType.uint32](
                 token_expert_order,
                 expert_start_indices,
                 restore_token_order,
@@ -316,7 +315,6 @@ def bench_router_group_limited[
                 n_groups=n_groups,
                 topk_group=topk_group,
                 norm_weights=True,
-                target="gpu",
             ](
                 expert_indices,
                 expert_weights,
@@ -412,7 +410,6 @@ def bench_single_group_router[
                 n_routed_experts=n_routed_experts,
                 n_experts_per_tok=n_experts_per_tok,
                 norm_weights=True,
-                target="gpu",
             ](
                 expert_indices,
                 expert_weights,
@@ -520,7 +517,6 @@ def bench_eplb_remap[
                 max_replicas=max_replicas,
                 K=K,
                 hash_decorrelate=hash_decorrelate,
-                target="gpu",
             ](
                 phy,
                 router_idx.as_imm(),

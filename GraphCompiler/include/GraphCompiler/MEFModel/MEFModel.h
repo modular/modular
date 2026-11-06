@@ -26,7 +26,6 @@
 #include "GraphCompiler/Support/ResultInfo.h"
 #include "Kernels/max_license/WeightsRegistry.h"
 #include "MLRT/GraphRT/MEFExecutor/MEFFile.h"
-#include "Support/ML/CompiledFrameworkLabel.h"
 #include "Support/ML/DebugPrint.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -151,9 +150,6 @@ private:
 /// An executable model's signature and metadata, decoded from MEF.
 class Model {
 public:
-  static constexpr CompiledFrameworkLabel kFrameworkLabel{
-      CompiledFrameworkLabel::kModularModel};
-
   Model(const Model &) = delete;
   Model &operator=(const Model &) = delete;
   Model(Model &&) = default;
@@ -221,15 +217,15 @@ public:
   getFromDescriptor(const PrimitiveDescriptor &descriptor);
 
   Model(std::string name, SmallVector<DeviceRef> devices,
-        CompiledFrameworkLabel frameworkLabel, const MEFInvokable *initFn,
-        const MEFInvokable *executeFn, ArrayRef<QuantTensorSpec> inputSpecs,
+        const MEFInvokable *initFn, const MEFInvokable *executeFn,
+        ArrayRef<QuantTensorSpec> inputSpecs,
         ArrayRef<QuantTensorSpec> outputSpecs,
         SmallVector<DeviceRef> inputDevices,
         SmallVector<DeviceRef> outputDevices, EncodedLocation location);
 
   Model(std::string name, SmallVector<DeviceRef> devices,
-        CompiledFrameworkLabel frameworkLabel, const MEFInvokable *initFn,
-        const MEFInvokable *executeFn, ArrayRef<QuantTensorSpec> inputSpecs,
+        const MEFInvokable *initFn, const MEFInvokable *executeFn,
+        ArrayRef<QuantTensorSpec> inputSpecs,
         ArrayRef<QuantTensorSpec> outputSpecs, ArrayRef<StringRef> inputNames,
         ArrayRef<StringRef> outputNames, SmallVector<DeviceRef> inputDevices,
         SmallVector<DeviceRef> outputDevices, EncodedLocation location);

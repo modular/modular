@@ -160,8 +160,10 @@ def read_mixed_split(
 
 
 def is_packed(t: TileTensor[...]) -> Bool:
-    """Whether `t` is packed row-major. The split's views are pointer offsets
-    with packed strides, so a strided operand keeps the unsplit route."""
+    """Whether `t` is packed row-major.
+
+    The split's view builders take the parent's head stride and assume packed
+    rows, so a strided operand keeps the unsplit route."""
     var packed = 1
     comptime for d in reversed(range(t.rank)):
         if Int(t.layout.stride[d]()) != packed:

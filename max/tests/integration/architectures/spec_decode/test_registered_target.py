@@ -28,7 +28,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.lib.graph_specs import GraphSpec

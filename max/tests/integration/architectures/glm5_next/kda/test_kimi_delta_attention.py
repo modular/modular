@@ -232,7 +232,7 @@ def weights() -> dict[str, torch.Tensor]:
     def normal(*shape: int, std: float) -> torch.Tensor:
         return torch.randn(*shape, generator=generator) * std
 
-    return {
+    weights = {
         "q_proj.weight": normal(QKV_DIM, HIDDEN, std=0.02),
         "k_proj.weight": normal(QKV_DIM, HIDDEN, std=0.02),
         "v_proj.weight": normal(QKV_DIM, HIDDEN, std=0.02),
@@ -247,6 +247,14 @@ def weights() -> dict[str, torch.Tensor]:
         "o_norm.weight": 1.0 + normal(HEAD_DIM, std=0.05),
         "o_proj.weight": normal(HIDDEN, QKV_DIM, std=0.02),
     }
+    # The checkpoint ships the conv as three tensors, which the layer
+    # concatenates in q, k, v order.
+    conv = weights.pop("conv1d.weight").split(QKV_DIM)
+    weights.update(
+        (f"{part}_conv1d.weight", block)
+        for part, block in zip("qkv", conv, strict=True)
+    )
+    return weights
 
 
 def _reference_weights(weights: dict[str, torch.Tensor]) -> KdaWeights:
@@ -254,7 +262,9 @@ def _reference_weights(weights: dict[str, torch.Tensor]) -> KdaWeights:
         q_proj=weights["q_proj.weight"],
         k_proj=weights["k_proj.weight"],
         v_proj=weights["v_proj.weight"],
-        conv1d=weights["conv1d.weight"],
+        conv1d=torch.cat(
+            [weights[f"{part}_conv1d.weight"] for part in "qkv"], dim=0
+        ),
         f_a_proj=weights["f_a_proj.weight"],
         f_b_proj=weights["f_b_proj.weight"],
         dt_bias=weights["dt_bias"],
@@ -650,10 +660,9 @@ def test_conv_concat_order_is_load_bearing(
     """Permuting the conv weight's q/k/v blocks changes the output.
 
     The placebo the verification ladder asks for. The layer concatenates its
-    three projections in q, k, v order to match the weight adapter's
-    ``Concatenate(dim=0)`` over ``[q_conv1d, k_conv1d, v_conv1d]``; at TP1 every
-    permutation has the same shapes, so nothing but a numeric check can tell
-    them apart.
+    three projections in q, k, v order to match its ``Concatenate(dim=0)``
+    over ``[q_conv1d, k_conv1d, v_conv1d]``; at TP1 every permutation has the
+    same shapes, so nothing but a numeric check can tell them apart.
     """
     blocks = reference_weights.conv1d.split(QKV_DIM, dim=0)
     permuted = dataclasses.replace(

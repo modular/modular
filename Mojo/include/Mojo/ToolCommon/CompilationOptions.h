@@ -22,6 +22,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTarget.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -98,7 +99,7 @@ inline void applyTargetABIEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
 
 /// This class provides a set of options used to control the compilation of
 /// KGEN modules.
-class CompilationOptions {
+class MODULAR_CXX_EXPORT CompilationOptions {
 public:
   /// The debug info level to use when compiling.
   enum DebugInfoLevel {
@@ -266,10 +267,10 @@ public:
 };
 
 // Return true if `triple` is a registered GPU target.
-bool isGPUTriple(const llvm::Triple &triple);
+MODULAR_CXX_EXPORT bool isGPUTriple(const llvm::Triple &triple);
 
 // Return true if `triple` is the registered Metal target.
-bool isMetalTriple(const llvm::Triple &triple);
+MODULAR_CXX_EXPORT bool isMetalTriple(const llvm::Triple &triple);
 
 // Whether the standalone module should export all symbols (GPU targets do, so
 // offloaded kernels resolve by symbol at runtime).

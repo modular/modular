@@ -29,6 +29,10 @@ modular_cc_test(
         "//Mojo/tools/mojo",
         "//Mojo/unittests:lit-lldb-init.in",
     ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     env = {
         # HACK: This test invokes "mojo build" in a subprocess, but it can't see modular.cfg, so we need to
         # provide the run path here to find CompilerRT.
@@ -48,6 +52,6 @@ modular_cc_test(
     }),
     deps = [
         ":Support",
-        "//Support:Globals",
+        "//Support:Globals.static",
     ],
 )

@@ -33,14 +33,15 @@ from max.driver import (
 )
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
+from max.pipelines.architectures.mimo_v2.weight_adapters import (
+    mimo_v2_weight_rules,
+)
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
-    convert_safetensor_state_dict,
-)
+from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
@@ -84,9 +85,7 @@ def test_fused_qkv_sites(
     config.fused_sliding_qkv = sliding
     config.fused_full_qkv = full
     weights = SafetensorWeights(sorted(tmp_path.glob("*.safetensors")))
-    adapted = convert_safetensor_state_dict(
-        dict(weights.items()), huggingface_config=hf
-    )
+    adapted = WeightTransform(mimo_v2_weight_rules(hf))(dict(weights.items()))
 
     mesh = DeviceMesh(tuple(devices), (n_devices,), ("tp",))
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):

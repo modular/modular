@@ -46,12 +46,15 @@ from shmem.ep_comm import (
     EP_PDL_MAX_RANKS,
     BF16TokenFormat,
     EPLocalSyncCounters,
+    EP_MX_MSG_GROUP,
+    ep_mx_msg_bytes,
     combine_wait_kernel,
     combine_async_kernel,
+    NullExpertLoad,
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_true
 from std.math import ceildiv
 from std.memory.alloc import unsafe_alloc
 
@@ -150,6 +153,7 @@ def test_combine[
     n_slots: Int,
     n_tokens_per_rank: Int,
     skewed: Bool = False,
+    mx_msg: Bool = False,
 ](list_of_ctx: List[DeviceContext[]]) raises:
     comptime input_type = DType.bfloat16
     comptime n_local_experts = n_experts // n_ranks
@@ -166,14 +170,16 @@ def test_combine[
         output_layout=type_of(output_layout), hidden_size, top_k
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
-    comptime combine_msg_bytes = size_of[input_type]() * hidden_size
+    comptime combine_msg_bytes = ep_mx_msg_bytes(
+        hidden_size
+    ) if mx_msg else size_of[input_type]() * hidden_size
 
     comptime num_bytes = combine_msg_bytes * top_k * n_tokens_per_rank
 
     print(
         t"Running ep_combine test: input_type: {input_type} hidden_size:"
         t" {hidden_size} top_k: {top_k} n_experts: {n_experts} n_ranks:"
-        t" {n_ranks} n_tokens_per_rank: {n_tokens_per_rank}"
+        t" {n_ranks} n_tokens_per_rank: {n_tokens_per_rank} mx_msg: {mx_msg}"
     )
 
     # fmt: off
@@ -443,6 +449,7 @@ def test_combine[
         n_tokens_per_rank,
         n_ranks,  # p2p world size
         use_shmem=False,
+        mx_msg=mx_msg,
     ]
 
     @inline(.always)
@@ -474,6 +481,7 @@ def test_combine[
             dispatch_recv_count_bufs_inputs[slot_idx][dev_idx],
             get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -524,6 +532,7 @@ def test_combine[
             type_of(store_output_2),
             type_of(EP_NO_ROUTER_WEIGHTS),
             has_router_weights=False,
+            mx_msg=mx_msg,
         ]
         ctx.enqueue_function[combine_wait](
             Int32(n_tokens_per_rank),
@@ -705,6 +714,30 @@ def test_combine[
                     var received_token = slot_output_2.unsafe_offset(
                         token_idx * top_k * hidden_size
                     ).unsafe_offset(topk_idx * hidden_size)
+                    comptime if mx_msg:
+                        # An MXFP8 element sits within half an E4M3 step
+                        # (1/16) of its group's largest magnitude.
+                        for i in range(hidden_size):
+                            var g0 = i // EP_MX_MSG_GROUP * EP_MX_MSG_GROUP
+                            var group_max = Float32(0)
+                            for j in range(EP_MX_MSG_GROUP):
+                                group_max = max(
+                                    group_max,
+                                    abs(ref_token[g0 + j].cast[.float32]()),
+                                )
+                            var err = abs(
+                                received_token[i].cast[.float32]()
+                                - ref_token[i].cast[.float32]()
+                            )
+                            assert_true(
+                                err <= group_max / 16.0,
+                                String(
+                                    t"MXFP8 token mismatch for dev {dev_idx}"
+                                    t" token {token_idx} topk {topk_idx}"
+                                    t" hidden {i}: off by {err}"
+                                ),
+                            )
+                        continue
                     for i in range(hidden_size):
                         assert_equal(
                             received_token[i],
@@ -961,4 +994,25 @@ def main() raises:
                 n_ranks=num_gpus,
                 n_slots=1,
                 n_tokens_per_rank=8,
+            ](ctx)
+
+            # MXFP8 messages through the balanced send (prefill-sized) and the
+            # per-pair send (decode-sized).
+            test_combine[
+                hidden_size=7168,
+                top_k=8,
+                n_experts=num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=128,
+                mx_msg=True,
+            ](ctx)
+            test_combine[
+                hidden_size=7168,
+                top_k=8,
+                n_experts=num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=8,
+                mx_msg=True,
             ](ctx)

@@ -17,6 +17,7 @@
 #include "MLRT/GraphRT/MEF/MEFEncoding.h"
 #include "MLRT/GraphRT/MEF/MEFTypes.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include <cstdint>
 #include <type_traits>
@@ -172,7 +173,7 @@ public:
 
 /// Given a pointer to the start of a MEF array or string attribute, return the
 /// length of array or string by decoding the prefix encoded VBR.
-size_t decodeMEFArrayLength(const uint8_t *dataPtr);
+MODULAR_CXX_EXPORT size_t decodeMEFArrayLength(const uint8_t *dataPtr);
 
 /// String attributes have a special encoding that includes their length,
 /// allowing projection into a StringRef.
@@ -346,7 +347,7 @@ using MEFAttrDynCastRetType = typename MEFAttrDynCastRet<T>::Type;
 
 /// Dynamic attributes allow checked casting to other attribute kinds.
 template <>
-class MEFAttr<Detail::Dynamic>
+class MODULAR_CXX_EXPORT MEFAttr<Detail::Dynamic>
     : public MEFAttrCommon<MEFAttr<Detail::Dynamic>, const uint8_t *> {
 public:
   using BaseClass = MEFAttrCommon<MEFAttr<Detail::Dynamic>, const uint8_t *>;
@@ -425,7 +426,7 @@ class List {};
 
 /// List of attributes.
 template <>
-class MEFAttr<Detail::List>
+class MODULAR_CXX_EXPORT MEFAttr<Detail::List>
     : public MEFAttrCommon<MEFAttr<Detail::List>, Detail::List> {
 public:
   using BaseClass = MEFAttrCommon<MEFAttr<Detail::List>, Detail::List>;
@@ -513,7 +514,7 @@ class Dictionary {};
 
 /// Dictionaries are lists of name, value pairs.
 template <>
-class MEFAttr<Detail::Dictionary>
+class MODULAR_CXX_EXPORT MEFAttr<Detail::Dictionary>
     : public MEFAttrCommon<MEFAttr<Detail::Dictionary>, Detail::Dictionary> {
 public:
   using BaseClass =

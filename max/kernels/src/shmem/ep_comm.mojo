@@ -308,6 +308,132 @@ comptime _counter_atomic = Atomic[Int32, scope=DEVICE_SCOPE]
 comptime _signal_atomic = Atomic[UInt64]
 
 
+trait ExpertLoadSink(DevicePassable, TrivialRegisterPassable):
+    """Receives the routed-token count of each local expert at dispatch wait.
+
+    Implementations: `NullExpertLoad` (the default, counts nothing) and
+    `ExpertLoadTally`.
+    """
+
+    def add(self, local_expert: Int, n_local_experts: Int, count: UInt32):
+        """Adds one step's routed-token count for a local expert.
+
+        Args:
+            local_expert: Index of the expert among this rank's experts.
+            n_local_experts: Number of routed experts on this rank, the row
+                stride of the tally.
+            count: Tokens routed to the expert in this step, before any
+                grouped-matmul padding.
+        """
+        ...
+
+
+struct NullExpertLoad(ExpertLoadSink):
+    """Zero-sized sink whose `add` compiles away.
+
+    It contributes no kernel-argument bytes, so a dispatch built with it is
+    byte-identical to one without expert-load counting.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias. `NullExpertLoad` is trivially device-passable."""
+
+    @inline(.always)
+    def __init__(out self):
+        """Constructs the no-op sink."""
+        pass
+
+    @inline(.always)
+    def add(self, local_expert: Int, n_local_experts: Int, count: UInt32):
+        """Does nothing.
+
+        Args:
+            local_expert: Unused.
+            n_local_experts: Unused.
+            count: Unused.
+        """
+        pass
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        pass
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"NullExpertLoad"`.
+        """
+        return "NullExpertLoad"
+
+
+struct ExpertLoadTally(ExpertLoadSink):
+    """Running per-layer, per-local-expert token totals in device memory.
+
+    The tally is a `[layers, n_local_experts]` `uint64` buffer that is never
+    reset on device; the host reads it periodically and differences
+    consecutive readings. The add is atomic so two overlapped steps or two
+    data-parallel ranks sharing a GPU cannot lose an update.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias. `ExpertLoadTally` is trivially device-passable."""
+
+    var counts: MutPointer[UInt64, MutUntrackedOrigin]
+    """Base of the `[layers, n_local_experts]` running totals."""
+    var layer_idx: ImmPointer[Int32, ImmUntrackedOrigin]
+    """Device scalar holding the MoE layer index of this dispatch, the same
+    tensor the EPLB router reads."""
+
+    @inline(.always)
+    def __init__(
+        out self,
+        counts: MutPointer[UInt64, MutUntrackedOrigin],
+        layer_idx: ImmPointer[Int32, ImmUntrackedOrigin],
+    ):
+        """Wraps the tally buffer and the layer-index scalar.
+
+        Args:
+            counts: Base of the `[layers, n_local_experts]` running totals.
+            layer_idx: Device scalar holding the MoE layer index.
+        """
+        self.counts = counts
+        self.layer_idx = layer_idx
+
+    @inline(.always)
+    def add(self, local_expert: Int, n_local_experts: Int, count: UInt32):
+        """Atomically adds `count` to the expert's total for this layer.
+
+        Args:
+            local_expert: Index of the expert among this rank's experts.
+            n_local_experts: Number of routed experts on this rank.
+            count: Tokens routed to the expert in this step.
+        """
+        var row = Int(self.layer_idx.unsafe_load())
+        _ = Atomic[UInt64, scope=DEVICE_SCOPE].fetch_add[
+            ordering=Ordering.RELAXED
+        ](
+            self.counts.unsafe_offset(row * n_local_experts + local_expert),
+            UInt64(count),
+        )
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"ExpertLoadTally"`.
+        """
+        return "ExpertLoadTally"
+
+
 @inline(.always)
 def _acquire_wait[
     dtype: DType,
@@ -390,12 +516,19 @@ def _store_bypassing_l2(address: Int, data: SIMD[DType.uint32, 4]):
     stay there until flushed to L3/xGMI. See
     https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
 
+    The trailing `s_nop 1` is the two wait states CDNA3 and CDNA4 require
+    before a VALU instruction overwrites the data registers of a store wider
+    than 8 bytes. The compiler inserts them after its own stores but cannot
+    tell that this assembly is one, so a caller whose next VALU work reuses
+    the registers, as the MXFP8 combine send does, otherwise stores whatever
+    they hold when the store reads them, which varies with memory pressure.
+
     Args:
         address: The 16-byte aligned destination address.
         data: The bytes to store.
     """
     inlined_assembly[
-        "global_store_dwordx4 $0, $1, off sc0 sc1",
+        "global_store_dwordx4 $0, $1, off sc0 sc1\n\ts_nop 1",
         NoneType,
         constraints="v,v,~{memory}",
         has_side_effect=True,
@@ -511,6 +644,95 @@ def _store_token_index(
         ptr.unsafe_store[alignment=EP_TOKEN_INDEX_BYTES](
             SIMD[DType.int32, width](token)
         )
+
+
+comptime EP_MX_MSG_GROUP = 32
+"""Elements sharing one E8M0 scale in an MXFP8 combine message."""
+
+
+@inline(.always)
+def ep_mx_msg_bytes(hid_dim: Int) -> Int:
+    """Bytes of an MXFP8 combine message: E4M3 values, then E8M0 scales."""
+    return hid_dim + hid_dim // EP_MX_MSG_GROUP
+
+
+@inline(.always)
+def _store_peer_bytes[
+    dst_addr_space: AddressSpace, //, width: Int, bypass_l2: Bool
+](
+    dst_p: MutPointer[UInt8, _, address_space=dst_addr_space],
+    data: SIMD[DType.uint8, width],
+) -> None:
+    """Stores `data`; with `bypass_l2` on MI355X, as `block_memcpy` does, so the
+    bytes skip the per-chiplet L2 and are visible to other agents once the
+    caller publishes them."""
+    comptime if bypass_l2 and _is_amd_mi355x():
+        comptime if width == 16:
+            _store_bypassing_l2(Int(dst_p), bitcast[DType.uint32, 4](data))
+        else:
+            comptime assert width == 1, "peer stores are 16 bytes or 1 byte"
+            inlined_assembly[
+                "global_store_byte $0, $1, off sc0 sc1",
+                NoneType,
+                constraints="v,v,~{memory}",
+                has_side_effect=True,
+            ](Int(dst_p), UInt32(data[0]))
+    else:
+        dst_p.unsafe_store[alignment=width](0, data)
+
+
+@inline(.always)
+def _copy_token_mxfp8[
+    input_type: DType,
+    dst_addr_space: AddressSpace,
+    src_addr_space: AddressSpace,
+    //,
+    hid_dim: Int,
+    block_size: Int,
+    bypass_l2: Bool,
+](
+    dst_p: MutPointer[UInt8, _, address_space=dst_addr_space],
+    src_p: ImmPointer[Scalar[input_type], _, address_space=src_addr_space],
+    thread_idx: Int,
+) -> None:
+    """Writes one token as an MXFP8 combine message (`ep_mx_msg_bytes`).
+
+    Each thread quantizes 16 consecutive elements, so the two threads of a
+    32-element group share its E8M0 scale through a lane-pair max. All
+    `block_size` threads must call it, and `block_size` must be even.
+    """
+    comptime per_thread = 16
+    comptime n_vec = hid_dim // per_thread
+    comptime lanes_per_group = EP_MX_MSG_GROUP // per_thread
+    comptime assert (
+        hid_dim % EP_MX_MSG_GROUP == 0
+    ), "hid_dim must be a multiple of the MX group"
+    comptime assert block_size % lanes_per_group == 0
+    for i in range(thread_idx, n_vec, block_size):
+        var vals = src_p.unsafe_load[
+            width=per_thread, alignment=16, invariant=True
+        ](i * per_thread).cast[DType.float32]()
+        var group_max = warp.lane_group_max[num_lanes=lanes_per_group](
+            abs(vals).reduce_max()
+        )
+        var scale: Scalar[DType.float8_e8m0fnu]
+        var multiplier: Float32
+        var block_is_dead: Bool
+        scale, multiplier, block_is_dead = compute_mxfp8_block_scale[
+            DType.float8_e8m0fnu
+        ](group_max)
+        var data = type_of(vals)(0.0) if block_is_dead else vals
+        _store_peer_bytes[per_thread, bypass_l2](
+            dst_p.unsafe_offset(i * per_thread),
+            bitcast[DType.uint8, per_thread](
+                (data * multiplier).cast[DType.float8_e4m3fn]()
+            ),
+        )
+        if i % lanes_per_group == 0:
+            _store_peer_bytes[1, bypass_l2](
+                dst_p.unsafe_offset(hid_dim + i // lanes_per_group),
+                bitcast[DType.uint8, 1](scale),
+            )
 
 
 @inline(.always)
@@ -4591,6 +4813,7 @@ struct EPDispatchKernel[
         comm_thread_base: Int = 0,
         n_comm_threads: Int = Self.num_threads,
         comm_barrier_id: Int = -1,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
     ](
         format_handler: Self.token_fmt_type,
         row_offsets: TileTensor[
@@ -4602,6 +4825,7 @@ struct EPDispatchKernel[
         my_rank: Int32,
         n_active_offset_sms: Int,
         reserved_shared_expert_tokens: UInt32 = 0,
+        expert_load: ExpertLoadT = NullExpertLoad(),
     ) -> None:
         """Auxiliary SM logic for dispatch_wait_kernel.
 
@@ -4621,6 +4845,8 @@ struct EPDispatchKernel[
                 (``grid_dim.x - n_offset_sms`` in the standalone kernels).
             reserved_shared_expert_tokens: The number of tokens reserved for the
                 shared expert.
+            expert_load: Receives each local expert's routed-token count for
+                this step.
 
         Parameters:
             comm_thread_base: Absolute ``thread_idx.x`` of the first thread in
@@ -4631,6 +4857,8 @@ struct EPDispatchKernel[
                 the phase's block barriers when ``comm_barrier_id >= 0``).
             comm_barrier_id: Named-barrier id for the comm class, or negative
                 (the default) for the full-block ``barrier()``.
+            ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+                compiles the counting away.
         """
         comptime assert (
             row_offsets.flat_rank == 1
@@ -4799,6 +5027,16 @@ struct EPDispatchKernel[
 
             # Reset the receive count buffer.
             recv_count_p.unsafe_store(tid, UInt64.MAX_FINITE)
+
+            # After the ready flag, so the layer-index load and the atomic stay
+            # off the path that releases the copy SMs. The last rank's prefix
+            # is the expert's total before any grouped-matmul padding.
+            if tid % Self.n_ranks == Self.n_ranks - 1:
+                expert_load.add(
+                    local_expert_id,
+                    Self.n_local_experts,
+                    prefix_sum_arr[tid] - raw_expert_start_offset,
+                )
 
     @staticmethod
     @inline(.always)
@@ -5457,6 +5695,7 @@ def dispatch_wait_kernel[
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
     token_recv: Bool = False,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     format_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, row_offsets_layout, MutUntrackedOrigin],
@@ -5466,6 +5705,7 @@ def dispatch_wait_kernel[
     recv_count_p: MutPointer[UInt64, MutUntrackedOrigin],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
+    expert_load: ExpertLoadT,
 ):
     """
     This kernel is called after the `dispatch_kernel` to complete the
@@ -5489,6 +5729,8 @@ def dispatch_wait_kernel[
             token encoding scheme.
         token_recv: Whether each destination received a token once (see
             `EPDispatchKernel`). Must match the `dispatch_async_kernel`.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Args:
         format_handler: Instance of token_fmt_type that performs token decoding
@@ -5508,6 +5750,7 @@ def dispatch_wait_kernel[
             buffer is of shape `(n_local_experts, n_ranks)`.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
+        expert_load: Receives each local expert's routed-token count.
     """
 
     comptime dispatch_impl = EPDispatchKernel[
@@ -5529,7 +5772,9 @@ def dispatch_wait_kernel[
     # the tokens start in the output tensor.
     # Use runtime grid_dim so the host can launch a smaller grid for decode.
     if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
-        dispatch_impl.wait_for_arrivals_and_compute_offsets(
+        dispatch_impl.wait_for_arrivals_and_compute_offsets[
+            ExpertLoadT=ExpertLoadT
+        ](
             format_handler,
             row_offsets,
             expert_ids,
@@ -5537,6 +5782,7 @@ def dispatch_wait_kernel[
             atomic_counter,
             my_rank,
             grid_dim.x - dispatch_impl.n_offset_sms,
+            expert_load=expert_load,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -5570,6 +5816,7 @@ struct EPCombineKernel[
     use_shmem: Bool = True,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
+    mx_msg: Bool = False,
 ]:
     """Implements combine_async and combine_wait kernel logic for Expert Parallelism.
 
@@ -5596,6 +5843,9 @@ struct EPCombineKernel[
         fused_shared_expert: Whether to filter out the shared expert's outputs.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
             receive tokens from the current device.
+        mx_msg: Whether each message is the token as MXFP8 (`ep_mx_msg_bytes`)
+            rather than its raw bytes: the send quantizes in groups of 32
+            elements and the reduce dequantizes. Lossy, and peer-to-peer only.
     """
 
     comptime n_local_experts = Self.n_experts // Self.n_ranks
@@ -5774,9 +6024,17 @@ struct EPCombineKernel[
         comptime assert src_info.flat_rank >= 2, "src_info expects rank >= 2"
         comptime hid_dim = input_tokens.static_shape[1]
 
-        comptime assert (
-            Self.msg_bytes == hid_dim * size_of[Scalar[input_type]]()
-        ), "EP combine_async: input shape doesn't match message size."
+        comptime if Self.mx_msg:
+            comptime assert Self.msg_bytes == ep_mx_msg_bytes(
+                hid_dim
+            ), "EP combine_async: MXFP8 message size doesn't match hid_dim."
+            comptime assert (
+                not Self.use_shmem
+            ), "EP combine_async: MXFP8 messages are peer-to-peer only."
+        else:
+            comptime assert (
+                Self.msg_bytes == hid_dim * size_of[Scalar[input_type]]()
+            ), "EP combine_async: input shape doesn't match message size."
 
         # Comm-local thread / warp indices (== absolute when base == 0, so the
         # standalone kernel is byte-identical).
@@ -5974,28 +6232,38 @@ struct EPCombineKernel[
                         var ti = Int(smem_start[pair]) + k
                         var sti = src_info.load[width=2]((ti, Idx[0]))
                         if Self._recv_offset_in_bounds(sti[0], sti[1]):
-                            block_memcpy[
-                                hid_dim * size_of[input_type](),
-                                WARP_SIZE,
-                                bypass_l2=True,
-                            ](
-                                recv_buf_ptrs[rl].unsafe_offset(
-                                    Self.recv_buf_layout(
-                                        (sti[0], sti[1], Idx[0])
-                                    )
-                                ),
-                                input_tokens.ptr_at_offset(
-                                    (ti, Idx[0])
-                                ).unsafe_bitcast[UInt8](),
-                                lane,
+                            var dst = recv_buf_ptrs[rl].unsafe_offset(
+                                Self.recv_buf_layout((sti[0], sti[1], Idx[0]))
                             )
+                            comptime if Self.mx_msg:
+                                _copy_token_mxfp8[
+                                    hid_dim, WARP_SIZE, bypass_l2=True
+                                ](
+                                    dst,
+                                    input_tokens.ptr_at_offset(
+                                        (ti, Idx[0])
+                                    ).as_imm(),
+                                    lane,
+                                )
+                            else:
+                                block_memcpy[
+                                    hid_dim * size_of[input_type](),
+                                    WARP_SIZE,
+                                    bypass_l2=True,
+                                ](
+                                    dst,
+                                    input_tokens.ptr_at_offset(
+                                        (ti, Idx[0])
+                                    ).unsafe_bitcast[UInt8](),
+                                    lane,
+                                )
 
                     pend[n_pend] = Int32(pair)
                     n_pend += 1
                     if n_pend == FLUSH:
                         flush_pending()
                 flush_pending()
-            else:
+            elif not Self.mx_msg:
                 # Below that, at decode sizes, the CTA sends its pairs
                 # together. The per-pair loop below would walk them one after
                 # another, each with its own count load, row-at-a-time block
@@ -6014,7 +6282,7 @@ struct EPCombineKernel[
                 comptime vec = simd_width_of[DType.uint8]()
                 comptime n_vec = Self.msg_bytes // vec
                 comptime assert (
-                    Self.msg_bytes % vec == 0
+                    Self.mx_msg or Self.msg_bytes % vec == 0
                 ), "flat send copies whole 16-byte units"
                 var f_start = unsafe_stack_allocation[
                     FP, Int32, address_space=.SHARED
@@ -6212,15 +6480,27 @@ struct EPCombineKernel[
                                 (src_idx, src_topk_idx, Idx[0])
                             )
                         )
-                        block_memcpy[
-                            hid_dim * size_of[input_type](), Self.num_threads
-                        ](
-                            dst_recv_buf_ptr,
-                            input_tokens.ptr_at_offset(
-                                (token_idx, Idx[0])
-                            ).unsafe_bitcast[UInt8](),
-                            tid,
-                        )
+                        comptime if Self.mx_msg:
+                            _copy_token_mxfp8[
+                                hid_dim, Self.num_threads, bypass_l2=False
+                            ](
+                                dst_recv_buf_ptr,
+                                input_tokens.ptr_at_offset(
+                                    (token_idx, Idx[0])
+                                ).as_imm(),
+                                tid,
+                            )
+                        else:
+                            block_memcpy[
+                                hid_dim * size_of[input_type](),
+                                Self.num_threads,
+                            ](
+                                dst_recv_buf_ptr,
+                                input_tokens.ptr_at_offset(
+                                    (token_idx, Idx[0])
+                                ).unsafe_bitcast[UInt8](),
+                                tid,
+                            )
 
                 # If the target device is on a different node, we need to send the
                 # tokens to the target device using the SHMEM API.
@@ -6475,7 +6755,9 @@ struct EPCombineKernel[
         comptime dst_simd_width = simd_width_of[output_type]()
         comptime byte_simd_width = simd_width_of[DType.uint8]()
 
-        comptime hid_dim = Self.msg_bytes // size_of[Scalar[output_type]]()
+        comptime hid_dim = (
+            Self.msg_bytes * EP_MX_MSG_GROUP // (EP_MX_MSG_GROUP + 1)
+        ) if Self.mx_msg else Self.msg_bytes // size_of[Scalar[output_type]]()
         comptime _align = align_of[SIMD[.uint8, byte_simd_width]]()
         # `_align` is in bytes; stores take an alignment in elements.
         comptime store_align = _align // size_of[Scalar[output_type]]()
@@ -6533,24 +6815,45 @@ struct EPCombineKernel[
                     ):
                         continue
 
-                var recv_buf_ptr = recv_buf_p.unsafe_offset(
-                    Self.recv_buf_layout(
-                        (
-                            token_idx,
-                            topk_idx,
-                            chunk_idx_in_token * n_chunk_bytes,
+                var recv_chunk: SIMD[output_type, dst_simd_width]
+                comptime if Self.mx_msg:
+                    var msg_p = recv_buf_p.unsafe_offset(
+                        Self.recv_buf_layout((token_idx, topk_idx, Idx[0]))
+                    )
+                    var elem = (
+                        chunk_idx_in_token * n_chunk_elems
+                        + lane_id() * dst_simd_width
+                    )
+                    var scale = bitcast[DType.float8_e8m0fnu](
+                        msg_p.unsafe_load(hid_dim + elem // EP_MX_MSG_GROUP)
+                    ).cast[.float32]()
+                    recv_chunk = (
+                        bitcast[DType.float8_e4m3fn, dst_simd_width](
+                            msg_p.unsafe_load[
+                                width=dst_simd_width, alignment=dst_simd_width
+                            ](elem)
+                        ).cast[.float32]()
+                        * scale
+                    ).cast[output_type]()
+                else:
+                    var recv_buf_ptr = recv_buf_p.unsafe_offset(
+                        Self.recv_buf_layout(
+                            (
+                                token_idx,
+                                topk_idx,
+                                chunk_idx_in_token * n_chunk_bytes,
+                            )
                         )
                     )
-                )
-                # recv_buf is fresh peer data each round: not invariant.
-                var recv_chunk = bitcast[output_type, dst_simd_width](
-                    recv_buf_ptr.unsafe_load[
-                        width=byte_simd_width,
-                        alignment=_align,
-                    ](
-                        lane_id() * byte_simd_width,
+                    # recv_buf is fresh peer data each round: not invariant.
+                    recv_chunk = bitcast[output_type, dst_simd_width](
+                        recv_buf_ptr.unsafe_load[
+                            width=byte_simd_width,
+                            alignment=_align,
+                        ](
+                            lane_id() * byte_simd_width,
+                        )
                     )
-                )
 
                 comptime if has_router_weights:
                     var weight = router_weights_fn[1](token_idx, topk_idx)
@@ -6596,6 +6899,7 @@ def combine_async_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     use_shmem: Bool = True,
+    mx_msg: Bool = False,
     *,
     # Callers bind this kernel before the call, so there is no tile argument
     # to infer the engines from.
@@ -6639,6 +6943,7 @@ def combine_async_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         p2p_world_size: Size of a High-speed GPU interconnect group.
         use_shmem: Whether to use the SHMEM API for the communication.
+        mx_msg: Whether to send each token as an MXFP8 message.
         InputTokensEngine: Storage engine backing the `input_tokens` tile.
         SrcInfoEngine: Storage engine backing the `src_info` tile.
 
@@ -6672,6 +6977,7 @@ def combine_async_kernel[
         max_tokens_per_rank,
         p2p_world_size,
         use_shmem,
+        mx_msg=mx_msg,
     ]
 
     var atomic_counter = ep_counters.get_combine_async_ptr()
@@ -6715,6 +7021,7 @@ def combine_wait_kernel[
     StoreFnType: EPCombineStoreFn,
     RouterWeightsFnType: RouterWeightsFn,
     has_router_weights: Bool,
+    mx_msg: Bool = False,
 ](
     num_tokens: Int32,
     recv_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
@@ -6743,6 +7050,7 @@ def combine_wait_kernel[
         RouterWeightsFnType: The type of `router_weights_fn`.
         has_router_weights: Whether all routed experts' outputs for a token
             are weighted by `router_weights_fn` and summed.
+        mx_msg: Whether each received message is an MXFP8 token.
 
     Args:
         num_tokens: The number of output tokens.
@@ -6771,6 +7079,7 @@ def combine_wait_kernel[
         max_tokens_per_rank,
         1,  # p2p world size is not used in combine_wait
         use_shmem=False,
+        mx_msg=mx_msg,
     ]
 
     var atomic_counter = ep_counters.get_combine_wait_ptr()
@@ -6900,6 +7209,7 @@ def dispatch_kernel[
     RowOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
     ExpertIdsEngine: TensorEngine = DefaultEngine[element_width=1],
     SrcInfoEngine: TensorEngine = DefaultEngine[element_width=1],
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     input_tokens: TileTensor[
         input_type,
@@ -6927,6 +7237,7 @@ def dispatch_kernel[
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
+    expert_load: ExpertLoadT,
     input_scales_fn: InputScalesFnType,
 ):
     """
@@ -6975,6 +7286,8 @@ def dispatch_kernel[
         RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
         ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
         SrcInfoEngine: Storage engine backing the `src_info` tile.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Args:
         input_tokens: The input tokens to be dispatched. Also used as shared
@@ -6997,6 +7310,7 @@ def dispatch_kernel[
             each device in the p2p world.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
+        expert_load: Receives each local expert's routed-token count.
         input_scales_fn: Input scale supplier, passed by host layout.
     """
 
@@ -7094,7 +7408,9 @@ def dispatch_kernel[
         # ===== dispatch_wait =====
         # Use runtime grid_dim so the host can launch a smaller grid for decode.
         if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
-            dispatch_impl.wait_for_arrivals_and_compute_offsets(
+            dispatch_impl.wait_for_arrivals_and_compute_offsets[
+                ExpertLoadT=ExpertLoadT
+            ](
                 format_handler,
                 row_offsets,
                 expert_ids,
@@ -7103,6 +7419,7 @@ def dispatch_kernel[
                 my_rank,
                 grid_dim.x - dispatch_impl.n_offset_sms,
                 shared_expert_token_count,
+                expert_load=expert_load,
             )
         else:
             format_handler.init_smem_resources()

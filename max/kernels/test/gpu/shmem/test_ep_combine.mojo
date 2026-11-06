@@ -34,6 +34,7 @@ from shmem.ep_comm import (
     EPLocalSyncCounters,
     combine_wait_kernel,
     combine_async_kernel,
+    NullExpertLoad,
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
@@ -303,6 +304,7 @@ def test_combine[
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

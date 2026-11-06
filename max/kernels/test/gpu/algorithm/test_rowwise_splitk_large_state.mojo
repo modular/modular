@@ -109,7 +109,7 @@ def _check(rows: Int, cols: Int) raises:
 
             row.emit(write)
 
-        rowwise.launch[axis=1, simd_width=1, target="gpu", num_phases=1](
+        rowwise.launch[axis=1, simd_width=1, num_phases=1](
             body, Coord(Index(rows, cols)), ctx
         )
         ctx.enqueue_copy(out_h, out_d)

@@ -57,6 +57,7 @@ from shmem.ep_comm import (
     EPLocalSyncCounters,
     combine_async_kernel,
     dispatch_async_kernel,
+    NullExpertLoad,
     dispatch_wait_kernel,
 )
 
@@ -352,6 +353,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         dispatch_recv_count.unsafe_ptr(),
         counters,
         Int32(0),
+        NullExpertLoad(),
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )

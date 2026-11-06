@@ -20,6 +20,7 @@
 #define SUPPORT_ALIGNED_ALLOC_H
 
 #include "Support/PlatformUtils.h"
+#include "Support/SymbolExport.h"
 
 #include <cstddef>
 #include <cstdlib>
@@ -39,7 +40,7 @@ static constexpr size_t kPreferredMemoryAlignment = 16;
 ///  NOTE: The returned pointer *must* be deallocated with alignedFree().
 /// Deallocating with e.g. free() instead causes runtime issues on Windows that
 /// are hard to debug.
-void *alignedAlloc(size_t alignment, size_t size);
+MODULAR_CXX_EXPORT void *alignedAlloc(size_t alignment, size_t size);
 
 #ifndef _WIN32
 /// alignedFree deallocates a pointer allocated with alignedAlloc.

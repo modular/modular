@@ -19,17 +19,17 @@ import functools
 from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops.state_space import causal_conv1d_varlen_fwd
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.state_space import causal_conv1d_varlen_fwd
 from max.nn.legacy.transformer.transformer import logits_postprocess
 from max.pipelines.lib.registration_graph_api import decoder_outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs

@@ -14,13 +14,13 @@
 
 The reported alignment promises that every address the view can produce is a
 multiple of it, and consumers turn it straight into a vector-load width.
-`get_view_alignment` is a pure function of shape, strides, starts and steps, so
-these cases pin it directly, with no device and no op execution.
+`_mogg_slice_view_alignment` is a pure function of shape, strides, starts and
+steps, so these cases pin it directly, with no device and no op execution.
 
 Regression test for GEX-4058.
 """
 
-from builtin_kernels.gather_scatter import Slice
+from builtin_primitives.primitives import _mogg_slice_view_alignment
 
 from layout import ComptimeInt, Coord, CoordLike, Idx
 
@@ -82,7 +82,7 @@ comptime UNIT_STEP_3 = Coord(Idx[1], Idx[1], Idx[1])
 
 def test_column_slice_bounded_by_row_pitch() raises:
     """`x[:, :8]` of a `[4, 10]` float32 tensor: rows are 40 bytes apart."""
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         2, DType.float32, SHAPE_4_10, STRIDE_10_1, NO_OFFSET_2, UNIT_STEP_2
     ](BUFFER_ALIGN)
 
@@ -91,7 +91,7 @@ def test_column_slice_bounded_by_row_pitch() raises:
 
 def test_aligned_row_pitch_is_a_no_op() raises:
     """`[4, 64]` float32 rows are 256 bytes, so the pitch costs nothing."""
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         2, DType.float32, SHAPE_4_64, STRIDE_64_1, NO_OFFSET_2, UNIT_STEP_2
     ](BUFFER_ALIGN)
 
@@ -102,7 +102,7 @@ def test_aligned_row_pitch_is_a_no_op() raises:
 
 def test_moe_gate_row_pitch() raises:
     """Selecting 256 routed experts out of 258 logits: 1032-byte rows."""
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         2, DType.float32, SHAPE_8_258, STRIDE_258_1, NO_OFFSET_2, UNIT_STEP_2
     ](BUFFER_ALIGN)
 
@@ -112,7 +112,7 @@ def test_moe_gate_row_pitch() raises:
 def test_step_scales_the_pitch() raises:
     """A step of 2 doubles what one move along that dimension covers."""
     comptime steps = Coord(Idx[2], Idx[1])
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         2, DType.float32, SHAPE_4_10, STRIDE_10_1, NO_OFFSET_2, steps
     ](BUFFER_ALIGN)
 
@@ -122,7 +122,7 @@ def test_step_scales_the_pitch() raises:
 def test_innermost_start_offset_shrinks_alignment() raises:
     """`x[:, 2:]` of `[4, 64]` float32: an aligned pitch, an offset base."""
     comptime starts = Coord(Idx[0], Idx[2])
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         2, DType.float32, SHAPE_4_64, STRIDE_64_1, starts, UNIT_STEP_2
     ](BUFFER_ALIGN)
 
@@ -132,7 +132,7 @@ def test_innermost_start_offset_shrinks_alignment() raises:
 
 def test_dense_rank3_outer_strides_are_dominated() raises:
     """On a dense source each outer stride is a multiple of the next inner."""
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         3, DType.float32, SHAPE_2_3_10, STRIDE_30_10_1, NO_OFFSET_3, UNIT_STEP_3
     ](BUFFER_ALIGN)
 
@@ -144,7 +144,7 @@ def test_permuted_rank3_every_dimension_contributes() raises:
     comptime strides = TypeList.of[
         Trait=CoordLike, ComptimeInt[24], ComptimeInt[64], ComptimeInt[1]
     ]()
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         3, DType.float32, UNKNOWN_SHAPE_3, strides, NO_OFFSET_3, UNIT_STEP_3
     ](BUFFER_ALIGN)
 
@@ -156,7 +156,7 @@ def test_permuted_rank3_every_dimension_contributes() raises:
 def test_dynamic_stride_bails_to_one() raises:
     """With nothing static inside it, a dynamic stride admits no promise."""
     comptime strides = TypeList.of[Trait=CoordLike, Int, ComptimeInt[1]]()
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         2, DType.float32, UNKNOWN_SHAPE_2, strides, NO_OFFSET_2, UNIT_STEP_2
     ](BUFFER_ALIGN)
 
@@ -165,7 +165,7 @@ def test_dynamic_stride_bails_to_one() raises:
 
 def test_dynamic_batch_stride_keeps_vector_alignment() raises:
     """`[batch, seq_len, 8192]` bfloat16: the batch stride is symbolic."""
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         3,
         DType.bfloat16,
         SHAPE_UNKNOWN_8192,
@@ -183,7 +183,7 @@ def test_dynamic_batch_stride_keeps_vector_alignment() raises:
 def test_dynamic_batch_stride_with_start_offset() raises:
     """The same view, offset by one along the symbolic dimension."""
     comptime starts = Coord(Idx[1], Idx[0], Idx[0])
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         3,
         DType.bfloat16,
         SHAPE_UNKNOWN_8192,
@@ -197,7 +197,7 @@ def test_dynamic_batch_stride_with_start_offset() raises:
 
 def test_dynamic_stride_still_bounded_by_row_pitch() raises:
     """The GEX-4058 pitch under `[4, seq_len, 10]`: rows 40 bytes apart."""
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         3,
         DType.float32,
         SHAPE_4_UNKNOWN_10,
@@ -213,7 +213,7 @@ def test_dynamic_stride_still_bounded_by_row_pitch() raises:
 
 def test_dynamic_stride_over_a_strided_suffix_bails() raises:
     """A step already folded into `stride[1]` breaks the dense chain."""
-    var got = Slice.get_view_alignment[
+    var got = _mogg_slice_view_alignment[
         3,
         DType.float32,
         SHAPE_4_UNKNOWN_10,

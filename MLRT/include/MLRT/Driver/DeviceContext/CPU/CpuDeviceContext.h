@@ -23,6 +23,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 #include "Support/RCRef.h"
+#include "Support/SymbolExport.h"
 
 #include <chrono>
 #include <cstdint>
@@ -44,7 +45,7 @@ using CpuDeviceEventRef = RCRef<CpuDeviceEvent>;
 using CpuDeviceStreamRef = RCRef<CpuDeviceStream>;
 using CpuDeviceTimerRef = RCRef<CpuDeviceTimer>;
 
-class CpuDevice : public Device {
+class MODULAR_CXX_EXPORT CpuDevice : public Device {
 public:
   static constexpr API api = Device::cpuAPI;
 

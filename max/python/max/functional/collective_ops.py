@@ -268,6 +268,84 @@ def allgather(
     )
 
 
+def all_to_all(
+    t: Tensor,
+    split_axis: int = 0,
+    concat_axis: int = 0,
+    mesh_axis: int | str | Sequence[int | str] = 0,
+) -> Tensor:
+    """Exchanges one chunk of a tensor between every pair of devices.
+
+    Each device splits its shard into one chunk per device along
+    ``mesh_axis`` (by ``split_axis``), sends chunk ``j`` to the group's
+    device ``j``, and concatenates what it receives, in device order, along
+    ``concat_axis``. A tensor :class:`~max.tensor.sharding.Sharded` along
+    ``concat_axis`` on ``mesh_axis`` comes out sharded along ``split_axis``,
+    in one launch and moving each element once. With both axes equal it is
+    ``torch.distributed.all_to_all_single`` along that axis. With several
+    mesh axes, one collective spans every device they span, in row-major
+    device order.
+
+    The result claims :class:`~max.tensor.sharding.Sharded` along
+    ``split_axis`` on ``mesh_axis``; a caller that exchanges something else,
+    such as partial results, rebinds it.
+
+    Args:
+        t: The input distributed tensor. Its shards must have the same shape
+            within each group, with ``split_axis`` a multiple of the group
+            size.
+        split_axis: The tensor axis each shard is split along.
+        concat_axis: The tensor axis the received chunks concatenate along.
+        mesh_axis: The mesh axis or axes, by index or name, the exchange
+            runs over. Defaults to ``0``.
+
+    Returns:
+        A tensor whose shards have ``split_axis`` divided by the group size
+        and ``concat_axis`` multiplied by it.
+    """
+
+    def simulated(shards: list[TensorValue]) -> list[TensorValue]:
+        chunks = [
+            _split_evenly(shard, split_axis, len(shards)) for shard in shards
+        ]
+        return [
+            ops.concat(
+                [chunks[src][dst] for src in range(len(shards))], concat_axis
+            )
+            for dst in range(len(shards))
+        ]
+
+    return _collective(
+        t,
+        mesh_axis,
+        Sharded(split_axis),
+        kernel=lambda shards, signal_buffers, group_size=None: ops.all_to_all(
+            shards,
+            signal_buffers,
+            split_axis=split_axis,
+            concat_axis=concat_axis,
+            group_size=group_size,
+        ),
+        simulated=simulated,
+    )
+
+
+def _split_evenly(sv: TensorValue, axis: int, n: int) -> list[TensorValue]:
+    """Splits ``sv`` into ``n`` equal chunks along ``axis``."""
+    axis %= sv.rank
+    dim = sv.shape[axis]
+    if isinstance(dim, StaticDim):
+        if int(dim) % n != 0:
+            raise ValueError(
+                f"all_to_all cannot split axis {axis} of size {int(dim)} "
+                f"into {n} chunks"
+            )
+        return list(ops.split(sv, [int(dim) // n] * n, axis=axis))
+    # A symbolic axis splits into equal chunks only when it divides; the
+    # ragged binning of ``_even_chunk`` is exactly that then.
+    return [_even_chunk(sv, axis, n, index) for index in range(n)]
+
+
 def reduce_scatter(
     t: Tensor,
     scatter_axis: int = 0,

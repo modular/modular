@@ -22,10 +22,10 @@ from __future__ import annotations
 
 from max import functional as F
 from max.nn import HyperConnection, Module, RMSNorm
-from max.nn.common_layers.functional_kernels import mhc_post
+from max.nn._graph_ops import mhc_post_preferred
 from max.nn.common_layers.quant_moe import ExpertParallelMoE
+from max.nn.kernels import mhc_post
 from max.nn.legacy.comm.ep import EPCommBuffers
-from max.nn.legacy.kernels import mhc_post_preferred
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Sharded, auto_reshard
 

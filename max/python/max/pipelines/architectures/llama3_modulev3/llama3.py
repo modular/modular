@@ -24,18 +24,18 @@ from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.attention import AttentionWithRope
 from max.nn.common_layers.mlp import MLP
 from max.nn.embedding import Embedding
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs

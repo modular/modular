@@ -1046,7 +1046,6 @@ def softmax_inline[
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[_simd_width: Int](Coord) -> SIMD[dtype, _simd_width],
-    target: StaticString = "cpu",
     logsoftmax: Bool = False,
     has_prologue_fusion: Bool = True,
 ](
@@ -1066,7 +1065,6 @@ def softmax_inline[
         simd_width: The simd_width to use in vectorization.
         rank: The rank of the input and output tensors.
         InputFnType: The type of `input_fn` (inferred).
-        target: The target device ("cpu" or "gpu").
         logsoftmax: Enable to apply elementwise log() to outputs after softmax.
         has_prologue_fusion: Whether the input lambda supports prologue fusion.
 
@@ -1083,19 +1081,19 @@ def softmax_inline[
     def trace_information() {imm} -> String:
         return trace_arg("input", shape_il, dtype)
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.T.target.device_kind_label()](
         "softmax",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
     ):
         # Exit early if the tensors are empty.
         if shape_il.flattened_length() == 0:
             return
-        comptime if is_cpu[target]():
+        comptime if context.T.target.is_cpu():
             var cpu_ctx = DeviceContext._map_assert_cpu_target(context)
             _softmax_cpu[dtype, simd_width, rank, logsoftmax=logsoftmax](
                 input_fn, shape, output, axis, cpu_ctx
             )
-        elif is_gpu[target]():
+        elif context.T.target.is_gpu():
             _softmax_gpu[
                 dtype,
                 simd_width,
@@ -1110,7 +1108,9 @@ def softmax_inline[
                 context.value(),
             )
         else:
-            comptime assert False, String("unsupported target ", target)
+            comptime assert False, String(
+                "unsupported target ", context.T.target.device_kind_label()
+            )
 
 
 # ===----------------------------------------------------------------------=== #

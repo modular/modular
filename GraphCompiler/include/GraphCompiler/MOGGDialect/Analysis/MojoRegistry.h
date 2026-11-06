@@ -15,14 +15,25 @@
 #define GENERICML_GRAPHCOMPILER_MOGGDIALECT_MOJOREGISTRY_H
 
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
+#include "GraphCompiler/MOGGDialect/Support/PlatformPredicate.h"
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 
+#include <memory>
+#include <string>
+#include <utility>
+
 namespace M::MOGG {
+
+/// Returns the set of devices that `decl` applies to: its `cond=` platform,
+/// or else the devices that its `device_info` fields select.
+ErrorOr<PlatformPredicate> getRegistrationPlatformPredicate(KernelDeclOp decl);
 
 /// Indexes `mogg.kernel.decl`, `mogg.primitive.decl`, and
 /// `mogg.shape_func.decl` ops by registration name and sym_name. Not an MLIR
@@ -75,16 +86,55 @@ public:
   ErrorOr<KernelDeclOp> getResolvedKernel(llvm::StringRef name,
                                           DeviceInfoAttr deviceInfo) const;
 
+  /// Finds each op whose selection is ambiguous on some device, over all
+  /// representative devices of its registrations. With `builtinsOnly`, only
+  /// built-in registrations take part, as in a registry with no user
+  /// packages. Appends one message for each op and set of tied kernels to
+  /// `messages`, and returns an error when a registration has an invalid
+  /// platform. An error does not stop the scan, so `messages` keeps every
+  /// ambiguity found before and after it.
+  ErrorOrSuccess
+  findAmbiguousSelections(bool builtinsOnly,
+                          llvm::SmallVectorImpl<std::string> &messages) const;
+
   /// Returns the first execution device of `op`, or the host device if none.
   static DeviceRefAttr getDeviceRefForOp(mlir::Operation *op);
 
 private:
+  ErrorOr<const PlatformPredicate *>
+  getPlatformPredicate(KernelDeclOp decl) const;
+  ErrorOr<PlatformPredicateOrder> getOrder(KernelDeclOp first,
+                                           KernelDeclOp second) const;
+
+  /// Returns the registrations of `matches` that no other registration of
+  /// the selected provenance group is narrower than. All of `matches` hold
+  /// for one device.
+  ErrorOr<llvm::SmallVector<KernelDeclOp>>
+  getSurvivors(llvm::ArrayRef<KernelDeclOp> matches) const;
+
+  /// Describes why no registration of `survivors` is narrower than all the
+  /// others.
+  std::string describeAmbiguity(
+      llvm::StringRef name, llvm::ArrayRef<KernelDeclOp> survivors,
+      llvm::function_ref<void(llvm::raw_ostream &)> printDevice) const;
+
   MO::DeviceInfoMapping deviceInfoMapping;
   llvm::StringMap<llvm::SmallVector<KernelDeclOp>> kernelByName;
   llvm::StringMap<KernelDeclOp> kernelBySymName;
   llvm::StringMap<PrimitiveDeclOp> primitiveByName;
   llvm::StringMap<ShapeFunctionDeclOp> shapeFuncByName;
   llvm::StringMap<ShapeFunctionDeclOp> shapeFuncBySymName;
+
+  // Computed on first use. Import validates every platform, so an error here
+  // means a decl that did not come from `--mogg-import-packages`. The
+  // platforms live on the heap because callers keep pointers to them while
+  // the map grows; a null entry has an error in `platformErrorByDecl`.
+  mutable llvm::DenseMap<mlir::Operation *, std::unique_ptr<PlatformPredicate>>
+      platformByDecl;
+  mutable llvm::DenseMap<mlir::Operation *, std::string> platformErrorByDecl;
+  mutable llvm::DenseMap<std::pair<mlir::Operation *, mlir::Operation *>,
+                         PlatformPredicateOrder>
+      orderByPair;
 };
 
 /// Clones every `mogg.kernel.decl` and `mogg.primitive.decl` op from `src`

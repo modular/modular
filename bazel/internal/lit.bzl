@@ -222,6 +222,7 @@ EOF
                 extensions_string = extensions_string,
             ),
             testonly = True,
+            target_compatible_with = target_compatible_with,
         )
         native.genrule(
             name = name + "_gen_lit_site_cfg",
@@ -241,6 +242,7 @@ EOF
                 name = name,
             ),
             testonly = True,
+            target_compatible_with = target_compatible_with,
         )
 
     mojo_test_deps = []

@@ -35,7 +35,7 @@ from max.nn import Module
 from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
 )
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     ExpertForm,

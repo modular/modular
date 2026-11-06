@@ -34,8 +34,8 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   capture records the decode step, and a device-to-host copy cannot be
   captured (it also closed a 2-GPU collective deadlock, DRIV-462). The one
   size a ragged batch derives from its lengths, the per-ratio window count,
-  never reaches the host: `attention.compress_windows.ragged.paged`
-  (`max.nn.legacy.kernels.compress_windows_ragged`) sizes its output by a bound
+  never reaches the host: `mo.compress_windows.ragged.paged`
+  (`max.nn._graph_ops.compress_windows_ragged`) sizes its output by a bound
   taken from shapes and reads the count from the window offsets on the
   device. Ops without a GPU kernel (`ops.tile`) round-trip through the host
   implicitly; keep them out.
@@ -53,14 +53,14 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   leaf, this chunk's candidates]`; `top_k` keeps `min(index_topk, n)`, so at
   bringup lengths it selects everything and is exact by construction.
 - **Attention reads the leaves through
-  `attention.latent_sparse.ragged.paged`**
-  (`max.nn.legacy.kernels.latent_sparse_attention_ragged`): window by position
+  `mo.latent_sparse_attention.ragged.paged`**
+  (`max.nn._graph_ops.latent_sparse_attention_ragged`): window by position
   from `cache_lengths`, zone by the entry numbers `CompressedStream.entries`
   resolves, both leaves already holding the chunk's rows. Window-only layers
   pass the window leaf as the compressed operand with a `[rows, 0]` entry list.
   The indexer scores its zone leaf in place through
-  `attention.indexer_score.ragged.paged`
-  (`max.nn.legacy.kernels.indexer_score_ragged`), so no per-token candidate
+  `mo.indexer_score.ragged.paged`
+  (`max.nn._graph_ops.indexer_score_ragged`), so no per-token candidate
   table exists on the cached path. The compressor pools every window of the
   batch in one op that reads the state leaf in place, the same op for the
   attention's and the indexer's stream. The cache-less path (`cache=None`) keeps

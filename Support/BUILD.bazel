@@ -89,7 +89,7 @@ modular_cc_library(
     }),
     deps = [
         ":ConcurrentAppendingVector",
-        ":Globals",
+        ":Globals.static",
         ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:Support",
@@ -107,6 +107,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Compiler",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:BytecodeWriter",
@@ -122,6 +123,7 @@ modular_cc_library(
     hdrs = ["include/Support/Base64.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -130,6 +132,9 @@ modular_cc_library(
     name = "BinaryID",
     srcs = ["lib/BinaryID.cpp"],
     hdrs = ["include/Support/BinaryID.h"],
+    # Each shared library keeps its own hidden copy: getBinaryID() reports the
+    # build ID of the binary that contains it.
+    tags = ["LINKABLE_MORE_THAN_ONCE"],
     deps = [
         "@llvm-project//llvm:Support",
     ],
@@ -165,6 +170,7 @@ modular_cc_library(
         ":Base",
         ":Configuration",
         ":Filesystem",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
@@ -179,6 +185,7 @@ modular_cc_library(
         ":ADT",
         ":Base",
         ":Filesystem",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -189,6 +196,7 @@ modular_cc_library(
     hdrs = ["include/Support/DeviceSpecs.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
     ],
@@ -200,6 +208,7 @@ modular_cc_library(
     hdrs = ["include/Support/CPUCache.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -225,6 +234,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Filesystem",
+        ":SymbolExport",
         "@llvm-project//llvm:Option",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Support",
@@ -243,7 +253,7 @@ modular_cc_library(
     deps = [
         ":ADT",
         ":Base",
-        ":Globals",
+        ":Globals.static",
         ":SymbolExport",
         ":TypeID",
         "@llvm-project//llvm:Support",
@@ -257,7 +267,8 @@ modular_cc_library(
     deps = [
         ":Base",
         ":ConcurrentAppendingVector",
-        ":Globals",
+        ":Globals.static",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -273,7 +284,8 @@ modular_cc_library(
     ),
     deps = [
         ":Base",
-        ":Globals",
+        ":Globals.static",
+        ":SymbolExport",
         ":TypeID",
         "@llvm-project//llvm:Support",
     ],
@@ -287,11 +299,13 @@ modular_cc_library(
     # CUDA compilation driver resolves the dlopened NVPTX compiler with it, and
     # the mojo driver hands its runfiles down to the lldb it spawns.
     visibility = [
+        "//AsyncRT:__pkg__",
         "//MLRT:__subpackages__",
         "//Mojo/tools/mojo:__pkg__",
         "//max/python/max:__pkg__",
     ],
     deps = [
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@rules_cc//cc/runfiles",
     ],
@@ -319,7 +333,8 @@ modular_cc_library(
         ":BazelRunfiles",
         ":CacheLog",
         ":Filesystem",
-        ":Globals",
+        ":Globals.static",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -340,6 +355,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Configuration",
+        ":SymbolExport",
         "//Config",
         "@crashpad//:client",
         "@llvm-project//llvm:Support",
@@ -360,6 +376,7 @@ modular_cc_library(
     ]),
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Support",
     ],
@@ -371,6 +388,7 @@ modular_cc_library(
     hdrs = ["include/Support/IPInt.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -382,6 +400,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":IPInt",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -402,6 +421,7 @@ modular_cc_library(
     hdrs = ["include/Support/URI.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -415,6 +435,7 @@ modular_cc_library(
     ]),
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],
@@ -426,6 +447,7 @@ modular_cc_library(
     hdrs = glob(["include/Support/Threading/*.h"]),
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -437,8 +459,9 @@ modular_cc_library(
     defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     deps = [
         ":Base",
-        ":Globals",
+        ":Globals.static",
         ":MArchTargetMinimal",
+        ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:Support",
     ],
@@ -467,8 +490,9 @@ modular_cc_library(
     deps = [
         # Holds the process-global gates + cached sink, so every statically
         # linked copy of the shim observes the same state (see Ranges.h).
-        ":Globals",
+        ":Globals.static",
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -482,7 +506,10 @@ modular_cc_library(
     name = "ProfilingRangesHeaders",
     hdrs = ["include/Support/Profiling/Ranges.h"],
     visibility = ["//max/internal/profiler:__pkg__"],
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        ":SymbolExport",
+    ],
 )
 
 # The C ABI between :ProfilerHostGlue and the runtime-loaded profiler plugin
@@ -513,6 +540,7 @@ modular_cc_library(
         "//conditions:default": ["MODULAR_TRACY_BUILD=0"],
     }),
     visibility = [
+        "//AsyncRT:__pkg__",
         "//MLRT:__pkg__",
         "//Mojo:__pkg__",
         "//mach/crates/max-sys-internal:__pkg__",
@@ -545,6 +573,7 @@ modular_cc_library(
     name = "ExternalProfilerAnnotationHostGlue",
     srcs = ["lib/ExternalProfilerAnnotationHostGlue.cpp"],
     visibility = [
+        "//AsyncRT:__pkg__",
         "//Mojo:__pkg__",
         # The shim-absent test cannot live next to the shim: its fixture is
         # that nothing places the shim beside the test binary.
@@ -579,14 +608,14 @@ PROFILING_DEPS = [
     # Configuration backs the session.debug.profiling_* settings that
     # Range.cpp reads at enable()/disable() time.
     ":Configuration",
-    ":Globals",
+    ":Globals.static",
     ":MArchTargetMinimal",
     ":SymbolExport",
     "//Config",
     "@llvm-project//llvm:Support",
 ] + select({
     # Tracy without CUDA support
-    "//:tracy_enabled": ["@tracy//:Tracy"],
+    "//:tracy_enabled": ["@tracy//:Tracy.import"],
     "//conditions:default": [],
 }) + select({
     # Tracy CUDA support - only when both Tracy and NVIDIA GPU are enabled.
@@ -647,6 +676,7 @@ modular_cc_library(
         ":DeviceSpecs",
         ":MArchTargetMinimal",
         ":MDialect",
+        ":SymbolExport",
         ":Threading",
         "@llvm-project//clang:basic",
         "@llvm-project//llvm:AllTargetsAsmParsers",
@@ -676,6 +706,7 @@ modular_cc_library(
         ":Base",
         ":CPUCache",
         ":DeviceSpecs",
+        ":SymbolExport",
         ":Threading",
         "@llvm-project//clang:basic",
         "@llvm-project//llvm:AllTargetsAsmParsers",
@@ -697,6 +728,7 @@ modular_cc_library(
         ":Buffer",
         ":Filesystem",
         ":ML",
+        ":SymbolExport",
         ":TimeProfiler",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeOpInterface",
@@ -740,6 +772,7 @@ modular_cc_library(
         ":Filesystem",
         ":MArchTarget",
         ":MArchTargetMinimal",
+        ":SymbolExport",
         ":Threading",
         "//Config",
         "@llvm-project//llvm:Support",
@@ -874,6 +907,7 @@ modular_cc_library(
         ":MDialectIncGen",
         ":ML",
         ":MTypeInterfaces",
+        ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:MC",
         "@llvm-project//llvm:Support",
@@ -954,6 +988,7 @@ modular_cc_library(
         ":DebugInfoIncGen",
         ":DebugInfoTypeInterfaces",
         ":MDialect",
+        ":SymbolExport",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//llvm:CodeGen",
         "@llvm-project//llvm:Support",
@@ -1073,6 +1108,7 @@ modular_cc_library(
         ":Compiler",
         ":DebugInfoDialect",
         ":DebugInfoTransformPasses",
+        ":SymbolExport",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FunctionInterfaces",
@@ -1098,6 +1134,7 @@ modular_cc_library(
         ":DebugInfoToLLVMIncGen",
         ":DebugInfoTransforms",
         ":MDialect",
+        ":SymbolExport",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//llvm:Core",
         "@llvm-project//llvm:Support",
@@ -1131,25 +1168,11 @@ modular_shared_library(
     hdrs = glob(["include/Support/Globals/*.h"]) + [
         "include/Support/ContextGlobal.h",
     ],
-    # Always link and expose the FallbackTypeIDResolver::registerImplicitTypeID
-    # function. This is used by downstream libraries to decide whether MLIR types
-    # in different SOs are the same type or not.
-    #
-    # See https://github.com/llvm/llvm-project/pull/126999#issuecomment-2661526333
-    # for more details and breadcrumbs.
-    linkopts = select({
-        "@platforms//os:linux": [
-            "-Wl,--undefined=_ZN4mlir6detail22FallbackTypeIDResolver22registerImplicitTypeIDEN4llvm9StringRefE",
-        ],
-        "@platforms//os:macos": [
-            "-Wl,-u,__ZN4mlir6detail22FallbackTypeIDResolver22registerImplicitTypeIDEN4llvm9StringRefE",
-        ],
-    }),
+    dynamic_deps = ["@llvm-project//llvm:LLVM"],
     output_name = "MSupportGlobals",
     deps = [
         ":SymbolExport",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:Support",
     ],
     # TODO: Missing define conditionals for symbol visibility
     # NOTE: This library should not have any deps to avoid shared object linking issues
@@ -1181,6 +1204,7 @@ modular_cc_library(
     deps = [
         "Configuration",
         ":MpscRingBuffer",
+        ":SymbolExport",
         ":Threading",
         "@fmt",
         "@llvm-project//llvm:Support",
@@ -1200,7 +1224,7 @@ modular_cc_library(
 modular_cc_library(
     name = "RequestContext",
     hdrs = ["include/Support/RequestContext.h"],
-    deps = [":Globals"],
+    deps = [":Globals.static"],
 )
 
 modular_cc_library(
@@ -1272,13 +1296,14 @@ modular_shared_library(
     copts = ["-fvisibility=default"],
     output_name = "cudart-stub",
     target_compatible_with = ["@platforms//os:linux"],
+    with_import = True,
     deps = ["//bazel/public-patches:cuda_runtime_headers"],
 )
 
 alias(
     name = "libcudart_stub",
     actual = select({
-        "@platforms//os:linux": ":cudart_stub",
+        "@platforms//os:linux": ":cudart_stub.import",
         "//conditions:default": "//bazel/public-patches:empty_lib",
     }),
 )
@@ -1312,12 +1337,13 @@ modular_shared_library(
     copts = ["-fvisibility=default"],
     output_name = "cuda-stub",
     target_compatible_with = ["@platforms//os:linux"],
+    with_import = True,
 )
 
 alias(
     name = "libcuda_stub",
     actual = select({
-        "@platforms//os:linux": ":cuda_stub",
+        "@platforms//os:linux": ":cuda_stub.import",
         "//conditions:default": "//bazel/public-patches:empty_lib",
     }),
 )
@@ -1337,6 +1363,7 @@ modular_shared_library(
     copts = ["-fvisibility=default"],
     output_name = "cupti-stub",
     target_compatible_with = ["@platforms//os:linux"],
+    with_import = True,
     deps = [
         # cuda_cupti_headers provides <cupti.h> plus the sub-headers (events,
         # metrics, profiler_target, target) used by the trampolines'
@@ -1352,7 +1379,7 @@ modular_shared_library(
 alias(
     name = "libcupti_stub",
     actual = select({
-        "@platforms//os:linux": ":cupti_stub",
+        "@platforms//os:linux": ":cupti_stub.import",
         "//conditions:default": "//bazel/public-patches:empty_lib",
     }),
 )
@@ -1392,12 +1419,13 @@ modular_shared_library(
     copts = ["-fvisibility=default"],
     output_name = "rocprofiler-tracy-stub",
     target_compatible_with = ["@platforms//os:linux"],
+    with_import = True,
 )
 
 alias(
     name = "librocprofiler_tracy_stub",
     actual = select({
-        "@platforms//os:linux": ":rocprofiler_tracy_stub",
+        "@platforms//os:linux": ":rocprofiler_tracy_stub.import",
         "//conditions:default": "//bazel/public-patches:empty_lib",
     }),
 )

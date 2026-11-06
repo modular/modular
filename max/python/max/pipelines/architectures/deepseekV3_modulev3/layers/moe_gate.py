@@ -16,10 +16,8 @@ from __future__ import annotations
 
 from max import functional as F
 from max.dtype import DType
-from max.nn.common_layers.functional_kernels import (
-    moe_router_group_limited,
-)
 from max.nn.common_layers.moe import MoEGate
+from max.nn.kernels import moe_router_group_limited
 from max.tensor import Tensor
 
 

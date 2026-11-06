@@ -139,9 +139,7 @@ def _dequant_mx_block[
 
 
 @inline(.always)
-def dequant_mx[
-    target: StaticString
-](
+def dequant_mx(
     ctx: DeviceContext,
     output: TileTensor[mut=True, ...],
     input: TileTensor,
@@ -153,9 +151,6 @@ def dequant_mx[
 
     The format follows the dtype of `input`: `uint8` is packed MXFP4,
     `float8_e4m3fn` is MXFP8.
-
-    Parameters:
-        target: The compilation target. Must be a GPU.
 
     Args:
         ctx: Device context for kernel launch.
@@ -175,7 +170,7 @@ def dequant_mx[
         kernels read scales on trust, so a short scale tensor would otherwise
         be an out-of-bounds read.
     """
-    comptime assert is_gpu[target](), "MX dequant only supports GPUs"
+    comptime assert ctx.target.is_gpu(), "MX dequant only supports GPUs"
 
     comptime out_dtype = output.dtype
     comptime in_dtype = input.dtype

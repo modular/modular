@@ -32,13 +32,12 @@ from std.memory import bitcast
 from std.random import random_ui64, seed
 from std.testing import assert_almost_equal, assert_equal
 
-from layout import TileTensor
+from layout import Idx, TileTensor
 from layout.layout import row_major
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     BlockScaledMatmulAMD,
     _launch_block_scaled_split_k,
-    _sk_perf_clamped_max_m,
     block_scaled_matmul_amd,
 )
 
@@ -475,35 +474,102 @@ def _test_dispatch[
     print("     OK")
 
 
-def _test_route_policy() raises:
-    """Pins the split-K M ceiling at the measured o_proj crossover.
+def _test_dispatch_bands[
+    N: Int, K: Int, out_dtype: DType = DType.float32
+](name: String, ms: List[Int], ctx: DeviceContext) raises:
+    """Drives the public dispatcher at runtime `M`s, one per band of a shape's
+    tile table.
 
-    Both routes agree, so a wrong ceiling is a silent perf regression.
+    `_test_dispatch` takes a static `M`, which rebuilds every band's kernel
+    per point. Positive data keeps the reference at ~K*eps, so f32 output
+    holds rtol=1e-3: tight enough to see one skipped scale block at K=12288.
     """
-    print("\n--- split-K route policy (performance pin) ---")
+    comptime K_SCALES = K // MXFP8_SF_VECTOR_SIZE
+    comptime rtol = 1e-3 if out_dtype == DType.float32 else 5e-3
+    var max_m = 0
+    for m in ms:
+        max_m = max(max_m, m)
 
-    # o_proj key: workspace 1365, clamped to the measured crossover 320.
-    assert_equal(
-        _sk_perf_clamped_max_m[FP8_LANE_BYTES, 6144, 2048, 1365](), 320
-    )
+    # Every M reads a row prefix of the same operands.
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](max_m * K)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N * K)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](max_m * K_SCALES)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N * K_SCALES)
+    ctx.synchronize()
+    for i in range(max_m * K):
+        a_h[i] = _rand_positive_e4m3_byte()
+    for i in range(N * K):
+        b_h[i] = _rand_positive_e4m3_byte()
+    for i in range(max_m * K_SCALES):
+        sfa_h[i] = UInt8(Int(random_ui64(124, 130)))
+    for i in range(N * K_SCALES):
+        sfb_h[i] = UInt8(Int(random_ui64(124, 130)))
 
-    # Clamp is keyed to that (format, N, K); other shapes keep the byte budget.
-    assert_equal(
-        _sk_perf_clamped_max_m[FP8_LANE_BYTES, 6144, 4096, 1365](), 1365
-    )
-    assert_equal(
-        _sk_perf_clamped_max_m[FP8_LANE_BYTES, 2560, 2048, 1092](), 1092
-    )
-    assert_equal(_sk_perf_clamped_max_m[16, 6144, 2048, 1365](), 1365)
+    var a_d = ctx.enqueue_create_buffer[.uint8](max_m * K)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N * K)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](max_m * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[out_dtype](max_m * N)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](max_m * N)
+    ctx.enqueue_copy(a_d, a_h)
+    ctx.enqueue_copy(b_d, b_h)
+    ctx.enqueue_copy(sfa_d, sfa_h)
+    ctx.enqueue_copy(sfb_d, sfb_h)
+    var c_h = ctx.enqueue_create_host_buffer[out_dtype](max_m * N)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](max_m * N)
 
-    # A tighter workspace budget still wins.
-    assert_equal(_sk_perf_clamped_max_m[FP8_LANE_BYTES, 6144, 2048, 128](), 128)
-    print("     OK")
+    var b_tt = TileTensor(b_d, row_major[N, K]()).as_imm()
+    var sfb_tt = TileTensor(
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
+        row_major[N, K_SCALES](),
+    ).as_imm()
+
+    for m in ms:
+        print("  ", name, " ", m, "x", N, "x", K)
+        var c_tt = TileTensor(c_d.unsafe_ptr(), row_major((m, Idx[N])))
+        var a_tt = TileTensor(a_d.unsafe_ptr(), row_major((m, Idx[K]))).as_imm()
+        var sfa_tt = TileTensor(
+            sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
+            row_major((m, Idx[K_SCALES])),
+        ).as_imm()
+        # Each M rewrites rows an earlier M already got right, so a band that
+        # stores nothing would pass on stale output. Positive data never sums
+        # negative.
+        c_d.enqueue_fill(Scalar[out_dtype](-7.0))
+        block_scaled_matmul_amd[lane_bytes=FP8_LANE_BYTES](
+            c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx
+        )
+
+        comptime BLOCK_DIM = 32
+        ctx.enqueue_function[block_scaled_matmul_fp8_ref](
+            a_d.unsafe_ptr().as_imm(),
+            b_d.unsafe_ptr().as_imm(),
+            sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+            sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+            c_ref_d.unsafe_ptr(),
+            Int32(m),
+            Int32(N),
+            Int32(K),
+            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
+        ctx.enqueue_copy(c_h, c_d)
+        ctx.enqueue_copy(c_ref_h, c_ref_d)
+        ctx.synchronize()
+
+        for i in range(m * N):
+            assert_almost_equal(
+                c_h[i].cast[DType.float32](),
+                c_ref_h[i],
+                atol=1e-2,
+                rtol=rtol,
+                msg=String("M=", m, ": mismatch at ", i),
+            )
+        print("     OK")
 
 
 def main() raises:
     seed(0)
-    _test_route_policy()
     with DeviceContext() as ctx:
         print("===> dense row-major MXFP8 matmul (lane_bytes=32)")
 
@@ -619,7 +685,7 @@ def main() raises:
             WN=64,
         ](ctx)
 
-        # BM=64 band clamps to 2 splits; SK4 above is a different object.
+        # Two splits: a different object from SK4 above.
         # Random K, unit scales (reference atol), ragged M for OOB rows.
         test_mxfp8_matmul_split_k[
             64, 6144, 2048, num_splits=2, BK_ELEMS=128, unit_scales=True
@@ -633,15 +699,6 @@ def main() raises:
             ctx
         )
 
-        # o_proj key, one token either side of `_sk_route_max_m` (320): M=319
-        # split-K, M=321 dense. Const-fill so C==K; appended last (no RNG).
-        _test_dispatch[319, 6144, 2048, unit_scales=True, ones_data=True](
-            "dispatch-oproj-m319", ctx
-        )
-        _test_dispatch[321, 6144, 2048, unit_scales=True, ones_data=True](
-            "dispatch-oproj-m321", ctx
-        )
-
         print("\n--- num_stages=2: LDS ping-pong pipeline ---")
 
         # Const-fill cannot see a stage-base/swizzle fault; signed random at
@@ -652,28 +709,46 @@ def main() raises:
         # Random data and scales, M-OOB rows. N=2048 keeps the reference in atol.
         _test_case[64, 2048, 2048, num_stages=2]("dbuf-random-oob", ctx)
 
-        print("\n--- bf16 out: varying operands on the objects that ship ---")
+        print(
+            "\n--- MiniMax M3.1 tile table: both sides of every band edge ---"
+        )
 
-        # o_proj key, bf16 out, positive data: const-fill cannot see a granule
-        # swap; signed random exceeds atol. M=321 dense, M=319 split-K. Last (RNG).
-        _test_dispatch[
-            321, 6144, 2048, positive_data=True, out_dtype=DType.bfloat16
-        ]("dispatch-oproj-m321-bf16", ctx)
-        _test_dispatch[
-            319, 6144, 2048, positive_data=True, out_dtype=DType.bfloat16
-        ]("dispatch-oproj-m319-bf16", ctx)
-
-        # Shape-gated decode projection tiles, at exact-fill and unaligned M.
-        _test_dispatch[4, 6144, 2048]("dispatch-sk-m3-o-m4", ctx)
-        _test_dispatch[16, 6144, 2048]("dispatch-sk-m3-o-m16", ctx)
-        _test_dispatch[20, 6144, 2048]("dispatch-sk-m3-o-m20", ctx)
-        _test_dispatch[32, 6144, 2048]("dispatch-sk-m3-o-m32", ctx)
-        _test_dispatch[48, 6144, 2048]("dispatch-sk-m3-o-m48", ctx)
-        _test_dispatch[64, 6144, 2048]("dispatch-sk-m3-o-m64", ctx)
-        _test_dispatch[128, 6144, 2048]("dispatch-sk-m3-o-m128", ctx)
-
-        # Reference-checked here because the epilogue test's oracle is a
-        # second launch of the same tile.
-        _test_dispatch[4, 2560, 6144]("dispatch-sk-m3-qkv-n2560-m4", ctx)
-        _test_dispatch[16, 2560, 6144]("dispatch-sk-m3-qkv-n2560-m16", ctx)
-        _test_dispatch[4, 2304, 6144]("dispatch-sk-m3-qkv-n2304-m4", ctx)
+        # Appended last (draws RNG). Through the dispatcher at runtime M, so
+        # each shape builds its bands once.
+        _test_dispatch_bands[2560, 6144](
+            "m3-qkv-index",
+            [1, 16, 17, 128, 129, 384, 385, 768, 769, 1100],
+            ctx,
+        )
+        _test_dispatch_bands[2304, 6144](
+            "m3-qkv-dense", [5, 100, 300, 700, 900], ctx
+        )
+        _test_dispatch_bands[3072, 6144](
+            "m3-shared-gate-up",
+            [1, 8, 9, 32, 33, 64, 65, 384, 385, 768, 769, 1100],
+            ctx,
+        )
+        _test_dispatch_bands[12288, 6144](
+            "m3-dense-gate-up",
+            [16, 17, 32, 33, 128, 129, 256, 257, 1536, 1537],
+            ctx,
+        )
+        _test_dispatch_bands[6144, 2048](
+            "m3-o-proj",
+            [1, 16, 17, 32, 33, 64, 65, 128, 129, 384, 385, 512, 513, 1000],
+            ctx,
+        )
+        _test_dispatch_bands[6144, 3072](
+            "m3-shared-down",
+            [16, 17, 32, 33, 64, 65, 128, 129, 384, 385, 512, 513],
+            ctx,
+        )
+        _test_dispatch_bands[6144, 12288](
+            "m3-dense-down",
+            [16, 17, 64, 65, 128, 129, 256, 257, 640, 641, 3072, 3073],
+            ctx,
+        )
+        # bf16 out is what ships; a different object for every band.
+        _test_dispatch_bands[6144, 2048, DType.bfloat16](
+            "m3-o-proj-bf16", [16, 33, 65, 129, 385, 513, 1000], ctx
+        )

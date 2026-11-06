@@ -24,9 +24,9 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParams
 from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor

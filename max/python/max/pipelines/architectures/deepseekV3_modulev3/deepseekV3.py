@@ -24,6 +24,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module, as_subgraph
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
@@ -31,11 +32,10 @@ from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.quant_moe import (
     QuantizedMoE,
 )
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
 from max.nn.norm import RMSNorm
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
@@ -80,8 +80,13 @@ def split_replicated_batch(
     input_row_offsets_i64: Tensor,
     data_parallel_splits: Tensor,
     mapping: DeviceMapping,
+    group_size: int = 1,
 ) -> tuple[Tensor, Tensor]:
-    """Splits a replicated batch into data-parallel shards."""
+    """Splits a replicated batch into data-parallel shards.
+
+    ``group_size`` consecutive devices form one replica and take the same
+    split: the ``tp`` axis of a ``(dp, tp)`` mesh.
+    """
     devices = mapping.mesh.devices
 
     h_shards, input_row_offsets_shards = split_batch_replicated(
@@ -90,6 +95,7 @@ def split_replicated_batch(
         [TensorValue(shard) for shard in input_row_offsets.local_shards],
         TensorValue(input_row_offsets_i64),
         TensorValue(data_parallel_splits),
+        group_size=group_size,
     )
     return (
         Tensor.from_shard_values(h_shards, mapping),

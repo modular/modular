@@ -28,8 +28,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType
-from test_common.reduction_graphs import PURE_REDUCTIONS, build_reduction
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from test_common.reduction_graphs import (
+    PURE_REDUCTIONS,
+    RMS_NORM_EPS,
+    build_reduction,
+)
 
 
 @dataclass(frozen=True)
@@ -113,10 +117,22 @@ _INNER_CASES = (
     + [(op, DType.float16) for op in _INNER_BOTH]
 )
 
+# Fused graphs: a reduction with the elementwise ops around it, which the graph
+# compiler fuses into one rowwise kernel. `sum_plus_bias` adds a per-row input
+# to the sum, which the kernel loads once per row; on the non-inner axis the
+# GPU's tiled tier holds one output per lane. `rms_norm_spelled` is rms_norm
+# written as graph ops, which fuses into a fold and a per-element phase;
+# `rms_norm_of_product` normalizes x * s, which the kernel's load computes once
+# per element.
+FUSED_OPS = ("sum_plus_bias", "rms_norm_spelled", "rms_norm_of_product")
+_FUSED_CASES = [
+    (op, dtype) for op in FUSED_OPS for dtype in (DType.float32, DType.bfloat16)
+]
+
 INNER_SPECS = [
     _spec(op, dtype, -1, device)
     for device in _BOTH_DEVICES
-    for op, dtype in _INNER_CASES
+    for op, dtype in _INNER_CASES + _FUSED_CASES
 ]
 
 # Non-inner (reduce over axis 0): the pure arbitrary-axis reductions. Precision-
@@ -137,7 +153,7 @@ _NONINNER_CASES = [
 NONINNER_SPECS = [
     _spec(op, dtype, 0, device)
     for device in _BOTH_DEVICES
-    for op, dtype in _NONINNER_CASES
+    for op, dtype in _NONINNER_CASES + _FUSED_CASES
 ]
 
 # 8-byte elements, both axes -- CPU only (MAX's reduce dtype set has no 64-bit
@@ -202,10 +218,64 @@ GPU_SUBWORD_SPECS = [
 # into the field the emit reads, so a finish that skips it returns a
 # real-but-not-extreme index -- a wrong answer that still looks like a plausible
 # one. reduce_max rides the same call with an exactly representable result, so
-# it pins the non-arg monoids on that path too.
-_SPLITK_OPS = ["argmax", "argmin", "reduce_max"]
+# it pins the non-arg monoids on that path too. rms_norm_spelled splits its row
+# across blocks and writes every element in the last pass.
+_SPLITK_OPS = ["argmax", "argmin", "reduce_max", "rms_norm_spelled"]
 
 GPU_SPLITK_SPECS = [_spec(op, DType.float32, -1, "gpu") for op in _SPLITK_OPS]
+
+
+@dataclass(frozen=True)
+class RmsNormSpec:
+    """One compiled ``ops.rms_norm`` graph for the edge-case shapes."""
+
+    dtype: DType
+    """Element type of the input and the weight."""
+
+    rank: int
+    """Rank of the input."""
+
+    multiply_before_cast: bool
+    """Whether the weight multiplies before the cast back to ``dtype``."""
+
+    device: str
+    """``"cpu"`` or ``"gpu"``."""
+
+    static_cols: int | None = None
+    """The row width when the graph knows it, symbolic otherwise."""
+
+    @property
+    def name(self) -> str:
+        order = "mul_cast" if self.multiply_before_cast else "cast_mul"
+        cols = f"_c{self.static_cols}" if self.static_cols else ""
+        return (
+            f"rms_norm_{_DTYPE_TAGS[self.dtype]}_rank{self.rank}{cols}"
+            f"_{order}_{self.device}"
+        )
+
+
+# Non-zero, so a dropped or misplaced offset changes the result.
+RMS_NORM_WEIGHT_OFFSET = 1.0
+
+# rms_norm compiles to a generated rowwise kernel. Rank 2 covers both
+# `multiply_before_cast` branches in both precisions; ranks 1 and 5 check the
+# row indexing. On a GPU, a static row width keeps the row in registers when
+# the SIMD width divides it (4096) and streams it otherwise (2050, 557).
+RMS_NORM_SPECS = (
+    [
+        RmsNormSpec(dtype, 2, multiply_before_cast, device)
+        for device in _BOTH_DEVICES
+        for dtype in (DType.float32, DType.bfloat16)
+        for multiply_before_cast in (False, True)
+    ]
+    + [RmsNormSpec(DType.float32, 1, False, d) for d in _BOTH_DEVICES]
+    + [RmsNormSpec(DType.bfloat16, 5, True, d) for d in _BOTH_DEVICES]
+    + [
+        RmsNormSpec(DType.bfloat16, 3, True, "gpu", static_cols=4096),
+        RmsNormSpec(DType.bfloat16, 3, False, "gpu", static_cols=2050),
+        RmsNormSpec(DType.float32, 3, False, "gpu", static_cols=557),
+    ]
+)
 
 SPECS_BY_NAME: dict[str, RowwiseSpec] = {
     spec.name: spec
@@ -233,15 +303,81 @@ def build_graph(spec: RowwiseSpec) -> Graph:
     """
     x_t = TensorType(spec.dtype, ["r", "c"], device=spec.device)
     w_t = TensorType(spec.dtype, ["c"], device=spec.device)
+    # A per-row input: one value per row of the reduction.
+    row_t = TensorType(
+        spec.dtype,
+        ["r", 1] if spec.axis == -1 else [1, "c"],
+        device=spec.device,
+    )
     if spec.op == "layer_norm":
         input_types = [x_t, w_t, w_t]  # x, gamma, beta
     elif spec.op == "rms_norm":
         input_types = [x_t, w_t]
+    elif spec.op == "sum_plus_bias":
+        input_types = [x_t, row_t]
+    elif spec.op in ("rms_norm_spelled", "rms_norm_of_product"):
+        # Gamma along the reduced axis.
+        gamma_shape = ["c"] if spec.axis == -1 else ["r", 1]
+        gamma_t = TensorType(spec.dtype, gamma_shape, device=spec.device)
+        input_types = [x_t, gamma_t]
+        if spec.op == "rms_norm_of_product":
+            input_types = [x_t, x_t, gamma_t]
     else:
         input_types = [x_t]
 
     with Graph(spec.name, input_types=input_types) as graph:
         x = graph.inputs[0].tensor
         weights = [inp.tensor for inp in graph.inputs[1:]]
-        graph.output(build_reduction(spec.op, x, spec.axis, weights=weights))
+        if spec.op in FUSED_OPS:
+            graph.output(_build_fused(spec.op, x, spec.axis, weights))
+        else:
+            graph.output(
+                build_reduction(spec.op, x, spec.axis, weights=weights)
+            )
     return graph
+
+
+def build_rms_norm_graph(spec: RmsNormSpec) -> Graph:
+    """Builds ``spec``'s ``ops.rms_norm`` graph with symbolic dimensions.
+
+    Args:
+        spec: The parametrization to build.
+
+    Returns:
+        The constructed :class:`~max.graph.Graph`, ready to compile.
+    """
+    dims: list[str | int] = [f"d{i}" for i in range(spec.rank)]
+    if spec.static_cols:
+        dims[-1] = spec.static_cols
+    device = _DEVICE_REFS[spec.device]
+    x_t = TensorType(spec.dtype, dims, device=device)
+    w_t = TensorType(spec.dtype, dims[-1:], device=device)
+    with Graph(spec.name, input_types=[x_t, w_t]) as graph:
+        x, w = (inp.tensor for inp in graph.inputs)
+        graph.output(
+            ops.rms_norm(
+                x,
+                w,
+                epsilon=RMS_NORM_EPS,
+                weight_offset=RMS_NORM_WEIGHT_OFFSET,
+                multiply_before_cast=spec.multiply_before_cast,
+            )
+        )
+    return graph
+
+
+def _build_fused(
+    op: str, x: TensorValue, axis: int, inputs: list[TensorValue]
+) -> TensorValue:
+    if op == "sum_plus_bias":
+        (bias,) = inputs
+        return ops.sum(x, axis=axis) + bias
+    if op == "rms_norm_of_product":
+        scale, gamma = inputs
+        return _build_fused("rms_norm_spelled", x * scale, axis, [gamma])
+    if op == "rms_norm_spelled":
+        (gamma,) = inputs
+        xf = ops.cast(x, DType.float32)
+        inv = ops.rsqrt(ops.mean(xf * xf, axis=axis) + RMS_NORM_EPS)
+        return ops.cast(xf * inv * ops.cast(gamma, DType.float32), x.dtype)
+    raise ValueError(f"unknown fused graph {op!r}")

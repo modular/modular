@@ -46,9 +46,7 @@ struct AddOverride(ElementwiseBinaryOp):
 @extensibility.register("mo.reduce.layer_norm")
 struct LayerNormOverride:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Fused & StoreAccess],
         input: Some[Input & Fused & LoadAccess],
         gamma: Some[Input & Tensor],

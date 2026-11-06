@@ -28,12 +28,12 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops.state_space.kimi_delta import kda_ring_record_elements
+from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
     recurrent_leaf,
 )
-from max.nn.legacy.state_space import kda_ring_record_elements
 from max.pipelines.architectures.glm5_next.model_config import Glm5NextConfig
 from max.pipelines.architectures.glm5_next.state_cache import (
     CONV_LEAF_ID,

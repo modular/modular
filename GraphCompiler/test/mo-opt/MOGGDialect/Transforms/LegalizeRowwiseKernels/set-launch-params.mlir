@@ -1,9 +1,12 @@
 // RUN: mo-opt %s --mogg-rowwise-set-launch-params | FileCheck %s
 // RUN: mo-opt %s --mogg-rowwise-set-launch-params="expensive-cost-threshold=32" | FileCheck %s --check-prefix=T32
 
-// Sets each rowwise kernel's launch parameters. Bodies are reduce-shaped, so
-// `num_phases` is 1 and `dtype_size` 0. `cols` is the static size of the
-// reduced axis.
+// Sets each rowwise kernel's launch parameters as the hand-written kernels do.
+// A reduce-shaped body has `num_phases` 1 and `dtype_size` 0; a body with a
+// map phase has one phase per fold plus one, may split its row when its folds
+// keep one field each (`dtype_size` is the cache's byte size), and is
+// computationally expensive. `cols` is the static size of the reduced
+// axis.
 
 
 !DType = !lit.struct<@std::@builtin::@dtype::@DType>
@@ -100,6 +103,29 @@ func.func @expensiveFold(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tens
   return
 }
 
+// The cache runs per element too: its exp makes the kernel expensive.
+// CHECK-LABEL: func.func @expensiveCache
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  attributes {cols = 128 : i64, computationally_expensive, dtype_size
+func.func @expensiveCache(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      %e = mogg.call.elementwise @builtin_kernels.elementwise.Exp(%v) moOpName = "mo.exp" : !mogg.simd<f32> -> !mogg.simd<f32>
+      mogg.yield %e : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.emit {
+      mogg.tensor.store %co[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
 // A division after the fold runs once per row: it doesn't make the kernel
 // expensive.
 // CHECK-LABEL: func.func @expensiveRowOp
@@ -183,6 +209,79 @@ func.func @sixteenCheapOps(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.te
     }
     mogg.rowwise.emit {
       mogg.tensor.store %co[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// A fold, then a map phase.
+// CHECK-LABEL: func.func @normalize
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  attributes {cols = 128 : i64, computationally_expensive, dtype_size = 4 : i64, num_phases = 2 : i64, simd_monoid = @builtin_kernels.monoids.ReduceSum}
+func.func @normalize(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %xk = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %xk : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      %y = mogg.call.elementwise @builtin_kernels.elementwise.Div(%v, %acc) moOpName = "mo.div" : !mogg.simd<f32>, !mogg.simd<f32> -> !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %y : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// A fold that keeps two fields, like layer_norm's Welford, leaves `dtype_size`
+// 0, so the row doesn't split.
+// CHECK-LABEL: func.func @normalizeTwoFields
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  computationally_expensive, dtype_size = 0 : i64, num_phases = 2 : i64
+func.func @normalizeTwoFields(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %xk = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %xk : !mogg.simd<f32>
+    }
+    %m, %mi = mogg.rowwise.reduce @builtin_kernels.monoids.ArgMax (%i : !map.index<2>) -> (!mogg.simd<f32>, !mogg.simd<si64>) {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      %y = mogg.call.elementwise @builtin_kernels.elementwise.Div(%v, %m) moOpName = "mo.div" : !mogg.simd<f32>, !mogg.simd<f32> -> !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %y : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// `dtype_size` is the cache's size, not the accumulator's.
+// CHECK-LABEL: func.func @normalizeBf16
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  dtype_size = 2 : i64, num_phases = 2 : i64
+func.func @normalizeBf16(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<bf16> {
+      %xk = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<bf16>
+      mogg.yield %xk : !mogg.simd<bf16>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.cache.load : !mogg.simd<bf16>
+      %c = builtin.unrealized_conversion_cast %v : !mogg.simd<bf16> to !mogg.simd<f32>
+      mogg.yield %c : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load : !mogg.simd<bf16>
+      mogg.tensor.store %co[%j] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<bf16>
     }
   }
   return

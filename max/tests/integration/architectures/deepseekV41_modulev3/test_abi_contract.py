@@ -29,7 +29,7 @@ import abi_contract
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
-from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     STATE_RING_ROWS,
     V41Config,

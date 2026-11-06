@@ -41,11 +41,8 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferValue, DeviceRef, Graph, TensorType, TensorValue
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-)
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.mtp import Qwen3_5MTP
 from max.pipelines.kv_cache import PagedKVCacheManager

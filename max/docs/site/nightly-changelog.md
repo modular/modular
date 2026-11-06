@@ -55,6 +55,11 @@ This version is still a work in progress.
 
 ## Inference server
 
+- `max serve`, `max generate`, `AutoModel`, and `AutoPipeline` now prefer
+  ModuleV3 when an architecture has both ModuleV3 and graph API
+  implementations. Pass `--no-prefer-module-v3` on the command line or
+  `prefer_module_v3=False` to use the graph API implementation.
+
 - Serving metric names now use `max.*` instead of `maxserve.*`. Batch
   instruments use `max.batch.*`, such as `max.batch.size`. Prometheus
   exposes the corresponding `max_*` families. Update collector allowlists,
@@ -213,6 +218,10 @@ This version is still a work in progress.
   `PipelineModel`, return the module from `graph_specs()` under
   `GraphRole.ENCODER`, and load it with `load_graphs()` instead.
 
+- Removed the `LLM` class, deprecated in 26.5 when `max.entrypoints` became
+  private. To generate in-process, use `AutoModel` or `AutoPipeline` from
+  `max.pipelines`.
+
 - `Buffer.to(device)` for a buffer on another queue of that device requires an
   `after` event and no longer syncs implicitly. Mojo's `reassign_ownership_to()`
   is removed; use `enqueue_wait_for()` and keep buffers alive until synced.
@@ -220,6 +229,17 @@ This version is still a work in progress.
 - Removed `max.nn.legacy.FusedMLP`. Use `max.nn.legacy.MLP`, which takes the
   separate `gate_proj` and `up_proj` weights a checkpoint ships and fuses their
   matmuls in the graph.
+
+- `max.nn.legacy.kv_cache` moved to `max.nn.kv_cache`. Change
+  `from max.nn.legacy.kv_cache import ...` to
+  `from max.nn.kv_cache import ...`.
+
+- Removed `max.nn.legacy.kernels`, `max.nn.legacy.state_space`,
+  `max.nn.legacy.data_parallelism`, `max.nn.legacy.quant_ops`,
+  `max.nn.legacy.moe.quant_strategy`, `max.nn.legacy.sampling.penalties`, and
+  `max.nn.legacy.comm.ep.ep_kernels`. The graph ops they held are now internal
+  to MAX. `max.nn.kernels` provides the kernels `max.nn` modules use, and
+  `LogitPenalties` stays importable from `max.nn.legacy.sampling`.
 
 - Removed `max_single_alloc_size()` and `run_healthcheck()` from the Mojo
   `DeviceContext`. On NVIDIA and AMD GPUs the health check still runs when a
@@ -299,6 +319,9 @@ This version is still a work in progress.
 ## C API
 
 ## Kernels and GPU programming
+
+- `DeviceStream.wait_for_host_value()` in `max.gpu.host` is deprecated; use
+  `DeviceStream.wait_for_flag()` instead.
 
 - Built-in custom ops are now named after their class instead of `mo.`,
   which is kept for the graph compiler's own ops. For example,

@@ -193,7 +193,7 @@ struct LogProbabilitiesRagged:
 
     @staticmethod
     def execute[
-        target: StaticString, levels: Int
+        levels: Int
     ](
         lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
         lp_tokens: OutputTensor[dtype=token_dtype, rank=2, ...],
@@ -209,7 +209,6 @@ struct LogProbabilitiesRagged:
         """Executes the ragged log-probabilities computation across all batches.
 
         Parameters:
-            target: Compilation target string, such as `"cpu"` or `"gpu"`.
             levels: Number of heap levels controlling the top-k width; the
                 output stores `2**levels` entries per token.
 
@@ -243,7 +242,7 @@ struct LogProbabilitiesRagged:
         if lp_tokens.shape()[1] != 2**levels:
             raise Error("Axis 1 of lp_tokens inconsistent with level setting")
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
 
             def lp_idx_kernel(output_token_index: Int) {imm} -> None:
                 compute_log_probabilities_1tok[levels](
@@ -263,7 +262,7 @@ struct LogProbabilitiesRagged:
                 num_output_tokens,
                 ctx=Optional(ctx.assert_cpu_target()),
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             # `Int` is not device-passable; the closure carries a fixed-width
             # copy of the token count.
             var num_output_tokens_dev = Int32(num_output_tokens)

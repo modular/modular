@@ -596,6 +596,7 @@ struct Pointer[
         self = Self(unsafe_from_address=Int(unsafe_from_address))
 
     @inline(.nodebug)
+    @stable(since="1.3")
     def __init__(
         out self,
         *,
@@ -883,22 +884,24 @@ struct Pointer[
 
     @__unsafe_nested_origins_read_only
     @inline(.nodebug)
+    @stable(since="1.3")
     def __eq__(
         self,
         rhs: Pointer[Self.T, _, address_space=Self.address_space],
     ) -> Bool:
-        """Returns True if the two pointers are equal.
+        """Returns True if the two pointer addresses are equal.
 
         Args:
-            rhs: The value of the other pointer.
+            rhs: The other pointer.
 
         Returns:
-            True if the two pointers are equal and False otherwise.
+            True if the two pointer addresses are equal and False otherwise.
         """
         return Int(self) == Int(rhs)
 
     @__unsafe_nested_origins_read_only
     @inline(.nodebug)
+    @stable(since="1.3")
     def __eq__(self, rhs: Self) -> Bool:
         """Returns True if the two pointers are equal.
 
@@ -912,6 +915,7 @@ struct Pointer[
 
     @__unsafe_nested_origins_read_only
     @inline(.nodebug)
+    @stable(since="1.3")
     def __ne__(
         self,
         rhs: Pointer[Self.T, _, address_space=Self.address_space],
@@ -928,6 +932,7 @@ struct Pointer[
 
     @__unsafe_nested_origins_read_only
     @inline(.nodebug)
+    @stable(since="1.3")
     def __ne__(self, rhs: Self) -> Bool:
         """Returns True if the two pointers are not equal.
 
@@ -2031,8 +2036,9 @@ struct Pointer[
         _free(self)
 
     @always_inline("builtin")
+    @stable(since="1.3")
     def unsafe_bitcast[
-        U: AnyType
+        U: AnyType, /
     ](self) -> Pointer[U, Self.origin, address_space=Self.address_space]:
         """Bitcasts a Pointer to a different type.
 
@@ -2064,7 +2070,7 @@ struct Pointer[
 
     @always_inline("builtin")
     def unsafe_mut_cast[
-        target_mut: Bool
+        target_mut: Bool, /
     ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
         """Changes the mutability of a pointer.
 

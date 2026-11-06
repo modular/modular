@@ -19,7 +19,7 @@ from dataclasses import dataclass, fields
 
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.registration_draft import DraftRegistration
 from max.tensor import default_dtype, defaults

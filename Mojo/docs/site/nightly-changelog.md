@@ -77,6 +77,10 @@ This version is still a work in progress.
 
 - `List.insert`
 - `List.clear`
+- `Pointer.__init__(to=)`
+- `Pointer.__eq__`
+- `Pointer.__ne__`
+- `Pointer.unsafe_bitcast`
 
 ## Library performance improvements
 
@@ -106,6 +110,20 @@ This version is still a work in progress.
 - Added a builtin `filter()`, which takes an iterable and a predicate closure
   and yields the elements the predicate accepts:
   `filter(items, lambda (x: Int) -> Bool: x > 0)`.
+
+- `take_while()` and `drop_while()` in `std.itertools` now take the predicate
+  as an argument instead of a compile-time parameter, so it can be a closure
+  that captures values. Write `take_while(items, pred)` instead of
+  `take_while[pred](items)`.
+
+- `Span.binary_search_by()` no longer takes the comparator as a compile-time
+  parameter. Pass it as an argument, `span.binary_search_by(cmp)`, which also
+  lets it capture the value being searched for.
+
+- `QuickBench.run()` in `std.benchmark` now takes a single closure with no
+  arguments in place of its eleven overloads for functions of 0 to 10
+  arguments. Capture the inputs instead of passing them separately:
+  `qb.run(lambda () {x} -> Float32: exp(x), bench_id=BenchId("exp"))`.
 
 - `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
   now raise an `Error` instead of aborting when the string is empty. They also
@@ -208,6 +226,26 @@ This version is still a work in progress.
 
   # After
   def fill(buf: Optional[MutPointer[Byte, _]]): ...
+  ```
+
+- The `StringSlice`, `ImmStringSpan`, and `ImmStringSlice` aliases are
+  deprecated. Use `StringSpan` instead. `StringSpan` is always immutable, so
+  the `Imm` variants are redundant.
+
+- `Span` now conforms to `Equatable` when its element type does.
+
+- `Optional.value()`, `Optional.unsafe_value()`, and `Optional.__getitem__()`
+  now return a reference with an interior origin of the `Optional`.
+  Reassigning the `Optional`, or calling a `mut self` method on it
+  invalidates outstanding references to its value. Reading through
+  such a reference afterward used to compile and read a destroyed value; it is
+  now a compile error:
+
+  ```mojo
+  var opt = Optional(5)
+  ref i = opt.value()
+  opt = None
+  print(i)  # error: use of invalidated interior reference 'opt["value"]'
   ```
 
 ## GPU programming
@@ -341,3 +379,6 @@ This version is still a work in progress.
 
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns.
+
+- A `comptime if conforms_to(T, Deinitable)` guard now correctly refines `T`
+  and deinits it after its last use.

@@ -667,7 +667,7 @@ def _late_producer_once[
     var a_t = TileTensor(a, row_major(b, m, Idx[K]))
     var w_t = TileTensor(w, row_major(b, Idx[N], Idx[K]))
     comptime if via_public:
-        batched_matmul[transpose_b=True, target="gpu", pdl_level=pdl_level](
+        batched_matmul[transpose_b=True, pdl_level=pdl_level](
             c_t, a_t.as_imm(), w_t.as_imm(), context=ctx
         )
     else:

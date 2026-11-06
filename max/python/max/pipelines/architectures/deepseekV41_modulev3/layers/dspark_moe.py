@@ -45,15 +45,15 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import AlgebraicDim, TensorValue
 from max.nn import Module
+from max.nn._graph_ops import (
+    moe_create_indices_with_slots as _moe_create_indices_with_slots,
+)
 from max.nn.common_layers.quant_ops import (
     block_scales_interleave,
     grouped_matmul_block_scaled,
     grouped_quantize_dynamic_block_scaled,
 )
-from max.nn.legacy.kernels import (
-    moe_create_indices_with_slots as _moe_create_indices_with_slots,
-)
-from max.nn.legacy.quant_config import ceildiv
+from max.nn.quant_config import ceildiv
 from max.tensor import Tensor
 from max.tensor.sharding import (
     AxisAssignment,

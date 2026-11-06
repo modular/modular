@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import extensibility
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, Dim
 from max.gpu.host import DeviceExternalFunction
 from max.gpu import global_idx
 from std.math import ceildiv
@@ -369,6 +369,37 @@ struct OpWithStringSliceParameter[StringParameter: StringSpan]:
         print(Self.StringParameter)
 
 
+# What a declarative kernel's `execute_configuration` returns: the graph
+# compiler calls only `get_grid_dim()` and `get_block_dim()`.
+@fieldwise_init
+struct DeclarativeLaunchConfig(Copyable):
+    var grid_dim: Dim
+    var block_dim: Dim
+
+    def get_grid_dim(self) -> Dim:
+        return self.grid_dim
+
+    def get_block_dim(self) -> Dim:
+        return self.block_dim
+
+
+# A declarative kernel has no `execute`, so it declares its parameters on its
+# entry points.
+@extensibility.register("declarative_op_with_int_parameter")
+struct DeclarativeOpWithIntParameter:
+    @staticmethod
+    def execute_configuration(
+        output: Some[Tensor], x: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(1))
+
+    @staticmethod
+    def execute_device[
+        IntParameter: Int
+    ](output: Some[Output & TileTensorable], x: Some[Input & TileTensorable]):
+        pass
+
+
 @extensibility.register("op_with_static_string_parameter")
 struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
@@ -392,15 +423,13 @@ struct ExternalCubinVecAdd:
     """Custom op that uses an external cubin for vector addition."""
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         lhs: Some[Input & Tensor],
         rhs: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime assert target == "gpu"
+        comptime assert ctx.target.is_gpu()
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(lhs), TileTensorable)
         comptime assert conforms_to(type_of(rhs), TileTensorable)
@@ -451,14 +480,12 @@ struct IntentionalGpuCrash:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime assert target == "gpu"
+        comptime assert ctx.target.is_gpu()
         comptime assert type_of(output).rank == 1
         comptime assert type_of(x).dtype == type_of(output).dtype
         comptime assert type_of(x).rank == 1

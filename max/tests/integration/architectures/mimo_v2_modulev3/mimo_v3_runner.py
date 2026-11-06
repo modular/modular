@@ -42,21 +42,26 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
+from max.nn.outputs import ReturnLogits
+from max.pipelines.architectures.mimo_v2.weight_adapters import (
+    mimo_v2_weight_rules,
+)
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
-)
-from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
-    convert_safetensor_state_dict,
 )
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import KVCacheConfig
 from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
     JengaKVCacheManager,
 )
-from max.pipelines.lib import MAXModelConfig, ModelManifest, PipelineConfig
+from max.pipelines.lib import (
+    MAXModelConfig,
+    ModelManifest,
+    PipelineConfig,
+    WeightTransform,
+)
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
@@ -156,7 +161,9 @@ class Runner:
 
         t0 = time.time()
         weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-        state = convert_safetensor_state_dict(dict(weights.items()))
+        state = WeightTransform(mimo_v2_weight_rules(self.hf))(
+            dict(weights.items())
+        )
         print(f"adapted {len(state)} tensors in {time.time() - t0:.0f} s")
 
         mesh = DeviceMesh(tuple(self.devices), (num_devices,), ("tp",))

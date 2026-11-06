@@ -28,13 +28,13 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.lfm2 import LFM2, LFM2Config
 from max.pipelines.architectures.lfm2.model_config import (
     ATTN_CACHE_KEY,

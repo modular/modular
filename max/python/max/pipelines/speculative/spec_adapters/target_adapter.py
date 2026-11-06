@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 if TYPE_CHECKING:
@@ -89,6 +89,14 @@ def _default_trailing_input_types(target_config: Any) -> list[TensorType]:
     """Returns no inputs past the canonical tail."""
     del target_config
     return []
+
+
+def _default_trailing_input_tree(
+    target_config: Any,
+) -> Mapping[str, object] | None:
+    """Names no inputs past the canonical tail."""
+    del target_config
+    return None
 
 
 def _default_trailing_buffers(
@@ -279,6 +287,12 @@ class TargetAdapter:
         _default_trailing_input_types
     )
     """Returns the inputs the target's call takes past the canonical tail."""
+
+    trailing_input_tree: Callable[[Any], Mapping[str, object] | None] = (
+        _default_trailing_input_tree
+    )
+    """Returns the groups an exported graph names :attr:`trailing_input_types`
+    by, in order; ``None`` leaves the graph's inputs unnamed."""
 
     trailing_buffers: Callable[
         [Any, Sequence[TextContext], Sequence[Device]], list[Buffer]

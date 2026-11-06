@@ -8,11 +8,19 @@ package(default_visibility = [
 modular_cc_binary(
     name = "max-cache-info",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         "//GraphCompiler",
         "//GraphCompiler:CompileDriver",
+        "//Mojo:CompilerRT.static",
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//mlir:BytecodeReader",
         "@llvm-project//mlir:Pass",
     ],

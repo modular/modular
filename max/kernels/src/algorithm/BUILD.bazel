@@ -3,6 +3,13 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS")
 
 package(default_visibility = ["//max:consumers"])
 
+# Raw sources for plugin overlays.
+filegroup(
+    name = "srcs",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//plugins:__subpackages__"],
+)
+
 mojo_library(
     name = "algorithm",
     srcs = glob(["**/*.mojo"]),

@@ -25,10 +25,7 @@ from std.utils.index import IndexList
 @extensibility.register("grayscale")
 struct Grayscale:
     @staticmethod
-    def execute[
-        # The kind of device this is running on: "cpu" or "gpu"
-        target: StaticString,
-    ](
+    def execute(
         img_out: OutputTensor[dtype=.uint8, rank=2, ...],
         img_in: InputTensor[dtype=.uint8, rank=3, ...],
         ctx: DeviceContext,
@@ -53,15 +50,13 @@ struct Grayscale:
 
             return gray_f32.clamp(0, 255).cast[.uint8]()
 
-        foreach[target=target, simd_width=1](color_to_grayscale, img_out, ctx)
+        foreach[simd_width=1](color_to_grayscale, img_out, ctx)
 
 
 @extensibility.register("brightness")
 struct Brightness:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         img_out: OutputTensor[dtype=.uint8, rank=2, ...],
         img_in: InputTensor[dtype=.uint8, rank=2, ...],
         brightness: Float32,
@@ -77,15 +72,13 @@ struct Brightness:
 
             return brightened_f32.clamp(0, 255).cast[.uint8]()
 
-        foreach[target=target](brighten, img_out, ctx)
+        foreach(brighten, img_out, ctx)
 
 
 @extensibility.register("blur")
 struct Blur:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         img_out: OutputTensor[dtype=.uint8, rank=2, ...],
         img_in: InputTensor[dtype=.uint8, rank=2, ...],
         blur_size: Int64,
@@ -123,4 +116,4 @@ struct Blur:
             return UInt8(max(min(pix_val_accum // pixel_count, 255), 0))
 
         # Apply the kernel to each pixel in the output tensor
-        foreach[target=target, simd_width=1](blur_kernel, img_out, ctx)
+        foreach[simd_width=1](blur_kernel, img_out, ctx)

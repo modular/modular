@@ -67,15 +67,20 @@ void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
   if (!shared)
     return; // Ignore discarded diagnostics.
 
-  // Format it of course.
-  diag << '\'' << ASTType::getParamAsString(paramValue, /*forDiag=*/shared)
-       << '\'';
-
   // Remember the context decl for when this type was emitted - it could change
   // before the diagnostic is emitted.  This happens (e.g.) in overload
   // resolution where lots of diagnostics are producted (with different callees)
   // and then are emitted in a deferred way.
   ASTDecl *ctxDecl = shared->declResolver->getDiagnosticDeclContext();
+
+  // Format it only if the diagnostic is emitted,
+  // since overload resolution drops the diagnostic of each failed candidate
+  // when another one matches.
+  diag.addLazyText([shared, paramValue, ctxDecl] {
+    DeclResolver::DiagnosticDeclContextChanger x(ctxDecl);
+    return "'" + ASTType::getParamAsString(paramValue, /*forDiag=*/shared) +
+           "'";
+  });
 
   // Remember we emitted this parameter so we can post-process the diagnostic.
   auto &mdiag = static_cast<MojoInflightDiag &>(diag);

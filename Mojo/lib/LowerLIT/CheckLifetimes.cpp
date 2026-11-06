@@ -1712,7 +1712,7 @@ public:
     // If we're going to explode, produce some debris to help debug.
     if (!(it != interiorOriginID.end() && it->second < nextInteriorOriginID)) {
       llvm::errs() << "\n-----\n";
-      o.dump();
+      llvm::errs() << o << "\n";
       llvm::errs() << "\n-----\n";
       dump();
       llvm::errs() << "\n-----\n";

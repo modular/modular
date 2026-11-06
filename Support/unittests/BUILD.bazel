@@ -14,10 +14,14 @@ package(
 modular_cc_test(
     name = "ADTTest",
     srcs = glob(["ADT/*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     deps = [
         "//Support:ADT",
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],
@@ -251,9 +255,13 @@ modular_cc_test(
 modular_cc_test(
     name = "ContextTest",
     srcs = ["ContextTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     deps = [
         "//Support:Context",
-        "//Support:Globals",
+        "//Support:Globals.static",
     ],
 )
 
@@ -331,8 +339,12 @@ modular_cc_test(
 modular_cc_test(
     name = "ProfilingTest",
     srcs = ["TimeProfilerTest.cpp"],
-    deps = [
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
         "//Support:Globals",
+    ],
+    deps = [
+        "//Support:Globals.static",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
     ],
@@ -341,9 +353,13 @@ modular_cc_test(
 modular_cc_test(
     name = "MArchTargetTest",
     srcs = glob(["MArchTarget/*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     deps = [
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MArchTarget",
         "//Support:MDialect",
         "@llvm-project//llvm:Support",

@@ -13,9 +13,8 @@
 """Cascade worker that delegates decode work to a MAX Serve model worker.
 
 This worker does **not** load the model in its own process. Instead it spawns a
-``max.serve`` model-worker subprocess (the same one used by
-``max.serve.api_server`` and ``max.entrypoints.LLM``) and communicates with it
-over ZMQ (via :class:`ZmqModelWorkerInterface`). As in ``max.serve``, a single
+``max.serve`` model-worker subprocess (the same one ``max.serve.api_server``
+uses) and communicates with it over ZMQ (via :class:`ZmqModelWorkerInterface`). As in ``max.serve``, a single
 fan-out task on the proxy side pulls ``SchedulerResult`` batches off the response
 socket and routes individual outputs to per-request ``asyncio.Queue`` instances.
 """
@@ -84,9 +83,8 @@ class MAXModelWorker(ModelWorker):
     The worker is constructed with a :py:class:`PipelineConfig` (typically built
     once by the entrypoint/CLI and shared across the cascade pipeline's
     workers). It does **not** load the model in its own process; instead it
-    spawns a ``max.serve`` model-worker subprocess (the same one used by
-    ``max.serve.api_server`` and ``max.entrypoints.LLM``) and communicates with
-    it over ZMQ. Per-request streaming is handled by the proxy's single
+    spawns a ``max.serve`` model-worker subprocess (the same one
+    ``max.serve.api_server`` uses) and communicates with it over ZMQ. Per-request streaming is handled by the proxy's single
     response-fan-out task.
     """
 
@@ -129,8 +127,7 @@ class MAXModelWorker(ModelWorker):
         registry lookups (no config mutation, no network). The telemetry
         consumer, model-worker subprocess and proxy (with its single response
         fan-out task) stay alive for the worker's lifetime -- the same async
-        context managers used by ``max.entrypoints.LLM`` and
-        ``max.serve.api_server``.
+        context managers ``max.serve.api_server`` uses.
         """
         # lazy import to avoid circular imports when defining
         # CascadePipelines in model arch.py layers

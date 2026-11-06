@@ -14,11 +14,17 @@ modular_cc_test(
     name = "AllocatorTest",
     timeout = "short",
     srcs = ["AllocatorTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:Threading",
     ],
 )
@@ -27,15 +33,21 @@ modular_cc_test(
     name = "AsyncValueTest",
     size = "small",
     srcs = ["AsyncValueTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//AsyncRT:Support",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -44,10 +56,19 @@ modular_cc_test(
     name = "DebuggingAllocatorsTest",
     size = "small",
     srcs = ["DebuggingAllocatorsTest.cpp"],
-    deps = [
-        "//AsyncRT:Runtime",
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    # Crash test: times out in external CI after the crash trace is printed.
+    # Temporary, until crash-test slowness is fixed.
+    tags = ["skip-external-ci"],
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals.static",
+        "//Support:Globals.static",
     ],
 )
 
@@ -55,14 +76,20 @@ modular_cc_test(
     name = "CPUDeviceTest",
     size = "small",
     srcs = ["CPUDeviceTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
-        "//Support:Globals",
+        "//AsyncRT:RuntimeGlobals.static",
+        "//Support:Globals.static",
     ],
 )
 
@@ -70,6 +97,12 @@ modular_cc_test(
     name = "LLVMThreadPoolTest",
     size = "small",
     srcs = ["LLVMThreadPoolTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -77,7 +110,7 @@ modular_cc_test(
     deps = [
         "//AsyncRT:CompilerSupport",
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -86,13 +119,22 @@ modular_cc_test(
     name = "WorkQueueTest",
     size = "small",
     srcs = ["WorkQueueTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    # Crash test: times out in external CI after the crash trace is printed.
+    # Temporary, until crash-test slowness is fixed.
+    tags = ["skip-external-ci"],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Support:Threading",
     ],
 )
@@ -101,6 +143,15 @@ modular_cc_test(
     name = "WorkerSignalAltStackTest",
     size = "small",
     srcs = ["WorkerSignalAltStackTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    # Crash test: times out in external CI after the crash trace is printed.
+    # Temporary, until crash-test slowness is fixed.
+    tags = ["skip-external-ci"],
     # Asyncrt altstack is disabled on sanitizer builds, so there is nothing to test.
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
@@ -109,7 +160,7 @@ modular_cc_test(
     }),
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Support:Threading",
         "@llvm-project//llvm:Support",
     ],
@@ -119,10 +170,14 @@ modular_cc_test(
     name = "TypeIDTest",
     size = "small",
     srcs = ["TypeIDTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     deps = [
         "//AsyncRT:Support",
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:TypeID",
     ],
 )
@@ -131,10 +186,16 @@ modular_cc_test(
     name = "TimerHeapTest",
     size = "small",
     srcs = ["TimerHeapTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//AsyncRT:Support",
-        "//Support:Globals",
+        "//Support:Globals.static",
     ],
 )

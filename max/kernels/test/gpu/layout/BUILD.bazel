@@ -144,12 +144,15 @@ _FILECHECK_EXTRA_DEPS = {
             "test_local_to_shared_numeric_conversion.mojo",
             # Depend only on `layout` + `std`; given dedicated minimal-deps
             # targets below so they are not coupled to `nn`/`linalg`.
+            "test_atom.mojo",
             "test_device_pointer_tile_storage_kernel.mojo",
             "test_optional_device_pointer_tile.mojo",
             "test_owned_tensor_gpu_engine.mojo",
             "test_tile_layout_device_launch.mojo",
             # Blackwell-only `TmemEngine` probe; dedicated target below.
             "test_tmem_engine.mojo",
+            # Blackwell-only TMEM atoms; dedicated target below.
+            "test_tmem_atom.mojo",
             "test_tensor_engine_plugin_gpu.mojo",
         ],
     )
@@ -191,6 +194,7 @@ mojo_test(
         ],
     )
     for src in [
+        "test_atom.mojo",
         "test_device_pointer_tile_storage_kernel.mojo",
         "test_optional_device_pointer_tile.mojo",
         "test_owned_tensor_gpu_engine.mojo",
@@ -198,6 +202,24 @@ mojo_test(
         "test_tensor_engine_plugin_gpu.mojo",
     ]
 ]
+
+# The TMEM atoms issue `tcgen05`, so they only run on B200-class hardware.
+mojo_test(
+    name = "test_tmem_atom.mojo.test",
+    size = "large",
+    srcs = ["test_tmem_atom.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
 
 # `TmemEngine` needs `tcgen05`, so it only runs on B200-class hardware.
 mojo_test(

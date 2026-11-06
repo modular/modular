@@ -46,7 +46,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 __all__ = [
     "UNQUANTIZED_ATTN_PROJECTIONS",

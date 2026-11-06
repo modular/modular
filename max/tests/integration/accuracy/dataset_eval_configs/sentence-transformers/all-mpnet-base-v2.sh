@@ -15,3 +15,5 @@
 batch_size=512
 max_length=512
 evaluator=mteb
+
+extra_pipelines_args=(--no-prefer-module-v3)

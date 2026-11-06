@@ -293,7 +293,7 @@ struct PackMatrixRows[
             row_major[Self.simd_size, Self.simd_size]()
         )
 
-        var valid_tile_simd_dim = Index(
+        var valid_tile_simd_dim = (
             Int(min(self.valid_simd_dim[0], self.pack_tile_dim[0])),
             Int(min(self.valid_simd_dim[1], self.pack_tile_dim[1])),
         )
@@ -650,7 +650,7 @@ def _pack_matmul_b_shape_func_impl[
     var dim1 = Int(b_input.dim[1]())
     var n = dim0 if transpose_in_0 else dim1
     var k = dim1 if transpose_in_0 else dim0
-    var tile_n_k = IndexList[2]()
+    var tile_n_k = (0, 0)
 
     @inline(.always)
     def dispatch_on_kernel_type[kernel_type: Bool]() {mut tile_n_k, b_input}:
@@ -1037,7 +1037,7 @@ struct BTileGenerator[
         b: TileTensor[
             Self.b_type, Self.b_layout, Self.origin, Engine=Self.b_engine
         ],
-        tile_n_k: IndexList[2],
+        tile_n_k: Tuple[Int, Int],
     ) -> BTileGenerator[
         Self.config,
         Self.a_type,
@@ -1073,7 +1073,7 @@ struct BTileGenerator[
             Self.transpose_b,
             Self.b_packed,
             b_engine=Self.b_engine,
-        ](b, b_tile_stack_ptr, Coord(tile_n_k))
+        ](b, b_tile_stack_ptr, Coord(Int64(tile_n_k[0]), Int64(tile_n_k[1])))
 
     comptime PackedTileLayout = RowMajorLayout[Int, Int, Int]
 
@@ -1118,7 +1118,7 @@ struct BTileGenerator[
         comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
         var k = align_up(tile_dim_nk[1], factor)
-        var tile_shape_nopack = IndexList[3](
+        var tile_shape_nopack = (
             tile_dim_nk[0] // inner_size2,
             k // factor,
             factor * inner_size2,
@@ -1178,7 +1178,7 @@ struct BTileGenerator[
             var tile_k = Int(self.tile_n_k[1])
             var tile_k2 = align_up(min(tile_k, valid_data_dim_nk[1]), factor)
 
-            var tile_shape_pack = IndexList[3](
+            var tile_shape_pack = (
                 Int(self.tile_n_k[0]) // inner_size2,
                 tile_k2 // factor,
                 inner_size2 * factor,

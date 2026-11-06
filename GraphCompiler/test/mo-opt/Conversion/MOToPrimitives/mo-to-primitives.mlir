@@ -1,6 +1,6 @@
 // RUN: mo-opt %s --mogg-import-packages --mo-to-map --map-outline-structured-kernel-bodies --map-to-mogg --mogg-to-mgp | FileCheck %s
 
-// CHECK-LABEL:  mgp.model @constants_with_multiple_returns : mof
+// CHECK-LABEL:  mgp.model @constants_with_multiple_returns
 // CHECK:  } execute (
 // CHECK-SAME: %[[ARG0:.*]]: !mef.chain, %[[ARG1:.*]]: !mgp.context, %{{.*}}: !mgp.opaque<"weights_registry">
 // CHECK-SAME: %[[ARG2:[^:]*]]: !mgp.tensor<2xf32>, %[[ARG3:.*]]: !mgp.tensor<5x1xf32>
@@ -23,7 +23,7 @@ mo.graph @constants_with_multiple_returns(%arg0: !mo.tensor<[2], f32>, %arg1: !m
   mo.output %arg0, %0, %0, %arg1, %arg1, %1 : !mo.tensor<[2], f32>, !mo.tensor<[3], f32>, !mo.tensor<[3], f32>, !mo.tensor<[5, 1], f32>, !mo.tensor<[5, 1], f32>, !mo.tensor<[4], si8>
 }
 
-// CHECK-LABEL: mgp.model @foo : mof
+// CHECK-LABEL: mgp.model @foo
 // CHECK: } execute (
 // CHECK-SAME: %[[ARG0:.*]]: !mef.chain, %[[ARG1:.*]]: !mgp.context,
 // CHECK-SAME: %[[ARG2:[^:]*]]: !mgp.tensor<1x?xf32>, %[[ARG3:.*]]: !mgp.tensor<?xf32>) -> !mef.chain {
@@ -36,7 +36,7 @@ mo.graph @foo<N>(%arg0: !mo.tensor<[1, N], f32>, %arg1: !mo.tensor<[N], f32>) {
   mo.output
 }
 
-// CHECK-LABEL: mgp.model @scalar_arg : mof
+// CHECK-LABEL: mgp.model @scalar_arg
 // CHECK: } execute (
 // CHECK-SAME: %[[ARG0:.*]]: !mef.chain, %[[ARG1:.*]]: !mgp.context,
 // CHECK-SAME: %[[ARG2:[^:]*]]: !mgp.tensor<f32>) -> (!mef.chain, !mgp.tensor<f32>) {

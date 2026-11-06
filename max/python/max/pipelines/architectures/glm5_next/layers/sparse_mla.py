@@ -58,12 +58,12 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn._graph_ops import mla_decode_graph
+from max.nn._graph_ops.quant import quantized_matmul
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.kernels import mla_decode_graph
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module
-from max.nn.legacy.quant_ops import quantized_matmul
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     Indexer,
@@ -322,7 +322,7 @@ class Glm5NextSparseMLASublayer(Module):
             norm_dtype=config.compute_dtype,
             # TODO(GLM53-PREFILLSCALE): "auto" would route prefill through
             # `mla_prefill_decode_graph`, which asserts the absorbed scales are
-            # present (`max/python/max/nn/legacy/kernels.py:4580`) and so cannot serve
+            # present (`max/python/max/nn/_graph_ops/__init__.py:4580`) and so cannot serve
             # a checkpoint that ships `kv_b_proj` unquantized --- the very
             # split this model needs. `mla_decode_graph` already takes them as
             # `TensorValue | None`, so the decode route is correct today and
@@ -437,9 +437,8 @@ class Glm5NextSparseMLASublayer(Module):
             inputs.input_row_offsets[device_idx],
             inputs.indexer_kv_collections[device_idx],
             inputs.layer_idx,
-            # The indexer's default is no mask, under which a prefill query
-            # spends its pool budget on pools after it that `_attend`'s causal
-            # mask then discards.
+            # Without a causal mask a prefill query spends its pool budget on
+            # pools after it, which `_attend`'s causal mask then discards.
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             tail=inputs.tail_pools[device_idx],
             slot_idx=inputs.tail_row_ids[device_idx],
@@ -502,7 +501,7 @@ class Glm5NextSparseMLASublayer(Module):
             raise ValueError(
                 "An FP8 latent cache with a BF16 kv_b_proj is not reachable: "
                 "the FP8 MLA op requires absorbed weight scales this "
-                "checkpoint does not ship (max/python/max/nn/legacy/kernels.py:4410). "
+                "checkpoint does not ship (max/python/max/nn/_graph_ops/__init__.py:4410). "
                 "Run the BF16 latent cache, which is what the accuracy gates "
                 "use, until that pairing is supported."
             )

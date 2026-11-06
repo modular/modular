@@ -101,6 +101,7 @@ from max.graph import BufferType, DeviceRef, TensorType, Type
 from max.graph.weights import WeightsAdapter
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPInit
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
 from max.nn.legacy.graph_groups import (
@@ -110,8 +111,7 @@ from max.nn.legacy.graph_groups import (
     VisionMerge,
 )
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
 from max.pipelines.modeling.types import RequestID
@@ -1172,7 +1172,9 @@ class ModuleV3DecoderPipelineModel(
         """Returns the decoder's ``batch_context_lengths`` input types.
 
         One ``int32`` per replica, or for a decoder that sets
-        ``device_context_length_dtype``, one of that dtype per device.
+        ``device_context_length_dtype``, one of that dtype per device. Replicas
+        that span several devices of a ``(dp, tp)`` mesh also take one
+        ``int32`` per device, each device its replica's.
         ``None`` when its config doesn't take them.
         """
         if not (
@@ -1185,7 +1187,10 @@ class ModuleV3DecoderPipelineModel(
             type(self).decoder_cls, "device_context_length_dtype", None
         )
         if dtype is None:
-            return batch_context_length_types(replicas)
+            mesh = self._device_mesh()
+            if not (DP in mesh.axis_names and TP in mesh.axis_names):
+                return batch_context_length_types(replicas)
+            dtype = DType.int32
         return batch_context_length_types(
             replicas,
             devices_per_replica=len(self.devices) // max(1, replicas),

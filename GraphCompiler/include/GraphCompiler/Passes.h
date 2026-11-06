@@ -24,10 +24,6 @@ namespace M::MO {
 /// MLIR options for `buildGCPipeline` and `buildGCPipelineThroughEmitMojo`.
 /// See GraphCompilerCLOptions for the mt equivalents.
 struct GCPipelineOptions : public mlir::PassPipelineOptions<GCPipelineOptions> {
-  Option<std::string> compiledFrameworkLabel{
-      *this, "compiled-framework-label",
-      llvm::cl::desc(
-          "Framework label to compile to (used in mgp.model framework tag).")};
   Option<size_t> minimumCpuAlignment{
       *this, "minimum-cpu-alignment",
       llvm::cl::desc("Alignment for all CPU-allocated buffers."),
@@ -301,10 +297,6 @@ struct MoPipelineOptions : public mlir::PassPipelineOptions<MoPipelineOptions> {
       llvm::cl::desc("Evaluate parts of the program that can be evaluated at "
                      "compile time."),
       llvm::cl::init(true)};
-  Option<std::string> compiledFrameworkLabel{
-      *this, "compiled-framework-label",
-      llvm::cl::desc(
-          "Framework label to compile to (used in mgp.model framework tag).")};
   Option<std::string> cacheDir{
       *this, "cache-dir",
       llvm::cl::desc("Path used by the CAS subsystem to establish its backing "

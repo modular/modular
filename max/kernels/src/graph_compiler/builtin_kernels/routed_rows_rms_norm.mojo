@@ -18,7 +18,8 @@ The EP dispatch packs a device's routed rows from row 0, and the last
 expert offset counts them. That count lives on the device, so the launch
 covers the whole static buffer and every row past it returns at once; rows
 past it are left unwritten. The body is `rms_norm`'s, on the same launch, so
-the routed rows match `mo.reduce.rms_norm` of the scaled input bit for bit.
+the routed rows match `mo.composite.reduce.rms_norm` of the scaled input bit
+for bit.
 
 `norm.routed_rows_rms_norm_finalize` folds that norm into `moe.finalize`
 (`nn.routed_rows_finalize`): each token sums its routed rows' norms by router
@@ -31,8 +32,7 @@ from std.utils.coord import ComptimeInt, Coord, DynamicCoord
 from std.utils.numerics import get_accum_type
 
 import extensibility
-from extensibility import InputTensor, OutputTensor
-from layout import UNKNOWN_VALUE
+from extensibility import Input, Output, Tensor, TileTensorable
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 
@@ -53,23 +53,15 @@ struct RoutedRowsRMSNorm:
     """Registers the `norm.routed_rows_rms_norm` graph op."""
 
     @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        input: InputTensor[dtype=dtype, rank=2, ...],
-        weight: InputTensor[dtype=dtype, rank=1, ...],
-        expert_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        expert_offsets: Some[Input & Tensor],
         eps: Float32,
         ctx: DeviceContext,
     ) raises:
         """Normalizes the rows below the last expert offset.
-
-        Parameters:
-            dtype: Element type of the activations and the weight.
-            target: Compilation target.
 
         Args:
             output: The normalized rows `[rows, hidden]`.
@@ -83,33 +75,57 @@ struct RoutedRowsRMSNorm:
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[
-            target
-        ](), "norm.routed_rows_rms_norm is GPU only"
-        comptime cols = Int(input.static_spec.shape_tuple[1])
-        comptime assert cols != UNKNOWN_VALUE, "the hidden size must be static"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "norm.routed_rows_rms_norm is GPU only"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert conforms_to(type_of(expert_offsets), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(weight).rank == 1
+        comptime assert type_of(expert_offsets).rank == 1
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(weight).dtype == dtype
+        comptime assert (
+            type_of(input)._shape_types[1].is_static_value
+        ), "the hidden size must be static"
+        comptime cols = type_of(input)._shape_types[1].static_value
+        var output_tt = output.to_tile_tensor[dtype]()
+        var input_tt = input.to_tile_tensor[dtype]()
+        var weight_tt = weight.to_tile_tensor[dtype]()
+        var offsets_tt = expert_offsets.to_tile_tensor[DType.uint32]()
+        comptime input_alignment = type_of(input).alignment
+        comptime weight_alignment = type_of(weight).alignment
+        comptime output_alignment = type_of(output).alignment
         comptime accum = get_accum_type[dtype]()
         comptime simd_width = rowwise.pick_simd_width[
-            ReduceSum[accum, 1], target, 64, dtype, accum
+            ReduceSum[accum, 1],
+            ctx.target,
+            64,
+            dtype,
+            accum,
         ]()
         var axis_size_accum = Scalar[accum](cols)
-        var last_offset = Int(expert_offsets.dim_size[0]()) - 1
+        var last_offset = Int(expert_offsets.shape()[0].value()) - 1
 
         @inline(.always)
         def body[
             params: rowwise.ContextParams
         ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
-            var input,
-            var weight,
-            var expert_offsets,
-            var output,
+            var input_tt,
+            var weight_tt,
+            var offsets_tt,
+            var output_tt,
             var axis_size_accum,
             var last_offset,
             var eps,
         }:
             # Uniform over the threads sharing a row, so no tier's barrier
             # is split.
-            if UInt32(Int(row_coords[0])) >= expert_offsets.load[width=1](
+            if UInt32(Int(row_coords[0])) >= offsets_tt.load[width=1](
                 Coord(last_offset)
             ):
                 return
@@ -120,13 +136,18 @@ struct RoutedRowsRMSNorm:
             def load[
                 width: Int, alignment: Int
             ](idx: DynamicCoord[DType.int, row_rank]) {
-                var input, var weight
+                var input_tt, var weight_tt
             } -> SIMD[dtype, width]:
-                return input.load[width, element_alignment=alignment](idx) * (
+                comptime byte_alignment = alignment * size_of[dtype]()
+                return input_tt.load[
+                    width=width,
+                    alignment=min(input_alignment, byte_alignment),
+                ](idx) * (
                     1
-                    + weight.load[width, element_alignment=alignment](
-                        Coord(Int(idx[1]))
-                    )
+                    + weight_tt.load[
+                        width=width,
+                        alignment=min(weight_alignment, byte_alignment),
+                    ](Coord(Int(idx[1])))
                 )
 
             var row = rowwise.Row[
@@ -152,9 +173,14 @@ struct RoutedRowsRMSNorm:
                 width: Int
             ](
                 tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]
-            ) {var inv_rms, var output, var ctx_p}:
+            ) {var inv_rms, var output_tt, var ctx_p}:
                 comptime alignment = ctx_p.element_alignment[dtype, width]()
-                output.store[width, element_alignment=alignment](
+                output_tt.store[
+                    width=width,
+                    alignment=min(
+                        output_alignment, alignment * size_of[dtype]()
+                    ),
+                ](
                     idx,
                     (tile.cast[accum]() * inv_rms.slice[width]()).cast[dtype](),
                 )
@@ -164,18 +190,18 @@ struct RoutedRowsRMSNorm:
         rowwise.launch[
             axis=1,
             simd_width=simd_width,
-            target=target,
             num_phases=2,
             dtype_size=size_of[dtype](),
             computationally_expensive=True,
-        ](body, input.shape_coord(), ctx)
+        ](body, input.shape(), ctx)
 
 
 @always_inline
-def _in[T: DType](t: InputTensor[dtype=T, ...]) -> In[T]:
+def _in[T: DType](t: Some[Input & Tensor]) -> In[T]:
+    comptime assert conforms_to(type_of(t), TileTensorable)
     return (
-        t.unsafe_ptr()
-        .unsafe_mut_cast[False]()
+        t.to_tile_tensor[T]()
+        .ptr.unsafe_mut_cast[False]()
         .unsafe_origin_cast[ImmUntrackedOrigin]()
     )
 
@@ -185,28 +211,21 @@ struct RoutedRowsRMSNormFinalize:
     """Registers the `norm.routed_rows_rms_norm_finalize` graph op."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-        out_dtype: DType,
-    ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        input: InputTensor[dtype=DType.bfloat16, rank=2, ...],
-        weight: InputTensor[dtype=DType.bfloat16, rank=1, ...],
-        expert_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        restore_order: InputTensor[dtype=DType.uint32, rank=1, ...],
-        router_weight: InputTensor[dtype=DType.float32, rank=2, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        expert_offsets: Some[Input & Tensor],
+        restore_order: Some[Input & Tensor],
+        router_weight: Some[Input & Tensor],
         eps: Float32,
         ctx: DeviceContext,
     ) raises:
         """Sums each token's normalized routed rows by router weight.
 
-        Parameters:
-            target: Compilation target.
-            out_dtype: The output's dtype, float32 or bf16 (rounded once
-                from the float32 sum).
-
         Args:
-            output: One row per token `[tokens, hidden]`.
+            output: One row per token `[tokens, hidden]`, float32 or bf16
+                (rounded once from the float32 sum).
             input: The expert outputs in expert order `[tokens * top_k,
                 hidden]`.
             weight: The norm's input scale weight `[hidden]`.
@@ -220,28 +239,40 @@ struct RoutedRowsRMSNormFinalize:
         Raises:
             Error: If the launch fails.
         """
-        comptime assert is_gpu[
-            target
-        ](), "norm.routed_rows_rms_norm_finalize is GPU only"
         comptime assert (
-            Int(input.static_spec.shape_tuple[1]) == HIDDEN
+            ctx.target.is_gpu()
+        ), "norm.routed_rows_rms_norm_finalize is GPU only"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(weight).rank == 1
+        comptime assert type_of(expert_offsets).rank == 1
+        comptime assert type_of(restore_order).rank == 1
+        comptime assert type_of(router_weight).rank == 2
+        comptime out_dtype = type_of(output).dtype
+        comptime assert (
+            type_of(input)._shape_types[1].static_value == HIDDEN
         ), "the hidden size must be 4096"
         comptime assert out_dtype in (
             DType.float32,
             DType.bfloat16,
         ), "the output must be float32 or bf16"
-        comptime top_k = Int(router_weight.static_spec.shape_tuple[1])
-        comptime assert top_k != UNKNOWN_VALUE, "top_k must be static"
+        comptime assert (
+            type_of(router_weight)._shape_types[1].is_static_value
+        ), "top_k must be static"
+        comptime top_k = type_of(router_weight)._shape_types[1].static_value
         routed_rows_finalize[top_k](
             RoutedRowsFinalizeArgs(
-                _in(input),
-                _in(weight),
-                _in(expert_offsets),
-                _in(restore_order),
-                _in(router_weight),
-                output.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
-                Int64(output.dim_size[0]()),
-                Int64(expert_offsets.dim_size[0]() - 1),
+                _in[DType.bfloat16](input),
+                _in[DType.bfloat16](weight),
+                _in[DType.uint32](expert_offsets),
+                _in[DType.uint32](restore_order),
+                _in[DType.float32](router_weight),
+                output.to_tile_tensor[out_dtype]().ptr.unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                Int64(output.shape()[0].value()),
+                Int64(expert_offsets.shape()[0].value() - 1),
                 eps,
             ),
             ctx,

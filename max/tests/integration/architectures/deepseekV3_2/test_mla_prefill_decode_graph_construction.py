@@ -30,7 +30,18 @@ from _mla_sparse_test_utils import paged_kv_from_flat_graph_inputs
 from max import mlir, tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn._graph_ops import (
+    cp_merge_topk,
+    mla_decode_graph,
+    mla_decode_graph_cp,
+    mla_fp8_index_top_k_physical,
+    mla_fp8_index_top_k_physical_cp,
+    mla_fp8_index_top_k_with_physical,
+    mla_prefill_decode_graph,
+)
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheQuantizationConfig, MLAKVCacheParams
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
     MLAPrefillMetadata,
@@ -38,15 +49,8 @@ from max.nn.legacy.attention.multi_latent_attention import (
 from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.kernels import (
-    mla_decode_graph,
-    mla_fp8_index_top_k_physical,
-    mla_fp8_index_top_k_with_physical,
-    mla_prefill_decode_graph,
-)
-from max.nn.legacy.kv_cache import KVCacheQuantizationConfig, MLAKVCacheParams
-from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -54,10 +58,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 
 
 def test_mla_prefill_decode_graph_sparse_smoke() -> None:
@@ -155,6 +156,7 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
         DeviceRef.GPU(),
     )
     topk_len_type = TensorType(DType.int32, ["batch"], DeviceRef.GPU())
+    cp_len_type = TensorType(DType.int32, ["total_tokens"], DeviceRef.GPU())
     sink_type = TensorType(DType.float32, ["batch"], DeviceRef.GPU())
     batch_ctx_type = TensorType(
         DType.int32, ["buf_len_chunks"], DeviceRef.GPU()
@@ -173,6 +175,7 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
                 topk_len_type,
                 sink_type,
                 batch_ctx_type,
+                cp_len_type,
                 *kv_sym,
             ],
         ) as g:
@@ -183,9 +186,10 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
             sparse_topk_lengths = g.inputs[4].tensor
             sparse_attn_sink = g.inputs[5].tensor
             batch_context_lengths = g.inputs[6].tensor
+            cp_lengths = g.inputs[7].tensor
 
             kv_collection = paged_kv_from_flat_graph_inputs(
-                kv_params, list(g.inputs[7:])
+                kv_params, list(g.inputs[8:])
             )
             assert kv_collection.attention_dispatch_metadata is not None
             assert kv_collection.mla_num_partitions is not None
@@ -239,11 +243,50 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
                 sparse_attn_sink=sparse_attn_sink,
                 sparse_indices_stride=indices_stride,
             )
-            g.output(out)
+
+            # The decode context-parallel op: rank 1 of 2, O and LSE.
+            cp_args: dict[str, Any] = dict(
+                q=q,
+                kv=kv,
+                input_row_offsets=input_row_offsets,
+                freqs_cis=freqs_cis,
+                kv_norm_gamma=attn.kv_a_proj_layernorm,
+                w_uk=w_uk,
+                w_uv=w_uv,
+                kv_params=kv_params,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=attn.scale,
+                epsilon=1e-6,
+                v_head_dim=v_head_dim,
+                scalar_args=scalar_args,
+                sparse_indices=sparse_indices,
+                sparse_lengths=cp_lengths,
+                sparse_indices_stride=indices_stride,
+                split_len_bound=topk // 2,
+                w_uk_scale=w_uk_scale,
+                w_uv_scale=w_uv_scale,
+                quant_config=quant_config,
+                dcp_size=2,
+                dcp_interleave=1,
+                dcp_rank=1,
+            )
+            # A rank stores positions at local slots, so it takes only
+            # physical rows.
+            with pytest.raises(ValueError, match="requires physical_indices"):
+                mla_decode_graph_cp(**cp_args, physical_indices=False)
+            cp_out, cp_lse = mla_decode_graph_cp(**cp_args)
+            assert cp_out.dtype == q.dtype
+            assert list(cp_out.shape) == [q.shape[0], num_heads, v_head_dim]
+            assert cp_lse.dtype == DType.float32
+            assert list(cp_lse.shape) == [q.shape[0], num_heads]
+            g.output(out, cp_out, cp_lse)
         return g
 
     _ = attn.state_dict()
-    _ = construct()
+    ir = str(construct())
+    assert '"attention.mla.graph.decode.paged.fp8.sparse.cp"' in ir
 
 
 def test_mla_sparse_graphs_nvfp4_cache_construction(
@@ -326,13 +369,16 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
         ),
         TensorType(DType.uint32, ["row_offsets_len"], gpu),
         TensorType(DType.int32, ["total_tokens", 2 * topk], gpu),
+        TensorType(DType.int32, ["total_tokens"], gpu),
         *tree.leaves(kv_params.get_symbolic_inputs()[0]),
     ]
 
     with Graph("mla_sparse_nvfp4_construction", input_types=input_types) as g:
-        q, kv, input_row_offsets, rows = (x.tensor for x in g.inputs[:4])
+        q, kv, input_row_offsets, rows, lengths = (
+            x.tensor for x in g.inputs[:5]
+        )
         kv_collection = paged_kv_from_flat_graph_inputs(
-            kv_params, list(g.inputs[4:])
+            kv_params, list(g.inputs[5:])
         )
         assert kv_collection.kv_scales is not None
         assert kv_collection.attention_dispatch_metadata is not None
@@ -388,7 +434,20 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
             **sparse,
         )
         decode = mla_decode_graph(**decode_args, **sparse)
-        g.output(prefill, decode)
+        cp_args = dict(decode_args)
+        del cp_args["num_partitions_scalar"]
+        cp_out, cp_lse = mla_decode_graph_cp(
+            **cp_args,
+            sparse_indices=rows,
+            sparse_lengths=lengths,
+            sparse_indices_stride=2 * topk,
+            split_len_bound=topk // 2,
+            dcp_size=2,
+            dcp_rank=1,
+        )
+        assert cp_lse.dtype == DType.float32
+        assert list(cp_lse.shape) == [q.shape[0], num_heads]
+        g.output(prefill, decode, cp_out, cp_lse)
 
     mla_ops = [
         op
@@ -411,6 +470,7 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
     ir = str(g)
     assert '"attention.mla.graph.prefill.decode.paged.sparse.nvfp4"' in ir
     assert '"attention.mla.graph.decode.paged.sparse.nvfp4"' in ir
+    assert '"attention.mla.graph.decode.paged.sparse.nvfp4.cp"' in ir
     assert re.search(r"nvfp4_convert_ratio = 37\b", ir)
     assert re.search(r"nvfp4_convert_max_rows = 4096\b", ir)
 
@@ -512,3 +572,90 @@ def test_mla_indexer_nvfp4_cache_rows_carry_scale_rows() -> None:
     ir = str(g)
     assert '"attention.mla.indexer.ragged.float8.paged.remap.nvfp4"' in ir
     assert '"attention.mla.indexer.ragged.float8.paged.remap"' in ir
+
+
+def test_mla_indexer_cp_and_merge_construction() -> None:
+    """The DCP indexer and the top-k merge build with their declared types.
+
+    ``mla_fp8_index_top_k_physical_cp`` returns ``[tokens, top_k]`` int32 rows
+    and bfloat16 scores; after an all-gather of the scores (stood in for by a
+    concat here), ``cp_merge_topk`` returns ``[tokens, top_k]`` rows and
+    ``[tokens]`` lengths.
+    """
+    num_heads = 8
+    index_head_dim = 128
+    top_k = 8
+    dcp_size = 4
+    gpu = DeviceRef.GPU()
+
+    indexer_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=index_head_dim,
+        num_layers=1,
+        page_size=128,
+        devices=[gpu],
+        num_q_heads=num_heads,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=index_head_dim
+        ),
+    )
+    mla_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=576,
+        num_layers=1,
+        page_size=128,
+        devices=[gpu],
+        num_q_heads=num_heads,
+    )
+    input_types = [
+        TensorType(
+            DType.float8_e4m3fn,
+            ["total_tokens", num_heads, index_head_dim],
+            gpu,
+        ),
+        TensorType(DType.float32, ["total_tokens", num_heads], gpu),
+        TensorType(DType.uint32, ["row_offsets_len"], gpu),
+        TensorType(DType.int32, [1], gpu),
+        *tree.leaves(indexer_params.get_symbolic_inputs()[0]),
+        *tree.leaves(mla_params.get_symbolic_inputs()[0]),
+    ]
+    num_indexer_inputs = len(
+        tree.leaves(indexer_params.get_symbolic_inputs()[0])
+    )
+
+    with Graph("mla_indexer_cp_construction", input_types=input_types) as g:
+        q, q_s, row_offsets, dcp_rank = (x.tensor for x in g.inputs[:4])
+        flat = list(g.inputs[4:])
+        indexer_collection = paged_kv_from_flat_graph_inputs(
+            indexer_params, flat[:num_indexer_inputs]
+        )
+        mla_collection = paged_kv_from_flat_graph_inputs(
+            mla_params, flat[num_indexer_inputs:]
+        )
+        layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
+        local_rows, local_scores = mla_fp8_index_top_k_physical_cp(
+            q,
+            q_s,
+            row_offsets,
+            indexer_collection,
+            mla_collection,
+            layer_idx,
+            dcp_rank,
+            top_k,
+            index_head_dim,
+            dcp_size,
+            dcp_interleave=1,
+        )
+        gathered = ops.concat([local_scores] * dcp_size, axis=1)
+        rows, lengths = cp_merge_topk(local_rows, gathered, dcp_rank, dcp_size)
+        g.output(local_rows, local_scores, rows, lengths)
+
+    assert local_rows.dtype == DType.int32
+    assert local_scores.dtype == DType.bfloat16
+    assert local_rows.shape == local_scores.shape == rows.shape
+    assert int(rows.shape[1]) == top_k
+    assert rows.dtype == lengths.dtype == DType.int32
+    assert lengths.rank == 1 and lengths.shape[0] == local_rows.shape[0]
+    ir = str(g)
+    assert '"attention.mla.indexer.ragged.float8.paged.remap.cp"' in ir
+    assert '"attention.mla.cp_merge_topk"' in ir

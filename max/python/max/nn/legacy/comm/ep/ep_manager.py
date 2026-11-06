@@ -48,21 +48,8 @@ from max.graph import (
     Value,
     ops,
 )
-from max.support.human_readable_formatter import to_human_readable_bytes
-from max.support.math import ceildiv
-from max.tensor import Tensor
-from numpy.typing import NDArray
-
-from ...activation import GatedActivation
-from ...graph_groups import EPPayload
-from ...layer import Module
-from .ep_config import (
-    _EP_LOCAL_SYNC_RESERVED_WORDS,
-    NUM_GROUPS,
-    EPConfig,
-    _ep_fused_moe_requested,
-)
-from .ep_kernels import (
+from max.nn._graph_ops.ep import (
+    ExpertLoad,
     _call_mega_ffn_ep_combine_send,
     _call_mega_ffn_ep_fused,
     _call_mega_ffn_ep_fused_init,
@@ -79,6 +66,20 @@ from .ep_kernels import (
     call_ep_dispatch_wait,
     call_ep_init,
 )
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import (
+    _EP_LOCAL_SYNC_RESERVED_WORDS,
+    NUM_GROUPS,
+    EPConfig,
+    _ep_fused_moe_requested,
+)
+from max.support.human_readable_formatter import to_human_readable_bytes
+from max.support.math import ceildiv
+from max.tensor import Tensor
+from numpy.typing import NDArray
+
+from ...graph_groups import EPPayload
+from ...layer import Module
 
 logger = logging.getLogger("max.pipelines")
 
@@ -296,6 +297,10 @@ class EPCommBuffers:
     """Per-device count of physical replicas per logical expert (EPLB), keyed by
     device ID. Populated only when EPLB is enabled; otherwise ``None``."""
 
+    eplb_expert_load: dict[int, Tensor] | None = None
+    """Per-device EPLB expert-load tally, keyed by device ID. Populated only
+    when ``eplb_count_expert_load`` is set; otherwise ``None``."""
+
 
 class EPBatchManager:
     """Batch manager for Expert Parallelism (EP).
@@ -338,6 +343,11 @@ class EPBatchManager:
     _eplb_logcnt_per_device: dict[int, BufferValue]
     """Per-device logcnt buffer. Shape: [num_moe_layer, num_experts_per_layer]"""
 
+    _eplb_expert_load_per_device: dict[int, BufferValue]
+    """Per-device uint64 expert-load tally. Shape: [num_moe_layers,
+    n_local_experts]. Populated by fetch_buffers when
+    config.eplb_count_expert_load is True."""
+
     _eplb_phy2log: NDArray[np.int64] | None
     """Per-layer logical->physical map from EPLB. Shape [num_layers, num_phy].
     Set once at startup before MoE.shard()."""
@@ -358,6 +368,7 @@ class EPBatchManager:
         self._src_info = {}
         self._eplb_log2phy_per_device = {}
         self._eplb_logcnt_per_device = {}
+        self._eplb_expert_load_per_device = {}
         self._eplb_phy2log = None
         self._dispatch_dim = {}
         self._send_buf_ptrs = None
@@ -477,7 +488,21 @@ class EPBatchManager:
                 BufferType(DType.int32, shape, device=DeviceRef.GPU(i))
                 for i in range(n_gpus)
             )
+        if self.config.eplb_count_expert_load:
+            inputs["eplb_expert_load"] = tuple(
+                BufferType(
+                    DType.uint64,
+                    [self.config.num_moe_layers, self._n_local_experts],
+                    device=DeviceRef.GPU(i),
+                )
+                for i in range(n_gpus)
+            )
         return inputs
+
+    @property
+    def _n_local_experts(self) -> int:
+        n_ranks = self.config.n_gpus_per_node * self.config.n_nodes
+        return self.config.n_experts // n_ranks
 
     def input_types(self) -> list[TensorType | BufferType]:
         """Get the input types for the MoE graph."""
@@ -538,6 +563,13 @@ class EPBatchManager:
             }
             start_idx += n_gpus
 
+        if self.config.eplb_count_expert_load:
+            n_gpus = self.config.n_gpus_per_node
+            self._eplb_expert_load_per_device = {
+                i: input_vals[start_idx + i].buffer for i in range(n_gpus)
+            }
+            start_idx += n_gpus
+
     def comm_buffers(
         self, input_vals: Iterable[Value[Any] | Tensor]
     ) -> EPCommBuffers:
@@ -565,6 +597,12 @@ class EPBatchManager:
                 i: Tensor.from_graph_value(b)
                 for i, b in self._eplb_logcnt_per_device.items()
             }
+        eplb_expert_load: dict[int, Tensor] | None = None
+        if self.config.eplb_count_expert_load:
+            eplb_expert_load = {
+                i: Tensor.from_graph_value(b)
+                for i, b in self._eplb_expert_load_per_device.items()
+            }
         return EPCommBuffers(
             atomic_counters=[
                 [Tensor.from_graph_value(b) for b in group]
@@ -581,6 +619,7 @@ class EPBatchManager:
             ],
             eplb_log2phy=eplb_log2phy,
             eplb_logcnt=eplb_logcnt,
+            eplb_expert_load=eplb_expert_load,
         )
 
     def bind_comm_buffers(self, comm: EPCommBuffers) -> None:
@@ -604,6 +643,28 @@ class EPBatchManager:
             self._eplb_logcnt_per_device = {
                 i: BufferValue(t) for i, t in comm.eplb_logcnt.items()
             }
+        if comm.eplb_expert_load is not None:
+            self._eplb_expert_load_per_device = {
+                i: BufferValue(t) for i, t in comm.eplb_expert_load.items()
+            }
+
+    def _expert_load(
+        self, device_id: int, layer_idx: TensorValue | None
+    ) -> ExpertLoad | None:
+        """Returns the tally a dispatch on ``device_id`` adds to.
+
+        Returns ``None`` when expert-load counting is off.
+        """
+        if not self.config.eplb_count_expert_load:
+            return None
+        if layer_idx is None:
+            raise ValueError(
+                "eplb_count_expert_load needs the MoE layer index of each"
+                " dispatch"
+            )
+        return ExpertLoad(
+            self._eplb_expert_load_per_device[device_id], layer_idx
+        )
 
     def ep_dispatch_async(
         self,
@@ -645,7 +706,9 @@ class EPBatchManager:
             input_scales=input_scales_val,
         )
 
-    def ep_dispatch_wait(self, device_id: int) -> tuple[TensorValue, ...]:
+    def ep_dispatch_wait(
+        self, device_id: int, layer_idx: TensorValue | None = None
+    ) -> tuple[TensorValue, ...]:
         """Wait for Expert Parallelism token dispatch phase completion.
 
         This function launches the EP dispatch wait kernel that waits for all
@@ -654,6 +717,8 @@ class EPBatchManager:
 
         Args:
             device_id: Device ID for the current device.
+            layer_idx: int32 ``[1]`` MoE layer index on this device. Required
+                when ``eplb_count_expert_load`` is set.
 
         Returns:
             A tuple containing:
@@ -678,6 +743,7 @@ class EPBatchManager:
             # Forward the per-rank input token dim so the kernel can pick
             # a smaller grid when num_tokens is statically known (decode).
             num_tokens=self._dispatch_dim.get(device_id),
+            expert_load=self._expert_load(device_id, layer_idx),
         )
 
         # The last element is the src_info, we need to store it for the
@@ -688,7 +754,10 @@ class EPBatchManager:
         return (*results[:-1], self._common_grouped_matmul_metadata())
 
     def ep_combine_async(
-        self, input_tokens: TensorLike, device_id: int
+        self,
+        input_tokens: TensorLike,
+        device_id: int,
+        total_tokens: TensorValue | None = None,
     ) -> None:
         """Initiate Expert Parallelism combine phase (async).
 
@@ -700,6 +769,8 @@ class EPBatchManager:
             input_tokens: Expert output tensors from the current device.
                 A TensorValue with shape (max_recv_tokens, hidden_size).
             device_id: Device ID for the current device.
+            total_tokens: The step's token count across all ranks, a host
+                ``uint32`` scalar; required with ``combine_mx_min_tokens``.
         """
         COMBINE_GROUP = 1
         # always use group 0 atomic counters unless we enable
@@ -719,6 +790,7 @@ class EPBatchManager:
             self.recv_buf_ptrs[COMBINE_GROUP],
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
+            total_tokens=total_tokens,
         )
 
         # reset src_info to None to avoid reusing it for the next batch
@@ -773,7 +845,7 @@ class EPBatchManager:
             estimated_total_m: Estimated total non-padded tokens.
             num_active_experts: Active expert slots.
             activation: The gated activation the kernel fuses; see
-                :func:`~max.nn.legacy.comm.ep.ep_kernels.fused_silu`.
+                :func:`~max.nn._graph_ops.ep.fused_silu`.
         """
         COMBINE_GROUP = 1
 
@@ -862,6 +934,7 @@ class EPBatchManager:
         down_expert_scales: TensorValue,
         c_input_scales: TensorValue,
         activation: GatedActivation | None = None,
+        layer_idx: TensorValue | None = None,
     ) -> TensorValue:
         """One-launch fused EP MoE: dispatch -> MegaFFN -> weighted combine.
 
@@ -887,7 +960,9 @@ class EPBatchManager:
             down_expert_scales: Per-local-expert L2 alpha.
             c_input_scales: Per-local-expert L1->L2 requant scale.
             activation: The gated activation the kernel fuses; see
-                :func:`~max.nn.legacy.comm.ep.ep_kernels.fused_silu`.
+                :func:`~max.nn._graph_ops.ep.fused_silu`.
+            layer_idx: int32 ``[1]`` MoE layer index on this device. Required
+                when ``eplb_count_expert_load`` is set.
 
         Returns:
             The routed-expert MoE output ``(T, hidden)`` BF16.
@@ -908,10 +983,14 @@ class EPBatchManager:
             self.recv_count_ptrs[0],
             self.config,
             activation=activation,
+            expert_load=self._expert_load(device_id, layer_idx),
         )
 
     def ep_combine_wait(
-        self, router_weight: TensorLike, device_id: int
+        self,
+        router_weight: TensorLike,
+        device_id: int,
+        total_tokens: TensorValue | None = None,
     ) -> TensorLike:
         """Wait for Expert Parallelism combine phase completion.
 
@@ -923,6 +1002,7 @@ class EPBatchManager:
             router_weight: Router weights for the current device.
                 A TensorValue with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
+            total_tokens: The scalar :meth:`ep_combine_async` got.
 
         Returns:
             Final output tensor with shape (num_local_tokens, hidden_size).
@@ -944,6 +1024,7 @@ class EPBatchManager:
             self.config,
             dispatch_dim,
             router_weight_val,
+            total_tokens=total_tokens,
         )
 
         return _as_input_type(router_weight, results)
@@ -958,6 +1039,7 @@ class EPBatchManager:
         topk_ids: TensorLike,
         device_id: int,
         input_scales: TensorLike | None = None,
+        layer_idx: TensorValue | None = None,
     ) -> tuple[TensorLike, ...]:
         """Execute fused Expert Parallelism token dispatch (async + wait).
 
@@ -977,6 +1059,8 @@ class EPBatchManager:
             device_id: Device ID for the current device.
             input_scales: Optional input scales tensor. Needed for NVFP4
                 dispatch.
+            layer_idx: int32 ``[1]`` MoE layer index on this device. Required
+                when ``eplb_count_expert_load`` is set.
 
         Returns:
             A tuple containing:
@@ -1013,6 +1097,7 @@ class EPBatchManager:
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
             input_scales=input_scales_val,
+            expert_load=self._expert_load(device_id, layer_idx),
         )
 
         # The last element is the src_info, we need to store it for the
@@ -1029,6 +1114,7 @@ class EPBatchManager:
         topk_ids: Sequence[TensorLike],
         device_ids: list[int],
         input_scales: Sequence[TensorLike] | None = None,
+        layer_idx_per_device: Sequence[TensorValue] | None = None,
     ) -> list[tuple[TensorLike, ...]]:
         """Multi-device fused EP dispatch across all devices.
 
@@ -1041,12 +1127,33 @@ class EPBatchManager:
             topk_ids: Per-device top-k expert ID tensors.
             device_ids: Device IDs corresponding to each input.
             input_scales: Per-device input scales (required for NVFP4).
+            layer_idx_per_device: int32 ``[1]`` MoE layer index per device,
+                indexed by device ID. Required when ``eplb_count_expert_load``
+                is set.
 
         Returns:
             Per-device output tuples. The last element of each tuple is
             always ``src_info``; the remaining elements are the dispatch
             outputs followed by the grouped matmul metadata.
         """
+        if self.config.eplb_count_expert_load:
+            # The multi-device graph op has no expert-load form, so a counted
+            # dispatch runs the per-device fused op on every device.
+            return [
+                self.ep_dispatch(
+                    input_tokens[i],
+                    topk_ids[i],
+                    device_id,
+                    input_scales[i] if input_scales is not None else None,
+                    layer_idx=(
+                        layer_idx_per_device[device_id]
+                        if layer_idx_per_device
+                        else None
+                    ),
+                )
+                for i, device_id in enumerate(device_ids)
+            ]
+
         DISPATCH_GROUP = 0
         token_vals = [TensorValue(t) for t in input_tokens]
         topk_id_vals = [TensorValue(t) for t in topk_ids]
@@ -1322,6 +1429,10 @@ class EPCommInitializer:
     atomic_counters: list[Buffer]
     """List of atomic counters used for synchronization."""
 
+    expert_load: list[Buffer]
+    """Per-device EPLB expert-load tallies, zeroed at construction and never
+    reset. Empty unless ``config.eplb_count_expert_load`` is set."""
+
     fused_moe_workspace: tuple[int, int] | None = None
     """Bytes per device and token block of the one-launch fused MoE workspace
     EP init set up, or ``None`` when it set none up."""
@@ -1354,6 +1465,17 @@ class EPCommInitializer:
             )
             for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
         ]
+
+        self.expert_load = []
+        if config.eplb_count_expert_load:
+            n_ranks = config.n_gpus_per_node * config.n_nodes
+            zeros = np.zeros(
+                (config.num_moe_layers, config.n_experts // n_ranks), np.uint64
+            )
+            self.expert_load = [
+                Buffer.from_numpy(zeros).to(Accelerator(i))
+                for i in range(config.n_gpus_per_node)
+            ]
 
     def ep_init(self, session: InferenceSession) -> None:
         """Initialize Expert Parallelism communication infrastructure.
@@ -1573,4 +1695,4 @@ class EPCommInitializer:
                     "eplb_enabled is True but set_eplb_placement was not called"
                 )
             inputs += self._eplb_log2phy + self._eplb_logcnt
-        return inputs
+        return inputs + self.expert_load

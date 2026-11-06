@@ -73,7 +73,7 @@ class Value;
 namespace M::Driver {
 
 /// Result of comparing two launch traces.
-struct LaunchTraceDiff {
+struct MODULAR_CXX_EXPORT LaunchTraceDiff {
   /// Operations in baseline but missing from current trace, with counts.
   std::map<KernelLaunchMetadata, int> missingOps;
 
@@ -129,7 +129,7 @@ size_t getPreferredAlignment(std::string label);
 void setVirtualCpuTarget(StringRef cpu);
 std::string getVirtualCpuTarget();
 
-class DeviceContextScope {
+class MODULAR_CXX_EXPORT DeviceContextScope {
 public:
   explicit DeviceContextScope(const DeviceContext &ctx);
   ~DeviceContextScope();
@@ -142,7 +142,7 @@ private:
   ErrorOrSuccess err_;
 };
 
-class Device : public ReferenceCounted<Device> {
+class MODULAR_CXX_EXPORT Device : public ReferenceCounted<Device> {
 public:
   enum class Attribute;
 
@@ -441,9 +441,10 @@ struct GPUHealthData {
 
 /// Evaluate GPU health from pre-gathered metrics. Returns an error with a
 /// descriptive message if the GPU is unhealthy.
-ErrorOrSuccess evaluateGPUHealth(const GPUHealthData &data);
+MODULAR_CXX_EXPORT ErrorOrSuccess evaluateGPUHealth(const GPUHealthData &data);
 
-class DeviceBuffer final : public ReferenceCounted<DeviceBuffer> {
+class MODULAR_CXX_EXPORT DeviceBuffer final
+    : public ReferenceCounted<DeviceBuffer> {
 public:
   ~DeviceBuffer();
 
@@ -531,7 +532,8 @@ private:
 // Only the non-virtual members the Python extension calls are exported;
 // exporting the class would duplicate its vtable across every library that
 // links DeviceContext.cpp (an ODR violation).
-class DeviceMulticastBuffer : public ReferenceCounted<DeviceMulticastBuffer> {
+class MODULAR_CXX_EXPORT DeviceMulticastBuffer
+    : public ReferenceCounted<DeviceMulticastBuffer> {
 public:
   virtual ~DeviceMulticastBuffer();
 
@@ -596,7 +598,7 @@ private:
 /// The outputs correspond to the pinned memory allocated by one of the
 /// DeviceGraphs during the record session and are used to ensure the backing
 /// memory lives as long as the allocating DeviceGraph.
-class DeviceGraphCollection {
+class MODULAR_CXX_EXPORT DeviceGraphCollection {
 public:
   explicit DeviceGraphCollection(SmallVector<AsyncDeviceGraphRef> &&graphs)
       : graphs(std::move(graphs)) {}
@@ -642,7 +644,8 @@ private:
 /// Allocator for buffers whose lifetime is tied to a device graph rather than
 /// to a single execution: allocations stay live for as long as the graph that
 /// references them, so a replay can reuse the recorded device pointers.
-class DeviceGraphMemoryPool : public ReferenceCounted<DeviceGraphMemoryPool> {
+class MODULAR_CXX_EXPORT DeviceGraphMemoryPool
+    : public ReferenceCounted<DeviceGraphMemoryPool> {
 public:
   DeviceGraphMemoryPool(DeviceContextRef context);
   ~DeviceGraphMemoryPool();
@@ -675,7 +678,7 @@ private:
 };
 
 /// A captured sequence of GPU operations that can be replayed.
-class DeviceGraph : public ReferenceCounted<DeviceGraph> {
+class MODULAR_CXX_EXPORT DeviceGraph : public ReferenceCounted<DeviceGraph> {
 public:
   virtual ~DeviceGraph() = default;
   Device &device() const;
@@ -857,7 +860,7 @@ private:
   DeviceGraphMemoryPoolRef memoryPool;
 };
 
-class DeviceStream : public ReferenceCounted<DeviceStream> {
+class MODULAR_CXX_EXPORT DeviceStream : public ReferenceCounted<DeviceStream> {
 public:
   virtual ~DeviceStream() = default;
   Device &device() const;
@@ -888,18 +891,19 @@ public:
     return Error("enqueueHostFunc is not supported on this device");
   }
 
-  /// Enqueues a wait-value node on this stream: subsequent stream
-  /// operations stall until the 64-bit value held by `flag` equals
-  /// `value`. The call itself returns immediately after enqueuing
-  /// (it does NOT block the caller waiting on the host value). The
-  /// flag must have been allocated via the same device's
-  /// `DeviceContext::allocateCompletionFlag`. Lets a host producer
-  /// (typically calling `flag.signal(value)`) gate stream-side
-  /// consumers on a CPU-produced result, without a second stream or
-  /// a blocking host callback on the consumer's critical path.
-  virtual ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                                uint64_t value) const {
-    return Error("enqueueWaitOnHostValue is not supported on this device");
+  /// Holds later work on this stream, without blocking the host, until
+  /// `flag` is at least `value`. `flag` must come from this device's
+  /// `DeviceContext::allocateCompletionFlag`. Keep values below 2^63: HIP
+  /// compares them as signed.
+  ///
+  /// While the wait is pending, the thread that signals the flag must not
+  /// block on this stream first: no `synchronize`, no device-to-host copy into
+  /// pageable memory, no large host-to-device copy from pageable memory, and
+  /// don't drop the flag. Stage through a host buffer or signal from another
+  /// thread.
+  virtual ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                           uint64_t value) const {
+    return Error("enqueueWaitOnFlag is not supported on this device");
   }
 
   // Raw device driver pointer to enable passing to PyTorch and similar APIs.
@@ -929,7 +933,8 @@ private:
   DeviceContextRef ctx_;
 };
 
-class DeviceFunction : public ReferenceCounted<DeviceFunction> {
+class MODULAR_CXX_EXPORT DeviceFunction
+    : public ReferenceCounted<DeviceFunction> {
 public:
   virtual ~DeviceFunction() = default;
 
@@ -963,45 +968,34 @@ private:
   DeviceContextRef context_;
 };
 
-/// 8-byte completion flag in pinned host memory mapped into the device
-/// address space. The CPU side reads / writes the value via
-/// `reset()` / `signal()` / `load()`; the GPU side waits for a value
-/// via `DeviceStream::enqueueWaitOnHostValue`. Allocated by
-/// `DeviceContext::allocateCompletionFlag()`; freed by the destructor
-/// (which routes through `DeviceContext::freeCompletionFlag`).
+/// A 64-bit value the host sets with `signal()` and a stream waits on with
+/// `DeviceStream::enqueueWaitOnFlag`.
 ///
 /// Refcounted so a single flag can be held simultaneously by, e.g., a
 /// Python-side wrapper and a host-function trampoline that needs to keep
 /// it alive until its AsyncRT worker signals.
-class CompletionFlag final : public ReferenceCounted<CompletionFlag> {
+class CompletionFlag : public ReferenceCounted<CompletionFlag> {
 public:
-  // Constructed only by `DeviceContext::allocateCompletionFlag`.
-  CompletionFlag(DeviceContext &context, void *hostPtr, uint64_t devicePtr);
-  ~CompletionFlag();
+  CompletionFlag() = default;
+  virtual ~CompletionFlag() = default;
 
   CompletionFlag(const CompletionFlag &) = delete;
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
-  /// Device-visible address (suitable for
-  /// `DeviceStream::enqueueWaitOnHostValue`).
-  uint64_t devicePtr() const { return devicePtr_; }
-
-  /// Relaxed store of 0 to clear the flag.
-  void reset();
-
-  /// Release-ordered store of `value` to the flag.
-  void signal(uint64_t value);
+  /// Release-ordered store of `value` to the flag. On Metal the value never
+  /// decreases: a lower `value` is ignored until `reset()`.
+  virtual void signal(uint64_t value) = 0;
 
   /// Acquire load of the current flag value.
-  uint64_t load() const;
+  virtual uint64_t load() const = 0;
 
-private:
-  DeviceContextRef context_;
-  void *hostPtr_;
-  uint64_t devicePtr_;
+  /// Stores 0. Don't reset while a wait on the flag is pending, and don't
+  /// signal a lower value without a reset.
+  virtual void reset() = 0;
 };
 
-class DeviceContext : public ReferenceCounted<DeviceContext> {
+class MODULAR_CXX_EXPORT DeviceContext
+    : public ReferenceCounted<DeviceContext> {
 public:
   virtual ~DeviceContext();
 
@@ -1038,14 +1032,7 @@ public:
   /// CUDA, HIP and Metal only. Rejected while recording a device graph.
   ErrorOr<DeviceBufferRef> wrapHostMemory(void *ptr, size_t byteSize);
 
-  /// Allocates an 8-byte `CompletionFlag` in pinned host memory mapped
-  /// into this device's address space (CUDA:
-  /// `cuMemHostAlloc(... CU_MEMHOSTALLOC_DEVICEMAP)` +
-  /// `cuMemHostGetDevicePointer_v2`). Returns a refcounted handle; the
-  /// allocation is freed when the last ref is dropped via
-  /// `freeCompletionFlag`.
-  ///
-  /// Only implemented for CUDA. Other backends return an error.
+  /// Allocates a `CompletionFlag` holding 0. CUDA, HIP and Metal only.
   virtual ErrorOr<CompletionFlagRef> allocateCompletionFlag() {
     return Error("allocateCompletionFlag is not supported on this device");
   }
@@ -1407,7 +1394,7 @@ protected:
   void setPendingError(Error err);
 
 private:
-  friend class CompletionFlag;
+  friend class PinnedCompletionFlag;
   friend class MemoryManagerFreeList;
   friend class DeviceBuffer;
   // Frees run from a `DeviceBuffer` destructor, so a failure can only be

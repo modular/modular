@@ -46,6 +46,7 @@ from shmem.ep_comm import (
     EP_NO_INPUT_SCALES,
     BF16TokenFormat,
     EPLocalSyncCounters,
+    NullExpertLoad,
     dispatch_async_kernel,
     dispatch_wait_kernel,
 )
@@ -393,6 +394,7 @@ def main() raises:
                 counters[d].unsafe_ptr().as_unsafe_any_origin()
             ),
             Int32(d),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -439,7 +441,6 @@ def main() raises:
             MAX_TOK,
             N_RANKS,
             1,
-            "gpu",
             use_shmem=False,
         ](
             rows,

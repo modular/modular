@@ -136,7 +136,7 @@ def run[m: Int](ctx: DeviceContext) raises:
         var b_tt = TileTensor(
             ops.weights[layer], row_major(Idx[N], Idx[K])
         ).as_imm()
-        matmul[transpose_b=True, target="gpu"](c_tt, a_f32_tt, b_tt, ctx)
+        matmul[transpose_b=True](c_tt, a_f32_tt, b_tt, ctx)
 
     def fused(layer: Int) raises {imm}:
         var b_tt = TileTensor(

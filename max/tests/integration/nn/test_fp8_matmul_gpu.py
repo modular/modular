@@ -19,15 +19,15 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import (
+from max.nn._graph_ops import (
+    dynamic_scaled_matmul,
+    quantize_dynamic_scaled_float8,
+)
+from max.nn.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
-)
-from max.nn.legacy.kernels import (
-    dynamic_scaled_matmul,
-    quantize_dynamic_scaled_float8,
 )
 from test_common.graph_utils import is_b100_b200, is_h100_h200
 

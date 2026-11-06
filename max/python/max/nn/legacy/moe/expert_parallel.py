@@ -37,9 +37,9 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops import moe_eplb_remap, moe_router_single_group_eplb
 
 from ..comm.ep.ep_manager import EPBatchManager
-from ..kernels import moe_eplb_remap, moe_router_single_group_eplb
 from ..layer import Module
 from ..transformer.distributed_transformer import forward_sharded_layers
 from .moe import MoE
@@ -108,6 +108,12 @@ def _compute_shared_experts(
             [xs[i] for i in device_idxs],
         )
     ]
+
+
+def _layer_idx(
+    layer_idx_per_device: list[TensorValue] | None, device_id: int
+) -> TensorValue | None:
+    return layer_idx_per_device[device_id] if layer_idx_per_device else None
 
 
 def _ep_forward(
@@ -277,7 +283,10 @@ def _ep_forward(
         for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
             shared = shard.shared_experts(x) if has_unfused_shared else None
             out = shard._ep_fused_forward(
-                x, all_topk_ids[i], all_router_weights[i]
+                x,
+                all_topk_ids[i],
+                all_router_weights[i],
+                _layer_idx(layer_idx_per_device, device_ids[i]),
             )
             if shared is not None:
                 out += shared
@@ -297,6 +306,7 @@ def _ep_forward(
                 all_topk_ids[i],
                 device_ids[i],
                 input_scales=scales[i] if scales is not None else None,
+                layer_idx=_layer_idx(layer_idx_per_device, device_ids[i]),
             )
             all_dispatch_results.append(dispatch_result)
         if has_unfused_shared:
@@ -324,7 +334,10 @@ def _ep_forward(
             moe_shards, xs, range(len(moe_shards))
         )
         all_dispatch_results = [
-            shard.ep_batch_manager.ep_dispatch_wait(device_ids[i])
+            shard.ep_batch_manager.ep_dispatch_wait(
+                device_ids[i],
+                _layer_idx(layer_idx_per_device, device_ids[i]),
+            )
             for i, shard in enumerate(moe_shards)
         ]
     else:
@@ -343,7 +356,11 @@ def _ep_forward(
             )
         # Multi-device dispatch (single op).
         all_dispatch_results = batch_mgr.ep_dispatch_all(
-            xs, all_topk_ids, device_ids, input_scales=scales
+            xs,
+            all_topk_ids,
+            device_ids,
+            input_scales=scales,
+            layer_idx_per_device=layer_idx_per_device,
         )
         if has_unfused_shared and batch_mgr.config.nvfp4_dyn_global_scales:
             if dyn_shared_side is None:
@@ -414,18 +431,28 @@ def _ep_forward(
         # When the FFN epilogue already sent, there is nothing to launch here:
         # the payload is in the peer buffers and the arrival signal is
         # published, so the wait below is the only remaining step.
+        step_tokens = (
+            total_tokens.cast(DType.uint32)
+            if batch_mgr.config.combine_mx_min_tokens > 0
+            else None
+        )
         if not ffn_sent:
             for i, shard in enumerate(moe_shards):
                 shard.ep_batch_manager.ep_combine_async(
-                    all_down_projs[i], device_ids[i]
+                    all_down_projs[i], device_ids[i], total_tokens=step_tokens
                 )
         combine_results = [
             shard.ep_batch_manager.ep_combine_wait(
-                all_router_weights[i], device_ids[i]
+                all_router_weights[i], device_ids[i], total_tokens=step_tokens
             )
             for i, shard in enumerate(moe_shards)
         ]
     else:
+        if batch_mgr.config.combine_mx_min_tokens > 0:
+            raise NotImplementedError(
+                "combine_mx_min_tokens is served by the split"
+                " ep_combine_async / ep_combine_wait path only"
+            )
         # Multi-device combine (single op).
         combine_results = batch_mgr.ep_combine_all(
             all_down_projs, all_router_weights, device_ids

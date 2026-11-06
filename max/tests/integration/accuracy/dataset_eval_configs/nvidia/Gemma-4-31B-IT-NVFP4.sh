@@ -19,5 +19,6 @@ evaluator=mistral-evals
 tasks=mathvista,chartqa,docvqa,mmmu
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --trust-remote-code
 )

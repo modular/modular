@@ -23,8 +23,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import huggingface_hub
 import pytest
-from max._artifact import ArtifactError
+from max._artifact import ArtifactError, HuggingFaceRef
 from max._artifact.batch_processor import BatchProcessorDims
 from max._artifact.engine_config import (
     EngineConfig,
@@ -35,6 +36,7 @@ from max._artifact.export import (
     SupportsCompiledModules,
     batch_processor_dims,
     checkpoint_format_spec,
+    checkpoint_tokenizer,
     model_artifact,
     pipeline_engine_config,
     pipeline_kv_cache,
@@ -53,6 +55,7 @@ from max._artifact.kv_cache import (
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.serialization import deserialize, serialize
+from max._artifact.tokenizer import Tokenizer
 from max._artifact.vision import (
     AspectRatioPreserving,
     ModalityLayout,
@@ -64,9 +67,7 @@ from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
-from max.nn.legacy import Module
-from max.nn.legacy.graph_groups import Logits
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
     MLAKVCacheParams,
@@ -75,8 +76,13 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import Logits
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.outputs import ReturnLogits
 from max.pipelines import lib as pipelines_lib
+from max.pipelines.architectures.gemma4.arch import gemma4_arch
+from max.pipelines.architectures.llama3.arch import llama_arch
 from max.pipelines.lib import (
     GraphRole,
     GraphSpec,
@@ -88,6 +94,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
     PipelineRuntimeConfig,
+    SupportedArchitecture,
     compile_and_init_graphs,
 )
 from max.pipelines.lib.graph_specs import compile_roles_separately
@@ -338,6 +345,130 @@ def test_checkpoint_format_spec_is_picked_per_checkpoint() -> None:
     assert checkpoint_format_spec(arch, _fake(repo_id="org/old")) is None
 
 
+def test_checkpoint_tokenizer_is_the_checkpoints_own(tmp_path: Path) -> None:
+    (tmp_path / "tokenizer.json").write_text("{}")
+    (tmp_path / "tokenizer_config.json").write_text("{}")
+    (tmp_path / "chat_template.jinja").write_text("{{ checkpoint }}")
+    repo = _fake(repo_type="local", local_path=str(tmp_path), revision="main")
+    named = {"default": "{{ messages }}", "tool_use": "{{ tools }}"}
+    tokenizer = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0, "b": 9}, chat_template=named),
+        eos_token_ids={9, 3},
+    )
+    config = _fake(model=_fake(huggingface_config=_fake(vocab_size=16)))
+    arch = _fake(tokenizer_family=lambda repo: ("gemma4", "thinking"))
+
+    assert checkpoint_tokenizer(arch, repo, tokenizer, config) == Tokenizer(
+        family="gemma4",
+        flavor="thinking",
+        files={
+            name: HuggingFaceRef(str(tmp_path), "main", name)
+            for name in ("tokenizer.json", "tokenizer_config.json")
+        },
+        chat_templates=named,
+        vocab_size=16,
+        sampleable_vocab_size=10,
+        eos_token_ids=(3, 9),
+    )
+
+    served = _fake(
+        delegate=_fake(
+            get_vocab=lambda: {"a": 0}, chat_template="{{ served }}"
+        ),
+        eos_token_ids={0},
+    )
+    unnamed = checkpoint_tokenizer(None, repo, served, config)
+    assert unnamed is not None
+    assert (unnamed.family, unnamed.flavor) == (None, None)
+    assert unnamed.chat_templates == {"default": "{{ served }}"}
+    untemplated = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0}, chat_template=None),
+        eos_token_ids={0},
+    )
+    result = checkpoint_tokenizer(None, repo, untemplated, config)
+    assert result is not None and result.chat_templates == {}
+    assert checkpoint_tokenizer(arch, repo, _fake(), config) is None
+
+
+def test_checkpoint_tokenizer_files_are_referenced_at_the_cached_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cached = "a" * 40
+    downloaded = "b" * 40
+    fetched: list[str] = []
+
+    def from_cache(repo_id: str, name: str, revision: str) -> str | None:
+        assert (repo_id, revision) == ("org/model", "main")
+        if name != "tokenizer.json":
+            return None
+        return str(tmp_path / "snapshots" / cached / name)
+
+    def download(repo_id: str, name: str, revision: str) -> str:
+        fetched.append(name)
+        if name == "tiktoken.model":
+            raise huggingface_hub.errors.EntryNotFoundError(name)
+        return str(tmp_path / "snapshots" / downloaded / name)
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", from_cache)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    repo = _fake(repo_type="online", repo_id="org/model", revision="main")
+    tokenizer = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0}, chat_template=None),
+        eos_token_ids={0},
+    )
+    config = _fake(model=_fake(huggingface_config=_fake(vocab_size=1)))
+
+    result = checkpoint_tokenizer(None, repo, tokenizer, config)
+
+    assert result is not None
+    assert result.files == {
+        "tokenizer.json": HuggingFaceRef("org/model", cached, "tokenizer.json"),
+        "tokenizer_config.json": HuggingFaceRef(
+            "org/model", downloaded, "tokenizer_config.json"
+        ),
+    }
+    assert fetched == ["tokenizer_config.json", "tiktoken.model"]
+
+
+@pytest.mark.parametrize(
+    ("arch", "repo_id", "family"),
+    [
+        (gemma4_arch, "google/gemma-4-31B-it", ("gemma4", "thinking")),
+        (gemma4_arch, "google/gemma-4-E4B-it", ("gemma4", "nonthinking")),
+        (
+            llama_arch,
+            "meta-llama/Llama-3.1-8B-Instruct",
+            ("llama3", "standard"),
+        ),
+        (llama_arch, "meta-llama/Llama-3.2-1B-Instruct", ("llama3", "lite")),
+        (llama_arch, "deepseek-ai/DeepSeek-R1-Distill-Llama-8B", None),
+        (
+            llama_arch,
+            "myorg/Llama-3.1-8B-Instruct-v3.2",
+            ("llama3", "standard"),
+        ),
+        (llama_arch, "mlabonne/Meta-Llama-3-120B-Instruct", None),
+        (
+            gemma4_arch,
+            "/hub/models--google--gemma-4-31B-it/snapshots/0e2b4e4b",
+            ("gemma4", "thinking"),
+        ),
+        (
+            gemma4_arch,
+            "/hub/models--google--gemma-4-E2B-it/snapshots/0e2b4e4b",
+            ("gemma4", "nonthinking"),
+        ),
+    ],
+)
+def test_architecture_names_the_checkpoints_tokenizer_family(
+    arch: SupportedArchitecture,
+    repo_id: str,
+    family: tuple[str, str | None] | None,
+) -> None:
+    assert callable(arch.tokenizer_family)
+    assert arch.tokenizer_family(_fake(repo_id=repo_id)) == family
+
+
 @pytest.mark.parametrize(
     "architecture",
     [
@@ -554,6 +685,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=None,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(
             KVPoolLeaf(
                 leaf_id=sliding_id,
@@ -599,6 +732,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=512,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(full_leaf("indexer"),),
     )
     assert layout.caches[3] == MLAKVCache(
@@ -614,6 +749,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=None,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(full_leaf("latent"),),
     )
     assert layout.caches[4] == RecurrentStateCache(

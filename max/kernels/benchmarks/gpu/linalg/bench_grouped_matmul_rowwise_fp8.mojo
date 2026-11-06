@@ -199,9 +199,7 @@ def bench_grouped_matmul_rowwise_fp8[
     }:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
-            grouped_matmul_rowwise_dynamic_scaled_fp8[
-                transpose_b=True, target="gpu"
-            ](
+            grouped_matmul_rowwise_dynamic_scaled_fp8[transpose_b=True,](
                 c_dev,
                 a_dev,
                 b_dev,

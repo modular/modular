@@ -55,16 +55,16 @@ from max.graph import (
     ops,
 )
 from max.nn import Module as ModuleV3
-from max.nn.legacy.kernels import topk_fused_sampling_with_dist
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
-from max.nn.legacy.layer import Module
-from max.nn.legacy.sampling.penalties import LogitPenalties
-from max.nn.legacy.sampling.rejection_sampler import (
+from max.nn._graph_ops import topk_fused_sampling_with_dist
+from max.nn._graph_ops.sampling import (
     AcceptanceSampler,
+    LogitPenalties,
     _draft_step_seed,
     _reshape_target_logits,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )

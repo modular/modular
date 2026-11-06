@@ -26,7 +26,7 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import BufferType, TensorType, TensorValue, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.pipelines.speculative.block_driver import (
     Accepted,
@@ -41,6 +41,7 @@ from max.pipelines.speculative.spec_target import Verified
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 
+from .layers.residual_gate import MuseSparkResidualBoundary
 from .model_config import MuseSparkConfig
 from .modules import MuseSparkDecoder
 from .muse_spark import MuseSparkTextModel, replicate
@@ -105,6 +106,8 @@ def _verify_and_tap(
             input_row_offsets=input_row_offsets,
         )
         if idx in target_layer_ids:
+            if isinstance(h, MuseSparkResidualBoundary):
+                h = h.join()
             taps.append(h)
     distance = F.range(
         return_n_logits[0],

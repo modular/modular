@@ -31,10 +31,10 @@ from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData, WeightsFormat
 from max.nn import Module
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.graph_groups import DecoderGraphInputs, VisionMerge
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,
@@ -893,6 +893,29 @@ def test_replicas_span_devices_only_where_the_decoder_supports_it() -> None:
     assert _data_parallel_model(
         SharedReplicaDecoder, 4, 4
     )._device_mesh().mesh_shape == (4,)
+
+
+class _TakesContextLengths(DeploymentConfig):
+    takes_batch_context_lengths: ClassVar[bool] = True
+
+
+def test_multi_device_replicas_take_a_context_length_per_device() -> None:
+    config = _TakesContextLengths()
+    # Two replicas of four: one int32 per device, each its replica's.
+    shared = _data_parallel_model(
+        SharedReplicaDecoder, 2, 8
+    )._batch_context_length_types(config)
+    assert shared is not None
+    assert len(shared) == 8
+    assert {(t.dtype, t.device) for t in shared} == {
+        (DType.int32, DeviceRef.CPU())
+    }
+    # One replica per device: one per replica.
+    per_replica = _data_parallel_model(
+        SharedReplicaDecoder, 4, 4
+    )._batch_context_length_types(config)
+    assert per_replica is not None
+    assert len(per_replica) == 4
 
 
 def test_graph_name_defaults_to_the_class_name() -> None:

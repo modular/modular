@@ -35,15 +35,16 @@ from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.buffer_utils import cast_tensors_to
+from max.nn.kv_cache import KVCacheParamInterface, recurrent_leaf
 from max.nn.legacy.image_preprocess import (
     image_preprocess_input_types,
     video_preprocess_input_types,
 )
-from max.nn.legacy.kv_cache import KVCacheParamInterface, recurrent_leaf
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
+    PipelineConfig,
     WeightEntry,
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
@@ -513,16 +514,27 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             ModelLoadContext.from_pipeline_model(self), state_dict
         )
 
-    def vision_metadata(self) -> VisionMetadata | None:
+    @classmethod
+    def vision_metadata_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> VisionMetadata | None:
         """Returns the checkpoint's vision metadata."""
-        return qwen3_5_vision_metadata(self.huggingface_config)
+        del config
+        huggingface_config = pipeline_config.model.huggingface_config
+        assert huggingface_config is not None
+        return qwen3_5_vision_metadata(huggingface_config)
 
-    def vision_preprocess_spec(self) -> GraphSpec | None:
+    @classmethod
+    def vision_preprocess_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
         """Returns the graph that preprocesses one image for the tower.
 
         It does what the tokenizer and the vision input packing do.
         """
-        vision = getattr(self.huggingface_config, "vision_config", None)
+        del config
+        huggingface_config = pipeline_config.model.huggingface_config
+        vision = getattr(huggingface_config, "vision_config", None)
         if vision is None:
             return None
         return GraphSpec(
@@ -532,14 +544,19 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             weights={},
         )
 
-    def vision_preprocess_video_spec(self) -> GraphSpec | None:
+    @classmethod
+    def vision_preprocess_video_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
         """Returns the graph that preprocesses one temporal patch of a clip.
 
         It does for the tower what the video processor does. The tower
         attends within each temporal patch, so a patch is a clip's attention
         segment.
         """
-        vision = getattr(self.huggingface_config, "vision_config", None)
+        del config
+        huggingface_config = pipeline_config.model.huggingface_config
+        vision = getattr(huggingface_config, "vision_config", None)
         if vision is None:
             return None
         return GraphSpec(

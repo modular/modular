@@ -22,8 +22,11 @@
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/ParameterReplacer.h"
+#include "Support/SymbolExport.h"
 #include "mlir/Pass/AnalysisManager.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
@@ -253,6 +256,61 @@ private:
                                 SmallVectorImpl<ParamDeclRefAttr> &uses,
                                 bool &hasCtxEvalExpr,
                                 size_t &requiredSignatureDepth);
+  /// Scan `attr` or `type`. These functions skip the `cache` and `visited`
+  /// lookups for the argument. The children of the argument still go through
+  /// both caches. Only `verifyAndCollect` calls these functions.
+  void collectUsesFromAttrUncached(Attribute attr,
+                                   SmallVectorImpl<ParamDeclRefAttr> &uses,
+                                   bool &hasCtxEvalExpr,
+                                   size_t &requiredSignatureDepth);
+  void collectUsesFromTypesUncached(Type type,
+                                    SmallVectorImpl<ParamDeclRefAttr> &uses,
+                                    bool &hasCtxEvalExpr,
+                                    size_t &requiredSignatureDepth);
+
+  using AttrOrType = llvm::PointerUnion<Attribute, Type>;
+
+  using Signature =
+      SmartVariant<ParameterScopeAttrInterface, ParameterScopeTypeInterface>;
+
+  /// What the collector knows about one attribute or type.
+  struct VisitedInfo {
+    /// Each distinct parameter use, once.
+    SmallVector<ParamDeclRefAttr, 2> uses;
+    bool hasCtxEvalExpr = false;
+    size_t requiredSignatureDepth = 0;
+    /// The signature contexts in which the sub-expression was verified.
+    /// `collectMemoized` reuses this entry only in these contexts. The three
+    /// fields above are the same in every context.
+    llvm::SmallDenseSet<unsigned, 1> verifiedContextIds;
+  };
+
+  /// Scans `expr` and returns its facts. The scan also verifies `expr`
+  /// against the current signatures, through `maybeVerify`. The scan does not
+  /// look up `expr` itself in `visited`.
+  VisitedInfo verifyAndCollect(AttrOrType expr);
+
+  /// Collects the facts about `expr` and merges them into the out-parameters:
+  /// - appends each parameter use in `expr` to `uses`,
+  /// - sets `hasCtxEvalExpr` if `expr` has an unresolved parameter expression,
+  /// - raises `requiredSignatureDepth` to the depth that `expr` requires.
+  /// Calls `verifyAndCollect` unless `visited` already holds `expr` and
+  /// `expr` was verified in the current signature context. An error found
+  /// while verifying `expr` is reported once per signature context, not once
+  /// per operation.
+  void collectMemoized(AttrOrType expr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+                       bool &hasCtxEvalExpr, size_t &requiredSignatureDepth);
+
+  /// Returns an id for the innermost `depth` signatures on the stack, and
+  /// creates the id on first use. Equal sequences get equal ids. See
+  /// `signatureContextIds`.
+  unsigned getOrCreateSignatureContextId(size_t depth);
+
+  /// Returns the attribute or type that `signature` wraps.
+  static AttrOrType fromSignature(const Signature &signature);
+
+  /// Returns whether `cache.parameterLess` holds `expr`.
+  bool isInParameterLessCache(AttrOrType expr) const;
 
   /// The first time we encounter an attribute with a reference to an
   /// out-of-line declaration, verify it.
@@ -277,9 +335,36 @@ private:
 
   /// An internal stack of scoped parameter types representing the input param
   /// types of the current nested signatures.
-  SmallVector<
-      SmartVariant<ParameterScopeAttrInterface, ParameterScopeTypeInterface>>
-      signatures;
+  SmallVector<Signature> signatures;
+
+  /// Facts about the sub-expressions that `cache` does not hold, kept for the
+  /// lifetime of the collector. A sub-expression shared by many parents is
+  /// scanned once.
+  DenseMap<AttrOrType, VisitedInfo> visited;
+
+  /// Gives each sequence of signatures a small integer id, so that a sequence
+  /// can be stored in `VisitedInfo::verifiedContextIds`.
+  ///
+  /// Why: a `visited` entry can be reused only where the index references of
+  /// the sub-expression resolve to the same signatures. Those signatures are
+  /// the innermost `requiredSignatureDepth` entries of `signatures`. A key
+  /// that holds the sequence itself would copy and hash a vector on every
+  /// lookup. An integer id avoids both.
+  ///
+  /// How: the map is a prefix tree. Id 0 is the empty sequence. An entry
+  /// `(idOfS, sig) -> id` gives the id of the sequence S followed by `sig`.
+  /// `getOrCreateSignatureContextId` starts at id 0 and takes one step per
+  /// signature, innermost first. Each step looks up `(currentId, sig)`, or adds
+  /// it with the next free id. Equal sequences get equal ids, and different
+  /// sequences get different ids.
+  ///
+  /// Example: the stack is `[F, G, H]`, with `H` innermost, and the depth is 2.
+  /// The first step adds `(0, H) -> 1`, the id of `[H]`. The second step adds
+  /// `(1, G) -> 2`, the id of `[H, G]`. A later visit with the stack
+  /// `[X, G, H]` and depth 2 finds ids 1 and 2 again, so the entry is reused.
+  /// A visit with the stack `[G, K]` starts with `(0, K)`, which gets a new id,
+  /// so the sub-expression is verified again.
+  DenseMap<std::pair<unsigned, AttrOrType>, unsigned> signatureContextIds;
 };
 
 //===----------------------------------------------------------------------===//
@@ -352,7 +437,7 @@ struct ParamDeclaration {
 /// expressions to a simple constant value. Then, all operations that use
 /// parameters (in an attribute, type, or location) can be concretized in any
 /// order.
-struct ParameterUseDefGraph {
+struct MODULAR_CXX_EXPORT ParameterUseDefGraph {
   ParameterUseDefGraph(Region &scope) : scope(&scope) {}
   ParameterUseDefGraph(Region *scope) : scope(scope) {}
   virtual ~ParameterUseDefGraph() = default;

@@ -46,7 +46,7 @@ from layout import (
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import (
     CausalMask,
     NullMask,
@@ -261,7 +261,7 @@ def test[
     ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            flare_mla_decoding[config=config](
+            flare_mla_decoding[config=config, kernels=SM100MLA](
                 out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
@@ -271,7 +271,7 @@ def test[
                 scalar_args_buf_tt,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
-            flare_mla_decoding[config=config](
+            flare_mla_decoding[config=config, kernels=SM100MLA](
                 out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
@@ -483,7 +483,7 @@ def bench[
         var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt, imm
     }:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
@@ -731,7 +731,7 @@ def test_sw[
         ctx: DeviceContext[],
     ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,

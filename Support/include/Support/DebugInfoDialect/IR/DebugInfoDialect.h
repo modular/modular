@@ -21,6 +21,8 @@
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
+#pragma GCC visibility push(default)
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h.inc"
+#pragma GCC visibility pop
 
 #endif // SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFODIALECT_H

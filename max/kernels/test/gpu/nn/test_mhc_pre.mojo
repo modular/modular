@@ -208,7 +208,6 @@ def run_mhc_pre[
             hidden_size=hidden,
             hc_sinkhorn_iters=sinkhorn_iters,
             has_norm=has_norm,
-            target="gpu",
             fn_terms=fn_terms,
         ](
             TileTensor(post_d, row_major((num_rows, Idx[hc]))),
@@ -567,7 +566,6 @@ def _launch[
         hidden_size=hidden,
         hc_sinkhorn_iters=sinkhorn_iters,
         has_norm=has_norm,
-        target="gpu",
     ](
         TileTensor(post_d, row_major((num_rows, hc))),
         TileTensor(comb_d, row_major((num_rows, hc, hc))),

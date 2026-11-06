@@ -61,7 +61,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _is_apple_gpu,
     block_scales_interleave,
     grouped_matmul_block_scaled,
@@ -71,7 +71,7 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import ceildiv
+from max.nn.quant_config import ceildiv
 
 from ..model_config import DeepseekV4Config
 from .quantization import linear_for

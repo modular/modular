@@ -63,9 +63,7 @@ struct UseLogger:
 @extensibility.register("add_one_custom")
 struct AddOneCustom:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -92,7 +90,7 @@ struct AddOneCustom:
                 x_tile.load[width=width, alignment=align_of[dtype]()](idx) + 1,
             )
 
-        elementwise[simd_width=get_kernel_simd_width[dtype, target]()](
+        elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
             add_one, output.shape(), ctx
         )
 

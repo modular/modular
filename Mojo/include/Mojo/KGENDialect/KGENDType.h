@@ -21,6 +21,7 @@
 #include "Support/ForwardDecls.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/ML/DType.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -28,7 +29,7 @@ namespace M::KGEN {
 
 /// KGEN dtype is always compatible with GraphCompiler's DType but has some
 /// additional types.
-class KGENDType : public DType {
+class MODULAR_CXX_EXPORT KGENDType : public DType {
 public:
   using DType::DType;
   using DType::getWidthInBits;

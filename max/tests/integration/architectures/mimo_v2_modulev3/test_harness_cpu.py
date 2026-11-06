@@ -39,19 +39,20 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, WeightData
-from max.nn.legacy import kernels
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn import _graph_ops as kernels
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.outputs import ReturnLogits
+from max.pipelines.architectures.mimo_v2.weight_adapters import (
+    mimo_v2_weight_rules,
+)
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     FULL,
     SLIDING,
     MiMoV2Config,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
-    convert_safetensor_state_dict,
-)
 from max.pipelines.kv_cache import KVCacheConfig
+from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
@@ -212,9 +213,7 @@ def adapted(
     hf = PretrainedConfig(
         **json.loads((checkpoint / "config.json").read_text())
     )
-    return convert_safetensor_state_dict(
-        dict(weights.items()), huggingface_config=hf
-    )
+    return WeightTransform(mimo_v2_weight_rules(hf))(dict(weights.items()))
 
 
 def _mesh() -> DeviceMesh:

@@ -15,6 +15,7 @@
 #define KERNELS_TRACING_H
 
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 #include "Support/max_license/Tracy/TracyZone.h"
 #include "tracing_c_api.h"
 #include "llvm/ADT/StringRef.h"
@@ -24,7 +25,7 @@ namespace M {
 using MojoTracePtr = std::unique_ptr<void, decltype(&destroy_trace)>;
 
 /// Class for starting and stopping profiling via tracing.mojo.
-class MojoTrace {
+class MODULAR_CXX_EXPORT MojoTrace {
 public:
   /// Fallible constructor for the trace object.
   static ErrorOr<MojoTrace> create(StringRef message, StringRef color = "");

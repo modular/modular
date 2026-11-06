@@ -76,6 +76,7 @@ from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
     _INDEX_SWIZZLE,
+    KTMATileT,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
@@ -160,9 +161,13 @@ def _launch_scorer[
         comptime assert kpool == 1, "the SM100 scorer has no pooled keys"
         if chunk_begin != 0:
             raise Error("the SM100 scorer has no row windows")
-        var k_tma_tile = k_cache.create_paged_tma_tile[
-            _INDEX_SWIZZLE, BN=_BM_KEY, BK=depth
-        ](ctx)
+        var k_tma_tile = rebind[
+            KTMATileT[KCollectionT.CacheType.dtype, _BM_KEY, depth]
+        ](
+            k_cache.create_paged_tma_tile[_INDEX_SWIZZLE, BN=_BM_KEY, BK=depth](
+                ctx
+            )
+        )
         fp8_index_score_sm100[
             KCollectionT.CacheType.dtype,
             type_of(k_op),

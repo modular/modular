@@ -44,7 +44,6 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/Paths.h"
 #include "Support/MDialect/MAttrs.h"
-#include "Support/ML/CompiledFrameworkLabel.h"
 #include "max/max_license/MOF/Driver/DriverImpl.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -75,9 +74,6 @@ struct MOFConfig {
   bool tileBasedFusion = false;
 
   void overrideLoweringOptions(MO::GCPipelineOptions &gcPipelineOptions) const {
-    gcPipelineOptions.compiledFrameworkLabel =
-        CompiledFrameworkLabel::asLabelString(
-            CompiledFrameworkLabel::kModularModel);
     gcPipelineOptions.kernelLibraryPaths = kernelLibraryPaths;
     if (defaultDeviceLabel) {
       gcPipelineOptions.defaultDeviceLabel = *defaultDeviceLabel;
@@ -193,9 +189,6 @@ void MOFContext::overrideLoweringOptions(
   if (impl->clOptions)
     static_cast<const MO::GraphCompilerOptions &>(*impl->clOptions)
         .overrideLoweringOptions(gcPipelineOptions);
-  gcPipelineOptions.compiledFrameworkLabel =
-      CompiledFrameworkLabel::asLabelString(
-          CompiledFrameworkLabel::kModularModel);
   if (impl->mofConfig)
     impl->mofConfig->overrideLoweringOptions(gcPipelineOptions);
 

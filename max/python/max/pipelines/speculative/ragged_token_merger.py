@@ -22,7 +22,7 @@ __all__ = [
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import merge_ragged_tensors
+from max.nn._graph_ops import merge_ragged_tensors
 from max.nn.legacy.layer import Module
 
 

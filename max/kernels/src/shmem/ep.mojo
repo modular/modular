@@ -28,7 +28,10 @@ from std.ffi import external_call, _get_global_or_null
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
     EP_PDL_MAX_RANKS,
+    ep_mx_msg_bytes,
     EPLocalSyncCounters,
+    ExpertLoadSink,
+    NullExpertLoad,
     TokenFormat,
     dispatch_async_kernel,
     dispatch_wait_kernel,
@@ -191,7 +194,6 @@ def ep_dispatch_async_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
     use_shmem: Bool = (n_nodes > 1),
 ](
     atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
@@ -218,7 +220,6 @@ def ep_dispatch_async_kernel_api[
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
         use_shmem: Whether to enable SHMEM communication.
 
     Arguments:
@@ -242,7 +243,6 @@ def ep_dispatch_async_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         n_nodes,
-        target,
         use_shmem,
         has_input_scales=False,
     ](
@@ -272,7 +272,6 @@ def ep_dispatch_async_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
     use_shmem: Bool = (n_nodes > 1),
     has_input_scales: Bool = True,
 ](
@@ -305,7 +304,6 @@ def ep_dispatch_async_kernel_api[
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
         use_shmem: Whether to enable SHMEM communication.
         has_input_scales: Whether `input_scales_fn` supplies the input scale.
             The overload without `input_scales_fn` passes `False`.
@@ -322,7 +320,7 @@ def ep_dispatch_async_kernel_api[
             copy what it captures.
     """
 
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert (
         input_tokens.static_shape[1] == token_fmt_type.hid_dim
     ), "EP dispatch: input tokens shape doesn't match hidden size."
@@ -383,7 +381,7 @@ def ep_dispatch_async_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.dispatch_async",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -453,7 +451,7 @@ def ep_dispatch_wait_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
@@ -464,6 +462,7 @@ def ep_dispatch_wait_kernel_api[
     atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     context: DeviceContext,
     num_input_tokens: Int = -1,
+    expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
     """Execute the Expert Parallelism dispatch completion kernel.
 
@@ -484,7 +483,8 @@ def ep_dispatch_wait_kernel_api[
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -498,11 +498,13 @@ def ep_dispatch_wait_kernel_api[
         num_input_tokens: Per-rank input token count for this layer. When >= 0
             enables the decode-fast-path grid sizing. Default `-1` keeps the
             full-`sm_count` grid for backwards compatibility.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
     """
     comptime n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert (
         recv_ptrs.flat_rank == 1
     ), "Receive pointers must be a 1D tensor."
@@ -531,6 +533,7 @@ def ep_dispatch_wait_kernel_api[
         max_token_per_rank,
         token_fmt_type,
         token_recv=ep_token_recv[n_nodes](),
+        ExpertLoadT=ExpertLoadT,
     ]
 
     @inline(.always)
@@ -546,7 +549,7 @@ def ep_dispatch_wait_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.dispatch_wait",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -583,6 +586,7 @@ def ep_dispatch_wait_kernel_api[
             recv_count_ptr,
             ep_counters,
             my_rank,
+            expert_load,
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
@@ -613,11 +617,11 @@ def ep_fused_dispatch_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     fused_shared_expert: Bool,
-    target: StaticString,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
     dispatch_warp_min_tokens: Int = -1,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
@@ -632,6 +636,7 @@ def ep_fused_dispatch_kernel_api[
     recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
     recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
+    expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel at unit input scale.
 
@@ -655,7 +660,6 @@ def ep_fused_dispatch_kernel_api[
         n_nodes: Number of physical nodes.
         fused_shared_expert: Whether to pack shared expert inputs with
             routed experts' inputs.
-        target: Target.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
             send tokens within the current device.
         use_shmem: Whether to enable SHMEM communication.
@@ -668,6 +672,8 @@ def ep_fused_dispatch_kernel_api[
             Same bytes and receive layout. -1 (the default) keeps the stock
             send and count, as does every configuration but single-node NVFP4
             without a fused shared expert.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -681,6 +687,8 @@ def ep_fused_dispatch_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
     """
 
     # Stands in for the input scales `has_input_scales=False` never reads.
@@ -694,12 +702,12 @@ def ep_fused_dispatch_kernel_api[
         n_gpus_per_node,
         n_nodes,
         fused_shared_expert,
-        target,
         skip_a2a,
         use_shmem,
         allreduce_world_size,
         has_input_scales=False,
         dispatch_warp_min_tokens=dispatch_warp_min_tokens,
+        ExpertLoadT=ExpertLoadT,
     ](
         token_handler,
         row_offsets,
@@ -713,6 +721,7 @@ def ep_fused_dispatch_kernel_api[
         recv_count_ptrs,
         context,
         no_input_scales,
+        expert_load,
     )
 
 
@@ -736,12 +745,12 @@ def ep_fused_dispatch_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     fused_shared_expert: Bool,
-    target: StaticString,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
     has_input_scales: Bool = True,
     dispatch_warp_min_tokens: Int = -1,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
@@ -757,6 +766,7 @@ def ep_fused_dispatch_kernel_api[
     recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
     input_scales_fn: InputScalesFnType,
+    expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel.
 
@@ -785,7 +795,6 @@ def ep_fused_dispatch_kernel_api[
         n_nodes: Number of physical nodes.
         fused_shared_expert: Whether to pack shared expert inputs with
             routed experts' inputs.
-        target: Target.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
             send tokens within the current device.
         use_shmem: Whether to enable SHMEM communication.
@@ -800,6 +809,8 @@ def ep_fused_dispatch_kernel_api[
             Same bytes and receive layout. -1 (the default) keeps the stock
             send and count, as does every configuration but single-node NVFP4
             without a fused shared expert.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -815,10 +826,12 @@ def ep_fused_dispatch_kernel_api[
         context: Device context pointer.
         input_scales_fn: The input scales. It runs on the device, so it must
             copy what it captures.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
     """
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert dispatch_dtype == .bfloat16
     comptime assert (
         send_ptrs.flat_rank == 1
@@ -877,6 +890,7 @@ def ep_fused_dispatch_kernel_api[
         RowOffsetsEngine=row_offsets.Engine,
         ExpertIdsEngine=expert_ids.Engine,
         SrcInfoEngine=src_info.Engine,
+        ExpertLoadT=ExpertLoadT,
     ]
 
     @inline(.always)
@@ -892,7 +906,7 @@ def ep_fused_dispatch_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.dispatch",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -960,6 +974,7 @@ def ep_fused_dispatch_kernel_api[
             recv_count_ptrs_arr,
             ep_counters,
             my_rank,
+            expert_load,
             host_args=(input_scales_fn,),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
@@ -989,8 +1004,8 @@ def ep_combine_async_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
     use_shmem: Bool = (n_nodes > 1),
+    mx_msg: Bool = False,
 ](
     atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     input_tokens: TileTensor[
@@ -1025,8 +1040,9 @@ def ep_combine_async_kernel_api[
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
         use_shmem: Whether to enable SHMEM communication.
+        mx_msg: Send each token as MXFP8 (lossy, peer-to-peer only); the
+            matching `ep_combine_wait_kernel_api` must take it too.
 
     Arguments:
         output_tokens: Output tokens for the shared experts.
@@ -1041,7 +1057,7 @@ def ep_combine_async_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert (
         input_tokens.static_shape[1] == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
@@ -1057,7 +1073,9 @@ def ep_combine_async_kernel_api[
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
-    comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
+    comptime combine_msg_size = ep_mx_msg_bytes(
+        hidden_size
+    ) if mx_msg else hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes
 
     comptime combine_async = combine_async_kernel[
@@ -1073,6 +1091,7 @@ def ep_combine_async_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         use_shmem=use_shmem,
+        mx_msg=mx_msg,
         InputTokensEngine=input_tokens.Engine,
         SrcInfoEngine=src_info.Engine,
     ]
@@ -1092,7 +1111,7 @@ def ep_combine_async_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.combine",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -1162,7 +1181,6 @@ def ep_combine_wait_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
 ](
     num_tokens: Int,
     atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
@@ -1188,7 +1206,6 @@ def ep_combine_wait_kernel_api[
         max_token_per_rank: Maximum tokens any device can receive.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
 
     Arguments:
         num_tokens: Number of output tokens.
@@ -1217,7 +1234,6 @@ def ep_combine_wait_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         n_nodes,
-        target,
         has_router_weights=False,
     ](
         num_tokens,
@@ -1245,8 +1261,8 @@ def ep_combine_wait_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
     has_router_weights: Bool = True,
+    mx_msg: Bool = False,
 ](
     num_tokens: Int,
     atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
@@ -1276,10 +1292,11 @@ def ep_combine_wait_kernel_api[
         max_token_per_rank: Maximum tokens any device can receive.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
         has_router_weights: Whether the routed expert outputs are weighted by
             `router_weights_fn` and summed. The overload without
             `router_weights_fn` passes `False`.
+        mx_msg: The messages are MXFP8, as `ep_combine_async_kernel_api`
+            sent them with `mx_msg`.
 
     Arguments:
         num_tokens: Number of output tokens.
@@ -1297,7 +1314,7 @@ def ep_combine_wait_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert (
         recv_ptrs.flat_rank == 1
     ), "Receive pointers must be a 1D tensor."
@@ -1313,7 +1330,9 @@ def ep_combine_wait_kernel_api[
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
-    comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
+    comptime combine_msg_size = ep_mx_msg_bytes(
+        hidden_size
+    ) if mx_msg else hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes
 
     comptime combine_wait = combine_wait_kernel[
@@ -1328,6 +1347,7 @@ def ep_combine_wait_kernel_api[
         StoreFnType,
         RouterWeightsFnType,
         has_router_weights,
+        mx_msg=mx_msg,
     ]
 
     @inline(.always)
@@ -1345,7 +1365,7 @@ def ep_combine_wait_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.combine_wait",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -1416,7 +1436,6 @@ def ep_fused_combine_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
@@ -1459,7 +1478,6 @@ def ep_fused_combine_kernel_api[
         max_token_per_rank: Maximum tokens any device can receive.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
         fused_shared_expert: Whether to add shared expert outputs to the
             combined routed expert outputs.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
@@ -1500,7 +1518,6 @@ def ep_fused_combine_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         n_nodes,
-        target,
         fused_shared_expert,
         skip_a2a,
         use_shmem,
@@ -1540,7 +1557,6 @@ def ep_fused_combine_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
@@ -1589,7 +1605,6 @@ def ep_fused_combine_kernel_api[
         max_token_per_rank: Maximum tokens any device can receive.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
         fused_shared_expert: Whether to add shared expert outputs to the
             combined routed expert outputs.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
@@ -1623,7 +1638,7 @@ def ep_fused_combine_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     # Ensure the shape for the tensors are correct
     comptime assert (
         input_tokens.static_shape[1] == hidden_size
@@ -1688,7 +1703,7 @@ def ep_fused_combine_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.combine",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),

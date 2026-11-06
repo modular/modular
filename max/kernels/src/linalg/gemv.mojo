@@ -15,8 +15,20 @@
 
 from std.math import align_down, align_up, ceildiv
 from std.math.uutils import ufloordiv
-from std.sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic, simd_width_of
-from std.sys.info import _is_amd_mi250x, _is_sm_100x, size_of
+from std.sys import (
+    get_defined_bool,
+    get_defined_int,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    llvm_intrinsic,
+    simd_width_of,
+)
+from std.sys.info import (
+    _accelerator_arch,
+    _is_amd_mi250x,
+    _is_sm_100x,
+    size_of,
+)
 from max.gpu.compute.mma import ld_matrix, mma
 from max.gpu.sync import async_copy_arrive, named_barrier
 from layout.tma_async import SharedMemBarrier
@@ -64,7 +76,6 @@ from layout import (
 )
 from std.logger import Logger
 from std.memory import bitcast, unsafe_stack_allocation
-from std.utils import IndexList
 from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -2199,7 +2210,7 @@ def _amd_gemv_config[
     static_K: Int,
     has_N: Bool,
     static_N: Int,
-]() -> IndexList[3]:
+]() -> Tuple[Int, Int, Int]:
     """Compute GEMV split-K dispatch config for AMD GPUs.
 
     Returns (num_threads, tile_n, unroll_factor).
@@ -2265,7 +2276,7 @@ def _amd_gemv_config[
     # unroll=4 when there are enough K-iterations and tile_n is small enough
     # to avoid register pressure (tile_n=4 + unroll=4 hurts large-N shapes).
     var unroll = 4 if k_iters >= 8 and tile_n <= 2 else 2
-    return IndexList[3](num_threads, tile_n, unroll)
+    return (num_threads, tile_n, unroll)
 
 
 def _nvidia_gemv_config[
@@ -2274,7 +2285,7 @@ def _nvidia_gemv_config[
     static_K: Int,
     has_N: Bool,
     static_N: Int,
-]() -> IndexList[3]:
+]() -> Tuple[Int, Int, Int]:
     """Compute GEMV split-K dispatch config for NVIDIA B200 GPUs.
 
     Returns (num_threads, tile_n, unroll_factor).
@@ -2289,7 +2300,7 @@ def _nvidia_gemv_config[
     # per block); 256 threads/block and unroll=2 are the swept winner, while
     # tile_n>=2 and 128T regress. (KERN-3076.)
     comptime if a_type == .float32:
-        return IndexList[3](256, 1, 2)
+        return (256, 1, 2)
 
     var num_threads: Int
     comptime if simd_width <= 8:
@@ -2347,7 +2358,7 @@ def _nvidia_gemv_config[
             unroll = 2
         else:
             unroll = 1
-    return IndexList[3](num_threads, tile_n, unroll)
+    return (num_threads, tile_n, unroll)
 
 
 # Row tile of `gemv_kernel_vector_multirow`, and the K depth up to which it
@@ -2372,6 +2383,23 @@ comptime _GEMV_MULTIROW_MAX_K_ITERS = 2
 
 
 @inline(.always)
+def _amd_small_m_gemv_widened() -> Bool:
+    """Returns whether the gfx950-only small-M GEMV widenings apply.
+
+    An autotuning build keeps them off: `AUTOTUNING_MODE` and
+    `TUNE_4WAVE_KERNEL` sweeps must measure the GEMM kernel they ask for,
+    and the matmul dispatch reaches the small-M GEMV before its autotune
+    block, so a widened shape would otherwise time the same GEMV for every
+    requested tile config.
+    """
+    return (
+        _accelerator_arch() == "amdgpu:gfx950"
+        and not get_defined_bool["AUTOTUNING_MODE", False]()
+        and get_defined_int["TUNE_4WAVE_KERNEL", 0]() == 0
+    )
+
+
+@inline(.always)
 def _is_amd_small_m_gemv[
     c_type: DType,
     a_type: DType,
@@ -2384,7 +2412,15 @@ def _is_amd_small_m_gemv[
     The bounds cover the measured span (the smallest measured N is 24 for fp32
     and 32 for bf16). The matmul caller additionally requires N % 4 == 0.
     Wider fp32 N (for example 896x7168) regresses with cache-resident weights
-    at M >= 8, so it stays on the tiled path.
+    at M >= 8, so it stays on the tiled path. On gfx950 the fp32 band
+    extends down to N=8: the 12x7168 KDA beta projection measures ~2x
+    faster (2.38x at M=4, 2.04x at M=16) on the single-launch GEMV than
+    on the 16-partition split-K plus separate reduce it replaces.
+    On gfx950 the bf16 band extends up to N=4608 (the KDA qkv
+    projection): the static-K GEMV beats the split-K GEMM plus separate
+    reduce those shapes otherwise take, with the M reach tiered per N in
+    `_amd_small_m_gemv_route`. Other AMD targets, and autotuning builds,
+    keep N >= 16 and N <= 576.
     """
     comptime n_min = 16
     comptime k_min = 2048
@@ -2396,6 +2432,12 @@ def _is_amd_small_m_gemv[
     comptime assert (
         f32_n_max <= grid_y_limit
     ), "GEMV exceeds AMD/HIP grid.y limit"
+    comptime gfx950 = _amd_small_m_gemv_widened()
+    comptime f32_n_min = 8 if gfx950 else n_min
+    comptime bf16_n_max_arch = 4608 if gfx950 else bf16_n_max
+    comptime assert (
+        bf16_n_max_arch <= grid_y_limit
+    ), "GEMV exceeds AMD/HIP grid.y limit"
     return (
         a_type == b_type
         and static_K % simd_width_of[a_type, target=get_gpu_target()]() == 0
@@ -2403,17 +2445,54 @@ def _is_amd_small_m_gemv[
             (
                 a_type == .float32
                 and c_type == .float32
-                and n_min <= static_N <= f32_n_max
+                and f32_n_min <= static_N <= f32_n_max
                 and k_min <= static_K <= f32_k_max
             )
             or (
                 a_type == .bfloat16
                 and c_type in (DType.bfloat16, DType.float32)
-                and n_min <= static_N <= bf16_n_max
+                and n_min <= static_N <= bf16_n_max_arch
                 and k_min <= static_K <= bf16_k_max
             )
         )
     )
+
+
+@inline(.always)
+def _amd_small_m_static_k_threads[
+    a_type: DType, b_type: DType, static_K: Int
+]() -> Int:
+    """Returns the thread count of the static-K staged `gemv_split_k`
+    instantiation the AMD small-M dispatch uses for this operand type and
+    static K, or 0 when no static-K tiling is legal.
+
+    The static-K stage (`small_m_static_k`) requires
+    `static_K % tile_k == 0` with `tile_k = simd_width * num_threads`. The
+    default 256-thread instantiation tiles K by `simd_width * 256` (2048
+    for bf16), which leaves in-band K values such as 7168 (the KDA f_a
+    128x7168 and MLA kv_a 576x7168 projections, K = 7 x 1024) on the
+    cached-load config. On gfx950, bf16 shapes whose K tiles at 128 threads
+    get that instantiation instead. Everything else -- fp32, other AMD
+    targets -- keeps the 256-thread tiling. This answers only the K tiling;
+    `_gemv_gpu_dispatch_impl` still decides per M and N whether the stage
+    runs at all.
+    """
+    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
+    comptime default_num_threads = 256
+    comptime gfx950_bf16_num_threads = 128
+    comptime if static_K > 0 and static_K % (
+        simd_width * default_num_threads
+    ) == 0:
+        return default_num_threads
+    comptime if (
+        _accelerator_arch() == "amdgpu:gfx950"
+        and a_type == .bfloat16
+        and b_type == .bfloat16
+        and static_K > 0
+        and static_K % (simd_width * gfx950_bf16_num_threads) == 0
+    ):
+        return gfx950_bf16_num_threads
+    return 0
 
 
 @inline(.always)
@@ -2428,11 +2507,51 @@ def _amd_small_m_gemv_route[
 
     Config B uses cached weight loads and 128 threads for repeated rows.
     Narrow fp32 outputs keep config A at every M.
+
+    On gfx950 the top of the band is N-tiered (MI355X measurements):
+    bf16 N = 128 reaches M=64, N in (576, 2048]
+    reaches M=8, wider admitted N reaches only M=2 at the measured K
+    (K >= 7168; a wider K range was never probed), and fp32 N below 16
+    reaches M=64. Every arm past M=16, and every arm at N > 576, is
+    static-K staged, so a K the static-K tiling cannot cover keeps the
+    tiled GEMM launch there. N in (128, 576] keeps M=16: with warm
+    cache-resident weights the tiled GEMM measures faster at every
+    probed M past 16. An autotuning build skips the tiering
+    (`_amd_small_m_gemv_widened`) and keeps M=16.
     """
     comptime f32_config_b_n_min = 384
     comptime bf16_config_b_n_min = 576
     comptime f32_config_b_n_floor = 64
-    comptime max_m = 16
+    comptime gfx950 = _amd_small_m_gemv_widened()
+    comptime static_k_threads = _amd_small_m_static_k_threads[
+        a_type, b_type, static_K
+    ]()
+    comptime max_m = (
+        64 if (
+            gfx950
+            and a_type == .bfloat16
+            and static_N == 128
+            and static_k_threads > 0
+        ) else 8 if (
+            gfx950
+            and a_type == .bfloat16
+            and 576 < static_N <= 2048
+            and static_k_threads > 0
+        ) else 2 if (
+            gfx950
+            and a_type == .bfloat16
+            and static_N > 2048
+            and static_K >= 7168
+            and static_k_threads > 0
+        ) else 64 if (
+            gfx950
+            and a_type == .float32
+            and static_N < 16
+            and static_k_threads > 0
+        ) else 0 if gfx950
+        and a_type == .bfloat16
+        and static_N > 576 else 16
+    )
     comptime m1_static_k_shape = (
         a_type == .float32
         and (
@@ -3021,8 +3140,69 @@ def _gemv_gpu_dispatch_impl[
                         and static_K == 4096
                         and not has_compute_fn
                     )
+                    comptime gfx950 = _accelerator_arch() == "amdgpu:gfx950"
+                    comptime static_k_threads = _amd_small_m_static_k_threads[
+                        a_type, b_type, static_K
+                    ]()
+                    # gfx950 static-K-only tiers (MI355X measurements).
+                    # `_amd_small_m_gemv_route` admits M past 16, every N
+                    # past 576, and fp32 N below 16 only with a legal
+                    # static-K tiling, so these branches own those
+                    # launches; every other admitted shape keeps the arms
+                    # below.
+                    comptime sk_small_n_tier = (
+                        gfx950
+                        and a_type == .bfloat16
+                        and static_N == 128
+                        and static_k_threads > 0
+                    )
+                    comptime sk_wide_n_tier = (
+                        gfx950
+                        and a_type == .bfloat16
+                        and static_N > 576
+                        and (static_N <= 2048 or static_K >= 7168)
+                        and static_k_threads > 0
+                    )
+                    comptime sk_beta_tier = (
+                        gfx950
+                        and a_type == .float32
+                        and static_N < 16
+                        and static_k_threads > 0
+                    )
                     if bf16_narrow_m8 and m == 8:
                         _gemv_split_k_dispatch[128, 1, 2, False, 1, False]()
+                    elif sk_beta_tier and route[0]:
+                        # The 12x7168-style fp32 beta projection: two rows
+                        # per block through M=32, four above.
+                        if m <= 32:
+                            _gemv_split_k_dispatch[
+                                static_k_threads, 1, 2, False, 2, True
+                            ]()
+                        else:
+                            _gemv_split_k_dispatch[
+                                static_k_threads, 1, 2, False, 4, True
+                            ]()
+                    elif sk_wide_n_tier and route[0]:
+                        # Wide-N bf16 projections: rows per block tracks the
+                        # M band up to N=2048; wider N admits M=2 only, at
+                        # the measured K (>= 7168).
+                        comptime if static_N <= 2048:
+                            if m <= 2:
+                                _gemv_split_k_dispatch[
+                                    static_k_threads, 1, 2, False, 2, True
+                                ]()
+                            elif m <= 4:
+                                _gemv_split_k_dispatch[
+                                    static_k_threads, 1, 2, False, 4, True
+                                ]()
+                            else:
+                                _gemv_split_k_dispatch[
+                                    static_k_threads, 1, 2, False, 8, True
+                                ]()
+                        else:
+                            _gemv_split_k_dispatch[
+                                static_k_threads, 1, 2, False, 2, True
+                            ]()
                     elif (
                         route[1]
                         or (tuned_m2m3 and (m == 2 or m == 3))
@@ -3030,18 +3210,19 @@ def _gemv_gpu_dispatch_impl[
                     ):
                         # One output column per CTA leaves too few CTAs to
                         # fill the GPU at narrow N; keep those on config B.
+                        # `static_k_threads` picks the K-legal static-K
+                        # instantiation (256, or the gfx950 bf16 128-thread
+                        # one for K % 2048 != 0).
                         comptime if (
                             static_N >= 64 or static_k_target
-                        ) and static_K > 0 and static_K % (
-                            simd_width * 256
-                        ) == 0:
+                        ) and static_k_threads > 0:
                             if (
                                 static_k_target
                                 and m <= 8
                                 and (m == 1 or static_N == 32)
                             ):
                                 _gemv_split_k_dispatch[
-                                    256, 1, 2, False, 1, True
+                                    static_k_threads, 1, 2, False, 1, True
                                 ]()
                             elif m == 2:
                                 comptime if tuned_m2m3:
@@ -3055,7 +3236,7 @@ def _gemv_gpu_dispatch_impl[
                                         ]()
                                 else:
                                     _gemv_split_k_dispatch[
-                                        256, 1, 2, False, 1, True
+                                        static_k_threads, 1, 2, False, 1, True
                                     ]()
                             elif m == 3:
                                 comptime if tuned_m2m3 and static_N == 288:
@@ -3064,7 +3245,7 @@ def _gemv_gpu_dispatch_impl[
                                     ]()
                                 else:
                                     _gemv_split_k_dispatch[
-                                        256, 1, 2, False, 2, True
+                                        static_k_threads, 1, 2, False, 2, True
                                     ]()
                             elif m <= 4:
                                 comptime if (
@@ -3077,7 +3258,7 @@ def _gemv_gpu_dispatch_impl[
                                     ]()
                                 else:
                                     _gemv_split_k_dispatch[
-                                        256, 1, 2, False, 2, True
+                                        static_k_threads, 1, 2, False, 2, True
                                     ]()
                             elif m <= 8:
                                 comptime if (
@@ -3098,19 +3279,32 @@ def _gemv_gpu_dispatch_impl[
                                     ]()
                                 else:
                                     _gemv_split_k_dispatch[
-                                        256, 1, 2, False, 4, True
+                                        static_k_threads, 1, 2, False, 4, True
                                     ]()
+                            elif 16 < m <= 64 and sk_small_n_tier:
+                                # Narrow-N decode shapes (the 128x7168 KDA
+                                # f_a projection): the tiled GEMM the route
+                                # falls back to above M=16 is CU-starved;
+                                # rpb4 wins or ties within noise at every
+                                # probed M in 17..64.
+                                _gemv_split_k_dispatch[
+                                    static_k_threads, 1, 2, False, 4, True
+                                ]()
                             else:
                                 comptime if static_N <= 128 or (
                                     a_type == .bfloat16
                                     and not (
-                                        static_N == 576 and static_K == 4096
+                                        static_N == 576
+                                        and (
+                                            static_K == 4096
+                                            or static_k_threads == 128
+                                        )
                                     )
                                 ):
                                     _gemv_split_k_dispatch[128, 2, 2, False]()
                                 else:
                                     _gemv_split_k_dispatch[
-                                        256, 1, 2, False, 8, True
+                                        static_k_threads, 1, 2, False, 8, True
                                     ]()
                         else:
                             _gemv_split_k_dispatch[128, 2, 2, False]()

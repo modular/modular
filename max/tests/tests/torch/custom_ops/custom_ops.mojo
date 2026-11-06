@@ -12,18 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import align_of
+from std.sys.info import CompilationTarget
 
 from extensibility import register
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 from extensibility import (
     Input,
-    InputTensor,
     Output,
-    OutputTensor,
     Tensor,
     TileTensorable,
-    foreach,
     get_kernel_simd_width,
 )
 
@@ -33,10 +31,7 @@ from std.utils.coord import Coord, coord_to_index_list
 @register("grayscale")
 struct Grayscale:
     @staticmethod
-    def execute[
-        # The kind of device this is running on: "cpu" or "gpu"
-        target: StaticString,
-    ](
+    def execute(
         img_out: Some[Output & Tensor],
         img_in: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -84,9 +79,7 @@ struct Grayscale:
 @register("myadd")
 struct MyAdd:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         C: Some[Output & Tensor],
         A: Some[Input & Tensor],
         B: Some[Input & Tensor],
@@ -121,7 +114,7 @@ struct MyAdd:
                 ),
             ](idx, a + b)
 
-        elementwise[simd_width=get_kernel_simd_width[type, target]()](
+        elementwise[simd_width=get_kernel_simd_width[type, ctx.target]()](
             doit, C.shape(), ctx
         )
 
@@ -130,7 +123,7 @@ struct MyAdd:
 struct ParameterIncrement:
     @staticmethod
     def execute[
-        increment: Int, target: StaticString
+        increment: Int
     ](
         B: Some[Output & Tensor],
         A: Some[Input & Tensor],
@@ -158,7 +151,7 @@ struct ParameterIncrement:
                 ),
             ](idx, a + type_of(a)(increment))
 
-        elementwise[simd_width=get_kernel_simd_width[type, target]()](
+        elementwise[simd_width=get_kernel_simd_width[type, ctx.target]()](
             doit, B.shape(), ctx
         )
 
@@ -178,20 +171,41 @@ struct ScalarAdd:
 @register("unsupported_type_op")
 struct UnsupportedTypeOp:
     @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         message: String,  # String is not a supported type for PyTorch custom ops
         ctx: DeviceContext,
     ) raises:
         # This operation is for testing error handling only
         # The String parameter should cause a validation error
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+        var out_tile = output.to_tile_tensor[dtype]()
+        var in_tile = input.to_tile_tensor[dtype]().as_imm()
+
         @inline(.always)
         def copy[
-            simd_width: Int
-        ](idx: Coord) {var} -> SIMD[output.dtype, simd_width]:
-            return input.load[simd_width](idx)
+            simd_width: Int, element_alignment: Int = 1
+        ](idx: Coord) {var out_tile, var in_tile}:
+            out_tile.store[
+                width=simd_width,
+                alignment=min(
+                    type_of(output).alignment,
+                    element_alignment * align_of[dtype](),
+                ),
+            ](
+                idx,
+                in_tile.load[width=simd_width, alignment=align_of[dtype]()](
+                    idx
+                ),
+            )
 
-        foreach[target="cpu"](copy, output, ctx)
+        elementwise[
+            simd_width=get_kernel_simd_width[
+                dtype, CompilationTarget.current()
+            ]()
+        ](copy, output.shape(), ctx)

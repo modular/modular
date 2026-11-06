@@ -45,7 +45,6 @@ from layout.tensor_core import get_mma_shape
 from std.utils.coord import Coord
 from std.logger import Logger
 from std.memory import unsafe_stack_allocation
-from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 from ...gemv import (
     GEMVAlgorithm,
@@ -558,7 +557,7 @@ def _amdgpu_matmul_config_from_block_shape[
     transpose_b: Bool,
     K: Int,
     pdl_level: PDLLevel = PDLLevel(),
-](block_shape: IndexList[2]) -> MatmulConfig[
+](block_shape: Tuple[Int, Int]) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
     comptime max_num_warps: Int = 4
@@ -633,7 +632,7 @@ def _amdgpu_matmul_config_from_block_shape[
     )
 
 
-def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
+def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[Tuple[Int, Int]]:
     comptime sm_count = get_gpu_info().sm_count
 
     comptime block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
@@ -675,7 +674,7 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
     for m in range(1024, 8192, 32):
         process_m(m)
 
-    var block_shape_list = List[IndexList[2]]()
+    var block_shape_list = List[Tuple[Int, Int]]()
 
     for idx in range(len(emit_block_shape)):
         if not emit_block_shape[idx]:
@@ -683,9 +682,76 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
 
         var idx_m, idx_n = divmod(idx, len_block_sizes)
 
-        block_shape_list.append(Index(block_sizes[idx_m], block_sizes[idx_n]))
+        block_shape_list.append((block_sizes[idx_m], block_sizes[idx_n]))
 
     return block_shape_list^
+
+
+def _amd_bm16_small_m_block_n[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    static_N: Int,
+    static_K: Int,
+](m: Int) -> Int:
+    """Returns the block_n width of the unsplit BM16 small-M bf16 band on
+    gfx950, or 0 when the dispatch keeps its default arm.
+
+    At decode M the wide-N split-K plus reduce launch (N/64 * num_splits
+    CTAs) and the auto-scored BN64+ tile leave the GPU underfilled; a
+    single BM16 x BN16/BN32 `AMDMatmul` launch covers N in one pass of
+    N/BN * ceil(M/16) CTAs and measures 5-35% faster in the bands below
+    (MI355X bf16 re-measure, cold medians; the warm median wins at
+    every routed edge too). Outside them the default arm wins, ties
+    within noise, or the warm ordering flips, so the default arm is
+    kept:
+
+    - 8192 < N < 16384, K >= 4096 (K % 1024 == 0): 2 <= m <= 16 -> BN16
+      (the 8448x7168 dense MLP gate). Both edges keep the default arm:
+      the N cap is the CTA-fill point, where the auto-scored BN64 tile
+      already issues a full 256-CTA wave and runs at the HBM floor, and
+      past it the band arm measured slower cold and warm (the 20480x7168
+      LM head); at N = 8192 the 4-wave gate below still fires, so the
+      base launch there is split-K(2), which the band never measured
+      against.
+    - 4096 <= N < 8192, K >= 4096 (K % 1024 == 0): 4 <= m <= 16 -> BN16
+      (the 4608x7168 KDA qkv; m = 2..3 and m >= 17 keep the split-K arm:
+      BN32 wins cold by ~4% at m = 17..24 but loses warm by +24%, and
+      the split-K arm wins warm at m = 32).
+    - N == 7168, 3584 <= K < 4096: 24 <= m <= 48 -> BN32 (the 7168x3584
+      MoE exit, which carries the residual-add epilogue).
+    - N == 7168, K == 1536: m == 48 -> BN32 (the 7168x1536 o_proj row;
+      m = 24..32 wins cold by ~13% but the warm ordering flips, and the
+      shallower 7168x768 row also flips warm at m = 48 (+7.7%), so both
+      keep the default arm). K outside {3584, 1536} in (0, 4096) was
+      never measured and keeps the default arm. N is pinned to the
+      measured family: a wider N range here would admit shapes the
+      probe never measured.
+
+    bf16 output only; other c_type keep the default arm.
+    """
+    comptime if _accelerator_arch() != "amdgpu:gfx950":
+        return 0
+    comptime if not (
+        a_type == .bfloat16 and b_type == .bfloat16 and c_type == .bfloat16
+    ):
+        return 0
+
+    comptime wide_k = static_K >= 4096 and static_K % 1024 == 0
+
+    if wide_k and 8192 < static_N < 16384 and 2 <= m <= 16:
+        return 16
+
+    if wide_k and 4096 <= static_N < 8192 and 4 <= m <= 16:
+        return 16
+
+    if static_N == 7168 and static_K < 4096:
+        if 3584 <= static_K and 24 <= m <= 48:
+            return 32
+        if static_K == 1536 and m == 48:
+            return 32
+
+    return 0
 
 
 @inline(.always)
@@ -1368,6 +1434,67 @@ def _matmul_gpu_impl[
                                 block_k_override=block_k,
                             ](a, b, c, ctx)
 
+                    # Small-M bf16 bands: one unsplit BM16
+                    # `AMDMatmul` launch replaces the split-K + reduce arm
+                    # (4096 <= N < 8192, K >= 4096) or the auto-scored tile
+                    # (N > 8192, or N = 7168 with K < 4096) in the measured
+                    # bands. N = 8192 is excluded: the 4-wave split-K arm
+                    # covers it and the band was never measured against it.
+                    # `_amd_bm16_small_m_block_n` is the single source of
+                    # truth for the band table; `test_matmul_dispatching_amd`
+                    # asserts its edges. The comptime shape gate keeps the
+                    # two band configs from instantiating for shapes that
+                    # can never route. Autotuning builds keep authority
+                    # over the launch, so the band steps aside there:
+                    # `TUNE_4WAVE_KERNEL` and `AUTOTUNING_MODE` sweeps
+                    # would otherwise measure this arm instead of the
+                    # kernel they ask for.
+                    comptime if (
+                        a_type == .bfloat16
+                        and b_type == .bfloat16
+                        and c_type == .bfloat16
+                        and 4096 <= static_N < 16384
+                        and not get_defined_bool["AUTOTUNING_MODE", False]()
+                        and get_defined_int["TUNE_4WAVE_KERNEL", 0]() == 0
+                        and (
+                            (static_K >= 4096 and static_K % 1024 == 0)
+                            or static_N == 7168
+                        )
+                    ):
+                        var bm16_block_n = _amd_bm16_small_m_block_n[
+                            c_type, a_type, b_type, static_N, static_K
+                        ](m)
+                        if bm16_block_n == 16:
+                            comptime config = (
+                                _amdgpu_matmul_config_from_block_shape[
+                                    c_type,
+                                    a_type,
+                                    b_type,
+                                    transpose_b,
+                                    static_K,
+                                    pdl_level,
+                                ]((16, 16))
+                            )
+                            logger.info(
+                                "Executing: AMD BM16 x BN16 small-M bf16 matmul"
+                            )
+                            return _multistage_gemm[config]()
+                        elif bm16_block_n == 32:
+                            comptime config = (
+                                _amdgpu_matmul_config_from_block_shape[
+                                    c_type,
+                                    a_type,
+                                    b_type,
+                                    transpose_b,
+                                    static_K,
+                                    pdl_level,
+                                ]((16, 32))
+                            )
+                            logger.info(
+                                "Executing: AMD BM16 x BN32 small-M bf16 matmul"
+                            )
+                            return _multistage_gemm[config]()
+
                     comptime if (
                         static_N >= 1024
                         and static_N <= 8192
@@ -1485,8 +1612,19 @@ def _matmul_gpu_impl[
                             # wide-N wants split-K(2) (autotune: +4.8%
                             # at M=64 N=K=8192) because bf16's higher
                             # arithmetic intensity makes split-K(4)
-                            # over-split the K-dim at wide N.
+                            # over-split the K-dim at wide N. At decode
+                            # M <= 16 that intensity is gone and wide-N
+                            # bf16 wants split-K(4) too (-11% at M=2..3
+                            # N=6416 K=4096, GLM-5.3-Flash's fused KDA
+                            # input projection, MI355X); the BM16 band
+                            # above takes over at 4 <= M <= 16 for the N
+                            # it measured.
                             comptime if a_type.is_float8() or is_skinny_n:
+                                logger.info(
+                                    "Executing: AMD 4-wave + split-K(4) matmul"
+                                )
+                                return _launch_4wave_split_k[4]()
+                            if m <= 16:
                                 logger.info(
                                     "Executing: AMD 4-wave + split-K(4) matmul"
                                 )
@@ -1641,32 +1779,54 @@ def _matmul_gpu_impl[
                                 if k >= 256:
                                     return _small_m_gemm[128, 128, 256]()
 
-                # Skinny-deep fp32 (MoE router gate: N=128, K=6144) leaves
-                # the machine idle, so split the K reduction. Config is built
-                # directly because kernel_helper's warp=block//2 degenerates
-                # at BM=16.
-                comptime split_k_p = 16
+                # Skinny-deep fp32 (MoE router gate: N=128, K=6144; the
+                # GLM-5.3-Flash indexer's weights_proj: N=32, K=4096) leaves
+                # the machine idle, so split the K reduction. On gfx950 up to
+                # M=64 the unsplit tiles still launch only a handful of CTAs
+                # (6 at M=48, N=32: 19 us against 9 us split on MI355X), and
+                # past it the MI355X sweep of the router gate keeps splitting
+                # (13-15 us instead of 45 us at 64-256 rows, 61 us instead of
+                # 117 us at 2048); other AMD targets were never measured past
+                # M=32 and keep that reach. Config is built directly because
+                # kernel_helper's warp=block//2 degenerates at BM=16.
                 comptime if (
                     a_type == .float32
                     and transpose_b
                     and static_N <= 256
                     and static_K >= 2048
-                    and static_K % (split_k_p * 64) == 0
+                    and static_K % (16 * 64) == 0
                 ):
-                    if m > 1 and m <= 32:
+
+                    @inline(.always)
+                    def _split_k_gemm[
+                        block_m: Int, num_k_partitions: Int
+                    ]() raises {imm}:
                         comptime config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=(16, 16, 64),
-                            warp_tile_shape=(16, 16, 64),
+                            block_tile_shape=(block_m, 16, 64),
+                            warp_tile_shape=(block_m, 16, 64),
                             mma_shape=_amdgpu_get_mma_shape[
                                 a_type, transpose_b
                             ](),
                             num_pipeline_stages=1,
-                            num_k_partitions=split_k_p,
+                            num_k_partitions=num_k_partitions,
                             pdl_level=pdl_level,
                         )
                         return _multistage_gemm[config]()
+
+                    comptime split_k_max_m = (
+                        64 if _accelerator_arch() == "amdgpu:gfx950" else 32
+                    )
+                    if m > 1 and m <= split_k_max_m:
+                        return _split_k_gemm[16, 16]()
+                    comptime if _accelerator_arch() == "amdgpu:gfx950":
+                        if m > split_k_max_m and m <= 256:
+                            return _split_k_gemm[16, 8]()
+                        elif m > 256 and m <= 512:
+                            return _split_k_gemm[16, 4]()
+                        elif m > 512:
+                            return _split_k_gemm[32, 4]()
 
                 comptime sm_count = ctx.default_device_info.sm_count
                 comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[

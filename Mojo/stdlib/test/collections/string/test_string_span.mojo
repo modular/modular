@@ -1321,23 +1321,6 @@ def test_grapheme_indexing() raises:
     assert_equal(StringSpan("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
 
 
-def test_immutable_string_span_compatibility_aliases() raises:
-    def byte_sum(s: StringSpan[_]) -> Int:
-        var total = 0
-        for b in s.as_bytes():
-            total += Int(b)
-        return total
-
-    var byte_sum_compat = lambda (s: StringSpan[_]) -> Int: byte_sum(s)
-
-    var mutable_data = String("abc")
-    var immutable_data = StaticString("abc")
-
-    # Both names work with mutable and immutable data.
-    assert_equal(byte_sum(mutable_data), 294)
-    assert_equal(byte_sum_compat(immutable_data), 294)
-
-
 def test_string_span_niche() raises:
     assert_equal(StaticString.niche_count(), Int.MAX)
     assert_equal(size_of[Optional[StaticString]](), size_of[StaticString]())

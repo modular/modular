@@ -90,9 +90,7 @@ def bench_argmax[
         ](coords: Coord, val: SIMD[.int64, width]) {var out_tensor}:
             out_tensor.store(coords, val.cast[out_idx_type]())
 
-        reduce_argmax[dtype, target="gpu", reduce_dim=1](
-            input_fn, output_fn, in_shape, ctx
-        )
+        reduce_argmax[dtype, reduce_dim=1](input_fn, output_fn, in_shape, ctx)
 
     @inline(.always)
     def bench_rowwise(mut b: Bencher) raises {imm}:

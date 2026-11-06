@@ -68,6 +68,7 @@ logit_verification_pipelines:
   # tolerances below ~5e-2.
 
   meta-llama/Meta-Llama-3-8B-Instruct-float32:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Meta-Llama-3-8B-Instruct"
     compatible_with: [cpu, gpu]
@@ -82,6 +83,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.5e-05
 
   meta-llama/Llama-3.1-8B-Instruct-float32:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Llama-3.1-8B-Instruct"
     compatible_with: [cpu, gpu]
@@ -96,6 +98,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.9e-05
 
   sentence-transformers/all-mpnet-base-v2-float32:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "sentence-transformers/all-mpnet-base-v2"
     compatible_with: [cpu, gpu]
@@ -110,31 +113,12 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.6e-5
     kl_div_threshold: 5.0e-07
 
-  # Disabled in SDLC-3497: MAX OLMo pipeline is not yet transformers v5
-  # compatible. The v4 wheel hack that was masking this on main was
-  # removed in this branch. Re-enable once MAX OLMo is updated for
-  # transformers >=5 (tracked separately).
-  allenai/OLMo-1B-hf-float32:
-    pre_submit_agents: []
-    pipeline: "allenai/OLMo-1B-hf"
-    compatible_with: [cpu, gpu]
-    encoding: float32
-    tags: [manual]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz"
-      json_file: "torch_olmo-1b-hf_float32_golden.json"
-    # On CPU, olmo passes with atol set to `5e-4`
-    # GPU specifically requires these higher tolerances (160x worse).
-    absolute_tolerance: 3.7e-2
-    relative_tolerance: 4.2e-2
-    cos_dist_threshold: 8.2e-6
-    kl_div_threshold: 1.1e-04
-
   # The checkpoint mcloudDeployConfig.yaml's smollm jobs deploy, on CPU
   # because their manifests request no accelerator. No
   # pregenerated_torch_goldens: at 135M a torch reference is cheaper to
   # regenerate each run than a golden tarball is to maintain.
   modularai/SmolLM-135M-Instruct-FP32:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "modularai/SmolLM-135M-Instruct-FP32"
     compatible_with: [cpu]
@@ -162,6 +146,7 @@ logit_verification_pipelines:
   # be migrated to being a robust pipelines.
 
   bartowski/Meta-Llama-3-8B-Instruct-GGUF-q4_k:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Meta-Llama-3-8B-Instruct"
     compatible_with: [cpu]
@@ -177,6 +162,7 @@ logit_verification_pipelines:
     kl_div_threshold: 8.3e-03
 
   meta-llama/Meta-Llama-3-8B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Meta-Llama-3-8B-Instruct"
     compatible_with: [gpu]
@@ -188,6 +174,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.3e-1
 
   bartowski/Meta-Llama-3.1-8B-Instruct-GGUF-q4_k:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Llama-3.1-8B-Instruct"
     compatible_with: [cpu]
@@ -203,6 +190,7 @@ logit_verification_pipelines:
     kl_div_threshold: 2.6e-02
 
   meta-llama/Llama-3.1-8B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Llama-3.1-8B-Instruct"
     compatible_with: [gpu]
@@ -214,6 +202,7 @@ logit_verification_pipelines:
     kl_div_threshold: 4.0e-2
 
   meta-llama/Llama-3.1-8B-Instruct-data-parallel-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Llama-3.1-8B-Instruct-data-parallel"
     compatible_with: [gpu]
@@ -227,6 +216,7 @@ logit_verification_pipelines:
     timeout: 1200
 
   RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static"
     compatible_with: [gpu]
@@ -242,6 +232,7 @@ logit_verification_pipelines:
     kl_div_threshold: 8.6e-2
 
   RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-float8-dynamic:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic"
     compatible_with: [gpu]
@@ -257,6 +248,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.2e-01
 
   nvidia/Llama-3.1-8B-Instruct-NVFP4:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "nvidia/Llama-3.1-8B-Instruct-NVFP4"
     compatible_with: [gpu]
@@ -269,6 +261,7 @@ logit_verification_pipelines:
     kl_div_threshold: 3.0e-01
 
   nvidia/Llama-3.1-405B-Instruct-NVFP4:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "nvidia/Llama-3.1-405B-Instruct-NVFP4"
     compatible_with: [gpu]
@@ -281,6 +274,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.4e-1
 
   RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic"
     compatible_with: [gpu]
@@ -295,6 +289,7 @@ logit_verification_pipelines:
   # TODO: Unusually high KL divergence (~19) observed locally vs vLLM — investigate
   # whether autofp8 quantization differences between MAX and vLLM cause this drift.
   modularai/Llama-3.1-405B-Instruct-autofp8:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "modularai/Llama-3.1-405B-Instruct-autofp8"
     compatible_with: [gpu]
@@ -308,6 +303,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.6e-01
 
   meta-llama/Llama-3.2-1B-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Llama-3.2-1B"
     compatible_with: [gpu]
@@ -320,6 +316,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.5e-02
 
   LiquidAI/LFM2.5-1.2B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "LiquidAI/LFM2.5-1.2B-Instruct"
     compatible_with: [gpu]
@@ -332,6 +329,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.0e-02
 
   meta-llama/Llama-3.3-70B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "meta-llama/Llama-3.3-70B-Instruct"
     compatible_with: [gpu]
@@ -345,6 +343,7 @@ logit_verification_pipelines:
     kl_div_threshold: 5.0e-03
 
   mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: [*b200_1x, *mi355_1x]
     pipeline: "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
     compatible_with: [gpu]
@@ -357,6 +356,7 @@ logit_verification_pipelines:
     kl_div_threshold: 5.2e-3
 
   OpenGVLab/InternVL3-1B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "OpenGVLab/InternVL3-1B-Instruct"
     compatible_with: [gpu]
@@ -373,6 +373,7 @@ logit_verification_pipelines:
   # TODO(GEX-3701): Graph compilation fails on b200-multi:
   # 'mo.static.reshape' op lowering inside mo.parallel is not yet supported.
   OpenGVLab/InternVL3-8B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "OpenGVLab/InternVL3-8B-Instruct"
     compatible_with: [gpu]
@@ -388,6 +389,7 @@ logit_verification_pipelines:
   # TODO(GEX-3701): Graph compilation fails on b200-multi:
   # 'mo.static.reshape' op lowering inside mo.parallel is not yet supported.
   OpenGVLab/InternVL3-14B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "OpenGVLab/InternVL3-14B-Instruct"
     compatible_with: [gpu]
@@ -404,6 +406,7 @@ logit_verification_pipelines:
   # TODO(GEX-3701): Graph compilation fails on b200-multi:
   # 'mo.static.reshape' op lowering inside mo.parallel is not yet supported.
   OpenGVLab/InternVL3-38B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "OpenGVLab/InternVL3-38B-Instruct"
     compatible_with: [gpu]
@@ -419,6 +422,7 @@ logit_verification_pipelines:
   # TODO(GEX-3701): Graph compilation fails on b200-multi:
   # 'mo.static.reshape' op lowering inside mo.parallel is not yet supported.
   OpenGVLab/InternVL3_5-8B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "OpenGVLab/InternVL3_5-8B-Instruct"
     compatible_with: [gpu]
@@ -432,6 +436,7 @@ logit_verification_pipelines:
     timeout: 1200
 
   mistral-experimental/pixtral-12b-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "mistral-experimental/pixtral-12b"
     compatible_with: [gpu]
@@ -444,6 +449,7 @@ logit_verification_pipelines:
     kl_div_threshold: 2.5e-2
 
   Qwen/Qwen2.5-7B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen2.5-7B-Instruct"
     compatible_with: [gpu]
@@ -456,6 +462,7 @@ logit_verification_pipelines:
     kl_div_threshold: 5.0e-1
 
   Qwen/Qwen2.5VL-3B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen2.5-VL-3B-Instruct"
     compatible_with: [gpu]
@@ -468,6 +475,7 @@ logit_verification_pipelines:
     kl_div_threshold: 4.0e-01
 
   Qwen/Qwen2.5VL-7B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen2.5-VL-7B-Instruct"
     compatible_with: [gpu]
@@ -480,6 +488,7 @@ logit_verification_pipelines:
     kl_div_threshold: 4.0e-1
 
   Qwen/Qwen2.5VL-32B-Instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen2.5-VL-32B-Instruct"
     compatible_with: [gpu]
@@ -493,6 +502,7 @@ logit_verification_pipelines:
     timeout: 900
 
   Qwen/Qwen3-VL-30B-A3B-Instruct:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-VL-30B-A3B-Instruct"
     compatible_with: [gpu]
@@ -505,6 +515,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.5e-01
 
   Qwen/Qwen3-VL-4B-Instruct-FP8:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-VL-4B-Instruct-FP8"
     compatible_with: [gpu]
@@ -516,6 +527,7 @@ logit_verification_pipelines:
     kl_div_threshold: 5.6e-01
 
   Qwen/Qwen3-8B-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-8B"
     compatible_with: [gpu]
@@ -528,6 +540,7 @@ logit_verification_pipelines:
     kl_div_threshold: 7.1e-3
 
   Qwen/Qwen3.8-27B-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3.8-27B"
     compatible_with: [gpu]
@@ -546,6 +559,7 @@ logit_verification_pipelines:
   # cannot see M-RoPE at all: without an image every axis carries the flat
   # token index, so the multi-axis positions only start to matter here.
   Qwen/Qwen3.8-27B-vision-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3.8-27B-vision"
     compatible_with: [gpu]
@@ -561,6 +575,7 @@ logit_verification_pipelines:
     kl_div_threshold: 2.5e-2
 
   Qwen/Qwen3.8-27B-bfloat16-multi:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3.8-27B"
     compatible_with: [gpu]
@@ -574,6 +589,7 @@ logit_verification_pipelines:
     kl_div_threshold: 5.0e-3
 
   RadixArk/Qwen3.8-27B-NVFP4:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "RadixArk/Qwen3.8-27B-NVFP4"
     compatible_with: [gpu]
@@ -604,6 +620,7 @@ logit_verification_pipelines:
     tags: [nvidia-only]
     torch_reference_is_unquantized_source: true
     config_params_override:
+      prefer_module_v3: false
       kv_cache_format: float8_e4m3fn
     # Suggested by --find-tolerances on 1x B200: 1.3e-01 / 2.2e-01, against the
     # bf16 entry's 8.7e-02 / 6.6e-02 -- the FP8 cache is the whole difference,
@@ -618,6 +635,7 @@ logit_verification_pipelines:
   # Runs only on the 2x B200 job (nvidia-multi), whose `gpu:0,1` device list
   # makes MAX shard the model at TP=2.
   nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
     compatible_with: [gpu]
@@ -657,6 +675,7 @@ logit_verification_pipelines:
     tags: [nvidia-only, nvidia-multi, no-h100]
     torch_reference_is_unquantized_source: true
     config_params_override:
+      prefer_module_v3: false
       kv_cache_format: float8_e4m3fn
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4_golden/1/2b31a05956691e1d5a61ca1f7bc0b019a8406b81ea8ec3cabe5146e7961a8e6c/nvidia_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4_golden.tar.gz"
@@ -665,6 +684,7 @@ logit_verification_pipelines:
     kl_div_threshold: 2.5e+00
 
   Qwen/Qwen3-Embedding-0.6B-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-Embedding-0.6B"
     compatible_with: [gpu]
@@ -686,6 +706,7 @@ logit_verification_pipelines:
 
   # Qwen2.VL-FP8
   allenai/olmOCR-2-7B-1025-FP8:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "allenai/olmOCR-2-7B-1025-FP8"
     compatible_with: [gpu]
@@ -702,6 +723,7 @@ logit_verification_pipelines:
   # The main difference from a prefill run in text-gen mode is that in the
   # encoder case all prompts are padded to 512 tokens.
   Qwen/Qwen3-4B-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-4B-text-encoder"
     compatible_with: [gpu]
@@ -714,6 +736,7 @@ logit_verification_pipelines:
 
   # TODO(MODELS-1099): Re-enable once upstream tokenizer is fixed.
   allenai/OLMo-2-1124-7B-float32:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "allenai/OLMo-2-1124-7B"
     compatible_with: [cpu, gpu]
@@ -726,6 +749,7 @@ logit_verification_pipelines:
     kl_div_threshold: 4.6e-7
 
   HuggingFaceM4/Idefics3-8B-Llama3:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "HuggingFaceM4/Idefics3-8B-Llama3"
     compatible_with: [gpu]
@@ -743,6 +767,7 @@ logit_verification_pipelines:
     kl_div_threshold: 6.8e-01
 
   microsoft/Phi-3.5-mini-instruct-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "microsoft/Phi-3.5-mini-instruct"
     compatible_with: [gpu]
@@ -755,6 +780,7 @@ logit_verification_pipelines:
     kl_div_threshold: 4.0e-1
 
   microsoft/phi-4-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "microsoft/phi-4"
     compatible_with: [gpu]
@@ -769,6 +795,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.5e-02
 
   hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4"
     compatible_with: [gpu]
@@ -781,6 +808,7 @@ logit_verification_pipelines:
     kl_div_threshold: 2.7e-3
 
   hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq-no-perm-idx:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit"
     compatible_with: [gpu]
@@ -795,6 +823,7 @@ logit_verification_pipelines:
     kl_div_threshold: 5.5e-03
 
   deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "deepseek-ai/DeepSeek-V2-Lite-Chat"
     compatible_with: [gpu]
@@ -808,6 +837,7 @@ logit_verification_pipelines:
 
   # TODO(MODELS-812): Investigate deepseek timeout
   kathywu95/deepseek-v3-small-random-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "kathywu95/deepseek-v3-small-random"
     compatible_with: [gpu]
@@ -820,6 +850,7 @@ logit_verification_pipelines:
     kl_div_threshold: 8.0e-2  # TODO(MODELS-998)
 
   kathywu95/deepseek-v3-small-random-fp8:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "kathywu95/deepseek-v3-small-random-fp8"
     compatible_with: [gpu]
@@ -834,6 +865,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.1e-2
 
   nvidia/Kimi-K2.7-Code-NVFP4:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "nvidia/Kimi-K2.7-Code-NVFP4"
     compatible_with: [gpu]
@@ -862,6 +894,7 @@ logit_verification_pipelines:
   # the reference has to come from vLLM. Fill in `pregenerated_torch_goldens`
   # and the tolerances `--find-tolerances` suggests before dropping the tag.
   poolside/Laguna-S-2.1-NVFP4:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "poolside/Laguna-S-2.1-NVFP4"
     compatible_with: [gpu]
@@ -871,6 +904,7 @@ logit_verification_pipelines:
   # MiniMax-M3 (dense-only layers) on a trimmed checkpoint, compared
   # against goldens pregenerated from the mm-sglang MiniMax-M3 fork.
   minimax/minimax3-dense-only:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     post_submit_agents: []
     pipeline: "minimax/minimax3-dense-only"
@@ -902,8 +936,9 @@ logit_verification_pipelines:
     # into the runfiles the generate_llm_logits child inherits.
     verify_target: //max_private/minimax_m3:verify_minimax_m3
     # Registers the ModuleV3 MiniMax-M3 as `_ModuleV3` variants beside the
-    # Graph API one, which serves unless prefer_module_v3 is set.
+    # Graph API one, selected explicitly below.
     config_params_override:
+      prefer_module_v3: false
       custom_architectures: ["minimax_m3_modulev3.variant"]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-ci-prod-artifact-bucket/artifacts/MiniMaxAI_MiniMax-M3-MXFP8_golden/1/f6c729e886f1750f1c569f5d68bfcd300f5e5eca24507047fd11830dadfd9cae/MiniMaxAI_MiniMax-M3-MXFP8_golden.tar.gz"
@@ -919,6 +954,7 @@ logit_verification_pipelines:
     kl_div_threshold: 3.0e-01
 
   deepseek-ai/DeepSeek-V3.1-Terminus:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "deepseek-ai/DeepSeek-V3.1-Terminus"
     compatible_with: [gpu]
@@ -931,6 +967,7 @@ logit_verification_pipelines:
     kl_div_threshold: 4.0e-01
 
   deepseek-ai/DeepSeek-V3.2-Exp:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "deepseek-ai/DeepSeek-V3.2-Exp"
     compatible_with: [gpu]
@@ -945,6 +982,7 @@ logit_verification_pipelines:
     timeout: 1200
 
   google/gemma-3-1b-it-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "google/gemma-3-1b-it"
     compatible_with: [gpu]
@@ -957,6 +995,7 @@ logit_verification_pipelines:
     kl_div_threshold: 1.0e-01
 
   google/gemma-3-12b-it-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "google/gemma-3-12b-it"
     compatible_with: [gpu]
@@ -971,6 +1010,7 @@ logit_verification_pipelines:
     kl_div_threshold: 0.35
 
   google/gemma-3-27b-it-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "google/gemma-3-27b-it"
     compatible_with: [gpu]
@@ -983,6 +1023,7 @@ logit_verification_pipelines:
     kl_div_threshold: 6.9e-01
 
   RedHatAI/gemma-3-27b-it-FP8-dynamic:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "RedHatAI/gemma-3-27b-it-FP8-dynamic"
     compatible_with: [gpu]
@@ -996,6 +1037,7 @@ logit_verification_pipelines:
 
   # Multi-GPU variant
   RedHatAI/gemma-3-27b-it-FP8-dynamic-multi:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "RedHatAI/gemma-3-27b-it-FP8-dynamic"
     compatible_with: [gpu]
@@ -1009,6 +1051,7 @@ logit_verification_pipelines:
 
   # TODO(MODELS-1339): Re-enable once transformers v4 tokenizer crash is fixed.
   google/gemma-4-26B-A4B-it-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "google/gemma-4-26B-A4B-it"
     compatible_with: [gpu]
@@ -1017,6 +1060,7 @@ logit_verification_pipelines:
 
   # TODO(MODELS-1339): Re-enable once transformers v4 tokenizer crash is fixed.
   google/gemma-4-31B-it-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "google/gemma-4-31B-it"
     compatible_with: [gpu]
@@ -1024,6 +1068,7 @@ logit_verification_pipelines:
     tags: [manual]
 
   HKUSTAudio/Llasa-8B-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "HKUSTAudio/Llasa-8B"
     compatible_with: [gpu]
@@ -1036,6 +1081,7 @@ logit_verification_pipelines:
     kl_div_threshold: 7.7e-01
 
   HuggingFaceTB/SmolLM2-360M-Instruct-LoRA-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "HuggingFaceTB/SmolLM2-360M-Instruct"
     compatible_with: [gpu]
@@ -1050,6 +1096,7 @@ logit_verification_pipelines:
     kl_div_threshold: 5.0e-01
 
   RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA"
     compatible_with: [gpu]
@@ -1147,6 +1194,7 @@ logit_verification_pipelines:
     config_params_override: {"prefer_module_v3": false}
 
   black-forest-labs/FLUX.2-klein-4B-t2i-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "black-forest-labs/FLUX.2-klein-4B"
     compatible_with: [gpu]
@@ -1164,6 +1212,7 @@ logit_verification_pipelines:
   # ========== Wan T2V Pipelines ==========
 
   Wan-AI/Wan2.1-T2V-14B-Diffusers-bfloat16:
+    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Wan-AI/Wan2.1-T2V-14B-Diffusers"
     compatible_with: [gpu]

@@ -43,11 +43,8 @@ from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     NVFP4Tensor,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MLAKVCacheParams,
-)
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3.model_config import (
     mla_kv_cache_quant_config,
 )

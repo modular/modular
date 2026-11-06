@@ -25,7 +25,7 @@ import pytest
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     MLAKVCacheParams,
     MultiKVCacheParams,
@@ -34,6 +34,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.model_config import (
     KimiK3Config,
 )
 from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
+from max.pipelines.speculative import SpeculativeConfig
 
 _HIDDEN_SIZE = 1024
 _NUM_ATTENTION_HEADS = 8
@@ -174,6 +175,26 @@ def test_layer_split_matches_the_checkpoint_partition(
     assert config.model.num_hidden_layers == _NUM_HIDDEN_LAYERS
 
 
+def test_routed_experts_sized_for_the_batch_token_budget(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """A budget past the layer's 8192-row fallback reaches the routed
+    experts, which size their GEMM grid and MegaFFN workspace from it."""
+    _huggingface_config, pipeline_config, _ = configs
+    pipeline_config.runtime = pipeline_config.runtime.model_copy(
+        update={"max_batch_input_tokens": 16384, "enable_chunked_prefill": True}
+    )
+
+    config = KimiK3Config.initialize(
+        pipeline_config, pipeline_config.model, max_seq_len=_MAX_LENGTH
+    )
+
+    assert config.max_tokens_per_expert == config.routed_expert_row_bound(
+        pipeline_config
+    )
+    assert config.max_tokens_per_expert >= 16384
+
+
 def test_cache_is_the_attention_leaf_beside_the_kda_state(
     configs: tuple[Any, Any, Any],
 ) -> None:
@@ -266,6 +287,28 @@ def test_decompressed_cache_has_no_mla_prefill_window(
 
     assert not config.mla_latent_cache
     assert config.mla_prefill_scratch_bytes(_MAX_LENGTH) == 0
+
+
+def test_a_non_dspark_speculative_config_sizes_the_plain_leaf(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """An eagle config keeps initializing, over a decode-sized leaf.
+
+    Only DSpark block-drafts through this tower; any other speculative
+    method runs the plain cache sizing rather than failing at KV-cache
+    time with a message about sizing. The leaf's draft width stays zero
+    and its per-step accounting stays one draft row per step.
+    """
+    _, pipeline_config, model_config = configs
+    pipeline_config.speculative = SpeculativeConfig(speculative_method="eagle")
+
+    config = KimiK3Config.initialize(
+        pipeline_config, model_config, max_seq_len=_MAX_LENGTH
+    )
+
+    assert config.attn_kv_params.num_draft_tokens == 0
+    assert config.attn_kv_params.num_draft_tokens_per_step == 1
+    assert config.attn_kv_params.speculative_method == "eagle"
 
 
 def test_max_seq_len_uses_the_requested_length_within_bound(

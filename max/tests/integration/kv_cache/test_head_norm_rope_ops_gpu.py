@@ -23,8 +23,8 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import rope_split_store_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn._graph_ops import rope_split_store_ragged
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 HEAD_DIM = 64

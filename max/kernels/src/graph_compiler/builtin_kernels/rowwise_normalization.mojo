@@ -35,152 +35,14 @@ from .monoids import ReduceMax, ReduceSum, Welford
 
 
 # ===----------------------------------------------------------------------=== #
-# Row-based rms_norm + layer_norm (free-form body layer).
+# Row-based normalizations (free-form body layer). The graph compiler
+# generates plain rms_norm from its parts.
 #
-# rms_norm: one ReduceSum-of-squares phase -> per-element map
-# (normalize * gamma). layer_norm: one Welford phase (mean + variance in a
-# single pass) -> map (normalize * gamma + beta). gamma/beta are broadcast
-# side-loads inside the map, like the GC IR's `%weight` load. The row is
-# cached once and replayed across the reduce + map on the
-# cache-eligible tier.
+# layer_norm: one Welford phase (mean + variance in a single pass) -> map
+# (normalize * gamma + beta). gamma/beta are broadcast side-loads inside the
+# map, like the GC IR's `%weight` load. The row is cached once and replayed
+# across the reduce + map on the cache-eligible tier.
 # ===----------------------------------------------------------------------=== #
-
-
-def rms_norm[
-    dtype: DType,
-    rank: Int,
-    InputFn: ImplicitlyCopyable
-    & RegisterPassable
-    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
-    OutputFn: ImplicitlyCopyable
-    & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, alignment: Int
-        ](Coord, SIMD[dtype, width]) -> None
-    ),
-    AxisSizeT: CoordLike,
-    /,
-    target: StaticString,
-    epsilon: Float32,
-    weight_offset: Float32,
-    multiply_before_cast: Bool = True,
-    reduce_dim: Int = rank - 1,
-](
-    input_fn: InputFn,
-    output_fn: OutputFn,
-    shape: Coord,
-    axis_size: AxisSizeT,
-    gamma: TileTensor[mut=False, dtype, ...],
-    context: DeviceContext.Optional = DeviceContext.NoneValue,
-) raises:
-    comptime accum = get_accum_type[dtype]()
-    comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
-    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
-    comptime assert shape.is_flat, "shape must be flat"
-    comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
-    ]()
-    var axis_size_accum = Scalar[accum](Int(axis_size))
-
-    @inline(.always)
-    def body[
-        params: rowwise.ContextParams
-    ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
-        var axis_size,
-        var gamma,
-        var axis_size_accum,
-        var input_fn,
-        var output_fn,
-    }:
-        comptime row_rank = row_coords.rank
-
-        # Load: fuses the caller's input closure into the row's primary load.
-        @inline(.always)
-        def load[
-            width: Int, alignment: Int
-        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
-            dtype, width
-        ]:
-            return input_fn[width, alignment](idx)
-
-        var row = rowwise.Row[
-            params, accum, dtype, reduce_dim, row_rank, is_cached=True
-        ](row_coords, axis_size, ctx_p, load)
-
-        # Reduce: sum of squares -> inv_rms.
-        @inline(.always)
-        def square[
-            width: Int
-        ](
-            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]
-        ) {} -> SIMD[accum, width]:
-            var tile_accum = tile.cast[accum]()
-            return tile_accum * tile_accum
-
-        # `inv_rms` held W-wide (one value broadcast to every lane, or one per
-        # output column, depending on how the launch maps threads to
-        # outputs); read via `.slice[width]` uniformly either way.
-        var ssq = row.reduce[ReduceSum[accum, params.simd_width]](
-            square, load
-        ).acc
-        var inv_rms = rsqrt(
-            ssq / axis_size_accum + comptime (epsilon.cast[accum]())
-        )
-
-        # gamma indexed by the reduced axis. Its inner (lane) stride is 1 when
-        # the reduced axis is inner (lanes are consecutive reduced positions),
-        # else 0 (lanes are columns at one position — one gamma, splatted). A
-        # strided load handles both via a compile-time stride, no branching.
-        comptime g_stride = 1 if reduce_dim == rank - 1 else 0
-
-        # Emit: per-element normalize, scale by gamma, and store.
-        @inline(.always)
-        def write[
-            width: Int
-        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
-            var gamma,
-            var inv_rms,
-            var output_fn,
-            var ctx_p,
-        }:
-            comptime alignment = ctx_p.element_alignment[dtype, width]()
-            var col = Int(idx[reduce_dim])
-            var g_raw = strided_load[width, g_stride, alignment=alignment](
-                gamma.ptr_at_offset(Coord(col))
-            )
-            var normed = tile.cast[accum]() * inv_rms.slice[width]()
-
-            # `multiply_before_cast` matches legacy: True multiplies gamma in
-            # `accum` then casts; False casts the normed value first, then
-            # multiplies gamma in the input dtype.
-            comptime if multiply_before_cast:
-                var gamma_with_offset = g_raw.cast[accum]() + comptime (
-                    weight_offset.cast[accum]()
-                )
-                var result = (normed * gamma_with_offset).cast[dtype]()
-                output_fn[width, alignment](idx, result)
-            else:
-                var gamma_with_offset = g_raw + comptime (
-                    weight_offset.cast[dtype]()
-                )
-                var result = normed.cast[dtype]() * gamma_with_offset
-                output_fn[width, alignment](idx, result)
-
-        # `gamma`/`inv_rms`/`output_fn` ride into `elementwise`.
-        row.elementwise(write, load)
-
-    rowwise.launch[
-        axis=reduce_dim,
-        simd_width=simd_width,
-        target=target,
-        num_phases=2,
-        dtype_size=size_of[dtype](),
-        computationally_expensive=True,
-        # Wait on the predecessor grid, then release dependents early so a
-        # following GEMM overlaps its prologue with the norm.
-        pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
-    ](body, shape, context)
 
 
 def rms_norm_residual_add[
@@ -208,7 +70,6 @@ def rms_norm_residual_add[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     epsilon: Float32,
     weight_offset: Float32,
     multiply_before_cast: Bool = True,
@@ -233,7 +94,11 @@ def rms_norm_residual_add[
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     comptime assert shape.is_flat, "shape must be flat"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target,
+        64,
+        dtype,
+        accum,
     ]()
     var axis_size_accum = Scalar[accum](Int(axis_size))
 
@@ -320,7 +185,6 @@ def rms_norm_residual_add[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         dtype_size=size_of[dtype](),
         computationally_expensive=True,
@@ -361,7 +225,6 @@ def rms_norm_rope[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     multiply_before_cast: Bool = True,
     reduce_dim: Int = rank - 1,
 ](
@@ -386,7 +249,11 @@ def rms_norm_rope[
             AxisSizeT.static_value % 2 == 0
         ), "rope requires an even row width"
     comptime simd_width_cand = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, input_dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target,
+        64,
+        input_dtype,
+        accum,
     ]()
     # Rotate-half needs each SIMD tile to sit wholly in one half and align to
     # the partner offset, i.e. `half` must be a multiple of the SIMD width. That
@@ -555,7 +422,6 @@ def rms_norm_rope[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
@@ -582,7 +448,6 @@ def layer_norm[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     reduce_dim: Int = rank - 1,
 ](
     input_fn: InputFn,
@@ -604,7 +469,11 @@ def layer_norm[
     # than raising the global default. fp32/fp64 inputs are unaffected
     # (natural width already <= 4).
     comptime simd_width = rowwise.pick_simd_width[
-        Welford[accum, 1], target, 96, dtype, accum
+        Welford[accum, 1],
+        context.T.target,
+        96,
+        dtype,
+        accum,
     ]()
 
     @inline(.always)
@@ -691,7 +560,6 @@ def layer_norm[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
@@ -724,7 +592,6 @@ def layer_norm_rope_ragged[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     interleaved: Bool,
     reduce_dim: Int = rank - 1,
 ](
@@ -752,7 +619,11 @@ def layer_norm_rope_ragged[
     ].is_static_value, "Need static rope_dim for freqs_cis"
     comptime rope_dim = Int(freqs_cis.static_shape[1])
     comptime simd_width_cand = rowwise.pick_simd_width[
-        Welford[accum, 1], target, 96, input_dtype, accum
+        Welford[accum, 1],
+        context.T.target,
+        96,
+        input_dtype,
+        accum,
     ]()
     # A SIMD tile must sit wholly within the roped region or wholly within
     # the passthrough region -- never straddle the boundary -- so `rope_dim`
@@ -932,7 +803,6 @@ def layer_norm_rope_ragged[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
@@ -960,7 +830,6 @@ def row_mean_of_squares[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[out_dtype, width]) -> None),
     /,
-    target: StaticString = "cpu",
     reduce_dim: Int = rank - 1,
 ](
     input_fn: InputFn,
@@ -976,7 +845,7 @@ def row_mean_of_squares[
         accum.is_floating_point()
     ), "row_mean_of_squares requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, in_dtype, accum
+        ReduceSum[accum, 1], ctx.target, 64, in_dtype, accum
     ]()
     var axis_size = Int(shape[reduce_dim])
     var axis_size_accum = Scalar[accum](axis_size)
@@ -1041,7 +910,6 @@ def row_mean_of_squares[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=1,
     ](body, shape, ctx)
 
@@ -1060,7 +928,6 @@ def row_mean_of_squares_qk[
     in_dtype: DType,
     out_dtype: DType,
     //,
-    target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, out_dtype, ...],
     query: TileTensor[mut=False, in_dtype, ...],
@@ -1092,7 +959,7 @@ def row_mean_of_squares_qk[
         comptime for i in range(width):
             output.store((Int(oc[0]) + i, 0), val[i])
 
-    row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
+    row_mean_of_squares[in_dtype, out_dtype, 2](
         q_in, q_out, Coord(rows, q_cols), ctx
     )
 
@@ -1111,7 +978,7 @@ def row_mean_of_squares_qk[
         comptime for i in range(width):
             output.store((Int(oc[0]) + i, 1), val[i])
 
-    row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
+    row_mean_of_squares[in_dtype, out_dtype, 2](
         k_in, k_out, Coord(rows, k_cols), ctx
     )
 
@@ -1153,7 +1020,6 @@ def rms_norm_fused_residual_add[
     ),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     epsilon1: Float32,
     weight_offset1: Float32,
     epsilon2: Float32,
@@ -1174,7 +1040,11 @@ def rms_norm_fused_residual_add[
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target,
+        64,
+        dtype,
+        accum,
     ]()
     var axis_size_int = Int(axis_size)
     var axis_size_accum = Scalar[accum](axis_size_int)
@@ -1342,7 +1212,6 @@ def rms_norm_fused_residual_add[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
@@ -1375,7 +1244,6 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
     & (def(Coord, Scalar[scale_dtype]) -> None),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     reduce_dim: Int = rank - 1,
 ](
     input_fn: InputFn,
@@ -1396,7 +1264,11 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         DType.float8_e4m3fnuz,
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, in_dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target,
+        64,
+        in_dtype,
+        accum,
     ]()
     var axis_size_accum = Scalar[accum](Int(axis_size))
 
@@ -1539,7 +1411,6 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=3,
         computationally_expensive=True,
     ](body, shape, context)

@@ -101,6 +101,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 from nn.attention.mha_utils import NonNullPointer
 from std.benchmark import BenchId
 from std.utils import IndexList
+from nn.attention.gpu.mla_graph import SM100MLAGraph
 
 comptime fp8 = DType.float8_e4m3fn
 comptime bf16 = DType.bfloat16
@@ -583,6 +584,7 @@ def run_dense[
             n_scale_granularity=N_SCALE_GRAN,
             k_scale_granularity=K_SCALE_GRAN,
             indices_stride=TOP_K,
+            kernels=SM100MLAGraph,
         ](
             ref_tt,
             q_tt,
@@ -616,7 +618,7 @@ def run_dense[
             mask_str="causal",
             sparse_mla=True,
             sparse_indices_stride=TOP_K,
-            target="gpu",
+            kernels=SM100MLAGraph,
         ](
             out_tt,
             q_tt,
@@ -989,7 +991,9 @@ def run_nvfp4[
 
     @inline(.always)
     def mirror_launch(launch_ctx: DeviceContext[]) raises {mut mirror_tt, imm}:
-        mla_prefill_branch_sparse_bf16[indices_stride=TOP_K](
+        mla_prefill_branch_sparse_bf16[
+            indices_stride=TOP_K, kernels=SM100MLAGraph
+        ](
             mirror_tt,
             q_tt,
             row_offsets_tt,
@@ -1017,7 +1021,7 @@ def run_nvfp4[
             sparse_indices_stride=indices_stride,
             nvfp4_convert_ratio=NVFP4_CONVERT_RATIO,
             nvfp4_convert_max_rows=NVFP4_CONVERT_MAX_ROWS,
-            target="gpu",
+            kernels=SM100MLAGraph,
         ](
             packed_tt,
             q_tt,
@@ -1052,7 +1056,7 @@ def run_nvfp4[
             mask_str="causal",
             sparse_mla=True,
             sparse_indices_stride=TOP_K,
-            target="gpu",
+            kernels=SM100MLAGraph,
         ](
             mirror_decode_tt,
             q_tt,
@@ -1083,7 +1087,10 @@ def run_nvfp4[
     def packed_prefill_launch(
         launch_ctx: DeviceContext[],
     ) raises {mut packed_prefill_tt, imm}:
-        mla_prefill_branch_sparse_bf16[indices_stride=indices_stride,](
+        mla_prefill_branch_sparse_bf16[
+            indices_stride=indices_stride,
+            kernels=SM100MLAGraph,
+        ](
             packed_prefill_tt,
             q_tt,
             row_offsets_tt,

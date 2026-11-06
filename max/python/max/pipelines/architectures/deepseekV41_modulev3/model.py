@@ -26,20 +26,15 @@ from max.driver import Buffer, Device, Usage, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.comm.ep import (
-    EPBatchManager,
-    EPCommInitializer,
-    EPConfig,
-    EPInit,
-    calculate_ep_max_tokens_per_rank,
-)
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPInit
 
 # The export's ep_init graph declares its counter buffers by the same word
 # count EPCommInitializer allocates at runtime, so the engine introspects
 # from the MEF the size it must zero-fill at boot.
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,

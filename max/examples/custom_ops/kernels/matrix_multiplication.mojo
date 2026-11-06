@@ -864,10 +864,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
     """
 
     @staticmethod
-    def execute[
-        # The kind of device this will be run on: "cpu" or "gpu"
-        target: StaticString,
-    ](
+    def execute(
         output: OutputTensor[rank=2, ...],
         a: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         b: InputTensor[dtype=output.dtype, rank=output.rank, ...],
@@ -876,7 +873,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
     ) raises:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
-        comptime if target == "gpu":
+        comptime if ctx.target.is_gpu():
             var a_tt = a.to_tile_tensor().as_unsafe_any_origin()
             var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
             var out_tt = output.to_tile_tensor().as_unsafe_any_origin()

@@ -181,6 +181,7 @@ class RecipeConfig(BaseModel):
     class Runtime(BaseModel):
         model_config = ConfigDict(extra="ignore")
 
+        prefer_module_v3: bool = False
         ep_size: int | None = None
         enable_chunked_prefill: bool | None = None
 
@@ -513,7 +514,15 @@ def get_server_cmd(
     # CUDA graph capture and fails Hy4's engine start.
     if "hy4" in model.casefold():
         VLLM += ["--enforce-eager"]
-    MAX = ["serve", "--pretty-print-config"]
+    MAX = [
+        "serve",
+        "--pretty-print-config",
+        (
+            "--prefer-module-v3"
+            if recipe is not None and recipe.runtime.prefer_module_v3
+            else "--no-prefer-module-v3"
+        ),
+    ]
     # A smoke test is where an eager or host-transfer footgun should surface,
     # so validate each request too and not just initialization. max-ci only:
     # the flag is newer than the wheels the ``max`` framework installs.
@@ -586,10 +595,6 @@ def get_server_cmd(
         # VMM on 8 GPUs at the default memory budget.
         if gpu_name.startswith("AMD") and gpu_count <= 4:
             env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
-        # Without this, the registry falls back to an unquantized matmul
-        # that rejects the packed checkpoint's weight shapes.
-        if "kimi-k3" in model.casefold() and gpu_name.startswith("AMD"):
-            env["MAX_KIMI_K3_AMD_W4A8"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"

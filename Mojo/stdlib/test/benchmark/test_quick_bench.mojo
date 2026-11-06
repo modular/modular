@@ -44,214 +44,25 @@ def dummy() -> None:
     sleep(0.5)
 
 
-def dummy(x0: Int) -> Float32:
-    return Float32(x0)
-
-
 def dummy(x0: Int, x1: Int) -> Float32:
     return Float32(x0 + x1)
 
 
-def dummy(x0: Int, x1: Int, x2: Int) -> Float32:
-    return Float32(x0 + x1 + x2)
-
-
-def dummy(x0: Int, x1: Int, x2: Int, x3: Int) -> Float32:
-    return Float32(x0 + x1 + x2 + x3)
-
-
-def dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int) -> Float32:
-    return Float32(x0 + x1 + x2 + x3 + x4)
-
-
-def dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int) -> Float32:
-    return Float32(x0 + x1 + x2 + x3 + x4 + x5)
-
-
-def dummy(
-    x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int
-) -> Float32:
-    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6)
-
-
-def dummy(
-    x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int, x7: Int
-) -> Float32:
-    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7)
-
-
-def dummy(
-    x0: Int,
-    x1: Int,
-    x2: Int,
-    x3: Int,
-    x4: Int,
-    x5: Int,
-    x6: Int,
-    x7: Int,
-    x8: Int,
-) -> Float32:
-    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8)
-
-
-def dummy(
-    x0: Int,
-    x1: Int,
-    x2: Int,
-    x3: Int,
-    x4: Int,
-    x5: Int,
-    x6: Int,
-    x7: Int,
-    x8: Int,
-    x9: Int,
-) -> Float32:
-    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9)
-
-
-def test_overloaded() raises:
+def test_captures() raises:
     var qb = QuickBench()
 
-    qb.run[T_out=NoneType._mlir_type](
-        dummy,
+    qb.run(
+        lambda () -> None: dummy(),
         bench_id=BenchId("dummy_none"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-    qb.run[Int, T_out=Float32](
-        dummy,
-        1,
-        bench_id=BenchId("dummy_1"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
+        measures=[ThroughputMeasure(BenchMetric.flops, 1)],
     )
 
-    qb.run[Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
+    var x0 = 1
+    var x1 = 2
+    qb.run(
+        lambda () {x0, x1} -> Float32: dummy(x0, x1),
         bench_id=BenchId("dummy_2"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-
-    qb.run[Int, Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
-        3,
-        bench_id=BenchId("dummy_3"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-
-    qb.run[Int, Int, Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
-        3,
-        4,
-        bench_id=BenchId("dummy_4"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-
-    qb.run[Int, Int, Int, Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
-        3,
-        4,
-        5,
-        bench_id=BenchId("dummy_5"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-
-    qb.run[Int, Int, Int, Int, Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        bench_id=BenchId("dummy_6"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-
-    qb.run[Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        bench_id=BenchId("dummy_7"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-
-    qb.run[Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        bench_id=BenchId("dummy_8"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-
-    qb.run[Int, Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        bench_id=BenchId("dummy_9"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
-    )
-
-    qb.run[Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
-        dummy,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        bench_id=BenchId("dummy_10"),
-        measures=[
-            ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ],
+        measures=[ThroughputMeasure(BenchMetric.flops, 1)],
     )
 
     qb.dump_report()
@@ -270,16 +81,15 @@ def tanh(x: SIMD[.float32, 4]) -> type_of(x):
 def test_mojo_math() raises:
     var qb = QuickBench()
 
+    var x: SIMD[.float32, 4] = 1.0
     qb.run(
-        exp,
-        1.0,
+        lambda () {x} -> SIMD[.float32, 4]: exp(x),
         bench_id=BenchId("exp"),
         measures=[ThroughputMeasure(BenchMetric.bytes, 4)],  # 4 bytes per call
     )
 
     qb.run(
-        tanh,
-        1.0,
+        lambda () {x} -> SIMD[.float32, 4]: tanh(x),
         bench_id=BenchId("tanh"),
         measures=[ThroughputMeasure(BenchMetric.bytes, 4)],  # 4 bytes per call
     )
@@ -301,8 +111,9 @@ def test_custom() raises:
     var qb = QuickBench()
 
     qb.run(
-        vec_reduce[N, dtype],
-        x.as_unsafe_any_origin(),
+        lambda () {x} -> Scalar[dtype]: vec_reduce[N, dtype](
+            x.as_unsafe_any_origin()
+        ),
         bench_id=BenchId("vec_reduce"),
         measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
@@ -310,9 +121,9 @@ def test_custom() raises:
     )
 
     qb.run(
-        vec_add[N, dtype],
-        x.as_unsafe_any_origin(),
-        y.as_unsafe_any_origin(),
+        lambda () {x, y} -> Pointer[Scalar[dtype], MutAnyOrigin]: vec_add[
+            N, dtype
+        ](x.as_unsafe_any_origin(), y.as_unsafe_any_origin()),
         bench_id=BenchId("vec_add"),
         measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
@@ -338,17 +149,8 @@ def test_all() raises:
 
     # CHECK: name      ,
     # CHECK: dummy_none,
-    # CHECK: dummy_1   ,
     # CHECK: dummy_2   ,
-    # CHECK: dummy_3   ,
-    # CHECK: dummy_4   ,
-    # CHECK: dummy_5   ,
-    # CHECK: dummy_6   ,
-    # CHECK: dummy_7   ,
-    # CHECK: dummy_8   ,
-    # CHECK: dummy_9   ,
-    # CHECK: dummy_10  ,
-    test_overloaded()
+    test_captures()
 
 
 def main() raises:

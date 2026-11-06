@@ -66,12 +66,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weight import Segment
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.stacked_linear import StackedLinear
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     GatedDeltaReplayInputs,
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
@@ -81,6 +76,11 @@ from max.nn.legacy.state_space import (
     kda_chunk_is_registered,
     kda_chunk_supports_head_dims,
 )
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.stacked_linear import StackedLinear
+from max.nn.quant_config import QuantConfig
 
 from ..state_cache import GatedDeltaRingAccess
 
@@ -478,7 +478,7 @@ class GatedDeltaNet(Module, Shardable):
                 of writing ``recurrent_pool``, and the caller must fold them
                 before the pool is read again.
             verify_width: The speculative graph's
-                :func:`~max.nn.legacy.state_space.verify_width_operand`. A launch at
+                :func:`~max.nn._graph_ops.state_space.verify_width_operand`. A launch at
                 width zero lands both leaves on the live pools, and a wider
                 one leaves them for the rollback.
 

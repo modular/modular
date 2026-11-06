@@ -126,7 +126,7 @@ def top_k() raises:
     var metrics: List = [flops, elements]
 
     def top_k_cpu() raises {imm}:
-        TopK.execute[K=K, target="cpu"](
+        TopK.execute[K=K](
             out_vals.slice, out_idxs.slice, in_vals.slice, cpu_ctx
         )
 
@@ -140,7 +140,7 @@ def top_k() raises:
         var in_vals_dev = Tensor[IOSpec.Input, val_spec](gpu_ctx).rand()
 
         def top_k_gpu() raises {imm}:
-            TopK.execute[K=K, target="gpu"](
+            TopK.execute[K=K](
                 out_vals_dev.slice,
                 out_idxs_dev.slice,
                 in_vals_dev.slice,
@@ -179,7 +179,7 @@ def matmul() raises:
     var metrics: List = [flops, elements]
 
     def matmul_cpu() raises {imm}:
-        MatrixMultiplication["naive"].execute[target="cpu"](
+        MatrixMultiplication["naive"].execute(
             c.slice, a.slice, b.slice, cpu_ctx
         )
 
@@ -198,7 +198,7 @@ def matmul() raises:
 
         def bench_matmul_kernel[impl: StaticString]() raises {mut bench, imm}:
             def bench_gpu() raises {imm}:
-                MatrixMultiplication[impl].execute[target="gpu"](
+                MatrixMultiplication[impl].execute(
                     c_dev.slice, a_dev.slice, b_dev.slice, gpu_ctx
                 )
 
@@ -264,7 +264,7 @@ def tensor_core_mma() raises:
 
         def bench_matmul_kernel[impl: StaticString]() raises {mut bench, imm}:
             def bench_gpu() raises {imm}:
-                TensorCoreMMA[impl].execute[target="gpu", M=M, N=N, K=K](
+                TensorCoreMMA[impl].execute[M=M, N=N, K=K](
                     c_dev.slice,
                     a_dev.slice,
                     b_dev.slice,

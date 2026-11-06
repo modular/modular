@@ -27,9 +27,9 @@ import math
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn._graph_ops import flash_attention
 from max.nn.legacy.activation import activation_function_from_name
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kernels import flash_attention
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import LayerNorm

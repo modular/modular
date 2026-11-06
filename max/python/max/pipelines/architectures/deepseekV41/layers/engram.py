@@ -22,13 +22,13 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
 )
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

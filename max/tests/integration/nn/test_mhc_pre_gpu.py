@@ -31,11 +31,7 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import (
-    hyper_connection_gates,
-    mhc_pre,
-    mhc_pre_supports,
-)
+from max.nn._graph_ops import hyper_connection_gates, mhc_pre, mhc_pre_supports
 from torch.utils.dlpack import from_dlpack
 
 _HC = 4

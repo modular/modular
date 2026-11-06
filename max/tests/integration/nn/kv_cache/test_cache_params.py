@@ -18,7 +18,7 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     AttnKey,
     BatchCharacteristics,
     KVCacheBuffer,
@@ -29,12 +29,10 @@ from max.nn.legacy.kv_cache import (
     MLAKVCacheParams,
     PagedKVLeafRegion,
 )
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache.cache_params import (
     SpeculativeMethod as CacheSpeculativeMethod,
 )
-from max.nn.legacy.kv_cache.cache_params import (
-    page_stride_of,
-)
+from max.nn.kv_cache.cache_params import page_stride_of
 from max.pipelines.speculative import SpeculativeMethod
 
 

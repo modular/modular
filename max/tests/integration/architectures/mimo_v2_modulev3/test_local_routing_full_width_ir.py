@@ -44,7 +44,7 @@ set_virtual_device_count(4)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,

@@ -46,6 +46,7 @@ from max.gpu.primitives.grid_controls import (
 )
 from max.gpu.host import DeviceContext
 
+from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.paged_sparse_kv_index_remap import NoRemap, SparseIndexRemap
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -69,7 +70,9 @@ from nn.attention.gpu.sparse_index_fp8_sm100 import (
     mxfp4_index_score_sm100,
 )
 from nn.attention.gpu.sparse_index_fp8_sm100_prefill import (
+    CPRankPtr,
     IndexerScoreHook,
+    _cp_layout,
     NoScoreHook,
     _index_swizzle,
     _is_mxfp4,
@@ -831,6 +834,69 @@ struct _IndexerSink[R: SparseIndexRemap, write_logical: Bool](TopkSink):
         self.remap.store(idx, self.batch, col)
 
 
+@inline(.always)
+def _locate_row(
+    row_offsets: ImmPointer[UInt32, ImmUntrackedOrigin],
+    cache_lengths: ImmPointer[UInt32, ImmUntrackedOrigin],
+    batch_size: Int,
+    token: Int,
+) -> Tuple[Int, Int, Int, Int]:
+    """Finds the batch entry that owns ragged query row `token`.
+
+    Warp-collective: every lane of the calling warp must call it.
+
+    Returns:
+        The entry's index, its first and one-past-last query rows, and its
+        cached-prefix length.
+    """
+    var lane = Int(lane_id())
+    # The owning entry is the number of entries that end at or before the
+    # token. Offsets are monotone, so a warp counts `SPAN` of them per
+    # round with every load in flight at once, and takes the owner's
+    # offsets and cache length from the same loads by shuffles: one load
+    # latency per round where a serial walk takes one per entry.
+    comptime vote_t = DType.uint32 if WARP_SIZE == 32 else DType.uint64
+    comptime CH = 4
+    comptime SPAN = CH * WARP_SIZE
+    var batch_idx = 0
+    var q_start = Int(row_offsets[0])
+    var q_end = 0
+    var cache_len = 0
+    for base in range(0, batch_size, SPAN):
+        var ends = SIMD[DType.uint32, CH](0)
+        var lens = SIMD[DType.uint32, CH](0)
+        comptime for c in range(CH):
+            var b = base + c * WARP_SIZE + lane
+            if b < batch_size:
+                ends[c] = row_offsets[b + 1]
+                lens[c] = cache_lengths[b]
+        var ended = 0
+        comptime for c in range(CH):
+            var b = base + c * WARP_SIZE + lane
+            ended += Int(
+                pop_count(
+                    warp.vote[vote_t](b < batch_size and Int(ends[c]) <= token)
+                )
+            )
+        batch_idx += ended
+        # The owner is entry `ended` of this round: slot `ended / WS` of
+        # lane `ended % WS`, and its start is the entry before's end.
+        var own = UInt32(ended % WARP_SIZE)
+        var prev = UInt32((ended + WARP_SIZE - 1) % WARP_SIZE)
+        comptime for c in range(CH):
+            var end_c = Int(warp.shuffle_idx(ends[c], own))
+            var len_c = Int(warp.shuffle_idx(lens[c], own))
+            var prev_c = Int(warp.shuffle_idx(ends[c], prev))
+            if c == ended // WARP_SIZE:
+                q_end = end_c
+                cache_len = len_c
+            if ended > 0 and c == (ended - 1) // WARP_SIZE:
+                q_start = prev_c
+        if ended < SPAN:
+            break
+    return (batch_idx, q_start, q_end, cache_len)
+
+
 struct _IndexerRowBound[
     causal: Bool, kpool: Int, R: SparseIndexRemap, write_logical: Bool
 ](RowBound):
@@ -900,52 +966,9 @@ struct _IndexerRowBound[
             also remaps into the row's batch entry.
         """
         var token = Int(self.first_row) + row
-        var batch = Int(self.batch_size)
-        var lane = Int(lane_id())
-        # The owning entry is the number of entries that end at or before the
-        # token. Offsets are monotone, so a warp counts `SPAN` of them per
-        # round with every load in flight at once, and takes the owner's
-        # offsets and cache length from the same loads by shuffles: one load
-        # latency per round where a serial walk takes one per entry.
-        comptime vote_t = DType.uint32 if WARP_SIZE == 32 else DType.uint64
-        comptime CH = 4
-        comptime SPAN = CH * WARP_SIZE
-        var batch_idx = 0
-        var q_start = Int(self.row_offsets[0])
-        var q_end = 0
-        var cache_len = 0
-        for base in range(0, batch, SPAN):
-            var ends = SIMD[DType.uint32, CH](0)
-            var lens = SIMD[DType.uint32, CH](0)
-            comptime for c in range(CH):
-                var b = base + c * WARP_SIZE + lane
-                if b < batch:
-                    ends[c] = self.row_offsets[b + 1]
-                    lens[c] = self.cache_lengths[b]
-            var ended = 0
-            comptime for c in range(CH):
-                var b = base + c * WARP_SIZE + lane
-                ended += Int(
-                    pop_count(
-                        warp.vote[vote_t](b < batch and Int(ends[c]) <= token)
-                    )
-                )
-            batch_idx += ended
-            # The owner is entry `ended` of this round: slot `ended / WS` of
-            # lane `ended % WS`, and its start is the entry before's end.
-            var own = UInt32(ended % WARP_SIZE)
-            var prev = UInt32((ended + WARP_SIZE - 1) % WARP_SIZE)
-            comptime for c in range(CH):
-                var end_c = Int(warp.shuffle_idx(ends[c], own))
-                var len_c = Int(warp.shuffle_idx(lens[c], own))
-                var prev_c = Int(warp.shuffle_idx(ends[c], prev))
-                if c == ended // WARP_SIZE:
-                    q_end = end_c
-                    cache_len = len_c
-                if ended > 0 and c == (ended - 1) // WARP_SIZE:
-                    q_start = prev_c
-            if ended < SPAN:
-                break
+        var batch_idx, q_start, q_end, cache_len = _locate_row(
+            self.row_offsets, self.cache_lengths, Int(self.batch_size), token
+        )
         var seq_len = q_end - q_start
         return (
             indexer_key_bound[Self.kpool](
@@ -967,6 +990,197 @@ struct _IndexerRowBound[
             Always `"_IndexerRowBound"`.
         """
         return "_IndexerRowBound"
+
+
+struct _CPIndexerSink[
+    R: SparseIndexRemap, write_logical: Bool, in_dtype: DType
+](TopkSink):
+    """`_IndexerSink` that also writes each selected column's score.
+
+    The score is re-read by column from the row of the live score buffer, so
+    the top-k kernels and the `TopkSink` contract stay as they are.
+
+    Parameters:
+        R: Type of the remap output.
+        write_logical: Whether the logical index is written at all.
+        in_dtype: Element type of the score buffer.
+    """
+
+    var inner: _IndexerSink[Self.R, Self.write_logical]
+    """Writes the logical index and its remap."""
+    var row_scores: ImmPointer[Scalar[Self.in_dtype], ImmUntrackedOrigin]
+    """The row's scores, indexed by column."""
+    var out_scores: MutPointer[BFloat16, MutUntrackedOrigin]
+    """Flat score output, `[rows, top_k]`."""
+
+    @inline(.always)
+    def __init__(
+        out self,
+        inner: _IndexerSink[Self.R, Self.write_logical],
+        row_scores: ImmPointer[Scalar[Self.in_dtype], ImmUntrackedOrigin],
+        out_scores: MutPointer[BFloat16, MutUntrackedOrigin],
+    ):
+        """Creates the sink for one row.
+
+        Args:
+            inner: Sink for the logical index and its remap.
+            row_scores: The row's scores, indexed by column.
+            out_scores: Flat score output.
+        """
+        self.inner = inner
+        self.row_scores = row_scores
+        self.out_scores = out_scores
+
+    @inline(.always)
+    def store(self, idx: Int, col: Int32):
+        """Writes slot `idx` of every output; a `-1` slot scores `-inf`.
+
+        Args:
+            idx: Flat output slot.
+            col: Selected key column, or `-1`.
+        """
+        self.inner.store(idx, col)
+        self.out_scores[idx] = (
+            self.row_scores[Int(col)].cast[DType.bfloat16]() if col
+            >= 0 else neg_inf[DType.bfloat16]()
+        )
+
+
+struct _CPIndexerRowBound[
+    causal: Bool,
+    R: SparseIndexRemap,
+    write_logical: Bool,
+    in_dtype: DType,
+    cp_size: Int,
+    cp_interleave: Int,
+](RowBound):
+    """`_IndexerRowBound` over one decode context-parallel rank's local slots.
+
+    A row's live count is the number of this rank's slots below the row's
+    global key bound, `local_len(indexer_key_bound(...))`: local slots are
+    ordered by global position, so that is a prefix. Its sink also writes the
+    selected columns' scores, which the group merges across ranks. With
+    `cp_size == 1` the count is `_IndexerRowBound`'s.
+
+    Parameters:
+        causal: Whether the bound is causal.
+        R: Type of the remap output.
+        write_logical: Whether the logical indices are written.
+        in_dtype: Element type of the score buffer.
+        cp_size: Ranks in the context-parallel group.
+        cp_interleave: Consecutive positions a rank owns in turn.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias; the struct is trivially device-passable."""
+
+    comptime Sink = _CPIndexerSink[Self.R, Self.write_logical, Self.in_dtype]
+    """Writes the logical indices, their remap and their scores."""
+
+    var row_offsets: ImmPointer[UInt32, ImmUntrackedOrigin]
+    """Ragged query row offsets, `batch_size + 1` entries."""
+    var cache_lengths: ImmPointer[UInt32, ImmUntrackedOrigin]
+    """Per-batch cached-prefix length, global."""
+    var batch_size: Int32
+    """Number of batch entries."""
+    var first_row: Int32
+    """Token index of the launch's row 0 (the score window's first row)."""
+    var remap: Self.R
+    """Remap output, already advanced to the launch's row 0."""
+    var cp_rank: ImmPointer[Int32, ImmUntrackedOrigin]
+    """This rank, one `int32` on the device."""
+    var scores: ImmPointer[Scalar[Self.in_dtype], ImmUntrackedOrigin]
+    """The launch's score buffer, row 0 first."""
+    var scores_stride: Int32
+    """Columns per score buffer row."""
+    var out_scores: MutPointer[BFloat16, MutUntrackedOrigin]
+    """Score output, already advanced to the launch's row 0."""
+
+    @inline(.always)
+    def __init__(
+        out self,
+        row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+        cache_lengths: ImmPointer[UInt32, ImmutAnyOrigin],
+        batch_size: Int,
+        first_row: Int,
+        remap: Self.R,
+        cp_rank: CPRankPtr,
+        scores: ImmPointer[Scalar[Self.in_dtype], ImmutAnyOrigin],
+        scores_stride: Int,
+        out_scores: MutPointer[BFloat16, MutAnyOrigin],
+    ):
+        """Captures the ragged metadata, the rank and the score buffers.
+
+        Args:
+            row_offsets: Ragged query row offsets, `batch_size + 1` entries.
+            cache_lengths: Per-batch cached-prefix length, global.
+            batch_size: Number of batch entries.
+            first_row: Token index of the launch's row 0.
+            remap: Remap output, already advanced to the launch's row 0.
+            cp_rank: This rank, one `int32` on the device.
+            scores: The launch's score buffer.
+            scores_stride: Columns per score buffer row.
+            out_scores: Score output, advanced to the launch's row 0.
+        """
+        self.row_offsets = row_offsets.unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.cache_lengths = cache_lengths.unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
+        self.batch_size = Int32(batch_size)
+        self.first_row = Int32(first_row)
+        self.remap = remap
+        self.cp_rank = cp_rank
+        self.scores = scores.unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.scores_stride = Int32(scores_stride)
+        self.out_scores = out_scores.unsafe_origin_cast[MutUntrackedOrigin]()
+
+    @inline(.always)
+    def row(
+        self, row: Int, out_idxs: MutPointer[Int32, MutAnyOrigin]
+    ) -> Tuple[Int, Self.Sink]:
+        """Returns the local live key count of launch row `row` and its sink.
+
+        Args:
+            row: Row index within the launch.
+            out_idxs: The launch's flat logical output.
+
+        Returns:
+            How many of this rank's slots lie below the row's global key
+            bound, and a sink that also remaps and scores each selection.
+        """
+        var token = Int(self.first_row) + row
+        var batch_idx, q_start, q_end, cache_len = _locate_row(
+            self.row_offsets, self.cache_lengths, Int(self.batch_size), token
+        )
+        var seq_len = q_end - q_start
+        var bound = indexer_key_bound(
+            cache_len + seq_len, seq_len, token - q_start, Int(Self.causal)
+        )
+        var cp = _cp_layout[Self.cp_size, Self.cp_interleave](self.cp_rank)
+        return (
+            cp.local_len(max(bound, 0)),
+            Self.Sink(
+                _IndexerSink[Self.R, Self.write_logical](
+                    out_idxs, self.remap, batch_idx
+                ),
+                self.scores.unsafe_offset(row * Int(self.scores_stride)),
+                self.out_scores,
+            ),
+        )
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"_CPIndexerRowBound"`.
+        """
+        return "_CPIndexerRowBound"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1176,6 +1390,128 @@ def mla_indexer_ragged_float8_paged[
         remap,
         NoScoreHook(),
         scores_budget_bytes,
+    )
+
+
+@inline(.always)
+def mla_indexer_ragged_float8_paged_cp[
+    oi_layout: TensorLayout,
+    os_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    R: SparseIndexRemap,
+    //,
+    dtype: DType,
+    KCollectionT: KVCollectionT,
+    num_heads: Int,
+    depth: Int,
+    top_k: Int,
+    mask_str: StaticString,
+    cp_size: Int,
+    cp_interleave: Int,
+    write_logical: Bool = False,
+    Topk: IndexerTopk = BlockSplitTopk,
+](
+    output_indices: MutTileTensor[.int32, oi_layout, _],
+    output_scores: MutTileTensor[.bfloat16, os_layout, _],
+    q: ImmTileTensor[dtype, q_layout, _],
+    q_s: ImmTileTensor[.float32, qs_layout, _],
+    input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
+    k_collection: KCollectionT,
+    layer_idx: UInt32,
+    ctx: DeviceContext,
+    remap: R,
+    cp_rank: ImmPointer[Int32, _],
+    scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
+) raises:
+    """Selects one decode context-parallel rank's local top-k, with scores.
+
+    Under decode context parallelism (DCP) each rank of a group stores only
+    the positions it owns (`ContextParallelLayout[cp_size, cp_interleave]`),
+    at its local slots, addressed through the same lookup table as without
+    CP, while `cache_lengths` stay global. This scores only the rank's local
+    slots, bounding each query row by the number of slots below its global
+    causal bound, and selects their top-k: the slots' physical rows through
+    `remap`, and their scores, which the group all-gathers for
+    `cp_merge_topk`. A token in the group's top-k is in its owner's local
+    top-k, so that merge is exact up to ties.
+
+    Requires the SM100 FP8 scorer and `kpool == 1`. With `cp_size == 1` it is
+    `mla_indexer_ragged_float8_paged` plus the scores.
+
+    Parameters:
+        oi_layout: Layout of the logical index output.
+        os_layout: Layout of the score output.
+        q_layout: Layout of the query tensor.
+        qs_layout: Layout of the query scales.
+        iro_layout: Layout of the ragged query row offsets.
+        R: Type of `remap`.
+        dtype: Element type of the `q` query tensor, an FP8 dtype.
+        KCollectionT: Type of the KV collection holding this rank's cached K
+            values and K scales.
+        num_heads: Number of attention heads per token.
+        depth: Per-head key dimension (head size) in elements.
+        top_k: Number of local key slots to select per token.
+        mask_str: Name of the mask, `MaskName.NULL` or `MaskName.CAUSAL`.
+        cp_size: Ranks in the context-parallel group.
+        cp_interleave: Consecutive positions a rank owns in turn.
+        write_logical: Whether to write `output_indices`, the selected local
+            slots. `False` leaves it untouched, so it may be empty.
+        Topk: The top-k over the score rows.
+
+    Args:
+        output_indices: Dense `[total_seq_len, top_k]` local slots, `-1`
+            past a token's local candidates.
+        output_scores: Dense `[total_seq_len, top_k]` score of each
+            selection in bfloat16, the score buffer's own values, `-inf` past a token's
+            local candidates.
+        q: Query tensor `[total_seq_len, num_heads, head_dim]` in FP8.
+        q_s: Query scales `[total_seq_len, num_heads]` in float32.
+        input_row_offsets: Ragged row offsets for queries `[batch_size + 1]`.
+        k_collection: This rank's KV collection, with global cache lengths.
+        layer_idx: Layer index for retrieving cache.
+        ctx: Device context.
+        remap: Writes each selected slot's physical row, laid out like
+            `output_indices`.
+        cp_rank: This rank in `[0, cp_size)`, one `int32` on the device.
+        scores_budget_bytes: Peak bytes the transient score matrix may occupy.
+    """
+    comptime CacheType = KCollectionT.CacheType
+    comptime assert (
+        CacheType.quantization_enabled
+    ), "k_collection must have quantization/scales enabled for MLA k_s values"
+    comptime assert (
+        CacheType.quantization_granularity >= depth
+    ), "k_collection.quantization_granularity must be >= depth (head_dim)"
+    comptime assert cp_size >= 1 and cp_interleave >= 1
+
+    _mla_indexer_paged_impl[
+        dtype,
+        num_heads,
+        depth,
+        top_k,
+        mask_str,
+        _SCORES_DTYPE,
+        1,
+        write_logical,
+        Topk=Topk,
+        emit_scores=True,
+        cp_size=cp_size,
+        cp_interleave=cp_interleave,
+    ](
+        output_indices,
+        q,
+        q_s,
+        input_row_offsets,
+        k_collection.get_key_cache(Int(layer_idx)),
+        ctx,
+        remap,
+        NoScoreHook(),
+        scores_budget_bytes,
+        None,
+        cp_rank.unsafe_origin_cast[ImmUntrackedOrigin](),
+        output_scores.unsafe_ptr().as_unsafe_any_origin(),
     )
 
 
@@ -1667,6 +2003,9 @@ def _mla_indexer_paged_impl[
     kpool: Int,
     write_logical: Bool,
     Topk: IndexerTopk = BlockSplitTopk,
+    emit_scores: Bool = False,
+    cp_size: Int = 1,
+    cp_interleave: Int = 1,
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
@@ -1678,6 +2017,10 @@ def _mla_indexer_paged_impl[
     score_hook: H,
     scores_budget_bytes: Int,
     q_sf: Optional[Pointer[UInt32, ImmutAnyOrigin]] = None,
+    cp_rank: CPRankPtr = CPRankPtr.unsafe_dangling(),
+    out_scores: MutPointer[BFloat16, MutAnyOrigin] = MutPointer[
+        BFloat16, MutAnyOrigin
+    ].unsafe_dangling(),
 ) raises:
     """Scores, bounds and selects the indexer's top-k over one paged K cache.
 
@@ -1686,6 +2029,10 @@ def _mla_indexer_paged_impl[
     MXFP4 pages. See the former for the parameters; `q_sf` carries MXFP4's
     query block scales and `q_s` its per-head weights. `score_hook` runs on
     every score in the MXFP4 scorer's epilogue.
+
+    `emit_scores` also writes each selection's score to `out_scores`, and
+    `cp_size > 1` scores only rank `cp_rank[0]`'s local slots; see
+    `mla_indexer_ragged_float8_paged_cp`.
     """
     comptime CacheType = CacheT
     comptime assert (
@@ -1759,6 +2106,15 @@ def _mla_indexer_paged_impl[
         "pooled indexing (kpool > 1) is implemented only on the SM100 and"
         " gfx950 tensor-core scorers; the scalar fallback walks token rows"
     )
+    comptime assert not emit_scores or (
+        use_sm100_scorer and not FP4 and kpool == 1 and not H.enabled
+    ), (
+        "the scored and context-parallel indexer runs on the SM100 FP8 scorer"
+        " only, unpooled and without a score hook"
+    )
+    comptime assert (
+        cp_size == 1 or emit_scores
+    ), "a context-parallel indexer must emit scores for the group merge"
 
     # A pooled cache comes in two shapes: one `depth`-wide row per pool, or
     # (GLM-5.3-Flash) one `depth / kpool`-wide row per token with each pool's
@@ -1800,10 +2156,13 @@ def _mla_indexer_paged_impl[
     # `ceildiv(max_num_keys, 128)`, so a depth landing in a 128-key tile's last
     # `scores_align - 1` columns reads as one tile deeper.
     comptime scores_align = _elems_per_16b[scores_dt]()
-    var max_num_keys = align_up(
-        (Int(k_cache.max_context_length()) + max_new_tokens) // kpool,
-        scores_align,
-    )
+    var max_keys = (Int(k_cache.max_context_length()) + max_new_tokens) // kpool
+    comptime if cp_size > 1:
+        # A context-parallel rank holds, and so scores, only its local slots.
+        max_keys = ContextParallelLayout[cp_size, cp_interleave].max_local_len(
+            max_keys
+        )
+    var max_num_keys = align_up(max_keys, scores_align)
 
     # Per-batch KV cache lengths (cached-prefix length), for the top-k's row
     # bounds.
@@ -1959,6 +2318,8 @@ def _mla_indexer_paged_impl[
                     kpool=kpool,
                     pool_row_tokens=pool_row_tokens,
                     k_box_rows=k_box_rows,
+                    cp_size=cp_size,
+                    cp_interleave=cp_interleave,
                 ](
                     scores_tile,
                     q,
@@ -1973,6 +2334,7 @@ def _mla_indexer_paged_impl[
                     mask_str == MaskName.CAUSAL.name,
                     ctx,
                     chunk_begin,
+                    cp_rank,
                 )
         else:
             comptime assert num_heads % 16 == 0, (
@@ -2022,25 +2384,58 @@ def _mla_indexer_paged_impl[
         # never selected, and a row with fewer live keys than `top_k` gets a
         # `-1` tail -- including every row when `max_num_keys < top_k`, which
         # the single-block path pads however short `N` is.
-        var row_bound = _IndexerRowBound[
-            use_causal_mask, kpool, R, write_logical
-        ](
-            input_row_offsets.unsafe_ptr().as_unsafe_any_origin(),
-            cache_lengths.unsafe_ptr().as_unsafe_any_origin(),
-            batch_size,
-            chunk_begin,
-            remap.offset(chunk_begin * top_k),
-        )
-        Topk.select(
-            ctx,
-            scores_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
-            output_indices.unsafe_ptr()
-            .unsafe_offset(chunk_begin * top_k)
-            .as_unsafe_any_origin(),
-            max_num_keys,
-            top_k,
-            chunk_rows,
-            row_bound,
-        )
+        comptime if emit_scores:
+            # Same top-k; the row bound counts local slots and its sink also
+            # re-reads each selection's score from the buffer just consumed.
+            var cp_row_bound = _CPIndexerRowBound[
+                use_causal_mask,
+                R,
+                write_logical,
+                scores_dt,
+                cp_size,
+                cp_interleave,
+            ](
+                input_row_offsets.unsafe_ptr().as_unsafe_any_origin(),
+                cache_lengths.unsafe_ptr().as_unsafe_any_origin(),
+                batch_size,
+                chunk_begin,
+                remap.offset(chunk_begin * top_k),
+                cp_rank,
+                scores_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                max_num_keys,
+                out_scores.unsafe_offset(chunk_begin * top_k),
+            )
+            Topk.select(
+                ctx,
+                scores_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                output_indices.unsafe_ptr()
+                .unsafe_offset(chunk_begin * top_k)
+                .as_unsafe_any_origin(),
+                max_num_keys,
+                top_k,
+                chunk_rows,
+                cp_row_bound,
+            )
+        else:
+            var row_bound = _IndexerRowBound[
+                use_causal_mask, kpool, R, write_logical
+            ](
+                input_row_offsets.unsafe_ptr().as_unsafe_any_origin(),
+                cache_lengths.unsafe_ptr().as_unsafe_any_origin(),
+                batch_size,
+                chunk_begin,
+                remap.offset(chunk_begin * top_k),
+            )
+            Topk.select(
+                ctx,
+                scores_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                output_indices.unsafe_ptr()
+                .unsafe_offset(chunk_begin * top_k)
+                .as_unsafe_any_origin(),
+                max_num_keys,
+                top_k,
+                chunk_rows,
+                row_bound,
+            )
 
     _ = scores_buf

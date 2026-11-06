@@ -31,7 +31,6 @@ from std._gpu.host.info import (
     is_accelerator,
     is_cpu,
     is_gpu,
-    is_valid_target,
 )
 
 

@@ -32,8 +32,8 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import Module
 from max.nn import hyper_connection as hyper_connection_module
-from max.nn.legacy.kernels import mhc_pre_supports
-from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.nn._graph_ops import mhc_pre_supports
+from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.glm5_next_modulev3.layers.decoder import (
     Glm5NextDecoderLayer,
 )

@@ -15,6 +15,7 @@
 #define SUPPORT_HASHUTILS_H
 
 #include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/raw_ostream.h"
@@ -45,7 +46,7 @@ class Operation;
 namespace M {
 
 /// A raw_ostream that hashes content using the xxhash 128-bit algorithm.
-class raw_xxhash128_stream : public llvm::raw_ostream {
+class MODULAR_CXX_EXPORT raw_xxhash128_stream : public llvm::raw_ostream {
   XXH3_state_t State;
 
   /// See raw_ostream::write_impl. Defined out-of-line in HashUtils.cpp so the
@@ -65,7 +66,7 @@ public:
 };
 
 /// A raw_ostream that hashes content using the xxhash 64-bit algorithm.
-class raw_xxhash64_stream : public llvm::raw_ostream {
+class MODULAR_CXX_EXPORT raw_xxhash64_stream : public llvm::raw_ostream {
   XXH3_state_t State;
 
   /// See raw_ostream::write_impl. Defined out-of-line in HashUtils.cpp so the

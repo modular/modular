@@ -21,14 +21,14 @@ from max import functional as F
 from max import tree
 from max.dtype import DType
 from max.nn import Module
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
 from max.nn.embedding import Embedding
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.linear import Linear
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs

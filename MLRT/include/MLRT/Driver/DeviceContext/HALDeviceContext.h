@@ -94,9 +94,10 @@ using AsyncDeviceGraphRef = AsyncValueRef<DeviceGraphRef>;
 /// Device enumeration and identity.
 class MODULAR_CXX_EXPORT Device final : public ReferenceCounted<Device> {
 public:
-  // API is a constexpr StringLiteral for fast comparison, while being
-  // printable as a string.
-  using API = StringLiteral;
+  // A StringRef rather than the legacy driver's StringLiteral: a plugin names
+  // its own API at runtime, and `api()` reports that name as the legacy
+  // driver's backends report theirs.
+  using API = StringRef;
   static constexpr API cpuAPI = "cpu";     // Generic CPU device
   static constexpr API gpuAPI = "gpu";     // Generic GPU device
   static constexpr API cudaAPI = "cuda";   // NVIDIA CUDA device
@@ -182,7 +183,8 @@ public:
 
   /// DLPack device descriptor for this device. Mirrors the legacy
   /// per-backend mappings; APIs without a DLPack code (for example the mock
-  /// test plugin's generic gpu) report `kDLExtDev`.
+  /// test plugin's generic gpu) report `kDLExtDev`, and their pinned buffers,
+  /// which are plain host memory, report `kDLCPU`.
   DLDevice getDLDevice(bool pinned) const {
     if (api_ == cudaAPI)
       return pinned ? DLDevice{kDLCUDAHost, 0} : DLDevice{kDLCUDA, id_};
@@ -190,7 +192,7 @@ public:
       return pinned ? DLDevice{kDLROCMHost, 0} : DLDevice{kDLROCM, id_};
     if (api_ == metalAPI)
       return pinned ? DLDevice{kDLCPU, 0} : DLDevice{kDLMetal, id_};
-    return DLDevice{kDLExtDev, id_};
+    return pinned ? DLDevice{kDLCPU, 0} : DLDevice{kDLExtDev, id_};
   }
 
 private:
@@ -404,6 +406,8 @@ public:
   CompletionFlag(const CompletionFlag &) = delete;
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
+  // TODO(DRIV-688): make private once the extension backs the flag; the HAL
+  // Mojo wait reads it.
   uint64_t devicePtr() const { return devicePtr_; }
 
   void reset();
@@ -441,9 +445,9 @@ public:
   /// Stalls this stream until `event` has been reached.
   ErrorOrSuccess enqueueWaitForEvent(DeviceEvent &event);
 
-  /// Stalls the stream until the flag's slot holds `value`.
-  ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const;
+  /// Stalls the stream until the flag's slot is at least `value`.
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const;
 
   /// CUDA and HIP only, as in legacy.
   ErrorOrSuccess enqueueHostFunc(void (*fn)(void *), void *userData) const;

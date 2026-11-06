@@ -34,6 +34,7 @@ from max.benchmark import (
 )
 from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
+from comm.reducescatter_quant import reducescatter_quant, rs_quant_scratch_bytes
 from layout import TileTensor, row_major
 from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
@@ -83,6 +84,7 @@ def bench_reducescatter_2d[
     *,
     use_multimem: Bool,
     cache_busting: Bool,
+    quant_bits: Int = 0,
 ](
     mut b: Bench,
     list_of_ctx: List[DeviceContext[]],
@@ -92,10 +94,14 @@ def bench_reducescatter_2d[
 ) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
     comptime assert axis == 0 or axis == 1
+    comptime assert quant_bits == 0 or (
+        axis == 0 and not use_multimem
+    ), "the quantized reduce-scatter scatters rows of per-GPU inputs"
     comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var multimem_tag = "-multimem" if use_multimem else ""
     var cache_tag = "-cachebust" if cache_busting else ""
+    var quant_tag = String("-quant", quant_bits) if quant_bits else String("")
     var name = String(
         "reducescatter-axis",
         axis,
@@ -104,6 +110,7 @@ def bench_reducescatter_2d[
         "-",
         ngpus,
         multimem_tag,
+        quant_tag,
         cache_tag,
         "-(",
         M,
@@ -174,8 +181,13 @@ def bench_reducescatter_2d[
         host_buffers.append(host_buffer^)
 
         # Create and initialize signal buffers.
+        var scratch = 0
+        comptime if quant_bits > 0:
+            scratch = rs_quant_scratch_bytes[quant_bits, ngpus](M, D)
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](
+                size_of[Signal]() + scratch
+            )
         )
         list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
 
@@ -227,21 +239,34 @@ def bench_reducescatter_2d[
                     row_major(M, D),
                 )
 
-            # `reducescatter` takes a world-view output array (every device's
-            # own partition, indexed by global rank); `out_bufs` is already
-            # that array.
-            reducescatter[
-                dtype=dtype,
-                ngpus=ngpus,
-                use_multimem=use_multimem,
-                axis=axis,
-            ](
-                in_bufs,
-                out_bufs,
-                rank_sigs,
-                ctx_inner,
-                max_num_blocks,
-            )
+            comptime if quant_bits > 0:
+                var input = cb_inputs[ctx_idx].offset_ptr(cache_iter)
+                reducescatter_quant[dtype, ngpus, quant_bits](
+                    input.as_unsafe_any_origin().as_imm(),
+                    out_bufs[ctx_idx].ptr.as_unsafe_any_origin(),
+                    input.as_unsafe_any_origin().as_imm(),
+                    M,
+                    D,
+                    rank_sigs,
+                    ctx_idx,
+                    ctx_inner,
+                )
+            else:
+                # `reducescatter` takes a world-view output array (every
+                # device's own partition, indexed by global rank); `out_bufs`
+                # is already that array.
+                reducescatter[
+                    dtype=dtype,
+                    ngpus=ngpus,
+                    use_multimem=use_multimem,
+                    axis=axis,
+                ](
+                    in_bufs,
+                    out_bufs,
+                    rank_sigs,
+                    ctx_inner,
+                    max_num_blocks,
+                )
 
         bencher_iter_custom(b, call_fn, ctx)
 
@@ -260,6 +285,11 @@ def bench_reducescatter_2d[
 
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
+
+    # The quantized path is lossy; its test checks it against the error bound.
+    comptime if quant_bits > 0:
+        _ = host_buffers^
+        return
 
     # Verify results.
     comptime for i in range(ngpus):
@@ -562,4 +592,5 @@ def main() raises:
             ngpus=num_gpus,
             use_multimem=use_multimem,
             cache_busting=cache_busting,
+            quant_bits=get_defined_int["quant_bits", 0](),
         ](m, ctx, M, D, max_num_blocks)

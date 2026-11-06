@@ -374,7 +374,6 @@ def update_frequency_data_kernel[
 def update_frequency_data[
     token_type: DType,
     //,
-    target: StaticString,
 ](
     compressed_frequency_data: TileTensor[
         mut=True, .int32, address_space=.GENERIC, ...
@@ -393,7 +392,6 @@ def update_frequency_data[
 
     Parameters:
         token_type: Element type of the `new_tokens` tensor (inferred).
-        target: Target device to dispatch the kernel to.
 
     Args:
         compressed_frequency_data: Mutable 2D CSR frequency data where column
@@ -410,7 +408,7 @@ def update_frequency_data[
     comptime assert compressed_frequency_data.element_size == 1
     comptime assert new_tokens.element_size == 1
 
-    comptime if is_gpu[target]():
+    comptime if ctx.target.is_gpu():
         comptime block_size = 128
 
         var dev_ctx = ctx

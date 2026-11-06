@@ -12,52 +12,59 @@
 # ===----------------------------------------------------------------------=== #
 """Checkpoint names map onto the ModuleV3 GLM-5.3-Flash module tree.
 
-The checkpoint is mixed precision layer by layer, so an FP8 weight has to be
-recognized by its scale, not by its projection's name: every KDA layer has a
-BF16 ``q_proj`` that the DeepSeek adapter would mistake for an MLA projection.
+The checkpoint is mixed precision layer by layer: an FP8 projection keeps its
+checkpoint names, and the config lists the projections left unquantized. Every
+KDA layer has a BF16 ``q_proj`` that the DeepSeek naming would mistake for an
+MLA projection.
 """
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock
+from collections.abc import Mapping, Sequence
+from unittest.mock import NonCallableMock
 
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import Accelerator
 from max.dtype import DType
-from max.graph.weights import WeightData
-from max.pipelines.architectures.glm5_next_modulev3 import (
-    model as glm5_next_model,
+from max.graph.weights import WeightData, Weights
+from max.pipelines.architectures.glm5_next_modulev3.checkpoint import (
+    _stored_hc_fn_dtype,
+    check_raw_projections,
 )
 from max.pipelines.architectures.glm5_next_modulev3.weight_adapters import (
-    convert_glm5_next_state_dict,
+    glm5_next_weight_rules,
 )
+from max.pipelines.lib import WeightTransform
+from transformers import PretrainedConfig
 
 _LM = "model.language_model."
 
 
-class _Weight:
-    def __init__(self, data: WeightData) -> None:
-        self._data = data
-
-    def data(self) -> WeightData:
-        return self._data
-
-
 def _weight(
     name: str, shape: tuple[int, ...], dtype: npt.DTypeLike = np.float32
-) -> _Weight:
-    return _Weight(WeightData.from_numpy(np.zeros(shape, dtype=dtype), name))
+) -> Weights:
+    weight = NonCallableMock()
+    weight.data.return_value = WeightData.from_numpy(
+        np.zeros(shape, dtype=dtype), name
+    )
+    return weight
 
 
 def _convert(
-    names: dict[str, tuple[int, ...]], dtype: npt.DTypeLike = np.float32
+    names: Mapping[str, tuple[int, ...]],
+    dtype: npt.DTypeLike = np.float32,
+    not_converted: Sequence[str] = ("model.layers.3.self_attn.kv_b_proj",),
 ) -> dict[str, WeightData]:
     state = {name: _weight(name, shape, dtype) for name, shape in names.items()}
-    config = SimpleNamespace(text_config=SimpleNamespace(num_hidden_layers=4))
-    return convert_glm5_next_state_dict(state, config)  # type: ignore[arg-type]
+    config = PretrainedConfig(
+        text_config=PretrainedConfig(num_hidden_layers=4),
+        quantization_config={
+            "quant_method": "fp8",
+            "modules_to_not_convert": list(not_converted),
+        },
+    )
+    return WeightTransform(glm5_next_weight_rules(config))(state)
 
 
 def test_mixed_precision_names() -> None:
@@ -100,98 +107,50 @@ def test_mixed_precision_names() -> None:
         f"{lm}layers.3.mlp.gate.gate_score.weight",
         f"{lm}lm_head.weight",
     }
-    # The depthwise conv loses its singleton group axis.
-    assert list(out[f"{lm}layers.0.self_attn.q_conv1d"].shape) == [8, 4]
+    # The depthwise conv keeps the checkpoint's shape.
+    assert list(out[f"{lm}layers.0.self_attn.q_conv1d"].shape) == [8, 1, 4]
 
 
-def test_mhc_sites_and_float32_parameters() -> None:
+def test_raw_projections_must_match_their_scales() -> None:
+    """A bare MLA projection is one without a scale, whichever way the
+    checkpoint's ``modules_to_not_convert`` disagrees."""
+    names = {
+        f"{_LM}layers.3.self_attn.kv_b_proj.weight": (8, 4),
+        f"{_LM}layers.3.self_attn.q_a_proj.weight": (8, 4),
+        f"{_LM}layers.3.self_attn.q_a_proj.weight_scale_inv": (1, 1),
+    }
+    check_raw_projections(_convert(names))
+    with pytest.raises(ValueError, match="omits"):
+        check_raw_projections(_convert(names, not_converted=()))
+    with pytest.raises(ValueError, match="lists"):
+        check_raw_projections(
+            _convert(
+                names,
+                not_converted=(
+                    "model.layers.3.self_attn.kv_b_proj",
+                    "model.layers.3.self_attn.q_a_proj",
+                ),
+            )
+        )
+
+
+def test_mhc_sites_keep_the_checkpoint_dtype() -> None:
+    """The modules hold every tensor in the dtype the checkpoint stores."""
     out = _convert(
         {
             f"{_LM}layers.0.hc_attn_fn": (24, 16),
             f"{_LM}layers.0.hc_ffn_base": (24,),
-            f"{_LM}layers.0.self_attn.A_log": (2,),
-        }
+            f"{_LM}layers.0.self_attn.o_norm.weight": (2,),
+        },
+        np.float16,
     )
     lm = "language_model."
     assert set(out) == {
         f"{lm}layers.0.hc_attn.hc_fn",
         f"{lm}layers.0.hc_ffn.hc_base",
-        f"{lm}layers.0.self_attn.A_log",
+        f"{lm}layers.0.self_attn.o_norm.weight",
     }
-    assert all(w.dtype == DType.float32 for w in out.values())
-
-
-def test_mhc_projection_keeps_checkpoint_dtype() -> None:
-    """The model, not the adapter, picks the projection's dtype per device."""
-    out = _convert(
-        {
-            f"{_LM}layers.0.hc_attn_fn": (24, 16),
-            f"{_LM}layers.0.hc_attn_base": (24,),
-        },
-        np.float16,
-    )
-    lm = "language_model."
-    assert out[f"{lm}layers.0.hc_attn.hc_fn"].dtype == DType.float16
-    assert out[f"{lm}layers.0.hc_attn.hc_base"].dtype == DType.float32
-
-
-def _device(api: str, architecture_name: str) -> MagicMock:
-    device = MagicMock(spec=Accelerator)
-    device.api = api
-    device.architecture_name = architecture_name
-    return device
-
-
-@pytest.mark.parametrize(
-    ("api", "architecture_name", "stored", "hidden_size", "expected"),
-    [
-        ("hip", "gfx950", DType.bfloat16, 4096, DType.bfloat16),
-        # A float32 checkpoint is never narrowed.
-        ("hip", "gfx950", DType.float32, 4096, DType.float32),
-        # Where the fused op does not run, the op chain reads float32.
-        ("hip", "gfx950", DType.bfloat16, 1536, DType.float32),
-        ("hip", "gfx942", DType.bfloat16, 4096, DType.float32),
-        ("cuda", "sm_100a", DType.bfloat16, 4096, DType.float32),
-    ],
-)
-def test_hc_fn_dtype(
-    monkeypatch: pytest.MonkeyPatch,
-    api: str,
-    architecture_name: str,
-    stored: DType,
-    hidden_size: int,
-    expected: DType,
-) -> None:
-    monkeypatch.setattr(glm5_next_model, "accelerator_api", lambda: api)
-    dtype = glm5_next_model._hc_fn_dtype(
-        stored, 4, hidden_size, DType.bfloat16, _device(api, architecture_name)
-    )
-    assert dtype == expected
-
-
-@pytest.mark.parametrize("hc_fn_dtype", [DType.bfloat16, DType.float32])
-def test_prepare_state_dict_holds_hc_fn_in_config_dtype(
-    hc_fn_dtype: DType,
-) -> None:
-    """A bfloat16 projection is kept or widened as the config says."""
-    # bfloat16-exact, so widening must reproduce them exactly.
-    values = np.array([[0.5, -1.25], [2.0, 0.0]], dtype=np.float32)
-    hc_fn = WeightData.from_numpy(values, "hc_attn.hc_fn").astype(
-        DType.bfloat16
-    )
-    hc_base = WeightData.from_numpy(np.zeros(2, np.float32), "hc_attn.hc_base")
-    model = object.__new__(glm5_next_model.Glm5NextModel)
-    out = model._prepare_state_dict(
-        {"layers.0.hc_attn.hc_fn": hc_fn, "layers.0.hc_attn.hc_base": hc_base},
-        SimpleNamespace(hc_fn_dtype=hc_fn_dtype),
-    )
-    assert out["layers.0.hc_attn.hc_base"] is hc_base
-    prepared = out["layers.0.hc_attn.hc_fn"]
-    assert prepared.dtype == hc_fn_dtype
-    if hc_fn_dtype == DType.bfloat16:
-        assert prepared is hc_fn
-    else:
-        np.testing.assert_array_equal(np.from_dlpack(prepared.data), values)
+    assert all(w.dtype == DType.float16 for w in out.values())
 
 
 def test_stored_hc_fn_dtype() -> None:
@@ -202,10 +161,9 @@ def test_stored_hc_fn_dtype() -> None:
             dtype
         )
 
-    stored = glm5_next_model._stored_hc_fn_dtype
-    assert stored({}) == DType.float32
+    assert _stored_hc_fn_dtype({}) == DType.float32
     assert (
-        stored(
+        _stored_hc_fn_dtype(
             {
                 "layers.0.hc_attn.hc_fn": hc_fn(DType.bfloat16),
                 "layers.0.hc_ffn.hc_fn": hc_fn(DType.bfloat16),
@@ -214,7 +172,7 @@ def test_stored_hc_fn_dtype() -> None:
         == DType.bfloat16
     )
     with pytest.raises(ValueError, match="mixes"):
-        stored(
+        _stored_hc_fn_dtype(
             {
                 "layers.0.hc_attn.hc_fn": hc_fn(DType.bfloat16),
                 "layers.1.hc_attn.hc_fn": hc_fn(DType.float32),

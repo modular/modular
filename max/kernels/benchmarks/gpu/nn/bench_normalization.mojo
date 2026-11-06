@@ -105,7 +105,7 @@ def bench_layer_norm_gpu[
         ctx: DeviceContext[],
     ) raises {imm}:
         comptime if static_shape:
-            layer_norm[dtype, rank, target="gpu"](
+            layer_norm[dtype, rank](
                 input_fn,
                 output_fn,
                 shape_coord,
@@ -116,7 +116,7 @@ def bench_layer_norm_gpu[
                 ctx,
             )
         else:
-            layer_norm[dtype, rank, target="gpu"](
+            layer_norm[dtype, rank](
                 input_fn,
                 output_fn,
                 shape_coord,

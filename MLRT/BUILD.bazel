@@ -1,3 +1,4 @@
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library", "mojo_shared_library", "pkg_files")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel:tablegen.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "td_library")
@@ -39,6 +40,7 @@ modular_cc_library(
     deps = [
         "//AsyncRT:Runtime",
         "//Support:Base",
+        "//Support:SymbolExport",
     ],
 )
 
@@ -75,6 +77,7 @@ modular_cc_library(
         "//Support:ML",
         "//Support:Profiling",
         "//Support:ProfilingRanges",
+        "//Support:SymbolExport",
         "//Support:TimeProfiler",
         "//Support:TypeID",
         "@llvm-project//llvm:Support",
@@ -400,6 +403,7 @@ modular_cc_library(
     deps = [
         "//Support:Base",
         "//Support:ML",
+        "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],
@@ -420,6 +424,7 @@ modular_cc_library(
         "//Support:ML",
         "//Support:Profiling",
         "//Support:ProfilingRanges",
+        "//Support:SymbolExport",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
     ],
@@ -462,6 +467,7 @@ modular_cc_library(
     visibility = ["//MLRT:consumers"],
     deps = [
         "//AsyncRT:Runtime",
+        "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -481,6 +487,7 @@ modular_cc_library(
         "//AsyncRT:Runtime",
         "//Support:Base",
         "//Support:Configuration",
+        "//Support:SymbolExport",
         "//Support:Threading",
         "@llvm-project//llvm:Support",
     ],
@@ -533,7 +540,7 @@ modular_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Support:Base",
         "//Support:Buffer",
         "//Support:Configuration",
@@ -636,7 +643,23 @@ modular_shared_library(
         "include/MLRT/Driver/DeviceContext/DeviceContext.h",
         "include/MLRT/Driver/DeviceContext/HALDeviceContext.h",
     ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     output_name = "AsyncRTMojoBindings",
+    visibility = [
+        ":consumers",
+        "//mach/crates/max-sys-internal:__pkg__",
+    ],
+    with_import = True,
+    exports = [":Core/Tensor"] + select({
+        "//:hal_device_context_enabled": [":Driver/DeviceContextImplHAL"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":Driver/DeviceContextAPI",
         ":Driver/KernelLoadGateBindings",
@@ -646,14 +669,6 @@ modular_shared_library(
         "//Support:BinaryID",
         "//Support:Buffer",
         "//Support:Configuration",
-        # The profiler host glue makes this DSO's copy of the range shim able
-        # to load/adopt the profiler plugin. Required for the device-init
-        # activation trigger: in Python processes the MLRT device contexts
-        # (and their activatePendingTrace() call sites) resolve into THIS
-        # DSO, not libmax, and a glue-less copy would silently drop the
-        # notification — on AMD that permanently forfeits GPU recording
-        # (rocprofiler tool registration must precede the first HIP call).
-        "//Support:ProfilerHostGlue",
         "//Support:SymbolExport",
         "//Support:TypeID",
         "@dlpack",
@@ -712,6 +727,32 @@ mojo_shared_library(
     ],
 )
 
+# rules_cc drops a prebuilt shared library from links that use dynamic_deps
+# unless it sits behind a rule that advertises CcInfo, which
+# mojo_shared_library doesn't.
+cc_import(
+    name = "Driver/HALDeviceContextExports.cc",
+    data = [":Driver/HALDeviceContextExports"],
+    shared_library = ":Driver/HALDeviceContextExports",
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":Driver/MojoRuntimeBindings.cc"],
+)
+
+# The Mojo toolchain links libHALDeviceContextMojo.so against this library. A
+# cc_shared_library ships only the runtime libraries it links itself, so the
+# shared library carrying the HAL exports links this one too.
+cc_import(
+    name = "Driver/MojoRuntimeBindings.cc",
+    shared_library = ":Driver/MojoRuntimeBindings",
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 # HAL replacement for the DeviceContext C++ API: a pure shim over the Mojo HAL
 # DeviceContext (MojoHAL_* exports), implementing the HALDeviceContext.h
 # declarations that DeviceContext.h dispatches to under
@@ -744,6 +785,13 @@ modular_cc_library(
 modular_shared_library(
     name = "Driver/MojoRuntimeBindings",
     srcs = [],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     output_name = "MojoRuntimeBindings",
     tags = [ALLOW_UNUSED_TAG],
     # Only meaningful under --config=hal-device-context.
@@ -752,6 +800,7 @@ modular_shared_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = ["//visibility:public"],
+    with_import = True,
     deps = [
         # The gate's bindings ride along here rather than in
         # MojoRuntimeBindingsImpl: that one is linked under both
@@ -796,7 +845,7 @@ modular_cc_library(
         ":Core/Tensor",
         ":Driver/CompilationDeviceImpl",
         ":Driver/DeviceContextAPI",
-        ":Driver/HALDeviceContextExports",
+        ":Driver/HALDeviceContextExports.cc",
         ":Driver/LaunchTraceRegistry",
         "//AsyncRT:Runtime",
         "//SDK:HAL",
@@ -846,6 +895,7 @@ modular_cc_library(
         "lib/Driver/DeviceContext/MemoryManager.h",
         "lib/Driver/DeviceContext/Metal/MetalDeviceContext.h",
         "lib/Driver/DeviceContext/Metal/MetalDriver.h",
+        "lib/Driver/DeviceContext/PinnedCompletionFlag.h",
         "lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.h",
     ],
     # This IS the legacy DeviceContext implementation: it always compiles against
@@ -856,9 +906,14 @@ modular_cc_library(
     # exports flag-mode binaries must not link (see the GraphCompiler dep
     # selects).
     copts = ["-UMODULAR_HAL_DEVICE_CONTEXT"],
+    # @metal-cpp is headers only, and cc_shared_library drops the linkopts of a
+    # dependency that has no library to link, so its frameworks are repeated
+    # here.
     linkopts = select({
         "@platforms//os:macos": [
+            "-Wl,-framework,CoreGraphics",
             "-Wl,-framework,IOKit",
+            "-Wl,-framework,Metal",
         ],
         "//conditions:default": [],
     }),
@@ -881,7 +936,7 @@ modular_cc_library(
         ":Driver/KernelLoadGate",
         ":Driver/LaunchTraceRegistry",
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//AsyncRT:Support",
         "//SDK:HAL",
         "//Support:Base",
@@ -1033,21 +1088,26 @@ modular_cc_library(
 )
 
 # The driver C API as a shared library, for consumers built outside bazel,
-# which load it together with the driver implementation it carries. In tree
+# which load it together with the driver implementation it links. In tree
 # only the exports test loads it, the way such a consumer would, and that test
 # data edge does not count for the unused targets lint, so the tag keeps the
 # lint from flagging a library built for consumers outside the tree.
 modular_shared_library(
     name = "Driver/CAPIShim",
     srcs = [],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        ":Driver/DeviceContext",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     output_name = "max_driver_capi",
     tags = ["top-level"],
     visibility = ["//visibility:public"],
     # The C API comes from the library above rather than a second compile of
     # its source, and that library is always linked, so the shim carries every
     # entry point although nothing in it references them.
-    deps = [
-        ":Driver/CAPI",
-        ":Driver/DeviceContext",
-    ],
+    deps = [":Driver/CAPI"],
 )

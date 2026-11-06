@@ -29,9 +29,9 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
+from max.nn import _graph_ops as kernels
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy import kernels
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     SplitKVHeadDims,

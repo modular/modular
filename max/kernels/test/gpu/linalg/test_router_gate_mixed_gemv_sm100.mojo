@@ -99,7 +99,7 @@ def _run_case[static_N: Int](ctx: DeviceContext, m: Int) raises:
             c_ref_dev.unsafe_ptr(), row_major(m, Idx[static_N])
         )
         var a_f32_tt = TileTensor(a_f32_dev.unsafe_ptr(), row_major(m, Idx[K]))
-        matmul[transpose_b=True, target="gpu"](
+        matmul[transpose_b=True](
             c_ref_tt, a_f32_tt.as_imm(), b_tt.as_imm(), ctx
         )
 

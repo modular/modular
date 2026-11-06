@@ -1,8 +1,8 @@
 // RUN: mo-opt %s | FileCheck %s
 // RUN: mo-opt %s | mo-opt
 
-// Round-trip map.iter.rowwise, map.iter.rowwise.body, map.iter.reduce and
-// map.iter.map.
+// Round-trip map.iter.rowwise, map.iter.rowwise.body, map.iter.reduce,
+// map.iter.map, map.iter.cache and map.iter.cache.load.
 
 !DType = !lit.struct<@std::@builtin::@dtype::@DType>
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
@@ -263,6 +263,32 @@ mo.graph @mapPhaseBody<M, N>(%x: !mo.tensor<[M, N], f32>)
     }
   } {device = #M.device_ref<"cpu", 0>}
   mo.output %r, %sum : !mo.tensor<[M, N], f32>, !mo.tensor<[1, N], f32>
+}
+
+// A cache, read by a map phase.
+// CHECK-LABEL: mo.graph @cache
+// CHECK:         [[P7:%[^ ]+]] = map.iter.cache index ([[K7:%[^ :,]+]]: !map.index<2>) -> f32 {
+// CHECK-NEXT:      [[XV7:%[^ ]+]] = map.load %{{.*}}[[[K7]]] : !mo.tensor<[8, 128], f32>
+// CHECK-NEXT:      map.yield [[XV7]] : f32
+// CHECK-NEXT:    }
+// CHECK-NEXT:    map.iter.map index ([[J7:%[^ :,]+]]: !map.index<2>) {
+// CHECK-NEXT:      [[V7:%[^ ]+]] = map.iter.cache.load [[P7]][[[J7]]] : !map.index<2>, f32
+// CHECK-NEXT:      map.store %{{.*}}[[[J7]]] = [[V7]] : !mo.tensor<[8, 128], f32>
+mo.graph @cache(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+      %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
+      map.yield %xv : f32
+    }
+    map.iter.map index (%i: !map.index<2>) {
+      %v = map.iter.cache.load %p[%i] : !map.index<2>, f32
+      map.store %out[%i] = %v : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
 }
 
 }

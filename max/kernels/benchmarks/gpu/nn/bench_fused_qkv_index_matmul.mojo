@@ -313,7 +313,7 @@ def bench_shape(
             .as_imm()
             .as_unsafe_any_origin()
         )
-        generic_fused_qkv_index_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_index_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_full,
@@ -367,7 +367,7 @@ def bench_shape(
             .as_imm()
             .as_unsafe_any_origin()
         )
-        generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_qkv,
@@ -376,7 +376,7 @@ def bench_shape(
             q_out,
             ctx,
         )
-        generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_idx,

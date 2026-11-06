@@ -34,11 +34,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn import Module
-from max.nn.common_layers.quant_tensor import (
-    FP8BlockTensor,
-)
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _is_apple_gpu,
     _is_sm10x_gpu,
     block_scales_interleave,
@@ -46,6 +42,10 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_block_scaled,
     rope_quantize_dynamic_block_scaled,
     swiglu_quantize_dynamic_block_scaled,
+)
+from max.nn.activation import GatedActivation
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded

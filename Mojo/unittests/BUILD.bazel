@@ -15,6 +15,14 @@ kgen_kernel(
 modular_cc_test(
     name = "unittests",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         ":test_kernels",
         "//Mojo:HostBackend",

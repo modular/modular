@@ -43,20 +43,14 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.legacy.attention import MHAMaskVariant
+from max.nn._graph_ops import flash_attention_ragged, rope_split_store_ragged
+from max.nn.activation import GatedActivation
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.legacy.graph_groups import LogitsName
-from max.nn.legacy.kernels import (
-    flash_attention_ragged,
-    rope_split_store_ragged,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MultiKVCacheParams,
-    PagedCacheValues,
-)
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.moe import GatedActivation, MoE, MoEQuantized
+from max.nn.legacy.moe import MoE, MoEQuantized
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.distributed_transformer import (

@@ -33,7 +33,7 @@ from max.pipelines.modeling.types import PipelineTask
 from .memory_planner import Glm5NextMemoryPlanner
 from .model_config import Glm5NextConfig
 from .modules import Glm5NextDecoder
-from .weight_adapters import convert_registered_state_dict
+from .weight_adapters import glm5_next_weight_rules
 
 __all__ = ["glm5_next_modulev3_arch"]
 
@@ -47,9 +47,8 @@ glm5_next_modulev3_arch = SupportedArchitecture(
     modules={GraphRole.DECODER: Glm5NextDecoder},
     tokenizer=GlmTokenizer,
     context_type=TextContext,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_registered_state_dict,
-    },
+    weight_rules=glm5_next_weight_rules,
+    use_weight_rules=True,
     config=Glm5NextConfig,
     memory_planner=Glm5NextMemoryPlanner,
     checkpoints_recurrent_state=True,

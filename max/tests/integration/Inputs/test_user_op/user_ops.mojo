@@ -80,7 +80,6 @@ struct ConcatOpaque:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
         axis: Int,
     ](
         output: Some[Output & Fused & StoreAccess],

@@ -24,7 +24,7 @@ This is a pure copy in the cache's own dtype, so the result is bit-identical
 to indexing the block buffer by hand, on every target.
 """
 
-from std.sys.info import CompilationTarget, simd_width_of
+from std.sys.info import simd_width_of
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
@@ -40,7 +40,6 @@ def kv_cache_gather_rows_ragged[
     cache_t: KVCacheT,
     dtype: DType,
     //,
-    target: StaticString,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     slots: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
@@ -53,7 +52,6 @@ def kv_cache_gather_rows_ragged[
     Parameters:
         cache_t: The key or value cache type (inferred); one head per slot.
         dtype: The output element type (inferred); must be the cache's.
-        target: Compilation target string, selects the CPU or GPU path.
 
     Args:
         output: ``[num_rows, num_slots, head_dim]``, the last axis contiguous.
@@ -64,7 +62,6 @@ def kv_cache_gather_rows_ragged[
         cache: The key or value cache of one layer.
         ctx: Device context used to enqueue the GPU kernel.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     comptime head_dim = cache_t.kv_params.head_size
     comptime assert (
@@ -100,13 +97,7 @@ def kv_cache_gather_rows_ragged[
             rebind[SIMD[dtype, width]](cache.load[width=width](b, 0, slot, d)),
         )
 
-    comptime simd_width = (
-        simd_width_of[
-            cache_t.dtype, target=CompilationTarget.current()
-        ]() if is_cpu[target]() else simd_width_of[
-            cache_t.dtype, target=ctx.target
-        ]()
-    )
+    comptime simd_width = simd_width_of[cache_t.dtype, target=ctx.target]()
 
     elementwise[
         simd_width,

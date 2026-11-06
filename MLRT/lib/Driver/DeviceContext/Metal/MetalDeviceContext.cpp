@@ -680,8 +680,24 @@ ErrorOrSuccess MetalDeviceContext::enqueueCopyToDevice(void *dst,
     return success();
   }
 
-  // Source is regular host memory — drain prior GPU work, then memcpy into
-  // the shared MTLBuffer's CPU pointer on this thread.
+  // Source is regular host memory. Snapshot it into a staging buffer now, so
+  // the caller may reuse `src` on return, and blit it in queue order rather
+  // than draining: a drain blocks this thread behind any pending flag wait.
+  if (byteSize < metalDevice()->maxBufferLength()) {
+    DEFINE_OR_RETURN_ERROR(
+        MTL::Buffer *, staging,
+        allocateNewBuffer(metalDevice(), const_cast<void *>(src), byteSize,
+                          getResourceOptions(Device::AllocMode::HOST)));
+    if (staging == nullptr)
+      RETURN_ERROR("Failed to allocate H2D staging buffer");
+    // The committed command buffer retains `staging`.
+    NS::SharedPtr<MTL::Buffer> stagingRef = NS::TransferPtr(staging);
+    RETURN_IF_ERROR(enqueueMetalCopy(staging, dstResult.buffer, 0,
+                                     dstResult.offset, byteSize));
+    METAL_MAYBE_SYNC(*this);
+    return success();
+  }
+
   RETURN_IF_ERROR(drainQueue());
 
   void *dstContents = dstResult.buffer->contents();
@@ -1259,6 +1275,80 @@ MetalDeviceStream::enqueueWaitForEvent(const DeviceEvent &event) const {
   return metalCtx_.enqueueWaitFor(const_cast<DeviceEvent &>(event));
 }
 
+namespace {
+/// A shared event's value never decreases (a lower `setSignaledValue` is
+/// ignored, measured on M5), so `reset()` swaps in a fresh event.
+class MetalCompletionFlag final : public CompletionFlag {
+public:
+  MetalCompletionFlag(MetalDeviceContext &ctx,
+                      NS::SharedPtr<MTL::SharedEvent> event)
+      : ctx_(DeviceContextRef::copy(&ctx)), event_(std::move(event)) {}
+
+  void signal(uint64_t value) override { current()->setSignaledValue(value); }
+  uint64_t load() const override { return current()->signaledValue(); }
+
+  void reset() override {
+    NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
+        NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    NS::SharedPtr<MTL::SharedEvent> fresh =
+        NS::TransferPtr(static_cast<MetalDeviceContext &>(*ctx_)
+                            .metalDevice()
+                            ->newSharedEvent());
+    std::lock_guard<std::mutex> lock(mutex_);
+    // A target the old event hasn't reached means a wait may still be pending
+    // on it; that wait stays on the old event and only a signal of it frees it.
+    if (event_->signaledValue() < maxTarget_)
+      static_cast<MetalDeviceContext &>(*ctx_).recordPendingError(
+          Error("CompletionFlag::reset() called while a wait on the flag may "
+                "be pending"));
+    if (!fresh) {
+      static_cast<MetalDeviceContext &>(*ctx_).recordPendingError(
+          Error("CompletionFlag::reset() failed to create an MTLSharedEvent"));
+      return;
+    }
+    event_ = std::move(fresh);
+    maxTarget_ = 0;
+  }
+
+  /// Returns the event a wait for `target` encodes, noting the target so a
+  /// later `reset()` can tell whether a wait may still be pending.
+  NS::SharedPtr<MTL::SharedEvent> eventForWait(uint64_t target) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    maxTarget_ = std::max(maxTarget_, target);
+    return event_;
+  }
+
+private:
+  NS::SharedPtr<MTL::SharedEvent> current() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return event_;
+  }
+
+  DeviceContextRef ctx_;
+  mutable std::mutex mutex_;
+  NS::SharedPtr<MTL::SharedEvent> event_;
+  mutable uint64_t maxTarget_ = 0;
+};
+} // namespace
+
+ErrorOrSuccess MetalDeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                                    uint64_t value) const {
+  NS::SharedPtr<MTL::SharedEvent> event =
+      static_cast<const MetalCompletionFlag &>(flag).eventForWait(value);
+  return metalCtx_.enqueueWaitOnSharedEvent(event.get(), value);
+}
+
+ErrorOr<CompletionFlagRef> MetalDeviceContext::allocateCompletionFlag() {
+  NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
+      NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+  NS::SharedPtr<MTL::SharedEvent> event =
+      NS::TransferPtr(metalDevice()->newSharedEvent());
+  if (!event)
+    RETURN_ERROR("Failed to create MTLSharedEvent");
+  return CompletionFlagRef::take(
+      new MetalCompletionFlag(*this, std::move(event)));
+}
+
 void *MetalDeviceStream::ptr() const { return metalCtx_.commandQueue(); }
 
 ErrorOrSuccess MetalDeviceContext::synchronize() {
@@ -1347,21 +1437,30 @@ ErrorOrSuccess MetalDeviceContext::enqueueWaitFor(DeviceEvent &event) {
   TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueWaitFor",
                        TRACY_COLOR_PURPLE);
 
+  MetalDeviceEvent &metalEvent = MetalDeviceEvent::cast(event);
+  uint64_t target = metalEvent.waitValue();
+  if (target == 0)
+    return success();
+  return enqueueWaitOnSharedEvent(metalEvent.sharedEvent(), target);
+}
+
+ErrorOrSuccess
+MetalDeviceContext::enqueueWaitOnSharedEvent(MTL::SharedEvent *event,
+                                             uint64_t target) {
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
 
   if (!orderFence_)
     RETURN_ERROR("Metal ordering fence unavailable");
-  MetalDeviceEvent &metalEvent = MetalDeviceEvent::cast(event);
-  uint64_t target = metalEvent.waitValue();
-  if (target == 0)
-    return success();
-
   MTL::CommandBuffer *cmdBuffer = commandQueue_->commandBuffer();
   if (cmdBuffer == nullptr)
     RETURN_ERROR("Failed to create command buffer for event wait");
   // The event gates this buffer; the fence update gates later work behind it.
-  cmdBuffer->encodeWait(metalEvent.sharedEvent(), target);
+  cmdBuffer->encodeWait(event, target);
+  // Keep the event alive until the buffer completes: a flag's `reset()` drops
+  // its event.
+  cmdBuffer->addCompletedHandler(
+      [keepAlive = NS::RetainPtr(event)](MTL::CommandBuffer *) {});
   MTL::BlitCommandEncoder *blit = cmdBuffer->blitCommandEncoder();
   if (blit == nullptr)
     RETURN_ERROR("Failed to create blit encoder for event wait");

@@ -36,7 +36,7 @@ from max.graph import (
 )
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.tensor import Tensor
 from max.tensor.sharding import (
     DeviceMapping,

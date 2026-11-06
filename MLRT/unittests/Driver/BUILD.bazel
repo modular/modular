@@ -606,9 +606,15 @@ modular_cc_test(
         "DeviceContextTest.cpp",
         "ScopedEnvVar.h",
     ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         ":TestUtils",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
         "//Target:Support",
@@ -623,14 +629,22 @@ modular_cc_test(
     # The HAL backend creates even the CPU context through a driver plugin;
     # the legacy backend ignores the variable.
     data = ["//Target:CPUPlugin.so"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     env = {
         "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so)",
     },
     deps = [
         ":TestUtils",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         # Carries AsyncRT_AsyncValue_createFromDeviceBuffer for both backends.
-        "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/DeviceContext.static",
         "//AsyncRT:Runtime",
         "//Support:Base",
         "//Support:TypeID",
@@ -675,6 +689,12 @@ modular_cc_test(
     name = "HALVirtualDeviceTest",
     size = "small",
     srcs = ["HALVirtualDeviceTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     # Virtual mode needs a CompilationDevice for the configured api, and CUDA's
     # is the only one that exists (Metal hard-errors -- FIXME: MOCO-2411); its
     # NVPTX compilation driver is Linux-only.
@@ -684,7 +704,7 @@ modular_cc_test(
     }),
     deps = [
         ":TestUtils",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/CompilationDeviceImpl",
         "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
@@ -704,6 +724,12 @@ modular_cc_test(
         "//:apple_gpu": ["//Target:MetalPlugin.so"],
         "//conditions:default": [],
     }),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     env = select({
         "//:nvidia_gpu": {
             "EXPECTED_ARCH_PREFIX": "nvidia:sm_",
@@ -722,7 +748,7 @@ modular_cc_test(
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/CompilerDeviceArch",
         "//MLRT:Driver/DeviceContextAPI",
         "@llvm-project//llvm:Support",
@@ -739,14 +765,41 @@ modular_cc_test(
         "//MLRT/test/Driver/HAL:MockPlugin.so",
         "//Target:CPUPlugin.so",
     ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     env = {
         "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
     },
     deps = [
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/CompilerDeviceArch",
         "//MLRT:Driver/DeviceContextAPI",
         "@llvm-project//llvm:Support",
+    ],
+)
+
+# A HAL device reports its plugin's own api; the mock plugin's has no HAL
+# constant. HAL-only: the legacy driver has no plugin to load.
+modular_cc_test(
+    name = "HALPluginAPITest",
+    size = "small",
+    srcs = ["HALPluginAPITest.cpp"],
+    data = ["//MLRT/test/Driver/HAL:MockPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+    },
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
     ],
 )
 
@@ -765,10 +818,18 @@ modular_cc_test(
     name = "TraceMetadataTest",
     size = "small",
     srcs = ["TraceMetadataTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     local_defines = ["MODULAR_TESTING"],
     deps = [
         ":TestUtils",
-        "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/DeviceContext.static",
         "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "@llvm-project//llvm:Support",
@@ -1210,6 +1271,61 @@ modular_cc_test(
     ],
 )
 
+# Under --config=hal-device-context every context, the CPU one included, comes
+# from a driver plugin, so the C API tests carry the plugins for the host's
+# accelerator. Gated on HAL so the legacy GPU lanes do not rerun these tests
+# whenever plugin code changes.
+config_setting(
+    name = "capi_test_hal_nvidia",
+    constraint_values = ["//:nvidia_gpu"],
+    flag_values = {"//:hal_device_context": "true"},
+)
+
+config_setting(
+    name = "capi_test_hal_amd",
+    constraint_values = ["//:amd_gpu"],
+    flag_values = {"//:hal_device_context": "true"},
+)
+
+config_setting(
+    name = "capi_test_hal_apple",
+    constraint_values = ["//:apple_gpu"],
+    flag_values = {"//:hal_device_context": "true"},
+)
+
+_CAPI_TEST_PLUGINS = select({
+    ":capi_test_hal_nvidia": [
+        "//Target:CPUPlugin.so",
+        "//Target:CUDAPlugin.so",
+    ],
+    ":capi_test_hal_amd": [
+        "//Target:CPUPlugin.so",
+        "//Target:HIPPlugin.so",
+    ],
+    ":capi_test_hal_apple": [
+        "//Target:CPUPlugin.so",
+        "//Target:MetalPlugin.so",
+    ],
+    "//:hal_device_context_enabled": ["//Target:CPUPlugin.so"],
+    "//conditions:default": [],
+})
+
+_CAPI_TEST_PLUGIN_ENV = select({
+    ":capi_test_hal_nvidia": {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);CUDA@$(rootpath //Target:CUDAPlugin.so)",
+    },
+    ":capi_test_hal_amd": {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);HIP@$(rootpath //Target:HIPPlugin.so)",
+    },
+    ":capi_test_hal_apple": {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);Metal@$(rootpath //Target:MetalPlugin.so)",
+    },
+    "//:hal_device_context_enabled": {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so)",
+    },
+    "//conditions:default": {},
+})
+
 # Exercises the driver C API (MLRT/Driver/CAPI/DriverCAPI.h) on one device.
 # The CPU cases run everywhere, but the GPU lanes run only tagged tests, and
 # the CUDA, HIP and Metal paths this covers are what matters, so it asks for a
@@ -1224,11 +1340,14 @@ modular_cc_test(
         # consumable without a C++ compiler.
         "DriverCAPIHeaderCheck.c",
     ],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
     ],
@@ -1242,13 +1361,29 @@ modular_cc_test(
         "CAPIPeerTest.cpp",
         "CAPITestHelpers.h",
     ],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
+    ],
+)
+
+# The C API tests under --config=hal-device-context, which no CI lane runs on
+# a GPU. Run with that config plus a remote GPU config, for example
+# `--config=hal-device-context --config=remote-b200`.
+test_suite(
+    name = "CAPIHALTests",
+    tags = ["manual"],
+    tests = [
+        ":CAPIConcurrencyTest",
+        ":CAPIPeerTest",
+        ":CAPITest",
     ],
 )
 
@@ -1263,7 +1398,12 @@ modular_cc_test(
     data = [
         "DriverCAPIHeaderCheck.c",
         "//MLRT:Driver/CAPIShim",
-    ],
+    ] + select({
+        # The shim's HAL implementation needs this library at load time, and
+        # dlopen finds it only next to the test's runfiles.
+        "//:hal_device_context_enabled": ["//MLRT:Driver/MojoRuntimeBindings"],
+        "//conditions:default": [],
+    }),
     env = {
         "M_DRIVER_CAPI_HEADER_CHECK": "$(rootpath DriverCAPIHeaderCheck.c)",
         "M_DRIVER_CAPI_SHIM": "$(rootpath //MLRT:Driver/CAPIShim)",
@@ -1277,11 +1417,14 @@ modular_cc_test(
     name = "CAPIConcurrencyTest",
     size = "small",
     srcs = ["CAPIConcurrencyTest.cpp"],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextAPI",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
     ],

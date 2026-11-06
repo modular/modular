@@ -39,8 +39,8 @@ from max.graph import (
     ops,
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
+from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     read_engram_lookback,
 )

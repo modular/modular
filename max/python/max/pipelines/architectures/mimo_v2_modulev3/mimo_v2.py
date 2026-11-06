@@ -33,14 +33,11 @@ from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers, EPConfig
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MultiKVCacheParams,
-    PagedCacheValues,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.norm import rms_norm
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded

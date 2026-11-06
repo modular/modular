@@ -132,6 +132,29 @@ def _assert_one_decode_per_device(mlir: str, n_devices: int) -> None:
     assert "mo.if" not in mlir, "the layer needs no per-batch conditional"
 
 
+def test_staged_trace_folds_the_conv_operands() -> None:
+    """The staged graph reaches ``kda_decode`` on the fused operands.
+
+    The layer routes by shape at trace time only to decide operand
+    conventions, and a served batch arrives with symbolic extents -- so a
+    predicate that needs static shapes would leave every production batch
+    on the activated path, where the graph pays the silu, cast and
+    pre-activation elementwise passes this fusion removes. The staged trace
+    here uses the symbolic input types the serving path builds, so it must
+    carry ``input_mode = "conv_raw"`` and no silu elementwise op ahead of
+    the decode.
+    """
+    mlir = _trace_layer(8, "tp", shard_heads=True)
+    assert '"conv_raw"' in mlir, (
+        "the staged kda_decode must take the fused conv_raw operands; a"
+        " shape predicate left the served graph on the activated path"
+    )
+    assert "silu" not in mlir, (
+        "the silu the fused prologue folds must not survive as its own"
+        " elementwise op ahead of kda_decode"
+    )
+
+
 def test_tp8_ranks_each_get_one_kda_decode() -> None:
     """Each of 8 devices runs 12 heads through its own ``kda_decode``.
 

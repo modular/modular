@@ -41,6 +41,9 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/SourceMgr.h"
 
+#include <memory>
+#include <optional>
+#include <set>
 #include <tuple>
 
 using namespace M;
@@ -159,6 +162,161 @@ static int deviceInfoSpecificity(DeviceInfoAttr infos) {
          !infos.getArch().empty() + !infos.getModel().empty();
 }
 
+ErrorOr<PlatformPredicate>
+M::MOGG::getRegistrationPlatformPredicate(KernelDeclOp decl) {
+  if (KGEN::GeneratorAttr generator = decl.getPlatformPredicateAttr())
+    return PlatformPredicate::fromGenerator(generator);
+  return PlatformPredicate::fromDeviceInfo(decl.getRegistrationDeviceInfo());
+}
+
+ErrorOr<const PlatformPredicate *>
+MojoRegistry::getPlatformPredicate(KernelDeclOp decl) const {
+  mlir::Operation *op = decl.getOperation();
+  auto it = platformByDecl.find(op);
+  if (it == platformByDecl.end()) {
+    ErrorOr<PlatformPredicate> platform =
+        getRegistrationPlatformPredicate(decl);
+    std::unique_ptr<PlatformPredicate> stored;
+    if (platform.isError())
+      platformErrorByDecl[op] = platform.getError();
+    else
+      stored = std::make_unique<PlatformPredicate>(platform.takeValue());
+    it = platformByDecl.try_emplace(op, std::move(stored)).first;
+  }
+  if (!it->second)
+    return Error(("invalid platform of '" + decl.getSymName() +
+                  "': " + platformErrorByDecl.lookup(op))
+                     .str());
+  return it->second.get();
+}
+
+ErrorOr<PlatformPredicateOrder>
+MojoRegistry::getOrder(KernelDeclOp first, KernelDeclOp second) const {
+  std::pair<mlir::Operation *, mlir::Operation *> key = {first.getOperation(),
+                                                         second.getOperation()};
+  auto it = orderByPair.find(key);
+  if (it != orderByPair.end())
+    return it->second;
+
+  ErrorOr<const PlatformPredicate *> firstPlatform =
+      getPlatformPredicate(first);
+  if (firstPlatform.isError())
+    return Error(firstPlatform.getError());
+  ErrorOr<const PlatformPredicate *> secondPlatform =
+      getPlatformPredicate(second);
+  if (secondPlatform.isError())
+    return Error(secondPlatform.getError());
+  PlatformPredicateComparison comparison =
+      comparePlatformPredicates(**firstPlatform, **secondPlatform);
+
+  PlatformPredicateOrder order = comparison.order;
+  PlatformPredicateOrder reverse = order;
+  if (order == PlatformPredicateOrder::FirstNarrower)
+    reverse = PlatformPredicateOrder::SecondNarrower;
+  else if (order == PlatformPredicateOrder::SecondNarrower)
+    reverse = PlatformPredicateOrder::FirstNarrower;
+  orderByPair[key] = order;
+  orderByPair[{key.second, key.first}] = reverse;
+  return order;
+}
+
+ErrorOr<llvm::SmallVector<KernelDeclOp>>
+MojoRegistry::getSurvivors(llvm::ArrayRef<KernelDeclOp> matches) const {
+  // User-defined registrations shadow the built-in ones completely, so
+  // specificity only orders registrations of the same provenance.
+  bool anyUserDefined = llvm::any_of(
+      matches, [](KernelDeclOp decl) { return decl.getIsUserDefined(); });
+  llvm::SmallVector<KernelDeclOp> group;
+  for (KernelDeclOp decl : matches)
+    if (decl.getIsUserDefined() == anyUserDefined)
+      group.push_back(decl);
+
+  llvm::SmallVector<KernelDeclOp> survivors;
+  for (KernelDeclOp candidate : group) {
+    bool beaten = false;
+    for (KernelDeclOp other : group) {
+      if (other == candidate)
+        continue;
+      ErrorOr<PlatformPredicateOrder> order = getOrder(other, candidate);
+      if (order.isError())
+        return Error(order.getError());
+      if (*order == PlatformPredicateOrder::FirstNarrower) {
+        beaten = true;
+        break;
+      }
+    }
+    if (!beaten)
+      survivors.push_back(candidate);
+  }
+  // Strict inclusion is a partial order, so a finite group has at least one
+  // registration that nothing in the group is narrower than.
+  ASSERT_STREAM(!survivors.empty(), "no minimal kernel registration");
+  return survivors;
+}
+
+std::string MojoRegistry::describeAmbiguity(
+    llvm::StringRef name, llvm::ArrayRef<KernelDeclOp> survivors,
+    llvm::function_ref<void(llvm::raw_ostream &)> printDevice) const {
+  std::string msg;
+  llvm::raw_string_ostream os(msg);
+  os << "ambiguous kernel resolution for '" << name << "' on device ";
+  printDevice(os);
+  KernelDeclOp first = survivors.front();
+  os << ": " << (first.getIsUserDefined() ? "user-defined" : "built-in")
+     << " registrations match, and none of them applies to a strict subset of "
+        "the devices of all the others:";
+  // Each candidate is a note at its struct, like Mojo's own `candidate declared
+  // here` notes, so the message shows the source line of every registration.
+  for (KernelDeclOp decl : survivors) {
+    std::string text;
+    llvm::raw_string_ostream noteOs(text);
+    noteOs << decl.getSymName() << ": cond=";
+    ErrorOr<const PlatformPredicate *> platform = getPlatformPredicate(decl);
+    if (platform.isError())
+      noteOs << "<" << platform.getError() << ">";
+    else
+      (*platform)->print(noteOs);
+    mlir::Diagnostic note(decl.getMojoStructLocation(),
+                          mlir::DiagnosticSeverity::Note);
+    note << noteOs.str();
+    os << "\n"
+       << llvm::StringRef(FormatScopedDiagnosticHandler::formatWithSource(note))
+              .rtrim();
+  }
+  for (size_t i = 0; i < survivors.size(); ++i) {
+    for (size_t j = i + 1; j < survivors.size(); ++j) {
+      KernelDeclOp left = survivors[i];
+      KernelDeclOp right = survivors[j];
+      ErrorOr<const PlatformPredicate *> leftPlatform =
+          getPlatformPredicate(left);
+      ErrorOr<const PlatformPredicate *> rightPlatform =
+          getPlatformPredicate(right);
+      if (leftPlatform.isError() || rightPlatform.isError())
+        continue;
+      PlatformPredicateComparison comparison =
+          comparePlatformPredicates(**leftPlatform, **rightPlatform);
+      os << "\n  " << left.getSymName() << " and " << right.getSymName();
+      if (comparison.order == PlatformPredicateOrder::Equivalent) {
+        os << " apply to the same devices";
+        continue;
+      }
+      os << ": only the first applies to {";
+      comparison.firstOnly->print(os);
+      os << "}, and only the second applies to {";
+      comparison.secondOnly->print(os);
+      os << "}";
+      if (comparison.both) {
+        os << "; both apply to {";
+        comparison.both->print(os);
+        os << "}";
+      }
+    }
+  }
+  os << "\nnarrow a cond, or register a kernel for exactly the devices where "
+        "they overlap";
+  return msg;
+}
+
 // The order candidates win in, compared lexicographically: a user-defined
 // kernel beats a built-in one, then more matching device fields beat fewer.
 static std::tuple<bool, int> resolutionRank(KernelDeclOp decl) {
@@ -216,6 +374,74 @@ MojoRegistry::getResolvedKernel(llvm::StringRef name,
                     << " registrations match the runtime device with equal "
                        "specificity");
   return best;
+}
+
+ErrorOrSuccess MojoRegistry::findAmbiguousSelections(
+    bool builtinsOnly, llvm::SmallVectorImpl<std::string> &messages) const {
+  llvm::SmallVector<llvm::StringRef> names;
+  for (const auto &entry : kernelByName)
+    names.push_back(entry.getKey());
+  llvm::sort(names);
+
+  std::optional<std::string> failure;
+  for (llvm::StringRef name : names) {
+    llvm::SmallVector<KernelDeclOp> scope;
+    for (KernelDeclOp decl : kernelByName.find(name)->second)
+      if (!builtinsOnly || !decl.getIsUserDefined())
+        scope.push_back(decl);
+    if (scope.size() < 2)
+      continue;
+
+    llvm::SmallVector<const PlatformPredicate *> platforms;
+    bool anyInvalidPlatform = false;
+    for (KernelDeclOp decl : scope) {
+      ErrorOr<const PlatformPredicate *> platform = getPlatformPredicate(decl);
+      if (platform.isError()) {
+        // Keep scanning, so that `messages` keeps every ambiguity of the
+        // registry, not only the ones before the first invalid platform.
+        if (!failure)
+          failure = platform.getError();
+        anyInvalidPlatform = true;
+        break;
+      }
+      platforms.push_back(*platform);
+    }
+    if (anyInvalidPlatform)
+      continue;
+
+    std::set<llvm::SmallVector<mlir::Operation *>> reported;
+    forEachRepresentativeDevice(platforms, [&](const SymbolicDevice &device) {
+      llvm::SmallVector<KernelDeclOp> matches;
+      for (auto [decl, platform] : llvm::zip(scope, platforms))
+        if (platform->holdsFor(device))
+          matches.push_back(decl);
+      if (matches.empty())
+        return;
+      ErrorOr<llvm::SmallVector<KernelDeclOp>> survivors =
+          getSurvivors(matches);
+      if (survivors.isError()) {
+        if (!failure)
+          failure = survivors.getError();
+        return;
+      }
+      if (survivors->size() < 2)
+        return;
+      llvm::SmallVector<mlir::Operation *> key;
+      for (KernelDeclOp decl : *survivors)
+        key.push_back(decl.getOperation());
+      if (!reported.insert(key).second)
+        return;
+      messages.push_back(
+          describeAmbiguity(name, *survivors, [&](llvm::raw_ostream &os) {
+            os << "{";
+            device.print(os);
+            os << "}";
+          }));
+    });
+  }
+  if (failure)
+    return Error(*failure);
+  return {};
 }
 
 DeviceRefAttr MojoRegistry::getDeviceRefForOp(mlir::Operation *op) {
@@ -463,7 +689,8 @@ static ErrorOrSuccess validateCustomOpParameters(const MojoRegistry &registry,
   // declared on the registered functions. Collect struct params first to
   // mirror Mojo's merged `@register` parameter layout, then union the param
   // lists from each function variant (some kernels declare params only on
-  // `elementwise` instead of `execute`).
+  // `elementwise` instead of `execute`, and a declarative kernel has no
+  // `execute`).
   SmallVector<KGEN::ParamDeclAttr> inputParamsVec;
   llvm::SmallDenseSet<StringRef> seen;
   auto append = [&](KGEN::ParamDeclAttr p) {
@@ -479,6 +706,8 @@ static ErrorOrSuccess validateCustomOpParameters(const MojoRegistry &registry,
       append(cast<KGEN::ParamDeclAttr>(a));
   };
   appendFn(declOp.getExecute());
+  appendFn(declOp.getExecuteDevice());
+  appendFn(declOp.getExecuteConfiguration());
   appendFn(declOp.getElementwise());
   if (registry.containsShapeFunction(declOp.getRegistration()))
     appendFn(

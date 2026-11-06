@@ -25,8 +25,8 @@ from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
@@ -157,6 +157,8 @@ class MuseSparkTextModel(MuseTextModelBase):
                 )
             )
             layer_type_counts[layer_type] += 1
+        for layer in layers[:-1]:
+            layer.defer_join = True
         self.layers = ModuleList(layers)
         self._layer_kv_key = list(text_config.layer_types)
         self.return_logits = text_config.return_logits

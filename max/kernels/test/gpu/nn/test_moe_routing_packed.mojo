@@ -14,6 +14,7 @@
 them."""
 
 from std.math import align_up
+from std.os import getenv
 from std.random import random_float64, random_ui64, seed
 from std.testing import assert_equal, assert_true
 from std.utils.coord import Coord
@@ -54,7 +55,7 @@ def test_router_packed[
     ](coords: Coord) {var scores_t} -> SIMD[DType.float32, width]:
         return scores_t.load[width=width](coords)
 
-    single_group_router[n_experts, top_k, True, "gpu", packed=True](
+    single_group_router[n_experts, top_k, True, packed=True](
         TileTensor(ids, row_major((tokens, Idx[top_k]))),
         TileTensor(weights, row_major((tokens, Idx[top_k]))),
         scores_t.layout,
@@ -205,6 +206,15 @@ def test_indices_packed[
     assert_equal(bad, 0, "packed indices differ from the model")
 
 
+def _redzone_allocator() -> Bool:
+    """Whether `MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds` is set.
+
+    It aborts on any write past a buffer, including the one planted fault 2
+    makes on purpose.
+    """
+    return "out-of-bounds" in getenv("MODULAR_DEBUG_DEVICE_ALLOCATOR")
+
+
 def test_poison[poison: Int](ctx: DeviceContext) raises:
     """A planted fault of the kernel must make some case differ."""
     var bad = indices_mismatches[8, 32, poison](67, 256, 64, 0, ctx)
@@ -230,4 +240,7 @@ def main() raises:
         test_indices_packed[8, 32](53, 256, 32, ctx, skew=40)
         test_indices_packed[8, 32](1031, 256, 0, ctx)
         comptime for p in range(1, POISONS + 1):
-            test_poison[p](ctx)
+            if p == 2 and _redzone_allocator():
+                print("skipping planted fault 2: it overruns `order`")
+            else:
+                test_poison[p](ctx)

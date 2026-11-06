@@ -18,14 +18,25 @@ custom op via :func:`max.functional.inplace_custom`.
 
 Every batch takes ``kda_decode``, and the op itself picks the recurrence,
 so this layer carries no device knowledge: no accelerator query, no
-servability check, no per-batch conditional, no operand casts. On gfx950,
-under the bounded "safe" gate with bf16 q/k/v and a float32 state pool,
-a prefill batch runs the chunk-parallel pipeline inside the op while every
-other batch -- decode included -- runs the token-sequential kernel; on any
-other target, and under the "original" gate, every batch runs the
-token-sequential kernel. The K3 memory planner still reserves the chunk
-workspaces host-side (see ``memory_planner.py``); KERN-3869 tracks moving
-them into graph-planned buffers.
+servability check, no operand casts, and no per-batch conditional. Under
+the safe gate every batch outside a verify passes the conv's raw fp32
+q/k/v and the raw gate under ``input_mode="conv_raw"``: the op routes
+at run time on the shapes it already holds, so a decode-shaped batch runs
+the fused prologue -- the SiLU, the model-dtype rounding and the gate's
+pre-activation that the graph otherwise runs as its own small elementwise
+launches over ``[1, tokens, 12, 128]`` -- while any other batch
+activates first inside the op and continues on the chunk pipeline or the
+token-serial kernel exactly as before. The routing cannot live at trace
+time: a staged graph's symbolic extents never prove a batch shape, so a
+static-shape gate left every served decode batch unfused.
+
+On gfx950, under the bounded "safe" gate with bf16 q/k/v and a float32
+state pool, a prefill batch runs the chunk-parallel pipeline inside the op
+while every other batch -- decode included -- runs the token-sequential
+kernel; on any other target, and under the "original" gate, every batch
+runs the token-sequential kernel. The K3 memory planner still reserves the
+chunk workspaces host-side (see ``memory_planner.py``); KERN-3869 tracks
+moving them into graph-planned buffers.
 
 The speculative-decoding VERIFY arm: when a binding is set on the layer
 (see :class:`KdaVerifyBinding`), the conv runs
@@ -38,11 +49,18 @@ so one graph serves every step. Outside a verify the layer is unchanged.
 
 Both gate-lower-bound arms V2 supports are kept (not scoped out): the
 "original" arm (``gate_lower_bound is None``, the kernel's own per-head
-``-exp(A_log) * softplus(pre)``) and the "safe" arm (pre-activated here,
-``log_alpha = bound * sigmoid(exp(A_log) * (raw_gate + dt_bias))`` folded
-into the kernel's ``A=1`` path). Published K3 sets the bound to -5.0, and
-both kernels hardcode -5.0 in their "safe" arm, so any other bound raises
-rather than silently running the wrong gate.
+``-exp(A_log) * softplus(pre)``) and the "safe" arm
+(``log_alpha = bound * sigmoid(exp(A_log) * (raw_gate + dt_bias))``).
+Under ``conv_raw`` the raw operands pass through and the op applies the
+pre-activation itself: in the fused kernel's prologue for a decode-shaped
+batch, in one activation launch for every other batch. Every activated
+safe-gate call -- the verify ring's -- instead takes the pre-activated
+gate with zeroed gate parameters: the activated kernels read ``a_log``
+per head, so the per-channel packing would both point every head at head
+0's coefficient and fail the chunk contract's ``a_log`` extent.
+Published K3 sets the bound to -5.0, and both kernels hardcode -5.0 in
+their "safe" arm, so any other bound raises rather than silently running
+the wrong gate.
 """
 
 from __future__ import annotations
@@ -53,12 +71,9 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue, ops
 from max.nn import Linear, Module
+from max.nn._graph_ops.state_space import gated_delta_conv1d_verify_fwd
+from max.nn._graph_ops.state_space.kimi_delta import STATE_LAYOUT, KdaGateMode
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import gated_delta_conv1d_verify_fwd
-from max.nn.legacy.state_space.kimi_delta import (
-    STATE_LAYOUT,
-    KdaGateMode,
-)
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 from max.tensor.sharding.action import PerShard
@@ -87,6 +102,8 @@ def _kda_decode(
     gate_mode: KdaGateMode,
     out_type: TensorType,
     pin_fma: bool,
+    input_mode: str = "activated",
+    activation_dtype: DType | None = None,
 ) -> TensorValue:
     values: list[TensorValue | BufferValue] = [
         TensorValue(q),
@@ -104,7 +121,7 @@ def _kda_decode(
     local_out_type = TensorType(
         out_type.dtype, out_type.shape, device=TensorValue(q).device
     )
-    parameters: dict[str, bool | int | str] = {
+    parameters: dict[str, bool | int | str | DType] = {
         "gate_mode": gate_mode,
         "beta_mode": "logits",
         "state_layout": STATE_LAYOUT,
@@ -115,6 +132,14 @@ def _kda_decode(
         # decode land on the same state bit for bit, so a rolled-back verify
         # equals the decode it interrupted.
         parameters["pin_fma"] = True
+    if input_mode != "activated":
+        if activation_dtype is None:
+            raise ValueError(
+                "kda_decode: input_mode 'conv_raw' needs activation_dtype,"
+                " the model dtype the fused SiLU result rounds to"
+            )
+        parameters["input_mode"] = input_mode
+        parameters["activation_dtype"] = activation_dtype
     out = ops.inplace_custom(
         "kda_decode",
         device=TensorValue(q).device,
@@ -435,10 +460,29 @@ class KimiK3KDAAttention(
             qkv = qkv.rebind_mapping(NamedMapping(qkv.mesh, (None, None)))
         q_flat, k_flat, v_flat = qkv.split([inner, inner, inner], axis=1)
 
+        # Every safe-gate batch outside a verify passes the conv's raw fp32
+        # operands: the op routes at run time on the shapes it holds, so a
+        # decode-shaped batch runs the fused prologue while any other batch
+        # activates first inside the op (SiLU, model-dtype rounding, gate
+        # pre-activation). A trace-time shape gate cannot see a staged
+        # batch's symbolic extents. The verify ring takes activated q/k/v and
+        # the pre-activated gate, so only a plain decode fuses, and only in a
+        # build without speculation (`pin_fma` off): the fused prologue is
+        # not byte-identical to the graph's elementwise activation, and a
+        # speculative build's rollback must land exactly on what its plain
+        # decode would have computed.
+        fused_decode = (
+            self.gate_lower_bound is not None
+            and binding is None
+            and not self.pin_fma
+        )
+
         def as_heads(flat: Tensor) -> Tensor:
             heads = flat.reshape(
                 [1, total_seq_len, self.num_heads, self.head_dim]
             )
+            if fused_decode:
+                return heads
             # silu and the cast back to the model dtype run per q/k/v slice
             # (the conv returns fp32 without them, `short_conv.py`), so each
             # fuses with the split that feeds it instead of forming a
@@ -468,7 +512,23 @@ class KimiK3KDAAttention(
             kernel_dt_bias = dt_bias_f32
             kernel_raw_gate = raw_gate_f32
             gate_mode: KdaGateMode = "original"
+        elif fused_decode:
+            # Only the conv_raw call folds the safe gate's per-channel
+            # pre-activation, so only it passes the raw gate, `dt_bias` and
+            # the per-channel `a_log` through unpacked, `a_log` flat for the
+            # op's rank-1 slot.
+            kernel_a_log = F.reshape(
+                a_log_f32, [self.num_heads * self.head_dim]
+            )
+            kernel_dt_bias = dt_bias_f32
+            kernel_raw_gate = raw_gate_f32
+            gate_mode = "safe"
         else:
+            # Every other safe-gate call runs activated -- the verify ring,
+            # or a plain decode that does not fuse -- and the activated
+            # kernels read `a_log` per head and apply the pre-activation
+            # themselves, so the gate arrives pre-activated and the gate
+            # parameters arrive as the identity.
             kernel_raw_gate = (raw_gate_f32 + dt_bias_f32) * F.exp(a_log_f32)
             kernel_a_log = F.zeros_like(a_log_f32[:, 0])
             kernel_dt_bias = F.zeros_like(dt_bias_f32)
@@ -501,6 +561,8 @@ class KimiK3KDAAttention(
                 gate_mode=gate_mode,
                 out_type=out_type,
                 pin_fma=self.pin_fma,
+                input_mode="conv_raw" if fused_decode else "activated",
+                activation_dtype=x.dtype if fused_decode else None,
             )
         else:
             o = kda_verify_ring(

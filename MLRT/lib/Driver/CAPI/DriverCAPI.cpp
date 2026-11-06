@@ -171,6 +171,13 @@ struct M_DriverBuffer {
   M::Driver::DeviceBufferRef buffer;
 };
 
+struct M_DriverCompletionFlag {
+  M::Driver::CompletionFlagRef flag;
+  /// The context the flag was created on, so a wait from another backend's
+  /// stream is refused rather than misread.
+  M::Driver::DeviceContextRef ctx;
+};
+
 namespace {
 
 /// A context of this interface's own, for calls that order nothing against
@@ -244,6 +251,15 @@ M_DriverStatus mixedBackends(const char *what) {
   message += ": the handles belong to different backends";
   return fail(M_DRIVER_INVALID_ARGUMENT, message);
 }
+
+#if MODULAR_HAL_DEVICE_CONTEXT
+/// Only the CUDA and HIP HAL plugins can wait on a flag.
+// TODO(DRIV-688): Metal, once its plugin gets the completion-flag extension.
+bool halSupportsCompletionFlags(const DeviceContext &context) {
+  const Device::API api = context.device().api();
+  return api == Device::cudaAPI || api == Device::hipAPI;
+}
+#endif
 
 } // namespace
 
@@ -411,17 +427,9 @@ M_DriverStatus M_DriverDeviceEnablePeerAccess(const M_DriverDevice *device,
     return fail(M_DRIVER_INVALID_ARGUMENT, "device or peer is null");
   if (!sameApi(contextOf(*device), contextOf(*peer)))
     return mixedBackends("M_DriverDeviceEnablePeerAccess");
-#if MODULAR_HAL_DEVICE_CONTEXT
-  // The HAL shim enables peer access for every pair at once and has no per
-  // pair entry point, so callers use M_DriverEnableAllPeerAccess there.
-  return fail(M_DRIVER_NOT_SUPPORTED,
-              "M_DriverDeviceEnablePeerAccess is not available in a HAL "
-              "device context build");
-#else
   return reportIfError(
       contextOf(*device).device().enablePeerAccess(contextOf(*peer).device()),
       "M_DriverDeviceEnablePeerAccess");
-#endif
 }
 
 M_DriverStatus M_DriverDeviceCanAccess(const M_DriverDevice *device,
@@ -474,6 +482,50 @@ M_DriverStatus M_DriverDeviceMemoryInfo(const M_DriverDevice *device,
   return succeed();
 }
 
+M_DriverStatus M_DriverDeviceAllocatorMemoryInfo(const M_DriverDevice *device,
+                                                 uint64_t *out_budget,
+                                                 uint64_t *out_allocatable) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+  // The context's query, not the device's, because it is the one that answers
+  // from the memory manager when the device has one.
+  ErrorOr<Device::MemInfo> info = contextOf(*device).getMemoryInfo();
+  if (info.isError())
+    return fail(info, "M_DriverDeviceAllocatorMemoryInfo");
+  if (out_budget != nullptr)
+    *out_budget = static_cast<uint64_t>(info.get().total);
+  if (out_allocatable != nullptr) {
+    const std::optional<size_t> free = info.get().free;
+    *out_allocatable = free.has_value() ? static_cast<uint64_t>(*free)
+                                        : M_DRIVER_MEMORY_UNKNOWN;
+  }
+  return succeed();
+}
+
+M_DriverStatus M_DriverDeviceGetAttribute(const M_DriverDevice *device,
+                                          M_DriverDeviceAttribute attribute,
+                                          int64_t *out) {
+  if (device == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
+  // The CPU device answers every attribute with 0 rather than refusing it.
+  if (contextOf(*device).device().api() == Device::cpuAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceGetAttribute: the CPU device reports no "
+                "device attributes");
+  // A caller built against a newer header can pass a value this library does
+  // not know, so the mapping refuses anything it does not name.
+  if (attribute != M_DRIVER_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceGetAttribute: unknown attribute " +
+                    std::to_string(static_cast<int>(attribute)));
+  ErrorOr<int> value = contextOf(*device).device().getAttribute(
+      Device::Attribute::MULTIPROCESSOR_COUNT);
+  if (value.isError())
+    return fail(value, "M_DriverDeviceGetAttribute");
+  *out = static_cast<int64_t>(value.get());
+  return succeed();
+}
+
 M_DriverStatus M_DriverDeviceAllocationRange(const M_DriverDevice *device,
                                              const void *address,
                                              void **out_base,
@@ -500,19 +552,11 @@ M_DriverStatus M_DriverEnableAllPeerAccess(void) {
 M_DriverStatus M_DriverAllPeerAccessEnabled(bool *out) {
   if (out == nullptr)
     return fail(M_DRIVER_INVALID_ARGUMENT, "out is null");
-#if MODULAR_HAL_DEVICE_CONTEXT
-  // The HAL shim keeps no record of which pairs are enabled.
-  *out = false;
-  return fail(M_DRIVER_NOT_SUPPORTED,
-              "M_DriverAllPeerAccessEnabled is not available in a HAL device "
-              "context build");
-#else
   ErrorOr<bool> enabled = Device::allPeerAccessEnabled();
   if (enabled.isError())
     return fail(enabled, "M_DriverAllPeerAccessEnabled");
   *out = enabled.get();
   return succeed();
-#endif
 }
 
 M_DriverStatus M_DriverDeviceContextHandle(const M_DriverDevice *device,
@@ -579,6 +623,28 @@ M_DriverStatus M_DriverStreamCreate(const M_DriverDevice *device,
   }
 #endif
   *out = new M_DriverStream{std::move(streamCtx), DeviceStreamRef(),
+                            DeviceContextRef::copy(device->ctx.getPointer())};
+  return succeed();
+}
+
+M_DriverStatus M_DriverDeviceStream(const M_DriverDevice *device,
+                                    M_DriverStream **out) {
+  if (out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "out is null");
+  *out = nullptr;
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+  // MAX builds its CPU contexts with DeviceContext::create, never the shared
+  // map this handle came from, so a CPU stream here would not be MAX's queue.
+  if (contextOf(*device).device().api() == Device::cpuAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceStream: MAX does not run CPU work on the "
+                "device's shared context");
+  // The device's process-wide context is the one MAX enqueues on, so a stream
+  // over it is MAX's queue. Unlike adopting the context by address, this
+  // needs no stable context address, which the HAL build cannot give.
+  *out = new M_DriverStream{DeviceContextRef::copy(device->ctx.getPointer()),
+                            DeviceStreamRef(),
                             DeviceContextRef::copy(device->ctx.getPointer())};
   return succeed();
 }
@@ -829,6 +895,29 @@ M_DriverStatus M_DriverStreamRecordNewEvent(const M_DriverStream *stream,
   return succeed();
 }
 
+M_DriverStatus M_DriverStreamEnqueueHostFunction(const M_DriverStream *stream,
+                                                 void (*fn)(void *),
+                                                 void *user_data) {
+  if (stream == nullptr || fn == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or fn is null");
+  // Checked here rather than left to the backend, because the CPU and Metal
+  // backends refuse with a runtime error the caller could not tell from a
+  // driver fault.
+  const Device::API api = stream->ctx->device().api();
+  if (api != Device::cudaAPI && api != Device::hipAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverStreamEnqueueHostFunction: host functions run on "
+                "CUDA and HIP streams only");
+  if (isExternal(*stream))
+    return reportIfError(stream->external->enqueueHostFunc(fn, user_data),
+                         "M_DriverStreamEnqueueHostFunction");
+  ErrorOr<DeviceStreamRef> active = stream->ctx->stream();
+  if (active.isError())
+    return fail(active, "M_DriverStreamEnqueueHostFunction");
+  return reportIfError(active.get()->enqueueHostFunc(fn, user_data),
+                       "M_DriverStreamEnqueueHostFunction");
+}
+
 //===----------------------------------------------------------------------===//
 // Events
 //===----------------------------------------------------------------------===//
@@ -888,6 +977,79 @@ M_DriverStatus M_DriverEventElapsedTimeMs(const M_DriverEvent *start,
   if (elapsed.isError())
     return fail(elapsed, "M_DriverEventElapsedTimeMs");
   *out_ms = static_cast<double>(elapsed.get());
+  return succeed();
+}
+
+//===----------------------------------------------------------------------===//
+// Completion flags
+//===----------------------------------------------------------------------===//
+
+M_DriverStatus M_DriverCompletionFlagCreate(const M_DriverDevice *device,
+                                            M_DriverCompletionFlag **out) {
+  if (device == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
+  *out = nullptr;
+#if MODULAR_HAL_DEVICE_CONTEXT
+  if (!halSupportsCompletionFlags(contextOf(*device)))
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverCompletionFlagCreate: a HAL device context build "
+                "supports completion flags on CUDA and HIP devices only");
+#endif
+  ErrorOr<M::Driver::CompletionFlagRef> flag =
+      contextOf(*device).allocateCompletionFlag();
+  if (flag.isError())
+    return fail(flag, "M_DriverCompletionFlagCreate");
+  *out = new M_DriverCompletionFlag{flag.takeValue(), device->ctx};
+  return succeed();
+}
+
+M_DriverStatus M_DriverCompletionFlagDestroy(M_DriverCompletionFlag *flag) {
+  if (flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  delete flag;
+  return succeed();
+}
+
+M_DriverStatus M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag,
+                                            uint64_t value) {
+  if (flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  flag->flag->signal(value);
+  return succeed();
+}
+
+M_DriverStatus M_DriverStreamWaitFlag(const M_DriverStream *stream,
+                                      const M_DriverCompletionFlag *flag,
+                                      uint64_t value) {
+  if (stream == nullptr || flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or flag is null");
+  if (!sameApi(*stream->ctx, *flag->ctx))
+    return mixedBackends("M_DriverStreamWaitFlag");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  if (!halSupportsCompletionFlags(*stream->ctx))
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverStreamWaitFlag: a HAL device context build supports "
+                "completion flags on CUDA and HIP streams only");
+#endif
+  if (isExternal(*stream))
+    return reportIfError(
+        stream->external->enqueueWaitOnFlag(*flag->flag, value),
+        "M_DriverStreamWaitFlag");
+  ErrorOr<DeviceStreamRef> queue = stream->ctx->stream();
+  if (queue.isError())
+    return fail(queue, "M_DriverStreamWaitFlag");
+  return reportIfError((*queue)->enqueueWaitOnFlag(*flag->flag, value),
+                       "M_DriverStreamWaitFlag");
+}
+
+M_DriverStatus
+M_DriverCompletionFlagGraphHandle(const M_DriverCompletionFlag *flag,
+                                  uint64_t *out) {
+  if (out != nullptr)
+    *out = 0;
+  if (flag == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag or out is null");
+  *out = reinterpret_cast<uint64_t>(flag->flag.getPointer());
   return succeed();
 }
 
@@ -1068,7 +1230,8 @@ M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
   if (stream == nullptr)
     return fail(M_DRIVER_INVALID_ARGUMENT, "stream is null");
   if (direction != M_DRIVER_COPY_HOST_TO_DEVICE &&
-      direction != M_DRIVER_COPY_DEVICE_TO_HOST)
+      direction != M_DRIVER_COPY_DEVICE_TO_HOST &&
+      direction != M_DRIVER_COPY_DEVICE_TO_DEVICE)
     return fail(M_DRIVER_INVALID_ARGUMENT, "direction is not a copy direction");
   if (isExternal(*stream))
     return notSupportedForExternalStream("M_DriverCopyBatch");
@@ -1090,7 +1253,12 @@ M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
 
   // Borrowed wrappers, so dropping them neither frees nor unregisters the
   // caller's memory; on the stream's context, so the batch orders only there.
-  const bool toDevice = direction == M_DRIVER_COPY_HOST_TO_DEVICE;
+  // A device-to-device source on a peer is stamped with the stream's context
+  // too: a source on another context would make the driver bracket the batch
+  // against that context's stream, and the address reaches the vendor's copy
+  // unchanged, where peer access resolves it.
+  const bool dstHost = direction == M_DRIVER_COPY_DEVICE_TO_HOST;
+  const bool srcHost = direction == M_DRIVER_COPY_HOST_TO_DEVICE;
   DeviceContext &ctx = *stream->ctx;
   auto borrow = [&](const void *address, uint64_t size, bool host) {
     void *ptr = const_cast<void *>(address);
@@ -1104,8 +1272,8 @@ M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
   dstBuffers.reserve(count);
   srcBuffers.reserve(count);
   for (size_t i = 0; i < count; ++i) {
-    DeviceBufferRef dst = borrow(dsts[i], sizes[i], /*host=*/!toDevice);
-    DeviceBufferRef src = borrow(srcs[i], sizes[i], /*host=*/toDevice);
+    DeviceBufferRef dst = borrow(dsts[i], sizes[i], dstHost);
+    DeviceBufferRef src = borrow(srcs[i], sizes[i], srcHost);
     if (!dst || !src)
       return fail(M_DRIVER_RUNTIME_ERROR,
                   "piece " + std::to_string(i) + " could not be wrapped");
@@ -1140,6 +1308,19 @@ M_DriverStatus M_DriverCopyDeviceToDevice(const M_DriverStream *stream,
       ctx.enqueueCopyDeviceToDevice(*dst, *src, /*srcByteOffset=*/0, byte_size,
                                     /*crossStreamSync=*/true),
       "M_DriverCopyDeviceToDevice");
+}
+
+M_DriverStatus M_DriverMemset(const M_DriverStream *stream, void *dst_device,
+                              uint8_t value, uint64_t byte_size) {
+  if (stream == nullptr || dst_device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or dst_device is null");
+  if (byte_size == 0)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
+  if (isExternal(*stream))
+    return notSupportedForExternalStream("M_DriverMemset");
+  return reportIfError(stream->ctx->enqueueSetMemory(dst_device, byte_size,
+                                                     value, /*valSize=*/1),
+                       "M_DriverMemset");
 }
 
 namespace {

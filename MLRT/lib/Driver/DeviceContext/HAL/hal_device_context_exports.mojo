@@ -602,6 +602,7 @@ def MojoHAL_HostBuffer_createSubBuffer(
 @export
 def MojoHAL_DeviceBuffer_createSubBuffer(
     out_buf: _OutPtr[_DeviceBufferBoxPtr],
+    out_ptr: _OutPtr[_RawMemoryPtr],
     parent: _DeviceBufferBoxPtr,
     byte_offset: UInt64,
     byte_size: UInt64,
@@ -618,6 +619,8 @@ def MojoHAL_DeviceBuffer_createSubBuffer(
         Int(byte_size),
         owning=False,
     )
+    # The plugin may have given the view an address of its own.
+    out_ptr[] = view.unsafe_ptr()
     var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
     boxed.unsafe_ptr().unsafe_write(view^)
     out_buf[] = boxed^.unsafe_leak()

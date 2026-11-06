@@ -402,8 +402,8 @@ class CompletionFlag:
     host-produced result without a second queue or a blocking host
     callback.
 
-    Currently requires a CUDA-backed :class:`Device`; constructing
-    against any other backend raises ``RuntimeError``.
+    Requires a CUDA, HIP or Metal :class:`Device`; other backends
+    raise ``RuntimeError``.
 
     .. invisible-code-block: python
 
@@ -419,25 +419,16 @@ class CompletionFlag:
         assert flag.load() == 0  # initialized to zero
 
     Args:
-        device: A CUDA-backed device. Other backends raise
-            ``RuntimeError``.
+        device: A CUDA, HIP or Metal device.
     """
 
     def __init__(self, device: Device) -> None: ...
-    @property
-    def device_ptr(self) -> int:
-        """
-        Device-visible 64-bit address of the 8-byte slot.
-
-        Suitable for passing to graph ops or queue APIs that wait
-        on a memory value.
-        """
-
     def reset(self) -> None:
         """
-        Clears the flag back to ``0`` with a relaxed atomic store.
+        Clears the flag back to ``0``.
 
-        Safe to call before any consumer has observed the address.
+        Don't reset while a queue is still waiting on the flag, and
+        don't signal a lower value without a reset.
         """
 
     def signal(self, value: int) -> None:
@@ -768,9 +759,9 @@ class DeviceQueue:
 
     def wait_for_host_value(self, flag: CompletionFlag, value: int) -> None:
         """
-        Stalls the queue until ``flag``'s 64-bit value equals ``value``.
+        Stalls the queue until ``flag`` holds at least ``value``.
 
-        Wraps the MLRT ``DeviceStream::enqueueWaitOnHostValue`` primitive
+        Wraps the MLRT ``DeviceStream::enqueueWaitOnFlag`` primitive
         (CUDA's ``cuStreamWaitValue64``). Typically paired with
         ``Device.__unsafe_enqueue_async_py_host_func`` to gate
         downstream GPU work on a host-side AsyncRT task that signals
@@ -778,10 +769,15 @@ class DeviceQueue:
         avoids a host ``synchronize()`` and captures cleanly into a
         CUDA graph as a wait-value node.
 
+        While the wait is pending, the thread that signals ``flag`` must
+        not block on this queue first: no ``synchronize()``, no copy into
+        or out of pageable host memory, and don't drop ``flag``. Each of
+        those waits for the queue, which is waiting for the flag.
+
         Args:
-            flag: The completion flag to wait on. The queue observes
-                ``flag.device_ptr`` via the pinned device-mapped alias.
-            value: The 64-bit value to wait for (equality).
+            flag: The completion flag to wait on.
+            value: The 64-bit value to wait for. Keep values below
+                2**63: HIP compares them as signed.
 
         Raises:
             RuntimeError: If the underlying device does not support

@@ -37,7 +37,8 @@ from typing import Generic, TypeVar
 from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops.state_space.kimi_delta import kda_ring_record_elements
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
@@ -45,7 +46,6 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateRegion,
 )
-from max.nn.legacy.state_space import kda_ring_record_elements
 from max.tensor import Tensor
 
 from ..qwen3_5.state_cache import (
@@ -320,7 +320,7 @@ def with_verify_ring(
     """Appends the speculative verify's ring to the live state leaves.
 
     A ring row holds one record per value head and window position, laid out
-    as :func:`~max.nn.legacy.state_space.kda_ring_record_elements` counts it.
+    as :func:`~max.nn._graph_ops.state_space.kda_ring_record_elements` counts it.
     The record stride is padded so the ring's page divides the live leaves'
     least common multiple -- the pool's block -- so declaring the ring never
     widens it. The name and argument order mirror GLM-5.3-Flash's

@@ -104,9 +104,7 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         out_tensor: Some[Output & Tensor],
         mat1: Some[Input & Tensor],
         mat2: Some[Input & Tensor],
@@ -117,7 +115,7 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
         ctx: DeviceContext,
     ) raises:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
-        comptime assert target == "gpu"
+        comptime assert ctx.target.is_gpu()
         comptime assert conforms_to(type_of(out_tensor), TileTensorable)
         comptime assert conforms_to(type_of(mat1), TileTensorable)
         comptime assert conforms_to(type_of(mat2), TileTensorable)

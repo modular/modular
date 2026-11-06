@@ -58,6 +58,7 @@ from max.tensor.realization_context import (
 from max.tensor.tensor import Tensor
 
 from .collective_ops import (
+    all_to_all,
     allgather,
     allgather_gated_residual_rms_norm,
     allgather_rms_norm,
@@ -215,6 +216,7 @@ __all__ = [
     "abs",
     "acos",
     "add",
+    "all_to_all",
     "allgather",
     "allgather_gated_residual_rms_norm",
     "allgather_rms_norm",

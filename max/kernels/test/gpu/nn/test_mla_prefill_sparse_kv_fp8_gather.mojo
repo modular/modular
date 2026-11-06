@@ -65,11 +65,12 @@ from layout import (
     row_major,
 )
 from layout.layout import Layout
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import AMDMLA, flare_mla_decoding
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
     _amd_sparse_mla_gather_kv_rows,
     mla_prefill_branch_sparse_fp8,
+    AMDMLAGraph,
 )
 from nn.attention.mha_mask import NullMask, PaddingMask
 from nn.attention.mha_utils import MHAConfig
@@ -403,6 +404,7 @@ def _run_case[
     flare_mla_decoding[
         config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
         decoding_warp_split_k=False,
+        kernels=AMDMLA,
     ](
         out_padded,
         q_padded,
@@ -451,6 +453,7 @@ def _run_case[
     flare_mla_decoding[
         config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
         decoding_warp_split_k=False,
+        kernels=AMDMLA,
     ](
         out_red_padded,
         q_last_padded,
@@ -883,6 +886,7 @@ def _check_attn_sink_guard(ctx: DeviceContext) raises:
             n_scale_granularity=n_scale_gran,
             k_scale_granularity=k_scale_gran,
             indices_stride=indices_stride,
+            kernels=AMDMLAGraph,
         ](
             out_tt,
             q_tt,

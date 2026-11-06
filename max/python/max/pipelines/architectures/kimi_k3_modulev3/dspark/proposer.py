@@ -32,7 +32,7 @@ from typing import Protocol, runtime_checkable
 from max import functional as F
 from max.graph import BufferValue, TensorValue, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.speculative.block_driver import (
     Accepted,
     ArgmaxDraftSampler,

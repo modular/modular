@@ -16,7 +16,7 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
-from max.nn.legacy.kernels import flash_attention
+from max.nn._graph_ops import flash_attention
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 

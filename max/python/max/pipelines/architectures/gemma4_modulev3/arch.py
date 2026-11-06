@@ -55,6 +55,7 @@ gemma4_modulev3_arch = SupportedArchitecture(
     config=Gemma4Config,
     tool_parser="gemma4",
     format_spec=gemma4_arch.format_spec,
+    tokenizer_family=gemma4_arch.tokenizer_family,
     reasoning_parser="gemma4",
     batching=Gemma4ModuleV3BatchProcessor,
     memory_planner=Gemma4MemoryPlanner,

@@ -32,6 +32,7 @@ modular_py_library(
         "model_artifact.py",
         "pipeline_modules.py",
         "serialization.py",
+        "tokenizer.py",
     ],
     deps = [
         ":_artifact",
@@ -56,9 +57,11 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/weights",
+        requirement("huggingface-hub"),
     ],
 )

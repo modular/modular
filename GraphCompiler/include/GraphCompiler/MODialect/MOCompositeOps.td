@@ -31,6 +31,62 @@ class MO_CompositeOp<string mnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
+// ReduceRMSNormOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_ReduceRMSNormOp : MO_CompositeOp<"reduce.rms_norm", [
+  AllDTypesMatch<["input", "result"]>,
+  AllShapeAttrsMatch<["input", "result"]>,
+  MO_ParamDeclaration,
+  MO_SingleDevice,
+  Pure,
+]> {
+  let summary = "RMS normalization operation";
+  let description = [{
+    Computes `input / sqrt(mean(input^2) + epsilon) * (weight + weight_offset)`.
+
+    A composite: MO patterns fuse it with its neighbors (a residual add,
+    RoPE, an allreduce, a quantize). A target that registers a kernel for it
+    runs that kernel; elsewhere `mo-tmp-decompose-composites` replaces it with
+    the ops it is made of.
+
+    `epsilon` and `weight_offset` are compile-time constants: targets that
+    need scalar constants as attributes cannot take them as operands.
+
+    `multiply_before_cast` false (Llama-style) casts to the output dtype
+    before multiplying by the weight; true (Gemma-style) multiplies first.
+
+    Example:
+
+    ```mlir
+      %res = mo.composite.reduce.rms_norm(%input, %weight)
+        {epsilon = #M.dense_array<9.99999997E-7> : tensor<f32>,
+         weight_offset = #M.dense_array<0.0> : tensor<f32>,
+         multiply_before_cast = false} :
+        (!mo.tensor<[2, 3], bf16, gpu:0>, !mo.tensor<[3], bf16, gpu:0>)
+        -> !mo.tensor<[2, 3], bf16, gpu:0>
+    ```
+  }];
+
+  let arguments = (ins
+    MO_Tensor:$input,
+    MO_Tensor:$weight,
+    MO_F32ScalarAttr:$epsilon,
+    MO_F32ScalarAttr:$weight_offset,
+    BoolAttr:$multiply_before_cast,
+    MO_ParamDecls:$outputParamDecls
+  );
+  let results = (outs MO_Tensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat = [{
+    `` custom<ParamDecls>($outputParamDecls) `(` operands `)`
+    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
+    `multiply_before_cast` `=` $multiply_before_cast `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ReduceRMSNormRoPEOp
 //===----------------------------------------------------------------------===//
 
@@ -389,7 +445,7 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
     RMSNorm and dynamic FP8 quantization. Returns the quantized output, its
     scale, and the post-add residual.
 
-    `multiply_before_cast` is the fused `mo.reduce.rms_norm`'s cast order. It
+    `multiply_before_cast` is the fused `mo.composite.reduce.rms_norm`'s cast order. It
     may be false only when the output is not quantized.
   }];
   let arguments = (ins
@@ -478,7 +534,7 @@ def MOComposite_QuantizeDynamicScaledFP8Op
     capped at `scale_ub`; `-1` gives one scale per row. When set,
     `amax_floor` floors each group's max-abs first. GPU only.
 
-    The fusion patterns that fold an `mo.reduce.rms_norm` (and an
+    The fusion patterns that fold an `mo.composite.reduce.rms_norm` (and an
     allreduce and add) into the quantize match this op.
   }];
 
@@ -638,6 +694,13 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
     into contiguous groups that reduce independently (TP-within-DP). It must
     be at least 2 and divide the device count. The builder always sets it;
     the `0` default is not usable.
+
+    A nonzero `quant_bits` (4 or 8) makes the reduce-scatter of shards too
+    large to fuse send each device's contribution to its peers quantized, in
+    groups of 32 elements: symmetric INT4 with a bf16 scale, or MXFP8. That is
+    lossy. Each device's own contribution and the residual stay exact. It
+    applies only to a full-world reduce-scatter (`group_size` equal to the
+    device count); the fused small-shard path never quantizes.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -648,7 +711,8 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
     DefaultValuedAttr<I64Attr, "0">:$group_size,
-    DefaultValuedAttr<BoolAttr, "false">:$has_residual
+    DefaultValuedAttr<BoolAttr, "false">:$has_residual,
+    DefaultValuedAttr<I64Attr, "0">:$quant_bits
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -658,7 +722,8 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
-    `` custom<ReduceScatterRMSNormAttrs>($group_size, $has_residual)
+    `` custom<ReduceScatterRMSNormAttrs>($group_size, $has_residual,
+        $quant_bits)
     attr-dict `:` functional-type(operands, results)
   }];
 }
@@ -866,7 +931,7 @@ def MOComposite_DistributedAllReduceRMSNormOp : MO_DistributedOp<"composite.dist
     allreduce (which rounds the sum to the input dtype) followed by a norm.
 
     `multiply_before_cast` is the norm's gamma cast order, matching
-    `mo.reduce.rms_norm`. bf16 in/out only; no residual and no quantization.
+    `mo.composite.reduce.rms_norm`. bf16 in/out only; no residual and no quantization.
     `gamma` is one operand per device, but every device must pass the same
     replicated weight: the 2-stage dispatch arm normalizes each row shard
     on its owner rank, so a gamma that differed per device would leak the

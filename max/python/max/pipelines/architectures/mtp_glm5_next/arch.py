@@ -20,8 +20,8 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from ..glm5_next.model_config import Glm5NextConfig
+from ..glm5_next.weight_adapters import glm5_next_mtp_weight_rules
 from .model import MTPGlm5NextDraftArchConfig
-from .weight_adapters import convert_glm5_next_with_mtp_state_dict
 
 __all__ = ["mtp_glm5_next_draft_arch"]
 
@@ -47,9 +47,8 @@ mtp_glm5_next_draft_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_glm5_next_with_mtp_state_dict,
-    },
+    weight_rules=glm5_next_mtp_weight_rules,
+    use_weight_rules=True,
     config=MTPGlm5NextDraftArchConfig,
     # The rollback never sizes a tensor by the accepted count, so a verify
     # step replays under capture like any decode step. Eager, the fused step

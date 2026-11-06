@@ -25,7 +25,7 @@ from typing import NamedTuple
 
 from max import tree
 from max.graph import BufferValue, TensorValue
-from max.nn.legacy.kv_cache import RecurrentStateInputsPerDevice
+from max.nn.kv_cache import RecurrentStateInputsPerDevice
 
 from ..state_cache import (
     CONV_LEAF_ID,

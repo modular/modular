@@ -32,6 +32,7 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
+    NullExpertLoad,
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
@@ -260,6 +261,7 @@ def test_dispatch[
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

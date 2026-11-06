@@ -25,6 +25,8 @@
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Support/AssertStream.h"
 
+#include "llvm/ADT/ScopedHashTable.h"
+
 namespace M::MOGG {
 // Forward-declared to break MOGGOps.h -> EmitsMojoInterface.h ->
 // EmitMojoState.h -> {KernelDeclAdaptor,MOGGOps}.h -> MOGGOps.h.
@@ -163,28 +165,51 @@ struct EmitMojoState {
     MojoLambdaInfos savedLambdaInfo;
   };
 
-  /// Drops the bindings made while it lives. A value lowered inside a Mojo
-  /// lambda is local to it (a constant is splat to the lambda's width), so
-  /// another lambda lowers the same value again.
+  /// What the ops of a `mogg.call.rowwise` body print against: names in the
+  /// Row API body the kernel prints, and its element types.
+  struct RowwiseBodyInfo {
+    Block *body = nullptr;
+    MojoValue params;
+    MojoValue rank;
+    MojoValue rowCoord;
+    MojoValue axisSize;
+    MojoValue dtype;
+    MojoValue accum;
+    /// Set by the body's `mogg.rowwise.cache`, which prints them.
+    MojoValue load;
+    MojoValue row;
+    /// The cached tile the phase printing now reads.
+    MojoValue tile;
+  };
+  RowwiseBodyInfo *rowwiseBody = nullptr;
+
+  /// Sets `rowwiseBody` while it lives.
+  class RowwiseBodyGuard {
+  public:
+    RowwiseBodyGuard(EmitMojoState &state, RowwiseBodyInfo &info)
+        : state(state), saved(state.rowwiseBody) {
+      state.rowwiseBody = &info;
+    }
+    RowwiseBodyGuard(const RowwiseBodyGuard &) = delete;
+    RowwiseBodyGuard &operator=(const RowwiseBodyGuard &) = delete;
+    ~RowwiseBodyGuard() { state.rowwiseBody = saved; }
+
+  private:
+    EmitMojoState &state;
+    RowwiseBodyInfo *saved;
+  };
+
+  /// Drops the bindings made while it lives, and restores the outer ones they
+  /// shadowed. A value lowered inside a Mojo lambda is local to it (a constant
+  /// is splat to the lambda's width), so another lambda lowers the same value
+  /// again.
   class ValueScope {
   public:
     explicit ValueScope(EmitMojoState &state)
-        : state(state), parent(state.valueScope) {
-      state.valueScope = this;
-    }
-    ValueScope(const ValueScope &) = delete;
-    ValueScope &operator=(const ValueScope &) = delete;
-    ~ValueScope() {
-      for (Value val : bound)
-        state.mlirValueToMojoValue.erase(val);
-      state.valueScope = parent;
-    }
+        : scope(state.mlirValueToMojoValue) {}
 
   private:
-    friend struct EmitMojoState;
-    EmitMojoState &state;
-    ValueScope *parent;
-    SmallVector<Value> bound;
+    llvm::ScopedHashTableScope<Value, MojoValue> scope;
   };
 
   /// If true, generate compute lambdas when possible.
@@ -207,8 +232,10 @@ struct EmitMojoState {
   void emitOutputStoreFusionDefsOnce();
 
 private:
-  mlir::DenseMap<Value, MojoValue> mlirValueToMojoValue;
-  ValueScope *valueScope = nullptr;
+  llvm::ScopedHashTable<Value, MojoValue> mlirValueToMojoValue;
+  // Holds the bindings made outside any `ValueScope`.
+  llvm::ScopedHashTableScope<Value, MojoValue> outermostValueScope{
+      mlirValueToMojoValue};
 
   /// Per-tensor static byte alignment for fused load/store receivers (see
   /// `setTensorArgAlignmentFor`).
@@ -231,19 +258,20 @@ public:
   using KernelBodyBuilder =
       llvm::function_ref<void(const MOGG::FunctionBody &)>;
 
-  const MojoValue &getMojoValueFor(Value val) const {
-    auto it = mlirValueToMojoValue.find(val);
-    ASSERT_STREAM(it != mlirValueToMojoValue.end(),
+  MojoValue getMojoValueFor(Value val) const {
+    ASSERT_STREAM(mlirValueToMojoValue.count(val),
                   << "value not bound to any MojoValue");
-    return it->second;
+    return mlirValueToMojoValue.lookup(val);
   }
 
+  /// Binds `val`. Inside a `ValueScope`, a binding from an outer scope is
+  /// shadowed until this scope ends.
   void setMojoValueFor(Value val, MojoValue mojoVal) {
-    [[maybe_unused]] auto inserted =
-        mlirValueToMojoValue.insert(std::make_pair(val, mojoVal)).second;
-    ASSERT_STREAM(inserted, << "value already bound to a MojoValue");
-    if (valueScope)
-      valueScope->bound.push_back(val);
+    ASSERT_STREAM(!mlirValueToMojoValue.count(val) ||
+                      mlirValueToMojoValue.getCurScope() !=
+                          &outermostValueScope,
+                  << "value already bound to a MojoValue");
+    mlirValueToMojoValue.insert(val, std::move(mojoVal));
   }
 
   /// Record a fused load/store receiver's static byte alignment, keyed by its

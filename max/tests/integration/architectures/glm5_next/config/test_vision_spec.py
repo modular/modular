@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The vision graph builds, with and without a tower replica per device.
+"""The vision graph builds, and declares the tower's weights once.
 
 Both plain serving (``graph_specs``) and the MTP pairing
 (``build_vision_graph``) build it through ``Glm5NextModel._vision_spec``. A
@@ -22,11 +22,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.glm5_next.model import Glm5NextModel
 from max.pipelines.architectures.glm5_next.model_config import (
     Glm5NextConfig,
@@ -34,6 +33,9 @@ from max.pipelines.architectures.glm5_next.model_config import (
 )
 from max.pipelines.architectures.glm5_next.nn.visual_transformer import (
     Glm5NextVisionTransformer,
+)
+from max.pipelines.architectures.glm5_next.weight_adapters import (
+    VISION_WEIGHT_PREFIX,
 )
 
 HIDDEN_SIZE = 256
@@ -81,23 +83,23 @@ def _config(devices: list[DeviceRef]) -> Glm5NextConfig:
 
 
 def _tower_weights(config: Glm5NextConfig) -> dict[str, WeightData]:
-    """Zero weights under the post-adapter tower names."""
+    """Zero weights under the names the weight rules give the tower."""
     assert config.vision_config is not None
     tower = Glm5NextVisionTransformer(config.vision_config, DeviceRef.CPU())
     return {
-        name: WeightData.from_numpy(
+        VISION_WEIGHT_PREFIX + name: WeightData.from_numpy(
             np.zeros([int(d) for d in w.shape.static_dims], np.float32), name
         ).astype(w.dtype)
         for name, w in tower.raw_state_dict().items()
     }
 
 
-@pytest.mark.parametrize("replicate", [True, False])
-def test_vision_graph_traces(
-    monkeypatch: pytest.MonkeyPatch, replicate: bool
-) -> None:
-    monkeypatch.setattr(Glm5NextModel, "replicate_vision_tower", replicate)
+def test_vision_graph_traces() -> None:
+    """Checks every device gets the rows and each weight has one name, the
+    one the weight rules give it."""
     config = _config([DeviceRef.CPU(0), DeviceRef.CPU(1)])
-    spec = Glm5NextModel._vision_spec(config, _tower_weights(config))
+    weights = _tower_weights(config)
+    spec = Glm5NextModel._vision_spec(config, weights)
     graph = spec.trace()
     assert len(graph.output_types) == 2
+    assert set(spec.weights_registry()) == set(weights)

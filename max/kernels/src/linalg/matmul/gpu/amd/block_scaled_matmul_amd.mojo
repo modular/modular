@@ -1880,6 +1880,7 @@ def _launch_block_scaled_impl[
     *,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
+    stages: Int = 0,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -1893,7 +1894,8 @@ def _launch_block_scaled_impl[
 ) raises:
     """`_launch_block_scaled`, optionally routing the output through
     `epilogue_fn` or `compute_fn` (selected by `has_epilogue_fn` and
-    `has_compute_fn`)."""
+    `has_compute_fn`). `stages` overrides the pipeline depth the tile gate
+    below would pick (0 keeps the gate), so a tile sweep can hold it fixed."""
     # Depth-2 LDS ping-pong: at BK=128 the K-sub-tile is one deep, so the
     # single-buffer body cannot overlap ds_write with MFMA. VGPR-bound, so 2x
     # LDS costs no occupancy (64 KiB of the 160 KiB budget at BM=BN=128).
@@ -1906,7 +1908,7 @@ def _launch_block_scaled_impl[
     # MXFP6 dense dispatch below for which shapes actually take this tile.
     comptime _a_bk_bytes = (BK_ELEMS * matrix_format.bits_per_element()) // 8
     comptime _k_tiles_total = type_of(a).static_shape[1] // _a_bk_bytes
-    comptime num_stages = 2 if (
+    comptime gated_stages = 2 if (
         (
             matrix_format == CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
             or matrix_format == CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3
@@ -1924,6 +1926,7 @@ def _launch_block_scaled_impl[
         and _k_tiles_total >= 2
         and _k_tiles_total % 2 == 0
     ) else 1
+    comptime num_stages = stages if stages else gated_stages
     comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
         BN=BN,
@@ -2090,6 +2093,7 @@ def _launch_block_scaled_split_k_impl[
     *,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
+    stages: Int = 1,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -2102,6 +2106,9 @@ def _launch_block_scaled_split_k_impl[
     ctx: DeviceContext,
 ) raises:
     """Inter-block split-K launch of BlockScaledMatmulAMD + reduce.
+
+    `stages` is the matmul's pipeline depth: 1 (the single-buffer schedule)
+    unless a caller asks for the depth-2 LDS ping-pong.
 
     Mirrors `amd_4wave_split_k_matmul`: allocate a `(num_splits * M, N)`
     float32 workspace, launch the matmul over a `grid_dim.z = num_splits`
@@ -2127,6 +2134,7 @@ def _launch_block_scaled_split_k_impl[
         BK_ELEMS=BK_ELEMS,
         WM=WM,
         WN=WN,
+        num_stages=stages,
         matrix_format=matrix_format,
         b_matrix_format=b_matrix_format,
     ]
@@ -2246,15 +2254,12 @@ def _pick_num_splits[
     BN: Int,
     BK_BYTES: Int,
     cta_cap: Int,
-    max_splits: Int = K_BYTES,
 ]() -> Int:
     """Comptime split-K factor for the small-M decode regime.
 
     Picks the largest `num_splits` such that the split is legal, the
     resulting CTA count `ceildiv(N, BN) * num_splits` stays under
-    `cta_cap`, and `num_splits <= max_splits`. Cap here, not with
-    `min(pick(), cap)`: that can name a factor that does not divide K.
-    Legality (mirrors `BlockScaledMatmulAMD.run`'s split-K asserts):
+    `cta_cap`. Legality (mirrors `BlockScaledMatmulAMD.run`'s split-K asserts):
       * `K_BYTES % num_splits == 0`, and
       * `(K_BYTES // num_splits) % BK_BYTES == 0`
     i.e. `num_splits` divides `K_BYTES // BK_BYTES`. Additionally each
@@ -2279,26 +2284,9 @@ def _pick_num_splits[
             and (K_BYTES // s) % BK_BYTES == 0
             and (K_BYTES // s) >= 2 * BK_BYTES
             and n_blocks * s <= cta_cap
-            and s <= max_splits
         ):
             best = s
     return best
-
-
-def _sk_perf_clamped_max_m[
-    lane_bytes: Int, N: Int, K_BYTES: Int, workspace_max_m: Int
-]() -> Int:
-    """Largest M the split-K route may claim.
-
-    Clamps the workspace ceiling to 320 at MXFP8 (N=6144, K=2048); other
-    shapes keep the byte budget.
-    """
-    # Measured o_proj crossover. Do not drop below 256: the dense path's
-    # latency floor loses to split-K at M=128.
-    comptime SK_PERF_MAX_M = 320
-    return min(workspace_max_m, SK_PERF_MAX_M) if (
-        lane_bytes == 32 and N == 6144 and K_BYTES == 2048
-    ) else workspace_max_m
 
 
 def block_scaled_matmul_amd[
@@ -2323,8 +2311,8 @@ def block_scaled_matmul_amd[
     during the store epilogue.
 
     Tile shape is selected at runtime based on M to match the expected
-    arithmetic intensity regime (decode vs. prefill). A proper
-    (N, K)-keyed dispatch table is planned for a follow-up PR.
+    arithmetic intensity regime (decode vs. prefill). MiniMax M3.1's MXFP8
+    shapes read it from a measured (N, K)-keyed table of M bands.
 
     Parameters:
         MMA_M: MFMA tile rows. Default 16. Pass 32 to opt into the
@@ -2462,7 +2450,201 @@ def block_scaled_matmul_amd[
     ](c, a, b, a_scales, b_scales, no_epilogue_fn, compute_fn, ctx)
 
 
+@fieldwise_init
+struct _MXFP8Band(Copyable, Movable):
+    """One M band of a shape's MXFP8 tile table: every M above the previous
+    band's `max_m` and up to this one's launches this tile."""
+
+    var max_m: Int
+    var BM: Int
+    var BN: Int
+    var BK_ELEMS: Int
+    var WM: Int
+    var WN: Int
+    var num_splits: Int
+    """1 launches the plain kernel; more splits K and adds the reduce."""
+    var stages: Int
+    """1 is the single-buffer schedule, 2 the LDS ping-pong."""
+
+
+def _m3_mxfp8_bands(lane_bytes: Int, N: Int, K: Int) -> List[_MXFP8Band]:
+    """Returns the measured MI355X tile table for a MiniMax M3.1 dense MXFP8
+    GEMM at TP4, or an empty list for any other shape or format.
+
+    Args:
+        lane_bytes: Operand bytes per lane per MFMA; only 32 (MXFP8) has bands.
+        N: Output columns.
+        K: Reduction depth in elements.
+
+    Returns:
+        The bands in increasing `max_m`; the last one takes every larger M.
+    """
+    # The closed-form buckets in `_block_scaled_matmul_amd_heuristic` derive
+    # the split from a CTA cap, so on these shapes they split K 4-12 ways out
+    # to M=320-1213 and never pair a small tile with the ping-pong. Each band
+    # is the fastest of 34 fixed configs of this kernel at M = 1, 8, 32, ...,
+    # 4096 (median of 50 calls, weights rotated past the MALL, every config
+    # checked against an FP32 reference): 1.006x the per-point best at the
+    # geomean, 1.09x at worst. Edges started at the geometric midpoints and
+    # moved where an in-between M measured otherwise; a BM=16 tile runs to
+    # M=16 because it is one M-tile either way. A config within ~3% of a
+    # band's best was preferred when it already serves a neighbor, to keep
+    # each shape's kernel count down. Against the buckets, same GPU at 22 M
+    # per shape, the table is 0.73-0.98x per forward pass for T = 16..4096.
+    #
+    # Columns: max_m, BM, BN, BK_ELEMS, WM, WN, num_splits, stages. Every
+    # split workspace stays under 40 MB at its band's largest M.
+    if lane_bytes != 32:
+        return []
+    if (N == 2304 or N == 2560) and K == 6144:
+        # Fused QKV (dense layers) and QKV+index (sparse layers).
+        return [
+            _MXFP8Band(16, 16, 64, 128, 16, 32, 12, 1),
+            _MXFP8Band(128, 64, 128, 128, 64, 32, 12, 1),
+            _MXFP8Band(384, 128, 128, 128, 64, 64, 4, 2),
+            _MXFP8Band(768, 64, 128, 128, 64, 32, 4, 2),
+            _MXFP8Band(Int.MAX, 128, 128, 128, 64, 64, 1, 2),
+        ]
+    if N == 3072 and K == 6144:
+        # Shared-expert gate and up.
+        return [
+            _MXFP8Band(8, 16, 64, 256, 16, 32, 6, 1),
+            _MXFP8Band(32, 16, 32, 512, 16, 16, 1, 1),
+            _MXFP8Band(64, 32, 64, 128, 16, 32, 4, 1),
+            _MXFP8Band(384, 64, 128, 128, 64, 32, 4, 2),
+            _MXFP8Band(768, 64, 64, 128, 32, 32, 1, 2),
+            _MXFP8Band(Int.MAX, 128, 128, 128, 64, 64, 1, 2),
+        ]
+    if N == 12288 and K == 6144:
+        # Dense-layer MLP gate and up.
+        return [
+            _MXFP8Band(16, 16, 64, 512, 16, 32, 1, 1),
+            _MXFP8Band(32, 32, 64, 128, 16, 32, 4, 1),
+            _MXFP8Band(128, 64, 128, 128, 64, 32, 4, 2),
+            _MXFP8Band(256, 64, 128, 128, 32, 64, 1, 2),
+            _MXFP8Band(1536, 128, 128, 128, 64, 64, 1, 2),
+            _MXFP8Band(Int.MAX, 256, 128, 128, 64, 64, 1, 2),
+        ]
+    if N == 6144 and (K == 2048 or K == 3072):
+        # Attention output projection and shared-expert down.
+        return [
+            _MXFP8Band(16, 16, 32, 512, 16, 16, 1, 1),
+            _MXFP8Band(32, 16, 64, 512, 16, 32, 1, 1),
+            _MXFP8Band(64, 32, 64, 256, 16, 32, 1, 1),
+            _MXFP8Band(128, 32, 64, 128, 16, 32, 1, 2),
+            _MXFP8Band(384, 64, 64, 128, 32, 32, 1, 2),
+            _MXFP8Band(512, 128, 128, 128, 32, 64, 1, 2),
+            _MXFP8Band(Int.MAX, 128, 128, 128, 64, 64, 1, 2),
+        ]
+    if N == 6144 and K == 12288:
+        # Dense-layer MLP down.
+        return [
+            _MXFP8Band(16, 16, 64, 128, 16, 32, 8, 1),
+            _MXFP8Band(64, 64, 128, 128, 64, 32, 4, 2),
+            _MXFP8Band(128, 128, 128, 128, 64, 64, 4, 2),
+            _MXFP8Band(256, 64, 128, 128, 64, 32, 4, 2),
+            _MXFP8Band(640, 128, 128, 128, 64, 64, 2, 1),
+            _MXFP8Band(3072, 128, 128, 128, 64, 64, 1, 2),
+            _MXFP8Band(Int.MAX, 256, 128, 128, 64, 64, 1, 2),
+        ]
+    return []
+
+
 def _block_scaled_matmul_amd_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    MMA_M: Int,
+    MMA_N: Int,
+    MMA_K: Int,
+    lane_bytes: Int,
+    b_lane_bytes: Int,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, .uint8, ...],
+    b: TileTensor[mut=False, .uint8, ...],
+    a_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    comptime N = type_of(c).static_shape[1]
+    comptime K = type_of(a).static_shape[1] * 32 // lane_bytes
+    comptime bands = _m3_mxfp8_bands(lane_bytes, N, K)
+    # Every band's split launch instantiates only the 16x16x128 MFMA, and the
+    # bands were measured with MXFP8 on both operands, so an MXFP4 B
+    # (`b_lane_bytes == 16`) keeps the heuristic.
+    comptime mma_is_default = MMA_M == 16 and MMA_N == 16 and MMA_K == 128
+    comptime if len(bands) > 0 and mma_is_default and b_lane_bytes == 0:
+        var M = Int(c.dim[0]())
+        if M == 0:
+            return
+        comptime for i in range(len(bands)):
+            comptime band = bands[i]
+            if M <= band.max_m:
+                comptime if band.num_splits > 1:
+                    _launch_block_scaled_split_k_impl[
+                        BM=band.BM,
+                        BN=band.BN,
+                        BK_ELEMS=band.BK_ELEMS,
+                        WM=band.WM,
+                        WN=band.WN,
+                        num_splits=band.num_splits,
+                        matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
+                        has_epilogue_fn=has_epilogue_fn,
+                        has_compute_fn=has_compute_fn,
+                        stages=band.stages,
+                    ](
+                        c,
+                        a,
+                        b,
+                        a_scales,
+                        b_scales,
+                        M,
+                        epilogue_fn,
+                        compute_fn,
+                        ctx,
+                    )
+                else:
+                    _launch_block_scaled_impl[
+                        BM=band.BM,
+                        BN=band.BN,
+                        BK_ELEMS=band.BK_ELEMS,
+                        WM=band.WM,
+                        WN=band.WN,
+                        matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
+                        has_epilogue_fn=has_epilogue_fn,
+                        has_compute_fn=has_compute_fn,
+                        stages=band.stages,
+                    ](
+                        c,
+                        a,
+                        b,
+                        a_scales,
+                        b_scales,
+                        M,
+                        epilogue_fn,
+                        compute_fn,
+                        ctx,
+                    )
+                return
+    else:
+        _block_scaled_matmul_amd_heuristic[
+            MMA_M=MMA_M,
+            MMA_N=MMA_N,
+            MMA_K=MMA_K,
+            lane_bytes=lane_bytes,
+            b_lane_bytes=b_lane_bytes,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](c, a, b, a_scales, b_scales, epilogue_fn, compute_fn, ctx)
+
+
+def _block_scaled_matmul_amd_heuristic[
     EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
     //,
@@ -2565,36 +2747,14 @@ def _block_scaled_matmul_amd_impl[
         K_BYTES, N, SK_BN, SK_SPLIT_BK_BYTES, cta_cap=_sk_cta_cap
     ]()
 
-    # BM=64 already has enough CTAs from M; extra splits only grow the reduce
-    # workspace. Cap at 2 for the measured o_proj key; M<=16 still uses `_sk_splits`.
-    comptime SK_BAND_MAX_SPLITS = 2 if (
-        lane_bytes == 32 and N == 6144 and K_BYTES == 2048
-    ) else _sk_splits
-    comptime _sk_band_splits = _pick_num_splits[
-        K_BYTES,
-        N,
-        SK_BN,
-        SK_SPLIT_BK_BYTES,
-        cta_cap=_sk_cta_cap,
-        max_splits=SK_BAND_MAX_SPLITS,
-    ]()
-
     # The f32 workspace grows with M while the benefit does not, so a byte
     # budget on it is an M ceiling (everything but M is comptime). 128 MiB stays
     # under the 205 MB a `mojo_test` gets from the MAX memory manager and still
     # admits M <= 1092 on M3's QKV+index GEMM (N=2560, 12 splits).
     comptime SK_MAX_WORKSPACE_BYTES = 128 * 1024 * 1024
-    # Keyed on `_sk_splits`, not `_sk_band_splits`: the band clamp must not
-    # spend freed workspace to widen reach (would pull M=2048 onto split-K).
     comptime _sk_max_m = SK_MAX_WORKSPACE_BYTES // (
         _sk_splits * N * size_of[DType.float32]()
     )
-
-    # Workspace bytes are a legality bound, ~4x past the measured crossover.
-    # `_sk_perf_clamped_max_m` holds that constant; a test pins it.
-    comptime _sk_route_max_m = _sk_perf_clamped_max_m[
-        lane_bytes, N, K_BYTES, _sk_max_m
-    ]()
 
     # Narrow-M split-K tile (M <= 16): BM=16 wastes no M rows, where BM=64 would
     # load and run MFMA on 48-63 OOB-zero rows. The DRAM→SMEM loader requires
@@ -2618,25 +2778,6 @@ def _block_scaled_matmul_amd_impl[
     # and the narrow wide-N tile below can only be the default MFMA; route a
     # 32x32x64 request past them rather than downgrading it silently.
     comptime _mma_is_default = MMA_M == 16 and MMA_N == 16 and MMA_K == 128
-    # Decode O-projection: N=6144, K=2048 elements.
-    comptime _m3_mxfp8_o_projection = (
-        lane_bytes == 32 and N == 6144 and K_BYTES * _elems_per_byte == 2048
-    )
-    # Fused QKV projections: N=2304 and N=2560, K=6144 elements.
-    comptime _m3_mxfp8_qkv_projection = (
-        lane_bytes == 32
-        and (N == 2304 or N == 2560)
-        and K_BYTES * _elems_per_byte == 6144
-    )
-    comptime _shape_gated_split_k = (
-        _m3_mxfp8_o_projection or _m3_mxfp8_qkv_projection
-    )
-    comptime assert not _shape_gated_split_k or (
-        can_use_bk_256 and _sk_splits > 1 and _sk_n_aligned
-    ), (
-        "shape-gated split-K needs BK256-tileable K, a legal split factor, and"
-        " N aligned to the branch's BN"
-    )
 
     # Wide-N short-K decode gate (e.g. down-proj N=16384, K<=3072). For wide
     # N the plain launch already yields ceildiv(N, BN) CTAs that fill the GPU,
@@ -2666,53 +2807,13 @@ def _block_scaled_matmul_amd_impl[
     )
 
     # Runtime M-bucket dispatch. Tile shapes tuned on MI355.
-    #   M <=  16  → BN=32/64 split-K for the MXFP8 O/QKV projections; other
-    #               shapes use the wide-N short-K route or narrow BM=16 split-K.
-    #   16 < M <= 32 → BM=32 split-K for the MXFP8 O-projection shape; other
-    #                  shapes use the BM=64 split-K tile below.
-    #   32 < M <= 128 → BN=64 split-K for the MXFP8 O-projection shape.
-    #   M >   16  → BM=64 split-K when `_sk_band_splits` found a legal factor
-    #               and M <= `_sk_route_max_m`. `_sk_splits` is
+    #   M <=  16  → the wide-N short-K route or narrow BM=16 split-K.
+    #   M >   16  → BM=64 split-K when `_sk_splits` found a legal factor
+    #               and M <= `_sk_max_m`. `_sk_splits` is
     #               keyed on N/K/cta_cap, not M, so a shape that's still
     #               CTA-starved at large M keeps benefiting there too. The
     #               BK512 fallback stays capped at M<=64 — see that branch.
     if M <= 16:
-        comptime if _m3_mxfp8_qkv_projection and _mma_is_default:
-            _launch_block_scaled_split_k_impl[
-                BM=16,
-                BN=64,
-                BK_ELEMS=SK_BK_ELEMS,
-                WM=16,
-                WN=32,
-                num_splits=_sk_splits,
-                MMA_M=MMA_M,
-                MMA_N=MMA_N,
-                MMA_K=MMA_K,
-                matrix_format=_fmt,
-                b_matrix_format=_bfmt,
-                has_epilogue_fn=has_epilogue_fn,
-                has_compute_fn=has_compute_fn,
-            ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
-            return
-        comptime if _m3_mxfp8_o_projection and _mma_is_default:
-            # Reuses `_sk_splits` outside its `SK_BN=128` calibration, as the
-            # `M <= 128` branch below does.
-            _launch_block_scaled_split_k_impl[
-                BM=16,
-                BN=32,
-                BK_ELEMS=SK_BK_ELEMS,
-                WM=16,
-                WN=16,
-                num_splits=_sk_splits,
-                MMA_M=MMA_M,
-                MMA_N=MMA_N,
-                MMA_K=MMA_K,
-                matrix_format=_fmt,
-                b_matrix_format=_bfmt,
-                has_epilogue_fn=has_epilogue_fn,
-                has_compute_fn=has_compute_fn,
-            ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
-            return
         comptime if _wide_n_short_k_decode and _mma_is_default:
             # Single kernel, no split-K, no reduce. BN=32 → ceildiv(N,32) CTAs
             # fill the GPU; BM=16 wastes no M rows. Mirrors aiter NUM_KSPLIT=1.
@@ -2779,44 +2880,6 @@ def _block_scaled_matmul_amd_impl[
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
     else:
-        comptime if _m3_mxfp8_o_projection and _mma_is_default:
-            if M <= 32:
-                _launch_block_scaled_split_k_impl[
-                    BM=32,
-                    BN=SK_BN,
-                    BK_ELEMS=SK_BK_ELEMS,
-                    WM=32,
-                    WN=64,
-                    num_splits=_sk_splits,
-                    MMA_M=MMA_M,
-                    MMA_N=MMA_N,
-                    MMA_K=MMA_K,
-                    matrix_format=_fmt,
-                    b_matrix_format=_bfmt,
-                    has_epilogue_fn=has_epilogue_fn,
-                    has_compute_fn=has_compute_fn,
-                ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
-                return
-            if M <= 128:
-                # Reuses `_sk_splits` outside its `SK_BN=128` calibration: at
-                # BN=64 this overshoots the CTA cap, but measured faster, so
-                # the derivation is not authoritative for this branch.
-                _launch_block_scaled_split_k_impl[
-                    BM=64,
-                    BN=64,
-                    BK_ELEMS=SK_BK_ELEMS,
-                    WM=64,
-                    WN=32,
-                    num_splits=_sk_splits,
-                    MMA_M=MMA_M,
-                    MMA_N=MMA_N,
-                    MMA_K=MMA_K,
-                    matrix_format=_fmt,
-                    b_matrix_format=_bfmt,
-                    has_epilogue_fn=has_epilogue_fn,
-                    has_compute_fn=has_compute_fn,
-                ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
-                return
         # Wide-N short-K, M > 16: keep the split route's own tile (BM=64,
         # BN=128, BK=256) and drop the split. A split does not add blocks -- it
         # re-runs K in shorter bands and then pays a workspace round trip of
@@ -2843,11 +2906,11 @@ def _block_scaled_matmul_amd_impl[
         # 17.6 us (1.66x), at 64 blocks 28.0 us against 26.1 us, and N=2304
         # K=8192 at 18 blocks 31.0 us against 14.8 us (2.1x). That is the same
         # short-K bound the decode gate above measured, reused for M > 16.
-        # `_sk_band_splits > 1` keeps this a replacement for a split, not for
+        # `_sk_splits > 1` keeps this a replacement for a split, not for
         # the BK512/narrow plain fallbacks below, which are unmeasured against
         # this tile.
         # MXFP8 is excluded: its crossover is not measured, and its production
-        # shapes are covered by the o_projection gate above.
+        # shapes take the M3.1 tile table in `_block_scaled_matmul_amd_impl`.
         #
         # TODO: both constants are measured heuristics with known limits that
         # someone should lift rather than widen blindly. The block floor comes
@@ -2861,14 +2924,14 @@ def _block_scaled_matmul_amd_impl[
         comptime _plain_wide_n = (
             lane_bytes == 16
             and can_use_bk_256
-            and _sk_band_splits > 1
+            and _sk_splits > 1
             and _sk_n_aligned
             and _mma_is_default
             and K_BYTES * _elems_per_byte <= 3072
         )
         comptime if _plain_wide_n:
             if (
-                M <= _sk_route_max_m
+                M <= _sk_max_m
                 and ceildiv(N, SK_BN) * ceildiv(M, SK_BM) >= _plain_min_blocks
             ):
                 _launch_block_scaled_impl[
@@ -2887,19 +2950,18 @@ def _block_scaled_matmul_amd_impl[
                 return
         comptime if (
             can_use_bk_256
-            and _sk_band_splits > 1
+            and _sk_splits > 1
             and _sk_n_aligned
             and _mma_is_default
         ):
-            # Past `_sk_route_max_m` the workspace round-trip outweighs the split.
-            if M <= _sk_route_max_m:
+            if M <= _sk_max_m:
                 _launch_block_scaled_split_k_impl[
                     BM=SK_BM,
                     BN=SK_BN,
                     BK_ELEMS=SK_BK_ELEMS,
                     WM=SK_WM,
                     WN=SK_WN,
-                    num_splits=_sk_band_splits,
+                    num_splits=_sk_splits,
                     MMA_M=MMA_M,
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,

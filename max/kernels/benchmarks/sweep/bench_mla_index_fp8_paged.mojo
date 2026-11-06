@@ -446,7 +446,7 @@ def run_config[
                     )
                 comptime if arm == _ARM_SPLIT:
                     paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
-                        "gpu", PAGE_SIZE
+                        PAGE_SIZE
                     ](
                         phys_ptr,
                         logical_ptr,

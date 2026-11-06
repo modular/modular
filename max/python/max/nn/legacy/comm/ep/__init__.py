@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Expert-parallel communication for the legacy NN layers."""
 
-from .ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+
 from .ep_manager import (
     EPBatchManager,
     EPCommBuffers,

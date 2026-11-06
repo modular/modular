@@ -380,6 +380,8 @@ constexpr llvm::StringLiteral kStructRowwiseContextParams =
     "algorithm.rowwise_types.ContextParams";
 constexpr llvm::StringLiteral kStructRowwiseContext =
     "algorithm.rowwise_types.Context";
+constexpr llvm::StringLiteral kFuncRowwiseAtAxis =
+    "algorithm.rowwise_types.at_axis";
 /// Fully qualified because `std.utils` does not re-export `coord`.
 constexpr llvm::StringLiteral kAliasDynamicCoord =
     "std.utils.coord.DynamicCoord";

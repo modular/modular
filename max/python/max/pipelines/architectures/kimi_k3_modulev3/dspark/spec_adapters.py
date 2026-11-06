@@ -56,6 +56,7 @@ from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import (
+    BufferType,
     BufferValue,
     DeviceRef,
     TensorType,
@@ -63,13 +64,15 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MLAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
+    RecurrentStateParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.legacy.comm import Signals
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
@@ -81,7 +84,10 @@ from ..model import KimiK3Model
 from ..spec_state import KimiK3RecurrentState
 from ..state_cache import (
     ATTN_CACHE_KEY,
+    CONV_LEAF_ID,
+    RECURRENT_LEAF_ID,
     STATE_CACHE_KEY,
+    VERIFY_RING_LEAF_ID,
     attn_cache,
     has_verify_ring,
 )
@@ -381,6 +387,135 @@ def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
     return {MLA_SPEC_EXTENTS: trailing[0].tensor}
 
 
+def export_contract(
+    speculative: SpeculativeConfig,
+    draft_config: Any,
+    target_config: Any,
+    kv_params: MultiKVCacheParams,
+    input_types: Sequence[TensorType | BufferType],
+    structured_output: bool,
+) -> dict[str, object] | None:
+    """Records the frozen export contract's resolved geometry.
+
+    The record carries what Mach's engine checks the export's inputs
+    against, independently of the graph
+    (mach/docs/models/kimi-k3-inferact-dspark.md).
+
+    Called from ``_driver_call`` on every fused build of this pairing,
+    serving included -- so a build MAX legitimately serves must never raise
+    here. A pairing outside the frozen contract (a decompressed, non-MLA
+    target cache, a target with no KDA state, or no verify ring) records
+    nothing: MAX keeps serving, and Mach's exporter fails its own
+    "records no export contract" refusal rather than shipping a half-frozen
+    record. The declared signature ends with the extent pair -- the traced
+    signal buffers the compile appends past it are recorded by the exporter,
+    which splices their types back in.
+
+    Raises:
+        ValueError: Only on states MAX cannot build: a drafter whose block
+            is not its draft width, or a trailing input that is not the host
+            extent pair. Both are refused earlier in ``_driver_call``.
+    """
+    del target_config
+    devices = [device.id for device in kv_params.devices]
+    tp = len(devices)
+    target_tree = kv_params.children.get("target")
+    if not isinstance(target_tree, MultiKVCacheParams):
+        # No KDA state child: a target whose layers are all full attention.
+        return None
+    state_child = target_tree.children.get(STATE_CACHE_KEY)
+    if not isinstance(state_child, RecurrentStateParams):
+        return None
+    regions = {region.leaf_id: region for region in state_child.regions}
+    conv, recurrent = regions[CONV_LEAF_ID], regions[RECURRENT_LEAF_ID]
+    ring = regions.get(VERIFY_RING_LEAF_ID)
+    target_attn = attn_cache(target_tree)
+    draft_attn = kv_params.children.get("draft")
+    if (
+        not isinstance(target_attn, MLAKVCacheParams)
+        or not isinstance(draft_attn, MLAKVCacheParams)
+        or ring is None
+        or not ring.scratch
+    ):
+        # Outside the frozen contract: the decompressed target cache a
+        # narrow-latent build serves through (the fused kernels' fallback,
+        # not the frozen 576-wide latent), or a cache that declares no
+        # verify-ring scratch. The Rust validator would refuse the record,
+        # so none is written.
+        return None
+
+    def cache(params: MLAKVCacheParams) -> dict[str, object]:
+        return {
+            "kind": "mla",
+            "layers": params.num_layers,
+            "kv_heads": 1,
+            "head_dim": params.head_dim,
+            "page_size": params.page_size,
+            "dtype": str(params.dtype),
+        }
+
+    width = speculative.draft_width
+    block = draft_config.block_size
+    anchor = K3DSparkProposer.samples_from_anchor
+    if block != width or not anchor:
+        raise ValueError(
+            "The Inferact K3 drafter drafts its whole block, anchor included:"
+            f" block_size {block} must equal the draft width {width}"
+        )
+    extent = input_types[-1]
+    if not (
+        isinstance(extent, TensorType)
+        and extent.dtype == DType.int32
+        and list(extent.shape) == [2]
+        and extent.device == DeviceRef.CPU()
+    ):
+        raise ValueError(
+            f"The Inferact K3 signature must end with the host extent pair,"
+            f" got {extent}"
+        )
+    return {
+        "devices": devices,
+        # The trace appends one signal buffer per device past every declared
+        # input; the class constant sizes it (Signals.NUM_BYTES).
+        "signal_bytes": Signals.NUM_BYTES,
+        "target": cache(target_attn),
+        "draft": cache(draft_attn),
+        "state": {
+            "layers": conv.num_layers,
+            "conv_dim": conv.row_shape[0] * tp,
+            "conv_span": conv.row_shape[1],
+            "heads": recurrent.row_shape[0] * tp,
+            "head_dim": recurrent.row_shape[1],
+            "conv_dtype": str(conv.dtype),
+            "recurrent_dtype": str(recurrent.dtype),
+            "ring": {
+                "length": ring.row_shape[1],
+                "record_stride": ring.row_shape[2],
+                "dtype": str(ring.dtype),
+                "scratch": True,
+            },
+        },
+        "spec_k": width,
+        "block_size": block,
+        "verify_width": width + 1,
+        "sample_from_anchor": anchor,
+        # What the frozen export pins off. Logit penalties and pipeline
+        # stages are refused by the build itself (a block drafter takes no
+        # penalties; this pairing answers no stage speculation), so they hold
+        # unconditionally; the other three follow the build.
+        "refused": {
+            "logit_penalties": True,
+            "pipeline_stages": True,
+            "in_thinking_phase": not any(
+                isinstance(t, TensorType) and t.dtype == DType.bool
+                for t in input_types
+            ),
+            "structured_output": not structured_output,
+            "stochastic_acceptance": speculative.use_greedy_acceptance,
+        },
+    }
+
+
 ADAPTER = TargetAdapter(
     primary_kv=ATTN_CACHE_KEY,
     verify=verify,
@@ -388,4 +523,5 @@ ADAPTER = TargetAdapter(
     trailing_input_types=trailing_input_types,
     trailing_buffers=trailing_buffers,
     extra=extra,
+    export_contract=export_contract,
 )

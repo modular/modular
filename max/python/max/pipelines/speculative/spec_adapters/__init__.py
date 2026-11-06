@@ -35,12 +35,9 @@ from typing import Any, TypeVar
 
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
-from max.nn.legacy.kv_cache import (
-    MultiKVCacheParams,
-    RecurrentStateInputsPerDevice,
-)
+from max.nn.kv_cache import MultiKVCacheParams, RecurrentStateInputsPerDevice
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 from ..block_driver import BlockBatch, BlockProposer
@@ -73,6 +70,7 @@ __all__ = [
     "tail_buffers",
     "tail_kv",
     "trailing_buffers",
+    "trailing_input_tree",
     "trailing_input_types",
     "verify_for",
 ]
@@ -288,6 +286,17 @@ def trailing_input_types(
 ) -> Sequence[TensorType | BufferType]:
     """Returns the inputs the target's call takes past the canonical tail."""
     return _adapter(target_arch, method).trailing_input_types(target_config)
+
+
+def trailing_input_tree(
+    target_arch: str, method: str, target_config: Any
+) -> Mapping[str, object] | None:
+    """Returns the groups that name :func:`trailing_input_types`.
+
+    ``None`` for a target whose trailing inputs an exported graph leaves
+    unnamed.
+    """
+    return _adapter(target_arch, method).trailing_input_tree(target_config)
 
 
 def trailing_buffers(

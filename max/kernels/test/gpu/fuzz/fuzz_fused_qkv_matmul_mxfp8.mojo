@@ -495,7 +495,7 @@ def run_one_case(
 
     # === Kernel under test ===================================================
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
     ](
         hs_dev_tt.as_imm().as_unsafe_any_origin(),
         row_offsets_tt,
