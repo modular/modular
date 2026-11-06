@@ -1057,10 +1057,12 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
         mlir::StringAttr::get(&context,
                               stringifyEmitAs(options.offloadOutputKind)));
 
+  // Declared before `pm` so it outlives the pass manager reporting into it.
+  mlir::TimingScope timing = pmConfigOptions.nestTimingScope("KGEN pipeline");
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
-  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
+  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm, timing);
   if (configPM)
     return configPM.takeError();
 

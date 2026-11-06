@@ -68,7 +68,6 @@
 /bazel/public-patches/tracy-tls-fix.patch @modular/max-sdk
 /bazel/public-patches/transformers-local-source-symlinks.patch @modular/max-serve
 /bazel/public-patches/xgrammar.patch @modular/max-serve
-/bazel/public-patches/llvm-mlir-timing-recycled-key.patch @modular/mojo-compiler
 /AsyncRT/ @modular/runtime
 /max/docs/site/ @modular/mojo-docs
 /max/docs/site/nightly-changelog.md @modular/public-repo-maintainers
