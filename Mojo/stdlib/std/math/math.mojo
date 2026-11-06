@@ -32,7 +32,12 @@ from std.sys.info import is_32bit
 
 from std.algorithm import vectorize
 from std.bit import count_leading_zeros, count_trailing_zeros
-from std.builtin.dtype import _integral_type_of
+from std.builtin.dtype import (
+    _int_type_of_width,
+    _integral_type_of,
+    _uint_type_of_width,
+)
+from std.os import abort
 from std.simd import _modf, _simd_apply
 from std.collections import Span
 from std.complex import ComplexSIMD
@@ -40,6 +45,7 @@ from . import pi, inf, isfinite, isinf, isnan, nan, nextafter
 
 from std.utils.numerics import FPUtils, isnan, nan
 from std.memory import bitcast
+from std.utils.fast_div import FastDiv
 from std.utils.static_tuple import StaticTuple
 
 from std._plugin import CurrentPlugin
@@ -3411,6 +3417,148 @@ def pow(base: SIMD, exp: FloatLiteral) -> type_of(base):
         The `base` raised elementwise to the power of the `exp`.
     """
     return base.__pow__(exp)
+
+
+def pow[
+    dtype: DType, width: SIMDLength, //
+](
+    base: SIMD[dtype, width],
+    exp: SIMD[dtype, width],
+    mod: SIMD[dtype, width],
+) -> SIMD[dtype, width] where dtype.is_integral():
+    """Computes `base` raised to the power of `exp`, modulo `mod`, elementwise.
+
+    For example, `pow(3, 4, 5)` is `1`, `pow(2, 3, -5)` is `-2`, and
+    `pow(3, -1, 7)` is `5`, because `3 * 5 % 7 == 1`.
+
+    Constraints:
+        The `dtype` must be an integral type of at most 64 bits.
+
+    Parameters:
+        dtype: The `dtype` of the inputs and the result.
+        width: The width of the inputs and the result.
+
+    Args:
+        base: The base of the power operation.
+        exp: The exponent of the power operation.
+        mod: The modulus.
+
+    Returns:
+        The `base` raised to the power of `exp`, modulo `mod`. Aborts if
+        `mod` is zero, or if `exp` is negative and `base` has no inverse
+        modulo `mod`.
+    """
+    comptime assert (
+        bit_width_of[dtype]() <= 64
+    ), "pow() with a modulus supports integers of at most 64 bits"
+
+    var result = SIMD[dtype, width]()
+    comptime for i in range(width):
+        result[i] = _pow_mod(base[i], exp[i], mod[i])
+    return result
+
+
+def _pow_mod[
+    dtype: DType
+](base: Scalar[dtype], exp: Scalar[dtype], mod: Scalar[dtype]) -> Scalar[dtype]:
+    # Follows CPython's `long_pow` for the semantics and Julia's `powermod` for
+    # the square-and-multiply loop and the sign of the result.
+    #
+    # The signed type twice as wide holds |x| of the most negative input, and
+    # its unsigned twin the extended Euclid coefficients for a 64-bit `mod`.
+    comptime wide = _int_type_of_width[2 * bit_width_of[dtype]()]()
+    comptime uwide = _uint_type_of_width[2 * bit_width_of[dtype]()]()
+
+    if mod == 0:
+        abort("pow() 3rd argument cannot be 0")
+
+    var m_abs = abs(mod.cast[wide]())
+    if m_abs == 1:
+        return 0
+    var m = m_abs.cast[.uint64]()
+
+    var b = abs(base.cast[wide]()).cast[.uint64]() % m
+    if base < 0 and b != 0:
+        b = m - b
+    if exp < 0:
+        b = _inverse_mod(b.cast[uwide](), m.cast[uwide]()).cast[.uint64]()
+    var e = abs(exp.cast[wide]()).cast[.uint64]()
+
+    var r: UInt64
+    # Products of residues below 2^32 fit in 64 bits; larger ones need a
+    # 128-bit `%`, which is a library call.
+    comptime is_64_bit = bit_width_of[dtype]() == 64
+    if is_64_bit and m > UInt32.MAX.cast[.uint64]():
+        r = _pow_mod_loop(
+            b.cast[.uint128](), e.cast[.uint128](), m.cast[.uint128]()
+        ).cast[.uint64]()
+    elif is_64_bit and not is_32bit() and e >= 1 << 34:
+        r = _pow_mod_reciprocal(b, e, m)
+    else:
+        r = _pow_mod_loop(b, e, m)
+
+    if mod < 0 and r != 0:
+        return (r.cast[wide]() - m_abs).cast[dtype]()
+    return r.cast[dtype]()
+
+
+def _pow_mod_loop[
+    dtype: DType
+](
+    var base: Scalar[dtype], var exp: Scalar[dtype], mod: Scalar[dtype]
+) -> Scalar[dtype]:
+    var result = Scalar[dtype](1)
+    while exp != 0:
+        if (exp & 1) != 0:
+            result = result * base % mod
+        exp >>= 1
+        if exp == 0:
+            break
+        base = base * base % mod
+    return result
+
+
+@inline(.never)
+def _pow_mod_reciprocal(base: UInt64, var exp: UInt64, mod: UInt64) -> UInt64:
+    # `FastDiv` divides by multiplying with a reciprocal of `mod`. Its setup is
+    # one 128-bit division, which exponents below about 2^34 don't repay.
+    comptime U = Scalar[FastDiv[DType.uint64].uint_type]
+    var m = FastDiv[DType.uint64](Int(mod))
+    var b = U(base)
+    var result = U(1)
+    while exp != 0:
+        if (exp & 1) != 0:
+            result = result * b % m
+        exp >>= 1
+        if exp == 0:
+            break
+        b = b * b % m
+    return result.cast[.uint64]()
+
+
+def _inverse_mod[
+    dtype: DType
+](a: Scalar[dtype], m: Scalar[dtype]) -> Scalar[dtype]:
+    # The extended Euclidean algorithm, keeping only the Bezout coefficient of
+    # `a`.
+    comptime signed = _int_type_of_width[bit_width_of[dtype]()]()
+    var t = Scalar[signed](0)
+    var new_t = Scalar[signed](1)
+    var r = m.cast[signed]()
+    var new_r = a.cast[signed]()
+    while new_r != 0:
+        var q = r // new_r
+        var next_t = t - q * new_t
+        t = new_t
+        new_t = next_t
+        var next_r = r - q * new_r
+        r = new_r
+        new_r = next_r
+    if r != 1:
+        abort("base is not invertible for the given modulus")
+    if t < 0:
+        t += m.cast[signed]()
+    return t.cast[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #

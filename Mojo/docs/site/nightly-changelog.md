@@ -142,6 +142,11 @@ This version is still a work in progress.
   comptime letter = ord("a")  # 97; never raises
   ```
 
+- `pow()` now takes a modulus as a third argument, like Python's `pow()`:
+  `pow(base, exp, mod)` computes `base ** exp % mod` for integers of up to 64
+  bits without overflowing. The result has the sign of `mod`, and a negative
+  `exp` uses the modular inverse of `base`, so `pow(3, -1, 7)` is `5`.
+
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
   `Tuple` has a new `init_with` initializer, which constructs each element in
