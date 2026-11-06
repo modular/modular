@@ -202,6 +202,7 @@ _EXTRA_CONSTRAINTS = {
     "gpu/nn/bench_mha_prefill_v2.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + from_expcnt
     "gpu/nn/bench_mha_prefill_v2_paged.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + paged KV operand
     "gpu/nn/bench_mhc_pre.mojo": ["//:mi355_gpu"],  # mhc_pre is gfx950-only (bf16 MFMA projection)
+    "gpu/nn/bench_moe_glue_chain.mojo": ["//:mi355_gpu"],  # K3 MoE glue chain bench: quantize_mx_amd is the CDNA4 MXFP8 arm
     "gpu/quantization/bench_qmatmul_int4.mojo": ["//:nvidia_gpu"],  # INT4 GEMM only compiles for NVIDIA
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_block_scaled_matmul_compute_fn.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul

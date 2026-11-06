@@ -13367,6 +13367,227 @@ def quantize_dynamic_block_scaled(
     return result[0].tensor, result[1].tensor
 
 
+def moe_gather_quantize_dynamic_block_scaled(
+    input: TensorValue,
+    token_expert_order: TensorValue,
+    *,
+    sf_vector_size: int = 32,
+    topk: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Fused MoE fan-out gather + MXFP8 quantize (AMD CDNA4).
+
+    Sorted row ``p`` reads source token row
+    ``token_expert_order[p] // topk`` from ``input`` and quantizes it as
+    :func:`quantize_dynamic_block_scaled` does on AMD CDNA4, so the fused
+    op's payload and scale bytes match the ``F.gather`` +
+    ``quantize_dynamic_block_scaled`` pair it replaces. One launch instead
+    of two, and the bf16 fan-out copy never materializes.
+
+    Args:
+        input: The per-token activations to quantize. Shape:
+            ``[num_tokens, K]``, dtype ``bfloat16``.
+        token_expert_order: ``moe_create_indices``'s sorted slot order.
+            Shape: ``[num_tokens * topk]``, dtype ``uint32``.
+        sf_vector_size: The block size for the scaling factors (32 for
+            MXFP8).
+        topk: Experts per token; must be positive.
+
+    Returns:
+        The quantized tensor ``[num_tokens * topk, K]`` and its rank-2
+        ``[num_tokens * topk, K // sf_vector_size]`` E8M0 scales,
+        row-major.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2 tensor")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if token_expert_order.rank != 1:
+        raise ValueError("token_expert_order must be rank 1")
+
+    if token_expert_order.dtype != DType.uint32:
+        raise ValueError("token_expert_order dtype must be uint32")
+
+    if sf_vector_size != 32:
+        raise ValueError("sf_vector_size must be 32 for MXFP8")
+
+    if topk < 1:
+        raise ValueError(f"topk must be positive, got {topk}")
+
+    cols = input.shape[1]
+    if isinstance(cols, StaticDim) and int(cols) % sf_vector_size != 0:
+        raise ValueError(
+            f"input.shape[1] must be a multiple of {sf_vector_size}"
+        )
+
+    # Static shapes are checked here; the kernel's launcher re-checks the
+    # slot count against the real sizes on every launch, which covers the
+    # dynamic-dim graph.
+    slots = token_expert_order.shape[0]
+    rows = input.shape[0]
+    if isinstance(slots, StaticDim) and isinstance(rows, StaticDim):
+        if int(slots) != int(rows) * topk:
+            raise ValueError(
+                f"token_expert_order holds {int(slots)} slots but input has"
+                f" {int(rows)} tokens at topk {topk}"
+            )
+
+    result = ops.custom(
+        "mo.moe.gather.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[input, token_expert_order],
+        out_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[slots, cols],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[slots, ceildiv(cols, Dim(sf_vector_size))],
+                device=input.device,
+            ),
+        ],
+        parameters={"SF_VECTOR_SIZE": sf_vector_size, "TOPK": topk},
+    )
+    return result[0].tensor, result[1].tensor
+
+
+def moe_sort_gather_quantize_dynamic_block_scaled(
+    input: TensorValue,
+    topk_ids: TensorValue,
+    *,
+    sf_vector_size: int = 32,
+    topk: int,
+    num_experts: int,
+) -> tuple[TensorValue, ...]:
+    """Fused MoE expert sort + fan-out gather + MXFP8 quantize (AMD CDNA4).
+
+    Produces :func:`moe_create_indices`'s five index outputs plus the fused
+    gather+quantize's two, in one graph node. At execution the op picks the
+    arm by the real slot count: small launches run the one-launch
+    sort+gather+quantize kernel, and the rest run ``moe_create_indices``
+    followed by the source-major scatter+quantize, falling back to the
+    sorted-row :func:`moe_gather_quantize_dynamic_block_scaled` only on
+    rows too wide for the source-major CTA -- the serving graph builds
+    once over a dynamic token count, so the slot count is only known at
+    execution.
+
+    ``expert_start_indices``, ``expert_ids`` and ``expert_usage_stats``
+    match :func:`moe_create_indices`'s byte for byte. ``token_expert_order``
+    and ``restore_token_order`` hold a stable grouping -- per-group
+    membership, bijection, and ``restore == order^-1`` -- whose intra-expert
+    positions were never load-bearing (the reference kernel's follow a
+    relaxed-atomic cursor).
+
+    Args:
+        input: The per-token activations to quantize. Shape:
+            ``[num_tokens, K]``, dtype ``bfloat16``.
+        topk_ids: The flat expert assignments. Shape:
+            ``[num_tokens * topk]``, dtype ``int32``.
+        sf_vector_size: The block size for the scaling factors (32 for
+            MXFP8).
+        topk: Experts per token; must be positive.
+        num_experts: The expert count.
+
+    Returns:
+        A tuple of seven tensors, in :func:`moe_create_indices`'s order
+        followed by the quantized pair: ``token_expert_order``
+        ``[num_tokens * topk]`` uint32, ``expert_start_indices``
+        ``[num_experts + 1]`` uint32, ``restore_token_order``
+        ``[num_tokens * topk]`` uint32, ``expert_ids`` ``[num_experts]``
+        int32, ``expert_usage_stats`` ``[2]`` uint32, then the quantized
+        ``[num_tokens * topk, K]`` float8_e4m3fn activations and their
+        ``[num_tokens * topk, K // sf_vector_size]`` float8_e8m0fnu scales.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2 tensor")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if topk_ids.rank != 1:
+        raise ValueError("topk_ids must be rank 1")
+
+    if topk_ids.dtype != DType.int32:
+        raise ValueError("topk_ids dtype must be int32")
+
+    if sf_vector_size != 32:
+        raise ValueError("sf_vector_size must be 32 for MXFP8")
+
+    if topk < 1:
+        raise ValueError(f"topk must be positive, got {topk}")
+
+    if num_experts < 1:
+        raise ValueError(f"num_experts must be positive, got {num_experts}")
+
+    cols = input.shape[1]
+    if not isinstance(cols, StaticDim):
+        raise ValueError(
+            "input.shape[1] must be a static multiple of 32 for the fused"
+            " MoE sort+gather+quantize"
+        )
+    if int(cols) % sf_vector_size != 0:
+        raise ValueError(
+            f"input.shape[1] must be a multiple of {sf_vector_size}"
+        )
+
+    # Static shapes are checked here; the kernel's launcher re-checks the
+    # slot count against the real sizes on every launch, which covers the
+    # dynamic-dim graph.
+    slots = topk_ids.shape[0]
+    rows = input.shape[0]
+    if isinstance(slots, StaticDim) and isinstance(rows, StaticDim):
+        if int(slots) != int(rows) * topk:
+            raise ValueError(
+                f"topk_ids holds {int(slots)} slots but input has"
+                f" {int(rows)} tokens at topk {topk}"
+            )
+
+    result = ops.custom(
+        "mo.moe.sort.gather.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[input, topk_ids],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32, shape=[slots], device=input.device
+            ),  # token_expert_order
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_experts + 1],
+                device=input.device,
+            ),  # expert_start_indices
+            TensorType(
+                dtype=DType.uint32, shape=[slots], device=input.device
+            ),  # restore_token_order
+            TensorType(
+                dtype=DType.int32, shape=[num_experts], device=input.device
+            ),  # expert_ids
+            TensorType(
+                dtype=DType.uint32, shape=[2], device=input.device
+            ),  # expert_usage_stats
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[slots, cols],
+                device=input.device,
+            ),  # quantized
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[slots, ceildiv(cols, Dim(sf_vector_size))],
+                device=input.device,
+            ),  # scales
+        ],
+        parameters={
+            "SF_VECTOR_SIZE": sf_vector_size,
+            "TOPK": topk,
+            "NUM_EXPERTS": num_experts,
+            "NUM_COLS": int(cols),
+        },
+    )
+    return tuple(t.tensor for t in result)
+
+
 def swiglu_quantize_dynamic_block_scaled(
     gate_up: TensorValue,
     activation: GatedActivation | None = None,

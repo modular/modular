@@ -48,6 +48,12 @@ from linalg.fp8_quantization import (
     quantize_tensor_dynamic_scaled_fp8,
 )
 from linalg.block_scaled_quantization import (
+    moe_gather_quantize_mx_amd,
+    moe_sort_gather_quantize_fused_compilable,
+    moe_sort_gather_quantize_fused_supported,
+    moe_sort_gather_quantize_mx_amd,
+    moe_source_scatter_quantize_mx_amd,
+    moe_source_scatter_quantize_supported,
     quantize_dynamic_block_scaled,
     grouped_quantize_dynamic_scaled_fp4_async,
     grouped_quantize_nvfp4_row_amax,
@@ -66,9 +72,11 @@ from linalg.mx_dequant import dequant_mx
 from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.nvfp4_dequant import dequant_nvfp4
 from linalg.fp6_utils import FP6Format
+from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from linalg.fp6_quantization import quantize_mxfp6_amd
 from linalg.mxfp6_dequant import dequant_mxfp6
 from nn.bicubic import resize_bicubic
+from nn.moe import moe_create_indices
 from nn.kv_cache import generic_get_paged_cache
 from nn.kv_cache_ragged import unfused_qkv_matmul_ragged_paged_gguf_quantized
 from nn.resize import (
@@ -1017,6 +1025,238 @@ struct Struct_quantize_dynamic_block_scaled:
             tensor_sf,
             context,
         )
+
+
+@extensibility.register("mo.moe.gather.quantize.dynamic.block.scaled")
+struct Struct_moe_gather_quantize_dynamic_block_scaled:
+    """Registers the `mo.moe.gather.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        SF_VECTOR_SIZE: Int,
+        TOPK: Int,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        token_expert_order: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Gathers and quantizes MoE-sorted rows to MXFP8 in one launch.
+
+        Sorted row `p` reads source token row
+        ``token_expert_order[p] // TOPK`` from the bf16 ``input`` and
+        quantizes it as ``mo.quantize.dynamic.block.scaled`` does on AMD
+        CDNA4, producing byte-identical payload and scale rows.
+
+        Args:
+            output: `[P, K]` float8_e4m3fn, one row per sorted slot.
+            scales: `[P, K // SF_VECTOR_SIZE]` float8_e8m0fnu block scales,
+                row-major.
+            input: `[M, K]` bfloat16 activations, one row per token.
+            token_expert_order: `moe_create_indices`'s `[P]` uint32 order,
+                with ``P == M * TOPK``.
+            context: The device context.
+        """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert (
+            context.target.is_gpu()
+        ), "the fused MoE gather+quantize only supports GPUs"
+        comptime assert (
+            SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        ), "the fused MoE gather+quantize is MXFP8-only (SF_VECTOR_SIZE 32)"
+        comptime assert TOPK >= 1, "TOPK must be positive"
+
+        moe_gather_quantize_mx_amd(
+            context,
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
+            token_expert_order.to_tile_tensor[.uint32](),
+            TOPK,
+        )
+
+
+@extensibility.register("mo.moe.sort.gather.quantize.dynamic.block.scaled")
+struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
+    """Registers the `mo.moe.sort.gather.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        SF_VECTOR_SIZE: Int,
+        TOPK: Int,
+        NUM_EXPERTS: Int,
+        NUM_COLS: Int,
+    ](
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Sorts, gathers and quantizes the MoE routing glue to MXFP8.
+
+        Produces the full `mo.moe.create.indices` contract plus the fused
+        gather+quantize's two outputs in one graph node. The serving graph
+        builds once over a dynamic token count, so the slot count is only
+        known here, at execution: small launches take the one-launch
+        sort+gather+quantize kernel, and the rest run
+        ``moe_create_indices`` followed by the source-major scatter+quantize
+        -- one CTA per source row, quantizing each token row once and
+        fanning it out through ``restore_token_order`` -- falling back to
+        the sorted-row ``moe_gather_quantize_mx_amd`` only on rows too wide
+        for the source-major CTA. The same execution-time split
+        ``mo.mla.graph.prefill.decode.paged`` makes.
+
+        Args:
+            token_expert_order: `[P]` uint32, the expert-sorted slot order.
+            expert_start_indices: `[NUM_EXPERTS + 1]` uint32 CSR starts.
+            restore_token_order: `[P]` uint32, `token_expert_order`'s
+                inverse.
+            expert_ids: `[NUM_EXPERTS]` int32 expert ids, `0..E-1`.
+            expert_usage_stats: `[2]` uint32 usage stats.
+            output: `[P, K]` float8_e4m3fn, one row per sorted slot.
+            scales: `[P, K // SF_VECTOR_SIZE]` float8_e8m0fnu block scales,
+                row-major.
+            input: `[M, K]` bfloat16 activations, one row per token.
+            topk_ids: `[P]` int32 flat expert ids, one per (token, pick)
+                pair, with ``P == M * TOPK``.
+            context: The device context.
+        """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(topk_ids).rank == 1
+        comptime assert type_of(input).rank == 2
+        comptime assert (
+            context.target.is_gpu()
+        ), "the fused MoE sort+gather+quantize only supports GPUs"
+        comptime assert SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE, (
+            "the fused MoE sort+gather+quantize is MXFP8-only"
+            " (SF_VECTOR_SIZE 32)"
+        )
+        comptime assert TOPK >= 1, "TOPK must be positive"
+        comptime assert NUM_EXPERTS >= 1, "NUM_EXPERTS must be positive"
+        comptime assert (
+            NUM_COLS % MXFP8_SF_VECTOR_SIZE == 0
+        ), "NUM_COLS must be a multiple of the 32-element MX block"
+
+        var output_tt = output.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var input_tt = input.to_tile_tensor()
+        var order_tt = token_expert_order.to_tile_tensor[.uint32]()
+        var restore_tt = restore_token_order.to_tile_tensor[.uint32]()
+        var start_tt = expert_start_indices.to_tile_tensor[.uint32]()
+        var ids_tt = expert_ids.to_tile_tensor[.int32]()
+        var stats_tt = expert_usage_stats.to_tile_tensor[.uint32]()
+        var topk_ids_tt = topk_ids.to_tile_tensor[.int32]()
+        var num_slots = Int(topk_ids_tt.dim(0))
+        # The fused and source-scatter kernels are instantiated behind
+        # runtime checks, so their comptime shape limits must gate the
+        # branches at compile time: a shape a kernel cannot build for
+        # takes the fallback arm instead of failing the op's build.
+        var fused_served = False
+        comptime if moe_sort_gather_quantize_fused_compilable[
+            NUM_EXPERTS, NUM_COLS
+        ]():
+            if moe_sort_gather_quantize_fused_supported(
+                num_slots, NUM_EXPERTS, NUM_COLS
+            ):
+                moe_sort_gather_quantize_mx_amd[
+                    num_experts=NUM_EXPERTS, num_cols=NUM_COLS
+                ](
+                    context,
+                    output_tt,
+                    scales_tt,
+                    input_tt,
+                    order_tt,
+                    start_tt,
+                    restore_tt,
+                    ids_tt,
+                    stats_tt,
+                    topk_ids_tt,
+                    TOPK,
+                )
+                fused_served = True
+        if not fused_served:
+            moe_create_indices[input_type=DType.int32](
+                order_tt,
+                start_tt,
+                restore_tt,
+                ids_tt,
+                stats_tt,
+                topk_ids_tt,
+                context,
+            )
+            # The large-P arm: quantize each unique token row once and fan
+            # the bytes out through `restore_token_order` -- one bf16 read
+            # per token instead of one per sorted row. Rows too wide for
+            # the source-major CTA keep the sorted-row kernel.
+            # 1024 is the device's max block size: the source-scatter
+            # kernel's one-CTA-per-source-row launch cannot stride columns.
+            comptime if NUM_COLS // 8 <= 1024:
+                if moe_source_scatter_quantize_supported(NUM_COLS):
+                    moe_source_scatter_quantize_mx_amd[num_cols=NUM_COLS](
+                        context,
+                        output_tt,
+                        scales_tt,
+                        input_tt,
+                        restore_token_order.to_tile_tensor[
+                            .uint32, mut=False
+                        ](),
+                        TOPK,
+                    )
+                else:
+                    moe_gather_quantize_mx_amd(
+                        context,
+                        output_tt,
+                        scales_tt,
+                        input_tt,
+                        token_expert_order.to_tile_tensor[.uint32, mut=False](),
+                        TOPK,
+                    )
+            else:
+                moe_gather_quantize_mx_amd(
+                    context,
+                    output_tt,
+                    scales_tt,
+                    input_tt,
+                    token_expert_order.to_tile_tensor[.uint32, mut=False](),
+                    TOPK,
+                )
 
 
 @extensibility.register("quantization.swiglu.quantize.dynamic.block.scaled")

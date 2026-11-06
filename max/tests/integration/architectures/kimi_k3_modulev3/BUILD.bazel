@@ -37,6 +37,30 @@ modular_eager_py_test(
     ],
 )
 
+# The op's runtime arm pick, executed on gfx950: the kernel tests call both
+# arms' kernels directly, so they all pass while the pick itself is broken.
+modular_eager_py_test(
+    name = "moe_sort_gather_quantize_op_arms_gpu",
+    size = "medium",
+    srcs = ["test_moe_sort_gather_quantize_op_arms.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+    ],
+)
+
 modular_py_test(
     name = "kda_prefill_routing_tests_cpu",
     srcs = ["test_kda_prefill_routing.py"],
@@ -49,6 +73,22 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_py_test(
+    name = "moe_gather_quantize_wiring_tests_cpu",
+    srcs = ["test_moe_gather_quantize_wiring.py"],
+    # Traces the layer on virtual gfx950 devices; a process that has opened
+    # a real device cannot switch to virtual ones, so this is its own target.
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )

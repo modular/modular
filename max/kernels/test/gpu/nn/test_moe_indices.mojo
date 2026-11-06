@@ -452,6 +452,136 @@ def test_moe_create_indices[
     )
 
 
+def test_moe_create_indices_sentinel[
+    num_experts: Int = 256
+](total_tokens: Int, ctx: DeviceContext) raises:
+    """Out-of-range expert ids: the pair's restore entry holds the
+    `total_tokens` sentinel, and every other output covers exactly the valid
+    pairs.
+
+    An id outside `[0, num_experts)` lands in no expert's CSR range, so the
+    scatter never writes the pair's `restore_token_order` entry; the kernel
+    pins it to `total_tokens`, a value no valid position can hold, so a
+    reader can skip the pair instead of consuming uninitialized garbage.
+    """
+    var order_host = ctx.enqueue_create_host_buffer[.uint32](total_tokens)
+    var start_host = ctx.enqueue_create_host_buffer[.uint32](num_experts + 1)
+    var restore_host = ctx.enqueue_create_host_buffer[.uint32](total_tokens)
+    var ids_host = ctx.enqueue_create_host_buffer[.int32](num_experts)
+    var stats_host = ctx.enqueue_create_host_buffer[.uint32](2)
+    var topk_host = ctx.enqueue_create_host_buffer[.uint32](total_tokens)
+
+    var order_d = ctx.enqueue_create_buffer[.uint32](total_tokens)
+    var start_d = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var restore_d = ctx.enqueue_create_buffer[.uint32](total_tokens)
+    var ids_d = ctx.enqueue_create_buffer[.int32](num_experts)
+    var stats_d = ctx.enqueue_create_buffer[.uint32](2)
+    var topk_d = ctx.enqueue_create_buffer[.uint32](total_tokens)
+
+    random(
+        TileTensor(topk_host, row_major(total_tokens)),
+        min=0,
+        max=UInt32(num_experts),
+    )
+    # A few out-of-range ids, spread over the flat slot array.
+    topk_host[0] = UInt32(num_experts)
+    topk_host[total_tokens // 2] = UInt32(0xFFFFFFFF)
+    topk_host[total_tokens - 1] = UInt32(num_experts + 7)
+    ctx.enqueue_copy(topk_d, topk_host)
+
+    moe_create_indices[input_type=DType.uint32](
+        TileTensor(order_d, row_major(total_tokens)),
+        TileTensor(start_d, row_major(num_experts + 1)),
+        TileTensor(restore_d, row_major(total_tokens)),
+        TileTensor(ids_d, row_major(num_experts)),
+        TileTensor(stats_d, row_major(2)),
+        TileTensor(topk_d, row_major(total_tokens)),
+        ctx,
+    )
+
+    ctx.enqueue_copy(order_host, order_d)
+    ctx.enqueue_copy(start_host, start_d)
+    ctx.enqueue_copy(restore_host, restore_d)
+    ctx.enqueue_copy(ids_host, ids_d)
+    ctx.enqueue_copy(stats_host, stats_d)
+    ctx.synchronize()
+
+    # Host reference over the valid pairs only.
+    var counts = List[Int](length=num_experts, fill=0)
+    var valid = 0
+    for i in range(total_tokens):
+        var e = Int(topk_host[i])
+        if 0 <= e and e < num_experts:
+            counts[e] += 1
+            valid += 1
+    var max_count = 0
+    var ref_start = List[Int](length=num_experts + 1, fill=0)
+    for g in range(num_experts):
+        max_count = max(max_count, counts[g])
+        ref_start[g + 1] = ref_start[g] + counts[g]
+
+    for g in range(num_experts + 1):
+        assert_equal(
+            Int(start_host[g]), ref_start[g], "sentinel case: CSR mismatch"
+        )
+    assert_equal(
+        Int(stats_host[0]),
+        max_count,
+        "sentinel case: usage max count mismatch",
+    )
+    assert_equal(
+        Int(stats_host[1]),
+        num_experts,
+        "sentinel case: usage expert count mismatch",
+    )
+    check_expert_ids_permutation(ids_host, num_experts)
+
+    # The out-of-range pairs, and only those, hold the sentinel; the valid
+    # pairs' entries invert a grouping of exactly the valid pairs.
+    var seen = List[Bool](length=valid, fill=False)
+    for i in range(total_tokens):
+        var e = Int(topk_host[i])
+        if 0 <= e and e < num_experts:
+            var pos = Int(restore_host[i])
+            assert_true(
+                pos < valid,
+                "a valid pair's restore entry is out of range",
+            )
+            assert_true(
+                not seen[pos],
+                "a valid pair's restore entry collides with another's",
+            )
+            seen[pos] = True
+            assert_equal(
+                Int(order_host[pos]),
+                i,
+                "sentinel case: restore is not order's inverse",
+            )
+        else:
+            assert_equal(
+                Int(restore_host[i]),
+                total_tokens,
+                "an out-of-range id must hold the total_tokens sentinel",
+            )
+    for p in range(valid):
+        var e = Int(topk_host[Int(order_host[p])])
+        assert_true(
+            0 <= e and e < num_experts,
+            "an out-of-range id landed in the CSR",
+        )
+        assert_true(
+            ref_start[e] <= p and p < ref_start[e + 1],
+            "sentinel case: a valid pair sorted outside its expert's range",
+        )
+
+    _ = order_d
+    _ = start_d
+    _ = restore_d
+    _ = ids_d
+    _ = stats_d
+    _ = topk_d
+
+
 def test_moe_create_indices_with_slots[
     num_groups: Int,
     local_experts: Int,
@@ -646,6 +776,13 @@ def main() raises:
         test_moe_create_indices[skewed=True, test_scales_offset=True](
             16_385, ctx
         )
+
+        # Out-of-range expert ids: the restore entry holds the total_tokens
+        # sentinel. Covers the single-CTA kernel (one and two expert chunks)
+        # and the multi-CTA scatter (16384 slots over 256 experts).
+        test_moe_create_indices_sentinel[64](100, ctx)
+        test_moe_create_indices_sentinel[896](2500, ctx)
+        test_moe_create_indices_sentinel[256](16_384, ctx)
 
         # Isolate each input/output stride so one fallback guard cannot mask another.
         for tensor in range(6):
