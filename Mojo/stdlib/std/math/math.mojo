@@ -28,6 +28,7 @@ from std.sys import (
     size_of,
 )
 from std.ffi import _external_call_const
+from std.os import abort
 from std.sys.info import is_32bit
 
 from std.algorithm import vectorize
@@ -2819,10 +2820,12 @@ def factorial(n: Int) -> Int:
     """Computes the factorial of the integer.
 
     Args:
-        n: The input value. Must be non-negative.
+        n: The input value. Must be non-negative and small enough that
+            `n!` fits in `Int` (20 on 64-bit platforms, 12 on 32-bit).
 
     Returns:
-        The factorial of the input. Results are undefined for negative inputs.
+        The factorial of the input. Aborts if `n` is negative or if `n!`
+        would overflow `Int`.
     """
     comptime table = StaticTuple[Int, 21](
         1,
@@ -2847,9 +2850,10 @@ def factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    assert (
-        0 <= n <= (12 if is_32bit() else 20)
-    ), "input value causes an overflow"
+    # `assert` is compiled out at the default assert level, so an out-of-range
+    # `n` used to index past the end of `table`. Abort unconditionally.
+    if not (0 <= n <= (12 if is_32bit() else 20)):
+        abort("input value causes an overflow")
     return table[n]
 
 
