@@ -413,6 +413,12 @@ def record_request_end(
     if input_tokens is not None:
         METRICS.input_tokens(input_tokens)
         METRICS.input_tokens_per_request(input_tokens, turn)
+        if cached_tokens is not None:
+            # A reported zero is a measurement: the server looked and reused
+            # nothing. Only an unreported count skips the pair.
+            cached = min(cached_tokens, input_tokens)
+            METRICS.request_cached_input_tokens(cached, turn)
+            METRICS.request_uncached_input_tokens(input_tokens - cached, turn)
         if cached_tokens is not None and input_tokens > 0:
             METRICS.prefix_coverage_per_request(
                 cached_tokens / input_tokens * 100, turn

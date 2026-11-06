@@ -263,6 +263,8 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "max.vision.cache_hit_rate": HISTOGRAM_PERCENT_BUCKETS,
     # Generic counts (tokens / occupancy)
     "max.input_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
+    "max.request.cached_input_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "max.request.uncached_input_tokens": HISTOGRAM_COUNT_BUCKETS,
     "max.output_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
     "max.batch.input_tokens": HISTOGRAM_COUNT_BUCKETS,
     "max.batch.context_tokens": HISTOGRAM_COUNT_BUCKETS,

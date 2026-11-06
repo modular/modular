@@ -162,6 +162,8 @@ def test_tokens_per_request_histograms() -> None:
     # Verify metrics exist in SERVE_METRICS
     assert "max.input_tokens_per_request" in metrics.SERVE_METRICS
     assert "max.output_tokens_per_request" in metrics.SERVE_METRICS
+    assert "max.request.cached_input_tokens" in metrics.SERVE_METRICS
+    assert "max.request.uncached_input_tokens" in metrics.SERVE_METRICS
 
     # Test recording input tokens per request
     m_input = metrics.MaxMeasurement("max.input_tokens_per_request", 256)
@@ -178,6 +180,8 @@ def test_tokens_per_request_histograms() -> None:
         "input_tokens_per_request",
         "output_tokens_per_request",
         "prefix_coverage_per_request",
+        "request_cached_input_tokens",
+        "request_uncached_input_tokens",
     ],
 )
 @pytest.mark.parametrize(

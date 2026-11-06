@@ -462,6 +462,20 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "Distribution of input tokens per request. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none."
         ),
     ),  # type: ignore
+    "max.request.cached_input_tokens": _meter.create_histogram(
+        "max.request.cached_input_tokens",
+        unit="tokens",
+        description=(
+            "Distribution of prompt tokens per request that the prefix cache served. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none. Recorded when the request ends, from the count the server reports to the client in `prompt_tokens_details.cached_tokens`, so a cold cache is a real zero sample. Paired with `max_request_uncached_input_tokens`; the two sum to `max_input_tokens_per_request_tokens` for the same request."
+        ),
+    ),  # type: ignore
+    "max.request.uncached_input_tokens": _meter.create_histogram(
+        "max.request.uncached_input_tokens",
+        unit="tokens",
+        description=(
+            "Distribution of prompt tokens per request that the prefix cache did not serve, i.e. the tokens the model prefilled. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none. Paired with `max_request_cached_input_tokens`; the two sum to `max_input_tokens_per_request_tokens` for the same request."
+        ),
+    ),  # type: ignore
     "max.prefix_coverage_per_request": _meter.create_histogram(
         "max.prefix_coverage_per_request",
         unit="percent",
@@ -2105,6 +2119,28 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.input_tokens_per_request",
+                value,
+                self._with_turn(turn),
+            ),
+        )
+
+    def request_cached_input_tokens(
+        self, value: int, turn: ConversationTurn | None = None
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.request.cached_input_tokens",
+                value,
+                self._with_turn(turn),
+            ),
+        )
+
+    def request_uncached_input_tokens(
+        self, value: int, turn: ConversationTurn | None = None
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.request.uncached_input_tokens",
                 value,
                 self._with_turn(turn),
             ),
