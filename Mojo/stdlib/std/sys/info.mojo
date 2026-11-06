@@ -1357,13 +1357,6 @@ def _cdna_version() -> Int:
 
 
 @inline(.nodebug)
-def _cdna_3_or_newer() -> Bool:
-    comptime if _is_amd_cdna():
-        return _cdna_version() >= 3
-    return False
-
-
-@inline(.nodebug)
 def _cdna_4_or_newer() -> Bool:
     comptime if _is_amd_cdna():
         return _cdna_version() >= 4

@@ -46,12 +46,10 @@ class HIPDeviceStream;
 class HIPDeviceTimer;
 class HIPModuleFunction;
 
-using HIPDeviceRef = RCRef<HIPDevice>;
 using HIPDeviceContextRef = RCRef<HIPDeviceContext>;
 using HIPStreamPoolRef = RCRef<HIPStreamPool>;
 using HIPDeviceEventRef = RCRef<HIPDeviceEvent>;
 using HIPDeviceFunctionRef = RCRef<HIPDeviceFunction>;
-using HIPDeviceFunctionArgumentsRef = RCRef<const HIPDeviceFunctionArguments>;
 using HIPDeviceGraphRef = RCRef<HIPDeviceGraph>;
 using HIPDeviceStreamRef = RCRef<HIPDeviceStream>;
 using HIPDeviceTimerRef = RCRef<HIPDeviceTimer>;

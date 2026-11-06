@@ -285,11 +285,6 @@ def _simd_construction_checks[dtype: DType, size: SIMDLength]():
 
 
 @inline(.nodebug)
-def _has_native_bf16_support() -> Bool:
-    return is_gpu()
-
-
-@inline(.nodebug)
 def _has_native_f8_support() -> Bool:
     return CurrentPlugin.has_native_float8
 

@@ -284,9 +284,6 @@ struct AllReduceTuningConfig(CommTuningConfig, TrivialRegisterPassable):
     def get_ngpus(self) -> Int:
         return self.ngpus
 
-    def get_algorithm(self) -> AllReduceAlgorithm:
-        return self.algorithm
-
     def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 

@@ -42,9 +42,6 @@ enum {
   // This is an arbitrary value used to fill out alignment padding.
   kAlignmentByte = 0xCB,
 
-  // This indicates whether a section has an explicit alignment.
-  kSectionAlignmentFlag = 0x01,
-
   // Primitives in MEF are 8-byte aligned.
   kPrimitiveEntryAlignment = 8,
 };

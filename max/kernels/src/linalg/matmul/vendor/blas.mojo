@@ -284,16 +284,6 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 
         raise Error("the backend is not currently supported")
 
-    def _is_null(self) -> Bool:
-        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
-            return self._get_cublas() == Self._cublas_type()
-        elif Self.resolved_backend is Backend.ROCBLAS:
-            return self._get_rocblas() == Self._rocblas_type()
-        elif Self.resolved_backend is Backend.HIPBLASLT:
-            return self._get_hipblaslt() == Self._hipblaslt_type()
-
-        return False
-
     def _get_cublas(self) -> Self._cublas_type:
         comptime assert Self.resolved_backend in (
             Backend.CUBLAS,

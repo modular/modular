@@ -433,7 +433,6 @@ populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
 constexpr StringLiteral kFnRegisterInternal = "register_internal";
 constexpr StringLiteral kFnRegister = "register";
 constexpr StringLiteral kFnRegisterShapeFunction = "register_shape_function";
-constexpr StringLiteral kMoggExecuteFuncName = "execute";
 
 /// Mojo package and type leaf names used to recognise extensibility kernel
 /// types in MLIR symbol references.
