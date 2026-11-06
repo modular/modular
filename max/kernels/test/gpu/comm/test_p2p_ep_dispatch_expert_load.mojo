@@ -15,8 +15,10 @@
 # kernel APIs the graph ops call, on both the split (async + wait) and the
 # fused dispatch. Each step adds every local expert's routed-token count to the
 # row of the step's layer; totals run across steps without a reset and the
-# other layer's row is left alone.
+# other layer's row is left alone. Blockwise FP8 pads each expert's rows for
+# the grouped matmul, and the tally must count tokens, not padded rows.
 
+from std.math import align_up
 from std.random import randint, seed
 
 from comm.sync import enable_p2p
@@ -29,11 +31,13 @@ from shmem.ep import (
 )
 from shmem.ep_comm import (
     BF16TokenFormat,
+    BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
     ExpertLoadTally,
+    TokenFormat,
 )
 from std.memory.alloc import unsafe_alloc
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_true
 
 
 def legalize_topk_ids[
@@ -60,7 +64,111 @@ def legalize_topk_ids[
             duplicate_idx = is_duplicate()
 
 
+trait LoadTestFormat(Deinitable, Movable):
+    """A token format and the receive buffers its handler writes to."""
+
+    comptime TokenFormatType: TokenFormat
+    # Rows each expert's group is padded to for the grouped matmul.
+    comptime m_padding: Int
+
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
+        ...
+
+    def handler(self, dev_idx: Int, out result: Self.TokenFormatType):
+        ...
+
+
+struct BF16Format[hidden_size: Int, top_k: Int, max_recv_num_tokens: Int](
+    LoadTestFormat
+):
+    comptime output_layout = row_major(
+        (Idx[Self.max_recv_num_tokens], Idx[Self.hidden_size])
+    )
+    comptime TokenFormatType = BF16TokenFormat[
+        output_layout=type_of(Self.output_layout),
+        Self.hidden_size,
+        Self.top_k,
+    ]
+    comptime m_padding = 1
+
+    var output_bufs: List[DeviceBuffer[.bfloat16]]
+
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
+        self.output_bufs = List[DeviceBuffer[.bfloat16]]()
+        for ctx in list_of_ctx:
+            self.output_bufs.append(
+                ctx.enqueue_create_buffer[.bfloat16](
+                    Self.max_recv_num_tokens * Self.hidden_size
+                )
+            )
+
+    def handler(self, dev_idx: Int, out result: Self.TokenFormatType):
+        result = Self.TokenFormatType(
+            TileTensor(
+                ptr=self.output_bufs[dev_idx].unsafe_ptr(),
+                layout=Self.output_layout,
+            )
+        )
+
+
+struct FP8Format[hidden_size: Int, top_k: Int, max_recv_num_tokens: Int](
+    LoadTestFormat
+):
+    comptime group_size = 128
+    comptime output_layout = row_major(
+        (Idx[Self.max_recv_num_tokens], Idx[Self.hidden_size])
+    )
+    comptime scales_layout = row_major(
+        (
+            Self.hidden_size // Self.group_size,
+            Idx[Self.max_recv_num_tokens],
+        )
+    )
+    comptime TokenFormatType = BlockwiseFP8TokenFormat[
+        fp8_dtype=DType.float8_e4m3fn,
+        scales_dtype=DType.float32,
+        output_layout=type_of(Self.output_layout),
+        scales_layout=type_of(Self.scales_layout),
+        Self.hidden_size,
+        Self.top_k,
+    ]
+    comptime m_padding = Self.TokenFormatType.expert_m_padding
+
+    var output_bufs: List[DeviceBuffer[DType.float8_e4m3fn]]
+    var scales_bufs: List[DeviceBuffer[DType.float32]]
+
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
+        self.output_bufs = List[DeviceBuffer[DType.float8_e4m3fn]]()
+        self.scales_bufs = List[DeviceBuffer[DType.float32]]()
+        for ctx in list_of_ctx:
+            self.output_bufs.append(
+                ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+                    Self.max_recv_num_tokens * Self.hidden_size
+                )
+            )
+            self.scales_bufs.append(
+                ctx.enqueue_create_buffer[DType.float32](
+                    Self.max_recv_num_tokens
+                    * Self.hidden_size
+                    // Self.group_size
+                )
+            )
+
+    def handler(self, dev_idx: Int, out result: Self.TokenFormatType):
+        result = Self.TokenFormatType(
+            TileTensor(
+                ptr=self.output_bufs[dev_idx].unsafe_ptr(),
+                layout=Self.output_layout,
+            ),
+            TileTensor(
+                ptr=self.scales_bufs[dev_idx].unsafe_ptr(),
+                layout=Self.scales_layout,
+            ),
+        )
+
+
 def test_expert_load[
+    FormatT: LoadTestFormat,
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
@@ -76,17 +184,15 @@ def test_expert_load[
     # Above 2^32, so a 32-bit tally or a reset would show.
     comptime tally_start = UInt64(1) << 33
 
-    comptime output_layout = row_major(
-        (Idx[max_recv_num_tokens], Idx[hidden_size])
-    )
-    comptime token_fmt_type = BF16TokenFormat[
-        output_layout=type_of(output_layout), hidden_size, top_k
-    ]
+    comptime token_fmt_type = FormatT.TokenFormatType
+    var formats = FormatT(list_of_ctx)
     comptime msg_bytes = token_fmt_type.msg_size()
     comptime counters_size = EPLocalSyncCounters[n_experts].total_size()
 
     print(
-        "Running ep_dispatch expert-load test: fused:",
+        "Running ep_dispatch expert-load test:",
+        token_fmt_type.get_type_name(),
+        "fused:",
         fused_dispatch,
         "n_experts:",
         n_experts,
@@ -103,7 +209,6 @@ def test_expert_load[
     var atomic_counter_bufs = List[DeviceBuffer[.int32]](capacity=n_ranks)
     var topk_bufs = List[DeviceBuffer[.int32]](capacity=n_ranks)
     var input_bufs = List[DeviceBuffer[input_type]](capacity=n_ranks)
-    var output_bufs = List[DeviceBuffer[input_type]](capacity=n_ranks)
     var row_offsets_bufs = List[DeviceBuffer[.uint32]](capacity=n_ranks)
     var expert_ids_bufs = List[DeviceBuffer[.int32]](capacity=n_ranks)
     var src_info_bufs = List[DeviceBuffer[.int32]](capacity=n_ranks)
@@ -118,7 +223,6 @@ def test_expert_load[
         atomic_counter_bufs.append(ctx.enqueue_create_buffer[.int32](counters_size))
         topk_bufs.append(ctx.enqueue_create_buffer[.int32](n_tokens_per_rank * top_k))
         input_bufs.append(ctx.enqueue_create_buffer[input_type](n_tokens_per_rank * hidden_size))
-        output_bufs.append(ctx.enqueue_create_buffer[input_type](max_recv_num_tokens * hidden_size))
         row_offsets_bufs.append(ctx.enqueue_create_buffer[.uint32](n_local_experts + 1))
         expert_ids_bufs.append(ctx.enqueue_create_buffer[.int32](n_local_experts))
         src_info_bufs.append(ctx.enqueue_create_buffer[.int32](max_recv_num_tokens * 2))
@@ -156,7 +260,6 @@ def test_expert_load[
     def run_step(
         dev_idx: Int,
     ) raises {
-        mut output_bufs,
         mut row_offsets_bufs,
         mut expert_ids_bufs,
         mut src_info_bufs,
@@ -164,12 +267,7 @@ def test_expert_load[
         imm,
     }:
         var ctx = list_of_ctx[dev_idx]
-        var format_handler = token_fmt_type(
-            TileTensor(
-                ptr=output_bufs[dev_idx].unsafe_ptr().as_unsafe_any_origin(),
-                layout=output_layout,
-            )
-        )
+        var format_handler = formats.handler(dev_idx)
         var expert_load = ExpertLoadTally(
             MutPointer[UInt64, MutUntrackedOrigin](
                 unsafe_from_address=Int(tally_bufs[dev_idx].unsafe_ptr())
@@ -260,6 +358,9 @@ def test_expert_load[
                 expert_load=expert_load,
             )
 
+    # Without an expert whose count is off the padding, the FP8 case would
+    # not tell tokens from padded rows.
+    var padded_an_expert = False
     for step in range(n_steps):
         var layer = step % n_layers
         host_layer_idx[0] = Int32(layer)
@@ -297,10 +398,10 @@ def test_expert_load[
                 expected[
                     (dev_idx * n_layers + layer) * n_local_experts + e
                 ] += UInt64(step_count)
-                # BF16 adds no grouped-matmul padding, so the offsets carry
-                # the same per-expert counts the tally received.
+                if step_count % FormatT.m_padding != 0:
+                    padded_an_expert = True
                 assert_equal(
-                    step_count,
+                    align_up(step_count, FormatT.m_padding),
                     Int(host_row_offsets[e + 1] - host_row_offsets[e]),
                     String("row offsets, dev ", dev_idx, " expert ", e),
                 )
@@ -328,6 +429,8 @@ def test_expert_load[
 
     for dev_idx in range(n_ranks):
         list_of_ctx[dev_idx].synchronize()
+    comptime if FormatT.m_padding > 1:
+        assert_true(padded_an_expert, "no expert count needed padding")
     print("expert-load tally matches after", n_steps, "steps")
 
 
@@ -351,11 +454,25 @@ def main() raises:
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
+        comptime n_experts = num_gpus * 32
+        comptime max_recv = n_experts * 64
         comptime for fused in [False, True]:
             test_expert_load[
+                BF16Format[3584, 8, max_recv],
                 hidden_size=3584,
                 top_k=8,
-                n_experts=num_gpus * 32,
+                n_experts=n_experts,
+                n_ranks=num_gpus,
+                n_tokens_per_rank=64,
+                n_layers=2,
+                n_steps=5,
+                fused_dispatch=fused,
+            ](ctx)
+            test_expert_load[
+                FP8Format[7168, 8, max_recv],
+                hidden_size=7168,
+                top_k=8,
+                n_experts=n_experts,
                 n_ranks=num_gpus,
                 n_tokens_per_rank=64,
                 n_layers=2,
