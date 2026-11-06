@@ -15,7 +15,7 @@
 Wave32 WMMA fragment geometry:
   A/B per lane = 16 elements (full K; lanes 0-15 unique, 16-31 replicate)
   C/D per lane = 8 elements (M*N / WARP = 256 / 32)
-  Lane->C/D map: lane l, elem v -> D[row = v*2 + l//16, col = l%16]
+  Lane->C/D map: lane l, elem v -> D[row = wmma_acc_row(v, l//16), col = l%16]
 """
 
 from std.collections import OptionalReg
@@ -33,7 +33,7 @@ from structured_kernels.amd_tile_io import RegTileLoader
 from std.utils import IndexList
 
 from .config import RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K
-from .utils import get_warp_coords, pad
+from .utils import get_warp_coords, pad, wmma_acc_row
 
 comptime RDNA_WARP_SIZE = 32
 comptime RDNA_AB_FRAG_SIZE = 16
@@ -960,9 +960,9 @@ struct PRegisterBufferRDNA[
 
                 comptime for elem in range(reg_per_thread):
                     # RDNA WMMA C/D mapping: lane l, elem v ->
-                    # D[row=v*2+l//16, col=l%16].
-                    # P^T[key, seq]: key = elem*2 + lane_key_group.
-                    var key_in_mma = elem * 2 + Int(lane_key_group)
+                    # D[row=wmma_acc_row(v, l//16), col=l%16].
+                    # P^T[key, seq]: key = wmma_acc_row(elem, lane_key_group).
+                    var key_in_mma = wmma_acc_row(elem, Int(lane_key_group))
                     var global_key = mma_key_base + key_in_mma
 
                     var smem_offset = global_key * Self.BM + global_seq
