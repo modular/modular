@@ -252,6 +252,13 @@ modular_py_library(
     testonly = True,
     srcs = ["conftest.py"],
     imports = ["."],
+    # Extends the package default with plugin tests.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

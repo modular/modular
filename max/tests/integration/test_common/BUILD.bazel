@@ -230,12 +230,13 @@ modular_py_library(
     srcs = ["context_utils.py"],
     imports = [".."],
     # Extends the package default with the Qwen4-Exp arch package, whose QSA
-    # tests build their contexts through this helper.
+    # tests build their contexts through this helper, and with plugin tests.
     visibility = [
         "//:__pkg__",
         "//max/tests:__subpackages__",
         "//max_private/qwen4_exp:__pkg__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         requirement("numpy"),
@@ -270,6 +271,7 @@ modular_py_library(
         "//max/internal:__subpackages__",
         "//max/tests:__subpackages__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         requirement("pytest"),
@@ -312,6 +314,7 @@ modular_py_library(
         "//max/internal:__subpackages__",
         "//max/tests:__subpackages__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         "//max/python/max/driver",
@@ -411,6 +414,13 @@ modular_py_library(
         "mocks/tokenizer.py",
     ],
     imports = [".."],
+    # Extends the package default with plugin tests.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
