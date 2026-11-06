@@ -88,6 +88,8 @@ def matmul[
         ctx: Optional `DeviceContext` required for GPU targets and used for
             CPU tracing (defaults to `None`).
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     _matmul_impl[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
@@ -147,6 +149,8 @@ def matmul[
         ctx: Optional `DeviceContext` required for GPU targets and used for
             CPU tracing (defaults to `None`).
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     _matmul_impl[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
@@ -205,6 +209,8 @@ def matmul[
         ctx: Optional `DeviceContext` required for GPU targets and used for
             CPU tracing (defaults to `None`).
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     _matmul_impl[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
@@ -241,6 +247,8 @@ def _matmul_impl[
     compute_fn: ComputeFnType,
     ctx: DeviceContext.Optional,
 ) raises:
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"

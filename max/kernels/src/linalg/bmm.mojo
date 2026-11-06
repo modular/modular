@@ -1329,6 +1329,8 @@ def batched_matmul[
         context: Optional device context used for dispatch and parallelism
             (defaults to `None`).
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     _batched_matmul[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
@@ -1392,6 +1394,8 @@ def batched_matmul[
         context: Optional device context used for dispatch and parallelism
             (defaults to `None`).
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     _batched_matmul[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
@@ -1455,6 +1459,8 @@ def batched_matmul[
         context: Optional device context used for dispatch and parallelism
             (defaults to `None`).
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     _batched_matmul[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
@@ -1487,6 +1493,8 @@ def _batched_matmul[
     compute_fn: ComputeFnType,
     context: DeviceContext.Optional,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert not (
         has_epilogue_fn and has_compute_fn
     ), "pass either epilogue_fn or compute_fn, not both"

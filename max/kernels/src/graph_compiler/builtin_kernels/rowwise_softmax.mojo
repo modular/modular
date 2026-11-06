@@ -58,6 +58,8 @@ def softmax[
     axis: Int,
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     # softmax's two dependent reduces (row max, then sum of `exp(x - max)`)
     # plus its final normalizing write are passed to the scaffolder as
     # `num_phases=3`, which lets it split each row across many blocks on the

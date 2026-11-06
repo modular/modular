@@ -496,10 +496,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     This alias may be removed once Mojo supports nested auto-parameterization.
     """
 
-    comptime NoneValue = Optional[DeviceContext[]]()
+    comptime NoneValue = Optional[DeviceContext.CPU]()
     """Convenience helper for constructing a default value for
-    `DeviceContext.Optional` parameters. This guides type inference to a default
-    value for the `target` parameter when the default argument value is used.
+    `DeviceContext.Optional` parameters. This guides type inference to the CPU
+    `target` when the default argument value is used, so omitting the context
+    means "run on the CPU".
 
     Intended to be used like:
 
@@ -759,10 +760,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # TODO(MSTDL-3265): Remove `target: StaticString` parameters from all
     #   callers of this method after verifying all callers instead indicate
     #   target device via `DeviceContext.target`.
+    @staticmethod
     @inline(.always)
-    def _comptime_assert_matches_target_is_cpu[
-        device_kind: StaticString
-    ](self,):
+    def _comptime_assert_matches_target_is_cpu[device_kind: StaticString]():
         comptime assert Self.target.is_cpu() == is_cpu[device_kind](), String(
             "`target` parameter '",
             device_kind,

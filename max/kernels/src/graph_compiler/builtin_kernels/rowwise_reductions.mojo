@@ -79,6 +79,8 @@ def reduce_product[
     input_shape: Coord,
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime simd_width = rowwise.pick_simd_width[
         ReduceProduct[dtype, 1], target, 64, dtype
     ]()
@@ -173,6 +175,8 @@ def reduce_argmin[
     """Finds the argmin along `reduce_dim` via the Row layer: one
     `ArgMin` phase (native dtype, lower index wins ties) plus a per-row
     `emit` of the int64 index."""
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime simd_width = rowwise.pick_simd_width[
         ArgMin[dtype, 1], target, 64, dtype
     ]()
@@ -260,6 +264,8 @@ def reduce_argmax[
     input_shape: Coord,
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime simd_width = rowwise.pick_simd_width[
         ArgMax[dtype, 1], target, 64, dtype
     ]()
@@ -359,6 +365,8 @@ def reduce_min_and_max[
 ) raises:
     """Computes min and max in one axis walk (`MinMax` monoid), two
     outputs."""
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime simd_width = rowwise.pick_simd_width[
         MinMax[dtype, 1], target, 64, dtype
     ]()

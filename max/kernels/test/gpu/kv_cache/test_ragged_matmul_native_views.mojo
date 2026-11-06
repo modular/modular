@@ -30,6 +30,8 @@ def _project[
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     @inline(.always)
     def write_output[
         value_type: DType, width: SIMDLength, *, alignment: Int

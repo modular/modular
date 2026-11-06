@@ -90,6 +90,8 @@ def rms_norm_residual_add[
     The residual add is fused into the row's load, so the sum is read once,
     cached, normalized, and stored as the residual output on the way out.
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
@@ -238,6 +240,8 @@ def rms_norm_rope[
     weight_offset: Scalar[input_dtype],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime accum = get_accum_type[input_dtype]()
     comptime assert accum.is_floating_point(), "rope requires fp accum"
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
@@ -456,6 +460,8 @@ def layer_norm[
     epsilon: Scalar[dtype],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "layer_norm requires fp accum"
     # Welford's triple-field state is 12B at W=1, so the default 64B
@@ -602,6 +608,8 @@ def layer_norm_rope_ragged[
     freqs_cis: TileTensor[freq_dtype, ...],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     # TODO(feras): non-interleaved RoPE needs the far-partner row-cache
     # lookup rms_norm_rope uses for its rotate-half, not yet implemented here.
     comptime assert (
@@ -1033,6 +1041,8 @@ def rms_norm_fused_residual_add[
     gamma2: TileTensor[mut=False, dtype, ...],
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
@@ -1251,6 +1261,8 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
     scale_ub: Float32,
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime accum = get_accum_type[in_dtype]()
     comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
     comptime assert out_dtype in (

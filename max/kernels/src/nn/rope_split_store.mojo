@@ -98,6 +98,8 @@ def _rope_split_store_ragged_impl[
             the ``freqs_cis`` row used for RoPE coefficients.
         context: DeviceContext for GPU.
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime kv_params = cache_t.kv_params
     comptime kv_type = cache_t.dtype
     comptime head_size = kv_params.head_size
@@ -380,6 +382,7 @@ def _rope_split_store_ragged[
         q_output: Output buffer for roped Q [total_seq_len, q_dim].
         context: DeviceContext for GPU.
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
 
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
@@ -512,6 +515,8 @@ def _rope_split_store_ragged_with_position_ids[
         q_output: Output buffer for roped Q [total_seq_len, q_dim].
         context: DeviceContext for GPU.
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert PositionIdsLayoutType.rank == 2
 
     # Validate mrope_section alignment with kernel SIMD width.

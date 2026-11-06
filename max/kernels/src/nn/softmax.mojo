@@ -1078,6 +1078,8 @@ def softmax_inline[
         axis: The axis along which to compute the softmax.
         context: Optional device context for GPU execution.
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
 
     def trace_information() {imm} -> String:

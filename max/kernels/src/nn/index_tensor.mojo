@@ -275,6 +275,8 @@ def _index_tensor_impl[
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert (
         data.flat_rank >= 2 and indices.flat_rank >= 2
     ), "Constraint: data_rank >= 2 and indices_rank >= 2"

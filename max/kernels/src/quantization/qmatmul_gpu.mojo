@@ -1686,6 +1686,8 @@ def matmul_gpu_qint4[
         Requires an NVIDIA GPU target. `a_type` and `c_type` must both be
         `bfloat16`.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert c_tt.rank == 2
     comptime assert a_tt.rank == 2
     comptime assert b_tt.rank == 2
@@ -1733,6 +1735,8 @@ def matmul_gpu_qint4[
         Requires an NVIDIA GPU target. `a_type` and `c_type` must both be
         `bfloat16`.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert c_tt.rank == 2
     comptime assert a_tt.rank == 2
     comptime assert b_tt.rank == 2
@@ -2306,6 +2310,8 @@ def gpu_qint4_repack_Q4_0[
     Raises:
         An error if the input tensors are not rank-2 or the target is not a GPU.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert b_tt.rank == 2
     comptime assert b_packed_tt.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
@@ -2367,6 +2373,8 @@ def gpu_qint4_repack_GPTQ[
     Raises:
         An error if the input tensors are not rank-2, the target is not a GPU, or the input and output dimensions are mismatched.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     var b = rebind[
         TileTensor[.uint8, type_of(b_tt).LayoutType, ImmutAnyOrigin]
     ](b_tt.reshape(b_tt.layout))

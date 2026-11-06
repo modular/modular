@@ -207,6 +207,8 @@ def _reduce_generator[
         reduce_function: The lambda implementing the reduction.
         context: The pointer to DeviceContext.
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert is_valid_target[target](), "unsupported target"
 
     # The plugin hook only accepts an `IndexList`, and the empty-dimension
@@ -286,6 +288,7 @@ def _reduce_generator[
         reduce_function: The lambda implementing the reduction.
         context: The pointer to DeviceContext.
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
 
     comptime num_reductions = 1
 

@@ -937,6 +937,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             Shape is (sum(seq_lens), num_heads * head_size)
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 2
     comptime kv_type = cache_t.dtype
@@ -1046,6 +1048,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert input_row_offsets.rank == input_row_offsets.flat_rank == 1
     comptime assert bias.rank == bias.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 2
@@ -1178,6 +1182,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         bias: Optional bias in projection order: Q, K for MLA, or Q, K, V
             otherwise.
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert input_row_offsets.rank == input_row_offsets.flat_rank == 1
     comptime assert input_scale.rank == input_scale.flat_rank == 2
     comptime assert weight_scale.rank == weight_scale.flat_rank == 2
@@ -1452,6 +1458,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             Shape is (sum(seq_lens), num_heads * head_size)
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert output.flat_rank == 2
     comptime kv_type = cache_t.dtype
@@ -1855,6 +1863,8 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     into the main `k_cache`/`v_cache`; IndexK is scattered into the MLA
     `index_k_cache` (single latent head, head 0).
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert q_output.flat_rank == iq_output.flat_rank == 2
     comptime kv_type = cache_t.dtype
@@ -2209,6 +2219,8 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     the main `k_cache`/`v_cache`; IndexK is scattered into the MLA
     `index_k_cache` (single latent head, head 0).
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 2
     comptime kv_type = cache_t.dtype
@@ -2378,6 +2390,8 @@ def _matmul_common[
     context: DeviceContext.Optional,
     epilogue_fn: EpilogueFnType,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
     comptime N = weight.static_shape[0]
 
@@ -2424,6 +2438,8 @@ def _qmatmul_common[
     context: DeviceContext.Optional,
     epilogue_fn: EpilogueFnType,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert is_gpu[target](), "GPTQ quantization only works on GPU."
 
     var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
@@ -2841,6 +2857,8 @@ def _matmul_kv_cache_ragged_impl[
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: Pointer containing the runtime context for the target device.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     if hidden_state.num_elements() == 0:
         # Nothing to do.
         return
@@ -3034,6 +3052,8 @@ def _matmul_k_cache_ragged_impl[
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: Pointer containing the runtime context for the target device.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     if hidden_state.num_elements() == 0:
         # Nothing to do.
         return

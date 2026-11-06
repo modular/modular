@@ -249,6 +249,8 @@ def _fused_qkv_matmul_kv_cache_impl[
             projections are written in-place to k_cache and v_cache.
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert valid_lengths.rank == valid_lengths.flat_rank == 1
     comptime assert output.rank == output.flat_rank == 3
     comptime cache_t = collection_t.CacheType
@@ -335,6 +337,8 @@ def _matmul_common[
     epilogue_fn: EpilogueFnType,
     context: DeviceContext.Optional,
 ) raises:
+    context.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert hidden_state.rank == hidden_state.flat_rank == 3
     comptime assert weight.rank == weight.flat_rank == 2
     comptime assert hidden_state.is_row_major

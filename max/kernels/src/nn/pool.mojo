@@ -1297,6 +1297,8 @@ def avg_pool[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
         ctx: The DeviceContext to use for GPU execution.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime if is_cpu[target]():
         avg_pool_cpu[count_boundary=count_boundary](
             input, filter, strides, dilations, paddings, output, ceil_mode
@@ -1352,6 +1354,8 @@ def max_pool[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
         ctx: The DeviceContext to use for GPU execution.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime if is_cpu[target]():
         max_pool_cpu(
             input, filter, strides, dilations, paddings, output, ceil_mode

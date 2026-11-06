@@ -705,6 +705,8 @@ def launch[
     Raises:
         On launch or worker failure.
     """
+    ctx.T._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert num_phases > 0, "num_phases must be > 0"
 
     comptime if num_phases == 1:
