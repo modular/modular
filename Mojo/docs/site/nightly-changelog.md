@@ -62,6 +62,9 @@ This version is still a work in progress.
   don't satisfy the condition. Previously, only an always-false conformance's
   message was reported.
 
+- `@explicit_destroy("<message>")` on a trait is deprecated and now emits a
+  warning. Only structs support a custom linear type error message.
+
 - Precompiled packages now no longer leak names and provide the same surface as
   the same packages compiled from source. This may break your code (especially
   from `std`):
