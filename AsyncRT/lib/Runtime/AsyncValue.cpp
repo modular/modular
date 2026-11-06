@@ -14,7 +14,6 @@
 #include "AsyncRT/Runtime/AsyncValue.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "AsyncRT/Support/Chain.h"
-#include "Support/ADT/ConcurrentAppendingVector.h"
 #include "Support/Threading/SpinWaiter.h"
 #include "llvm/Support/Format.h"
 

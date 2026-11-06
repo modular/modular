@@ -878,6 +878,7 @@ modular_cc_library(
         "//Support:Threading",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -962,6 +963,7 @@ modular_cc_library(
         "//AsyncRT:Runtime",
         "//Support:CommonCLOptions",
         "//Support:Driver",
+        "//Support:MArchTarget",
         "//Support:SymbolExport",
     ],
 )
@@ -992,6 +994,7 @@ modular_cc_library(
         ":ToolCommon.headers",
         ":TransformUtils",
         "//AsyncRT:CompilerSupport",
+        "//Support:Config",
         "//Support:Context",
         "//Support:DebugInfoTransforms",
         "//Support:SymbolExport",
@@ -1059,10 +1062,13 @@ modular_shared_library(
         "//MLRT:Driver/DeviceAffinity",
         "//MLRT:Driver/KernelLoadGate",
         "//MLRT:Driver/LaunchTraceRegistry",
+        "//Support:Buffer",
         "//Support:DLFcn",
         "//Support:HashUtils",
         "//Support:Log",
         "//Support:LogFFI",
+        "//Support:ML",
+        "//Support:Profiling",
         "//Target:DriverPlugin",
     ] + select({
         # Under --config=hal-device-context the HAL shim in
@@ -1112,6 +1118,7 @@ modular_cc_library(
         "//AsyncRT:Support",
         "//Support:Base",
         "//Support:BinaryID",
+        "//Support:Compiler",
         "//Support:Configuration",
         "//Support:Context",
         "//Support:ML",
@@ -1593,6 +1600,7 @@ modular_cc_library(
         ":ToolCommon.headers",
         "//Cache",
         "//Support:CommonCLOptions",
+        "//Support:Config",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
         "//Support:Driver",
@@ -1694,6 +1702,7 @@ modular_shared_library(
         "//MLRT:Driver/LaunchTraceRegistry",
         "//Support:Base64",
         "//Support:CommonCLOptions",
+        "//Support:Context",
         "//Support:CrashReporting",
         "//Support:DLFcn",
         "//Support:DebugInfoDialect",
