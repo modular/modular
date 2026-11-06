@@ -758,5 +758,7 @@ def main() raises:
             test_fp32_split_k[128, 6144, 8](ctx, m)
             test_fp32_split_k[128, 6144, 16](ctx, m)
             test_fp32_split_k[128, 6144, 32](ctx, m)
-        for m in [16, 32]:
+        for m in [16, 32, 100, 256, 300, 600]:
             test_fp32_split_k_dispatch[128, 6144](ctx, m)
+        for m in [64, 300]:
+            test_fp32_split_k_dispatch[256, 7168](ctx, m)

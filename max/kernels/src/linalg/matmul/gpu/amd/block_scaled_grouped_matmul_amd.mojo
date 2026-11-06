@@ -1565,10 +1565,8 @@ def block_scaled_grouped_matmul_amd_preb[
         elif etm <= 2100:
             # Keep BM64 across the etm~2048 pothole (BM128 under-fills the grid there).
             return run_kernel[64, 128, 512, 64, True]()
-        elif etm <= 4095:
-            return run_kernel[128, 128, 512, 64, True]()
         else:
-            return run_kernel[64, 128, 512, 64, False]()
+            return run_kernel[128, 128, 512, 64, True]()
 
     comptime if LB == 16 and N == 6144 and packed_K == (
         3072 // 2

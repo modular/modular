@@ -501,8 +501,16 @@ def main() raises:
                 ctx
             )
             # A second (N, split) pair, so the controls cannot be passing by
-            # fitting one geometry.
-            test_split_k_epilogue[lane_bytes, 16, 6144, 3072, num_splits=6](ctx)
+            # fitting one geometry. M3.1's MXFP8 table runs N=6144, K=3072
+            # unsplit at this M, so that arm takes K=6144 instead.
+            comptime if lane_bytes == MXFP8_LANE_BYTES:
+                test_split_k_epilogue[lane_bytes, 16, 6144, 6144, num_splits=8](
+                    ctx
+                )
+            else:
+                test_split_k_epilogue[lane_bytes, 16, 6144, 3072, num_splits=6](
+                    ctx
+                )
 
         print(
             "\n--- SK workspace cap: where the dispatcher stops splitting ---"
@@ -511,12 +519,15 @@ def main() raises:
         # N=2560, K=6144 splits 12 ways, so the 128 MiB budget admits
         # M <= 128*1024*1024 / (12 * 2560 * 4) = 1092. Straddle it: a decode M
         # splits, a prefill-shaped M must not (M=2048 would want 240 MiB).
+        # M3.1's MXFP8 table owns that shape, so the MXFP8 arm straddles
+        # K=4096 instead: 8 splits, M <= 1638.
         comptime for lane_bytes in [MXFP4_LANE_BYTES, MXFP8_LANE_BYTES]:
+            comptime K = 6144 if lane_bytes == MXFP4_LANE_BYTES else 4096
             test_dispatch_workspace_cap[
-                lane_bytes, 1024, 2560, 6144, expect_split_k=True
+                lane_bytes, 1024, 2560, K, expect_split_k=True
             ]("cap-under-m1024", ctx)
             test_dispatch_workspace_cap[
-                lane_bytes, 2048, 2560, 6144, expect_split_k=False
+                lane_bytes, 2048, 2560, K, expect_split_k=False
             ]("cap-over-m2048", ctx)
 
         print("\n--- plain vs split: the wide-N short-K floor ---")
