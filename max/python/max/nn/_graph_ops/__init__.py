@@ -4052,9 +4052,10 @@ def msa_sparse_indexer(
 ) -> TensorValue:
     """Selects the top-k key *blocks* per token for MiniMax-M3 sparse attention.
 
-    Computes per-block QK scores against the index-K paged cache (BF16 or
-    scale-free FP8 e4m3) and returns, for each (index head, query token), the
-    ids of the ``topk`` highest-scoring 128-token blocks. The forward
+    Computes per-block QK scores against the index-K paged cache (BF16,
+    scale-free FP8 e4m3, or packed NVFP4 with E4M3 scales) and returns, for
+    each (index head, query token), the ids of the ``topk`` highest-scoring
+    128-token blocks. The forward
     sparse-attention op consumes these block ids to gather a sparse KV band.
     The op selects the prefill or decode kernel at runtime from the index-K
     cache's ``max_seq_length``, so the same call serves both paths.
@@ -4063,13 +4064,14 @@ def msa_sparse_indexer(
         kv_params: Key-value cache parameters for the index-K cache.
         index_q: Index queries. Prefill: ``[total_q, num_index_heads,
             idx_head_dim]``; decode: ``[batch, num_index_heads, idx_head_dim]``.
-            BF16.
+            BF16, or FP8 e4m3 for an NVFP4 index-K cache.
         input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32 (used on
             the prefill path; on decode it is ``[0, 1, ..., batch]``).
         prefix_lens: Per-row cached-key count ``[batch]`` (the index-K
             ``cache_lengths``). uint32.
-        index_kv_collection: Paged index-K cache (BF16 or scale-free e4m3, no
-            scales). Its ``mixed_step_split`` record splits a mixed batch,
+        index_kv_collection: Paged index-K cache: BF16 or scale-free e4m3
+            without scales, or packed NVFP4 with its E4M3 scales. Its
+            ``mixed_step_split`` record splits a mixed batch,
             so the decode rows take the decode routes; it splits only on
             NVIDIA and only for packed operands.
         layer_idx: Layer index, uint32, on CPU.
@@ -4275,13 +4277,14 @@ def msa_sparse_attention_ragged(
         kv_params: Key-value cache parameters for the main KV cache.
         input: Query tensor ``[total_q, n_heads, head_dim]`` (prefill) or
             ``[batch, n_heads, head_dim]`` (decode); dtype matches the KV cache
-            (BF16 or FP8 e4m3).
+            (BF16 or FP8 e4m3), or is FP8 e4m3 for NVFP4.
         input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32.
         cache_row_offsets: Ragged valid-cache offsets ``[batch + 1]`` uint32.
         total_context_length: Total padded cache length for the batch, CPU
             scalar ``[1]`` uint32.
-        kv_collection: Main paged KV cache (BF16 or FP8 e4m3, no scales).
-            Its ``mixed_step_split`` record splits a mixed batch; it splits
+        kv_collection: Main paged KV cache: BF16 or FP8 e4m3 without
+            scales, or NVFP4 with its E4M3 scales. Its
+            ``mixed_step_split`` record splits a mixed batch; it splits
             only on NVIDIA and only for packed operands.
         layer_idx: Layer index, uint32, on CPU.
         block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,

@@ -40,6 +40,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     coord,
+    row_major,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -4660,3 +4661,63 @@ struct PagedKVCacheCollection[
 
     def cache_length(self, bs_idx: Int) -> Int:
         return Int(self.cache_lengths.load((bs_idx,)))
+
+    def rows_view(
+        self,
+        first_row: Int,
+        num_rows: Int,
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
+    ) -> Self:
+        """Returns a view of batch rows `[first_row, first_row + num_rows)`.
+
+        The blocks and the scales are shared with `self`, not copied.
+
+        Args:
+            first_row: First batch row the view covers.
+            num_rows: Number of batch rows the view covers.
+            max_seq_length: Max sequence length the view reports.
+            max_cache_length: Max cache length the view reports.
+
+        Returns:
+            A view of the collection covering the requested rows only.
+        """
+        var view = self.copy()
+        view.cache_lengths = _as_cache_tt[
+            Self.CacheType.cache_lengths_tt_layout,
+            Self.CacheType.cache_lengths_tt_type.Engine,
+        ](
+            TileTensor(
+                self.cache_lengths.unsafe_ptr().unsafe_offset(first_row),
+                row_major(num_rows),
+            )
+        )
+        var lut_cols = Int(self.lookup_table.dim[1]())
+        view.lookup_table = _as_cache_tt[
+            Self.CacheType.lookup_table_tt_layout,
+            Self.CacheType.lookup_table_tt_type.Engine,
+        ](
+            TileTensor(
+                self.lookup_table.unsafe_ptr().unsafe_offset(
+                    first_row * lut_cols
+                ),
+                row_major(num_rows, lut_cols),
+            )
+        )
+        # A distinct scales table can have another width than the values
+        # table, so its offset and width come from itself.
+        var scales_lut_cols = Int(self.scales_lookup_table.dim[1]())
+        view.scales_lookup_table = _as_cache_tt[
+            Self.CacheType.lookup_table_tt_layout,
+            Self.CacheType.lookup_table_tt_type.Engine,
+        ](
+            TileTensor(
+                self.scales_lookup_table.unsafe_ptr().unsafe_offset(
+                    first_row * scales_lut_cols
+                ),
+                row_major(num_rows, scales_lut_cols),
+            )
+        )
+        view.max_seq_length = max_seq_length
+        view.max_cache_length = max_cache_length
+        return view

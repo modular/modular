@@ -33,6 +33,87 @@ from std.utils.index import IndexList
 from std.collections import OptionalReg
 
 comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
+comptime _rows_view_kv_params = KVCacheStaticParams(num_heads=1, head_size=4)
+comptime _rows_view_page_size = 1
+comptime _rows_view_granularity = 4
+
+# The one scaled collection type the scales test and the rows-view tests
+# build; a second spelling would drift from it.
+comptime _ScaledCollection = PagedKVCacheCollection[
+    .float32,
+    _rows_view_kv_params,
+    _rows_view_page_size,
+    MutAnyOrigin,
+    ImmutAnyOrigin,
+    ImmutAnyOrigin,
+    MutAnyOrigin,
+    scale_dtype_=DType.float32,
+    quantization_granularity_=_rows_view_granularity,
+]
+
+
+def _zeroed_blocks_pool[num_blocks: Int]() -> _ScaledCollection.blocks_tt_type:
+    """Allocates a zeroed value pool that outlives the caller.
+
+    The collection keeps a view of the pool, so it must be heap-backed;
+    a local `List` would free at return.
+    """
+    comptime shape = IndexList[6](
+        num_blocks,
+        2,
+        1,
+        _rows_view_page_size,
+        _rows_view_kv_params.num_heads,
+        _rows_view_kv_params.head_size,
+    )
+    var ptr = unsafe_alloc[Float32](shape.flattened_length())
+    return rebind[_ScaledCollection.blocks_tt_type](
+        TileTensor(ptr, row_major(shape.flattened_length()))
+        .reshape(
+            Coord(
+                Int64(shape[0]),
+                Idx[2],
+                Int64(shape[2]),
+                Idx[_rows_view_page_size],
+                Idx[_rows_view_kv_params.num_heads],
+                Idx[_rows_view_kv_params.head_size],
+            )
+        )
+        .as_unsafe_any_origin()
+    ).fill(Float32(0))
+
+
+def _uninit_scales_pool[
+    num_scale_blocks: Int
+]() -> _ScaledCollection.scales_tt_type:
+    """Allocates an uninitialized scale pool that outlives the caller.
+
+    The collection keeps a view of the pool, so it must be heap-backed;
+    each caller fills the values it asserts on.
+    """
+    comptime shape = IndexList[6](
+        num_scale_blocks,
+        2,
+        1,
+        _rows_view_page_size,
+        _rows_view_kv_params.num_heads,
+        1,
+    )
+    var ptr = unsafe_alloc[Float32](shape.flattened_length())
+    return rebind[_ScaledCollection.scales_tt_type](
+        TileTensor(ptr, row_major(shape.flattened_length()))
+        .reshape(
+            Coord(
+                Int64(shape[0]),
+                Idx[2],
+                Int64(shape[2]),
+                Idx[_rows_view_page_size],
+                Idx[_rows_view_kv_params.num_heads],
+                Idx[1],
+            )
+        )
+        .as_unsafe_any_origin()
+    )
 
 
 def do_test[
@@ -348,47 +429,11 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     """A distinct scales_lookup_table must resolve scale pages independently
     of lookup_table, not silently fall back to it.
     """
-    comptime kv_params_small = KVCacheStaticParams(num_heads=1, head_size=4)
-    comptime page_size = 1
-    comptime granularity = 4
     comptime batch_size = 1
     comptime num_value_blocks = 1
     comptime num_scale_blocks = 3
 
-    comptime blocks_shape = IndexList[6](
-        num_value_blocks,
-        2,
-        1,
-        page_size,
-        kv_params_small.num_heads,
-        kv_params_small.head_size,
-    )
-    var blocks_ptr = List(
-        length=blocks_shape.flattened_length(), fill=Float32(0)
-    )
-    comptime Collection = PagedKVCacheCollection[
-        .float32,
-        kv_params_small,
-        page_size,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
-        scale_dtype_=DType.float32,
-        quantization_granularity_=granularity,
-    ]
-    var blocks = TileTensor(
-        Span(blocks_ptr), row_major(blocks_shape.flattened_length())
-    ).reshape(
-        Coord(
-            Int64(blocks_shape[0]),
-            Idx[2],
-            Int64(blocks_shape[2]),
-            Idx[page_size],
-            Idx[kv_params_small.num_heads],
-            Idx[kv_params_small.head_size],
-        )
-    )
+    var blocks = _zeroed_blocks_pool[num_value_blocks]()
 
     var cache_lengths_ptr = List(length=batch_size, fill=UInt32(1))
     var cache_lengths = TileTensor(
@@ -410,7 +455,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     var scales_lookup_table_ptr = unsafe_alloc[UInt32](batch_size)
     scales_lookup_table_ptr[0] = UInt32(2)
     var scales_lookup_table_opt: OptionalReg[
-        Collection.CacheType.lookup_table_tt_type
+        _ScaledCollection.CacheType.lookup_table_tt_type
     ] = (
         TileTensor(scales_lookup_table_ptr, row_major(batch_size))
         .reshape(Coord(Int64(batch_size), Int64(1)))
@@ -418,38 +463,23 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
         .as_unsafe_any_origin()
     )
 
-    comptime scales_shape = IndexList[6](
-        num_scale_blocks, 2, 1, page_size, kv_params_small.num_heads, 1
+    var scales = _uninit_scales_pool[num_scale_blocks]().fill(
+        Scalar[_ScaledCollection.scale_dtype](-1.0)
     )
-    var scales_ptr = unsafe_alloc[Float32](scales_shape.flattened_length())
-    var scales = rebind[Collection.scales_tt_type](
-        TileTensor(scales_ptr, row_major(scales_shape.flattened_length()))
-        .reshape(
-            Coord(
-                Int64(scales_shape[0]),
-                Idx[2],
-                Int64(scales_shape[2]),
-                Idx[page_size],
-                Idx[kv_params_small.num_heads],
-                Idx[1],
-            )
-        )
-        .as_unsafe_any_origin()
-    ).fill(Scalar[Collection.scale_dtype](-1.0))
     # Block 0 -- where lookup_table points -- holds a decoy value that a
     # buggy fallback to lookup_table would read instead.
-    scales[0, 0, 0, 0, 0, 0] = Scalar[Collection.scale_dtype](111.0)
+    scales[0, 0, 0, 0, 0, 0] = Scalar[_ScaledCollection.scale_dtype](111.0)
     # Block 2 -- where scales_lookup_table points -- holds the real value.
-    scales[2, 0, 0, 0, 0, 0] = Scalar[Collection.scale_dtype](222.0)
+    scales[2, 0, 0, 0, 0, 0] = Scalar[_ScaledCollection.scale_dtype](222.0)
 
-    var scales_opt: OptionalReg[Collection.scales_tt_type] = scales
+    var scales_opt: OptionalReg[_ScaledCollection.scales_tt_type] = scales
 
-    var collection = Collection(
-        rebind[Collection.blocks_tt_type](blocks.as_unsafe_any_origin()),
+    var collection = _ScaledCollection(
+        rebind[_ScaledCollection.blocks_tt_type](blocks.as_unsafe_any_origin()),
         cache_lengths.as_imm().as_unsafe_any_origin(),
         lookup_table.as_imm().as_unsafe_any_origin(),
-        UInt32(page_size),
-        UInt32(page_size),
+        UInt32(_rows_view_page_size),
+        UInt32(_rows_view_page_size),
         scales_opt,
         scales_lookup_table_opt,
     )
@@ -465,6 +495,209 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
         + String(scale)
         + ", expected 222.0 (via scales_lookup_table, not lookup_table)",
     )
+
+    blocks.ptr.unsafe_free()
+    lookup_table_ptr.unsafe_free()
+    scales_lookup_table_ptr.unsafe_free()
+    scales.ptr.unsafe_free()
+
+
+def _build_rows_view_collection[
+    num_rows: Int,
+    value_lut_cols: Int,
+    scale_lut_cols: Int,
+    distinct_scale_lut: Bool,
+]() raises -> _ScaledCollection:
+    """Builds a scaled collection whose rows resolve distinct value and
+    scale pages, so a row view can be checked against the whole collection.
+
+    With `distinct_scale_lut` the scales get their own table and block ids;
+    otherwise the constructor aliases the values table.
+    """
+    comptime assert (
+        distinct_scale_lut or scale_lut_cols == value_lut_cols
+    ), "an aliased scales table has the values table's width"
+    comptime num_value_blocks = num_rows * value_lut_cols
+    comptime num_scale_blocks = (
+        num_value_blocks
+        + num_rows
+        * scale_lut_cols if distinct_scale_lut else num_rows
+        * scale_lut_cols
+    )
+    # Distinct scale ids start past the value pool, so no scale id equals a
+    # value id.
+    comptime scale_id_base = num_value_blocks if distinct_scale_lut else 0
+
+    var blocks = _zeroed_blocks_pool[num_value_blocks]()
+    # Each row resolves its own value page per column, so no two rows share
+    # a block id in the same column.
+    for row in range(num_rows):
+        for col in range(value_lut_cols):
+            blocks[row * value_lut_cols + col, 0, 0, 0, 0, 0] = Float32(
+                1000 + row * 10 + col
+            )
+
+    var cache_lengths_ptr = unsafe_alloc[UInt32](num_rows)
+    for row in range(num_rows):
+        cache_lengths_ptr[row] = UInt32(_rows_view_page_size * (row + 1))
+    var cache_lengths = (
+        TileTensor(cache_lengths_ptr, row_major(num_rows))
+        .reshape(Coord(Int64(num_rows)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+
+    var lookup_table_ptr = unsafe_alloc[UInt32](num_rows * value_lut_cols)
+    for row in range(num_rows):
+        for col in range(value_lut_cols):
+            lookup_table_ptr[row * value_lut_cols + col] = UInt32(
+                row * value_lut_cols + col
+            )
+    var lookup_table = (
+        TileTensor(lookup_table_ptr, row_major(num_rows * value_lut_cols))
+        .reshape(Coord(Int64(num_rows), Int64(value_lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+
+    var scales_lookup_table_opt: OptionalReg[
+        _ScaledCollection.CacheType.lookup_table_tt_type
+    ] = None
+    comptime if distinct_scale_lut:
+        # The scales table has its own width and its own ids, distinct per
+        # row and per column from the values table's.
+        var scales_lookup_table_ptr = unsafe_alloc[UInt32](
+            num_rows * scale_lut_cols
+        )
+        for row in range(num_rows):
+            for col in range(scale_lut_cols):
+                scales_lookup_table_ptr[row * scale_lut_cols + col] = UInt32(
+                    scale_id_base + row * scale_lut_cols + col
+                )
+        scales_lookup_table_opt = (
+            TileTensor(
+                scales_lookup_table_ptr, row_major(num_rows * scale_lut_cols)
+            )
+            .reshape(Coord(Int64(num_rows), Int64(scale_lut_cols)))
+            .as_imm()
+            .as_unsafe_any_origin()
+        )
+
+    var scales = _uninit_scales_pool[num_scale_blocks]().fill(
+        Scalar[_ScaledCollection.scale_dtype](0)
+    )
+    for row in range(num_rows):
+        for col in range(scale_lut_cols):
+            scales[
+                scale_id_base + row * scale_lut_cols + col, 0, 0, 0, 0, 0
+            ] = Scalar[_ScaledCollection.scale_dtype](2000 + row * 10 + col)
+
+    var scales_opt: OptionalReg[_ScaledCollection.scales_tt_type] = scales
+
+    return _ScaledCollection(
+        rebind[_ScaledCollection.blocks_tt_type](blocks.as_unsafe_any_origin()),
+        cache_lengths,
+        lookup_table,
+        UInt32(_rows_view_page_size * value_lut_cols),
+        UInt32(_rows_view_page_size * value_lut_cols),
+        scales_opt,
+        scales_lookup_table_opt,
+    )
+
+
+def _free_rows_view_collection[
+    distinct_scale_lut: Bool
+](collection: _ScaledCollection):
+    """Frees the pools and tables `_build_rows_view_collection` allocated."""
+    collection.blocks.ptr.unsafe_free()
+    collection.cache_lengths.ptr.unsafe_mut_cast[True]().unsafe_free()
+    collection.lookup_table.ptr.unsafe_mut_cast[True]().unsafe_free()
+    collection.scales.value().ptr.unsafe_free()
+    # An aliased scales table is the values table, freed above.
+    comptime if distinct_scale_lut:
+        collection.scales_lookup_table.ptr.unsafe_mut_cast[True]().unsafe_free()
+
+
+def test_paged_rows_view_resolves_the_rows_of_the_whole_collection() raises:
+    """A row view resolves the same lengths, values and max lengths as the
+    whole collection at the offset rows.
+    """
+    var whole = _build_rows_view_collection[3, 2, 2, True]()
+    var S = UInt32(7)
+    var C = UInt32(9)
+    var view = whole.rows_view(1, 2, S, C)
+
+    assert_true(view.max_seq_length == S, "view max_seq_length must change")
+    assert_true(view.max_cache_length == C, "view max_cache_length must change")
+    var view_key = view.get_key_cache(0)
+    var whole_key = whole.get_key_cache(0)
+    for i in range(2):
+        assert_true(
+            view.cache_length(i) == whole.cache_length(1 + i),
+            "view cache_length must follow the offset rows",
+        )
+        # One token per page, so the two positions cover different pages.
+        for tok in range(2):
+            var view_val = view_key.block_paged_ptr[1](i, tok, 0)[0]
+            var whole_val = whole_key.block_paged_ptr[1](1 + i, tok, 0)[0]
+            assert_true(
+                view_val == whole_val,
+                "view key cache must resolve the same element as the whole",
+            )
+
+    _free_rows_view_collection[True](whole)
+
+
+def test_paged_rows_view_values_and_scales_follow_their_own_tables() raises:
+    """A row view resolves values and scales through their own tables'
+    widths, not each other's column counts.
+    """
+    var whole = _build_rows_view_collection[3, 2, 3, True]()
+    var view = whole.rows_view(1, 2, UInt32(7), UInt32(9))
+
+    var view_key = view.get_key_cache(0)
+    var whole_key = whole.get_key_cache(0)
+    for i in range(2):
+        # One token per page, so the two positions cover different columns
+        # of both tables.
+        for tok in range(2):
+            var view_val = view_key.block_paged_ptr[1](i, tok, 0)[0]
+            var whole_val = whole_key.block_paged_ptr[1](1 + i, tok, 0)[0]
+            assert_true(
+                view_val == whole_val,
+                "view values must resolve through the values table's width",
+            )
+            var view_scale = view_key.load_scale[width=1](i, 0, tok, 0)
+            var whole_scale = whole_key.load_scale[width=1](1 + i, 0, tok, 0)
+            assert_true(
+                view_scale == whole_scale,
+                "view scales must resolve through the scales table's width",
+            )
+
+    _free_rows_view_collection[True](whole)
+
+
+def test_paged_rows_view_scales_follow_the_aliased_values_table() raises:
+    """A row view resolves scales through the values table when the scales
+    table is its alias, at the values table's width.
+    """
+    var whole = _build_rows_view_collection[3, 2, 2, False]()
+    var view = whole.rows_view(1, 2, UInt32(7), UInt32(9))
+
+    var view_key = view.get_key_cache(0)
+    var whole_key = whole.get_key_cache(0)
+    for i in range(2):
+        # One token per page, so the two positions cover different scale
+        # columns of the values table.
+        for tok in range(2):
+            var view_scale = view_key.load_scale[width=1](i, 0, tok, 0)
+            var whole_scale = whole_key.load_scale[width=1](1 + i, 0, tok, 0)
+            assert_true(
+                view_scale == whole_scale,
+                "view scales must resolve through the aliased values table",
+            )
+
+    _free_rows_view_collection[False](whole)
 
 
 def _build_collection_and_page_stride[
@@ -594,6 +827,9 @@ def main() raises:
     test_paged_kv_cache_offset_correctness()
     test_paged_kv_cache_quantization()
     test_scales_resolve_through_their_own_lookup_table()
+    test_paged_rows_view_resolves_the_rows_of_the_whole_collection()
+    test_paged_rows_view_values_and_scales_follow_their_own_tables()
+    test_paged_rows_view_scales_follow_the_aliased_values_table()
     do_test[16, 16]()
     do_test[64, 16]()
     do_test[128, 64]()

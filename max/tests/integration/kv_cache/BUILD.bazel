@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
@@ -14,6 +14,7 @@ modular_py_test(
         ["*.py"],
         exclude = [
             "*_gpu.py",
+            "msa_mixed_split_cases.py",
             "test_jenga_arch_geometry.py",
             "test_rotary_embedding.py",
         ],
@@ -91,6 +92,8 @@ modular_py_test(
             "test_dual_qk_fp8_kv_store_gpu.py",
             "test_msa_nvfp4_kv_gpu.py",
             "test_msa_mixed_split_gpu.py",
+            "test_msa_mixed_split_nvfp4_gpu.py",
+            "test_msa_mixed_split_postsubmit_gpu.py",
             "test_mha_mixed_split_gpu.py",
             "test_chunked_staging_region_gpu.py",
             "test_kv_cache_buffer_pinned_gpu.py",
@@ -381,6 +384,26 @@ modular_py_test(
     ],
 )
 
+modular_py_library(
+    name = "msa_mixed_split_cases",
+    testonly = True,
+    srcs = ["msa_mixed_split_cases.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental/torch",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("pytest"),
+        requirement("torch"),
+    ],
+)
+
 # Mixed-step split of the MiniMax-M3 MSA ops: bit-exact against the parts.
 modular_py_test(
     name = "test_msa_mixed_split_gpu",
@@ -399,17 +422,52 @@ modular_py_test(
     ],
     # Needs the MSA ops, registered only by the closed-source kernels.
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn/_graph_ops",
-        "//max/python/max/nn/kv_cache",
-        "//max/tests/integration/test_common:graph_utils",
-        requirement("numpy"),
-        requirement("torch"),
+    deps = [":msa_mixed_split_cases"],
+)
+
+# The other two BF16 and FP8 harnesses; their head-count and dtype axes
+# take the same dispatch lines as the presubmit pair.
+modular_py_test(
+    name = "test_msa_mixed_split_postsubmit_gpu",
+    srcs = [
+        "test_msa_mixed_split_postsubmit_gpu.py",
     ],
+    exec_properties = {
+        # The four-head BF16 id's pool and query tensors are the largest
+        # this target stages, so it needs the larger slice.
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    # Needs the MSA ops, registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [":msa_mixed_split_cases"],
+)
+
+# Every case through the NVFP4 ops, on their own target so the presubmit
+# pair stays inside the GPU budget.
+modular_py_test(
+    name = "test_msa_mixed_split_nvfp4_gpu",
+    srcs = [
+        "test_msa_mixed_split_nvfp4_gpu.py",
+    ],
+    exec_properties = {
+        # The packed pools, the largest tensors this target stages, fit a
+        # small slice.
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    # Needs the MSA ops, registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [":msa_mixed_split_cases"],
 )
 
 modular_py_test(
