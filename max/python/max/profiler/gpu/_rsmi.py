@@ -215,26 +215,38 @@ class RSMIContext:
         )
         return result.value
 
-    def _get_memory_busy_percent(self, index: int) -> int:
+    def _get_memory_busy_percent(self, index: int) -> int | None:
         assert self._library is not None
         result = ctypes.c_uint32()
-        _check_rsmi_status(
-            self._library,
-            self._library.rsmi_dev_memory_busy_percent_get(
-                index, _bindtools.byref(result)
-            ),
-        )
+        try:
+            _check_rsmi_status(
+                self._library,
+                self._library.rsmi_dev_memory_busy_percent_get(
+                    index, _bindtools.byref(result)
+                ),
+            )
+        except RSMIError as e:
+            # Consumer Radeon cards often return NOT_SUPPORTED for this
+            # query. Skip the metric rather than aborting the benchmark.
+            if e.code == _RSMI_STATUS_NOT_SUPPORTED:
+                return None
+            raise
         return result.value
 
-    def _get_device_busy_percent(self, index: int) -> int:
+    def _get_device_busy_percent(self, index: int) -> int | None:
         assert self._library is not None
         result = ctypes.c_uint32()
-        _check_rsmi_status(
-            self._library,
-            self._library.rsmi_dev_busy_percent_get(
-                index, _bindtools.byref(result)
-            ),
-        )
+        try:
+            _check_rsmi_status(
+                self._library,
+                self._library.rsmi_dev_busy_percent_get(
+                    index, _bindtools.byref(result)
+                ),
+            )
+        except RSMIError as e:
+            if e.code == _RSMI_STATUS_NOT_SUPPORTED:
+                return None
+            raise
         return result.value
 
     def _get_clock_freqs(
@@ -316,7 +328,9 @@ class RSMIContext:
                 reserved_bytes=None,
             ),
             utilization=UtilizationStats(
-                gpu_usage_percent=dev_busy_pct,
+                gpu_usage_percent=(
+                    dev_busy_pct if dev_busy_pct is not None else 0
+                ),
                 memory_activity_percent=mem_busy_pct,
             ),
             clocks=self._get_clock_stats(index),
