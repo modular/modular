@@ -64,17 +64,13 @@ struct CausalConv1D[activation: StaticString]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         weight: Some[Input & Tensor],
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(weight), TileTensorable)
@@ -379,9 +375,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         conv_state: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -390,8 +384,6 @@ struct CausalConv1DUpdate[activation: StaticString]:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(conv_state), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)

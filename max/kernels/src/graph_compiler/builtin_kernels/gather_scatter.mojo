@@ -1580,7 +1580,6 @@ struct StaticBroadcastTo:
 
     @staticmethod
     def execute[
-        target: StaticString,
         dtype: DType,
         in_rank: Int,
         out_rank: Int,
@@ -1591,8 +1590,6 @@ struct StaticBroadcastTo:
         output_shape: IndexList[out_rank],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
@@ -1600,7 +1597,7 @@ struct StaticBroadcastTo:
 
         view_copy_impl[
             _trace_name=_trace_name,
-            target=target,
+            target=ctx.target.device_kind_label(),
         ](z, x_view, ctx)
 
 
@@ -1643,7 +1640,6 @@ struct StaticReshape:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
         dtype: DType,
         output_rank: Int,
@@ -1653,15 +1649,13 @@ struct StaticReshape:
         shape: IndexList[output_rank],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var view_tensor = Self.input_view[output._static_shape_tuple](
             input, shape
         )
 
         view_copy_impl[
             _trace_name=_trace_name,
-            target=target,
+            target=ctx.target.device_kind_label(),
         ](output, view_tensor, ctx)
 
 
@@ -1749,7 +1743,6 @@ struct Transpose:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
         static_permutations: Coord,
         dtype: DType,
@@ -1760,15 +1753,13 @@ struct Transpose:
         permutations: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var view = Self.input_view[
             output._static_shape_tuple, static_permutations
         ](input, permutations)
 
         view_copy_impl[
             _trace_name=_trace_name,
-            target=target,
+            target=ctx.target.device_kind_label(),
         ](output, view, ctx)
 
     # TODO(GEX-1033) Make it possible to have multiple raises.
@@ -1946,7 +1937,6 @@ struct Slice:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
         static_starts: Coord,
         static_steps: Coord,
@@ -1960,15 +1950,13 @@ struct Slice:
         steps: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var view_tensor = Self.input_view[
             output._static_shape_tuple, static_starts, static_steps
         ](input, starts, stops, steps)
 
         view_copy_impl[
             _trace_name=_trace_name,
-            target=target,
+            target=ctx.target.device_kind_label(),
         ](output, view_tensor, ctx)
 
 
@@ -2505,15 +2493,12 @@ struct IndexTensor:
     @staticmethod
     def execute[
         batch_dims: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         data: Some[Input & Tensor],
         indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(data), TileTensorable)
         comptime assert conforms_to(type_of(indices), TileTensorable)

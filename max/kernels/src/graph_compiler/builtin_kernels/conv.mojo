@@ -121,7 +121,6 @@ struct AvgPool:
     @staticmethod
     def execute[
         count_boundary: Bool,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -131,8 +130,6 @@ struct AvgPool:
         paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(filter), TileTensorable)
@@ -143,7 +140,9 @@ struct AvgPool:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        avg_pool[count_boundary=count_boundary, target=target](
+        avg_pool[
+            count_boundary=count_boundary, target=ctx.target.device_kind_label()
+        ](
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -197,7 +196,6 @@ struct AvgPoolCeilModeTrue:
     @staticmethod
     def execute[
         count_boundary: Bool,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -207,8 +205,6 @@ struct AvgPoolCeilModeTrue:
         paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(filter), TileTensorable)
@@ -219,7 +215,9 @@ struct AvgPoolCeilModeTrue:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        avg_pool[count_boundary=count_boundary, target=target](
+        avg_pool[
+            count_boundary=count_boundary, target=ctx.target.device_kind_label()
+        ](
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -272,7 +270,7 @@ struct PadConstant:
 
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString
+        dtype: DType,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -280,8 +278,6 @@ struct PadConstant:
         constant: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(padding), TileTensorable)
@@ -353,16 +349,12 @@ struct PadRepeat:
     """Registers the `mo.pad.repeat` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         padding: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(padding), TileTensorable)
@@ -412,16 +404,12 @@ struct PadReflect:
     """Registers the `mo.pad.reflect` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         padding: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(padding), TileTensorable)

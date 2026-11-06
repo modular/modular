@@ -94,7 +94,6 @@ struct ArgMax:
 
     @staticmethod
     def execute[
-        target: StaticString,
         axis: Int,
         _trace_name: StaticString,
     ](
@@ -105,7 +104,6 @@ struct ArgMax:
         """Executes the `mo.reduce.arg_max` graph op.
 
         Parameters:
-            target: Compilation target string.
             axis: Dimension along which to reduce.
             _trace_name: Name used for tracing and debugging.
 
@@ -117,8 +115,6 @@ struct ArgMax:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
         # the new impl handles CPU + GPU and any axis.
         comptime dtype = type_of(input).dtype
@@ -154,7 +150,7 @@ struct ArgMax:
 
         reduce_argmax[
             dtype,
-            target=target,
+            target=ctx.target.device_kind_label(),
             reduce_dim=reduce_dim,
             name=_trace_name,
         ](input_fn, output_fn, input.shape().flatten(), ctx)
@@ -166,7 +162,6 @@ struct ArgMin:
 
     @staticmethod
     def execute[
-        target: StaticString,
         axis: Int,
         _trace_name: StaticString,
     ](
@@ -177,7 +172,6 @@ struct ArgMin:
         """Executes the `mo.reduce.arg_min` graph op.
 
         Parameters:
-            target: Compilation target string.
             axis: Dimension along which to reduce.
             _trace_name: Name used for tracing and debugging.
 
@@ -189,8 +183,6 @@ struct ArgMin:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
         # the new impl handles CPU + GPU and any axis.
         comptime dtype = type_of(input).dtype
@@ -226,7 +218,7 @@ struct ArgMin:
 
         reduce_argmin[
             dtype,
-            target=target,
+            target=ctx.target.device_kind_label(),
             reduce_dim=reduce_dim,
             name=_trace_name,
         ](input_fn, output_fn, input.shape().flatten(), ctx)
@@ -286,17 +278,12 @@ struct RowMeanOfSquares:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
         """Executes the `reduction.row_mean_of_squares` graph op.
-
-        Parameters:
-            target: Compilation target string.
 
         Args:
             output: Output tensor of shape `[M, 1]` receiving the per-row
@@ -307,8 +294,6 @@ struct RowMeanOfSquares:
         Raises:
             Error: If `output` does not have shape `[input_rows, 1]`.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime in_dtype = type_of(input).dtype
         comptime out_dtype = type_of(output).dtype
@@ -384,18 +369,13 @@ struct RowMeanOfSquaresQK:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
         k: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Executes the `reduction.row_mean_of_squares_qk` graph op.
-
-        Parameters:
-            target: Compilation target string.
 
         Args:
             output: Output tensor of shape `[M, 2]` receiving the per-row
@@ -404,8 +384,6 @@ struct RowMeanOfSquaresQK:
             k: Key tensor of shape `[M, Nk]`.
             ctx: Device context used to enqueue the kernel.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(k), TileTensorable)
@@ -595,7 +573,6 @@ struct ReduceMul:
 
     @staticmethod
     def execute[
-        target: StaticString,
         axis: Int,
         _trace_name: StaticString,
     ](
@@ -606,7 +583,6 @@ struct ReduceMul:
         """Executes the `mo.reduce.mul` graph op.
 
         Parameters:
-            target: Compilation target string.
             axis: Dimension along which to reduce.
             _trace_name: Name used for tracing and debugging.
 
@@ -618,8 +594,6 @@ struct ReduceMul:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime dtype = type_of(input).dtype
         comptime assert type_of(output).dtype == dtype
         comptime assert type_of(input).rank == type_of(output).rank
@@ -652,7 +626,7 @@ struct ReduceMul:
 
         reduce_product[
             dtype,
-            target=target,
+            target=ctx.target.device_kind_label(),
             reduce_dim=axis,
             name=_trace_name,
         ](input_fn, output_fn, input.shape().flatten(), ctx)
@@ -682,9 +656,7 @@ struct LayerNorm:
     """Registers the `mo.reduce.layer_norm` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Fused & StoreAccess],
         input: Some[Input & Fused & LoadAccess],
         gamma: Some[Input & Tensor],
@@ -693,9 +665,6 @@ struct LayerNorm:
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.layer_norm` graph op.
-
-        Parameters:
-            target: Compilation target string.
 
         Args:
             output: Output tensor receiving the result.
@@ -708,8 +677,6 @@ struct LayerNorm:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(gamma), TileTensorable)
         comptime assert conforms_to(type_of(beta), TileTensorable)
         comptime dtype = type_of(input).dtype
@@ -765,7 +732,7 @@ struct LayerNorm:
         comptime ln_cols = type_of(input)._shape_types[rank - 1].static_value
 
         comptime if ln_cols != UNKNOWN_VALUE:
-            layer_norm[dtype, rank, target=target](
+            layer_norm[dtype, rank, target=ctx.target.device_kind_label()](
                 input_fn,
                 output_fn,
                 input.shape().flatten(),
@@ -776,7 +743,7 @@ struct LayerNorm:
                 ctx,
             )
         else:
-            layer_norm[dtype, rank, target=target](
+            layer_norm[dtype, rank, target=ctx.target.device_kind_label()](
                 input_fn,
                 output_fn,
                 input.shape().flatten(),
@@ -831,7 +798,6 @@ struct ReduceRMSNormRoPE:
 
     @staticmethod
     def execute[
-        target: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
         multiply_before_cast: Bool = True,
@@ -843,8 +809,6 @@ struct ReduceRMSNormRoPE:
         sin_vals: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(weight), TileTensorable)
         comptime dtype = type_of(input).dtype
         comptime output_dtype = type_of(output).dtype
@@ -923,7 +887,7 @@ struct ReduceRMSNormRoPE:
                 output_dtype,
                 cos_sin_dtype,
                 rank,
-                target=target,
+                target=ctx.target.device_kind_label(),
                 multiply_before_cast=multiply_before_cast,
             ](
                 input_fn,
@@ -943,7 +907,7 @@ struct ReduceRMSNormRoPE:
                 output_dtype,
                 cos_sin_dtype,
                 rank,
-                target=target,
+                target=ctx.target.device_kind_label(),
                 multiply_before_cast=multiply_before_cast,
             ](
                 input_fn,
@@ -1009,7 +973,6 @@ struct LayerNormRopeRagged:
 
     @staticmethod
     def execute[
-        target: StaticString,
         interleaved: Bool,
     ](
         output: Some[Output & Fused & StoreAccess],
@@ -1022,8 +985,6 @@ struct LayerNormRopeRagged:
         freqs_cis: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(gamma), TileTensorable)
         comptime assert conforms_to(type_of(beta), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1085,7 +1046,7 @@ struct LayerNormRopeRagged:
                 output_dtype,
                 freq_dtype,
                 rank,
-                target=target,
+                target=ctx.target.device_kind_label(),
                 interleaved=interleaved,
             ](
                 input_fn,
@@ -1106,7 +1067,7 @@ struct LayerNormRopeRagged:
                 output_dtype,
                 freq_dtype,
                 rank,
-                target=target,
+                target=ctx.target.device_kind_label(),
                 interleaved=interleaved,
             ](
                 input_fn,
@@ -1301,7 +1262,6 @@ struct ReduceMinAndMax:
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
         axis: Int,
     ](
@@ -1313,8 +1273,6 @@ struct ReduceMinAndMax:
         writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
         the minimum reduction and [:, :, 1, :] contains the maximum reduction.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime dtype = type_of(output).dtype
@@ -1361,7 +1319,7 @@ struct ReduceMinAndMax:
 
         reduce_min_and_max[
             dtype,
-            target=target,
+            target=ctx.target.device_kind_label(),
             reduce_dim=norm_axis,
             name=_trace_name,
         ](
@@ -1403,7 +1361,6 @@ struct ReduceRMSNormFusedResidualAdd:
 
     @staticmethod
     def execute[
-        target: StaticString,
         epsilon1: Float32,
         epsilon2: Float32,
         weight_offset1: Float32,
@@ -1421,7 +1378,6 @@ struct ReduceRMSNormFusedResidualAdd:
         """Executes the `mo.composite.rms_norm_fused_residual_add` graph op.
 
         Parameters:
-            target: Compilation target string.
             epsilon1: Stability constant for the first normalization.
             epsilon2: Stability constant for the second normalization.
             weight_offset1: Scalar offset for the first weight.
@@ -1440,8 +1396,6 @@ struct ReduceRMSNormFusedResidualAdd:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(residual_output), TileTensorable)
         comptime assert conforms_to(type_of(gamma1), TileTensorable)
@@ -1523,7 +1477,7 @@ struct ReduceRMSNormFusedResidualAdd:
             rms_norm_fused_residual_add[
                 dtype,
                 rank,
-                target=target,
+                target=ctx.target.device_kind_label(),
                 epsilon1=epsilon1,
                 weight_offset1=weight_offset1,
                 epsilon2=epsilon2,
@@ -1544,7 +1498,7 @@ struct ReduceRMSNormFusedResidualAdd:
             rms_norm_fused_residual_add[
                 dtype,
                 rank,
-                target=target,
+                target=ctx.target.device_kind_label(),
                 epsilon1=epsilon1,
                 weight_offset1=weight_offset1,
                 epsilon2=epsilon2,
@@ -1619,7 +1573,6 @@ struct RMSNormResidualAdd:
 
     @staticmethod
     def execute[
-        target: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
         multiply_before_cast: Bool = True,
@@ -1631,8 +1584,6 @@ struct RMSNormResidualAdd:
         gamma: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(residual_output), TileTensorable)
         comptime assert conforms_to(type_of(gamma), TileTensorable)
@@ -1686,7 +1637,7 @@ struct RMSNormResidualAdd:
                 ),
             ](coords, val)
 
-        comptime if is_gpu[target]():
+        comptime if ctx.target.is_gpu():
 
             @inline(.always)
             def input_fn[
@@ -1717,7 +1668,7 @@ struct RMSNormResidualAdd:
                 rms_norm_residual_add[
                     dtype,
                     rank,
-                    target=target,
+                    target=ctx.target.device_kind_label(),
                     epsilon=epsilon,
                     weight_offset=weight_offset,
                     multiply_before_cast=multiply_before_cast,
@@ -1735,7 +1686,7 @@ struct RMSNormResidualAdd:
                 rms_norm_residual_add[
                     dtype,
                     rank,
-                    target=target,
+                    target=ctx.target.device_kind_label(),
                     epsilon=epsilon,
                     weight_offset=weight_offset,
                     multiply_before_cast=multiply_before_cast,
@@ -2066,7 +2017,6 @@ struct Softmax:
 
     @staticmethod
     def execute[
-        target: StaticString,
         axis: Int,
     ](
         output: Some[Output & Tensor],
@@ -2076,7 +2026,6 @@ struct Softmax:
         """Executes the `mo.reduce.softmax` graph op.
 
         Parameters:
-            target: Compilation target string.
             axis: Dimension along which to reduce.
 
         Args:
@@ -2087,8 +2036,6 @@ struct Softmax:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime dtype = type_of(output).dtype
         comptime rank = type_of(output).rank
@@ -2116,7 +2063,12 @@ struct Softmax:
         comptime sm_cols = type_of(input)._shape_types[axis].static_value
 
         comptime if sm_cols != UNKNOWN_VALUE:
-            softmax[dtype, rank, target=target, reduce_dim=axis](
+            softmax[
+                dtype,
+                rank,
+                target=ctx.target.device_kind_label(),
+                reduce_dim=axis,
+            ](
                 input_fn,
                 output.shape().flatten(),
                 ComptimeInt[sm_cols](),
@@ -2125,7 +2077,12 @@ struct Softmax:
                 context=ctx,
             )
         else:
-            softmax[dtype, rank, target=target, reduce_dim=axis](
+            softmax[
+                dtype,
+                rank,
+                target=ctx.target.device_kind_label(),
+                reduce_dim=axis,
+            ](
                 input_fn,
                 output.shape().flatten(),
                 Int(input.shape()[axis].value()),
@@ -2141,7 +2098,6 @@ struct LogSoftmax:
 
     @staticmethod
     def execute[
-        target: StaticString,
         axis: Int,
     ](
         output: Some[Output & Tensor],
@@ -2151,7 +2107,6 @@ struct LogSoftmax:
         """Executes the `mo.reduce.logsoftmax` graph op.
 
         Parameters:
-            target: Compilation target string.
             axis: Dimension along which to reduce.
 
         Args:
@@ -2162,8 +2117,6 @@ struct LogSoftmax:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime dtype = type_of(output).dtype
         comptime rank = type_of(output).rank
@@ -2194,7 +2147,7 @@ struct LogSoftmax:
             softmax[
                 dtype,
                 rank,
-                target=target,
+                target=ctx.target.device_kind_label(),
                 logsoftmax=True,
                 reduce_dim=axis,
             ](
@@ -2209,7 +2162,7 @@ struct LogSoftmax:
             softmax[
                 dtype,
                 rank,
-                target=target,
+                target=ctx.target.device_kind_label(),
                 logsoftmax=True,
                 reduce_dim=axis,
             ](

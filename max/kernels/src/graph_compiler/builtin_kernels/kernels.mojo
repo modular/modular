@@ -280,7 +280,6 @@ struct Range:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
@@ -289,8 +288,6 @@ struct Range:
         step: Scalar[dtype],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert type_of(output).dtype == dtype
         comptime assert type_of(output).rank == 1
 
@@ -310,7 +307,7 @@ struct Range:
             )
 
         elementwise[
-            get_kernel_simd_width[dtype, target](),
+            get_kernel_simd_width[dtype, ctx.target.device_kind_label()](),
             _trace_description=_trace_name,
         ](body, output.shape().flatten(), ctx)
 
@@ -508,9 +505,7 @@ struct MaxPool:
     """Registers the `mo.max_pool` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         filter: Some[Input & Tensor],
@@ -519,8 +514,6 @@ struct MaxPool:
         paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(filter), TileTensorable)
@@ -531,7 +524,7 @@ struct MaxPool:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        max_pool[target=target](
+        max_pool[target=ctx.target.device_kind_label()](
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -595,9 +588,7 @@ struct MaxPoolCeilModeTrue:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         filter: Some[Input & Tensor],
@@ -606,8 +597,6 @@ struct MaxPoolCeilModeTrue:
         paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(filter), TileTensorable)
@@ -618,7 +607,7 @@ struct MaxPoolCeilModeTrue:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        max_pool[target=target](
+        max_pool[target=ctx.target.device_kind_label()](
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -777,7 +766,6 @@ struct ROIAlign:
     def execute[
         aligned: Bool,
         mode: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -788,8 +776,6 @@ struct ROIAlign:
         sampling_ratio: Scalar,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert conforms_to(type_of(rois), TileTensorable)
@@ -1537,9 +1523,7 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         qkv: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1553,8 +1537,6 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(qkv), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1615,7 +1597,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
     @staticmethod
     def execute[
         mrope_section: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         qkv: Some[Input & Tensor],
@@ -1631,8 +1612,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(qkv), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1724,9 +1703,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Fused & StoreAccess],
         x: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1734,8 +1711,6 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         freqs_cis: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(start_pos), TileTensorable)
@@ -1768,7 +1743,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
                         trace_arg("freqs_cis", freqs_cis.shape()),
                         String(t"interleaved={Self.interleaved}"),
                         String(t"rope_first={Self.rope_first}"),
-                        String(t"target={target}"),
+                        String(t"target={ctx.target.device_kind_label()}"),
                     ]
                 )
             )
@@ -1818,9 +1793,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Fused & StoreAccess],
         x: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1829,8 +1802,6 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         position_ids: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(start_pos), TileTensorable)
@@ -1865,7 +1836,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
                         trace_arg("freqs_cis", freqs_cis.shape()),
                         trace_arg("position_ids", position_ids.shape()),
                         String(t"interleaved={Self.interleaved}"),
-                        String(t"target={target}"),
+                        String(t"target={ctx.target.device_kind_label()}"),
                     ]
                 )
             )
@@ -2664,7 +2635,6 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
-        target: StaticString,
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
@@ -2674,8 +2644,6 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(expert_indices), TileTensorable)
         comptime assert conforms_to(type_of(expert_weights), TileTensorable)
         comptime assert conforms_to(type_of(hidden), TileTensorable)
@@ -4596,9 +4564,7 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         recurrence_output: Some[Output & Tensor],
         qkv_conv_output: Some[Input & Tensor],
         decay_per_token: Some[Input & Tensor],
@@ -4611,8 +4577,6 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
         verify_width: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(recurrence_output), TileTensorable)
         comptime assert conforms_to(type_of(qkv_conv_output), TileTensorable)
         comptime assert conforms_to(type_of(decay_per_token), TileTensorable)
@@ -4697,9 +4661,9 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
         var ring_tt = ring.to_tile_tensor()
         var ring_slot_idx_tt = ring_slot_idx.to_tile_tensor[.uint32]()
 
-        comptime assert is_gpu[
-            target
-        ](), "gated_delta_recurrence_verify_ring_fwd is only supported on GPU."
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "gated_delta_recurrence_verify_ring_fwd is only supported on GPU."
 
         var dispatched = False
         if shape.key_head_dim == 128 and shape.value_head_dim == 128:
@@ -5016,9 +4980,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         y: Some[Output & Tensor],
         x: Some[Input & Fused & LoadAccess],
         dt: Some[Input & Fused & LoadAccess],
@@ -5036,8 +4998,6 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         xbc: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(y), TileTensorable)
         comptime assert conforms_to(type_of(A), TileTensorable)
         comptime assert conforms_to(type_of(D), TileTensorable)
@@ -5192,7 +5152,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
 
         @inline(.always)
         def launch[DSTATE: Int]() raises {imm}:
-            comptime if is_cpu[target]():
+            comptime if ctx.target.is_cpu():
                 mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
                     DSTATE, dt_softplus=Self.dt_softplus
                 ](
@@ -5212,7 +5172,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     slot_fn,
                     Optional(ctx.assert_cpu_target()),
                 )
-            elif not is_gpu[target]():
+            elif not ctx.target.is_gpu():
                 raise Error("Unsupported target device")
             elif ctx.target.is_apple_gpu():
                 # One thread per channel; see the kernel docstring.
@@ -5763,9 +5723,7 @@ struct CausalConv1DVarlenFwd[
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Input & Fused & LoadAccess],
         weight: Some[Input & Tensor],
@@ -5778,8 +5736,6 @@ struct CausalConv1DVarlenFwd[
         update_state: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(weight), TileTensorable)
         comptime assert conforms_to(type_of(bias), TileTensorable)
@@ -5875,7 +5831,7 @@ struct CausalConv1DVarlenFwd[
                     ](Coord(b))
                 )
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             causal_conv1d_varlen_fwd_cpu[
                 silu_activation,
                 use_residual=Self.use_residual,
@@ -5891,7 +5847,7 @@ struct CausalConv1DVarlenFwd[
                 x_fn,
                 slot_fn,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
 
             @inline(.always)
             def launch_gpu[WIDTH: Int]() raises {imm}:
@@ -6039,7 +5995,6 @@ struct GatedGroupRMSNorm[group_size: Int]:
     def execute[
         dtype: DType,
         gate_dtype: DType,
-        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         y: InputTensor[dtype=dtype, rank=2, ...],
@@ -6048,8 +6003,6 @@ struct GatedGroupRMSNorm[group_size: Int]:
         eps: Float32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         var n_rows = y.dim_size(0)
         var intermediate = y.dim_size(1)
         comptime gs = Self.group_size
@@ -6081,7 +6034,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
                 (n, col)
             )
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             gated_group_rmsnorm_cpu[dtype, gate_dtype](
                 output_tt,
                 y_tt,
@@ -6092,7 +6045,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
                 gs,
                 eps,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             gated_group_rmsnorm_gpu[dtype, gate_dtype, gs, type_of(gate_fn)](
                 output_tt,
                 y_tt,

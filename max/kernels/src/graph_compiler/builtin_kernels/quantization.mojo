@@ -129,7 +129,6 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
     @staticmethod
     def execute[
-        target: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
     ](
@@ -140,8 +139,6 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(scales), TileTensorable)
         comptime assert conforms_to(type_of(gamma), TileTensorable)
@@ -202,7 +199,11 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
         comptime if cols != UNKNOWN_VALUE:
             rms_norm_fused_quantize_dynamic_scaled_fp8[
-                input_dtype, output_dtype, scale_dtype, rank, target=target
+                input_dtype,
+                output_dtype,
+                scale_dtype,
+                rank,
+                target=ctx.target.device_kind_label(),
             ](
                 input_fn,
                 output_fn,
@@ -217,7 +218,11 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
             )
         else:
             rms_norm_fused_quantize_dynamic_scaled_fp8[
-                input_dtype, output_dtype, scale_dtype, rank, target=target
+                input_dtype,
+                output_dtype,
+                scale_dtype,
+                rank,
+                target=ctx.target.device_kind_label(),
             ](
                 input_fn,
                 output_fn,
@@ -858,7 +863,6 @@ struct QMatmulGPU_b4_g128:
     @staticmethod
     @inline(.always)
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & Tensor],
@@ -866,12 +870,10 @@ struct QMatmulGPU_b4_g128:
         b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
         comptime assert type_of(c).rank == 2
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b).rank == 2
@@ -903,18 +905,15 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     @staticmethod
     @inline(.always)
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         b_packed: Some[Output & Tensor],
         b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(b_packed), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
         comptime assert type_of(b_packed).rank == 2
         comptime assert type_of(b).rank == 2
 
@@ -943,7 +942,6 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     @staticmethod
     @inline(.always)
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         b_packed: Some[Output & Tensor],
@@ -951,15 +949,13 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         perm_idx: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(b_packed), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert conforms_to(type_of(perm_idx), TileTensorable)
         comptime assert type_of(b_packed).rank == 2
         comptime assert type_of(b).rank == 2
         comptime assert type_of(perm_idx).rank == 1
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         var permutation = perm_idx.to_tile_tensor[.int32, mut=False]()
         # The helper takes the permutation as a pointer-backed tile, so rebuild
@@ -1999,21 +1995,18 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
     @staticmethod
     def execute[
         scale_type: DType,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Fused & LoadAccess],
         scale: Scalar[scale_type],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime input_type = type_of(input).dtype
         comptime output_type = type_of(output).dtype
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
         comptime assert output_type in (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
@@ -2053,7 +2046,9 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
             ](idx, fp8_quantize[output_type, use_clamp=True](v, inversed_scale))
 
         elementwise[
-            simd_width=get_kernel_simd_width[output_type, target](),
+            simd_width=get_kernel_simd_width[
+                output_type, ctx.target.device_kind_label()
+            ](),
             _trace_description="scaled_fp8_quant",
         ](quant_fn, output.shape().flatten(), ctx)
 

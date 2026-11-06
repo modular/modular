@@ -57,7 +57,6 @@ struct RoutedRowsRMSNorm:
     def execute[
         dtype: DType,
         //,
-        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         input: InputTensor[dtype=dtype, rank=2, ...],
@@ -70,7 +69,6 @@ struct RoutedRowsRMSNorm:
 
         Parameters:
             dtype: Element type of the activations and the weight.
-            target: Compilation target.
 
         Args:
             output: The normalized rows `[rows, hidden]`.
@@ -84,16 +82,18 @@ struct RoutedRowsRMSNorm:
         Raises:
             Error: If the launch fails.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime assert is_gpu[
-            target
-        ](), "norm.routed_rows_rms_norm is GPU only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "norm.routed_rows_rms_norm is GPU only"
         comptime cols = Int(input.static_spec.shape_tuple[1])
         comptime assert cols != UNKNOWN_VALUE, "the hidden size must be static"
         comptime accum = get_accum_type[dtype]()
         comptime simd_width = rowwise.pick_simd_width[
-            ReduceSum[accum, 1], target, 64, dtype, accum
+            ReduceSum[accum, 1],
+            ctx.target.device_kind_label(),
+            64,
+            dtype,
+            accum,
         ]()
         var axis_size_accum = Scalar[accum](cols)
         var last_offset = Int(expert_offsets.dim_size[0]()) - 1
@@ -167,7 +167,7 @@ struct RoutedRowsRMSNorm:
         rowwise.launch[
             axis=1,
             simd_width=simd_width,
-            target=target,
+            target=ctx.target.device_kind_label(),
             num_phases=2,
             dtype_size=size_of[dtype](),
             computationally_expensive=True,

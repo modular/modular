@@ -150,7 +150,6 @@ struct RMSNormTileSM100:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
         epsilon: Float32 = 1e-6,
         weight_offset: Float32 = 0.0,
         multiply_before_cast: Bool = True,
@@ -160,15 +159,13 @@ struct RMSNormTileSM100:
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         # The tile programming model (`tile_based_fusion=True`) binds `output`
         # to `_FusedOutputTile`, and the selection filter routes the op to
         # this sm_100a registration. Naive, correctness-only GPU rms_norm on
         # MAX's own Mojo kernel (no vendor BLAS); see
         # `_NaiveRMSNormTileAdapter`. Tested at (M, N) = (256, 256) f32 on
         # B200.
-        comptime assert is_gpu[target](), "tile-codegen rms_norm is GPU-only"
+        comptime assert ctx.target.is_gpu(), "tile-codegen rms_norm is GPU-only"
         comptime assert (
             rank == 2
         ), "tile-codegen rms_norm only supports rank-2 tensors"
@@ -181,7 +178,9 @@ struct RMSNormTileSM100:
         # default, and that shape must be threaded into the fusion emitter so
         # the epilogue conforms to it -- instead of the driver and emitter
         # each independently reading `get_kernel_tile_shape`.
-        comptime tile_shape = get_kernel_tile_shape[output.dtype, target]()
+        comptime tile_shape = get_kernel_tile_shape[
+            output.dtype, ctx.target.device_kind_label()
+        ]()
         comptime TM = tile_shape[0]
         comptime TN = tile_shape[1]
 

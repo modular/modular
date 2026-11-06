@@ -1544,9 +1544,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
         weight: Some[Input & Tensor],
@@ -1560,8 +1558,6 @@ struct Struct_fused_qkv_matmul_padded_paged:
         valid_lengths: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(weight), TileTensorable)
@@ -1610,9 +1606,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1626,8 +1620,6 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1678,7 +1670,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         group_size: Int,
         has_zp_int: Int,
         //,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -1693,8 +1684,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1749,9 +1738,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
@@ -1766,8 +1753,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1823,7 +1808,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -1840,8 +1824,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -1936,7 +1918,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
         kv_type: DType,
         //,
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -1954,8 +1935,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2026,7 +2005,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
         kv_type: DType,
         //,
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -2044,8 +2022,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2119,7 +2095,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
         kv_type: DType,
         //,
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -2137,8 +2112,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2208,7 +2181,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp6_amd:
         //,
         SF_VECTOR_SIZE: Int,
         FP6_FORMAT: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -2226,8 +2198,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp6_amd:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2320,7 +2290,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         //,
         SF_VECTOR_SIZE: Int,
         IQ_DIM: Int,
-        target: StaticString,
     ](
         q_output: Some[Output & Tensor],
         iq_output: Some[Output & Tensor],
@@ -2345,8 +2314,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(q_output), TileTensorable)
         comptime assert conforms_to(type_of(iq_output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
@@ -2470,7 +2437,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
         //,
         SF_VECTOR_SIZE: Int,
         IQ_DIM: Int,
-        target: StaticString,
     ](
         q_output: Some[Output & Tensor],
         iq_output: Some[Output & Tensor],
@@ -2495,8 +2461,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(q_output), TileTensorable)
         comptime assert conforms_to(type_of(iq_output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
@@ -2607,7 +2571,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
         SF_VECTOR_SIZE: Int,
         IQ_DIM: Int,
         FP6_FORMAT: Int,
-        target: StaticString,
     ](
         q_output: Some[Output & Tensor],
         iq_output: Some[Output & Tensor],
@@ -2632,8 +2595,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(q_output), TileTensorable)
         comptime assert conforms_to(type_of(iq_output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
@@ -2757,7 +2718,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
         index_kv_type: DType,
         //,
         IQ_DIM: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -2778,8 +2738,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2865,7 +2823,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -2883,8 +2840,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -2964,7 +2919,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         group_size: Int,
         has_zp_int: Int,
         //,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         hidden_state: Some[Input & Tensor],
@@ -2980,8 +2934,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(hidden_state), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -4109,9 +4061,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         k_latent_buffer: Some[Output & Tensor],
         k_buffer: Some[Output & Tensor],
         buffer_row_offsets_1d: Some[Input & Tensor],
@@ -4127,8 +4077,6 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         layer_idx: UInt32,
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(k_latent_buffer), TileTensorable)
         comptime assert conforms_to(type_of(k_buffer), TileTensorable)
         comptime assert conforms_to(
@@ -4190,7 +4138,6 @@ trait _MLAPrefillGraphPagedOp:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -4216,8 +4163,6 @@ trait _MLAPrefillGraphPagedOp:
         w_uv_scale: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -4268,9 +4213,9 @@ trait _MLAPrefillGraphPagedOp:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "attention.mla.graph.prefill.paged.fp8 is only supported on GPU"
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.graph.prefill.paged.fp8 is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -4932,7 +4877,6 @@ trait _MLAPrefillGraphBF16PagedOp:
     @staticmethod
     def execute[
         mask_str: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -4956,8 +4900,6 @@ trait _MLAPrefillGraphBF16PagedOp:
         epsilon: Float32,
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -5001,9 +4943,9 @@ trait _MLAPrefillGraphBF16PagedOp:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "attention.mla.graph.prefill.paged is only supported on GPU"
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.graph.prefill.paged is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -5620,7 +5562,6 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -5650,8 +5591,6 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
         num_partitions_scalar: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -5712,7 +5651,7 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.prefill.decode.paged.fp8 is only supported"
             " on GPU"
         )
@@ -5737,7 +5676,7 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
             )
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.prefill.decode.paged.fp8",
             task_id=get_safe_task_id(context),
         ):
@@ -5844,7 +5783,6 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        target: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
         # (`attention.mla.indexer.ragged.float8.paged.remap`) rather than logical
@@ -5898,8 +5836,6 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
@@ -5909,7 +5845,7 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
             max_cache_length,
         )
 
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.prefill.decode.paged.fp8.sparse is only"
             " supported on GPU"
         )
@@ -5939,7 +5875,7 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
             attn_sink.unsafe_ptr()
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.prefill.decode.paged.fp8.sparse",
             task_id=get_safe_task_id(context),
         ):
@@ -6080,7 +6016,6 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
     @staticmethod
     def execute[
         mask_str: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -6107,8 +6042,6 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         num_partitions_scalar: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -6160,9 +6093,9 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        comptime assert is_gpu[
-            target
-        ](), "attention.mla.graph.prefill.decode.paged is only supported on GPU"
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.graph.prefill.decode.paged is only supported on GPU"
 
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -6184,7 +6117,7 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
             )
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.prefill.decode.paged",
             task_id=get_safe_task_id(context),
         ):
@@ -6381,7 +6314,6 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
         cache_dtype: DType,
         //,
         mask_str: StaticString,
-        target: StaticString,
         indices_stride: Int,
         # Whether `sparse_indices` holds the indexer's paged physical rows
         # (`attention.mla.indexer.ragged.float8.paged.remap`) rather than logical
@@ -6429,8 +6361,6 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
@@ -6440,7 +6370,7 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
             max_cache_length,
         )
 
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.prefill.decode.paged.sparse is only supported"
             " on GPU"
         )
@@ -6470,7 +6400,7 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
             attn_sink.unsafe_ptr()
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.prefill.decode.paged.sparse",
             task_id=get_safe_task_id(context),
         ):
@@ -6616,7 +6546,6 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        target: StaticString,
         indices_stride: Int,
         physical_indices: Bool,
         has_topk_lengths: Bool = True,
@@ -6661,9 +6590,7 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
         selection_lag: Int32,
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.prefill.decode.paged.sparse.nvfp4 is only"
             " supported on GPU"
         )
@@ -6713,7 +6640,7 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
             attn_sink.unsafe_ptr()
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.prefill.decode.paged.sparse.nvfp4",
             task_id=get_safe_task_id(context),
         ):
@@ -6842,7 +6769,6 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
     @staticmethod
     def execute[
         mask_str: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -6870,8 +6796,6 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
         num_partitions_scalar: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
@@ -6924,7 +6848,7 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "attention.mla.graph.prefill.decode.paged.quantized is only"
             " supported on GPU"
         )
@@ -6949,7 +6873,7 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
             )
         )
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.prefill.decode.paged.quantized",
             task_id=get_safe_task_id(context),
         ):

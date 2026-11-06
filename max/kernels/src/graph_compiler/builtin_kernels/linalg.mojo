@@ -257,7 +257,6 @@ struct MatmulCPU:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & Fused & StoreAccess],
@@ -265,8 +264,6 @@ struct MatmulCPU:
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert not (packed_b and transpose_b), (
             "transpose_b and b_packed cannot both be true because"
             " pre-packing transposes B"
@@ -326,7 +323,7 @@ struct MatmulCPU:
             transpose_b=transpose_b,
             b_packed=packed_b,
             _trace_description=_trace_name,
-            target=target,
+            target=ctx.target.device_kind_label(),
         ](
             TileTensor(c_ptr, c_layout),
             a.to_tile_tensor(),
@@ -340,7 +337,6 @@ struct MatmulCPU:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & TileTensorable],
@@ -348,8 +344,6 @@ struct MatmulCPU:
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert not (packed_b and transpose_b), (
             "transpose_b and b_packed cannot both be true because"
             " pre-packing transposes B"
@@ -359,7 +353,7 @@ struct MatmulCPU:
             transpose_b=transpose_b,
             b_packed=packed_b,
             _trace_description=_trace_name,
-            target=target,
+            target=ctx.target.device_kind_label(),
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -387,7 +381,6 @@ struct MatmulGPU:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & Fused & _LegacyComputeOutput],
@@ -395,8 +388,6 @@ struct MatmulGPU:
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         # TODO(KERN-3837): The store-epilogue matmul has no output buffer to
         # write, yet every GPU matmul interface on its path still takes a
         # `c: TileTensor`, so the store branch below hands it a tile over a
@@ -440,7 +431,7 @@ struct MatmulGPU:
                 transpose_a=False,
                 transpose_b=transpose_b,
                 _trace_description=_trace_name,
-                target=target,
+                target=ctx.target.device_kind_label(),
             ](
                 c_view.to_tile_tensor(),
                 a.to_tile_tensor(),
@@ -475,7 +466,7 @@ struct MatmulGPU:
                 transpose_a=False,
                 transpose_b=transpose_b,
                 _trace_description=_trace_name,
-                target=target,
+                target=ctx.target.device_kind_label(),
             ](
                 TileTensor(c_ptr._unsafe_nullable(), row_major(c.shape())),
                 a.to_tile_tensor(),
@@ -488,7 +479,6 @@ struct MatmulGPU:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & TileTensorable],
@@ -496,14 +486,12 @@ struct MatmulGPU:
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises where not conforms_to(type_of(c), Fused):
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert not packed_b, "packed B is only supported on CPU"
         matmul[
             transpose_a=False,
             transpose_b=transpose_b,
             _trace_description=_trace_name,
-            target=target,
+            target=ctx.target.device_kind_label(),
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -521,15 +509,12 @@ struct BatchMatmulCPU:
         has_epilogue_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
-        target: StaticString,
     ](
         c: _FusedComputeOutputTensor[rank=rank, ...],
         a: InputTensor[rank=rank, ...],
         b: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         @inline(.always)
         def output_fn[
             _type: DType, _width: SIMDLength, *, alignment: Int
@@ -550,7 +535,9 @@ struct BatchMatmulCPU:
 
         comptime if has_epilogue_fusion:
             batched_matmul[
-                transpose_a=False, transpose_b=transpose_b, target=target
+                transpose_a=False,
+                transpose_b=transpose_b,
+                target=ctx.target.device_kind_label(),
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -560,7 +547,9 @@ struct BatchMatmulCPU:
             )
         else:
             batched_matmul[
-                transpose_a=False, transpose_b=transpose_b, target=target
+                transpose_a=False,
+                transpose_b=transpose_b,
+                target=ctx.target.device_kind_label(),
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -578,15 +567,12 @@ struct BatchMatmulGPU:
         has_epilogue_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
-        target: StaticString,
     ](
         c: _FusedComputeOutputTensor[rank=rank, ...],
         a: InputTensor[rank=rank, ...],
         b: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         @inline(.always)
         def output_fn[
             _type: DType, _width: SIMDLength, *, alignment: Int
@@ -609,7 +595,7 @@ struct BatchMatmulGPU:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
-                target=target,
+                target=ctx.target.device_kind_label(),
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -621,7 +607,7 @@ struct BatchMatmulGPU:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
-                target=target,
+                target=ctx.target.device_kind_label(),
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -1816,7 +1802,6 @@ struct Struct_matmul_dynamic_block_scaled:
         //,
         has_epilogue_fusion: Bool,
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
@@ -1826,9 +1811,7 @@ struct Struct_matmul_dynamic_block_scaled:
         tensor_sf: Float32,
         context: DeviceContext,
     ) raises:
-        context._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "dynamic block scaled matmul only support GPUs with native"
             " block scaled support"
         )
@@ -2422,7 +2405,6 @@ struct MatmulDynamicScaledFloat8:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -2431,8 +2413,6 @@ struct MatmulDynamicScaledFloat8:
         b_scales: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
@@ -2445,7 +2425,7 @@ struct MatmulDynamicScaledFloat8:
         comptime assert type_of(b).rank == 2
         comptime assert type_of(a_scales).rank == 2
         comptime assert type_of(b_scales).rank == 2
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         matmul_dynamic_scaled_fp8[
             input_scale_granularity,
@@ -2473,7 +2453,6 @@ struct MatmulStaticScaledFloat8:
     @staticmethod
     def execute[
         scale_type: DType,
-        target: StaticString,
     ](
         output_tensor: Some[Output & Tensor],
         input_tensor: Some[Input & Tensor],
@@ -2482,8 +2461,6 @@ struct MatmulStaticScaledFloat8:
         weight_scale: Scalar[scale_type],
         ctx: DeviceContext,
     ) raises:
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(output_tensor), TileTensorable)
         comptime assert conforms_to(type_of(input_tensor), TileTensorable)
         comptime assert conforms_to(type_of(weight_tensor), TileTensorable)
@@ -2492,7 +2469,7 @@ struct MatmulStaticScaledFloat8:
         comptime assert type_of(output_tensor).rank == 2
         comptime assert type_of(input_tensor).rank == 2
         comptime assert type_of(weight_tensor).rank == 2
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         var output_tt = output_tensor.to_tile_tensor()
         var input_tt = input_tensor.to_tile_tensor()
@@ -2527,7 +2504,7 @@ struct MatmulStaticScaledFloat8:
                 var scaled_val = val.cast[.float32]() * scale
                 return scaled_val.cast[dtype]()
 
-            matmul[target=target, transpose_b=True](
+            matmul[target=ctx.target.device_kind_label(), transpose_b=True](
                 output_tt,
                 input_tt,
                 weight_tt,
@@ -2569,7 +2546,7 @@ struct MatmulStaticScaledFloat8:
                 row_major(Int64(M), Idx[N]),
             )
 
-            matmul[target=target, transpose_b=True](
+            matmul[target=ctx.target.device_kind_label(), transpose_b=True](
                 output_scratch,
                 input_tt,
                 weight_tt,
@@ -2906,9 +2883,7 @@ struct Struct_router_gate_mixed_gemv:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2927,15 +2902,15 @@ struct Struct_router_gate_mixed_gemv:
             b: Weight `[N, K]` fp32 tensor (transpose_b layout).
             context: The device context.
         """
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert type_of(c).rank == 2
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b).rank == 2
-        comptime assert is_gpu[target](), "router-gate mixed GEMV is GPU-only"
+        comptime assert (
+            context.target.is_gpu()
+        ), "router-gate mixed GEMV is GPU-only"
 
         var M = Int(c.shape()[0].value())
         # Empty-launch guard: a graph-capture warmup can call with M == 0.
@@ -3020,7 +2995,7 @@ struct Struct_router_gate_mixed_gemv:
             _cast_bf16_to_fp32, Coord(M, Idx[K]), context
         )
 
-        matmul[transpose_b=True, target=target](
+        matmul[transpose_b=True, target=context.target.device_kind_label()](
             c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
         )
         _ = a_f32^
@@ -3046,9 +3021,7 @@ struct Struct_smallm_streaming_matmul:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a_scratch: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -3074,8 +3047,6 @@ struct Struct_smallm_streaming_matmul:
             b: The same weight, row-major (the above-band fallback operand).
             context: The device context.
         """
-        context._comptime_assert_matches_target_is_cpu[target]()
-
         comptime assert conforms_to(type_of(c), TileTensorable)
         comptime assert conforms_to(type_of(a_scratch), TileTensorable)
         comptime assert conforms_to(type_of(a), TileTensorable)
@@ -3086,7 +3057,9 @@ struct Struct_smallm_streaming_matmul:
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b_shuffled).rank == 2
         comptime assert type_of(b).rank == 2
-        comptime assert is_gpu[target](), "smallm streaming matmul is GPU-only"
+        comptime assert (
+            context.target.is_gpu()
+        ), "smallm streaming matmul is GPU-only"
 
         var M = Int(c.shape()[0].value())
         if M == 0:
@@ -3129,7 +3102,7 @@ struct Struct_smallm_streaming_matmul:
             )
             return
 
-        matmul[transpose_b=True, target=target](
+        matmul[transpose_b=True, target=context.target.device_kind_label()](
             c.to_tile_tensor[.bfloat16](),
             a.to_tile_tensor[.bfloat16](),
             b.to_tile_tensor[.bfloat16](),

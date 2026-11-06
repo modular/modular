@@ -87,7 +87,6 @@ struct QKRMSNormRopeSplitStore:
         dtype: DType,
         freq_dtype: DType,
         cache_dtype: DType,
-        target: StaticString,
         //,
         n_q_heads: Int,
     ](
@@ -112,7 +111,6 @@ struct QKRMSNormRopeSplitStore:
             dtype: Element type of the projection and the Q output.
             freq_dtype: Element type of `freqs_cis`.
             cache_dtype: Element type of the KV cache.
-            target: Compilation target.
             n_q_heads: Query heads in `qkv` (this device's).
 
         Args:
@@ -135,11 +133,9 @@ struct QKRMSNormRopeSplitStore:
         Raises:
             Error: If the launch fails.
         """
-        ctx._comptime_assert_matches_target_is_cpu[target]()
-
-        comptime assert is_gpu[
-            target
-        ](), "mo.qk_rms_norm_rope_split_store is GPU only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "mo.qk_rms_norm_rope_split_store is GPU only"
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             page_stride,
