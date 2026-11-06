@@ -445,9 +445,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     // They are resolved during monomorphization in the KGEN elaboration pass.
     assert(unionType.isResolved() &&
            "cannot lower unresolved union type to LLVM");
-    // TODO: The generated assembly is sensitive to the content type of the
-    // union type. This needs to be optimized. For now, use an array of
-    // word-size integers.
     SmallVector<UnionMember> members;
     members.reserve(unionType.getNumTypes());
     for (Type memberType : unionType.getTypes()) {
@@ -470,11 +467,14 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
     if (int64_t tailLen = payloadSize - getTypeAllocSize(reprType);
         tailLen != 0) {
-      // Byte arrays are scalarized into individual byte accesses by LLVM's
-      // SROA, making large union copies expensive to optimize and select.
-      // Use word-sized elements when they preserve the tail's size, offset,
-      // and alignment; retain bytes for unaligned or partial-word tails.
-      Type tailType = IntegerType::get(&getContext(), 64);
+      // Choose integer storage that preserves the tail's size, offset, and
+      // alignment, falling back to bytes when necessary. Cap the element width
+      // at the pointer width to avoid introducing i64 tails on 32-bit targets.
+      // LLVM's SROA may scalarize byte arrays into individual byte accesses,
+      // making large union copies expensive to optimize and select.
+      unsigned tailBitWidth = std::min<unsigned>(
+          64, getTarget().getDataLayout().getPointerBitWidth());
+      Type tailType = IntegerType::get(&getContext(), tailBitWidth);
       int64_t elementSize = getTypeAllocSize(tailType);
       if (tailLen % elementSize != 0 ||
           getTypeABIAlign(tailType) > getTypeABIAlign(reprType) ||

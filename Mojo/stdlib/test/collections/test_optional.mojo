@@ -716,7 +716,7 @@ def _make_large_nested_optional(seed: Int) -> _LargeNestedOptional:
 
 
 def test_large_nested_optional_moves() raises:
-    # Exercise the word-sized union tail through a return, move, and replacement.
+    # Exercise the integer union tail through a return, move, and replacement.
     var result = _make_large_nested_optional(7)
     var moved = result^
     assert_equal(moved.a.value().head, 7)
