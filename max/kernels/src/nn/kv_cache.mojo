@@ -122,6 +122,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -198,6 +199,8 @@ def _fused_qkv_matmul_kv_cache[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     return _fused_qkv_matmul_kv_cache_impl[target=target](
         hidden_state,
         weight,

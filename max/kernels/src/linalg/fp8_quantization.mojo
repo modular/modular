@@ -1281,6 +1281,8 @@ def matmul_dynamic_scaled_fp8[
     ctx: DeviceContext,
 ) raises:
     """TileTensor primary implementation of dynamic scaled FP8 matmul."""
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert c.rank == 2
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1354,6 +1356,8 @@ def _matmul_dynamic_scaled_fp8_impl[
     ctx: DeviceContext,
 ) raises:
     """TileTensor implementation of dynamic scaled FP8 matmul."""
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert a_type == b_type, "input A and B dtype should be the same"
     comptime assert (
         a_scales_type == b_scales_type

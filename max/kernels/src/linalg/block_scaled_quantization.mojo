@@ -3043,6 +3043,8 @@ def block_scaled_matmul[
         compute_fn: With `has_compute_fn`, maps each output value before it
             is stored into `c_device`.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert c_device.rank == 2 and c_device.flat_rank == 2
     comptime assert a_device.rank == 2 and a_device.flat_rank == 2
     comptime assert b_device.rank == 2 and b_device.flat_rank == 2

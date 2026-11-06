@@ -120,6 +120,8 @@ def causal_conv1d[
         silu_activation: Whether to apply SiLU after the convolution.
         ctx: Device context to run on.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     var batch_size = Int(input.dim[0]())
     var dim = Int(input.dim[1]())
     var seqlen = Int(input.dim[2]())
@@ -455,6 +457,8 @@ def causal_conv1d_update[
         silu_activation: Whether to apply SiLU after the convolution.
         ctx: Device context to run on.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     var batch_size = Int(input.dim[0]())
     var dim = Int(input.dim[1]())
     var seqlen = Int(input.dim[2]())

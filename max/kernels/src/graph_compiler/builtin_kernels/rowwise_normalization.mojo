@@ -838,6 +838,8 @@ def row_mean_of_squares[
     shape: Coord,
     ctx: DeviceContext,
 ) raises:
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     comptime assert shape.is_flat, "shape must be flat"
     comptime assert 0 <= reduce_dim < rank, "reduce_dim must be in [0, rank)"
@@ -940,6 +942,8 @@ def row_mean_of_squares_qk[
     k_cols: Int,
     ctx: DeviceContext,
 ) raises:
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     if rows == 0:
         return
 

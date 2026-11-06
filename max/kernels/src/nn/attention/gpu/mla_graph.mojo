@@ -1572,6 +1572,8 @@ def mla_prefill_branch_fp8[
             it captures.
         ctx: Device context.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
     comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
@@ -3576,6 +3578,7 @@ def mla_prefill_decode_graph_fp8[
             computed for and the token that reads it; read by the decode
             branch only.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     var seq_len = q.dim(0)
 
@@ -3877,6 +3880,8 @@ def mla_prefill_branch_bf16[
             it captures.
         ctx: Device context.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
     comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
@@ -4787,6 +4792,8 @@ def mla_prefill_decode_graph_bf16[
             computed for and the token that reads it; read by the decode
             branch only.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     var seq_len = q.dim(0)
 
     if seq_len == 0:

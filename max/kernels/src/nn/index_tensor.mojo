@@ -167,6 +167,7 @@ def index_tensor[
         ctx: The device context as prepared by the graph compiler.
 
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     comptime if is_cpu[target]():
         return _index_tensor_1d[batch_dims,](

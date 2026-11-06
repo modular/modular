@@ -268,6 +268,8 @@ def _rowwise_prologue[
 ) raises:
     """The prologue as one `rowwise` kernel, a warp per (token, head) row:
     below SM-count tokens it beats `nn.head_rms_norm_rope`'s lane kernel."""
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime cache_dtype = cache_t.dtype
     comptime head_dim = cache_t.kv_params.head_size
     comptime n_kv_heads = cache_t.kv_params.num_heads

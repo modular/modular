@@ -2303,6 +2303,7 @@ def foreach[
         tensor: The output tensor slice which receives the return values.
         ctx: The call context (forward this from the custom operation).
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     # The wrapper captures `func` (passed by value) and `tensor` so the
     # store can route through `_fused_store` when output-store fusion is
@@ -3051,6 +3052,8 @@ def foreach_fusion_tile[
         into `tile_shape`. Partial-tile / remainder handling and a CPU path are
         documented follow-ups.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert (
         ctx.target.is_accelerator()
     ), "foreach_fusion_tile currently supports GPU targets only"
@@ -3114,6 +3117,7 @@ def foreach_out_func[
         tensor: The tensor slice whose shape is the iteration domain.
         ctx: The call context (forward this from the custom operation).
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def out_func_shim[
@@ -3148,6 +3152,8 @@ def view_copy_impl[
     x: ManagedTensorSlice[static_spec=spec, ...],
     ctx: DeviceContext,
 ) raises:
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert _shape_types_compatible[
         x.static_spec.static_layout._shape_types,
         z.static_spec.static_layout._shape_types,

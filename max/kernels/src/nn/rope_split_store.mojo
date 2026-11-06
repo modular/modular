@@ -435,6 +435,8 @@ def rope_split_store_paged_ragged[
         q_output: Output buffer for roped Q [total_seq_len, q_dim].
         ctx: DeviceContext for GPU.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = kv_collection.get_value_cache(
@@ -608,6 +610,8 @@ def rope_split_store_paged_ragged_with_position_ids[
         q_output: Output buffer for roped Q [total_seq_len, q_dim].
         ctx: DeviceContext for GPU.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = kv_collection.get_value_cache(

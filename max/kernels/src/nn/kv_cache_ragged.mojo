@@ -150,6 +150,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -239,6 +240,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
         bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -351,6 +353,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
         bias: Optional bias in projection order: Q, K for MLA, or Q, K, V
             otherwise.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -473,6 +476,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -562,6 +566,8 @@ def _fused_qkv_matmul_kv_cache_ragged[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -624,6 +630,8 @@ def _fused_qkv_matmul_kv_cache_ragged_bias[
         bias: Bias to be added to the QKV Tensor. Tensor is concatenated q + k + v. Rank 1.
         context: The call context pointer, passed by the graph compiler.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
@@ -702,6 +710,8 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
         bias: Optional bias in projection order: Q, K for MLA, or Q, K, V
             otherwise.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -781,6 +791,8 @@ def _fused_qkv_matmul_kv_cache_ragged_scale_float4[
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache: OptionalReg[type_of(k_cache)] = None
@@ -1674,6 +1686,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
             Shape: (sum(seq_lens), iq_dim).
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -1768,6 +1781,8 @@ def _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
     """Resolves both KVCache objects from their collections and dispatches the
     dual-cache impl. K/V come from the MAIN (non-MLA) collection, IndexK from
     the INDEX (MLA, single latent head) collection."""
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     comptime kv_params = collection_t.kv_params
 
     # The MAIN cache is GQA/MHA — it has a real K and V side scattered per
@@ -2071,6 +2086,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
             projections. Shape: (sum(seq_lens), q_dim + iq_dim).
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -2141,6 +2157,8 @@ def _fused_qkv_index_matmul_kv_cache_ragged[
     """Resolves both KVCache objects from their collections and dispatches the
     dual-cache impl. K/V come from the MAIN (non-MLA) collection, IndexK from
     the INDEX (MLA, single latent head) collection."""
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     comptime kv_params = collection_t.kv_params
 
     # The MAIN cache is GQA/MHA — it has a real K and V side scattered per
@@ -2526,6 +2544,8 @@ def _matmul_blockwise_scaled_fp4_common[
     *,
     unfuse_epilogue: Bool = True,
 ) raises:
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert is_gpu[
         target
     ](), "Blockwise scaled fp4 matmul only works on GPU."
@@ -2722,6 +2742,7 @@ def kv_matmul_ragged_paged[
             for the given layer from kv_collection.
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -2780,6 +2801,8 @@ def _matmul_kv_cache_ragged[
             for the given layer from kv_collection.
         context: Pointer containing the runtime context for the target device.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
@@ -2925,6 +2948,7 @@ def k_matmul_ragged_paged[
             for the given layer from kv_collection.
         ctx: The call context pointer, passed by the graph compiler.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -2984,6 +3008,8 @@ def _matmul_k_cache_ragged[
             for the given layer from kv_collection.
         context: Pointer containing the runtime context for the target device.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     var layer_idx_cast = Int(layer_idx)
     var k_cache = kv_collection.get_key_cache(layer_idx_cast)
 
@@ -4822,6 +4848,8 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         k_buffer: Mutable output buffer receiving the decompressed K vectors.
         context: The call context pointer, passed by the graph compiler.
     """
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
     var buffer_length_int = Int(buffer_length)
