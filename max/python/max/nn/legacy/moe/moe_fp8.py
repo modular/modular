@@ -454,6 +454,7 @@ class MoEQuantized(MoE):
         x: TensorValue,
         topk_ids: TensorValue,
         router_weights: TensorValue,
+        layer_idx: TensorValue | None = None,
     ) -> TensorValue:
         """Routed-expert output of the one-launch fused EP MoE.
 
@@ -501,6 +502,7 @@ class MoEQuantized(MoE):
             down_expert_scales=down_expert_scales,
             c_input_scales=c_input_scales,
             activation=self.activation,
+            layer_idx=layer_idx,
         )
 
     def _local_ep_compute(

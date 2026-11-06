@@ -934,6 +934,7 @@ class EPBatchManager:
         down_expert_scales: TensorValue,
         c_input_scales: TensorValue,
         activation: GatedActivation | None = None,
+        layer_idx: TensorValue | None = None,
     ) -> TensorValue:
         """One-launch fused EP MoE: dispatch -> MegaFFN -> weighted combine.
 
@@ -960,6 +961,8 @@ class EPBatchManager:
             c_input_scales: Per-local-expert L1->L2 requant scale.
             activation: The gated activation the kernel fuses; see
                 :func:`~max.nn._graph_ops.ep.fused_silu`.
+            layer_idx: int32 ``[1]`` MoE layer index on this device. Required
+                when ``eplb_count_expert_load`` is set.
 
         Returns:
             The routed-expert MoE output ``(T, hidden)`` BF16.
@@ -980,6 +983,7 @@ class EPBatchManager:
             self.recv_count_ptrs[0],
             self.config,
             activation=activation,
+            expert_load=self._expert_load(device_id, layer_idx),
         )
 
     def ep_combine_wait(

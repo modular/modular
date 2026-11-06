@@ -279,17 +279,14 @@ def _ep_forward(
     if batch_mgr.config.fused_moe_ready and all(
         shard._can_fuse_megaffn_ep() for shard in moe_shards
     ):
-        if batch_mgr.config.eplb_count_expert_load:
-            # TODO(MAX-922): count in the fused EP MoE's own arrival wait.
-            raise NotImplementedError(
-                "eplb_count_expert_load does not count the fused EP MoE"
-                " dispatch yet"
-            )
         fused_outputs: list[TensorValue] = []
         for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
             shared = shard.shared_experts(x) if has_unfused_shared else None
             out = shard._ep_fused_forward(
-                x, all_topk_ids[i], all_router_weights[i]
+                x,
+                all_topk_ids[i],
+                all_router_weights[i],
+                _layer_idx(layer_idx_per_device, device_ids[i]),
             )
             if shared is not None:
                 out += shared

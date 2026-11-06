@@ -961,6 +961,7 @@ def _call_mega_ffn_ep_fused(
     recv_count_ptrs: TensorValue,
     config: EPConfig,
     activation: GatedActivation | None = None,
+    expert_load: ExpertLoad | None = None,
 ) -> TensorValue:
     """Runs dispatch -> MegaFFN (L1 + L2) -> weighted combine in ONE launch.
 
@@ -994,6 +995,8 @@ def _call_mega_ffn_ep_fused(
             ``fused_activation`` with its ``alpha`` and ``limit``. Defaults to
             plain SiLU. It must not set ``gated_activation_fn``, which no
             kernel fuses.
+        expert_load: When given, also adds each local expert's routed-token
+            count to the tally row of this layer.
 
     Returns:
         The token-indexed MoE output ``(T, hidden)`` BF16 (routed experts
@@ -1008,24 +1011,29 @@ def _call_mega_ffn_ep_fused(
         **_ep_common_parameters(config),
         **(activation or GatedActivation()).kernel_parameters(),
     }
+    op_name = "mega_ffn.ep_fused"
+    values: list[Value[Any]] = [
+        atomic_counters,
+        input_tokens,
+        topk_ids,
+        router_weights,
+        input_scales,
+        gate_up_weight,
+        gate_up_b_scales,
+        down_weight,
+        down_b_scales,
+        gate_up_expert_scales,
+        down_expert_scales,
+        c_input_scales,
+        recv_count_ptrs,
+    ]
+    if expert_load is not None:
+        op_name += ".expert_load"
+        values += [expert_load.tally, expert_load.layer_idx]
     results = ops.inplace_custom(
-        "mega_ffn.ep_fused",
+        op_name,
         device=input_tokens.device,
-        values=[
-            atomic_counters,
-            input_tokens,
-            topk_ids,
-            router_weights,
-            input_scales,
-            gate_up_weight,
-            gate_up_b_scales,
-            down_weight,
-            down_b_scales,
-            gate_up_expert_scales,
-            down_expert_scales,
-            c_input_scales,
-            recv_count_ptrs,
-        ],
+        values=values,
         out_types=[
             TensorType(
                 dtype=DType.bfloat16,

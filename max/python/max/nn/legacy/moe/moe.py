@@ -787,10 +787,13 @@ class MoE(Module, Shardable):
         x: TensorValue,
         topk_ids: TensorValue,
         router_weights: TensorValue,
+        layer_idx: TensorValue | None = None,
     ) -> TensorValue:
         """Routed-expert output of the one-launch fused EP MoE.
 
         Only reached when :meth:`_can_fuse_megaffn_ep` is ``True``.
+        ``layer_idx`` is this device's MoE layer index, for expert-load
+        counting.
         """
         raise NotImplementedError(
             "the one-launch fused EP MoE needs quantized (NVFP4 or MXFP8)"
