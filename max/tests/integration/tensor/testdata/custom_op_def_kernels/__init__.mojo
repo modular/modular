@@ -259,6 +259,8 @@ struct Mxf353NVFP4Quantize:
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(packed), TileTensorable)
         comptime assert conforms_to(type_of(scales), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
@@ -327,6 +329,8 @@ struct Mxf353NVFP4Matmul:
         b_scales: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(out_tensor), TileTensorable)
         comptime assert conforms_to(type_of(a_packed), TileTensorable)
         comptime assert conforms_to(type_of(a_scales), TileTensorable)
@@ -401,6 +405,8 @@ struct Mxf353Relu:
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime dtype = type_of(output).dtype

@@ -400,6 +400,8 @@ struct ExternalCubinVecAdd:
         rhs: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert target == "gpu"
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(lhs), TileTensorable)
@@ -458,6 +460,8 @@ struct IntentionalGpuCrash:
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert target == "gpu"
         comptime assert type_of(output).rank == 1
         comptime assert type_of(x).dtype == type_of(output).dtype

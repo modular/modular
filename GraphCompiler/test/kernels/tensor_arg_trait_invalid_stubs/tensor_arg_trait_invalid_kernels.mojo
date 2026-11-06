@@ -56,6 +56,8 @@ struct TraitNoRole:
     def execute[
         target: StaticString,
     ](z: Some[TileTensorable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -67,6 +69,8 @@ struct TraitTwoRoles:
         target: StaticString,
         Z: Input & Output & TileTensorable,
     ](z: Z, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -77,6 +81,8 @@ struct TraitFusedNoAccess:
     def execute[
         target: StaticString,
     ](z: Some[Output & Fused & TileTensorable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -89,6 +95,8 @@ struct TraitForeign:
         target: StaticString,
         Z: Output & TileTensorable & Copyable,
     ](z: Z, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -106,6 +114,8 @@ struct TraitTensorTupleMovable:
         xs: TensorTuple[*Ts],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -117,6 +127,8 @@ struct TraitVariadicPack:
         target: StaticString,
         *Ts: Input & TileTensorable,
     ](z: Some[Output & TileTensorable], *xs: *Ts, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -127,6 +139,8 @@ struct TraitStoreOnInput:
     def execute[
         target: StaticString,
     ](z: Some[Input & Fused & Storable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -139,6 +153,8 @@ struct TraitInputAndMutableInput:
         target: StaticString,
         Z: Input & MutableInput & TileTensorable,
     ](z: Z, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -155,6 +171,8 @@ struct TraitMultiAccessForms:
         z: Some[MutableInput & Fused & Loadable & Storable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -167,6 +185,8 @@ struct TraitMultiAccessMarkersNonFused:
     def execute[
         target: StaticString,
     ](z: Some[Input & LoadAccess & StoreAccess], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -178,6 +198,8 @@ struct TraitLoadOnOutput:
     def execute[
         target: StaticString,
     ](z: Some[Output & Fused & Loadable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -189,6 +211,8 @@ struct TraitTransformOnInput:
     def execute[
         target: StaticString,
     ](z: Some[Input & Fused & _LegacyComputeOutput], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -204,6 +228,8 @@ struct TraitTransformOnMutableInput:
         z: Some[MutableInput & Fused & _LegacyComputeOutput],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -217,6 +243,8 @@ struct TraitComputableOnSignature:
     def execute[
         target: StaticString,
     ](z: Some[Output & Fused & _LegacyComputable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -233,6 +261,8 @@ struct TraitComputeOutputTileOnSignature:
         z: Some[Output & Fused & _LegacyComputeOutput & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -277,6 +307,8 @@ struct TraitStableOutput:
     def execute[
         target: StaticString,
     ](z: Some[Output & TileTensorable & Stable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -292,6 +324,8 @@ struct TraitStableFused:
         x: Some[Input & Fused & Loadable & Stable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 

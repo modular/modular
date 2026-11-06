@@ -41,6 +41,8 @@ struct ReadUninitOutput:
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime dtype = type_of(output).dtype

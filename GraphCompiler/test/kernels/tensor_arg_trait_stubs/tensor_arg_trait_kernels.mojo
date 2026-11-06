@@ -53,6 +53,8 @@ struct TraitAddExplicit:
         Z: Output & TileTensorable,
         X: Input & TileTensorable,
     ](z: Z, x: X, y: X, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -69,6 +71,8 @@ struct TraitAddSome:
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -84,6 +88,8 @@ struct TraitFusedLoad:
         x: Some[Input & Fused & Loadable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -98,6 +104,8 @@ struct TraitBadConvention:
         target: StaticString,
         Z: Output & TileTensorable,
     ](mut z: Z, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -118,6 +126,8 @@ struct TraitLegacyBadConvention:
         mut z: OutputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -135,6 +145,8 @@ struct TraitMultiOutput:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -151,6 +163,8 @@ struct TraitMutableInput:
         x: Some[MutableInput & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -173,6 +187,8 @@ struct TraitTensorTuple:
         b: TensorTuple[*Bs],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -190,6 +206,8 @@ struct TraitTensorTupleFused:
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -207,6 +225,8 @@ struct TraitMixedLegacy:
         y: InputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -224,6 +244,8 @@ struct TraitMixedLegacyOut:
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -239,6 +261,8 @@ struct TraitMultiOutputExplicit:
         A: Output & TileTensorable,
         X: Input & TileTensorable,
     ](a: A, b: A, x: X, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -250,6 +274,8 @@ struct TraitMutableInputExplicit:
         Z: Output & TileTensorable,
         X: MutableInput & TileTensorable,
     ](z: Z, x: X, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -261,6 +287,8 @@ struct TraitFusedLoadExplicit:
         Z: Output & TileTensorable,
         X: Input & Fused & Loadable,
     ](z: Z, x: X, ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -277,6 +305,8 @@ struct TraitLeadingMutable:
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -294,6 +324,8 @@ struct TraitAllOutputs:
         c: Some[Output & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -311,6 +343,8 @@ struct TraitNonLeadingOutput:
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -327,6 +361,8 @@ struct TraitMixedLegacyMut:
         x: MutableInputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -344,6 +380,8 @@ struct TraitMixedLegacyFused:
         y: Some[Input & Fused & Loadable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -359,6 +397,8 @@ struct TraitFusedStoreLegacyInput:
         x: InputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -373,6 +413,8 @@ struct TraitDenseAndFusedInputs:
         y: Some[Input & Fused & Loadable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -390,6 +432,8 @@ struct LegacyOnlyControl:
         w: MutableInputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -413,6 +457,8 @@ struct TraitPlainTensorInput:
     def execute[
         target: StaticString,
     ](x: Some[Input & Tensor], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -425,6 +471,8 @@ struct TraitFusedLoadMarker:
     def execute[
         target: StaticString,
     ](x: Some[Input & Fused & LoadAccess], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -436,6 +484,8 @@ struct TraitFusedStoreMarker:
     def execute[
         target: StaticString,
     ](z: Some[Output & Fused & StoreAccess], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -447,6 +497,8 @@ struct TraitFusedStoreCapability:
     def execute[
         target: StaticString,
     ](z: Some[Output & Fused & Storable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -460,6 +512,8 @@ struct TraitFusedTransformMarker:
     ](
         z: Some[Output & Fused & _LegacyComputeOutput], ctx: DeviceContext
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -471,6 +525,8 @@ struct TraitMutableFusedStore:
     def execute[
         target: StaticString,
     ](x: Some[MutableInput & Fused & Storable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -482,6 +538,8 @@ struct TraitMutableFusedLoad:
     def execute[
         target: StaticString,
     ](x: Some[MutableInput & Fused & Loadable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -494,6 +552,8 @@ struct TraitNonFusedLoadCapability:
     def execute[
         target: StaticString,
     ](x: Some[Input & TileTensorable & Loadable], ctx: DeviceContext) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -514,6 +574,8 @@ struct TraitNonFusedLoadStoreCapability:
         x: Some[MutableInput & TileTensorable & Loadable & Storable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -550,6 +612,8 @@ struct TraitStableInput:
         x: Some[Input & TileTensorable & Stable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -562,6 +626,8 @@ struct TraitStableMutableInput:
     ](
         x: Some[MutableInput & TileTensorable & Stable], ctx: DeviceContext
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
 
@@ -578,4 +644,6 @@ struct TraitStableTensorInput:
         x: Some[Input & Tensor & Stable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass

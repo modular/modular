@@ -243,6 +243,8 @@ struct Foo:
         y: InputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
             return rebind[SIMD[z.dtype, width]](x.load[width](idx)) + rebind[
@@ -272,6 +274,8 @@ struct FooRaisingShape:
         y: InputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
             return rebind[SIMD[z.dtype, width]](x.load[width](idx)) + rebind[
@@ -327,6 +331,8 @@ struct TraitNegate:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         # The host-entry bound is the role + metadata traits; each target arm
         # asserts the capability it needs (mirrors `DenseElementwiseKernel`).
         comptime if is_cpu[target]():
@@ -399,6 +405,8 @@ struct TraitStableNegate:
         x: Some[Input & Tensor & Stable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert not is_cpu[
             target
         ](), "trait_stable_negate: a stable address slot is device memory"
@@ -435,6 +443,8 @@ struct TraitNegateTileTensor:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(z), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         var zt = z.to_tile_tensor()
@@ -496,6 +506,8 @@ struct TraitFusedLoadNegateUnifiedClosure:
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(x), Loadable)
@@ -578,6 +590,8 @@ def _fused_load_negate[
     `DevicePassable` and cannot be a runtime argument to `enqueue_function`; a
     regular device call can still take it as a comptime parameter.
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime assert conforms_to(Z, TileTensorable)
     comptime assert conforms_to(type_of(load_fn), TrivialRegisterPassable)
     comptime if is_cpu[target]():
@@ -619,6 +633,8 @@ struct TraitFusedLoadHostUnifiedClosure:
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var n = Int(z.shape().product())
         comptime if is_cpu[target]():
             # CPU: arg already access-enabled, capture directly.
@@ -666,6 +682,8 @@ struct TraitFusedLoadHostClosureNegative:
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var n = Int(z.shape().product())
         # Intentionally no `unsafe_fused_view(x)` projection: this kernel
         # captures `x` directly so the launched closure's body reaches the
@@ -772,6 +790,8 @@ struct TraitFusedLoadNegate:
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(x), Loadable)
@@ -855,6 +875,8 @@ struct TraitTensorTupleAdd:
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert len(Outs) == len(Ins)
             comptime assert conforms_to(type_of(bias), TileTensorable)
@@ -1033,6 +1055,8 @@ struct TraitTensorTupleAddArray:
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert len(Outs) == len(Ins)
         comptime assert conforms_to(type_of(bias), TileTensorable)
         var bt = bias.to_tile_tensor()
@@ -1142,6 +1166,8 @@ struct TraitTensorTupleFusedConcat:
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(z), TileTensorable)
             var zt = z.to_tile_tensor()
@@ -1231,6 +1257,8 @@ struct TraitTensorTupleFusedStoreSplit:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor()
@@ -1301,6 +1329,8 @@ struct TraitFusedStoreDouble:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
@@ -1388,6 +1418,8 @@ struct TraitFusedStoreParameterClosure:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
@@ -1458,6 +1490,8 @@ struct TraitFusedStoreUnifiedClosure:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
@@ -1576,6 +1610,8 @@ struct TraitFusedTransformBias:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var n = Int(z.shape().product())
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(x), TileTensorable)
@@ -1666,6 +1702,8 @@ struct TraitFusedTransformBiasUnifiedClosure:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var n = Int(z.shape().product())
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(x), TileTensorable)
@@ -1731,6 +1769,8 @@ struct TraitTupleThenComputeOutput:
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var n = Int(x.shape().product())
@@ -2171,6 +2211,8 @@ struct AddFuseOutput:
         y: InputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
             return rebind[SIMD[z.dtype, width]](x.load[width](idx)) + rebind[
@@ -2686,6 +2728,8 @@ struct TraitTensorTupleShapeOp:
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if not is_cpu[target]():
             raise Error("trait_tensor_tuple_shape_op only runs on the CPU")
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -2980,6 +3024,8 @@ struct MutableStore:
         tensor: FusedInputTensor[dtype=.float32, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         var buffer = tw.buffer
 
         @inline(.always)
@@ -3859,6 +3905,8 @@ struct MapLowerAddOne:
     def execute[
         target: StaticString,
     ](res: OutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[res.dtype, width]:
             return rebind[SIMD[res.dtype, width]](a.load[width](idx)) + 1
@@ -3887,6 +3935,8 @@ struct MapLowerAdd3:
         c: InputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[res.dtype, width]:
             return (
@@ -3935,6 +3985,8 @@ struct MapLowerAddSub:
         b: InputTensor,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         @inline(.always)
         def add[width: Int](idx: Coord) {var} -> SIMD[res0.dtype, width]:
             return rebind[SIMD[res0.dtype, width]](a.load[width](idx)) + rebind[
@@ -4044,6 +4096,8 @@ struct TraitTensorTupleFusedConcatUnifiedClosure:
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime if is_cpu[target]():
             raise Error(
                 "trait_tensor_tuple_fused_concat_unified_closure only runs on"
@@ -4102,6 +4156,8 @@ struct TraitUnfusedExecute:
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert (
             type_of(x).rank == 1
             and type_of(z).rank == 1
@@ -4128,6 +4184,8 @@ struct TraitUnfusedExecute:
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises where not conforms_to(type_of(z), Fused):
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert (
             type_of(x).rank == 1
             and type_of(z).rank == 1

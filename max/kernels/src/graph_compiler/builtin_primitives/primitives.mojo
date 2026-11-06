@@ -2352,6 +2352,8 @@ def _foreach[
             tensors.
         ctx: The call context (forward this from the custom operation).
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     elementwise[
         simd_width=simd_width,
         _trace_description=_trace_name,
@@ -2399,6 +2401,8 @@ def _rowwise[
         shape: The iteration domain.
         ctx: The call context (forward this from the custom operation).
     """
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime simd_width = pick_simd_width[
         SimdMonoid, target, 64, dtype, accum
     ]()

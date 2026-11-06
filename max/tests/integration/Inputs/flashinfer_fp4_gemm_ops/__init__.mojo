@@ -117,6 +117,8 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
         ctx: DeviceContext,
     ) raises:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert target == "gpu"
         comptime assert conforms_to(type_of(out_tensor), TileTensorable)
         comptime assert conforms_to(type_of(mat1), TileTensorable)

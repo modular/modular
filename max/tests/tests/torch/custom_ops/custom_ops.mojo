@@ -38,6 +38,8 @@ struct Grayscale:
         img_in: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(img_out), TileTensorable)
         comptime assert conforms_to(type_of(img_in), TileTensorable)
         comptime assert type_of(img_out).dtype == .uint8
@@ -89,6 +91,8 @@ struct MyAdd:
         B: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(C), TileTensorable)
         comptime assert conforms_to(type_of(A), TileTensorable)
         comptime assert conforms_to(type_of(B), TileTensorable)
@@ -133,6 +137,8 @@ struct ParameterIncrement:
         A: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(B), TileTensorable)
         comptime assert conforms_to(type_of(A), TileTensorable)
         comptime type = type_of(B).dtype

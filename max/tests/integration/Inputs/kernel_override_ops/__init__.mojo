@@ -56,4 +56,6 @@ struct LayerNormOverride:
         epsilon: Float32,
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         raise Error("LAYER_NORM_OVERRIDE_FIRED")

@@ -35,4 +35,6 @@ struct TileRMSNormStub:
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
     ):
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass

@@ -125,6 +125,8 @@ struct ExecuteAndExecuteDevice:
         a: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         pass
 
     @staticmethod

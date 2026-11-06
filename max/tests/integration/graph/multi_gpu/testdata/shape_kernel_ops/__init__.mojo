@@ -93,6 +93,8 @@ struct ShapeKernel:
         input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert type_of(output).dtype == .float32

@@ -83,6 +83,8 @@ struct RaggedAttentionLoadMask:
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert is_gpu[target](), "only valid on GPUs"
         comptime match mask:
             case "causal":
@@ -159,6 +161,8 @@ struct RaggedAttentionPointerMask:
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert is_gpu[target](), "only valid on GPUs"
         var output_buffer = output.to_tile_tensor()
         var q_buffer = q.to_tile_tensor()
@@ -220,6 +224,8 @@ struct DenseAttentionPointerMask:
         mask: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        ctx._comptime_assert_matches_target_is_cpu[target]()
+
         comptime assert is_gpu[target](), "only valid on GPUs"
         flash_attention(
             output.to_tile_tensor(),

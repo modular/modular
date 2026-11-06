@@ -17,7 +17,14 @@ from std.testing import assert_equal
 from std.utils.index import IndexList
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, MixedLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    MixedLayout,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.kv_cache_ragged import _matmul_common
 
@@ -30,6 +37,8 @@ def _project[
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
+    context._comptime_assert_matches_target_is_cpu[target]()
+
     @inline(.always)
     def write_output[
         value_type: DType, width: SIMDLength, *, alignment: Int
@@ -40,20 +49,35 @@ def _project[
     _matmul_common(hidden, weight, context, write_output)
 
 
+def _make_tensor[
+    LayoutType: TensorLayout, //, dtype: DType, target: StaticString
+](layout: LayoutType, ctx: DeviceContext) raises -> HostDeviceTileTensor[
+    dtype, LayoutType
+]:
+    # A CPU context cannot own a device buffer, and the CPU case needs only
+    # host memory.
+    comptime if target == "cpu":
+        return HostDeviceTileTensor[dtype](layout)
+    else:
+        return HostDeviceTileTensor[dtype](layout, ctx)
+
+
 def _check_projection[
     dtype: DType, target: StaticString, input_padding: Int = 0
 ](ctx: DeviceContext,) raises:
+    ctx._comptime_assert_matches_target_is_cpu[target]()
+
     comptime M = 5
     comptime N = 64
     comptime K = 64
     comptime output_padding = 16
-    var hidden = HostDeviceTileTensor[dtype](
+    var hidden = _make_tensor[dtype, target](
         row_major[M, K + input_padding](), ctx
     )
-    var weight = HostDeviceTileTensor[dtype](
+    var weight = _make_tensor[dtype, target](
         row_major[N, K + input_padding](), ctx
     )
-    var output = HostDeviceTileTensor[dtype](
+    var output = _make_tensor[dtype, target](
         row_major[M, N + output_padding](), ctx
     )
     var hidden_host = hidden.host_tensor().fill(111)
@@ -85,7 +109,7 @@ def _check_projection[
             TileTensor(hidden_host.as_imm().unsafe_ptr(), hidden_layout),
             TileTensor(weight_host.as_imm().unsafe_ptr(), weight_layout),
             output_host,
-            DeviceContext.cpu(),
+            ctx,
         )
     else:
         hidden.to_device()
@@ -122,7 +146,7 @@ def _check_projection[
 
 def main() raises:
     with DeviceContext() as ctx:
-        _check_projection[DType.float32, "cpu"](ctx)
+        _check_projection[DType.float32, "cpu"](DeviceContext.cpu())
         _check_projection[DType.float32, "gpu"](ctx)
         _check_projection[DType.bfloat16, "gpu"](ctx)
         # Some legacy dispatches require dense input rows; AMD also covers padding.
