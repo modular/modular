@@ -1778,6 +1778,22 @@ def test_constant_input_buffers_share_the_declared_tree() -> None:
         )
 
 
+def test_constant_inputs_need_no_buffers_under_virtual_devices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValueError):
+        ConstantInputs(input_types={"table": (X,)}, buffers={})
+
+    # A virtual device cannot allocate, and only execution reads the buffers,
+    # so a compile-only run declares the inputs without backing them.
+    monkeypatch.setattr(
+        "max.pipelines.lib.registration_runtime.is_virtual_device_mode",
+        lambda: True,
+    )
+    constants = ConstantInputs(input_types={"table": (X,)}, buffers={})
+    assert constants.buffers == {}
+
+
 def test_a_disabled_vision_role_is_not_constructed() -> None:
     class DisabledVision(ToyVision):
         @classmethod

@@ -78,6 +78,10 @@ class ConstantInputs:
     buffers: tree.Tree[Buffer]
 
     def __post_init__(self) -> None:
+        if is_virtual_device_mode() and not self.buffers:
+            # Compile-only: a virtual device cannot allocate, and only
+            # execution reads the buffers. The declarations still stand.
+            return
         _, structure = tree.flatten(self.input_types)
         structure.flatten_up_to(self.buffers)
 
