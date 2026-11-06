@@ -30,6 +30,8 @@ from shmem.ep_comm import (
     EP_PDL_MAX_RANKS,
     ep_mx_msg_bytes,
     EPLocalSyncCounters,
+    ExpertLoadSink,
+    NullExpertLoad,
     TokenFormat,
     dispatch_async_kernel,
     dispatch_wait_kernel,
@@ -449,6 +451,7 @@ def ep_dispatch_wait_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
@@ -459,6 +462,7 @@ def ep_dispatch_wait_kernel_api[
     atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     context: DeviceContext,
     num_input_tokens: Int = -1,
+    expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
     """Execute the Expert Parallelism dispatch completion kernel.
 
@@ -479,6 +483,8 @@ def ep_dispatch_wait_kernel_api[
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -492,6 +498,8 @@ def ep_dispatch_wait_kernel_api[
         num_input_tokens: Per-rank input token count for this layer. When >= 0
             enables the decode-fast-path grid sizing. Default `-1` keeps the
             full-`sm_count` grid for backwards compatibility.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
     """
     comptime n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
 
@@ -525,6 +533,7 @@ def ep_dispatch_wait_kernel_api[
         max_token_per_rank,
         token_fmt_type,
         token_recv=ep_token_recv[n_nodes](),
+        ExpertLoadT=ExpertLoadT,
     ]
 
     @inline(.always)
@@ -577,6 +586,7 @@ def ep_dispatch_wait_kernel_api[
             recv_count_ptr,
             ep_counters,
             my_rank,
+            expert_load,
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
@@ -611,6 +621,7 @@ def ep_fused_dispatch_kernel_api[
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
     dispatch_warp_min_tokens: Int = -1,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
@@ -625,6 +636,7 @@ def ep_fused_dispatch_kernel_api[
     recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
     recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
+    expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel at unit input scale.
 
@@ -660,6 +672,8 @@ def ep_fused_dispatch_kernel_api[
             Same bytes and receive layout. -1 (the default) keeps the stock
             send and count, as does every configuration but single-node NVFP4
             without a fused shared expert.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -673,6 +687,8 @@ def ep_fused_dispatch_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
     """
 
     # Stands in for the input scales `has_input_scales=False` never reads.
@@ -691,6 +707,7 @@ def ep_fused_dispatch_kernel_api[
         allreduce_world_size,
         has_input_scales=False,
         dispatch_warp_min_tokens=dispatch_warp_min_tokens,
+        ExpertLoadT=ExpertLoadT,
     ](
         token_handler,
         row_offsets,
@@ -704,6 +721,7 @@ def ep_fused_dispatch_kernel_api[
         recv_count_ptrs,
         context,
         no_input_scales,
+        expert_load,
     )
 
 
@@ -732,6 +750,7 @@ def ep_fused_dispatch_kernel_api[
     allreduce_world_size: Int = 1,
     has_input_scales: Bool = True,
     dispatch_warp_min_tokens: Int = -1,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
@@ -747,6 +766,7 @@ def ep_fused_dispatch_kernel_api[
     recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
     input_scales_fn: InputScalesFnType,
+    expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel.
 
@@ -789,6 +809,8 @@ def ep_fused_dispatch_kernel_api[
             Same bytes and receive layout. -1 (the default) keeps the stock
             send and count, as does every configuration but single-node NVFP4
             without a fused shared expert.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -804,6 +826,8 @@ def ep_fused_dispatch_kernel_api[
         context: Device context pointer.
         input_scales_fn: The input scales. It runs on the device, so it must
             copy what it captures.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
     """
 
     # Ensure this kernel only runs on GPU targets
@@ -866,6 +890,7 @@ def ep_fused_dispatch_kernel_api[
         RowOffsetsEngine=row_offsets.Engine,
         ExpertIdsEngine=expert_ids.Engine,
         SrcInfoEngine=src_info.Engine,
+        ExpertLoadT=ExpertLoadT,
     ]
 
     @inline(.always)
@@ -949,6 +974,7 @@ def ep_fused_dispatch_kernel_api[
             recv_count_ptrs_arr,
             ep_counters,
             my_rank,
+            expert_load,
             host_args=(input_scales_fn,),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,

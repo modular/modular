@@ -77,6 +77,7 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     EPLocalSyncCounters,
     combine_async_kernel,
+    NullExpertLoad,
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
@@ -656,6 +657,7 @@ def bench_combine[
             dispatch_recv_count_bufs_inputs[slot_idx][dev_idx],
             get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

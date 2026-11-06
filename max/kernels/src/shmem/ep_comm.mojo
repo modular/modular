@@ -308,6 +308,132 @@ comptime _counter_atomic = Atomic[Int32, scope=DEVICE_SCOPE]
 comptime _signal_atomic = Atomic[UInt64]
 
 
+trait ExpertLoadSink(DevicePassable, TrivialRegisterPassable):
+    """Receives the routed-token count of each local expert at dispatch wait.
+
+    Implementations: `NullExpertLoad` (the default, counts nothing) and
+    `ExpertLoadTally`.
+    """
+
+    def add(self, local_expert: Int, n_local_experts: Int, count: UInt32):
+        """Adds one step's routed-token count for a local expert.
+
+        Args:
+            local_expert: Index of the expert among this rank's experts.
+            n_local_experts: Number of routed experts on this rank, the row
+                stride of the tally.
+            count: Tokens routed to the expert in this step, before any
+                grouped-matmul padding.
+        """
+        ...
+
+
+struct NullExpertLoad(ExpertLoadSink):
+    """Zero-sized sink whose `add` compiles away.
+
+    It contributes no kernel-argument bytes, so a dispatch built with it is
+    byte-identical to one without expert-load counting.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias. `NullExpertLoad` is trivially device-passable."""
+
+    @inline(.always)
+    def __init__(out self):
+        """Constructs the no-op sink."""
+        pass
+
+    @inline(.always)
+    def add(self, local_expert: Int, n_local_experts: Int, count: UInt32):
+        """Does nothing.
+
+        Args:
+            local_expert: Unused.
+            n_local_experts: Unused.
+            count: Unused.
+        """
+        pass
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        pass
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"NullExpertLoad"`.
+        """
+        return "NullExpertLoad"
+
+
+struct ExpertLoadTally(ExpertLoadSink):
+    """Running per-layer, per-local-expert token totals in device memory.
+
+    The tally is a `[layers, n_local_experts]` `uint64` buffer that is never
+    reset on device; the host reads it periodically and differences
+    consecutive readings. The add is atomic so two overlapped steps or two
+    data-parallel ranks sharing a GPU cannot lose an update.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias. `ExpertLoadTally` is trivially device-passable."""
+
+    var counts: MutPointer[UInt64, MutUntrackedOrigin]
+    """Base of the `[layers, n_local_experts]` running totals."""
+    var layer_idx: ImmPointer[Int32, ImmUntrackedOrigin]
+    """Device scalar holding the MoE layer index of this dispatch, the same
+    tensor the EPLB router reads."""
+
+    @inline(.always)
+    def __init__(
+        out self,
+        counts: MutPointer[UInt64, MutUntrackedOrigin],
+        layer_idx: ImmPointer[Int32, ImmUntrackedOrigin],
+    ):
+        """Wraps the tally buffer and the layer-index scalar.
+
+        Args:
+            counts: Base of the `[layers, n_local_experts]` running totals.
+            layer_idx: Device scalar holding the MoE layer index.
+        """
+        self.counts = counts
+        self.layer_idx = layer_idx
+
+    @inline(.always)
+    def add(self, local_expert: Int, n_local_experts: Int, count: UInt32):
+        """Atomically adds `count` to the expert's total for this layer.
+
+        Args:
+            local_expert: Index of the expert among this rank's experts.
+            n_local_experts: Number of routed experts on this rank.
+            count: Tokens routed to the expert in this step.
+        """
+        var row = Int(self.layer_idx.unsafe_load())
+        _ = Atomic[UInt64, scope=DEVICE_SCOPE].fetch_add[
+            ordering=Ordering.RELAXED
+        ](
+            self.counts.unsafe_offset(row * n_local_experts + local_expert),
+            UInt64(count),
+        )
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"ExpertLoadTally"`.
+        """
+        return "ExpertLoadTally"
+
+
 @inline(.always)
 def _acquire_wait[
     dtype: DType,
@@ -4687,6 +4813,7 @@ struct EPDispatchKernel[
         comm_thread_base: Int = 0,
         n_comm_threads: Int = Self.num_threads,
         comm_barrier_id: Int = -1,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
     ](
         format_handler: Self.token_fmt_type,
         row_offsets: TileTensor[
@@ -4698,6 +4825,7 @@ struct EPDispatchKernel[
         my_rank: Int32,
         n_active_offset_sms: Int,
         reserved_shared_expert_tokens: UInt32 = 0,
+        expert_load: ExpertLoadT = NullExpertLoad(),
     ) -> None:
         """Auxiliary SM logic for dispatch_wait_kernel.
 
@@ -4717,6 +4845,8 @@ struct EPDispatchKernel[
                 (``grid_dim.x - n_offset_sms`` in the standalone kernels).
             reserved_shared_expert_tokens: The number of tokens reserved for the
                 shared expert.
+            expert_load: Receives each local expert's routed-token count for
+                this step.
 
         Parameters:
             comm_thread_base: Absolute ``thread_idx.x`` of the first thread in
@@ -4727,6 +4857,8 @@ struct EPDispatchKernel[
                 the phase's block barriers when ``comm_barrier_id >= 0``).
             comm_barrier_id: Named-barrier id for the comm class, or negative
                 (the default) for the full-block ``barrier()``.
+            ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+                compiles the counting away.
         """
         comptime assert (
             row_offsets.flat_rank == 1
@@ -4895,6 +5027,16 @@ struct EPDispatchKernel[
 
             # Reset the receive count buffer.
             recv_count_p.unsafe_store(tid, UInt64.MAX_FINITE)
+
+            # After the ready flag, so the layer-index load and the atomic stay
+            # off the path that releases the copy SMs. The last rank's prefix
+            # is the expert's total before any grouped-matmul padding.
+            if tid % Self.n_ranks == Self.n_ranks - 1:
+                expert_load.add(
+                    local_expert_id,
+                    Self.n_local_experts,
+                    prefix_sum_arr[tid] - raw_expert_start_offset,
+                )
 
     @staticmethod
     @inline(.always)
@@ -5553,6 +5695,7 @@ def dispatch_wait_kernel[
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
     token_recv: Bool = False,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     format_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, row_offsets_layout, MutUntrackedOrigin],
@@ -5562,6 +5705,7 @@ def dispatch_wait_kernel[
     recv_count_p: MutPointer[UInt64, MutUntrackedOrigin],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
+    expert_load: ExpertLoadT,
 ):
     """
     This kernel is called after the `dispatch_kernel` to complete the
@@ -5585,6 +5729,8 @@ def dispatch_wait_kernel[
             token encoding scheme.
         token_recv: Whether each destination received a token once (see
             `EPDispatchKernel`). Must match the `dispatch_async_kernel`.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Args:
         format_handler: Instance of token_fmt_type that performs token decoding
@@ -5604,6 +5750,7 @@ def dispatch_wait_kernel[
             buffer is of shape `(n_local_experts, n_ranks)`.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
+        expert_load: Receives each local expert's routed-token count.
     """
 
     comptime dispatch_impl = EPDispatchKernel[
@@ -5625,7 +5772,9 @@ def dispatch_wait_kernel[
     # the tokens start in the output tensor.
     # Use runtime grid_dim so the host can launch a smaller grid for decode.
     if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
-        dispatch_impl.wait_for_arrivals_and_compute_offsets(
+        dispatch_impl.wait_for_arrivals_and_compute_offsets[
+            ExpertLoadT=ExpertLoadT
+        ](
             format_handler,
             row_offsets,
             expert_ids,
@@ -5633,6 +5782,7 @@ def dispatch_wait_kernel[
             atomic_counter,
             my_rank,
             grid_dim.x - dispatch_impl.n_offset_sms,
+            expert_load=expert_load,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -7059,6 +7209,7 @@ def dispatch_kernel[
     RowOffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
     ExpertIdsEngine: TensorEngine = DefaultEngine[element_width=1],
     SrcInfoEngine: TensorEngine = DefaultEngine[element_width=1],
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     input_tokens: TileTensor[
         input_type,
@@ -7086,6 +7237,7 @@ def dispatch_kernel[
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
+    expert_load: ExpertLoadT,
     input_scales_fn: InputScalesFnType,
 ):
     """
@@ -7134,6 +7286,8 @@ def dispatch_kernel[
         RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
         ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
         SrcInfoEngine: Storage engine backing the `src_info` tile.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Args:
         input_tokens: The input tokens to be dispatched. Also used as shared
@@ -7156,6 +7310,7 @@ def dispatch_kernel[
             each device in the p2p world.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
+        expert_load: Receives each local expert's routed-token count.
         input_scales_fn: Input scale supplier, passed by host layout.
     """
 
@@ -7253,7 +7408,9 @@ def dispatch_kernel[
         # ===== dispatch_wait =====
         # Use runtime grid_dim so the host can launch a smaller grid for decode.
         if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
-            dispatch_impl.wait_for_arrivals_and_compute_offsets(
+            dispatch_impl.wait_for_arrivals_and_compute_offsets[
+                ExpertLoadT=ExpertLoadT
+            ](
                 format_handler,
                 row_offsets,
                 expert_ids,
@@ -7262,6 +7419,7 @@ def dispatch_kernel[
                 my_rank,
                 grid_dim.x - dispatch_impl.n_offset_sms,
                 shared_expert_token_count,
+                expert_load=expert_load,
             )
         else:
             format_handler.init_smem_resources()
