@@ -25,7 +25,7 @@
 // CHECK-NEXT:    var [[OUT:.*]] = builtin_kernels.elementwise.Cast.elementwise[out_dtype = DType.bfloat16]([[Y]])
 // CHECK-NEXT:    managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}simd_width = w, element_alignment = [[AL]]]({{.*}}[[OUT]]
 // CHECK:       [[ROW]].elementwise([[EW]], [[LOAD]])
-// CHECK:       builtin_primitives.primitives._rowwise[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = 1], DType.bfloat16, DType.float32, axis = 1, target = "cpu", num_phases = 2, computationally_expensive = True, dtype_size = 2]
+// CHECK:       builtin_primitives.primitives._rowwise[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = 1], DType.bfloat16, DType.float32, axis = 1, num_phases = 2, computationally_expensive = True, dtype_size = 2]
 // CHECK-NOT:   def __{{.*}}(arg
 mo.graph @rmsNormBf16(%x: !mo.tensor<[8, 4096], bf16>, %w: !mo.tensor<[4096], bf16>) -> !mo.tensor<[8, 4096], bf16> {
   %y = mo.composite.reduce.rms_norm(%x, %w) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[8, 4096], bf16>, !mo.tensor<[4096], bf16>) -> !mo.tensor<[8, 4096], bf16>

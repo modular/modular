@@ -75,4 +75,4 @@ struct Mandelbrot:
 
             return iters
 
-        foreach[target=target](elementwise_mandelbrot, output, ctx)
+        foreach(elementwise_mandelbrot, output, ctx)

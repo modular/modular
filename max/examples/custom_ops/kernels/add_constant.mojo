@@ -37,7 +37,7 @@ struct AddConstant[value: Int]:
         def add_constant[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + Scalar[output.dtype](Self.value)
 
-        foreach[target=target](add_constant, output, ctx)
+        foreach(add_constant, output, ctx)
 
 
 # You only need to implement this if you do not manually annotate

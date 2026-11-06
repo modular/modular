@@ -2768,18 +2768,20 @@ def get_kernel_tile_shape[dtype: DType, target: StaticString]() -> IndexList[2]:
 def foreach[
     dtype: DType,
     rank: Int,
+    ctx_target: CompilationTarget,
     //,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
     & (def[width: Int](Coord) -> SIMD[dtype, width]),
     *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    simd_width: Int = get_kernel_simd_width[
+        dtype, ctx_target.device_kind_label()
+    ](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var func: FuncType,
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[ctx_target],
 ) raises:
     """Apply a `RegisterPassable` body to each element of the tensor slice.
 
@@ -2796,8 +2798,8 @@ def foreach[
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
+        ctx_target: The compilation target of `ctx` (inferred).
         FuncType: The type of the per-element body closure.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
 
@@ -2806,7 +2808,6 @@ def foreach[
         tensor: The output tensor slice which receives the return values from `func`.
         ctx: The call context (forward this from the custom operation).
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     def wrapper[
         width: Int, alignment: Int = 1

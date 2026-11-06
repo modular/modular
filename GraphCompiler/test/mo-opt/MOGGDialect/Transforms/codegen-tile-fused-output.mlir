@@ -65,7 +65,7 @@ mo.graph @rms_norm_mul(%x: !mo.tensor<[256, 256], f32, gpu:0>, %gamma: !mo.tenso
 // EW:     var [[SUM:.*]] = builtin_kernels.elementwise.Add.elementwise(
 // EW:     var [[PROD:.*]] = builtin_kernels.elementwise.Mul.elementwise([[SUM]],
 // EW:     return rebind[layout.TileTensor[dtype, LayoutType, MutAnyOrigin]]([[PROD]])
-// EW-CALL: builtin_primitives.primitives.foreach_fusion_tile[target = "gpu"](tensor = {{.*}}, elem = var__{{[0-9]+}}, ctx = {{.*}})
+// EW-CALL: builtin_primitives.primitives.foreach_fusion_tile(tensor = {{.*}}, elem = var__{{[0-9]+}}, ctx = {{.*}})
 
 mo.graph @add_mul(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.tensor<[256, 256], f32, gpu:0>, %c: !mo.tensor<[256, 256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0> {
   %0 = mo.add(%a, %b) : !mo.tensor<[256, 256], f32, gpu:0>

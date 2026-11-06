@@ -247,7 +247,7 @@ struct Foo:
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=ctx.target.device_kind_label()](func, z, ctx)
+        foreach(func, z, ctx)
 
 
 @extensibility.register_shape_function("imposter_add")
@@ -274,7 +274,7 @@ struct FooRaisingShape:
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=ctx.target.device_kind_label()](func, z, ctx)
+        foreach(func, z, ctx)
 
 
 @extensibility.register_shape_function("imposter_add_raising_shape")
@@ -2141,7 +2141,7 @@ struct AddFuseOutput:
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=ctx.target.device_kind_label()](func, z, ctx)
+        foreach(func, z, ctx)
 
 
 # c = a @ b, should support CPU and GPU
@@ -2956,9 +2956,7 @@ struct MutableStore:
             idx[1] += 1
             buffer.store[width=width](Coord(idx), val)
 
-        foreach_out_func[
-            target=ctx.target.device_kind_label(), _trace_name=_trace_name
-        ](out_func, tensor, ctx)
+        foreach_out_func[_trace_name=_trace_name](out_func, tensor, ctx)
 
 
 @extensibility.register("my_square_compute_out_fusion")
@@ -3827,7 +3825,7 @@ struct MapLowerAddOne:
         def func[width: Int](idx: Coord) {var} -> SIMD[res.dtype, width]:
             return rebind[SIMD[res.dtype, width]](a.load[width](idx)) + 1
 
-        foreach[target=ctx.target.device_kind_label()](func, res, ctx)
+        foreach(func, res, ctx)
 
 
 # Real-body plain-output kernels below broaden the advanced-fusion MAP-ABI
@@ -3857,7 +3855,7 @@ struct MapLowerAdd3:
                 + rebind[SIMD[res.dtype, width]](c.load[width](idx))
             )
 
-        foreach[target=ctx.target.device_kind_label()](func, res, ctx)
+        foreach(func, res, ctx)
 
 
 # 1 input / 2 outputs: `res0 = a + 1`, `res1 = a * 2` (two plain outputs, two
@@ -3901,7 +3899,7 @@ struct MapLowerAddSub:
                 SIMD[res0.dtype, width]
             ](b.load[width](idx))
 
-        foreach[target=ctx.target.device_kind_label()](add, res0, ctx)
+        foreach(add, res0, ctx)
 
         @inline(.always)
         def sub[width: Int](idx: Coord) {var} -> SIMD[res1.dtype, width]:
@@ -3909,7 +3907,7 @@ struct MapLowerAddSub:
                 SIMD[res1.dtype, width]
             ](b.load[width](idx))
 
-        foreach[target=ctx.target.device_kind_label()](sub, res1, ctx)
+        foreach(sub, res1, ctx)
 
 
 # Scalar operand: `res = a * s` where `s: Scalar[dtype]`. Exercises the MAP

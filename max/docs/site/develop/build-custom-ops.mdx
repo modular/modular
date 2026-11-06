@@ -162,7 +162,7 @@ struct AddOne:
         ](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[target=target](elementwise_add_one, output, ctx)
+        foreach(elementwise_add_one, output, ctx)
 ```
 
 We call `elementwise_add_one()` using
@@ -171,8 +171,9 @@ which distributes an elementwise computation in parallel across all elements in
 the output tensor. At compile time, `foreach()` specializes the computation for
 the target hardware, so the same code runs on CPU or GPU with no changes.
 
-The `target` parameter tells `foreach()` which device to specialize for. The
-[next example](#example-2-write-device-specific-kernels) sets it explicitly.
+`foreach()` takes the device to specialize for from the `ctx` argument. The
+[next example](#example-2-write-device-specific-kernels) writes kernels that
+differ by device.
 
 ### Declare the output shape
 

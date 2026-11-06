@@ -22,7 +22,7 @@
 // CHECK-NEXT:    var [[Y:.*]] = builtin_kernels.elementwise.Mul.elementwise[dtype = DType.float32]([[NX]], [[G]])
 // CHECK-NEXT:    managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}simd_width = w, element_alignment = [[AL]]]({{.*}}idx{{.*}}[[Y]]))
 // CHECK:       [[ROW4]].elementwise([[EW]], [[LOAD4]])
-// CHECK:       {{.*}}._rowwise[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = 1], DType.float32, DType.float32, axis = 1, target = "cpu", num_phases = 2, computationally_expensive = True, dtype_size = 4]
+// CHECK:       {{.*}}._rowwise[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = 1], DType.float32, DType.float32, axis = 1, num_phases = 2, computationally_expensive = True, dtype_size = 4]
 mo.graph @rmsNorm(%x: !mo.tensor<[8, 128], f32>, %g: !mo.tensor<[128], f32>) -> !mo.tensor<[8, 128], f32> {
   %n = mo.constant <#M.dense_array<1.280000e+02> : tensor<f32>> : !mo.tensor<[], f32>
   %e = mo.constant <#M.dense_array<9.99999997E-7> : tensor<f32>> : !mo.tensor<[], f32>

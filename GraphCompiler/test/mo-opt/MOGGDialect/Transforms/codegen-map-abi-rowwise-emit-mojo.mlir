@@ -22,7 +22,7 @@
 // CHECK-NEXT:    def [[WRITE:write_+[0-9]+]](oc: std.utils.coord.DynamicCoord[DType.int, [[RANK]]]) {var}:
 // CHECK-NEXT:      managed_tensor_slice.simd_store_into_tensor_pointer[static_spec = [[SPEC_O]], simd_width = params.emit_tile_width, element_alignment = 1]({{.*}}oc{{.*}}[[ACC]].acc.slice[params.emit_tile_width]()))
 // CHECK:         [[ROW]].emit([[WRITE]])
-// CHECK:       {{.*}}._rowwise[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = 1], DType.float32, DType.float32, axis = 1, target = "cpu", num_phases = 1, computationally_expensive = False, dtype_size = 0]([[BODY]], {{.*}})
+// CHECK:       {{.*}}._rowwise[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = 1], DType.float32, DType.float32, axis = 1, num_phases = 1, computationally_expensive = False, dtype_size = 0]([[BODY]], {{.*}})
 mo.graph @sum(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %r = mo.reduce.add(%x) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
   mo.output %r : !mo.tensor<[8, 1], f32>

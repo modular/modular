@@ -2267,6 +2267,7 @@ def simd_select[
 def foreach[
     dtype: DType,
     rank: Int,
+    ctx_target: CompilationTarget,
     //,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
@@ -2274,13 +2275,14 @@ def foreach[
         dtype, width
     ],
     *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    simd_width: Int = get_kernel_simd_width[
+        dtype, ctx_target.device_kind_label()
+    ](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var func: FuncType,
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[ctx_target],
 ) raises:
     """Apply a `RegisterPassable` body to each element of the tensor slice.
 
@@ -2293,8 +2295,8 @@ def foreach[
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
+        ctx_target: The compilation target of `ctx` (inferred).
         FuncType: The type of the per-element body closure.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target.
         _trace_name: Name of the executed operation displayed in the trace.
 
@@ -2303,7 +2305,6 @@ def foreach[
         tensor: The output tensor slice which receives the return values.
         ctx: The call context (forward this from the custom operation).
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     # The wrapper captures `func` (passed by value) and `tensor` so the
     # store can route through `_fused_store` when output-store fusion is
@@ -2321,8 +2322,6 @@ def foreach[
     ](wrapper, tensor.shape_coord(), ctx)
 
 
-# TODO(MSTDL-3356): Remove the dead `target` parameter. The graph compiler
-# lowers `mogg.call.foreach` to this function and must stop passing it first.
 @register_internal("mogg.call.foreach")
 def _foreach[
     Lambda: ImplicitlyCopyable
@@ -2331,7 +2330,6 @@ def _foreach[
     //,
     *,
     simd_width: Int,
-    target: StaticString = "cpu",
     _trace_name: StaticString = "mogg.foreach",
 ](shape: Coord, lambda_: Lambda, ctx: DeviceContext,) raises:
     """Call `lambda_` once per index in `shape`; `lambda_` does its own store.
@@ -2343,7 +2341,6 @@ def _foreach[
     Parameters:
         Lambda: The per-index closure's concrete type.
         simd_width: The SIMD width to use.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         _trace_name: Name of the executed operation displayed in the trace.
 
     Args:
@@ -2352,8 +2349,6 @@ def _foreach[
             tensors.
         ctx: The call context (forward this from the custom operation).
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     elementwise[
         simd_width=simd_width,
         _trace_description=_trace_name,
@@ -2369,7 +2364,6 @@ def _rowwise[
     accum: DType,
     *,
     axis: Int,
-    target: StaticString,
     num_phases: Int,
     computationally_expensive: Bool,
     dtype_size: Int,
@@ -2382,7 +2376,6 @@ def _rowwise[
         dtype: The element type of the input the folds walk.
         accum: The type the folds' contributions are computed in.
         axis: The reduced axis.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         num_phases: 1 for a reduce-shaped body, which writes one value per
             row; for a normalize-shaped body, which writes every element,
             one per fold plus one for the write.
@@ -2401,10 +2394,8 @@ def _rowwise[
         shape: The iteration domain.
         ctx: The call context (forward this from the custom operation).
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime simd_width = pick_simd_width[
-        SimdMonoid, target, 64, dtype, accum
+        SimdMonoid, ctx.target.device_kind_label(), 64, dtype, accum
     ]()
     launch[
         axis=axis,
@@ -3016,16 +3007,18 @@ struct _ElementwiseFusionTileAdapter[
 def foreach_fusion_tile[
     dtype: DType,
     rank: Int,
+    ctx_target: CompilationTarget,
     //,
     E: ElementwiseFusionTile,
     *,
-    target: StaticString = "cpu",
-    tile_shape: IndexList[2] = get_kernel_tile_shape[dtype, target](),
+    tile_shape: IndexList[2] = get_kernel_tile_shape[
+        dtype, ctx_target.device_kind_label()
+    ](),
     _trace_name: StaticString = "mogg.for_each_tile",
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     var elem: E,
-    ctx: DeviceContext,
+    ctx: DeviceContext[ctx_target],
 ) raises:
     """Apply a tile-based pure elementwise fusion to each tile of the tensor.
 
@@ -3040,8 +3033,8 @@ def foreach_fusion_tile[
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
+        ctx_target: The compilation target of `ctx` (inferred).
         E: The tile elementwise fusion struct type.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         tile_shape: The `(rows, cols)` shape of one output tile.
         _trace_name: Name of the executed operation displayed in the trace.
 
@@ -3055,8 +3048,6 @@ def foreach_fusion_tile[
         into `tile_shape`. Partial-tile / remainder handling and a CPU path are
         documented follow-ups.
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
-
     comptime assert (
         ctx.target.is_accelerator()
     ), "foreach_fusion_tile currently supports GPU targets only"
@@ -3091,26 +3082,28 @@ def foreach_fusion_tile[
 def foreach_out_func[
     dtype: DType,
     rank: Int,
+    ctx_target: CompilationTarget,
     OutFuncType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](IndexList[rank]) -> None,
     //,
     *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    simd_width: Int = get_kernel_simd_width[
+        dtype, ctx_target.device_kind_label()
+    ](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var out_func: OutFuncType,
     tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[ctx_target],
 ) raises:
     """Apply `out_func` to each index of the tensor slice.
 
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
+        ctx_target: The compilation target of `ctx` (inferred).
         OutFuncType: The type of the per-index closure.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
 
@@ -3120,7 +3113,6 @@ def foreach_out_func[
         tensor: The tensor slice whose shape is the iteration domain.
         ctx: The call context (forward this from the custom operation).
     """
-    ctx._comptime_assert_matches_target_is_cpu[target]()
 
     @inline(.always)
     def out_func_shim[
@@ -3169,7 +3161,4 @@ def view_copy_impl[
             simd_width=width, element_alignment=element_alignment
         ](x, idx)
 
-    foreach[
-        target=ctx.target.device_kind_label(),
-        _trace_name=_trace_name,
-    ](func, z, ctx)
+    foreach[_trace_name=_trace_name](func, z, ctx)

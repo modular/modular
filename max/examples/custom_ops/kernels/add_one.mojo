@@ -47,7 +47,7 @@ struct AddOne:
         ](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[target=target](elementwise_add_one, output, ctx)
+        foreach(elementwise_add_one, output, ctx)
 
 
 # You only need to implement this if you do not manually annotate

@@ -53,7 +53,7 @@ struct Grayscale:
 
             return gray_f32.clamp(0, 255).cast[.uint8]()
 
-        foreach[target=target, simd_width=1](color_to_grayscale, img_out, ctx)
+        foreach[simd_width=1](color_to_grayscale, img_out, ctx)
 
 
 @extensibility.register("brightness")
@@ -77,7 +77,7 @@ struct Brightness:
 
             return brightened_f32.clamp(0, 255).cast[.uint8]()
 
-        foreach[target=target](brighten, img_out, ctx)
+        foreach(brighten, img_out, ctx)
 
 
 @extensibility.register("blur")
@@ -123,4 +123,4 @@ struct Blur:
             return UInt8(max(min(pix_val_accum // pixel_count, 255), 0))
 
         # Apply the kernel to each pixel in the output tensor
-        foreach[target=target, simd_width=1](blur_kernel, img_out, ctx)
+        foreach[simd_width=1](blur_kernel, img_out, ctx)

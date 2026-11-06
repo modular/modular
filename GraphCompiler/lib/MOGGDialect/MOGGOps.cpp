@@ -3641,8 +3641,6 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   state.builder.call(
       MojoValue(primitiveMojoName(launch)),
       {*simdMonoid, dtype, accum, MojoValue("axis").equal(MojoValue(axis)),
-       MojoValue(kMoggTargetParameterName)
-           .equal(MojoValue(("\"" + getDevice() + "\"").str())),
        MojoValue("num_phases").equal(MojoValue(*getNumPhases())),
        MojoValue("computationally_expensive")
            .equal(MojoValue(getComputationallyExpensive())),
@@ -4647,9 +4645,7 @@ LogicalResult CallForeachTileOp::emitMojo(EmitMojoState &state) {
   ASSERT_STREAM(driverDecl,
                 "Primitive not found for " << kMoggForeachTileRegistration);
   state.builder.call(
-      MojoValue(primitiveMojoName(driverDecl)),
-      {MojoValue(kMoggTargetParameterName)
-           .equal(MojoValue(getDevice().str()).quote())},
+      MojoValue(primitiveMojoName(driverDecl)), {},
       {MojoValue(kParameterForeachTensor).equal(state.getMojoValueFor(output)),
        MojoValue(kParameterForeachElem).equal(functor),
        MojoValue(kParameterForeachCtx)
@@ -5077,8 +5073,7 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
     return failure();
 
   state.builder.call(MojoValue(getCallee()),
-                     {MojoValue(kParameterSimdWidth).equal(simdWidth),
-                      MojoValue(kMoggTargetParameterName).equal(targetStr)},
+                     {MojoValue(kParameterSimdWidth).equal(simdWidth)},
                      {shape, lambdaVal, context});
   return success();
 }
