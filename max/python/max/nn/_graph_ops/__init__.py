@@ -4070,8 +4070,8 @@ def msa_sparse_indexer(
             ``cache_lengths``). uint32.
         index_kv_collection: Paged index-K cache (BF16 or scale-free e4m3, no
             scales). Its ``mixed_step_split`` record splits a mixed batch,
-            so the decode rows take the decode routes; only a BF16 or FP8
-            cache with one index head on NVIDIA splits.
+            so the decode rows take the decode routes; it splits only on
+            NVIDIA and only for packed operands.
         layer_idx: Layer index, uint32, on CPU.
         score_scratch: Persistent FP32 scratch buffer for decode scoring, shape
             ``[num_index_heads, max_rows, MAX_NUM_BLOCKS]``. ``max_rows`` must
@@ -4281,8 +4281,8 @@ def msa_sparse_attention_ragged(
         total_context_length: Total padded cache length for the batch, CPU
             scalar ``[1]`` uint32.
         kv_collection: Main paged KV cache (BF16 or FP8 e4m3, no scales).
-            Its ``mixed_step_split`` record splits a mixed batch; only a BF16
-            or FP8 cache with one KV head on NVIDIA splits.
+            Its ``mixed_step_split`` record splits a mixed batch; it splits
+            only on NVIDIA and only for packed operands.
         layer_idx: Layer index, uint32, on CPU.
         block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,
             topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.

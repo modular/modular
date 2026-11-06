@@ -21,7 +21,8 @@ bit. A zeros or bad record keeps the unsplit prefill route, so it equals the
 output of a graph that passes no record.
 
 The shape is the per-device TP4 MiniMax-M3 shape of
-``Kernels/benchmarks/msa/bench_msa_decode_path.py``.
+``Kernels/benchmarks/msa/bench_msa_decode_path.py``; the harness also runs
+2 and 4 KV heads per device, the TP2 and TP1 shapes.
 """
 
 from __future__ import annotations
@@ -60,6 +61,7 @@ from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from test_common.graph_utils import is_b100_b200
 
 HEAD_DIM = 128
+# Query heads per KV head; the total query heads scale with the head count.
 NUM_Q_HEADS = 16
 PAGE_SIZE = 128
 TOPK = 16
@@ -118,13 +120,20 @@ def _split_record(rows: Sequence[Row], head_rows: int) -> np.ndarray:
 
 
 def _cache_types(
-    kv_components: int, dtype: DType
+    kv_components: int, dtype: DType, heads: int
 ) -> list[BufferType | TensorType]:
     gpu = DeviceRef.GPU()
     return [
         BufferType(
             dtype,
-            shape=["num_pages", kv_components, 1, PAGE_SIZE, 1, HEAD_DIM],
+            shape=[
+                "num_pages",
+                kv_components,
+                1,
+                PAGE_SIZE,
+                heads,
+                HEAD_DIM,
+            ],
             device=gpu,
         ),
         TensorType(DType.uint32, shape=["batch"], device=gpu),
@@ -155,19 +164,24 @@ def _symbolic_cache(values: Sequence[object]) -> PagedCacheValues:
 
 
 def _build_model(
-    session: InferenceSession, kv_dtype: DType, with_split_input: bool
+    session: InferenceSession,
+    kv_dtype: DType,
+    heads: int,
+    with_split_input: bool,
 ) -> Model:
     """Indexer into attention, as one sparse MiniMax-M3 layer runs them."""
     gpu = DeviceRef.GPU()
     input_types: list[BufferType | TensorType] = [
-        TensorType(DType.bfloat16, ["total_q", 1, HEAD_DIM], device=gpu),
-        TensorType(kv_dtype, ["total_q", NUM_Q_HEADS, HEAD_DIM], device=gpu),
+        TensorType(DType.bfloat16, ["total_q", heads, HEAD_DIM], device=gpu),
+        TensorType(
+            kv_dtype, ["total_q", NUM_Q_HEADS * heads, HEAD_DIM], device=gpu
+        ),
         TensorType(DType.uint32, ["batch_p1"], device=gpu),
         TensorType(DType.uint32, [1], device=DeviceRef.CPU()),
-        *_cache_types(1, DType.bfloat16),
-        *_cache_types(2, kv_dtype),
+        *_cache_types(1, DType.bfloat16, 1),
+        *_cache_types(2, kv_dtype, heads),
         BufferType(
-            DType.float32, [1, "scratch_rows", SCRATCH_BLOCKS], device=gpu
+            DType.float32, [heads, "scratch_rows", SCRATCH_BLOCKS], device=gpu
         ),
     ]
     if with_split_input:
@@ -178,13 +192,16 @@ def _build_model(
         )
     kv_params = MSAKVCacheParams(
         dtype=kv_dtype,
-        n_kv_heads=1,
+        n_kv_heads=heads,
         head_dim=HEAD_DIM,
         num_layers=1,
         devices=[gpu],
         page_size=PAGE_SIZE,
     )
-    name = f"msa_mixed_split_{kv_dtype}_{with_split_input}"
+    # The index-K cache is MLA with one latent head at every layout, so the
+    # indexer gets its own one-head params, as the model's indexer does.
+    index_kv_params = replace(kv_params, n_kv_heads=1)
+    name = f"msa_mixed_split_{kv_dtype}_{heads}h_{with_split_input}"
     with Graph(name, input_types=input_types) as graph:
         values = list(graph.inputs)
         index_cache = _symbolic_cache(values[4:10])
@@ -195,14 +212,14 @@ def _build_model(
         row_offsets = values[2].tensor
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
         block_indices = msa_sparse_indexer(
-            kv_params,
+            index_kv_params,
             index_q=values[0].tensor,
             input_row_offsets=row_offsets,
             prefix_lens=index_cache.cache_lengths,
             index_kv_collection=index_cache,
             layer_idx=layer_idx,
             score_scratch=values[16].buffer,
-            num_index_heads=1,
+            num_index_heads=heads,
             idx_head_dim=HEAD_DIM,
             block_size=PAGE_SIZE,
             topk=TOPK,
@@ -310,10 +327,13 @@ class Step:
 class Harness:
     """Shared KV pool, compiled graphs and the run helpers of one KV dtype."""
 
-    def __init__(self, session: InferenceSession, kv_dtype: DType) -> None:
+    def __init__(
+        self, session: InferenceSession, kv_dtype: DType, heads: int
+    ) -> None:
         self.kv_dtype = kv_dtype
-        self.split_model = _build_model(session, kv_dtype, True)
-        self.plain_model = _build_model(session, kv_dtype, False)
+        self.heads = heads
+        self.split_model = _build_model(session, kv_dtype, heads, True)
+        self.plain_model = _build_model(session, kv_dtype, heads, False)
         self.num_pages = 1_024
         generator = torch.Generator(device="cuda").manual_seed(0)
         self.index_blocks = torch.randn(
@@ -332,7 +352,7 @@ class Harness:
             2,
             1,
             PAGE_SIZE,
-            1,
+            heads,
             HEAD_DIM,
             dtype=torch.bfloat16,
             device="cuda",
@@ -352,7 +372,7 @@ class Harness:
         total_q = sum(r.width for r in rows)
         index_q = torch.randn(
             total_q,
-            1,
+            self.heads,
             HEAD_DIM,
             dtype=torch.bfloat16,
             device="cuda",
@@ -360,7 +380,7 @@ class Harness:
         )
         attention_q = torch.randn(
             total_q,
-            NUM_Q_HEADS,
+            NUM_Q_HEADS * self.heads,
             HEAD_DIM,
             dtype=torch.bfloat16,
             device="cuda",
@@ -377,7 +397,7 @@ class Harness:
 
     def scratch(self, rows: int = SCRATCH_ROWS) -> torch.Tensor:
         return torch.zeros(
-            1, rows, SCRATCH_BLOCKS, dtype=torch.float32, device="cuda"
+            self.heads, rows, SCRATCH_BLOCKS, dtype=torch.float32, device="cuda"
         )
 
     def run_split(
@@ -426,13 +446,24 @@ def session() -> InferenceSession:
 
 @pytest.fixture(
     scope="module",
-    params=[DType.bfloat16, DType.float8_e4m3fn],
-    ids=["bf16_kv", "fp8_kv"],
+    params=[
+        (DType.bfloat16, 1),
+        (DType.float8_e4m3fn, 1),
+        (DType.bfloat16, 2),
+        (DType.float8_e4m3fn, 4),
+    ],
+    ids=[
+        "bf16_kv_1_head",
+        "fp8_kv_1_head",
+        "bf16_kv_2_heads",
+        "fp8_kv_4_heads",
+    ],
 )
 def harness(
     session: InferenceSession, request: pytest.FixtureRequest
 ) -> Harness:
-    return Harness(session, request.param)
+    kv_dtype, heads = request.param
+    return Harness(session, kv_dtype, heads)
 
 
 def _assert_bitwise_equal(
@@ -651,18 +682,20 @@ def test_scratch_too_small_for_the_decode_view_keeps_the_unsplit_indexer(
     # would overrun the persistent scratch. The scratch is the head of a
     # larger buffer, so an overrun would change the rows after it.
     backing = torch.full(
-        (SCRATCH_ROWS * SCRATCH_BLOCKS,),
+        (harness.heads * SCRATCH_ROWS * SCRATCH_BLOCKS,),
         7.0,
         dtype=torch.float32,
         device="cuda",
     )
-    scratch = backing[: 16 * SCRATCH_BLOCKS].view(1, 16, SCRATCH_BLOCKS)
+    scratch = backing[: harness.heads * 16 * SCRATCH_BLOCKS].view(
+        harness.heads, 16, SCRATCH_BLOCKS
+    )
     step = harness.step(MIXED_ROWS)
     split_indices, _ = harness.run_split(
         step, _split_record(MIXED_ROWS, 8), scratch
     )
-    assert bool((backing[16 * SCRATCH_BLOCKS :] == 7.0).all()), (
-        "the scratch was overrun"
-    )
+    assert bool(
+        (backing[harness.heads * 16 * SCRATCH_BLOCKS :] == 7.0).all()
+    ), "the scratch was overrun"
     plain_indices, _ = harness.run_plain(step, harness.scratch(16))
     _assert_bitwise_equal(split_indices, plain_indices, "block ids")

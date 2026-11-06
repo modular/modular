@@ -388,7 +388,9 @@ modular_py_test(
         "test_msa_mixed_split_gpu.py",
     ],
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        # The four-head FP8 id stages a bf16 pool before the cast, so it
+        # needs the larger slice.
+        "test.resources:gpu-memory": "8",
     },
     gpu_constraints = ["//:b200_gpu"],
     precompile_mefs = True,
