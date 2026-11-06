@@ -18,6 +18,7 @@
 
 """Registers gather, scatter, and indexed-access graph ops backed by the `nn.gather_scatter` kernels."""
 
+from std.collections import Array
 from std.math import ceildiv, gcd
 from std.sys import align_of
 from std.sys.info import simd_width_of
@@ -67,7 +68,11 @@ from nn.slice import (
     slice_shape,
     sliced_add,
 )
-from nn.shard_and_stack import shard_and_stack
+from nn.shard_and_stack import (
+    ShardStackInput,
+    ShardStackOutput,
+    shard_and_stack,
+)
 from nn.split import split
 from nn.tile import tile, tile_shape
 from extensibility import (
@@ -75,13 +80,11 @@ from extensibility import (
     Fused,
     Input,
     InputTensor,
-    InputVariadicTensors,
     LoadAccess,
     Loadable,
     MutableInput,
     Output,
     OutputTensor,
-    OutputVariadicTensors,
     Storable,
     StoreAccess,
     Tensor,
@@ -104,6 +107,7 @@ from std.utils import IndexList, StaticTuple
 from .kernels import *
 from .kernels import (
     _SliceStrideTypes,
+    _check_tensor_tuple,
     _TransposeStrideTypes,
 )
 
@@ -2249,17 +2253,42 @@ struct ShardWeights:
 
     @staticmethod
     def execute[
+        Outs: TypeList[Trait=Output & Tensor, ...],
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        //,
         axis: Int,
     ](
-        outputs: OutputVariadicTensors,
-        inputs: InputVariadicTensors[
-            dtype=outputs.dtype,
-            rank=outputs.rank - 1,
-            ...,
-        ],
+        outputs: TensorTuple[*Outs],
+        inputs: TensorTuple[*Ins],
         dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
-        shard_and_stack[axis](outputs, inputs, dev_ctxs_input)
+        comptime num_outputs = len(Outs)
+        comptime num_inputs = len(Ins)
+        comptime assert num_inputs > 0, "must have one or more inputs"
+        comptime dtype = Ins[0].dtype
+        comptime rank = Ins[0].rank
+        _check_tensor_tuple[num_inputs, dtype, rank, *Ins]()
+        _check_tensor_tuple[num_outputs, dtype, rank + 1, *Outs]()
+
+        def input_tile[i: Int]() {imm inputs} -> ShardStackInput[dtype, rank]:
+            comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+            return rebind[ShardStackInput[dtype, rank]](
+                inputs[i].to_tile_tensor[dtype]().make_dynamic[.int64]()
+            )
+
+        def output_tile[
+            i: Int
+        ]() {imm outputs} -> ShardStackOutput[dtype, rank + 1]:
+            comptime assert conforms_to(type_of(outputs[i]), TileTensorable)
+            return rebind[ShardStackOutput[dtype, rank + 1]](
+                outputs[i].to_tile_tensor[dtype]().make_dynamic[.int64]()
+            )
+
+        shard_and_stack[dtype, rank, axis](
+            Array[_, num_outputs](fill_with_unrolled=output_tile),
+            Array[_, num_inputs](fill_with_unrolled=input_tile),
+            dev_ctxs_input,
+        )
 
 
 @extensibility.register("mo.concat")
