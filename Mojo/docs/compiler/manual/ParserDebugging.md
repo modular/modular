@@ -22,7 +22,8 @@ Details on these, and other tricks, are below!
 
 ## Running the Debugger
 
-[https://github.com/modularml/modular/blob/main/docs/internal/bazel.md#running-targets-or-tests-with-lldb](https://github.com/modularml/modular/blob/main/docs/internal/bazel.md#running-targets-or-tests-with-lldb)
+See [Debugger](./PostParserDebugging.md#debugger) for how to run Mojo tools
+and tests under `lldb` or `gdb` with `bd`.
 
 For example, this will open the debugger for the `traits_with_builtin.mojo`
 test:
