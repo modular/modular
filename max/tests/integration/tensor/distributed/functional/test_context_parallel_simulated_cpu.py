@@ -145,7 +145,8 @@ def test_the_a2a_merge_is_one_collective_with_lse_lanes() -> None:
 
     Traces the packing without compiling or running it. A bfloat16 output
     carries each float32 LSE as three bfloat16 lanes, which sum back to it
-    exactly; a float32 output carries it as one lane.
+    exactly; a float32 output carries it as one lane. Each destination's
+    chunk holds its heads' output features, then their lanes, head-minor.
     """
     tokens, heads, depth = 2, 8, 5
     for dtype, lanes in [(DType.float32, 1), (DType.bfloat16, 3)]:
@@ -158,10 +159,16 @@ def test_the_a2a_merge_is_one_collective_with_lse_lanes() -> None:
         with F.lazy():
             if dtype != DType.float32:
                 out = _cast(out, dtype)
-            packed = F.call_on_mesh(_pack_partials, MESH)(out, lse)
+            packed = F.call_on_mesh(
+                lambda x, y: _pack_partials(x, y, DCP), MESH
+            )(out, lse)
         assert not packed.real
         for shard in packed.local_shards:
-            assert shard.shape == [tokens, heads, depth + lanes]
+            assert shard.shape == [
+                tokens,
+                DCP,
+                heads // DCP * (depth + lanes),
+            ]
             assert shard.dtype == dtype
 
 
