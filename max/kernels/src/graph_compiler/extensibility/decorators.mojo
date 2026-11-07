@@ -16,6 +16,8 @@
 `@register_internal` is used by built-in MAX Graph operations.
 """
 
+from .platform_predicates import PlatformExpr, PlatformPredicate
+
 
 def register_internal(name: StaticString):
     """
@@ -132,6 +134,62 @@ def register(
             all.
         model: Specific device model, for example `"NVIDIA B200"` or
             `"AMD Instinct MI355X"`. Empty matches all.
+    """
+    pass
+
+
+def register[
+    expr: PlatformExpr, //
+](name: StaticString, cond: PlatformPredicate[expr], /):
+    """Registers a struct as a kernel implementation for the devices that
+    `cond` selects.
+
+    The Graph Compiler does not accept this overload yet: importing a package
+    that uses it fails.
+
+    Build `cond` from the aliases in `extensibility.platforms` and the atoms in
+    `extensibility.platform_predicates`. Give each platform that uses the
+    `type`, `api`, `arch`, or `model` atoms a name with `comptime`, and pass
+    that name as `cond`. In the alias, state every level of the device above
+    the narrowest one that it tests, even when a helper already implies it:
+
+    ```mojo
+    comptime TCGEN05 = ACCELERATOR & CUDA & (arch("sm_100a") | arch("sm_103a"))
+
+    @extensibility.register("mo.matmul", CPU)
+    struct CpuMatmul:
+        ...
+
+    @extensibility.register("mo.matmul", ACCELERATOR)
+    struct AcceleratorMatmul:
+        ...
+
+    @extensibility.register("mo.matmul", TCGEN05)
+    struct TcgenMatmul:
+        ...
+    ```
+
+    The Graph Compiler selects a kernel for each op and device as follows:
+
+    1. It keeps the registrations whose platform holds for the device.
+    2. If a user-defined registration remains, it keeps only the user-defined
+       ones. Otherwise it keeps the built-in ones.
+    3. It selects the registration whose set of devices is a strict subset of
+       the set of every other remaining registration. In the example, a B200
+       matches `AcceleratorMatmul` and `TcgenMatmul`, and `TcgenMatmul` wins.
+
+    If no registration is a strict subset of all the others, the selection is
+    ambiguous and the Graph Compiler reports an error. To resolve it, narrow a
+    platform or register a kernel for exactly the devices that overlap. Two
+    registrations of the same op for the same set of devices, both built-in or
+    both user-defined, are an error, because neither can ever be selected.
+
+    Parameters:
+        expr: The expression of the platform, inferred from `cond`.
+
+    Args:
+        name: The MAX Graph op name to register (e.g. `"mo.matmul"`).
+        cond: The devices that the kernel supports.
     """
     pass
 

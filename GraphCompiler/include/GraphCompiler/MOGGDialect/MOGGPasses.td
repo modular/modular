@@ -506,6 +506,10 @@ def ImportPackages : Pass<"mogg-import-packages", "ModuleOp"> {
       "decl ops already present in the module, and skip loading built-in "
       "packages. Callers pass only the delta paths not yet loaded; existing "
       "decls in the module are preserved.">,
+    // TODO(GEX-4475): delete once every registration states a platform.
+    Option<"allowPlatformRegistrations", "allow-platform-registrations",
+      "bool", /*default=*/"false",
+      "Accept `register(name, cond)` registrations.">,
   ];
   let dependentDialects = [
     "M::MOGG::MOGGDialect",

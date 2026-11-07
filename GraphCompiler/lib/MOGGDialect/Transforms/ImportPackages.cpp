@@ -261,12 +261,62 @@ struct ExtensibilityAPIStructInfo {
   bool isElementwiseKernel = false;
   mlir::StringAttr registrationName{};
   DeviceInfoAttr deviceInfo{};
+  /// The `cond` platform of `register(name, cond)`, or null for the other
+  /// forms of `register`.
+  KGEN::GeneratorAttr platformExpr{};
+  /// The devices that the registration applies to.
+  PlatformPredicate platform{};
 };
+
+/// Reads the platform of a `register(name, cond)` decorator into `info`.
+static ErrorOrSuccess readPlatform(mlir::TypedAttr decorator,
+                                   ExtensibilityAPIStructInfo &info) {
+  KGEN::GeneratorAttr generator = getRegisterPlatformPredicate(decorator);
+  if (!generator)
+    return Error("invalid platform: the `cond` of a registration must "
+                 "fold to a platform when Mojo parses the decorator");
+  ErrorOr<PlatformPredicate> platform =
+      PlatformPredicate::fromGenerator(generator);
+  if (platform.isError())
+    return Error(std::string("invalid platform: ") + platform.getError());
+  // A registration for no device can never be selected.
+  if (!isSatisfiable(*platform)) {
+    std::string cond = platform->str();
+    if (cond == "false")
+      return Error("invalid platform: it folds to `false`, so it "
+                   "holds for no device");
+    return Error("invalid platform: `" + cond + "` holds for no device");
+  }
+  info.platformExpr = generator;
+  info.platform = platform.takeValue();
+  return {};
+}
 
 static ErrorOr<bool>
 isExtensibilityAPIStruct(KGEN::LIT::StructDeclOp structDeclOp,
                          ExtensibilityAPIStructInfo &info) {
   for (mlir::TypedAttr decorator : structDeclOp.getDecorators()) {
+    // Mojo mangles each overload of `register` with its parameter and
+    // argument lists.
+    std::optional<mlir::SymbolRefAttr> symbol = getDecoratorSymbol(decorator);
+    if (symbol && isMAXCompilerSymbol(*symbol) &&
+        symbol->getLeafReference().strref().starts_with(
+            kRegisterCondDecoratorPrefix)) {
+      auto nameOperand = getDecoratorLambdaArgument(decorator, {1});
+      if (!nameOperand)
+        continue;
+      if (info.registrationName)
+        return Error("Only one op can be registered per kernel");
+      info.registrationName =
+          getStringAttrFromStaticStringDecorator(nameOperand->front());
+      info.deviceInfo =
+          DeviceInfoAttr::get(structDeclOp.getContext(), "", "", "", "",
+                              /*tile_based_fusion=*/false);
+      if (ErrorOrSuccess error = readPlatform(decorator, info))
+        return Error(error.getError());
+      continue;
+    }
+
     auto operands = getDecoratorLambdaArgument(decorator, {1, 2, 3, 4, 5});
     if (!operands)
       continue;
@@ -289,6 +339,7 @@ isExtensibilityAPIStruct(KGEN::LIT::StructDeclOp structDeclOp,
         DeviceInfoAttr::get(structDeclOp.getContext(), type.strref(),
                             api.strref(), arch.strref(), model.strref(),
                             /*tile_based_fusion=*/false);
+    info.platform = PlatformPredicate::fromDeviceInfo(info.deviceInfo);
   }
 
   return info.registrationName != nullptr;
@@ -301,6 +352,7 @@ struct ScannedKernel {
   mlir::StringAttr registration;
   mlir::StringAttr mojoName;
   DeviceInfoAttr deviceInfo;
+  KGEN::GeneratorAttr platformExpr;
   /// The devices that the registration applies to.
   PlatformPredicate platform;
   /// Every method named `execute`; `resolveExecuteOverloads` picks the one
@@ -581,9 +633,11 @@ static mlir::LogicalResult scanForKernelDecls(
     ErrorOr<bool> isExtensibility =
         isExtensibilityAPIStruct(structDeclOp, info);
     if (isExtensibility.isError()) {
+      // Keep scanning, so that the import reports every invalid registration
+      // of the package at once.
       structDeclOp.emitError(isExtensibility.getError());
       result = mlir::failure();
-      return mlir::WalkResult::interrupt();
+      return mlir::WalkResult::advance();
     }
     if (!isExtensibility.takeValue())
       return mlir::WalkResult::advance();
@@ -592,7 +646,8 @@ static mlir::LogicalResult scanForKernelDecls(
     kernel.structDeclOp = structDeclOp;
     kernel.registration = info.registrationName;
     kernel.deviceInfo = info.deviceInfo;
-    kernel.platform = PlatformPredicate::fromDeviceInfo(info.deviceInfo);
+    kernel.platformExpr = info.platformExpr;
+    kernel.platform = info.platform;
     kernel.mojoName = getFullyResolvedMojoName(structDeclOp);
 
     for (auto &op : structDeclOp.getFields().front()) {
@@ -1076,6 +1131,15 @@ struct ImportPackagesPass
     bool sawFailure = false;
 
     for (auto kernel : kernels) {
+      if (kernel.platformExpr && !allowPlatformRegistrations) {
+        kernel.structDeclOp.emitError()
+            << "`register(name, cond)` is not supported yet; restrict the "
+               "registration with the `type`, `api`, `arch`, and `model` "
+               "arguments of `register`";
+        sawFailure = true;
+        continue;
+      }
+
       if (failed(checkNewDevices(kernel, seenRegistrations))) {
         sawFailure = true;
         continue;
@@ -1162,11 +1226,10 @@ struct ImportPackagesPass
 
       auto declOp = KernelDeclOp::create(
           builder, mlir::FusedLoc::get(ctx, fnLocs), kernel.mojoName,
-          kernel.registration, kernel.deviceInfo,
-          /*platform_predicate=*/nullptr, *executeAttr, *elementwiseAttr,
-          *tileElementwiseAttr, *buildGraphAttr, *executeDeviceAttr,
-          *executeConfigurationAttr, kernel.reduction, structParams,
-          mlir::BoolAttr::get(ctx, isUserDefined),
+          kernel.registration, kernel.deviceInfo, kernel.platformExpr,
+          *executeAttr, *elementwiseAttr, *tileElementwiseAttr, *buildGraphAttr,
+          *executeDeviceAttr, *executeConfigurationAttr, kernel.reduction,
+          structParams, mlir::BoolAttr::get(ctx, isUserDefined),
           /*supports_unfused_execute=*/
           kernel.supportsUnfusedExecute ? mlir::UnitAttr::get(ctx)
                                         : mlir::UnitAttr(),

@@ -70,6 +70,10 @@ constexpr size_t kRegisterDecoratorArgApi = 2;
 constexpr size_t kRegisterDecoratorArgArch = 3;
 constexpr size_t kRegisterDecoratorArgModel = 4;
 
+/// The prefix of the mangled leaf name of
+/// `@extensibility.register(name, cond)`.
+constexpr llvm::StringLiteral kRegisterCondDecoratorPrefix = "register[";
+
 constexpr llvm::StringLiteral kMoggTargetParameterName = "target";
 
 /// Lowered specially.

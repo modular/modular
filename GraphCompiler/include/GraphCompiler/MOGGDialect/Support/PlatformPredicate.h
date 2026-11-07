@@ -145,12 +145,20 @@ PlatformPredicateComparison
 comparePlatformPredicates(const PlatformPredicate &first,
                           const PlatformPredicate &second);
 
+/// Returns whether `platform` holds for at least one device.
+bool isSatisfiable(const PlatformPredicate &platform);
+
 /// Calls `fn` on each representative device of `platforms`: each field takes
 /// each literal that a platform compares it with, or a value that no
 /// platform mentions.
 void forEachRepresentativeDevice(
     llvm::ArrayRef<const PlatformPredicate *> platforms,
     llvm::function_ref<void(const SymbolicDevice &)> fn);
+
+/// Returns the platform of a `register(name, cond)` decorator.
+/// The platform is the first parameter of the decorator's callee. Returns
+/// null if `decorator` does not have that form.
+KGEN::GeneratorAttr getRegisterPlatformPredicate(mlir::TypedAttr decorator);
 
 } // namespace M::MOGG
 
