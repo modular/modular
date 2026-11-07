@@ -487,11 +487,10 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_state_tail",
-    srcs = ["test_state_tail.py"],
+    name = "test_verify_ring",
+    srcs = ["test_verify_ring.py"],
     deps = [
         "//max/python/max/dtype",
-        "//max/python/max/graph",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",

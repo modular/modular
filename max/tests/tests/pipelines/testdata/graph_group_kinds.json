@@ -10,7 +10,6 @@
   "logits",
   "mrope_positions",
   "ragged_batch",
-  "recurrent_state_tail",
   "sparse_indices",
   "spec_decode",
   "spec_decode_outputs",

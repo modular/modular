@@ -69,15 +69,6 @@ def _default_export_contract(
     del input_types, structured_output
 
 
-def _default_tail_buffers(tail: Sequence[object]) -> list[Buffer]:
-    """Returns nothing.
-
-    The graph declares every KV child among its KV inputs.
-    """
-    del tail
-    return []
-
-
 def _default_check(
     speculative: SpeculativeConfig, structured_output: bool
 ) -> None:
@@ -240,9 +231,6 @@ class TargetAdapter:
     """The KV leaf a driver dispatches the target over; ``""`` for a target
     with one leaf."""
 
-    tail_kv: str | None = None
-    """The KV child the graph declares past the canonical tail, if any."""
-
     verify: Callable[[Module, Any, ReturnHiddenStates, Any], VerifyFn]
     """Returns how a built target module verifies under a driver."""
 
@@ -261,11 +249,6 @@ class TargetAdapter:
         _default_export_contract
     )
     """Returns the record an engine checks the export's inputs against."""
-
-    tail_buffers: Callable[[Sequence[Any]], list[Buffer]] = (
-        _default_tail_buffers
-    )
-    """Returns the inputs of the ``tail_kv`` child, in declared order."""
 
     check: Callable[[SpeculativeConfig, bool], None] = _default_check
     """Raises if the target can't verify under the speculative config."""

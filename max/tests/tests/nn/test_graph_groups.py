@@ -35,7 +35,6 @@ from max.nn.legacy.graph_groups import (
     Logits,
     MRoPEPositions,
     RaggedBatch,
-    RecurrentStateTail,
     SparseIndices,
     SpecDecode,
     SpecDecodeOutputs,
@@ -90,7 +89,6 @@ def _examples() -> list[GraphGroup[Any, Any]]:
             pinned_bitmask=t, wait_payload=buf, device_bitmask_scratch=buf
         ),
         SpecDecodeOutputs(num_accepted=a, next_tokens=b, next_draft_tokens=a),
-        RecurrentStateTail(pool=((buf,),), live_row_ids=((t,),)),
     ]
 
 

@@ -43,7 +43,6 @@ __all__ = [
     "LogitsName",
     "MRoPEPositions",
     "RaggedBatch",
-    "RecurrentStateTail",
     "SparseIndices",
     "SpecDecode",
     "SpecDecodeOutputs",
@@ -332,20 +331,6 @@ class TokenBitmask(GraphGroup[str, _BitmaskT]):
     """
 
     kind = "token_bitmask"
-
-
-class RecurrentStateTail(
-    GraphGroup[str, tuple[tuple[TensorType | BufferType, ...], ...]]
-):
-    """A recurrent-state cache's inputs in a fused speculative graph's tail.
-
-    ``pool`` holds each region's pool and ``live_row_ids`` each region's
-    ``[num_layers, batch_size]`` rows, every region with one entry per
-    device. A serving engine binds them as it binds a decoder's
-    ``recurrent_state`` leaves.
-    """
-
-    kind = "recurrent_state_tail"
 
 
 class SpecDecodeOutputs(GraphGroup[str, _TensorT | tuple[_TensorT, ...]]):
