@@ -601,11 +601,19 @@ static bool isUnsupportedDebugValue(DebugInfo::ValueOp op) {
   return walkResult.wasInterrupted();
 }
 
-/// Remove debug values that are unsupported by LLVM.
-static void removeUnsupportedDebugValues(Operation *op) {
-  op->walk([](DebugInfo::ValueOp value) {
-    if (isUnsupportedDebugValue(value))
-      value->erase();
+/// Remove debug operations unsupported by LLVM or the target.
+static void removeUnsupportedDebugOps(ModuleOp module) {
+  TargetInfoAttr target = getTargetInfo(module);
+  bool isMetal = target && target.isMetal();
+  module->walk([&](Operation *op) {
+    if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
+      if (isUnsupportedDebugValue(value))
+        value->erase();
+    } else if (isMetal && isa<LineTableLocOp>(op)) {
+      // Metal doesn't support asm nops. Drop the markers before lowering,
+      // since StripDebugInfo removes their locations but leaves the calls.
+      op->erase();
+    }
   });
 }
 
@@ -633,8 +641,8 @@ void DebugInfoToLLVMPass::runOnOperation() {
   // Massage DebugInfo before conversion.
   targetAdapter.preTranslationAdapter(getOperation());
 
-  // Legalize DebugValues.
-  removeUnsupportedDebugValues(getOperation());
+  // Remove unsupported debug operations before conversion.
+  removeUnsupportedDebugOps(getOperation());
 
   // The driver never hands its root to the patterns.
   replacer.replaceElementsIn(getOperation());
