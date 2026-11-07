@@ -21,9 +21,6 @@ weighted but the image batching path is not yet validated for this model.
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.gemma4.context import Gemma4Context
-from max.pipelines.architectures.gemma4.memory_planner import (
-    Gemma4MemoryPlanner,
-)
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.pipeline_variants.block_diffusion_text_generation import (
@@ -32,6 +29,7 @@ from max.pipelines.lib.pipeline_variants.block_diffusion_text_generation import 
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
+from .memory_planner import DiffusionGemmaMemoryPlanner
 from .model import DiffusionGemmaForBlockDiffusionModel
 from .model_config import DiffusionGemmaForBlockDiffusionConfig
 
@@ -54,11 +52,13 @@ diffusion_gemma_arch = SupportedArchitecture(
     config=DiffusionGemmaForBlockDiffusionConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    memory_planner=Gemma4MemoryPlanner,
+    memory_planner=DiffusionGemmaMemoryPlanner,
     # The decoder writes canvas K/V into uncommitted cache slots and reads
     # them back within a step; prefix-cache block reuse across requests is
     # not yet audited against that pattern.
     required_arguments={"enable_prefix_caching": False},
+    # The denoise loop has no fixed-shape decode step to capture.
+    supports_device_graph_capture=False,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
