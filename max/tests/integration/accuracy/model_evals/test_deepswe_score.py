@@ -28,8 +28,13 @@ def _write_trial(
     reward: float | None,
     exception: str | None = None,
     verifier_result: bool = True,
+    **extra: object,
 ) -> None:
-    result: dict[str, object] = {"trial_name": trial, "task_name": task}
+    result: dict[str, object] = {
+        "trial_name": trial,
+        "task_name": task,
+        **extra,
+    }
     if verifier_result:
         result["verifier_result"] = {"rewards": {"reward": reward}}
     if exception:
@@ -119,6 +124,126 @@ def test_unreadable_result_is_an_infra_error(tmp_path: pathlib.Path) -> None:
     assert excluded[0][1].startswith("unreadable result.json")
 
 
+def test_rows_carry_the_uploader_fields(tmp_path: pathlib.Path) -> None:
+    tasks = tmp_path / "tasks"
+    for name in ("alpha", "beta", "gamma"):
+        (tasks / name).mkdir(parents=True)
+    (tasks / "README.md").write_text("not a task")
+    job_dir = tmp_path / "deepswe"
+    job_dir.mkdir()
+    # beta's second attempt started first, so it is repeat 0.
+    _write_trial(
+        job_dir,
+        "beta__1",
+        "datacurve/beta",
+        1,
+        task_id={"path": str(tasks / "beta")},
+        started_at="2026-11-06T05:20:00Z",
+        agent_result={"n_output_tokens": 50, "n_agent_steps": 7},
+    )
+    _write_trial(
+        job_dir,
+        "beta__2",
+        "datacurve/beta",
+        0,
+        exception="AgentTimeoutError",
+        task_id={"path": str(tasks / "beta")},
+        started_at="2026-11-06T05:10:00Z",
+    )
+    _write_trial(
+        job_dir,
+        "gamma__1",
+        "datacurve/gamma",
+        -1,
+        exception="VerifierTimeoutError",
+        task_id={"path": str(tasks / "gamma")},
+    )
+    (job_dir / "beta__1" / "artifacts").mkdir()
+    (job_dir / "beta__1" / "artifacts" / "model.patch").write_text("diff\n")
+
+    rows = {r["trial_name"]: r for r in deepswe_score.trial_rows(job_dir)}
+
+    assert rows["beta__1"] == {
+        "prompt_index": 1,
+        "repeat_index": 1,
+        "task_name": "datacurve/beta",
+        "trial_name": "beta__1",
+        "timestamp": "2026-11-06T05:20:00Z",
+        "passed": True,
+        "reward": 1,
+        "partial": None,
+        "error": None,
+        "agent_error": None,
+        "completion_tokens": 50,
+        "prompt_tokens": None,
+        "cached_tokens": None,
+        "agent_steps": 7,
+        "response": "diff\n",
+    }
+    assert rows["beta__2"]["repeat_index"] == 0
+    assert rows["beta__2"]["passed"] is False
+    assert rows["beta__2"]["error"] is None
+    assert rows["beta__2"]["agent_error"] == "AgentTimeoutError"
+    assert rows["beta__2"]["response"] is None
+    assert rows["gamma__1"]["prompt_index"] == 2
+    assert rows["gamma__1"]["passed"] is False
+    assert rows["gamma__1"]["error"] == "VerifierTimeoutError"
+    assert rows["gamma__1"]["agent_error"] is None
+
+
+def test_rows_without_their_task_directory_have_no_prompt_index(
+    tmp_path: pathlib.Path,
+) -> None:
+    _write_trial(
+        tmp_path, "a__1", "datacurve/a", 1, task_id={"path": "/gone/tasks/a"}
+    )
+    (tmp_path / "b__1").mkdir()
+    (tmp_path / "b__1" / "result.json").write_text("{")
+
+    rows = deepswe_score.trial_rows(tmp_path)
+
+    assert [r["prompt_index"] for r in rows] == [None, None]
+    assert [r["repeat_index"] for r in rows] == [0, 0]
+    assert str(rows[1]["error"]).startswith("unreadable result.json")
+
+
+@pytest.mark.parametrize(
+    "env, config",
+    [
+        (
+            {"OPENAI_API_BASE": "https://gw.example/v1/", "SAMPLE_SIZE": "3"},
+            {"base_url": "https://gw.example", "sample_size": 3},
+        ),
+        ({}, {"base_url": None, "sample_size": None}),
+    ],
+)
+def test_main_writes_results_and_config_for_the_uploader(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    env: dict[str, str],
+    config: dict[str, object],
+) -> None:
+    job_dir = tmp_path / "deepswe"
+    job_dir.mkdir()
+    _write_trial(job_dir, "a__1", "datacurve/a", 1)
+    _write_trial(job_dir, "b__1", "datacurve/b", None, verifier_result=False)
+    monkeypatch.setattr("sys.argv", ["deepswe_score.py", str(job_dir)])
+    for name in ("GITHUB_ENV", "OPENAI_API_BASE", "SAMPLE_SIZE"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+    deepswe_score.main()
+
+    lines = (tmp_path / "results.jsonl").read_text().splitlines()
+    assert [json.loads(line)["trial_name"] for line in lines] == [
+        "a__1",
+        "b__1",
+    ]
+    assert json.loads((tmp_path / "config.json").read_text()) == config
+    assert json.loads((tmp_path / "score.json").read_text())["passed"] == 1
+
+
 def test_main_fails_when_nothing_was_graded(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -133,3 +258,4 @@ def test_main_fails_when_nothing_was_graded(
 
     assert exit_info.value.code != 0
     assert not (tmp_path / "score.json").exists()
+    assert not (tmp_path / "results.jsonl").exists()
