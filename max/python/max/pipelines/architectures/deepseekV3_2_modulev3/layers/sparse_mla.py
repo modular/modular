@@ -498,16 +498,18 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         """Attends this rank's share of the keys and merges the ranks.
 
         ``selection`` packs each token's owned rows with their count (see
-        ``context_parallel.merge_topk``). Every rank attends all of its
-        group's heads over its own rows, stores only the positions it owns,
-        and returns its partial output and LSE; the merge leaves each rank
-        its TP heads for the head-sharded ``o_proj``.
+        ``context_parallel.merge_topk``); over an NVFP4 cache the rows are
+        the value rows then their scale-pool rows. Every rank attends all of
+        its group's heads over its own rows, stores only the positions it
+        owns, and returns its partial output and LSE; the merge leaves each
+        rank its TP heads for the head-sharded ``o_proj``.
 
         With BF16 weights the ranks merge the latent outputs and each applies
         its own heads' ``w_vc`` afterwards, as vLLM and SGLang do; FP8
         weights apply ``w_vc`` in the kernel before the merge.
         """
-        rows, lengths = split_selection(selection, self.index_topk)
+        width = sparse_selection_width(self.kv_params, self.index_topk)
+        rows, lengths = split_selection(selection, width)
         latent = not self.quantized
         kwargs = dict(attn_kwargs)
         if not self.dcp_q_replicate:
@@ -516,7 +518,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             **kwargs,
             sparse_indices=rows,
             sparse_lengths=lengths,
-            sparse_indices_stride=self.index_topk,
+            sparse_indices_stride=width,
             # Each rank holds about 1/dcp of the selected rows; the split-K
             # grid only needs a bound, correctness comes from the lengths.
             split_len_bound=-(-self.index_topk // self.dcp_size) + 16,

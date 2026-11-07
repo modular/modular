@@ -18,11 +18,21 @@ runs `mla_indexer_ragged_float8_paged_cp`, every rank merges the concatenated
 scores with `cp_merge_topk`, and the union of the ranks' rows, mapped back to
 global positions, must be a top-k of the full cache's scores: the same
 multiset of scores as the true top-k, so membership may differ only by ties.
+
+Each group also runs over an NVFP4 MLA cache (`halves = 2`), whose scales
+are paged apart from its values: the indexer then writes each selection's
+scale-pool row `top_k` columns after its value row (`PagedKVScaleRemap`, at
+the rank's local slot through the shared scales lookup table), and
+`cp_merge_topk` must move every kept scale row with its value row, so the
+second half of each merged row is the first half's scale rows.
 """
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.context_parallel import ContextParallelLayout
-from kv_cache.paged_sparse_kv_index_remap import PagedKVRemap
+from kv_cache.paged_sparse_kv_index_remap import (
+    PagedKVRemap,
+    PagedKVScaleRemap,
+)
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from nn.attention.gpu.cp_merge_topk import cp_merge_topk
 from nn.attention.gpu.mla_index_fp8 import (
@@ -164,7 +174,7 @@ def _score_reference[
 
 
 def _run_rank_indexer[
-    top_k: Int, cp_size: Int, cp_interleave: Int
+    top_k: Int, cp_size: Int, cp_interleave: Int, halves: Int
 ](
     mut phys_dev: DeviceBuffer[DType.int32],
     mut scores_dev: DeviceBuffer[DType.bfloat16],
@@ -172,6 +182,7 @@ def _run_rank_indexer[
     qs_dev: DeviceBuffer[DType.float32],
     iro_dev: DeviceBuffer[DType.uint32],
     lut_dev: DeviceBuffer[DType.uint32],
+    scales_lut_dev: DeviceBuffer[DType.uint32],
     rank_dev: DeviceBuffer[DType.int32],
     k_collection: Collection,
     total_seq_len: Int,
@@ -181,43 +192,101 @@ def _run_rank_indexer[
     budget: Int,
     ctx: DeviceContext,
 ) raises:
-    mla_indexer_ragged_float8_paged_cp[
-        DType.float8_e4m3fn,
-        Collection,
-        NUM_HEADS,
-        DEPTH,
-        top_k,
-        MaskName.CAUSAL.name,
-        cp_size,
-        cp_interleave,
-    ](
-        TileTensor(phys_dev, row_major(0, top_k)),
-        TileTensor(scores_dev, row_major(total_seq_len, top_k)),
-        TileTensor(q_dev, row_major(total_seq_len, NUM_HEADS, DEPTH)).as_imm(),
-        TileTensor(qs_dev, row_major(total_seq_len, NUM_HEADS)).as_imm(),
-        TileTensor(iro_dev, row_major(batch_size + 1)).as_imm(),
-        k_collection,
-        UInt32(0),
-        ctx,
-        PagedKVRemap[PAGE](
-            phys_dev.unsafe_ptr(),
-            lut_dev.unsafe_ptr(),
-            pages_per_seq,
-            batch_size,
-            UInt32(num_blocks),
-        ),
-        rank_dev.unsafe_ptr().as_imm(),
-        budget,
-    )
+    """Runs one rank's indexer; `halves = 2` remaps as over an NVFP4 cache.
+
+    The NVFP4 remap writes `[T, 2 * top_k]` rows: the value rows, then the
+    scale-pool rows through `scales_lut_dev`, whose blocks are `PAGE` rows
+    apart.
+    """
+
+    comptime if halves == 2:
+        mla_indexer_ragged_float8_paged_cp[
+            DType.float8_e4m3fn,
+            Collection,
+            NUM_HEADS,
+            DEPTH,
+            top_k,
+            MaskName.CAUSAL.name,
+            cp_size,
+            cp_interleave,
+        ](
+            TileTensor(phys_dev, row_major(0, top_k)),
+            TileTensor(scores_dev, row_major(total_seq_len, top_k)),
+            TileTensor(
+                q_dev, row_major(total_seq_len, NUM_HEADS, DEPTH)
+            ).as_imm(),
+            TileTensor(qs_dev, row_major(total_seq_len, NUM_HEADS)).as_imm(),
+            TileTensor(iro_dev, row_major(batch_size + 1)).as_imm(),
+            k_collection,
+            UInt32(0),
+            ctx,
+            PagedKVScaleRemap[PAGE, top_k](
+                phys_dev.unsafe_ptr(),
+                lut_dev.unsafe_ptr().as_imm(),
+                scales_lut_dev.unsafe_ptr().as_imm(),
+                pages_per_seq,
+                pages_per_seq,
+                batch_size,
+                UInt32(num_blocks),
+                UInt32(num_blocks),
+                PAGE,
+            ),
+            rank_dev.unsafe_ptr().as_imm(),
+            budget,
+        )
+    else:
+        mla_indexer_ragged_float8_paged_cp[
+            DType.float8_e4m3fn,
+            Collection,
+            NUM_HEADS,
+            DEPTH,
+            top_k,
+            MaskName.CAUSAL.name,
+            cp_size,
+            cp_interleave,
+        ](
+            TileTensor(phys_dev, row_major(0, top_k)),
+            TileTensor(scores_dev, row_major(total_seq_len, top_k)),
+            TileTensor(
+                q_dev, row_major(total_seq_len, NUM_HEADS, DEPTH)
+            ).as_imm(),
+            TileTensor(qs_dev, row_major(total_seq_len, NUM_HEADS)).as_imm(),
+            TileTensor(iro_dev, row_major(batch_size + 1)).as_imm(),
+            k_collection,
+            UInt32(0),
+            ctx,
+            PagedKVRemap[PAGE](
+                phys_dev.unsafe_ptr(),
+                lut_dev.unsafe_ptr(),
+                pages_per_seq,
+                batch_size,
+                UInt32(num_blocks),
+            ),
+            rank_dev.unsafe_ptr().as_imm(),
+            budget,
+        )
+
+
+def _scale_row(
+    scales_lut: List[UInt32], pages_per_seq: Int, b: Int, slot: Int
+) -> Int:
+    """Batch entry `b`'s local slot `slot` in a scale pool.
+
+    The pool's blocks are `PAGE` rows apart.
+    """
+    var block = Int(scales_lut[b * pages_per_seq + slot // PAGE])
+    return block * PAGE + slot % PAGE
 
 
 def _check_cp[
-    top_k: Int, cp_size: Int, cp_interleave: Int
+    top_k: Int, cp_size: Int, cp_interleave: Int, halves: Int = 1
 ](
     seq_lens: List[Int],
     cache_lens: List[Int],
     lut_host: List[UInt32],
     lut_dev: DeviceBuffer[DType.uint32],
+    scales_lut_host: List[UInt32],
+    scales_lut_dev: DeviceBuffer[DType.uint32],
     pages_per_seq: Int,
     num_blocks: Int,
     k_full: HostBuffer[DType.float8_e4m3fn],
@@ -231,8 +300,14 @@ def _check_cp[
     budget: Int,
     ctx: DeviceContext,
 ) raises:
-    """Runs every rank of one group and checks the merged selection."""
+    """Runs every rank of one group and checks the merged selection.
+
+    With `halves = 2` the rows also carry each selection's scale-pool row,
+    which must be the scales lookup table's row for the same local slot,
+    before and after the merge.
+    """
     comptime Layout = ContextParallelLayout[cp_size, cp_interleave]
+    comptime W = halves * top_k
     var batch_size = len(seq_lens)
     var total_seq_len = 0
     var max_seq_len = 0
@@ -243,7 +318,7 @@ def _check_cp[
         max_cache_len = max(max_cache_len, cache_lens[b])
     print(
         t"  cp_size={cp_size} interleave={cp_interleave} top_k={top_k}"
-        t" tokens={total_seq_len} budget={budget}"
+        t" halves={halves} tokens={total_seq_len} budget={budget}"
     )
     comptime n_cand = cp_size * top_k
     var n_rows = num_blocks * PAGE
@@ -298,9 +373,7 @@ def _check_cp[
         var rank_dev = ctx.enqueue_create_buffer[DType.int32](1)
         with rank_dev.map_to_host() as rh:
             rh[0] = Int32(r)
-        var phys_dev = ctx.enqueue_create_buffer[DType.int32](
-            total_seq_len * top_k
-        )
+        var phys_dev = ctx.enqueue_create_buffer[DType.int32](total_seq_len * W)
         phys_dev.enqueue_fill(Int32(-2))
         var scores_dev = ctx.enqueue_create_buffer[DType.bfloat16](
             total_seq_len * top_k
@@ -316,13 +389,14 @@ def _check_cp[
             max_seq_len,
             max_cache_len,
         )
-        _run_rank_indexer[top_k, cp_size, cp_interleave](
+        _run_rank_indexer[top_k, cp_size, cp_interleave, halves](
             phys_dev,
             scores_dev,
             q_dev,
             qs_dev,
             iro_dev,
             lut_dev,
+            scales_lut_dev,
             rank_dev,
             coll,
             total_seq_len,
@@ -333,7 +407,7 @@ def _check_cp[
             ctx,
         )
         var phys_host = ctx.enqueue_create_host_buffer[DType.int32](
-            total_seq_len * top_k
+            total_seq_len * W
         )
         var sc_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
             total_seq_len * top_k
@@ -344,25 +418,38 @@ def _check_cp[
 
         # Each local selection is an owned, visible position, scored exactly
         # as the full cache scores it; a row takes min(top_k, local visible).
-        var rows = List[Int32](capacity=total_seq_len * top_k)
+        var rows = List[Int32](capacity=total_seq_len * W)
+        for i in range(total_seq_len * W):
+            rows.append(phys_host[i])
         for t in range(total_seq_len):
             var b = tok_batch[t]
             var n_local = cp.local_len(tok_bound[t])
             var n_live = 0
             for j in range(top_k):
                 var i = t * top_k + j
-                var row = Int(phys_host[i])
-                rows.append(phys_host[i])
+                var row = Int(phys_host[t * W + j])
                 all_scores_host[t * n_cand + r * top_k + j] = sc_host[i]
                 if row < 0:
                     assert_true(
                         sc_host[i] == neg_inf[DType.bfloat16](),
                         "a padding slot's score must be -inf",
                     )
+                    comptime if halves == 2:
+                        assert_equal(
+                            Int(phys_host[t * W + top_k + j]),
+                            -1,
+                            "a padding slot's scale row must be -1",
+                        )
                     continue
                 n_live += 1
                 var page = page_of_block[b][row // PAGE]
                 var slot = page * PAGE + row % PAGE
+                comptime if halves == 2:
+                    assert_equal(
+                        Int(phys_host[t * W + top_k + j]),
+                        _scale_row(scales_lut_host, pages_per_seq, b, slot),
+                        String(t"rank {r} token {t}: wrong scale row"),
+                    )
                 var pos = cp.global_pos(slot)
                 assert_true(
                     slot < n_local and pos < tok_bound[t],
@@ -394,21 +481,17 @@ def _check_cp[
         var rank_dev = ctx.enqueue_create_buffer[DType.int32](1)
         with rank_dev.map_to_host() as rh:
             rh[0] = Int32(r)
-        var rows_dev = ctx.enqueue_create_buffer[DType.int32](
-            total_seq_len * top_k
-        )
+        var rows_dev = ctx.enqueue_create_buffer[DType.int32](total_seq_len * W)
         with rows_dev.map_to_host() as h:
-            for i in range(total_seq_len * top_k):
+            for i in range(total_seq_len * W):
                 h[i] = local_rows[r][i]
-        var out_dev = ctx.enqueue_create_buffer[DType.int32](
-            total_seq_len * top_k
-        )
+        var out_dev = ctx.enqueue_create_buffer[DType.int32](total_seq_len * W)
         out_dev.enqueue_fill(Int32(-2))
         var len_dev = ctx.enqueue_create_buffer[DType.int32](total_seq_len)
-        cp_merge_topk[cp_size, top_k](
-            TileTensor(out_dev, row_major(total_seq_len, top_k)),
+        cp_merge_topk[cp_size, top_k, halves](
+            TileTensor(out_dev, row_major(total_seq_len, W)),
             TileTensor(len_dev, row_major(total_seq_len)),
-            TileTensor(rows_dev, row_major(total_seq_len, top_k)).as_imm(),
+            TileTensor(rows_dev, row_major(total_seq_len, W)).as_imm(),
             TileTensor(
                 all_scores_dev, row_major(total_seq_len, n_cand)
             ).as_imm(),
@@ -416,7 +499,7 @@ def _check_cp[
             ctx,
         )
         var out_host = ctx.enqueue_create_host_buffer[DType.int32](
-            total_seq_len * top_k
+            total_seq_len * W
         )
         var len_host = ctx.enqueue_create_host_buffer[DType.int32](
             total_seq_len
@@ -431,12 +514,30 @@ def _check_cp[
             if cp.local_len(tok_bound[t]) == 0:
                 assert_equal(n, 0, "a rank with no visible keys keeps none")
             for j in range(top_k):
-                var row = Int(out_host[t * top_k + j])
+                var row = Int(out_host[t * W + j])
                 if j >= n:
                     assert_equal(row, -1, "slots past the length must be -1")
+                    comptime if halves == 2:
+                        assert_equal(
+                            Int(out_host[t * W + top_k + j]),
+                            -1,
+                            "scale slots past the length must be -1",
+                        )
                     continue
                 assert_true(row >= 0, "a selected slot must hold a row")
                 var page = page_of_block[b][row // PAGE]
+                comptime if halves == 2:
+                    # The kept value row's scale row moved with it.
+                    assert_equal(
+                        Int(out_host[t * W + top_k + j]),
+                        _scale_row(
+                            scales_lut_host,
+                            pages_per_seq,
+                            b,
+                            page * PAGE + row % PAGE,
+                        ),
+                        String(t"rank {r} token {t}: merged scale row"),
+                    )
                 var pos = cp.global_pos(page * PAGE + row % PAGE)
                 assert_true(cp.owns(pos) and pos < tok_bound[t])
                 merged[t].append(pos)
@@ -538,6 +639,18 @@ def test_cp_indexer[
     with lut_dev.map_to_host() as h:
         for i in range(batch_size * pages_per_seq):
             h[i] = lut_host[i]
+    # An NVFP4 cache's scales page table: block ids of its own, mapped apart
+    # from the values', so a scale row taken from a value row would be wrong.
+    # The remap only does arithmetic on it, so ids need not be distinct.
+    var scales_lut_host = List[UInt32]()
+    for i in range(batch_size * pages_per_seq):
+        scales_lut_host.append(UInt32((Int(lut_host[i]) * 7 + 3) % num_blocks))
+    var scales_lut_dev = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size * pages_per_seq
+    )
+    with scales_lut_dev.map_to_host() as h:
+        for i in range(batch_size * pages_per_seq):
+            h[i] = scales_lut_host[i]
 
     var k_full = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
         n_rows * DEPTH
@@ -589,6 +702,8 @@ def test_cp_indexer[
         cache_lens,
         lut_host,
         lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
         pages_per_seq,
         num_blocks,
         k_full,
@@ -607,6 +722,8 @@ def test_cp_indexer[
         cache_lens,
         lut_host,
         lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
         pages_per_seq,
         num_blocks,
         k_full,
@@ -625,6 +742,8 @@ def test_cp_indexer[
         cache_lens,
         lut_host,
         lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
         pages_per_seq,
         num_blocks,
         k_full,
@@ -643,6 +762,8 @@ def test_cp_indexer[
         cache_lens,
         lut_host,
         lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
         pages_per_seq,
         num_blocks,
         k_full,
@@ -661,6 +782,8 @@ def test_cp_indexer[
         cache_lens,
         lut_host,
         lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
         pages_per_seq,
         num_blocks,
         k_full,
@@ -679,6 +802,69 @@ def test_cp_indexer[
         cache_lens,
         lut_host,
         lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
+        pages_per_seq,
+        num_blocks,
+        k_full,
+        ks_full,
+        q_dev,
+        qs_dev,
+        iro_dev,
+        cl_dev,
+        ref_scores,
+        ref_stride,
+        budget,
+        ctx,
+    )
+    # Over an NVFP4 MLA cache: value rows, then their scale-pool rows.
+    _check_cp[top_k, 2, 1, halves=2](
+        seq_lens,
+        cache_lens,
+        lut_host,
+        lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
+        pages_per_seq,
+        num_blocks,
+        k_full,
+        ks_full,
+        q_dev,
+        qs_dev,
+        iro_dev,
+        cl_dev,
+        ref_scores,
+        ref_stride,
+        budget,
+        ctx,
+    )
+    _check_cp[top_k, 8, 1, halves=2](
+        seq_lens,
+        cache_lens,
+        lut_host,
+        lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
+        pages_per_seq,
+        num_blocks,
+        k_full,
+        ks_full,
+        q_dev,
+        qs_dev,
+        iro_dev,
+        cl_dev,
+        ref_scores,
+        ref_stride,
+        budget,
+        ctx,
+    )
+    _check_cp[top_k, 4, PAGE, halves=2](
+        seq_lens,
+        cache_lens,
+        lut_host,
+        lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
         pages_per_seq,
         num_blocks,
         k_full,
@@ -698,6 +884,8 @@ def test_cp_indexer[
         cache_lens,
         lut_host,
         lut_dev,
+        scales_lut_host,
+        scales_lut_dev,
         pages_per_seq,
         num_blocks,
         k_full,

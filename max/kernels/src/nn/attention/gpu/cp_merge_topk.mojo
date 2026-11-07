@@ -25,6 +25,12 @@ Per row, a two-pass radix select over the bf16 scores' order-preserving 16-bit
 keys finds the k-th largest score `t` and how many candidates scoring exactly
 `t` the top-k takes; those ties go to the lowest columns, so the choice is
 deterministic and agreed on by every rank without communication.
+
+Over an NVFP4 latent cache each selection carries a second row, its row in
+the cache's scale pool, which the indexer writes `top_k` columns after the
+value row (`PagedKVScaleRemap`). With `halves = 2` a row of `local_rows` and
+`out_rows` is `2 * top_k` wide, and the merge moves each kept selection's
+scale row with its value row, so both halves come out compacted the same way.
 """
 
 from std.atomic import Atomic, Ordering
@@ -122,12 +128,12 @@ def _select_digit[
             above += count
 
 
-@__name(t"cp_merge_topk_{dcp}x{top_k}")
+@__name(t"cp_merge_topk_{dcp}x{top_k}x{halves}")
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(_MERGE_THREADS))
 )
 def _cp_merge_topk_kernel[
-    dcp: Int, top_k: Int
+    dcp: Int, top_k: Int, halves: Int
 ](
     local_rows: ImmPointer[Int32, ImmUntrackedOrigin],
     scores: ImmPointer[BFloat16, ImmUntrackedOrigin],
@@ -139,6 +145,9 @@ def _cp_merge_topk_kernel[
     comptime N = dcp * top_k
     comptime NT = _MERGE_THREADS
     comptime MASK = UInt16(_BINS - 1)
+    # Row stride of `local_rows` and `out_rows`: the value rows, then (with
+    # `halves == 2`) the matching scale rows.
+    comptime W = halves * top_k
     var tid = thread_idx.x
     var row = block_idx.x
 
@@ -229,7 +238,7 @@ def _cp_merge_topk_kernel[
                 block_size=NT, exclusive=True
             ](UInt32(Int(tie)))
             barrier()
-            var local_row = local_rows[row * top_k + j] if live else Int32(-1)
+            var local_row = local_rows[row * W + j] if live else Int32(-1)
             var sel = (
                 key != 0
                 and local_row >= 0
@@ -244,14 +253,19 @@ def _cp_merge_topk_kernel[
             )
             barrier()
             if sel:
-                out_rows[row * top_k + Int(slot)] = local_row
+                out_rows[row * W + Int(slot)] = local_row
+                comptime for h in range(1, halves):
+                    out_rows[row * W + h * top_k + Int(slot)] = local_rows[
+                        row * W + h * top_k + j
+                    ]
             ties_before += block.sum[block_size=NT](UInt32(Int(tie)))
             barrier()
             n_sel += block.sum[block_size=NT](UInt32(Int(sel)))
             barrier()
 
         for i in range(Int(n_sel) + tid, top_k, NT):
-            out_rows[row * top_k + i] = -1
+            comptime for h in range(halves):
+                out_rows[row * W + h * top_k + i] = -1
         if tid == 0:
             out_lengths[row] = Int32(n_sel)
 
@@ -264,6 +278,7 @@ def cp_merge_topk[
     //,
     dcp: Int,
     top_k: Int,
+    halves: Int = 1,
 ](
     out_rows: MutTileTensor[.int32, out_layout, _],
     out_lengths: MutTileTensor[.int32, lengths_layout, _],
@@ -282,6 +297,11 @@ def cp_merge_topk[
     of each row. Padding is a `-inf` score, which never selects; a selected
     candidate whose row is `-1` is dropped.
 
+    With `halves = 2` each row of `local_rows` is a selection's value rows
+    then its scale-pool rows (an NVFP4 cache's indexer output), and each kept
+    selection's scale row moves with its value row: `out_rows`' second half is
+    compacted exactly as its first, and `out_lengths` counts either half.
+
     Parameters:
         rows_layout: Layout of `local_rows`.
         scores_layout: Layout of `scores`.
@@ -289,19 +309,27 @@ def cp_merge_topk[
         lengths_layout: Layout of `out_lengths`.
         dcp: Ranks in the group.
         top_k: Selections per token on each rank and in the merged result.
+        halves: Rows per selection, 1, or 2 for a value row and its scale
+            row `top_k` columns later (defaults to 1).
 
     Args:
-        out_rows: Dense `[T, top_k]` this rank's selected rows, in column
-            order, then `-1`.
+        out_rows: Dense `[T, halves * top_k]` this rank's selected rows, in
+            column order, then `-1`; with `halves = 2` their scale rows
+            follow at column `top_k`, compacted the same way.
         out_lengths: Dense `[T]` how many of `out_rows`' slots are selected.
-        local_rows: Dense `[T, top_k]` this rank's local selections, the rows
-            matching `scores[:, rank * top_k :][:, :top_k]`.
+        local_rows: Dense `[T, halves * top_k]` this rank's local
+            selections, the rows matching
+            `scores[:, rank * top_k :][:, :top_k]`, then (with `halves = 2`)
+            their scale rows.
         scores: Dense `[T, dcp * top_k]` bf16 scores of every rank's selections,
             rank-major, `-inf` for padding.
         cp_rank: This rank in `[0, dcp)`, one `int32` on the device.
         ctx: Device context.
     """
     comptime assert dcp >= 1 and top_k >= 1
+    comptime assert (
+        halves == 1 or halves == 2
+    ), "a selection is a value row, or a value row and its scale row"
     comptime assert dcp * top_k <= _MAX_CANDIDATES, (
         "the candidates' keys are staged in shared memory, which holds at most"
         " 16384"
@@ -310,20 +338,21 @@ def cp_merge_topk[
     comptime assert scores.flat_rank == 2 and out_lengths.flat_rank == 1
     var rows = Int(local_rows.dim[0]())
     if (
-        Int(local_rows.dim[1]()) != top_k
+        Int(local_rows.dim[1]()) != halves * top_k
         or Int(out_rows.dim[0]()) != rows
-        or Int(out_rows.dim[1]()) != top_k
+        or Int(out_rows.dim[1]()) != halves * top_k
         or Int(scores.dim[0]()) != rows
         or Int(scores.dim[1]()) != dcp * top_k
         or Int(out_lengths.dim[0]()) != rows
     ):
         raise Error(
-            "cp_merge_topk: expected local_rows and out_rows [T, top_k],"
+            "cp_merge_topk: expected local_rows and out_rows"
+            " [T, halves * top_k],"
             " scores [T, dcp * top_k] and out_lengths [T]"
         )
     if rows == 0:
         return
-    comptime kernel = _cp_merge_topk_kernel[dcp, top_k]
+    comptime kernel = _cp_merge_topk_kernel[dcp, top_k, halves]
     ctx.enqueue_function[kernel](
         local_rows.unsafe_ptr().unsafe_origin_cast[ImmUntrackedOrigin](),
         scores.unsafe_ptr().unsafe_origin_cast[ImmUntrackedOrigin](),

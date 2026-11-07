@@ -52,6 +52,18 @@ default: `latent_output` returns the attention's 512-wide latent output,
 which `w_uv` projects to the default output with the same LSE, and
 `q_absorbed` takes a pre-absorbed query `[q_nope @ w_uk, q_rope]` and attends
 as the default does.
+
+`run_nvfp4_cp_store` and `run_nvfp4_cp_owned_rows` run the same BF16 branch
+over a packed NVFP4 latent cache, as the `.sparse.nvfp4.cp` op does: 256 bytes
+of e2m1 pairs and 64 FP8 rope bytes per row, one E4M3 scale per 16 latent
+elements in a scale pool paged apart from the values (its own lookup table, a
+permutation of the values'). Each index row is the
+selected value rows, then their scale-pool rows, each half compacted the same
+way, with a per-token length counting either half. The store must write each
+owned new token's packed row and its scales at the rank's local slot, both
+exactly as a group of one writes them at the token's position, and leave every
+other value and scale byte as it was; the ranks' outputs over their compacted
+owned rows must merge to a group of one's over the whole selection.
 """
 
 from std.math import ceildiv, exp, exp2, gcd, log, log2
@@ -1436,6 +1448,640 @@ def run_bf16_branch_modes(
     )
 
 
+# ===-----------------------------------------------------------------------===#
+# NVFP4 latent cache
+# ===-----------------------------------------------------------------------===#
+
+# A packed row: the 512-element latent as e2m1 pairs, then the 64 rope dims as
+# FP8 bytes.
+comptime NV_PACKED_ROW = V_DEPTH // 2 + B_ROPE
+# One E4M3 scale per 16 latent elements.
+comptime NV_SF_PER_ROW = V_DEPTH // 16
+# `quantization_granularity` counts packed bytes: 16 elements are 8 bytes.
+comptime NV_QUANT_GRANULARITY = 8
+
+
+def _nvfp4_value_byte(i: Int) -> UInt8:
+    """Byte `i` of the initial packed cache.
+
+    Latent bytes hold any two e2m1 codes; rope bytes stay small finite FP8
+    (never the E4M3 NaN encodings 0x7F and 0xFF).
+    """
+    if i % NV_PACKED_ROW < V_DEPTH // 2:
+        return UInt8((i * 37 + 11) % 256)
+    var mag = UInt8((i * 13 + 5) % 0x38)
+    return mag | (UInt8(0x80) if i % 3 == 0 else UInt8(0))
+
+
+def _nvfp4_scale_byte(i: Int) -> UInt8:
+    """Byte `i` of the initial scale pool: an E4M3 scale in about [0.1, 1]."""
+    return UInt8(0x28 + (i * 5) % 24)
+
+
+def _nvfp4_scale_row(
+    scales_lut: List[Int], pages: Int, b: Int, slot: Int
+) -> Int:
+    """Batch entry `b`'s slot `slot` in the scale pool.
+
+    The pool's blocks are `PAGE_SIZE` rows apart (one layer).
+    """
+    return scales_lut[b * pages + slot // PAGE_SIZE] * PAGE_SIZE + (
+        slot % PAGE_SIZE
+    )
+
+
+def _run_nvfp4_branch[
+    dcp_size: Int,
+    dcp_interleave: Int,
+    sel_dcp: Int = dcp_size,
+    sel_interleave: Int = dcp_interleave,
+](
+    ctx: DeviceContext,
+    seq_lens: List[Int],
+    cache_len: Int,
+    rank: Int,
+    q_in: List[Scalar[DType.bfloat16]],
+    mut values_out: List[UInt8],
+    mut scales_out: List[UInt8],
+    mut scales_lut_out: List[Int],
+    mut out_out: List[Float32],
+    mut lse_out: List[Float32],
+    sel_rank: Int = -1,
+) raises:
+    """Runs `mla_decode_branch_bf16` over an NVFP4 cache, as the
+    `.sparse.nvfp4.cp` op does, for one rank.
+
+    The packed values start as `_nvfp4_value_byte` and the scale pool as
+    `_nvfp4_scale_byte`; then each cached position this rank owns gets the
+    initial value row and scale row of its global position at its local slot,
+    so the ranks hold one cache between them. Each token attends over the
+    rows of `_bf16_owned_selection` this rank owns, compacted as local slots:
+    value rows first, their scale-pool rows `B_TOPK` columns later, `-1`
+    after both and a per-token length. With `sel_dcp` and `sel_rank` the
+    selection is instead the rows rank `sel_rank` of a `sel_dcp` group owns
+    (`sel_interleave` positions in turn), so a group of one can attend over
+    exactly one rank's share at the positions' own slots. Returns the value
+    and scale bytes, the scale lookup table, the output
+    `[tokens, B_HEADS, B_V]` and the LSE.
+    """
+    comptime bf16 = DType.bfloat16
+    comptime fp8 = DType.float8_e4m3fn
+    comptime kv_params = KVCacheStaticParams(
+        num_heads=1,
+        head_size=NV_PACKED_ROW,
+        is_mla=True,
+        fp8_tail_size=B_ROPE,
+    )
+    comptime stride = 2 * B_TOPK
+    var batch_size = len(seq_lens)
+    var q_max = 0
+    var total = 0
+    for s in seq_lens:
+        q_max = max(q_max, s)
+        total += s
+    var num_keys = cache_len + q_max
+    var pages = ceildiv(num_keys, PAGE_SIZE)
+    var n_pages = batch_size * pages
+    var value_elems = n_pages * PAGE_SIZE * NV_PACKED_ROW
+    var scale_elems = n_pages * PAGE_SIZE * NV_SF_PER_ROW
+    if B_TOPK > cache_len:
+        raise Error("B_TOPK must not exceed the cached keys")
+
+    # The values' table is the identity; the scales' a permutation of it.
+    var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](n_pages)
+    var slut_host = ctx.enqueue_create_host_buffer[DType.uint32](n_pages)
+    var mult = _coprime_multiplier(n_pages)
+    scales_lut_out = List[Int](length=n_pages, fill=0)
+    for i in range(n_pages):
+        lut_host[i] = UInt32(i)
+        var sb = (i * mult + 1) % n_pages
+        slut_host[i] = UInt32(sb)
+        scales_lut_out[i] = sb
+
+    var values_host = ctx.enqueue_create_host_buffer[DType.uint8](value_elems)
+    for i in range(value_elems):
+        values_host[i] = _nvfp4_value_byte(i)
+    var scales_host = ctx.enqueue_create_host_buffer[fp8](scale_elems)
+    for i in range(scale_elems):
+        scales_host[i] = bitcast[fp8, 1](
+            SIMD[DType.uint8, 1](_nvfp4_scale_byte(i))
+        )[0]
+    var layout = ContextParallelLayout[dcp_size, dcp_interleave](rank)
+    for b in range(batch_size):
+        for pos in range(cache_len):
+            if not layout.owns(pos):
+                continue
+            var slot = layout.local_slot(pos)
+            var src = b * pages * PAGE_SIZE + pos
+            var dst = b * pages * PAGE_SIZE + slot
+            for d in range(NV_PACKED_ROW):
+                values_host[dst * NV_PACKED_ROW + d] = _nvfp4_value_byte(
+                    src * NV_PACKED_ROW + d
+                )
+            var src_s = _nvfp4_scale_row(scales_lut_out, pages, b, pos)
+            var dst_s = _nvfp4_scale_row(scales_lut_out, pages, b, slot)
+            for g in range(NV_SF_PER_ROW):
+                scales_host[dst_s * NV_SF_PER_ROW + g] = bitcast[fp8, 1](
+                    SIMD[DType.uint8, 1](
+                        _nvfp4_scale_byte(src_s * NV_SF_PER_ROW + g)
+                    )
+                )[0]
+    var values_dev = ctx.enqueue_create_buffer[DType.uint8](value_elems)
+    ctx.enqueue_copy(values_dev, values_host)
+    var scales_dev = ctx.enqueue_create_buffer[fp8](scale_elems)
+    ctx.enqueue_copy(scales_dev, scales_host)
+    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](n_pages)
+    ctx.enqueue_copy(lut_dev, lut_host)
+    var slut_dev = ctx.enqueue_create_buffer[DType.uint32](n_pages)
+    ctx.enqueue_copy(slut_dev, slut_host)
+    var cl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch_size)
+    var ro_host = ctx.enqueue_create_host_buffer[DType.uint32](batch_size + 1)
+    ro_host[0] = 0
+    for b in range(batch_size):
+        cl_host[b] = UInt32(cache_len)
+        ro_host[b + 1] = ro_host[b] + UInt32(seq_lens[b])
+    var cl_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    ctx.enqueue_copy(cl_dev, cl_host)
+    var ro_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    ctx.enqueue_copy(ro_dev, ro_host)
+
+    # Value rows, then their scale rows, both compacted the same way.
+    var idx_host = ctx.enqueue_create_host_buffer[DType.int32](total * stride)
+    var len_host = ctx.enqueue_create_host_buffer[DType.int32](total)
+    for b in range(batch_size):
+        for s in range(seq_lens[b]):
+            var t = Int(ro_host[b]) + s
+            var owned = _bf16_owned_selection[sel_dcp, sel_interleave](
+                sel_rank if sel_rank >= 0 else rank, t, cache_len
+            )
+            len_host[t] = Int32(len(owned))
+            for i in range(B_TOPK):
+                var value_row = Int32(-1)
+                var scale_row = Int32(-1)
+                if i < len(owned):
+                    var slot = layout.local_slot(owned[i])
+                    value_row = Int32(b * pages * PAGE_SIZE + slot)
+                    scale_row = Int32(
+                        _nvfp4_scale_row(scales_lut_out, pages, b, slot)
+                    )
+                idx_host[t * stride + i] = value_row
+                idx_host[t * stride + B_TOPK + i] = scale_row
+    var idx_dev = ctx.enqueue_create_buffer[DType.int32](total * stride)
+    ctx.enqueue_copy(idx_dev, idx_host)
+    var len_dev = ctx.enqueue_create_buffer[DType.int32](total)
+    ctx.enqueue_copy(len_dev, len_host)
+
+    var q_n = total * B_HEADS * B_Q_DEPTH
+    if len(q_in) != q_n:
+        raise Error("q_in has the wrong size")
+    var q_host = ctx.enqueue_create_host_buffer[bf16](q_n)
+    for i in range(q_n):
+        q_host[i] = q_in[i]
+    var q_dev = ctx.enqueue_create_buffer[bf16](q_n)
+    ctx.enqueue_copy(q_dev, q_host)
+    var kv_n = total * Q_DEPTH
+    var kv_host = ctx.enqueue_create_host_buffer[bf16](kv_n)
+    for i in range(kv_n):
+        kv_host[i] = Scalar[bf16](Float32((i % 61) - 30) * 0.03)
+    var kv_dev = ctx.enqueue_create_buffer[bf16](kv_n)
+    ctx.enqueue_copy(kv_dev, kv_host)
+    var wuk_n = B_HEADS * V_DEPTH * B_NOPE
+    var wuk_host = ctx.enqueue_create_host_buffer[bf16](wuk_n)
+    for i in range(wuk_n):
+        wuk_host[i] = _bf16_w_uk(i)
+    var wuk_dev = ctx.enqueue_create_buffer[bf16](wuk_n)
+    ctx.enqueue_copy(wuk_dev, wuk_host)
+    var wuv_n = B_HEADS * B_V * V_DEPTH
+    var wuv_host = ctx.enqueue_create_host_buffer[bf16](wuv_n)
+    for i in range(wuv_n):
+        wuv_host[i] = _bf16_w_uv(i)
+    var wuv_dev = ctx.enqueue_create_buffer[bf16](wuv_n)
+    ctx.enqueue_copy(wuv_dev, wuv_host)
+    var freqs_n = num_keys * B_ROPE
+    var freqs_host = ctx.enqueue_create_host_buffer[DType.float32](freqs_n)
+    for i in range(freqs_n):
+        freqs_host[i] = Float32(0.5) if i % 2 == 0 else Float32(0.25)
+    var freqs_dev = ctx.enqueue_create_buffer[DType.float32](freqs_n)
+    ctx.enqueue_copy(freqs_dev, freqs_host)
+    var gamma_dev = ctx.enqueue_create_buffer[bf16](V_DEPTH)
+    ctx.enqueue_memset(gamma_dev, Scalar[bf16](1.0))
+    var out_n = total * B_HEADS * B_V
+    var out_dev = ctx.enqueue_create_buffer[bf16](out_n)
+    ctx.enqueue_memset(out_dev, Scalar[bf16](7.0))
+    var lse_dev = ctx.enqueue_create_buffer[DType.float32](total * B_HEADS)
+    ctx.enqueue_memset(lse_dev, Float32(123.0))
+    ctx.synchronize()
+
+    comptime Collection = PagedKVCacheCollection[
+        DType.uint8,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+        scale_dtype_=fp8,
+        quantization_granularity_=NV_QUANT_GRANULARITY,
+    ]
+    var values_tt = TileTensor(
+        values_dev,
+        row_major(
+            Int64(n_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[1],
+            Idx[NV_PACKED_ROW],
+        ),
+    )
+    var scales_tt = TileTensor(
+        scales_dev,
+        row_major(
+            Int64(n_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[1],
+            Idx[NV_SF_PER_ROW],
+        ),
+    )
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](values_tt.as_unsafe_any_origin()),
+        TileTensor(cl_dev, row_major(batch_size))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(lut_dev, row_major(batch_size, pages))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        UInt32(q_max),
+        UInt32(cache_len),
+        rebind[Collection.scales_tt_type](scales_tt.as_unsafe_any_origin()),
+        TileTensor(slut_dev, row_major(batch_size, pages))
+        .as_imm()
+        .as_unsafe_any_origin(),
+    )
+    var kv_in_tt = TileTensor(
+        kv_dev.unsafe_ptr(), row_major((total, Idx[Q_DEPTH]))
+    )
+
+    @inline(.always)
+    def kv_input_fn[
+        width: Int
+    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
+        return kv_in_tt.load[width=width](Coord(coords))
+
+    var mla_args = MLADispatchScalarArgs[num_heads=B_HEADS, is_fp8_kv=True](
+        batch_size, cache_len, q_max, ctx
+    )
+    mla_decode_branch_bf16[
+        mask_str="causal",
+        sparse_mla=True,
+        skip_masked_tiles=True,
+        dcp_size=dcp_size,
+        dcp_interleave=dcp_interleave,
+        kernels=SM100MLAGraph,
+    ](
+        TileTensor(
+            out_dev.unsafe_ptr(),
+            row_major((total, Idx[B_HEADS], Idx[B_V])),
+        ),
+        TileTensor(
+            q_dev.unsafe_ptr(),
+            row_major((total, Idx[B_HEADS], Idx[B_Q_DEPTH])),
+        ),
+        TileTensor(ro_dev.unsafe_ptr(), row_major(batch_size + 1)),
+        TileTensor(freqs_dev.unsafe_ptr(), row_major((num_keys, Idx[B_ROPE]))),
+        TileTensor(gamma_dev.unsafe_ptr(), row_major(Idx[V_DEPTH])),
+        kv_collection,
+        UInt32(0),
+        SCALE,
+        Float32(1e-6),
+        TileTensor(
+            wuk_dev.unsafe_ptr(),
+            row_major((Idx[B_HEADS], Idx[V_DEPTH], Idx[B_NOPE])),
+        ),
+        TileTensor(
+            wuv_dev.unsafe_ptr(),
+            row_major((Idx[B_HEADS], Idx[B_V], Idx[V_DEPTH])),
+        ),
+        mla_args.gpu_tile_tensor(),
+        kv_input_fn,
+        ctx,
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](idx_dev.unsafe_ptr()),
+        indices_stride=stride,
+        topk_lengths=NonNullPointer[DType.int32](
+            len_dev.unsafe_ptr().as_imm().as_unsafe_any_origin()
+        ),
+        lse_out=NonNullPointer[DType.float32](lse_dev),
+        split_len_bound=B_TOPK,
+        dcp_rank=rank,
+    )
+    ctx.enqueue_copy(values_host, values_dev)
+    ctx.enqueue_copy(scales_host, scales_dev)
+    var out_host = ctx.enqueue_create_host_buffer[bf16](out_n)
+    ctx.enqueue_copy(out_host, out_dev)
+    var lse_host = ctx.enqueue_create_host_buffer[DType.float32](
+        total * B_HEADS
+    )
+    ctx.enqueue_copy(lse_host, lse_dev)
+    ctx.synchronize()
+
+    values_out = List[UInt8](length=value_elems, fill=0)
+    for i in range(value_elems):
+        values_out[i] = values_host[i]
+    scales_out = List[UInt8](length=scale_elems, fill=0)
+    for i in range(scale_elems):
+        scales_out[i] = bitcast[DType.uint8, 1](SIMD[fp8, 1](scales_host[i]))[0]
+    out_out = List[Float32](length=out_n, fill=0)
+    for i in range(out_n):
+        out_out[i] = out_host[i].cast[DType.float32]()
+    lse_out = List[Float32](length=total * B_HEADS, fill=0)
+    for i in range(total * B_HEADS):
+        lse_out[i] = lse_host[i]
+
+    _ = values_dev^
+    _ = scales_dev^
+    _ = lut_dev^
+    _ = slut_dev^
+    _ = cl_dev^
+    _ = ro_dev^
+    _ = idx_dev^
+    _ = len_dev^
+    _ = q_dev^
+    _ = kv_dev^
+    _ = wuk_dev^
+    _ = wuv_dev^
+    _ = freqs_dev^
+    _ = gamma_dev^
+    _ = out_dev^
+    _ = lse_dev^
+    _ = mla_args^
+
+
+def run_nvfp4_cp_store[
+    dcp_size: Int, dcp_interleave: Int
+](ctx: DeviceContext, seq_lens: List[Int], cache_len: Int) raises:
+    """Checks the CP latent store of the NVFP4 branch: values and scales.
+
+    Each rank must store exactly the new tokens it owns: the packed row at
+    `local_slot(pos)` with the bytes a group of one stores at `pos`, and its
+    32 scales at the local slot's scale-pool row with the scales a group of
+    one stores at `pos`'s. Every other value and scale byte keeps the image
+    the rank started from.
+    """
+    print(
+        t"nvfp4_cp_store: dcp={dcp_size} interleave={dcp_interleave}"
+        t" cache_len={cache_len}"
+    )
+    var total = 0
+    var q_max = 0
+    for s in seq_lens:
+        total += s
+        q_max = max(q_max, s)
+    var q = _bf16_plain_q(total)
+    var ref_values = List[UInt8]()
+    var ref_scales = List[UInt8]()
+    var slut = List[Int]()
+    var out = List[Float32]()
+    var lse = List[Float32]()
+    _run_nvfp4_branch[1, 1](
+        ctx, seq_lens, cache_len, 0, q, ref_values, ref_scales, slut, out, lse
+    )
+    var pages = ceildiv(cache_len + q_max, PAGE_SIZE)
+    for r in range(dcp_size):
+        var got_values = List[UInt8]()
+        var got_scales = List[UInt8]()
+        _run_nvfp4_branch[dcp_size, dcp_interleave](
+            ctx,
+            seq_lens,
+            cache_len,
+            r,
+            q,
+            got_values,
+            got_scales,
+            slut,
+            out,
+            lse,
+        )
+        var layout = ContextParallelLayout[dcp_size, dcp_interleave](r)
+        # The image the rank started from: the initial pattern, with its
+        # owned cached positions moved to their local slots.
+        var want_values = List[UInt8](length=len(ref_values), fill=0)
+        for i in range(len(want_values)):
+            want_values[i] = _nvfp4_value_byte(i)
+        var want_scales = List[UInt8](length=len(ref_scales), fill=0)
+        for i in range(len(want_scales)):
+            want_scales[i] = _nvfp4_scale_byte(i)
+        for b in range(len(seq_lens)):
+            for pos in range(cache_len):
+                if not layout.owns(pos):
+                    continue
+                var slot = layout.local_slot(pos)
+                var src = b * pages * PAGE_SIZE + pos
+                var dst = b * pages * PAGE_SIZE + slot
+                for d in range(NV_PACKED_ROW):
+                    want_values[dst * NV_PACKED_ROW + d] = _nvfp4_value_byte(
+                        src * NV_PACKED_ROW + d
+                    )
+                var src_s = _nvfp4_scale_row(slut, pages, b, pos)
+                var dst_s = _nvfp4_scale_row(slut, pages, b, slot)
+                for g in range(NV_SF_PER_ROW):
+                    want_scales[dst_s * NV_SF_PER_ROW + g] = _nvfp4_scale_byte(
+                        src_s * NV_SF_PER_ROW + g
+                    )
+        # Then the new tokens it owns, as the group of one stored them.
+        var stored = 0
+        for b in range(len(seq_lens)):
+            for s in range(seq_lens[b]):
+                var pos = cache_len + s
+                if not layout.owns(pos):
+                    continue
+                var slot = layout.local_slot(pos)
+                var src = b * pages * PAGE_SIZE + pos
+                var dst = b * pages * PAGE_SIZE + slot
+                var changed = False
+                for d in range(NV_PACKED_ROW):
+                    var v = ref_values[src * NV_PACKED_ROW + d]
+                    want_values[dst * NV_PACKED_ROW + d] = v
+                    changed = changed or v != _nvfp4_value_byte(
+                        src * NV_PACKED_ROW + d
+                    )
+                var src_s = _nvfp4_scale_row(slut, pages, b, pos)
+                var dst_s = _nvfp4_scale_row(slut, pages, b, slot)
+                var scales_changed = False
+                for g in range(NV_SF_PER_ROW):
+                    var v = ref_scales[src_s * NV_SF_PER_ROW + g]
+                    want_scales[dst_s * NV_SF_PER_ROW + g] = v
+                    scales_changed = scales_changed or v != _nvfp4_scale_byte(
+                        src_s * NV_SF_PER_ROW + g
+                    )
+                assert_true(changed, "the plain store left a new row as is")
+                assert_true(
+                    scales_changed, "the plain store left a new row's scales"
+                )
+                stored += 1
+        var bad_values = 0
+        for i in range(len(want_values)):
+            if got_values[i] != want_values[i]:
+                bad_values += 1
+        var bad_scales = 0
+        for i in range(len(want_scales)):
+            if got_scales[i] != want_scales[i]:
+                bad_scales += 1
+        print(
+            t"  rank={r} stored={stored} mismatched_value_bytes={bad_values}"
+            t" mismatched_scale_bytes={bad_scales}"
+        )
+        assert_true(
+            bad_values == 0, "the CP store's values differ from the expected"
+        )
+        assert_true(
+            bad_scales == 0, "the CP store's scales differ from the expected"
+        )
+
+
+def run_nvfp4_cp_owned_rows[
+    dcp_size: Int, dcp_interleave: Int
+](ctx: DeviceContext, seq_lens: List[Int], cache_len: Int) raises:
+    """Checks the NVFP4 `.cp` branch on compacted owned value and scale rows.
+
+    Each rank, reading its share at local slots through the value and scale
+    halves of its index rows, must return exactly, bit for bit, what a group
+    of one returns for the same selected positions at their own slots. As in
+    `run_bf16_cp_owned_rows`, a token with no rows (token 0) must return LSE
+    `-inf` and a zero output, every other a finite LSE, and the ranks' base-2
+    LSE merge must match a group of one over the whole selection. That merge
+    is exact in the LSE; the NVFP4 kernel multiplies FP8 probabilities by the
+    FP8 values, so each rank's output rounds its own normalized probabilities
+    and the merged output matches to FP8 precision, within 5% of the output's
+    largest magnitude.
+    """
+    print(
+        t"nvfp4_cp_owned_rows: dcp={dcp_size} interleave={dcp_interleave}"
+        t" cache_len={cache_len}"
+    )
+    var total = 0
+    for s in seq_lens:
+        total += s
+    var q = _bf16_plain_q(total)
+    var values = List[UInt8]()
+    var scales = List[UInt8]()
+    var slut = List[Int]()
+    var ref_out = List[Float32]()
+    var ref_lse = List[Float32]()
+    _run_nvfp4_branch[1, 1](
+        ctx, seq_lens, cache_len, 0, q, values, scales, slut, ref_out, ref_lse
+    )
+    var n = total * B_HEADS
+    var merged_m = List[Float64](length=n, fill=min_or_neg_inf[DType.float64]())
+    var merged_w = List[Float64](length=n, fill=0)
+    var merged_o = List[Float64](length=n * B_V, fill=0)
+    var empty_rows = 0
+    var short_rows = 0
+    var max_abs = Float64(0)
+    for r in range(dcp_size):
+        var out = List[Float32]()
+        var lse = List[Float32]()
+        _run_nvfp4_branch[dcp_size, dcp_interleave](
+            ctx, seq_lens, cache_len, r, q, values, scales, slut, out, lse
+        )
+        # The same selected positions, read by a group of one at their own
+        # slots: the rank must match it exactly.
+        var one_out = List[Float32]()
+        var one_lse = List[Float32]()
+        _run_nvfp4_branch[
+            1, 1, sel_dcp=dcp_size, sel_interleave=dcp_interleave
+        ](
+            ctx,
+            seq_lens,
+            cache_len,
+            0,
+            q,
+            values,
+            scales,
+            slut,
+            one_out,
+            one_lse,
+            sel_rank=r,
+        )
+        var bad = 0
+        for i in range(n):
+            var same = (
+                lse[i] == one_lse[i] or isinf(lse[i]) and isinf(one_lse[i])
+            )
+            if not same:
+                bad += 1
+            for d in range(B_V):
+                if out[i * B_V + d] != one_out[i * B_V + d]:
+                    bad += 1
+        assert_true(
+            bad == 0,
+            String(t"rank {r} differs from a group of one in {bad} values"),
+        )
+        for t in range(total):
+            var length = len(
+                _bf16_owned_selection[dcp_size, dcp_interleave](r, t, cache_len)
+            )
+            if length == 0:
+                empty_rows += 1
+            elif length < B_TOPK:
+                short_rows += 1
+            for h in range(B_HEADS):
+                var i = t * B_HEADS + h
+                var v = Float64(lse[i])
+                if length == 0:
+                    assert_true(
+                        isinf(v) and v < 0, String(t"empty token LSE {v}")
+                    )
+                    for d in range(B_V):
+                        assert_true(
+                            out[i * B_V + d] == 0, "empty token O is not zero"
+                        )
+                    continue
+                assert_true(
+                    not isnan(v) and not isinf(v), "token LSE not finite"
+                )
+                var m_new = max(merged_m[i], v)
+                var c_old = exp2(merged_m[i] - m_new)
+                var c_new = exp2(v - m_new)
+                merged_w[i] = merged_w[i] * c_old + c_new
+                for d in range(B_V):
+                    var o_old = merged_o[i * B_V + d]
+                    merged_o[i * B_V + d] = o_old * c_old + c_new * Float64(
+                        out[i * B_V + d]
+                    )
+                merged_m[i] = m_new
+    assert_true(empty_rows >= dcp_size, "no rank had an empty token")
+    assert_true(short_rows > 0, "no rank had a partial selection")
+
+    for v in ref_out:
+        max_abs = max(max_abs, abs(Float64(v)))
+    assert_true(max_abs > 0, "the reference output is all zero")
+    var max_out_err = Float64(0)
+    var max_lse_err = Float64(0)
+    for t in range(total):
+        for h in range(B_HEADS):
+            var i = t * B_HEADS + h
+            if t == 0:
+                assert_true(
+                    isinf(ref_lse[i]) and ref_lse[i] < 0, "reference LSE"
+                )
+                assert_true(merged_w[i] == 0, "a rank had rows for token 0")
+                continue
+            var lse = merged_m[i] + log2(merged_w[i])
+            max_lse_err = max(max_lse_err, abs(lse - Float64(ref_lse[i])))
+            assert_almost_equal(lse, Float64(ref_lse[i]), atol=1e-3, rtol=1e-4)
+            for d in range(B_V):
+                var o = merged_o[i * B_V + d] / merged_w[i]
+                var want = Float64(ref_out[i * B_V + d])
+                max_out_err = max(max_out_err, abs(o - want))
+                assert_almost_equal(o, want, atol=0.05 * max_abs, rtol=0)
+    print(
+        t"  empty_rows={empty_rows} short_rows={short_rows} max_out={max_abs}"
+        t" max_out_err={max_out_err} max_lse_err={max_lse_err}"
+    )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
@@ -1472,3 +2118,11 @@ def main() raises:
             # Compacted owned rows, short lengths and an empty token.
             run_bf16_cp_owned_rows[4, 1](ctx, [1, 3, 2], cache_len=101)
             run_bf16_cp_owned_rows[2, PAGE_SIZE](ctx, [2, 3], cache_len=250)
+            # The NVFP4 branch: values and scales stored at the local slot,
+            # and compacted owned value/scale rows merged across ranks.
+            run_nvfp4_cp_store[2, 1](ctx, [1, 3, 2], cache_len=101)
+            run_nvfp4_cp_store[8, 1](ctx, [2, 3, 1], cache_len=300)
+            run_nvfp4_cp_store[4, PAGE_SIZE](ctx, [2, 3], cache_len=250)
+            run_nvfp4_cp_owned_rows[4, 1](ctx, [1, 3, 2], cache_len=101)
+            run_nvfp4_cp_owned_rows[8, 1](ctx, [2, 3, 1], cache_len=300)
+            run_nvfp4_cp_owned_rows[2, PAGE_SIZE](ctx, [2, 3], cache_len=250)

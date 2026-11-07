@@ -132,9 +132,9 @@ def _pack_selection(rows: TensorValue, lengths: TensorValue) -> TensorValue:
 
 
 def _unpack_selection(
-    selection: TensorValue, top_k: int
+    selection: TensorValue, width: int
 ) -> tuple[TensorValue, TensorValue]:
-    return selection[:, :top_k], selection[:, top_k]
+    return selection[:, :width], selection[:, width]
 
 
 def merge_topk(local_rows: Tensor, local_scores: Tensor, dcp: int) -> Tensor:
@@ -147,18 +147,28 @@ def merge_topk(local_rows: Tensor, local_scores: Tensor, dcp: int) -> Tensor:
     compacted to the front, with their count in a last column: an int32
     ``[T, k + 1]`` selection (see :func:`split_selection`). The packed form
     lets ``shared`` indexer layers reuse it like a plain top-k.
+
+    Over an NVFP4 MLA cache ``local_rows`` is ``[T, 2 * k]``, each
+    selection's value row then its scale-pool row, and the selection is
+    ``[T, 2 * k + 1]``: both halves compacted the same way, then the count.
     """
     mesh = local_rows.mesh
+    k = int(local_scores.shape[1])
+    halves = int(local_rows.shape[1]) // k
     gathered = gather_topk_scores(local_scores, dcp)
     rows, lengths = cp_merge_topk(
-        local_rows, gathered, dcp_rank_tensor(mesh, dcp), dcp
+        local_rows, gathered, dcp_rank_tensor(mesh, dcp), dcp, halves
     )
     return F.call_on_mesh(_pack_selection, mesh)(rows, lengths)
 
 
-def split_selection(selection: Tensor, top_k: int) -> tuple[Tensor, Tensor]:
-    """Splits a packed selection into its ``[T, k]`` rows and ``[T]`` counts."""
-    return F.call_on_mesh(_unpack_selection, selection.mesh)(selection, top_k)
+def split_selection(selection: Tensor, width: int) -> tuple[Tensor, Tensor]:
+    """Splits a packed selection into its rows and ``[T]`` counts.
+
+    ``width`` is the rows' width: the top-k, or twice it over an NVFP4 MLA
+    cache, whose rows are the value rows then the scale-pool rows.
+    """
+    return F.call_on_mesh(_unpack_selection, selection.mesh)(selection, width)
 
 
 def combine_partial_attention(out: Tensor, lse: Tensor, dcp: int) -> Tensor:

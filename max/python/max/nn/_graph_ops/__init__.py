@@ -3852,14 +3852,20 @@ def mla_fp8_index_top_k_physical_cp(
     and also returns each selection's score. All-gather the scores over the
     group (rank-major) and pass them to :func:`cp_merge_topk`.
 
+    Over an NVFP4 ``mla_collection``, whose scales are paged apart from its
+    values, each row of ``rows`` is ``2 * top_k`` wide: the selections'
+    value rows, then their scale-pool rows, as
+    :func:`mla_fp8_index_top_k_physical` writes them. Merge them with
+    ``cp_merge_topk(..., halves=2)``.
+
     Args:
         q: Query tensor of shape [total_seq_len, num_heads, head_dim] in FP8.
         q_s: Query scales tensor of shape [total_seq_len, num_heads] in float32.
         input_row_offsets: Input row offsets tensor of shape [batch_size + 1].
         k_collection: This rank's paged indexer K cache. Must be FP8 with
             scales.
-        mla_collection: This rank's MLA cache the physical rows index. Must
-            not be NVFP4.
+        mla_collection: This rank's MLA cache the physical rows index. An
+            NVFP4 cache must carry its scale operands.
         layer_idx: Layer index for cache lookup.
         dcp_rank: This rank in ``[0, dcp_size)``, int32 ``[1]`` on the
             device of ``q``.
@@ -3871,21 +3877,33 @@ def mla_fp8_index_top_k_physical_cp(
 
     Returns:
         ``(rows, scores)``: ``[total_seq_len, top_k]`` int32 physical rows in
-        ``mla_collection``, ``-1`` past a token's local candidates or where a
-        page is unmapped, and ``[total_seq_len, top_k]`` bfloat16 scores,
-        ``-inf`` past a token's local candidates.
+        ``mla_collection`` (``[total_seq_len, 2 * top_k]``, value rows then
+        scale-pool rows, over an NVFP4 cache), ``-1`` past a token's local
+        candidates or where a page is unmapped, and ``[total_seq_len,
+        top_k]`` bfloat16 scores, ``-inf`` past a token's local candidates.
 
     Raises:
-        ValueError: If an argument is out of range, ``mla_collection`` is
-            NVFP4, or ``mask_variant`` is neither NULL nor CAUSAL.
+        ValueError: If an argument is out of range, an NVFP4
+            ``mla_collection`` lacks its scale operands, or ``mask_variant``
+            is neither NULL nor CAUSAL.
     """
     if dcp_size < 1 or dcp_interleave < 1:
         raise ValueError(
             "dcp_size and dcp_interleave must be positive, got"
             f" {dcp_size} and {dcp_interleave}"
         )
-    if mla_collection.kv_blocks.dtype == DType.uint8:
-        raise ValueError("the context-parallel indexer has no NVFP4 remap")
+    # An NVFP4 MLA cache pages its scales apart from its values, so its rows
+    # carry each selection's scale-pool row after the value row.
+    nvfp4_mla = mla_collection.kv_blocks.dtype == DType.uint8
+    if nvfp4_mla and (
+        mla_collection.kv_scales is None
+        or mla_collection.scales_page_stride is None
+        or mla_collection.scales_lookup_table is None
+    ):
+        raise ValueError(
+            "an NVFP4 MLA cache must carry its scale operands (kv_scales,"
+            " scales_page_stride and scales_lookup_table)"
+        )
     _validate_argument_tensor(
         "dcp_rank", dcp_rank, dtype=DType.int32, rank=1, device=q.device
     )
@@ -3900,21 +3918,35 @@ def mla_fp8_index_top_k_physical_cp(
         kpool=1,
     )
     rows_type = TensorType(
-        dtype=DType.int32, shape=(q.shape[0], top_k), device=q.device
-    )
-    results = ops.inplace_custom(
-        "attention.mla.indexer.ragged.float8.paged.remap.cp",
+        dtype=DType.int32,
+        shape=(q.shape[0], 2 * top_k if nvfp4_mla else top_k),
         device=q.device,
-        values=[
-            q,
-            q_s,
-            input_row_offsets,
-            *k_collection.flatten_without_attention_dispatch_metadata(),
-            layer_idx,
-            mla_collection.kv_blocks,
-            mla_collection.lookup_table,
-            dcp_rank,
-        ],
+    )
+    op_name = "attention.mla.indexer.ragged.float8.paged.remap.cp"
+    values: list[Value[Any]] = [
+        q,
+        q_s,
+        input_row_offsets,
+        *k_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+        mla_collection.kv_blocks,
+        mla_collection.lookup_table,
+    ]
+    if nvfp4_mla:
+        op_name += ".nvfp4"
+        assert mla_collection.kv_scales is not None
+        assert mla_collection.scales_page_stride is not None
+        assert mla_collection.scales_lookup_table is not None
+        values += [
+            mla_collection.kv_scales,
+            mla_collection.scales_page_stride,
+            mla_collection.scales_lookup_table,
+        ]
+    values.append(dcp_rank)
+    results = ops.inplace_custom(
+        op_name,
+        device=q.device,
+        values=values,
         out_types=[
             # The logical slots are not written, so they have no rows.
             TensorType(dtype=DType.int32, shape=(0, top_k), device=q.device),
@@ -3943,6 +3975,7 @@ def cp_merge_topk(
     scores: TensorValue,
     dcp_rank: TensorValue,
     dcp_size: int,
+    halves: int = 1,
 ) -> tuple[TensorValue, TensorValue]:
     """Keeps this rank's indexer selections that are in its group's top-k.
 
@@ -3954,23 +3987,30 @@ def cp_merge_topk(
     them. The result is exact up to ties: a token in the group's top-k is in
     its owner's local top-k.
 
+    Over an NVFP4 MLA cache each selection is a value row and its scale-pool
+    row ``k`` columns later (``halves=2``); the scale rows move with their
+    value rows, so both halves of the result are compacted the same way.
+
     Args:
-        local_rows: ``[T, k]`` int32 this rank's local selections.
+        local_rows: ``[T, halves * k]`` int32 this rank's local selections,
+            then (with ``halves=2``) their scale-pool rows.
         scores: ``[T, dcp_size * k]`` bfloat16 every rank's selection scores,
             rank-major (rank ``r``'s at columns ``[r * k, (r + 1) * k)``), as
             an all-gather over the group's ranks produces them.
         dcp_rank: This rank in ``[0, dcp_size)``, int32 ``[1]`` on the
             device of ``local_rows``.
         dcp_size: Ranks in the decode context-parallel group.
+        halves: Rows per selection: 1, or 2 for a value row and its scale
+            row (an NVFP4 MLA cache).
 
     Returns:
-        ``(rows, lengths)``: ``[T, k]`` int32 this rank's selected rows,
-        compacted to the front of each row, then ``-1``; and ``[T]`` int32
-        how many of each row are selected.
+        ``(rows, lengths)``: ``[T, halves * k]`` int32 this rank's selected
+        rows, compacted to the front of each half, then ``-1``; and ``[T]``
+        int32 how many of each half are selected.
 
     Raises:
-        ValueError: If a shape, dtype or device disagrees, or ``dcp_size *
-            k`` exceeds 16384.
+        ValueError: If a shape, dtype or device disagrees, ``halves`` is
+            not 1 or 2, or ``dcp_size * k`` exceeds 16384.
     """
     _validate_argument_tensor(
         "local_rows",
@@ -3993,7 +4033,14 @@ def cp_merge_topk(
         rank=1,
         device=local_rows.device,
     )
-    k = int(local_rows.shape[1])
+    if halves not in (1, 2):
+        raise ValueError(f"halves must be 1 or 2, got {halves}")
+    if int(local_rows.shape[1]) % halves:
+        raise ValueError(
+            f"local_rows must be [T, halves * k] with halves={halves}, got"
+            f" {local_rows.shape}"
+        )
+    k = int(local_rows.shape[1]) // halves
     if dcp_size < 1:
         raise ValueError(f"dcp_size must be positive, got {dcp_size}")
     if dcp_size * k > 16384:
@@ -4005,6 +4052,13 @@ def cp_merge_topk(
             f"scores must be [T, dcp_size * k] = [T, {dcp_size * k}], got"
             f" {scores.shape}"
         )
+    parameters: dict[str, bool | int | str | DType] = {
+        "dcp_size": dcp_size,
+        "k": k,
+    }
+    # Emitted only when set, so the plain op is unchanged.
+    if halves != 1:
+        parameters["halves"] = halves
     rows, lengths = ops.custom(
         "attention.mla.cp_merge_topk",
         device=local_rows.device,
@@ -4021,7 +4075,7 @@ def cp_merge_topk(
                 device=local_rows.device,
             ),
         ],
-        parameters={"dcp_size": dcp_size, "k": k},
+        parameters=parameters,
     )
     return rows.tensor, lengths.tensor
 
