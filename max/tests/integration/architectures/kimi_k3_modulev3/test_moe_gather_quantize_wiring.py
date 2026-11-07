@@ -50,6 +50,7 @@ from max.nn._graph_ops import (
 from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
+    tensor_parallel_latent_moe,
 )
 from max.tensor import default_device
 from max.tensor.sharding import DeviceMesh, NamedMapping, TensorLayout
@@ -292,6 +293,7 @@ def _trace_moe(amd_w4a8: bool, tp_size: int = 1) -> str:
                 ),
                 amd_w4a8=amd_w4a8,
             )
+            layer = tensor_parallel_latent_moe(layer, mesh)
             staged = layer.trace(
                 TensorLayout(
                     DType.bfloat16,

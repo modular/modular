@@ -28,11 +28,12 @@ Its AMD W4A8 validation (``validate_amd_tp_w4a8``, ``validate_amd_packed_k``)
 is copied from ``kimi_k3.layers.moe_latent`` rather than imported, so this
 port has no build dependency on V2.
 
-``tensor_parallel_latent_moe`` shards the per-expert FFN width across the
-``tp`` mesh axis. Unlike the other sharded layers, this block returns a
-complete value: ``routed_expert_norm`` cannot read a partial sum, so
-``forward()`` reduces the routed branch before the norm and the shared
-branch before adding it.
+``tensor_parallel_latent_moe`` shards the per-expert FFN width and the
+latent exit's input dim across the ``tp`` mesh axis. Unlike the other
+sharded layers, this block returns a complete value:
+``routed_expert_norm`` cannot read a partial sum, so ``forward()`` reduces
+the expert output before the norm, then reduces the exit's and the shared
+branch's partial sums together.
 
 ``expert_parallel_latent_moe`` gives each device whole experts instead,
 exchanging tokens through :mod:`ep` (mirroring ``minimax_m3_modulev3/ep.py``).
@@ -786,14 +787,20 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             )
         else:
             normed = self.routed_expert_norm(combined)
+        if sharded:
+            # The exit is row-parallel: each device multiplies its local
+            # slice of the replicated latent by its slice of the weight's
+            # input axis. The routed and shared partial sums then share one
+            # allreduce.
+            normed = normed.to(NamedMapping(mesh, (None, TP)))
         routed = self.routed_expert_up_proj(normed)
 
         # The shared branch reads the ORIGINAL full-width input, not the
-        # latent, and is added last.
-        shared = self.shared_experts(hidden_states)
+        # latent.
+        out = routed + self.shared_experts(hidden_states)
         if sharded:
-            shared = F.allreduce_sum(shared, mesh_axis=TP)
-        return routed + shared
+            out = F.allreduce_sum(out, mesh_axis=TP)
+        return out
 
     def expert_parallel_forward(
         self,
@@ -851,10 +858,12 @@ class KimiK3LatentMoE(Module[..., Tensor]):
 def tensor_parallel_latent_moe(
     layer: KimiK3LatentMoE, mesh: DeviceMesh
 ) -> KimiK3LatentMoE:
-    """Shards a latent MoE block's FFN widths along the ``tp`` mesh axis.
+    """Shards a latent MoE block along the ``tp`` mesh axis.
 
-    The router and the latent entry, exit and norm stay replicated: they
-    work at the hidden or latent width, not the FFN width.
+    The FFN widths shard, and so does the latent exit, on its input (latent)
+    dim. The router, the latent entry and the norm stay replicated: sharding
+    the entry would need an allgather before the experts. ``forward()``
+    reduces internally, so the block returns a complete value.
     """
     tp_size = mesh.axis_size(TP)
     if tp_size == 1:
@@ -865,6 +874,7 @@ def tensor_parallel_latent_moe(
         layer.shared_experts.intermediate_size,
         tp_size,
     )
+    check_divisible("MoE latent width", layer.latent_size, tp_size)
     if layer.mxfp4:
         # The down weight is packed two values per byte along the expert FFN
         # axis and carries one E8M0 scale per 32 of those values, so a shard
@@ -875,6 +885,9 @@ def tensor_parallel_latent_moe(
             latent_size=layer.latent_size,
             per_device_ffn=layer.moe_intermediate_size // tp_size,
         )
+    layer.routed_expert_up_proj.weight = layer.routed_expert_up_proj.weight.to(
+        NamedMapping(mesh, (None, TP))
+    )
     # The routed experts stay per-expert on the host; `_stacked` gives each
     # device its share.
     tensor_parallel_dense_mlp(layer.shared_experts, mesh)
