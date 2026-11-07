@@ -1614,7 +1614,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
             pass
 
     @implicit
-    def __init__(out self, *args: *Self.element_types):
+    def __init__(out self, var *args: *Self.element_types):
         while True:
             pass
 
@@ -1750,8 +1750,9 @@ def paramfor_next_value[
 
 
 struct Optional[T: Movable](
-    Copyable,
+    Copyable where conforms_to(T, Copyable),
     EnumLike,
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
     def __deinit__(deinit self):

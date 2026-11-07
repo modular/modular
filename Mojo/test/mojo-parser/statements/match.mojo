@@ -230,7 +230,7 @@ def match_initializer_fields(value: InitPattern):
 # Unparenthesized commas form tuples in both the subject and case patterns.
 # CHECK-LABEL: lit.fn @"match_comma_subject
 # CHECK:       lit.ref.pack.create
-# CHECK:       lit.call {{.*}}@"__init__[LITImmOrigin,::Origin[False, $2]](*$0)"
+# CHECK:       lit.call {{.*}}@"__init__[LITMutOrigin,::Origin[True, $2]](*$0)"
 # CHECK:       hlcf.match {
 # CHECK:         lit.call {{.*}}@"__getitem_param__
 # CHECK:         lit.call {{.*}}@"__eq__(::Bool,::Bool)"
