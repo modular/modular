@@ -22,6 +22,10 @@ This version is still a work in progress.
   statements to work with non-movable and linear types, and reduces copies in
   general.
 
+- Comparisons now try the reflected method on the right operand when the left
+  operand does not support the comparison. For example, `0 < value` can call
+  `value.__gt__(0)`.
+
 - Auto-parameterization now reaches `_` holes nested inside other parameterized
   types, so an unbound parameter at any depth of an argument's type becomes an
   an implicit parameter of the function:

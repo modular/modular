@@ -415,6 +415,46 @@ def test_mergewith(
 # Chained comparisons.
 ##===----------------------------------------------------------------------===##
 
+struct ReflectedComparison(ImplicitlyCopyable):
+    def __init__(out self):
+        pass
+
+    def __lt__(self, other: Int) -> Bool:
+        return True
+
+    def __le__(self, other: Int) -> Bool:
+        return True
+
+    def __gt__(self, other: Int) -> Bool:
+        return True
+
+    def __ge__(self, other: Int) -> Bool:
+        return True
+
+
+# CHECK-LABEL: lit.fn @"reflected_comparisons
+# CHECK: ReflectedComparison::@"__gt__
+# CHECK: ReflectedComparison::@"__ge__
+# CHECK: ReflectedComparison::@"__lt__
+# CHECK: ReflectedComparison::@"__le__
+# CHECK: ReflectedComparison::@"__gt__
+# CHECK: ReflectedComparison::@"__lt__
+def reflected_comparisons(value: ReflectedComparison):
+    _ = 0 < value
+    _ = 0 <= value
+    _ = 0 > value
+    _ = 0 >= value
+    _ = 0 < value < 100
+
+
+# The left IntLiteral must be materialized for Scalar's reflected comparison.
+# CHECK-LABEL: lit.fn @"reflected_intliteral_scalar
+def reflected_intliteral_scalar():
+    var x: Scalar[DType.float64] = 1.0
+    _ = x > 0
+    _ = 0 < x
+    _ = 0 < x < 100
+
 
 # CHECK-LABEL: lit.fn @"chained_cmp
 def chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):

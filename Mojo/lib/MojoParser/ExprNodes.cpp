@@ -3713,6 +3713,33 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
   return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
 }
 
+/// Return the method to try on the right operand when the left operand cannot
+/// perform a comparison. This allows "1 < x" to fall back to "x.__gt__(1)" when
+/// 1 needs to be promoted to the type of x for the comparison to succeed.
+static SpecialFunctionInfo
+getReflectedComparisonSpecialFunction(ExprNode::Kind kind) {
+  switch (kind) {
+  case ExprNode::Kind::kCmpLT:
+    kind = ExprNode::Kind::kCmpGT;
+    break;
+  case ExprNode::Kind::kCmpLE:
+    kind = ExprNode::Kind::kCmpGE;
+    break;
+  case ExprNode::Kind::kCmpGT:
+    kind = ExprNode::Kind::kCmpLT;
+    break;
+  case ExprNode::Kind::kCmpGE:
+    kind = ExprNode::Kind::kCmpLE;
+    break;
+  case ExprNode::Kind::kCmpEQ:
+  case ExprNode::Kind::kCmpNE:
+    break;
+  default:
+    return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
+  }
+  return getOpSpecialFunctions(kind, /*isReversed=*/false);
+}
+
 /// Emit the binary operation (with a `lhs`, `rhs` and `kind`) as a special
 /// function call.
 /// A special function call is one where the` kind` must corresponds to a valid
@@ -3808,6 +3835,24 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     }
 
     // Swap these back so we emit the right error.
+    std::swap(operands[0], operands[1]);
+    operands.syntax = CallSyntax::kOperator;
+  }
+
+  // Python-style comparisons are reflected through the corresponding ordered
+  // operator: `a < b` can fall back to `b.__gt__(a)`. Unlike arithmetic
+  // operators, comparisons do not have separately named reverse methods.
+  auto reflectedComparisonFnInfo = getReflectedComparisonSpecialFunction(kind);
+  if (reflectedComparisonFnInfo.kind != SpecialFunctionKind::kNormal) {
+    std::swap(operands[0], operands[1]);
+    operands.syntax = CallSyntax::kReversedOperator;
+    if (auto rhsCV = rhs.ir.getIfCValue()) {
+      if (PValue callee = OverloadSet::lookupAndResolve(
+              rhsCV.getRValueType(), reflectedComparisonFnInfo.name, operands,
+              emitter))
+        return emitter.emitIndirectCall(callee, std::move(operands));
+    }
+
     std::swap(operands[0], operands[1]);
     operands.syntax = CallSyntax::kOperator;
   }
