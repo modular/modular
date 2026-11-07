@@ -83,7 +83,7 @@ from structured_kernels.tile_types import (
 from layout.layout import _IntToComptimeInt
 from layout.layout import row_major as tt_row_major
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 

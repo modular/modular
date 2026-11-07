@@ -19,7 +19,7 @@ from max.gpu.host.info import B200
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic
 from std.sys import simd_width_of
-from std.sys import align_of, size_of, get_defined_bool
+from std.sys import size_of, get_defined_bool
 import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
 from max.algorithm.functional import _elementwise_impl_gpu

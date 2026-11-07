@@ -56,7 +56,7 @@ from layout import (
 )
 from layout.layout import row_major as tt_row_major
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS

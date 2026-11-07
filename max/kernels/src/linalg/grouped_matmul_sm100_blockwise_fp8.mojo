@@ -85,7 +85,7 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_grouped_matmul_amd import (
     blockwise_scaled_fp8_grouped_matmul_amd,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 

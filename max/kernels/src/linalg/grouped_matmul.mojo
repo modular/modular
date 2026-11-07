@@ -54,7 +54,7 @@ from layout import (
     row_major,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 
 from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul

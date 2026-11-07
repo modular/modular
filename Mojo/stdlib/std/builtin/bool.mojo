@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std.builtin.variadics import _MLIR
-from std.collections import List, Set
+from std.collections import Set
 from std.hash.hasher import Hasher
 from std.ffi import c_long
 

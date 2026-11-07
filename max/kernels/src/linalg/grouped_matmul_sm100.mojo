@@ -90,7 +90,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 

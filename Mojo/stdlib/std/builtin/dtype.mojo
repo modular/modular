@@ -22,7 +22,6 @@ from std.sys import bit_width_of
 
 comptime _mIsSigned = __mlir_attr.`#kgen.simd<1> : !kgen.scalar<ui8>`
 comptime _mIsInteger = __mlir_attr.`#kgen.simd<128> : !kgen.scalar<ui8>`
-comptime _mIsNotInteger = __mlir_attr.`#kgen.simd<127> : !kgen.scalar<ui8>`
 comptime _mIsFloat = __mlir_attr.`#kgen.simd<64> : !kgen.scalar<ui8>`
 
 

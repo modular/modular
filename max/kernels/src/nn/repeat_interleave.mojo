@@ -30,7 +30,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from layout import (
     Coord,
-    Idx,
     TensorEngine,
     TensorLayout,
     TileTensor,

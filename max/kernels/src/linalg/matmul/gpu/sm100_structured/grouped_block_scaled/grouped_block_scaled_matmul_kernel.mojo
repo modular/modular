@@ -132,17 +132,6 @@ comptime _ProblemSizesTile[
 
 
 # =============================================================================
-# Constants
-# =============================================================================
-
-# TMA descriptor size in bytes (128 bytes per descriptor)
-comptime TMA_DESCRIPTOR_SIZE = 128
-
-# Number of tensormaps for grouped GEMM (A, B, SFA, SFB, C)
-comptime NUM_TENSORMAPS = 5
-
-
-# =============================================================================
 # GroupedTensormapSmem - SMEM storage for tensormap descriptors
 # =============================================================================
 

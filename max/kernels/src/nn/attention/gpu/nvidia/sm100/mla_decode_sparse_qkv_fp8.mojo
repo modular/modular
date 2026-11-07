@@ -70,7 +70,7 @@ from std.memory import Pointer
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
 from std.memory import bitcast
-from std.sys import get_defined_int, size_of, _RegisterPackType
+from std.sys import get_defined_int, size_of
 from std.sys._assembly import inlined_assembly
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

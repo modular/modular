@@ -39,13 +39,11 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,
-    mma_arrive_multicast,
 )
 
 from max.gpu.sync import named_barrier, syncwarp
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
-    tcgen05_fence_before,
     tcgen05_ld,
     tcgen05_load_wait,
     tcgen05_st,
@@ -73,7 +71,6 @@ from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.mla_common import (
     SparseRowLayout,
-    _sparse_row_packed,
     assert_sparse_row_packed,
 )
 from std.utils.numerics import get_accum_type, min_or_neg_inf

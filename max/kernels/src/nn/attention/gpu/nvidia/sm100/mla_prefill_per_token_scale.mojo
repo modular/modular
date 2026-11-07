@@ -70,7 +70,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_generic import (
     warp_idx_to_role,
-    WarpRole,
 )
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     SeqInfo,

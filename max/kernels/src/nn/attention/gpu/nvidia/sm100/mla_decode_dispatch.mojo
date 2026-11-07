@@ -31,7 +31,6 @@ from layout import (
     Idx,
     RowMajorLayout,
     TileTensor,
-    coord,
     row_major,
 )
 from layout.tile_tensor import NullableTileTensor

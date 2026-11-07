@@ -30,9 +30,6 @@ from std.memory import bitcast
 comptime MXFP6_SF_VECTOR_SIZE = 32
 comptime MXFP6_SF_DTYPE = DType.float8_e8m0fnu
 
-comptime FP6_ELEMENTS_PER_GROUP = 4
-comptime FP6_BYTES_PER_GROUP = 3
-
 
 @fieldwise_init
 struct FP6Format(EnumLike, Equatable, TrivialRegisterPassable):

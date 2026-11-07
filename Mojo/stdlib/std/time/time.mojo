@@ -37,7 +37,6 @@ comptime _CLOCK_MONOTONIC_RAW = 4
 
 # Constants
 comptime _NSEC_PER_USEC = 1000
-comptime _NSEC_PER_MSEC = 1_000_000
 comptime _USEC_PER_MSEC = 1000
 comptime _MSEC_PER_SEC = 1000
 comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC

@@ -40,7 +40,6 @@ from algorithm import rowwise
 from nn.routed_rows_finalize import (
     HIDDEN,
     In,
-    Out,
     RoutedRowsFinalizeArgs,
     routed_rows_finalize,
 )

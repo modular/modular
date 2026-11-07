@@ -75,7 +75,7 @@ from layout import (
     stack_allocation as tt_stack_allocation,
 )
 from std.logger import Logger
-from std.memory import bitcast, unsafe_stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
