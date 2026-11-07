@@ -13,6 +13,7 @@
 
 #include "TargetAdapter.h"
 #include "AMDGPUAdapter.h"
+#include "MetalAdapter.h"
 #include "NVPTXAdapter.h"
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
@@ -51,6 +52,8 @@ TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target,
     return getNVPTXAdapter(tradeoffPerfForVariableDI);
   if (target && target.getTriple().isAMDGCN())
     return getAMDGPUAdapter(tradeoffPerfForVariableDI);
+  if (target && target.isMetal())
+    return getMetalAdapter();
   return getFallbackAdapter(tradeoffPerfForVariableDI);
 }
 
