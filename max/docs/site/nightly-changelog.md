@@ -373,6 +373,22 @@ This version is still a work in progress.
   element's alignment rather than the full vector's, so pass `alignment=` to
   keep a wider one.
 
+- `@extensibility.register` takes a platform as a second argument
+  that selects the devices a custom kernel supports, built from the `type`,
+  `api`, `arch`, and `model` platforms and the `CPU`, `ACCELERATOR`, `CUDA`,
+  `HIP`, and `METAL` helpers,
+  combined with `&` and `|` into a named alias:
+  `comptime TCGEN05 = ACCELERATOR & CUDA & (arch("sm_100a") |
+  arch("sm_103a"))`, then `@extensibility.register("my_op", TCGEN05)`.
+  When several registrations of an op match a device, the graph compiler now
+  selects the one whose set of devices is a strict subset of the sets of all
+  the others, and reports an error if no registration is. Before, it selected
+  the registration that set the most device fields. Two registrations of an op
+  for the same set of devices are an error. The `type`, `api`, `arch`, and
+  `model` arguments of `register` are removed: replace
+  `type="gpu", api="cuda"` with `CUDA`, and in general with the `&` of
+  the matching platforms.
+
 - Removed the `max`, `min`, `sum`, `product` and `mean` overloads in
   `max.algorithm` that take an input shape, an `input_fn`, an `output_fn` and
   a `reduce_dim`. To reduce along an axis, use the graph ops (`ops.sum`,

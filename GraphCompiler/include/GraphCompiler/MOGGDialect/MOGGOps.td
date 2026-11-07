@@ -912,9 +912,13 @@ def MOGG_KernelDeclOp
     built-ins with the same registration. The shape function lives in a
     separate `mogg.shape_func.decl`.
 
-    `platform_predicate` is the set of devices that the decl applies to, as a
-    `#kgen.gen` over the device's label, API, architecture, and model (see
-    `PlatformPredicate`).
+    `platform_predicate` is the `cond` of `register(name, cond)`. It is
+    a `#kgen.gen` over the device's label, API, architecture, and model, and
+    the decl applies to the devices for which it holds. A decl without a
+    `platform_predicate` comes from `register(name)` and applies to all
+    devices.
+    `MojoRegistry::getResolvedKernel` describes how a decl is selected.
+    `device_info` is always empty.
 
     `build_graph` has the same tensor signature as `execute` but takes a
     `DeviceGraphBuilder` in place of the `DeviceContext`.

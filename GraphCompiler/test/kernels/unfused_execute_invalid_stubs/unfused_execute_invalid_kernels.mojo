@@ -32,6 +32,12 @@ from extensibility import (
 from extensibility import InputTensor, OutputTensor
 from extensibility import _FusedOutputTensor as FusedOutputTensor
 
+comptime SM100 = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & extensibility.arch("sm_100a")
+)
+
 
 # Not on the grandfather list.
 @extensibility.register("unfused_not_allowed")
@@ -48,9 +54,7 @@ struct UnfusedNotAllowed:
 
 
 # A listed registration name, but on a device the entry does not name.
-@extensibility.register(
-    "trait_unfused_execute", type="gpu", api="cuda", arch="sm_100a"
-)
+@extensibility.register("trait_unfused_execute", SM100)
 struct UnfusedNotAllowedDevice:
     @staticmethod
     def execute(z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):

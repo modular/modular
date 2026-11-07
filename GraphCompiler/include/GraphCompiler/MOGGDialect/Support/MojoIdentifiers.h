@@ -63,15 +63,9 @@ constexpr llvm::StringLiteral kOpaqueTypeMappingAttrName =
 using KGEN::kFnRegister;
 using KGEN::kFnRegisterInternal;
 
-/// Indices into `getDecoratorLambdaArgument` for `@extensibility.register`.
-constexpr size_t kRegisterDecoratorArgName = 0;
-constexpr size_t kRegisterDecoratorArgType = 1;
-constexpr size_t kRegisterDecoratorArgApi = 2;
-constexpr size_t kRegisterDecoratorArgArch = 3;
-constexpr size_t kRegisterDecoratorArgModel = 4;
-
-/// The prefix of the mangled leaf name of
-/// `@extensibility.register(name, cond)`.
+/// The prefixes of the mangled leaf names of `@extensibility.register(name)`
+/// and `@extensibility.register(name, cond)`.
+constexpr llvm::StringLiteral kRegisterDecoratorPrefix = "register(";
 constexpr llvm::StringLiteral kRegisterCondDecoratorPrefix = "register[";
 
 constexpr llvm::StringLiteral kMoggTargetParameterName = "target";

@@ -4,32 +4,32 @@
 // The import keeps each platform as its canonical `#kgen.gen`, and gives a
 // registration for all devices no platform.
 // The import loads `builtin_kernels`, so grep for the decls under test.
-// RUN: mo-opt %s --split-input-file --mogg-import-packages="mojo-pkg-paths=%platform_pkg allow-platform-registrations=true" 2>&1 | grep 'registration = "pred_' | FileCheck %s --check-prefix=IMPORT
+// RUN: mo-opt %s --split-input-file --mogg-import-packages="mojo-pkg-paths=%platform_pkg" 2>&1 | grep 'registration = "pred_' | FileCheck %s --check-prefix=IMPORT
 
 // The test pass prints each platform and its value on the devices of
 // `mogg.test_device_infos`, compares the platforms of each registration, and
 // resolves each registration on the devices of `mo.device_info_mapping`.
-// RUN: mo-opt %s --split-input-file --mogg-import-packages="mojo-pkg-paths=%platform_pkg allow-platform-registrations=true" --mogg-test-kernel-registrations -o /dev/null 2>&1 | FileCheck %s
+// RUN: mo-opt %s --split-input-file --mogg-import-packages="mojo-pkg-paths=%platform_pkg" --mogg-test-kernel-registrations -o /dev/null 2>&1 | FileCheck %s
 
 // A decl with a platform prints in a form that parses back.
-// RUN: mo-opt %s --split-input-file --mogg-import-packages="mojo-pkg-paths=%platform_pkg allow-platform-registrations=true" | mo-opt --split-input-file --mogg-test-kernel-registrations -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROUNDTRIP
+// RUN: mo-opt %s --split-input-file --mogg-import-packages="mojo-pkg-paths=%platform_pkg" | mo-opt --split-input-file --mogg-test-kernel-registrations -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROUNDTRIP
 
 // The import rejects each forged platform of a package, and keeps scanning
 // after the first.
-// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_invalid_pkg allow-platform-registrations=true" -o /dev/null 2>&1 | FileCheck %s --check-prefix=INVALID
+// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_invalid_pkg" -o /dev/null 2>&1 | FileCheck %s --check-prefix=INVALID
 
 // The import rejects two registrations of an op for the same devices, however
 // they are written.
-// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_duplicate_pkg allow-platform-registrations=true" -o /dev/null 2>&1 | FileCheck %s --check-prefix=DUPLICATE
+// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_duplicate_pkg" -o /dev/null 2>&1 | FileCheck %s --check-prefix=DUPLICATE
 
 // The import rejects a platform that holds for no device.
-// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_unsatisfiable_pkg allow-platform-registrations=true" -o /dev/null 2>&1 | FileCheck %s --check-prefix=UNSATISFIABLE
+// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_unsatisfiable_pkg" -o /dev/null 2>&1 | FileCheck %s --check-prefix=UNSATISFIABLE
 
 // Registry validation finds the ambiguous op without a device.
-// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_pkg allow-platform-registrations=true" --mogg-validate-kernel-registry -o /dev/null 2>&1 | FileCheck %s --check-prefix=VALIDATE
+// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_pkg" --mogg-validate-kernel-registry -o /dev/null 2>&1 | FileCheck %s --check-prefix=VALIDATE
 
-// Without the switch, the import rejects `register(name, cond)`.
-// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_pkg" -o /dev/null 2>&1 | FileCheck %s --check-prefix=DISABLED
+// With the switch off, the import rejects `register(name, cond)`.
+// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_pkg allow-platform-registrations=false" -o /dev/null 2>&1 | FileCheck %s --check-prefix=DISABLED
 
 // IMPORT: @{{.*}}.PredMatmulCpu registration = "pred_matmul" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<identical(:string *(0,0), "cpu")> : !kgen.generator<{{.*}}> execute
 // IMPORT: @{{.*}}.PredMixedAllDevices registration = "pred_mixed" device_info = <"", "", "", ""> execute
@@ -123,7 +123,7 @@
 // VALIDATE: error: ambiguous kernel resolution for 'pred_overlap' on device {type="gpu", api="cuda", arch="sm_100a", model=*}: user-defined registrations match
 // VALIDATE-NOT: 'pred_specialized'
 
-// DISABLED: platform_kernels.mojo:{{[0-9]+}}:{{[0-9]+}}: error: `register(name, cond)` is not supported yet; restrict the registration with the `type`, `api`, `arch`, and `model` arguments of `register`
+// DISABLED: platform_kernels.mojo:{{[0-9]+}}:{{[0-9]+}}: error: `register(name, cond)` is disabled by `allow-platform-registrations=false`
 
 module attributes {
   mo.device_info_mapping = {

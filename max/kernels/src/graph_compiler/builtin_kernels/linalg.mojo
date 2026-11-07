@@ -238,7 +238,7 @@ def composite_matmul_fused_partial_rms_norm_shape(
     )
 
 
-@extensibility.register("mo.matmul", type="cpu")
+@extensibility.register("mo.matmul", extensibility.CPU)
 struct MatmulCPU:
     """Registers the `mo.matmul` graph op for CPU devices.
 
@@ -360,7 +360,7 @@ struct MatmulCPU:
         )
 
 
-@extensibility.register("mo.matmul", type="gpu")
+@extensibility.register("mo.matmul", extensibility.ACCELERATOR)
 struct MatmulGPU:
     """Registers the `mo.matmul` graph op for GPU devices.
 
@@ -495,7 +495,7 @@ struct MatmulGPU:
         )
 
 
-@extensibility.register("mo.batch_matmul", type="cpu")
+@extensibility.register("mo.batch_matmul", extensibility.CPU)
 struct BatchMatmulCPU:
     """Registers the `mo.batch_matmul` graph op for CPU devices."""
 
@@ -551,7 +551,7 @@ struct BatchMatmulCPU:
             )
 
 
-@extensibility.register("mo.batch_matmul", type="gpu")
+@extensibility.register("mo.batch_matmul", extensibility.ACCELERATOR)
 struct BatchMatmulGPU:
     """Registers the `mo.batch_matmul` graph op for GPU devices."""
 
@@ -2672,7 +2672,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         )
 
 
-@extensibility.register("matmul.swiglu", type="gpu")
+@extensibility.register("matmul.swiglu", extensibility.ACCELERATOR)
 struct MatmulSwiGLU:
     """Fused GEMM+SwiGLU on SM100 for BF16 inputs.
 
@@ -2710,7 +2710,7 @@ struct MatmulSwiGLU:
         )
 
 
-@extensibility.register("matmul.swiglu_bias", type="gpu")
+@extensibility.register("matmul.swiglu_bias", extensibility.ACCELERATOR)
 struct MatmulSwiGLUBias:
     """Fused GEMM+SwiGLU+bias on SM100 for BF16 inputs.
 
@@ -2754,7 +2754,7 @@ struct MatmulSwiGLUBias:
         )
 
 
-@extensibility.register("mo.composite.matmul_swiglu", type="gpu")
+@extensibility.register("mo.composite.matmul_swiglu", extensibility.ACCELERATOR)
 struct CompositeMatmulSwiGLU:
     @staticmethod
     def execute(
@@ -2766,7 +2766,9 @@ struct CompositeMatmulSwiGLU:
         MatmulSwiGLU.execute(output, a, b, ctx)
 
 
-@extensibility.register("mo.composite.matmul_swiglu_bias", type="gpu")
+@extensibility.register(
+    "mo.composite.matmul_swiglu_bias", extensibility.ACCELERATOR
+)
 struct CompositeMatmulSwiGLUBias:
     @staticmethod
     def execute(

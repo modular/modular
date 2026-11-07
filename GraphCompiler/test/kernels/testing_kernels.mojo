@@ -3444,7 +3444,7 @@ struct DeviceGraphIncrement:
         )
 
 
-@extensibility.register("add_one", type="cpu")
+@extensibility.register("add_one", extensibility.CPU)
 struct AddOneCPU:
     @staticmethod
     def execute(
@@ -3462,7 +3462,7 @@ struct AddOneCPU:
         elementwise[1](func, outp.shape_coord(), ctx)
 
 
-@extensibility.register("gpu_only_kernel", type="gpu")
+@extensibility.register("gpu_only_kernel", extensibility.ACCELERATOR)
 struct GpuOnlyKernel:
     @staticmethod
     def execute(
@@ -3473,7 +3473,7 @@ struct GpuOnlyKernel:
         pass
 
 
-@extensibility.register("add_one", type="gpu")
+@extensibility.register("add_one", extensibility.ACCELERATOR)
 struct AddOneGPU:
     @staticmethod
     def execute(

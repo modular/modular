@@ -16,7 +16,11 @@ import os
 from pathlib import Path
 
 import pytest
-from max.driver import accelerator_count
+from max.driver import (
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, _OpaqueType, ops
@@ -113,6 +117,51 @@ def test_api_scoped_kernel_valid(
         )
 
     session.load(graph)
+
+
+def _on_blackwell() -> bool:
+    # `accelerator_architecture_name` raises on a host without an accelerator.
+    return (
+        accelerator_count() > 0
+        and accelerator_api() == "cuda"
+        and accelerator_architecture_name().startswith("sm_10")
+    )
+
+
+@pytest.mark.skipif(
+    not _on_blackwell(),
+    reason="both registrations hold only on a Blackwell GPU",
+)
+def test_ambiguous_kernel_selection(
+    kernel_verification_ops_path: Path,
+) -> None:
+    # Hopper-and-Blackwell and Ampere-and-Blackwell kernels each cover an
+    # architecture that the other does not, and both hold on Blackwell, so
+    # `ops.custom` reports the tie, with each candidate and the Mojo source
+    # that declares it.
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.GPU())
+    graph = Graph(
+        "test_ambiguous_kernel_selection",
+        input_types=[tensor_type, tensor_type],
+        output_types=[tensor_type],
+    )
+    with graph:
+        graph._import_kernels([kernel_verification_ops_path])
+
+        with pytest.raises(ValueError) as err:
+            ops.custom(
+                "my_add_ambiguous",
+                device=DeviceRef.GPU(),
+                values=[graph.inputs[0], graph.inputs[1]],
+                out_types=[tensor_type],
+            )
+    message = str(err.value)
+    assert "ambiguous kernel resolution for 'my_add_ambiguous'" in message
+    assert "MyAddHopperBlackwell: cond=" in message
+    assert "MyAddAmpereBlackwell: cond=" in message
+    assert 'arch("sm_90a")' in message
+    assert 'arch("sm_80")' in message
+    assert "__init__.mojo" in message
 
 
 def test_my_add_invalid_inputs_count(

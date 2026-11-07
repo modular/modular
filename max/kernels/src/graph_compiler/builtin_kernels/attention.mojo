@@ -145,6 +145,21 @@ from .kernels import (
 )
 
 
+comptime SM100 = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & extensibility.arch("sm_100a")
+)
+"""Holds for CUDA devices with the `sm_100a` architecture."""
+
+comptime SM103 = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & extensibility.arch("sm_103a")
+)
+"""Holds for CUDA devices with the `sm_103a` architecture."""
+
+
 @extensibility.register("attention.mla.kpool.expand_topk")
 struct MLAKPoolExpandTopK:
     """Registers the `attention.mla.kpool.expand_topk` graph op with the graph compiler.
@@ -1768,7 +1783,7 @@ struct FlashAttentionGPU:
         )
 
 
-@extensibility.register("attention.mha.no_cache", type="cpu")
+@extensibility.register("attention.mha.no_cache", extensibility.CPU)
 struct FlashAttentionCPU:
     """Registers the CPU kernel of the `attention.mha.no_cache` graph op with the
     graph compiler."""
@@ -4136,27 +4151,21 @@ struct Struct_mla_decode_ragged_paged(_MLADecodeRaggedPagedOp):
     comptime kernels: MLAGraphKernels = LegacyNVMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.decode.ragged.paged", type="gpu", api="hip"
-)
+@extensibility.register("attention.mla.decode.ragged.paged", extensibility.HIP)
 struct Struct_mla_decode_ragged_paged_amd(_MLADecodeRaggedPagedOp):
     """Registers the op for AMD GPUs."""
 
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.decode.ragged.paged", type="gpu", api="cuda", arch="sm_100a"
-)
+@extensibility.register("attention.mla.decode.ragged.paged", SM100)
 struct Struct_mla_decode_ragged_paged_sm100(_MLADecodeRaggedPagedOp):
     """Registers the op for B100 and B200."""
 
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.decode.ragged.paged", type="gpu", api="cuda", arch="sm_103a"
-)
+@extensibility.register("attention.mla.decode.ragged.paged", SM103)
 struct Struct_mla_decode_ragged_paged_sm103(_MLADecodeRaggedPagedOp):
     """Registers the op for B300."""
 
@@ -4302,7 +4311,7 @@ struct Struct_mla_decode_ragged_paged_scaled(_MLADecodeRaggedPagedScaledOp):
 
 
 @extensibility.register(
-    "attention.mla.decode.ragged.paged.scaled", type="gpu", api="hip"
+    "attention.mla.decode.ragged.paged.scaled", extensibility.HIP
 )
 struct Struct_mla_decode_ragged_paged_scaled_amd(_MLADecodeRaggedPagedScaledOp):
     """Registers the op for AMD GPUs."""
@@ -4310,12 +4319,7 @@ struct Struct_mla_decode_ragged_paged_scaled_amd(_MLADecodeRaggedPagedScaledOp):
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.decode.ragged.paged.scaled",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.mla.decode.ragged.paged.scaled", SM100)
 struct Struct_mla_decode_ragged_paged_scaled_sm100(
     _MLADecodeRaggedPagedScaledOp
 ):
@@ -4324,12 +4328,7 @@ struct Struct_mla_decode_ragged_paged_scaled_sm100(
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.decode.ragged.paged.scaled",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.mla.decode.ragged.paged.scaled", SM103)
 struct Struct_mla_decode_ragged_paged_scaled_sm103(
     _MLADecodeRaggedPagedScaledOp
 ):
@@ -4428,27 +4427,21 @@ struct Struct_mla_prefill_ragged_paged(_MLAPrefillRaggedPagedOp):
     comptime kernels: MLAGraphKernels = LegacyNVMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.prefill.ragged.paged", type="gpu", api="hip"
-)
+@extensibility.register("attention.mla.prefill.ragged.paged", extensibility.HIP)
 struct Struct_mla_prefill_ragged_paged_amd(_MLAPrefillRaggedPagedOp):
     """Registers the op for AMD GPUs."""
 
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.prefill.ragged.paged", type="gpu", api="cuda", arch="sm_100a"
-)
+@extensibility.register("attention.mla.prefill.ragged.paged", SM100)
 struct Struct_mla_prefill_ragged_paged_sm100(_MLAPrefillRaggedPagedOp):
     """Registers the op for B100 and B200."""
 
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.prefill.ragged.paged", type="gpu", api="cuda", arch="sm_103a"
-)
+@extensibility.register("attention.mla.prefill.ragged.paged", SM103)
 struct Struct_mla_prefill_ragged_paged_sm103(_MLAPrefillRaggedPagedOp):
     """Registers the op for B300."""
 
@@ -4752,7 +4745,7 @@ struct Struct_mla_prefill_graph_paged(_MLAPrefillGraphPagedOp):
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.paged.fp8", type="gpu", api="hip"
+    "attention.mla.graph.prefill.paged.fp8", extensibility.HIP
 )
 struct Struct_mla_prefill_graph_paged_amd(_MLAPrefillGraphPagedOp):
     """Registers the op for AMD GPUs."""
@@ -4760,24 +4753,14 @@ struct Struct_mla_prefill_graph_paged_amd(_MLAPrefillGraphPagedOp):
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.paged.fp8",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.mla.graph.prefill.paged.fp8", SM100)
 struct Struct_mla_prefill_graph_paged_sm100(_MLAPrefillGraphPagedOp):
     """Registers the op for B100 and B200."""
 
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.paged.fp8",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.mla.graph.prefill.paged.fp8", SM103)
 struct Struct_mla_prefill_graph_paged_sm103(_MLAPrefillGraphPagedOp):
     """Registers the op for B300."""
 
@@ -4936,7 +4919,7 @@ struct Struct_mla_decode_graph_paged_fp8(_MLADecodeGraphPagedFP8Op):
 
 
 @extensibility.register(
-    "attention.mla.graph.decode.paged.fp8", type="gpu", api="hip"
+    "attention.mla.graph.decode.paged.fp8", extensibility.HIP
 )
 struct Struct_mla_decode_graph_paged_fp8_amd(_MLADecodeGraphPagedFP8Op):
     """Registers the op for AMD GPUs."""
@@ -4944,24 +4927,14 @@ struct Struct_mla_decode_graph_paged_fp8_amd(_MLADecodeGraphPagedFP8Op):
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged.fp8",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.mla.graph.decode.paged.fp8", SM100)
 struct Struct_mla_decode_graph_paged_fp8_sm100(_MLADecodeGraphPagedFP8Op):
     """Registers the op for B100 and B200."""
 
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged.fp8",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.mla.graph.decode.paged.fp8", SM103)
 struct Struct_mla_decode_graph_paged_fp8_sm103(_MLADecodeGraphPagedFP8Op):
     """Registers the op for B300."""
 
@@ -5382,7 +5355,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse(
 
 
 @extensibility.register(
-    "attention.mla.graph.decode.paged.fp8.sparse", type="gpu", api="hip"
+    "attention.mla.graph.decode.paged.fp8.sparse", extensibility.HIP
 )
 struct Struct_mla_decode_graph_paged_fp8_sparse_amd(
     _MLADecodeGraphPagedFP8SparseOp
@@ -5392,12 +5365,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_amd(
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged.fp8.sparse",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.mla.graph.decode.paged.fp8.sparse", SM100)
 struct Struct_mla_decode_graph_paged_fp8_sparse_sm100(
     _MLADecodeGraphPagedFP8SparseOp
 ):
@@ -5406,12 +5374,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_sm100(
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged.fp8.sparse",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.mla.graph.decode.paged.fp8.sparse", SM103)
 struct Struct_mla_decode_graph_paged_fp8_sparse_sm103(
     _MLADecodeGraphPagedFP8SparseOp
 ):
@@ -5546,27 +5509,21 @@ struct Struct_mla_prefill_graph_bf16_paged(_MLAPrefillGraphBF16PagedOp):
     comptime kernels: MLAGraphKernels = LegacyNVMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.paged", type="gpu", api="hip"
-)
+@extensibility.register("attention.mla.graph.prefill.paged", extensibility.HIP)
 struct Struct_mla_prefill_graph_bf16_paged_amd(_MLAPrefillGraphBF16PagedOp):
     """Registers the op for AMD GPUs."""
 
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.paged", type="gpu", api="cuda", arch="sm_100a"
-)
+@extensibility.register("attention.mla.graph.prefill.paged", SM100)
 struct Struct_mla_prefill_graph_bf16_paged_sm100(_MLAPrefillGraphBF16PagedOp):
     """Registers the op for B100 and B200."""
 
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.paged", type="gpu", api="cuda", arch="sm_103a"
-)
+@extensibility.register("attention.mla.graph.prefill.paged", SM103)
 struct Struct_mla_prefill_graph_bf16_paged_sm103(_MLAPrefillGraphBF16PagedOp):
     """Registers the op for B300."""
 
@@ -5707,27 +5664,21 @@ struct Struct_mla_decode_graph_bf16_paged(_MLADecodeGraphBF16PagedOp):
     comptime kernels: MLAGraphKernels = LegacyNVMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged", type="gpu", api="hip"
-)
+@extensibility.register("attention.mla.graph.decode.paged", extensibility.HIP)
 struct Struct_mla_decode_graph_bf16_paged_amd(_MLADecodeGraphBF16PagedOp):
     """Registers the op for AMD GPUs."""
 
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged", type="gpu", api="cuda", arch="sm_100a"
-)
+@extensibility.register("attention.mla.graph.decode.paged", SM100)
 struct Struct_mla_decode_graph_bf16_paged_sm100(_MLADecodeGraphBF16PagedOp):
     """Registers the op for B100 and B200."""
 
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged", type="gpu", api="cuda", arch="sm_103a"
-)
+@extensibility.register("attention.mla.graph.decode.paged", SM103)
 struct Struct_mla_decode_graph_bf16_paged_sm103(_MLADecodeGraphBF16PagedOp):
     """Registers the op for B300."""
 
@@ -5952,7 +5903,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse(
 
 
 @extensibility.register(
-    "attention.mla.graph.decode.paged.sparse", type="gpu", api="hip"
+    "attention.mla.graph.decode.paged.sparse", extensibility.HIP
 )
 struct Struct_mla_decode_graph_bf16_paged_sparse_amd(
     _MLADecodeGraphBF16PagedSparseOp
@@ -5962,12 +5913,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_amd(
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged.sparse",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.mla.graph.decode.paged.sparse", SM100)
 struct Struct_mla_decode_graph_bf16_paged_sparse_sm100(
     _MLADecodeGraphBF16PagedSparseOp
 ):
@@ -5976,12 +5922,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_sm100(
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged.sparse",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.mla.graph.decode.paged.sparse", SM103)
 struct Struct_mla_decode_graph_bf16_paged_sparse_sm103(
     _MLADecodeGraphBF16PagedSparseOp
 ):
@@ -6641,7 +6582,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4(
 
 
 @extensibility.register(
-    "attention.mla.graph.decode.paged.sparse.nvfp4", type="gpu", api="hip"
+    "attention.mla.graph.decode.paged.sparse.nvfp4", extensibility.HIP
 )
 struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_amd(
     _MLADecodeGraphBF16PagedSparseNVFP4Op
@@ -6651,12 +6592,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_amd(
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged.sparse.nvfp4",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.mla.graph.decode.paged.sparse.nvfp4", SM100)
 struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_sm100(
     _MLADecodeGraphBF16PagedSparseNVFP4Op
 ):
@@ -6665,12 +6601,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_sm100(
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.decode.paged.sparse.nvfp4",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.mla.graph.decode.paged.sparse.nvfp4", SM103)
 struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_sm103(
     _MLADecodeGraphBF16PagedSparseNVFP4Op
 ):
@@ -6855,7 +6786,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.fp8", type="gpu", api="hip"
+    "attention.mla.graph.prefill.decode.paged.fp8", extensibility.HIP
 )
 struct Struct_mla_prefill_graph_decode_paged_fp8_amd(
     _MLAPrefillGraphDecodePagedFP8Op
@@ -6865,12 +6796,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_amd(
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.fp8",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.mla.graph.prefill.decode.paged.fp8", SM100)
 struct Struct_mla_prefill_graph_decode_paged_fp8_sm100(
     _MLAPrefillGraphDecodePagedFP8Op
 ):
@@ -6879,12 +6805,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sm100(
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.fp8",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.mla.graph.prefill.decode.paged.fp8", SM103)
 struct Struct_mla_prefill_graph_decode_paged_fp8_sm103(
     _MLAPrefillGraphDecodePagedFP8Op
 ):
@@ -7158,7 +7079,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.fp8.sparse", type="gpu", api="hip"
+    "attention.mla.graph.prefill.decode.paged.fp8.sparse", extensibility.HIP
 )
 struct Struct_mla_prefill_graph_decode_paged_fp8_sparse_amd(
     _MLAPrefillGraphDecodePagedFP8SparseOp
@@ -7169,10 +7090,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse_amd(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.fp8.sparse",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
+    "attention.mla.graph.prefill.decode.paged.fp8.sparse", SM100
 )
 struct Struct_mla_prefill_graph_decode_paged_fp8_sparse_sm100(
     _MLAPrefillGraphDecodePagedFP8SparseOp
@@ -7183,10 +7101,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse_sm100(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.fp8.sparse",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
+    "attention.mla.graph.prefill.decode.paged.fp8.sparse", SM103
 )
 struct Struct_mla_prefill_graph_decode_paged_fp8_sparse_sm103(
     _MLAPrefillGraphDecodePagedFP8SparseOp
@@ -7350,7 +7265,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged", type="gpu", api="hip"
+    "attention.mla.graph.prefill.decode.paged", extensibility.HIP
 )
 struct Struct_mla_prefill_graph_decode_bf16_paged_amd(
     _MLAPrefillGraphDecodeBF16PagedOp
@@ -7360,12 +7275,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_amd(
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.decode.paged",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.mla.graph.prefill.decode.paged", SM100)
 struct Struct_mla_prefill_graph_decode_bf16_paged_sm100(
     _MLAPrefillGraphDecodeBF16PagedOp
 ):
@@ -7374,12 +7284,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_sm100(
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.mla.graph.prefill.decode.paged",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.mla.graph.prefill.decode.paged", SM103)
 struct Struct_mla_prefill_graph_decode_bf16_paged_sm103(
     _MLAPrefillGraphDecodeBF16PagedOp
 ):
@@ -7761,7 +7666,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.sparse", type="gpu", api="hip"
+    "attention.mla.graph.prefill.decode.paged.sparse", extensibility.HIP
 )
 struct Struct_mla_prefill_graph_decode_paged_sparse_amd(
     _MLAPrefillGraphDecodePagedSparseOp
@@ -7772,10 +7677,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_amd(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.sparse",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
+    "attention.mla.graph.prefill.decode.paged.sparse", SM100
 )
 struct Struct_mla_prefill_graph_decode_paged_sparse_sm100(
     _MLAPrefillGraphDecodePagedSparseOp
@@ -7786,10 +7688,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_sm100(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.sparse",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
+    "attention.mla.graph.prefill.decode.paged.sparse", SM103
 )
 struct Struct_mla_prefill_graph_decode_paged_sparse_sm103(
     _MLAPrefillGraphDecodePagedSparseOp
@@ -8043,9 +7942,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.sparse.nvfp4",
-    type="gpu",
-    api="hip",
+    "attention.mla.graph.prefill.decode.paged.sparse.nvfp4", extensibility.HIP
 )
 struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4_amd(
     _MLAPrefillGraphDecodePagedSparseNVFP4Op
@@ -8056,10 +7953,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4_amd(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.sparse.nvfp4",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
+    "attention.mla.graph.prefill.decode.paged.sparse.nvfp4", SM100
 )
 struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4_sm100(
     _MLAPrefillGraphDecodePagedSparseNVFP4Op
@@ -8070,10 +7964,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4_sm100(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.sparse.nvfp4",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
+    "attention.mla.graph.prefill.decode.paged.sparse.nvfp4", SM103
 )
 struct Struct_mla_prefill_graph_decode_paged_sparse_nvfp4_sm103(
     _MLAPrefillGraphDecodePagedSparseNVFP4Op
@@ -8240,7 +8131,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.quantized", type="gpu", api="hip"
+    "attention.mla.graph.prefill.decode.paged.quantized", extensibility.HIP
 )
 struct Struct_mla_prefill_graph_decode_bf16_paged_quantized_amd(
     _MLAPrefillGraphDecodeBF16PagedQuantizedOp
@@ -8251,10 +8142,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized_amd(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.quantized",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
+    "attention.mla.graph.prefill.decode.paged.quantized", SM100
 )
 struct Struct_mla_prefill_graph_decode_bf16_paged_quantized_sm100(
     _MLAPrefillGraphDecodeBF16PagedQuantizedOp
@@ -8265,10 +8153,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized_sm100(
 
 
 @extensibility.register(
-    "attention.mla.graph.prefill.decode.paged.quantized",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
+    "attention.mla.graph.prefill.decode.paged.quantized", SM103
 )
 struct Struct_mla_prefill_graph_decode_bf16_paged_quantized_sm103(
     _MLAPrefillGraphDecodeBF16PagedQuantizedOp
@@ -8488,7 +8373,7 @@ struct Struct_latent_sparse_attention_ragged_paged(
 
 
 @extensibility.register(
-    "attention.latent_sparse.ragged.paged", type="gpu", api="hip"
+    "attention.latent_sparse.ragged.paged", extensibility.HIP
 )
 struct Struct_latent_sparse_attention_ragged_paged_amd(
     _LatentSparseAttentionRaggedPagedOp
@@ -8498,12 +8383,7 @@ struct Struct_latent_sparse_attention_ragged_paged_amd(
     comptime kernels: MLAGraphKernels = AMDMLAGraph
 
 
-@extensibility.register(
-    "attention.latent_sparse.ragged.paged",
-    type="gpu",
-    api="cuda",
-    arch="sm_100a",
-)
+@extensibility.register("attention.latent_sparse.ragged.paged", SM100)
 struct Struct_latent_sparse_attention_ragged_paged_sm100(
     _LatentSparseAttentionRaggedPagedOp
 ):
@@ -8512,12 +8392,7 @@ struct Struct_latent_sparse_attention_ragged_paged_sm100(
     comptime kernels: MLAGraphKernels = SM100MLAGraph
 
 
-@extensibility.register(
-    "attention.latent_sparse.ragged.paged",
-    type="gpu",
-    api="cuda",
-    arch="sm_103a",
-)
+@extensibility.register("attention.latent_sparse.ragged.paged", SM103)
 struct Struct_latent_sparse_attention_ragged_paged_sm103(
     _LatentSparseAttentionRaggedPagedOp
 ):

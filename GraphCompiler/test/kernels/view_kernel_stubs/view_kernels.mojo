@@ -25,7 +25,7 @@ import extensibility
 from extensibility import InputTensor, OutputTensor
 
 
-@extensibility.register("mo.static.broadcast_to", type="gpu")
+@extensibility.register("mo.static.broadcast_to", extensibility.ACCELERATOR)
 struct StaticBroadcastTo:
     @staticmethod
     def execute(
@@ -36,7 +36,7 @@ struct StaticBroadcastTo:
         pass
 
 
-@extensibility.register("mo.transpose", type="gpu")
+@extensibility.register("mo.transpose", extensibility.ACCELERATOR)
 struct Transpose:
     @staticmethod
     def execute(

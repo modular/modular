@@ -260,9 +260,8 @@ getRegisterDecoratorStringValue(mlir::TypedAttr decorator,
 struct ExtensibilityAPIStructInfo {
   bool isElementwiseKernel = false;
   mlir::StringAttr registrationName{};
-  DeviceInfoAttr deviceInfo{};
-  /// The `cond` platform of `register(name, cond)`, or null for the other
-  /// forms of `register`.
+  /// The `cond` platform of `register(name, cond)`, or null for
+  /// `register(name)`.
   KGEN::GeneratorAttr platformExpr{};
   /// The devices that the registration applies to.
   PlatformPredicate platform{};
@@ -296,50 +295,35 @@ static ErrorOr<bool>
 isExtensibilityAPIStruct(KGEN::LIT::StructDeclOp structDeclOp,
                          ExtensibilityAPIStructInfo &info) {
   for (mlir::TypedAttr decorator : structDeclOp.getDecorators()) {
+    std::optional<mlir::SymbolRefAttr> symbol = getDecoratorSymbol(decorator);
+    if (!symbol || !isMAXCompilerSymbol(*symbol))
+      continue;
     // Mojo mangles each overload of `register` with its parameter and
     // argument lists.
-    std::optional<mlir::SymbolRefAttr> symbol = getDecoratorSymbol(decorator);
-    if (symbol && isMAXCompilerSymbol(*symbol) &&
-        symbol->getLeafReference().strref().starts_with(
-            kRegisterCondDecoratorPrefix)) {
-      auto nameOperand = getDecoratorLambdaArgument(decorator, {1});
-      if (!nameOperand)
-        continue;
-      if (info.registrationName)
-        return Error("Only one op can be registered per kernel");
-      info.registrationName =
-          getStringAttrFromStaticStringDecorator(nameOperand->front());
-      info.deviceInfo =
-          DeviceInfoAttr::get(structDeclOp.getContext(), "", "", "", "",
-                              /*tile_based_fusion=*/false);
-      if (ErrorOrSuccess error = readPlatform(decorator, info))
-        return Error(error.getError());
+    llvm::StringRef leaf = symbol->getLeafReference().strref();
+    bool hasCond = leaf.starts_with(kRegisterCondDecoratorPrefix);
+    if (!hasCond && !leaf.starts_with(kRegisterDecoratorPrefix))
       continue;
-    }
-
-    auto operands = getDecoratorLambdaArgument(decorator, {1, 2, 3, 4, 5});
-    if (!operands)
+    // A package built before `register` took `cond` passes the four device
+    // fields after the name. Reading it as `register(name)` would widen the
+    // registration to every device.
+    auto apply = KGEN::sugarDynCast<KGEN::ParamOperatorAttr>(decorator);
+    if (!hasCond && apply && apply.getOperands().size() > 2)
+      return Error("the `register` decorator has arguments after the name; "
+                   "rebuild the package against the current extensibility "
+                   "package, and pass `cond` to restrict a registration to "
+                   "some devices");
+    auto nameOperand = getDecoratorLambdaArgument(decorator, {1});
+    if (!nameOperand)
       continue;
-
-    auto name = getStringAttrFromStaticStringDecorator(
-        (*operands)[kRegisterDecoratorArgName]);
-    auto type = getStringAttrFromStaticStringDecorator(
-        (*operands)[kRegisterDecoratorArgType]);
-    auto api = getStringAttrFromStaticStringDecorator(
-        (*operands)[kRegisterDecoratorArgApi]);
-    auto arch = getStringAttrFromStaticStringDecorator(
-        (*operands)[kRegisterDecoratorArgArch]);
-    auto model = getStringAttrFromStaticStringDecorator(
-        (*operands)[kRegisterDecoratorArgModel]);
 
     if (info.registrationName)
       return Error("Only one op can be registered per kernel");
-    info.registrationName = name;
-    info.deviceInfo =
-        DeviceInfoAttr::get(structDeclOp.getContext(), type.strref(),
-                            api.strref(), arch.strref(), model.strref(),
-                            /*tile_based_fusion=*/false);
-    info.platform = PlatformPredicate::fromDeviceInfo(info.deviceInfo);
+    info.registrationName =
+        getStringAttrFromStaticStringDecorator(nameOperand->front());
+    if (hasCond)
+      if (ErrorOrSuccess error = readPlatform(decorator, info))
+        return Error(error.getError());
   }
 
   return info.registrationName != nullptr;
@@ -351,9 +335,7 @@ struct ScannedKernel {
   KGEN::LIT::StructDeclOp structDeclOp;
   mlir::StringAttr registration;
   mlir::StringAttr mojoName;
-  DeviceInfoAttr deviceInfo;
   KGEN::GeneratorAttr platformExpr;
-  /// The devices that the registration applies to.
   PlatformPredicate platform;
   /// Every method named `execute`; `resolveExecuteOverloads` picks the one
   /// the decl records.
@@ -645,7 +627,6 @@ static mlir::LogicalResult scanForKernelDecls(
     ScannedKernel kernel;
     kernel.structDeclOp = structDeclOp;
     kernel.registration = info.registrationName;
-    kernel.deviceInfo = info.deviceInfo;
     kernel.platformExpr = info.platformExpr;
     kernel.platform = info.platform;
     kernel.mojoName = getFullyResolvedMojoName(structDeclOp);
@@ -1133,9 +1114,8 @@ struct ImportPackagesPass
     for (auto kernel : kernels) {
       if (kernel.platformExpr && !allowPlatformRegistrations) {
         kernel.structDeclOp.emitError()
-            << "`register(name, cond)` is not supported yet; restrict the "
-               "registration with the `type`, `api`, `arch`, and `model` "
-               "arguments of `register`";
+            << "`register(name, cond)` is disabled by "
+               "`allow-platform-registrations=false`";
         sawFailure = true;
         continue;
       }
@@ -1226,10 +1206,12 @@ struct ImportPackagesPass
 
       auto declOp = KernelDeclOp::create(
           builder, mlir::FusedLoc::get(ctx, fnLocs), kernel.mojoName,
-          kernel.registration, kernel.deviceInfo, kernel.platformExpr,
-          *executeAttr, *elementwiseAttr, *tileElementwiseAttr, *buildGraphAttr,
-          *executeDeviceAttr, *executeConfigurationAttr, kernel.reduction,
-          structParams, mlir::BoolAttr::get(ctx, isUserDefined),
+          kernel.registration,
+          DeviceInfoAttr::get(ctx, "", "", "", "", /*tile_based_fusion=*/false),
+          kernel.platformExpr, *executeAttr, *elementwiseAttr,
+          *tileElementwiseAttr, *buildGraphAttr, *executeDeviceAttr,
+          *executeConfigurationAttr, kernel.reduction, structParams,
+          mlir::BoolAttr::get(ctx, isUserDefined),
           /*supports_unfused_execute=*/
           kernel.supportsUnfusedExecute ? mlir::UnitAttr::get(ctx)
                                         : mlir::UnitAttr(),

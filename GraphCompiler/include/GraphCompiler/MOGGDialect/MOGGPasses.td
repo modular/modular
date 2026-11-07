@@ -508,7 +508,7 @@ def ImportPackages : Pass<"mogg-import-packages", "ModuleOp"> {
       "decls in the module are preserved.">,
     // TODO(GEX-4475): delete once every registration states a platform.
     Option<"allowPlatformRegistrations", "allow-platform-registrations",
-      "bool", /*default=*/"false",
+      "bool", /*default=*/"true",
       "Accept `register(name, cond)` registrations.">,
   ];
   let dependentDialects = [
