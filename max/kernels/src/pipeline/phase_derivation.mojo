@@ -16,7 +16,7 @@ Contains:
   - PhaseAction, PhaseStep: declarative recipe primitives
   - apply_phase_recipe: recipe evaluator
   - single_buffer_prologue_recipe, single_buffer_epilogue_recipe
-  - pipe_to_list, default_prologue, default_kernel, default_epilogue
+  - default_prologue, default_kernel, default_epilogue
   - _strip_drain_fuse_blocks, _expand_epilogue_blocks
   - derive_epilogue_from_program
   - double_buffer_edge_rules, single_buffer_edge_rules, apply_edge_rules
@@ -260,11 +260,6 @@ def single_buffer_epilogue_recipe() -> List[PhaseStep]:
 # =============================================================================
 # Framework Default Derivations (reusable by PipelineSchedule implementations)
 # =============================================================================
-
-
-def pipe_to_list[N: Int](p: Pipe[N]) -> List[OpDesc]:
-    """Convert a Pipe to a List[OpDesc]."""
-    return List(length=N, fill_with=lambda (i: Int) -> OpDesc: p.ops[i])
 
 
 def default_prologue(

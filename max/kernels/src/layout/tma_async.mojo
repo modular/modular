@@ -2817,9 +2817,9 @@ def _gather4_box_width[
     ``swizzle_bytes // sizeof(dtype)``, so that each gather4 call loads one
     swizzle-group-sized chunk of the row.
 
-    The caller iterates over column groups using
-    ``_gather4_num_col_groups`` which uses ``ceildiv`` to handle
-    non-divisible widths (TMA hardware zero-fills out-of-bounds elements).
+    The caller iterates over column groups with
+    ``ceildiv(tile_width, box_width)``; TMA hardware zero-fills out-of-bounds
+    elements.
 
     Parameters:
         dtype: Element data type.
@@ -2834,30 +2834,6 @@ def _gather4_box_width[
         return tile_width
     else:
         return swizzle_mode.bytes() // size_of[dtype]()
-
-
-def _gather4_num_col_groups[
-    dtype: DType,
-    tile_width: Int,
-    swizzle_mode: TensorMapSwizzle,
-]() -> Int:
-    """Returns the number of column groups for a gather4 load of a wide row.
-
-    Each column group loads ``box_width`` elements. The last group may extend
-    past the end of the row when ``tile_width`` is not a multiple of
-    ``box_width``; the TMA hardware zero-fills the out-of-bounds elements.
-
-    Parameters:
-        dtype: Element data type.
-        tile_width: Total number of elements per row in the global tensor.
-        swizzle_mode: TMA swizzle mode.
-
-    Returns:
-        ``ceildiv(tile_width, box_width)`` where ``box_width`` comes
-        from ``_gather4_box_width``.
-    """
-    comptime bw = _gather4_box_width[dtype, tile_width, swizzle_mode]()
-    return ceildiv(tile_width, bw)
 
 
 @inline(.always)
@@ -2892,7 +2868,7 @@ def create_tma_tile_gather4[
     row).  The caller iterates over column groups using the ``col_idx``
     parameter of ``async_copy_gather4``::
 
-        for cg in range(_gather4_num_col_groups[dtype, tile_width, swizzle_mode]()):
+        for cg in range(ceildiv(tile_width, box_width)):
             tile.async_copy_gather4(dst, bar, col_idx=Int32(cg * box_width),
                                     row0, row1, row2, row3)
 
