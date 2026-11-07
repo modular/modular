@@ -295,10 +295,6 @@ private:
   /// We need to hold onto a pointer to the data layout because it holds onto
   /// some state.
   llvm::DataLayout dataLayout;
-
-  /// List of buffers that contain archive files added to the JIT. This holds
-  /// references to them so they aren't deallocated underneath our feet.
-  SmallVector<BufferRef> archiveBuffers;
 };
 } // namespace M::KGEN
 
