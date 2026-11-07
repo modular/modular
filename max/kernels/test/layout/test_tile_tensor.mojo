@@ -943,7 +943,9 @@ def test_linear_idx_type_small_static_layout() raises:
     """Small fully-static layouts use int32 for linear_idx_type."""
     # Cosize = (4-1)*4 + (4-1)*1 + 1 = 16, fits in int32
     comptime TensorType = TileTensor[
-        .float32, RowMajorLayout[ComptimeInt[4], ComptimeInt[4]], MutAnyOrigin
+        .float32,
+        RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
+        MutUntrackedOrigin,
     ]
     comptime assert TensorType.linear_idx_type == .int32
 
@@ -951,7 +953,7 @@ def test_linear_idx_type_small_static_layout() raises:
 def test_linear_idx_type_dynamic_layout_generic() raises:
     """Dynamic layouts in GENERIC address space use int64."""
     comptime TensorType = TileTensor[
-        .float32, RowMajorLayout[Int, ComptimeInt[4]], MutAnyOrigin
+        .float32, RowMajorLayout[Int, ComptimeInt[4]], MutUntrackedOrigin
     ]
     # Not all dims known -> falls through to address_space check -> GENERIC -> int64
     comptime assert TensorType.linear_idx_type == .int64
@@ -962,7 +964,7 @@ def test_linear_idx_type_shared_address_space() raises:
     comptime TensorType = TileTensor[
         .float32,
         RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
-        MutAnyOrigin,
+        MutUntrackedOrigin,
         address_space=.SHARED,
     ]
     comptime assert TensorType.linear_idx_type == .int32

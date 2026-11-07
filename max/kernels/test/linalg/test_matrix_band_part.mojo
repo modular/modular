@@ -28,9 +28,11 @@ from std.testing import assert_equal
 def matrix_band_part[
     output_layout: TensorLayout,
     dtype: DType,
+    input_origin: ImmOrigin,
+    output_origin: MutOrigin,
 ](
-    input: TileTensor[dtype, output_layout, ImmutAnyOrigin],
-    output: TileTensor[dtype, output_layout, MutAnyOrigin],
+    input: TileTensor[dtype, output_layout, input_origin],
+    output: TileTensor[dtype, output_layout, output_origin],
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,

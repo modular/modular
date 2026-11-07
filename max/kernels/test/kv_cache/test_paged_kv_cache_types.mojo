@@ -38,15 +38,17 @@ comptime _rows_view_page_size = 1
 comptime _rows_view_granularity = 4
 
 # The one scaled collection type the scales test and the rows-view tests
-# build; a second spelling would drift from it.
+# build; a second spelling would drift from it. Its pools and tables are
+# `unsafe_alloc`-backed and freed by hand, so untracked origins are the
+# true ones.
 comptime _ScaledCollection = PagedKVCacheCollection[
     .float32,
     _rows_view_kv_params,
     _rows_view_page_size,
-    MutAnyOrigin,
-    ImmutAnyOrigin,
-    ImmutAnyOrigin,
-    MutAnyOrigin,
+    MutUntrackedOrigin,
+    ImmUntrackedOrigin,
+    ImmUntrackedOrigin,
+    MutUntrackedOrigin,
     scale_dtype_=DType.float32,
     quantization_granularity_=_rows_view_granularity,
 ]
@@ -68,8 +70,7 @@ def _zeroed_blocks_pool[num_blocks: Int]() -> _ScaledCollection.blocks_tt_type:
     )
     var ptr = unsafe_alloc[Float32](shape.flattened_length())
     return rebind[_ScaledCollection.blocks_tt_type](
-        TileTensor(ptr, row_major(shape.flattened_length()))
-        .reshape(
+        TileTensor(ptr, row_major(shape.flattened_length())).reshape(
             Coord(
                 Int64(shape[0]),
                 Idx[2],
@@ -79,7 +80,6 @@ def _zeroed_blocks_pool[num_blocks: Int]() -> _ScaledCollection.blocks_tt_type:
                 Idx[_rows_view_kv_params.head_size],
             )
         )
-        .as_unsafe_any_origin()
     ).fill(Float32(0))
 
 
@@ -101,8 +101,7 @@ def _uninit_scales_pool[
     )
     var ptr = unsafe_alloc[Float32](shape.flattened_length())
     return rebind[_ScaledCollection.scales_tt_type](
-        TileTensor(ptr, row_major(shape.flattened_length()))
-        .reshape(
+        TileTensor(ptr, row_major(shape.flattened_length())).reshape(
             Coord(
                 Int64(shape[0]),
                 Idx[2],
@@ -112,7 +111,6 @@ def _uninit_scales_pool[
                 Idx[1],
             )
         )
-        .as_unsafe_any_origin()
     )
 
 
@@ -133,16 +131,6 @@ def do_test[
     )
 
     var blocks_ptr = List(length=shape.flattened_length(), fill=Float32(0))
-    comptime Collection = PagedKVCacheCollection[
-        .float32,
-        kv_params,
-        page_size,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
-        scale_dtype_=scale_dtype,
-    ]
     var blocks = TileTensor(
         Span(blocks_ptr), row_major(shape.flattened_length())
     ).reshape(
@@ -173,6 +161,19 @@ def do_test[
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
 
+    # The scales pool is unsafe_alloc'd; the other origins are the local
+    # Lists above.
+    comptime Collection = PagedKVCacheCollection[
+        .float32,
+        kv_params,
+        page_size,
+        origin_of(blocks_ptr),
+        ImmOrigin(origin_of(cache_lengths_ptr)),
+        ImmOrigin(origin_of(lookup_table_ptr)),
+        MutUntrackedOrigin,
+        scale_dtype_=scale_dtype,
+    ]
+
     comptime scales_dtype = scale_dtype.or_else(.float32)
     var scales: OptionalReg[Collection.scales_tt_type] = None
 
@@ -182,8 +183,7 @@ def do_test[
             shape.flattened_length()
         )
         scales = rebind[Collection.scales_tt_type](
-            TileTensor(scales_ptr, row_major(shape.flattened_length()))
-            .reshape(
+            TileTensor(scales_ptr, row_major(shape.flattened_length())).reshape(
                 Coord(
                     Int64(shape[0]),
                     Idx[2],
@@ -193,13 +193,12 @@ def do_test[
                     Idx[kv_params.head_size],
                 )
             )
-            .as_unsafe_any_origin()
         ).fill(0)
 
     var collection = Collection(
-        rebind[Collection.blocks_tt_type](blocks.as_unsafe_any_origin()),
-        cache_lengths.as_imm().as_unsafe_any_origin(),
-        lookup_table.as_imm().as_unsafe_any_origin(),
+        blocks,
+        cache_lengths.as_imm(),
+        lookup_table.as_imm(),
         max_seq_length,
         max_cache_length,
         scales,
@@ -311,15 +310,6 @@ def test_paged_kv_cache_offset_correctness() raises:
     for i in range(total_elems):
         blocks_ptr[i] = Float32(i)
 
-    comptime Collection = PagedKVCacheCollection[
-        .float32,
-        kv_params_small,
-        page_size,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
-    ]
     var blocks = TileTensor(
         Span(blocks_ptr), row_major(shape_6d.flattened_length())
     ).reshape(
@@ -348,10 +338,12 @@ def test_paged_kv_cache_offset_correctness() raises:
     ).reshape(Coord(Int64(batch_size), Int64(num_blocks)))
 
     # Create collection
-    var collection = Collection(
-        rebind[Collection.blocks_tt_type](blocks.as_unsafe_any_origin()),
-        cache_lengths.as_imm().as_unsafe_any_origin(),
-        lookup_table.as_imm().as_unsafe_any_origin(),
+    var collection = PagedKVCacheCollection[
+        .float32, kv_params_small, page_size, scales_origin=MutUntrackedOrigin
+    ](
+        blocks,
+        cache_lengths.as_imm(),
+        lookup_table.as_imm(),
         UInt32(page_size),
         UInt32(page_size),
     )
@@ -435,10 +427,13 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
 
     var blocks = _zeroed_blocks_pool[num_value_blocks]()
 
-    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(1))
-    var cache_lengths = TileTensor(
-        Span(cache_lengths_ptr), row_major(len(cache_lengths_ptr))
-    ).reshape(Coord(Int64(batch_size)))
+    var cache_lengths_ptr = unsafe_alloc[UInt32](batch_size)
+    cache_lengths_ptr[0] = UInt32(1)
+    var cache_lengths = (
+        TileTensor(cache_lengths_ptr, row_major(batch_size))
+        .reshape(Coord(Int64(batch_size)))
+        .as_imm()
+    )
 
     # Values resolve through block 0.
     var lookup_table_ptr = unsafe_alloc[UInt32](batch_size)
@@ -447,7 +442,6 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
         TileTensor(lookup_table_ptr, row_major(batch_size))
         .reshape(Coord(Int64(batch_size), Int64(1)))
         .as_imm()
-        .as_unsafe_any_origin()
     )
 
     # Scales resolve through block 2 -- distinct from what lookup_table
@@ -460,7 +454,6 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
         TileTensor(scales_lookup_table_ptr, row_major(batch_size))
         .reshape(Coord(Int64(batch_size), Int64(1)))
         .as_imm()
-        .as_unsafe_any_origin()
     )
 
     var scales = _uninit_scales_pool[num_scale_blocks]().fill(
@@ -475,9 +468,9 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     var scales_opt: OptionalReg[_ScaledCollection.scales_tt_type] = scales
 
     var collection = _ScaledCollection(
-        rebind[_ScaledCollection.blocks_tt_type](blocks.as_unsafe_any_origin()),
-        cache_lengths.as_imm().as_unsafe_any_origin(),
-        lookup_table.as_imm().as_unsafe_any_origin(),
+        blocks,
+        cache_lengths,
+        lookup_table,
         UInt32(_rows_view_page_size),
         UInt32(_rows_view_page_size),
         scales_opt,
@@ -497,6 +490,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     )
 
     blocks.ptr.unsafe_free()
+    cache_lengths_ptr.unsafe_free()
     lookup_table_ptr.unsafe_free()
     scales_lookup_table_ptr.unsafe_free()
     scales.ptr.unsafe_free()
@@ -544,7 +538,6 @@ def _build_rows_view_collection[
         TileTensor(cache_lengths_ptr, row_major(num_rows))
         .reshape(Coord(Int64(num_rows)))
         .as_imm()
-        .as_unsafe_any_origin()
     )
 
     var lookup_table_ptr = unsafe_alloc[UInt32](num_rows * value_lut_cols)
@@ -557,7 +550,6 @@ def _build_rows_view_collection[
         TileTensor(lookup_table_ptr, row_major(num_rows * value_lut_cols))
         .reshape(Coord(Int64(num_rows), Int64(value_lut_cols)))
         .as_imm()
-        .as_unsafe_any_origin()
     )
 
     var scales_lookup_table_opt: OptionalReg[
@@ -580,7 +572,6 @@ def _build_rows_view_collection[
             )
             .reshape(Coord(Int64(num_rows), Int64(scale_lut_cols)))
             .as_imm()
-            .as_unsafe_any_origin()
         )
 
     var scales = _uninit_scales_pool[num_scale_blocks]().fill(
@@ -595,7 +586,7 @@ def _build_rows_view_collection[
     var scales_opt: OptionalReg[_ScaledCollection.scales_tt_type] = scales
 
     return _ScaledCollection(
-        rebind[_ScaledCollection.blocks_tt_type](blocks.as_unsafe_any_origin()),
+        blocks,
         cache_lengths,
         lookup_table,
         UInt32(_rows_view_page_size * value_lut_cols),
@@ -728,15 +719,6 @@ def _build_collection_and_page_stride[
     )
     var page = packed_page if page_stride < 0 else page_stride
     var blocks_ptr = List(length=num_blocks * page, fill=Float32(0))
-    comptime Collection = PagedKVCacheCollection[
-        .float32,
-        kv_params,
-        page_size,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
-    ]
     var blocks = TileTensor(
         Span(blocks_ptr)[: shape.flattened_length()],
         row_major(shape.flattened_length()),
@@ -762,10 +744,12 @@ def _build_collection_and_page_stride[
     for j in range(num_blocks):
         lookup_table[0, j] = UInt32(j)
 
-    var collection = Collection(
-        rebind[Collection.blocks_tt_type](blocks.as_unsafe_any_origin()),
-        cache_lengths.as_imm().as_unsafe_any_origin(),
-        lookup_table.as_imm().as_unsafe_any_origin(),
+    var collection = PagedKVCacheCollection[
+        .float32, kv_params, page_size, scales_origin=MutUntrackedOrigin
+    ](
+        blocks,
+        cache_lengths.as_imm(),
+        lookup_table.as_imm(),
         UInt32(page_size * num_blocks),
         UInt32(page_size * num_blocks),
         page_stride=page_stride,

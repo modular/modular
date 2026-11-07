@@ -44,18 +44,16 @@ def test_gemv() raises:
     comptime k = 11008
 
     var lhs_storage = unsafe_alloc[Scalar[type],](m * k, alignment=alignment)
-    var lhs = TileTensor(lhs_storage.as_unsafe_any_origin(), row_major[m, k]())
+    var lhs = TileTensor(lhs_storage, row_major[m, k]())
 
     var rhs_storage = unsafe_alloc[Scalar[type],](k, alignment=alignment)
-    var rhs = TileTensor(rhs_storage.as_unsafe_any_origin(), row_major[k]())
+    var rhs = TileTensor(rhs_storage, row_major[k]())
 
     var out_storage = unsafe_alloc[Scalar[type],](m, alignment=alignment)
-    var out = TileTensor(out_storage.as_unsafe_any_origin(), row_major[m]())
+    var out = TileTensor(out_storage, row_major[m]())
 
     var ref_out_storage = unsafe_alloc[Scalar[type]](m, alignment=alignment)
-    var ref_out = TileTensor(
-        ref_out_storage.as_unsafe_any_origin(), row_major[m]()
-    )
+    var ref_out = TileTensor(ref_out_storage, row_major[m]())
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
@@ -121,12 +119,8 @@ def test_gemv() raises:
     var par_perf = bench_run(bench_fn_parallel)
     std.benchmark.keep(out[10])
 
-    var rhs_mat = TileTensor(
-        rhs_storage.as_unsafe_any_origin(), row_major[k, 1]()
-    )
-    var out_mat = TileTensor(
-        out_storage.as_unsafe_any_origin(), row_major[m, 1]()
-    )
+    var rhs_mat = TileTensor(rhs_storage, row_major[k, 1]())
+    var out_mat = TileTensor(out_storage, row_major[m, 1]())
 
     # Compute speedup and bandwidth stats
     var par_bandwidth = (

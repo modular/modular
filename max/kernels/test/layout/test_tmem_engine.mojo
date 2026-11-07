@@ -47,13 +47,13 @@ comptime ACCUM_LAYOUT = Layout(
 comptime AccumTile = TileTensor[
     .float32,
     type_of(ACCUM_LAYOUT),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
 # The handle carries no `address_space`, so the engine's trait-mandated
 # parameters can only be inferred inside `TileTensor`'s generic context.
 # Every operation below therefore goes through a tile, as kernels do.
-comptime AccumStorage = TMemStorage[.float32, MutAnyOrigin]
+comptime AccumStorage = TMemStorage[.float32, MutUntrackedOrigin]
 
 comptime NUM_WARPS = 4
 comptime M64_LANES_PER_WARP = 16
@@ -64,7 +64,7 @@ comptime M64_LAYOUT = Layout(
 comptime M64Tile = TileTensor[
     .float32,
     type_of(M64_LAYOUT),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
 

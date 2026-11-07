@@ -65,7 +65,7 @@ def test_matmul[
 ](m: Int, n: Int, k: Int, kernel_type_m: Int) raises:
     var a_ptr = unsafe_alloc[Scalar[a_type],](m * k, alignment=alignment)
     var b_ptr = unsafe_alloc[Scalar[b_type],](k * n, alignment=alignment)
-    var b = TileTensor(b_ptr.as_unsafe_any_origin(), row_major(k, n))
+    var b = TileTensor(b_ptr, row_major(k, n))
 
     var padded_n_k = pack_matmul_b_shape_func[
         a_type,
@@ -82,12 +82,10 @@ def test_matmul[
     var c0_ptr = unsafe_alloc[Scalar[c_type],](m * n, alignment=alignment)
     var c1_ptr = unsafe_alloc[Scalar[c_type],](m * n, alignment=alignment)
 
-    var a = TileTensor(a_ptr.as_unsafe_any_origin(), row_major(m, k))
-    var bp = TileTensor(
-        bp_ptr.as_unsafe_any_origin(), row_major(padded_k, padded_n)
-    )
-    var c = TileTensor(c0_ptr.as_unsafe_any_origin(), row_major(m, n))
-    var golden = TileTensor(c1_ptr.as_unsafe_any_origin(), row_major(m, n))
+    var a = TileTensor(a_ptr, row_major(m, k))
+    var bp = TileTensor(bp_ptr, row_major(padded_k, padded_n))
+    var c = TileTensor(c0_ptr, row_major(m, n))
+    var golden = TileTensor(c1_ptr, row_major(m, n))
 
     # saturated VNNI only has a range [0,127] for the input a
     var vnni_range: Int = 128 if saturated else 256
