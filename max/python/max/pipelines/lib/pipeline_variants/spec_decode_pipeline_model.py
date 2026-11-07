@@ -110,6 +110,7 @@ from ..graph_specs import (
     GraphSpec,
     compile_and_init_graphs,
     graph_callable,
+    tp_signals,
 )
 from ..interfaces.arch_config import ArchConfigWithVisionCache
 from ..interfaces.batch_processor import (
@@ -2536,6 +2537,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
             weights=modules.weights,
             name=_graph_name(self.pairing, call.method),
             signal_buffer_index=call.driver.input_spec.signal_buffer_index,
+            signals_group=tp_signals,
         )
         config.input_spec = call.driver.input_spec
         self.export_input_types = call.input_types

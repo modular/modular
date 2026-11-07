@@ -638,6 +638,7 @@ class Module(Generic[_P, _R]):
         allow_subgraphs: bool = True,
         is_device_graph: bool = False,
         signal_buffer_index: int | None = None,
+        signals_group: compilation.SignalsGroup | None = None,
     ) -> compilation.CompiledCallable[_P, _R]:
         """Traces ``forward`` and compiles it into a callable.
 
@@ -701,6 +702,9 @@ class Module(Generic[_P, _R]):
             is_device_graph: Whether to build a device graph.
             signal_buffer_index: The graph input position of the signal
                 buffers. See :func:`~max.tensor.compilation.stage`.
+            signals_group: Names the signal buffers in the callable's
+                serialized signature. See
+                :meth:`~max.tensor.compilation.CompiledCallable.graph_signature`.
 
         Returns:
             A :class:`~max.tensor.compilation.CompiledCallable` with
@@ -730,7 +734,10 @@ class Module(Generic[_P, _R]):
             )
             timer.mark_build_complete()
             return compilation.CompiledCallable(
-                staged, registry, session=session
+                staged,
+                registry,
+                session=session,
+                signals_group=signals_group,
             )
 
     def stage(

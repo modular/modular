@@ -59,6 +59,7 @@ import functools
 import itertools
 import re
 import shutil
+from collections import OrderedDict
 from collections.abc import (
     Callable,
     Iterable,
@@ -72,6 +73,7 @@ from typing import Any, Generic, ParamSpec, TypeVar
 
 from max import _validation_hooks, tree
 from max._artifact.value_types import (
+    ArtifactError,
     ArtifactFile,
     ArtifactType,
     decode_field,
@@ -131,6 +133,10 @@ _LAYOUT_TYPES: tuple[type, ...] = (
 )
 # Leaf types when flattening a traced function's return value.
 _VALUE_TYPES: tuple[type, ...] = (Tensor, BufferValue, TensorValue)
+
+SignalsGroup = Callable[[tuple[BufferLayout, ...]], Any]
+"""Builds the tree that names a graph's signal buffers, one per device, in
+its exported signature."""
 
 
 def _sanitized_graph_name(fn: Callable[..., object]) -> str:
@@ -398,6 +404,8 @@ class CompiledCallable(Generic[_P, _R]):
         session: The session that compiles and initializes the graph,
             including its precompiled or exported MEFs and its kernel
             options. Defaults to a session shared by the whole process.
+        signals_group: Names the graph's signal buffers when it is
+            serialized. See :meth:`graph_signature`.
     """
 
     #: See :attr:`StagedGraph.in_layouts`.
@@ -417,6 +425,7 @@ class CompiledCallable(Generic[_P, _R]):
     _engine_model: Model | None
     _signal_buffers: list[Buffer]
     _signal_buffer_index: int | None
+    _signals_group: SignalsGroup | None
 
     def __init__(
         self,
@@ -424,6 +433,7 @@ class CompiledCallable(Generic[_P, _R]):
         weights: Mapping[str, DLPackArray] | None = None,
         *,
         session: InferenceSession | None = None,
+        signals_group: SignalsGroup | None = None,
     ) -> None:
         session = _session() if session is None else session
         # Use the session's MEF cache. Plain ``compile`` bypasses it.
@@ -434,6 +444,7 @@ class CompiledCallable(Generic[_P, _R]):
             artifact, weights_registry=dict(weights or {})
         )
         self._bind(staged, artifact, engine_model, weights)
+        self._signals_group = signals_group
 
     @classmethod
     def from_engine_model(
@@ -442,6 +453,8 @@ class CompiledCallable(Generic[_P, _R]):
         artifact: CompiledModel,
         engine_model: Model,
         weights: Mapping[str, DLPackArray] | None = None,
+        *,
+        signals_group: SignalsGroup | None = None,
     ) -> CompiledCallable[_P, _R]:
         """Wraps a graph that was compiled and initialized elsewhere.
 
@@ -454,12 +467,15 @@ class CompiledCallable(Generic[_P, _R]):
             engine_model: The model initialized from ``artifact``.
             weights: The weight registry ``engine_model`` was initialized
                 with.
+            signals_group: Names the graph's signal buffers when it is
+                serialized. See :meth:`graph_signature`.
 
         Returns:
             The callable that runs ``engine_model``.
         """
         compiled = cls.__new__(cls)
         compiled._bind(staged, artifact, engine_model, weights)
+        compiled._signals_group = signals_group
         return compiled
 
     def _bind(
@@ -476,6 +492,7 @@ class CompiledCallable(Generic[_P, _R]):
         self._artifact = artifact
         self._weights = dict(weights or {})
         self._engine_model = engine_model
+        self._signals_group = None
         # Allocate the signal buffers now rather than on the first call.
         ids = self._signal_device_ids
         self._signal_buffers = _cached_signal_buffers(ids)[0] if ids else []
@@ -520,6 +537,7 @@ class CompiledCallable(Generic[_P, _R]):
         compiled._weights = dict(weights or {})
         compiled._engine_model = engine_model
         compiled._signal_buffers = []
+        compiled._signals_group = None
         return compiled
 
     @property
@@ -657,16 +675,52 @@ class CompiledCallable(Generic[_P, _R]):
         else:
             self._artifact.export_mef(path)
 
-    def __serialize__(self) -> Mapping[str, ArtifactType]:
-        """Returns the MEF, stored as ``model.mef``, and the call's layouts.
+    def graph_signature(self) -> tuple[list[TensorLayout], tree.TreeDef]:
+        """Returns the layouts and call structure of every graph input.
 
-        The layouts and tree structures of the call rebuild the callable.
+        This is :attr:`in_layouts` and :attr:`in_tree` plus the signal
+        buffers, which a call doesn't pass. They appear as the callable's
+        ``signals_group``: under ``signals`` when the call takes one mapping
+        argument, and otherwise as a positional argument.
+
+        Raises:
+            ArtifactError: If the graph takes signal buffers and the callable
+                has no ``signals_group``, or their graph inputs fall inside
+                an argument.
+        """
+        if not self._signal_device_ids:
+            return self.in_layouts, self.in_tree
+        if self._signals_group is None:
+            raise ArtifactError(
+                f"the graph takes {len(self._signal_device_ids)} signal"
+                " buffers that its signature does not name: build the"
+                " callable with a signals_group"
+            )
+        signals = tuple(
+            BufferLayout(t.dtype, t.shape, t.device)
+            for t in _signal_buffer_types(self._signal_device_ids)
+        )
+        return _with_signal_inputs(
+            self.in_layouts,
+            self.in_tree,
+            self._signals_group(signals),
+            self._signal_buffer_index,
+        )
+
+    def __serialize__(self) -> Mapping[str, ArtifactType]:
+        """Returns the MEF, stored as ``model.mef``, and the graph's layouts.
+
+        The layouts and tree structures are those of
+        :meth:`graph_signature`, so a rebuilt callable takes the signal
+        buffers as arguments.
 
         Raises:
             ArtifactError: If a layout has a dimension built from an operator
-                other than ``+``, ``*`` and ``//``, or a tree structure cannot
-                be encoded as JSON.
+                other than ``+``, ``*`` and ``//``, a tree structure cannot
+                be encoded as JSON, or :meth:`graph_signature` cannot name
+                the signal buffers.
         """
+        in_layouts, in_tree = self.graph_signature()
         return {
             "mef": ArtifactFile(
                 "model.mef",
@@ -674,8 +728,8 @@ class CompiledCallable(Generic[_P, _R]):
                 if isinstance(self._artifact, Path)
                 else self._artifact.export_mef,
             ),
-            "in_layouts": [layout_to_json(t) for t in self.in_layouts],
-            "in_tree": treedef_to_json(self.in_tree),
+            "in_layouts": [layout_to_json(t) for t in in_layouts],
+            "in_tree": treedef_to_json(in_tree),
             "out_layouts": [layout_to_json(t) for t in self.out_layouts],
             "out_tree": treedef_to_json(self.out_tree),
         }
@@ -706,6 +760,7 @@ class CompiledCallable(Generic[_P, _R]):
         compiled._weights = {}
         compiled._engine_model = None
         compiled._signal_buffers = []
+        compiled._signals_group = None
         return compiled
 
 
@@ -715,6 +770,81 @@ def _mef_path(value: ArtifactType) -> Path:
     ):
         raise TypeError(f"expected an artifact file, got {value!r}")
     return value.content
+
+
+def _with_signal_inputs(
+    layouts: Sequence[TensorLayout],
+    treedef: tree.TreeDef,
+    signals: object,
+    at: int | None,
+) -> tuple[list[TensorLayout], tree.TreeDef]:
+    """Returns a call's signature with ``signals`` at graph input ``at``.
+
+    ``at`` is ``None`` for after the last input.
+
+    Raises:
+        ArtifactError: If ``at`` falls inside an argument or a field, or the
+            call takes keyword arguments.
+    """
+    args, kwargs = tree.unflatten(treedef, layouts)
+    if kwargs:
+        raise ArtifactError(
+            "a call with keyword arguments cannot name its signal buffers"
+        )
+    starts = list(
+        itertools.accumulate(
+            (len(layout.local_types) for layout in layouts), initial=0
+        )
+    )
+    at = starts[-1] if at is None else at
+    if at not in starts:
+        raise ArtifactError(
+            f"the signal buffers at graph input {at} split an argument"
+        )
+    before = starts.index(at)
+    if len(args) == 1 and isinstance(args[0], Mapping):
+        (root,) = args
+        if "signals" in root:
+            raise ArtifactError("the call already has a field named signals")
+        # A plain dict flattens in key order, so its fields keep that order.
+        items = sorted(root.items()) if type(root) is dict else root.items()
+        fields = OrderedDict(_insert(list(items), ("signals", signals), before))
+        # Rebuild a graph group as its own class, so its kind survives.
+        args = (
+            type(root).__tree_unflatten__(
+                tree.flatten_one_level(root)[2], fields
+            )
+            if hasattr(type(root), "__tree_unflatten__")
+            else fields,
+        )
+    else:
+        args = tuple(
+            value
+            for _, value in _insert(
+                [(None, arg) for arg in args], (None, signals), before
+            )
+        )
+    return tree.flatten((args, kwargs), leaf=TensorLayout)
+
+
+def _insert(
+    items: list[tuple[Any, Any]], item: tuple[Any, Any], before: int
+) -> list[tuple[Any, Any]]:
+    """Returns ``items`` with ``item`` after the first ``before`` layouts.
+
+    Raises:
+        ArtifactError: If that point falls inside an item.
+    """
+    count = 0
+    for i, (_, value) in enumerate(items):
+        if count == before:
+            return [*items[:i], item, *items[i:]]
+        count += len(tree.leaves(value, leaf=TensorLayout))
+    if count == before:
+        return [*items, item]
+    raise ArtifactError(
+        f"the signal buffers after input layout {before} split an argument"
+    )
 
 
 def _argument_tensor(
