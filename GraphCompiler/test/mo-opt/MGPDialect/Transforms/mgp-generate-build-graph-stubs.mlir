@@ -22,7 +22,7 @@
 
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
 
-mogg.kernel.decl @k registration = "test.k" device_info = <"", "", "", ""> execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @k registration = "test.k" execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
 
 // The original stub is retained (still used by the direct-execution / init path),
 // keeping its `!mogg.context` launch arg and `mogg.call.opaque` dispatch.
@@ -83,7 +83,7 @@ mgp.model @dg device_graph devices [#M.device_ref<"gpu", 0>] init (%weights: !mg
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
 
 // CHECK-NOT: @stub_1_build_graph
-mogg.kernel.decl @k registration = "test.k" device_info = <"", "", "", ""> execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @k registration = "test.k" execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
 
 mogg.func @stub_1 private dispatch(deferred) (%in: !mogg.tensor, %out: !mogg.tensor, %ctx: !mogg.context) attributes {abi = #mogg.abi<MOGG>, constantResources = [], device = "gpu", fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"test.k">>} {
   mogg.call.opaque @k inputs(%in : !mogg.tensor) outputs(%out : !mogg.tensor) context(%ctx : !mogg.context)
@@ -126,7 +126,7 @@ mgp.model @not_dg devices [#M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<
 
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
 
-mogg.kernel.decl @k registration = "test.k" device_info = <"", "", "", ""> execute = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @k registration = "test.k" execute = #kf struct_params = [] is_user_defined = false
 
 // CHECK: mogg.func @stub_1_build_graph private {{(dispatch\([a-z]+\) )?}}(%{{.*}}: !mogg.tensor, %{{.*}}: !mogg.tensor, %[[B:[a-zA-Z0-9_]+]]: !mgp.device_graph.builder)
 // CHECK-NEXT: %[[REC:[a-zA-Z0-9_]+]] = mgp.device_graph.recording_context %[[B]] : !mogg.context
@@ -240,7 +240,7 @@ mgp.model @dg_alloc_in_dependencies device_graph devices [#M.device_ref<"gpu", 0
 
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
 
-mogg.kernel.decl @k registration = "test.k" device_info = <"", "", "", ""> execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @k registration = "test.k" execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
 
 // CHECK: mogg.func @stub_1_build_graph private {{(dispatch\([a-z]+\) )?}}(%{{.*}}: !mogg.tensor, %{{.*}}: !mgp.device_graph.builder, %{{.*}}: !mogg.tensor)
 // CHECK-NEXT: mogg.call.build_graph["k"]
@@ -285,7 +285,7 @@ mgp.model @dg_ctx_mid device_graph devices [#M.device_ref<"gpu", 0>] init (%weig
 
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
 
-mogg.kernel.decl @k registration = "test.k" device_info = <"", "", "", ""> execute = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @k registration = "test.k" execute = #kf struct_params = [] is_user_defined = false
 
 // CHECK: mogg.func @stub_1_build_graph private {{(dispatch\([a-z]+\) )?}}(%{{.*}}: !mogg.context, %{{.*}}: !mogg.tensor, %{{.*}}: !mogg.tensor, %[[B:[a-zA-Z0-9_]+]]: !mgp.device_graph.builder)
 // CHECK-NEXT: %[[REC:[a-zA-Z0-9_]+]] = mgp.device_graph.recording_context %[[B]] : !mogg.context
@@ -420,7 +420,7 @@ mgp.model @dg_map_rowwise device_graph devices [#M.device_ref<"gpu", 0>] init (%
 
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
 
-mogg.kernel.decl @k registration = "test.k" device_info = <"", "", "", ""> execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @k registration = "test.k" execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
 
 // CHECK: mogg.func @stub_1_build_graph private {{(dispatch\([a-z]+\) )?}}(%{{.*}}: !mogg.tensor, %{{.*}}: !mogg.tensor, %[[B:[a-zA-Z0-9_]+]]: !mgp.device_graph.builder)
 // CHECK: mogg.call.build_graph["k"]
@@ -465,7 +465,7 @@ mgp.model @dg_map_opaque device_graph devices [#M.device_ref<"gpu", 0>] init (%w
 
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
 
-mogg.kernel.decl @k registration = "test.k" device_info = <"", "", "", ""> execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @k registration = "test.k" execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
 
 // The recording sibling is generated once and shared across both collective
 // regions.
@@ -530,7 +530,7 @@ mgp.model @dg_collective device_graph devices [#M.device_ref<"gpu", 0>, #M.devic
 
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
 
-mogg.kernel.decl @k registration = "test.k" device_info = <"", "", "", ""> execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @k registration = "test.k" execute = #kf build_graph = #kf struct_params = [] is_user_defined = false
 
 // CHECK: mogg.func @stub_1_build_graph
 // CHECK-NEXT: mogg.call.build_graph["k"] inputs(%{{.*}}) outputs(%{{.*}}) builder(%{{.*}}) {{.*}}moOpName = "test.k" {{.*}}hasEpilogueFusion = true

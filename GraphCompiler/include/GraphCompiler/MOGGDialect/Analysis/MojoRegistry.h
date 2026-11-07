@@ -32,7 +32,7 @@
 namespace M::MOGG {
 
 /// Returns the set of devices that `decl` applies to: its `cond=` platform,
-/// or else the devices that its `device_info` fields select.
+/// or all devices if it has none.
 ErrorOr<PlatformPredicate> getRegistrationPlatformPredicate(KernelDeclOp decl);
 
 /// Indexes `mogg.kernel.decl`, `mogg.primitive.decl`, and

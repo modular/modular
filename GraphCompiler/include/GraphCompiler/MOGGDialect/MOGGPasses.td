@@ -506,10 +506,6 @@ def ImportPackages : Pass<"mogg-import-packages", "ModuleOp"> {
       "decl ops already present in the module, and skip loading built-in "
       "packages. Callers pass only the delta paths not yet loaded; existing "
       "decls in the module are preserved.">,
-    // TODO(GEX-4475): delete once every registration states a platform.
-    Option<"allowPlatformRegistrations", "allow-platform-registrations",
-      "bool", /*default=*/"true",
-      "Accept `register(name, cond)` registrations.">,
   ];
   let dependentDialects = [
     "M::MOGG::MOGGDialect",
@@ -557,12 +553,11 @@ def TestKernelRegistrations
   let summary = "Test-only: evaluates, compares, and resolves registrations";
   let description = [{
     For each registration that has at least one `mogg.kernel.decl` with a
-    `platform_predicate`, prints each decl's platform (the platform of its
-    `device_info` for a decl without one) and its value for each device in
-    the `mogg.test_device_infos` module attribute. Then it prints how the
-    platforms of each pair of decls of the registration compare, and the decl
-    that `MojoRegistry` resolves for each device in `mo.device_info_mapping`.
-    The output goes to stderr:
+    `platform_predicate`, prints each decl's platform (`true` for a decl
+    without one) and its value for each device in the `mogg.test_device_infos`
+    module attribute. Then it prints how the platforms of each pair of decls
+    of the registration compare, and the decl that `MojoRegistry` resolves for
+    each device in `mo.device_info_mapping`. The output goes to stderr:
 
     ```
     platform @Kernel = type("gpu") & api("cuda")

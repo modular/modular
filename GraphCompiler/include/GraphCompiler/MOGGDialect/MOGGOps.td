@@ -918,7 +918,6 @@ def MOGG_KernelDeclOp
     `platform_predicate` comes from `register(name)` and applies to all
     devices.
     `MojoRegistry::getResolvedKernel` describes how a decl is selected.
-    `device_info` is always empty.
 
     `build_graph` has the same tensor signature as `execute` but takes a
     `DeviceGraphBuilder` in place of the `DeviceContext`.
@@ -944,7 +943,6 @@ def MOGG_KernelDeclOp
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     StrAttr:$registration,
-    M_DeviceInfoAttr:$registration_device_info,
     OptionalAttr<KGEN_GeneratorAttr>:$platform_predicate,
     OptionalAttr<MOGG_KernelFunctionAttr>:$execute,
     OptionalAttr<MOGG_KernelFunctionAttr>:$elementwise,
@@ -962,7 +960,6 @@ def MOGG_KernelDeclOp
   let assemblyFormat = [{
     custom<SymbolVisibility>($sym_visibility) `` $sym_name
     `registration` `=` $registration
-    `device_info` `=` $registration_device_info
     (`platform_predicate` `=` qualified($platform_predicate)^)?
     (`execute` `=` $execute^)?
     (`elementwise` `=` $elementwise^)?

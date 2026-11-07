@@ -150,7 +150,7 @@ ErrorOr<PlatformPredicate>
 M::MOGG::getRegistrationPlatformPredicate(KernelDeclOp decl) {
   if (KGEN::GeneratorAttr generator = decl.getPlatformPredicateAttr())
     return PlatformPredicate::fromGenerator(generator);
-  return PlatformPredicate::fromDeviceInfo(decl.getRegistrationDeviceInfo());
+  return PlatformPredicate();
 }
 
 ErrorOr<const PlatformPredicate *>

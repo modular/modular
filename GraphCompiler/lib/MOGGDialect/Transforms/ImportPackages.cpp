@@ -1112,14 +1112,6 @@ struct ImportPackagesPass
     bool sawFailure = false;
 
     for (auto kernel : kernels) {
-      if (kernel.platformExpr && !allowPlatformRegistrations) {
-        kernel.structDeclOp.emitError()
-            << "`register(name, cond)` is disabled by "
-               "`allow-platform-registrations=false`";
-        sawFailure = true;
-        continue;
-      }
-
       if (failed(checkNewDevices(kernel, seenRegistrations))) {
         sawFailure = true;
         continue;
@@ -1206,12 +1198,10 @@ struct ImportPackagesPass
 
       auto declOp = KernelDeclOp::create(
           builder, mlir::FusedLoc::get(ctx, fnLocs), kernel.mojoName,
-          kernel.registration,
-          DeviceInfoAttr::get(ctx, "", "", "", "", /*tile_based_fusion=*/false),
-          kernel.platformExpr, *executeAttr, *elementwiseAttr,
-          *tileElementwiseAttr, *buildGraphAttr, *executeDeviceAttr,
-          *executeConfigurationAttr, kernel.reduction, structParams,
-          mlir::BoolAttr::get(ctx, isUserDefined),
+          kernel.registration, kernel.platformExpr, *executeAttr,
+          *elementwiseAttr, *tileElementwiseAttr, *buildGraphAttr,
+          *executeDeviceAttr, *executeConfigurationAttr, kernel.reduction,
+          structParams, mlir::BoolAttr::get(ctx, isUserDefined),
           /*supports_unfused_execute=*/
           kernel.supportsUnfusedExecute ? mlir::UnitAttr::get(ctx)
                                         : mlir::UnitAttr(),

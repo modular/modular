@@ -56,7 +56,7 @@ mo.graph @bodyAxis(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 // A fold belongs to a rowwise.
 mo.graph @reduceParent(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
@@ -80,7 +80,7 @@ mo.graph @reduceParent(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f3
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 mo.graph @reduceNoResult(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
@@ -102,7 +102,7 @@ mo.graph @reduceNoResult(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f3
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 mo.graph @reduceIndexRank(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
@@ -125,7 +125,7 @@ mo.graph @reduceIndexRank(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 mo.graph @reduceNoContribution(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
@@ -147,7 +147,7 @@ mo.graph @reduceNoContribution(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 mo.graph @reduceStores(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
@@ -188,7 +188,7 @@ mo.graph @reduceUnknownMonoid(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.elementwise.Neg registration = "mo.negative" device_info = <"", "", "", ""> elementwise = <<!lit.generator<<"dtype": !DType, "width": !SIMDLength>("x": !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>) -> !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>>>, [#kgen<param.decl dtype : !DType>, #kgen<param.decl width : !SIMDLength>], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}]> struct_params = [] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.elementwise.Neg registration = "mo.negative" elementwise = <<!lit.generator<<"dtype": !DType, "width": !SIMDLength>("x": !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>) -> !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>>>, [#kgen<param.decl dtype : !DType>, #kgen<param.decl width : !SIMDLength>], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}]> struct_params = [] is_user_defined = false
 
 mo.graph @reduceNotAMonoid(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
@@ -211,7 +211,7 @@ mo.graph @reduceNotAMonoid(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], 
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 mo.graph @reduceResultCount(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
@@ -234,7 +234,7 @@ mo.graph @reduceResultCount(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1],
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
-mogg.kernel.decl @builtin_kernels.monoids.Welford registration = "reduction.mean_var.tmp" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"count", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"mean", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"M2", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.Welford registration = "reduction.mean_var.tmp" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"count", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"mean", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"M2", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 // Welford's three outputs share the `dtype` parameter.
 mo.graph @reduceParamTypes(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {

@@ -28,11 +28,8 @@
 // Registry validation finds the ambiguous op without a device.
 // RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_pkg" --mogg-validate-kernel-registry -o /dev/null 2>&1 | FileCheck %s --check-prefix=VALIDATE
 
-// With the switch off, the import rejects `register(name, cond)`.
-// RUN: not mo-opt %s --split-input-file --mlir-print-op-on-diagnostic=false --mogg-import-packages="mojo-pkg-paths=%platform_pkg allow-platform-registrations=false" -o /dev/null 2>&1 | FileCheck %s --check-prefix=DISABLED
-
-// IMPORT: @{{.*}}.PredMatmulCpu registration = "pred_matmul" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<identical(:string *(0,0), "cpu")> : !kgen.generator<{{.*}}> execute
-// IMPORT: @{{.*}}.PredMixedAllDevices registration = "pred_mixed" device_info = <"", "", "", ""> execute
+// IMPORT: @{{.*}}.PredMatmulCpu registration = "pred_matmul" platform_predicate = #kgen.gen<identical(:string *(0,0), "cpu")> : !kgen.generator<{{.*}}> execute
+// IMPORT: @{{.*}}.PredMixedAllDevices registration = "pred_mixed" execute
 
 // CHECK: platform @{{.*}}.PredB200 = type("gpu") & api("cuda") & arch("sm_100a") & model("NVIDIA B200")
 // CHECK: platform @{{.*}}.PredB200 on #M.device_info<"gpu", "cuda", "sm_100a", "NVIDIA B200"> = true
@@ -122,8 +119,6 @@
 // VALIDATE-NOT: 'pred_matmul'
 // VALIDATE: error: ambiguous kernel resolution for 'pred_overlap' on device {type="gpu", api="cuda", arch="sm_100a", model=*}: user-defined registrations match
 // VALIDATE-NOT: 'pred_specialized'
-
-// DISABLED: platform_kernels.mojo:{{[0-9]+}}:{{[0-9]+}}: error: `register(name, cond)` is disabled by `allow-platform-registrations=false`
 
 module attributes {
   mo.device_info_mapping = {
