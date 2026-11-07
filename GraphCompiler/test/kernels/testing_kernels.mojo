@@ -2878,16 +2878,6 @@ def custom_op_with_mixed_bound_shape_func_shape(
     return IndexList[2](Int(num_rows), cols[1])
 
 
-# Declares the retired `target` parameter, which the graph compiler rejects.
-@extensibility.register("kernel_with_target_param")
-struct KernelWithTargetParam:
-    @staticmethod
-    def execute[
-        target: StaticString
-    ](output: Some[Output & Tensor], x: Some[Input & Tensor]):
-        pass
-
-
 comptime _WrapperLayout = Layout[
     shape_types=Coord[Int64, Int64].element_types,
     stride_types=Coord[Int64, Int64].element_types,

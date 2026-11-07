@@ -711,6 +711,49 @@ LogicalResult declVerifyHasEntryPoint(KernelDeclOp decl,
   return success();
 }
 
+// A kernel reads its device through its `DeviceContext` argument's `target`, so
+// the graph compiler no longer infers a `target: StaticString` parameter.
+LogicalResult declVerifyNoTargetParameter(KernelDeclOp decl,
+                                          const KernelDeclAdaptor &adaptor) {
+  bool failed = false;
+  auto check =
+      [&](mlir::ArrayAttr params, mlir::Location loc, llvm::StringRef where) {
+        if (!params)
+          return;
+        for (mlir::Attribute attr : params) {
+          auto param = mlir::cast<ParamDeclAttr>(attr);
+          if (demangleParameterName(param.getName().strref()) !=
+              MOGG::kMoggTargetParameterName)
+            continue;
+          mlir::emitError(loc)
+              << where << " declares a `target` parameter, which is no longer "
+              << "supported; take a `ctx: DeviceContext` argument and use "
+                 "`ctx.target` instead";
+          failed = true;
+        }
+      };
+
+  check(adaptor.structParams, decl.getMojoStructLocation(),
+        "the kernel struct");
+  auto checkFunction =
+      [&](const std::optional<KernelDeclFunctionAdaptor> &function,
+          KernelFunctionKind kind) {
+        if (function && function->attr)
+          check(function->attr.getParams(), decl.getMojoFunctionLocation(kind),
+                stringifyKernelFunctionKind(kind));
+      };
+  checkFunction(adaptor.executeFunction, KernelFunctionKind::Execute);
+  checkFunction(adaptor.elementwiseFunction, KernelFunctionKind::Elementwise);
+  checkFunction(adaptor.tileElementwiseFunction,
+                KernelFunctionKind::TileElementwise);
+  checkFunction(adaptor.buildGraphFunction, KernelFunctionKind::BuildGraph);
+  checkFunction(adaptor.executeDeviceFunction,
+                KernelFunctionKind::ExecuteDevice);
+  checkFunction(adaptor.executeConfigurationFunction,
+                KernelFunctionKind::ExecuteConfiguration);
+  return failed ? failure() : success();
+}
+
 // Whether the generated launch can pass `operand` to a declarative entry point:
 // a trait-bound tensor/buffer crosses as its `TileTensor` projection and is
 // rebuilt on the device, while a scalar crosses as-is.
@@ -1184,6 +1227,10 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
         continue;
 
       if (setFlagIfFailed(failed, declVerifyHasEntryPoint, decl, adaptor)
+              .failed())
+        continue;
+
+      if (setFlagIfFailed(failed, declVerifyNoTargetParameter, decl, adaptor)
               .failed())
         continue;
 

@@ -579,9 +579,6 @@ ErrorOr<MojoValue> EmitMojoState::inferDefaultKernelParamValue(
   // TODO(GEX-2847): Check the op, not the FuncOp, in case these get
   // sequence fused. Safe today: stubs are outlined before sequence fusion, and
   // sequence-fused ones are all on the host.
-  if (paramName == MOGG::kMoggTargetParameterName)
-    return Error("the `target` kernel parameter is no longer supported; take a "
-                 "`ctx: DeviceContext` argument and use `ctx.target` instead");
   if (paramName == MOGG::kMoggTraceNameParameterName) {
     auto kernelStubOp = callOp->getParentOfType<FuncOp>();
     return getTraceNameValue(kernelStubOp.getFusionInfoAttr());
