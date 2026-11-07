@@ -1010,6 +1010,16 @@ def _nv_interleave_block_scales(
     scales = scales.to(device)
     scale_m = scales.shape[1]
     scale_k = scales.shape[2]
+    if int(scale_m) % _SF_GRANULE_ROWS == 0:
+        # No row granule spans two experts, so one interleave of all experts'
+        # rows is byte-identical to interleaving each expert and stacking.
+        interleaved = block_scales_interleave(
+            scales.reshape([num_experts * scale_m, scale_k]), group_size
+        )
+        return interleaved.reshape(
+            [num_experts, int(scale_m) // _SF_GRANULE_ROWS]
+            + list(interleaved.shape[1:])
+        )
     expert_scales = ops.split(scales, [1] * num_experts, axis=0)
     return ops.stack(
         [
