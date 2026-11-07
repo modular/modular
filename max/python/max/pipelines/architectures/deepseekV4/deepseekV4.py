@@ -53,10 +53,12 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import (
+    BufferType,
     BufferValue,
     DeviceRef,
     Graph,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     Type,
     Value,
@@ -64,6 +66,7 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
+from max.nn._graph_ops import _is_sm10x_gpu
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.hyper_connection import HyperConnection
@@ -175,6 +178,91 @@ def _hc_pre(
     )
 
 
+# Arrival counters one ``hyper_connection.mega_mhc`` call keeps.
+_MEGA_MHC_COUNTERS = 1136
+
+
+def _hc_step(
+    h: TensorValue,
+    residual: TensorValue,
+    post: TensorValue,
+    comb: TensorValue,
+    hc: HyperConnection,
+    norm: RMSNorm,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+    """``hc_post`` of one sublayer, then ``_hc_pre`` and the norm of the next.
+
+    Returns the next sublayer's normalized ``[b, s, d]`` input, the new
+    ``[b, s, hc, d]`` streams and the next site's ``post`` and ``comb``. On
+    SM100 the whole step is one ``hyper_connection.mega_mhc`` op (unshifted:
+    the collapse uses the new site's own ``pre``), whose mix projection runs
+    in TF32.
+    """
+    # The kernel reads bf16 streams and supports hidden sizes that are
+    # multiples of 1024; anything else keeps the graph path.
+    if not (
+        residual.device.is_gpu()
+        and _is_sm10x_gpu()
+        and hc.hc_mult == 4
+        and residual.dtype == DType.bfloat16
+        and hc.hidden_size % 1024 == 0
+    ):
+        x = hc_post(h, residual, post, comb)
+        y, post, comb = _hc_pre(x, hc)
+        return norm(y), x, post, comb
+
+    b, s = residual.shape[0], residual.shape[1]
+    hc_mult, d = hc.hc_mult, hc.hidden_size
+    device = residual.device
+    flat_residual = ops.reshape(residual, [-1, hc_mult, d])
+    rows = flat_residual.shape[0]
+    flat_post = ops.reshape(post, [-1, hc_mult])
+    results = ops.inplace_custom(
+        "hyper_connection.mega_mhc",
+        device=device,
+        values=[
+            ops.reshape(ops.cast(h, DType.bfloat16), [-1, d]),
+            flat_residual,
+            flat_post,
+            ops.reshape(comb, [-1, hc_mult * hc_mult]),
+            # Read only by the shifted collapse.
+            flat_post,
+            hc.hc_fn.to(device),
+            hc.hc_scale.to(device),
+            hc.hc_base.to(device),
+            norm.weight.to(device).cast(DType.bfloat16),
+            ops.buffer_create(
+                BufferType(DType.uint64, [_MEGA_MHC_COUNTERS], device=device),
+                init_value=0,
+            ),
+        ],
+        out_types=[
+            TensorType(DType.bfloat16, [rows, hc_mult, d], device),
+            TensorType(DType.float32, [rows, hc_mult], device),
+            TensorType(DType.float32, [rows, hc_mult], device),
+            TensorType(DType.float32, [rows, hc_mult * hc_mult], device),
+            TensorType(DType.bfloat16, [rows, d], device),
+        ],
+        parameters={
+            "hidden": d,
+            "shifted": False,
+            "hc_norm_eps": hc.rms_norm_eps,
+            "hc_pre_eps": hc.hc_eps,
+            "hc_post_scale": 2.0,
+            "sinkhorn_eps": hc.hc_eps,
+            "sinkhorn_iters": hc.hc_sinkhorn_iters,
+            "rms_norm_eps": norm.eps,
+        },
+    )
+    streams, _, new_post, new_comb, normed = (r.tensor for r in results)
+    return (
+        ops.reshape(normed, [b, s, d]),
+        ops.reshape(streams, [b, s, hc_mult, d]),
+        ops.reshape(new_post, [b, s, hc_mult]),
+        ops.reshape(new_comb, [b, s, hc_mult, hc_mult]),
+    )
+
+
 def subgraph_layer_groups(config: DeepseekV4Config) -> list[list[int]]:
     """The trunk layers that can share one subgraph body, in layer order.
 
@@ -277,29 +365,21 @@ class DeepseekV4Block(Module):
             )
         ]
         attended = ops.allreduce.sum(partials, signal_buffers)
-        xs = [
-            hc_post(h, residual, post, comb)
-            for h, residual, (_, post, comb) in zip(
-                attended, xs, contracted, strict=True
+        steps = [
+            _hc_step(h, residual, post, comb, block.hc_ffn, block.ffn_norm)
+            for block, h, residual, (_, post, comb) in zip(
+                blocks, attended, xs, contracted, strict=True
             )
-        ]
-
-        contracted = [
-            _hc_pre(x, block.hc_ffn)
-            for block, x in zip(blocks, xs, strict=True)
         ]
         moved = DeepseekV4MoE.tensor_parallel(
             [block.ffn for block in blocks],
-            [
-                block.ffn_norm(h)
-                for block, (h, _, _) in zip(blocks, contracted, strict=True)
-            ],
+            [normed for normed, _, _, _ in steps],
             token_ids,
             signal_buffers,
         )
         return [
             hc_post(h, x, post, comb)
-            for h, x, (_, post, comb) in zip(moved, xs, contracted, strict=True)
+            for h, (_, x, post, comb) in zip(moved, steps, strict=True)
         ]
 
     def __call__(
@@ -320,12 +400,11 @@ class DeepseekV4Block(Module):
         residual = x
         h, post, comb = _hc_pre(x, self.hc_attn)
         h = self.attn(self.attn_norm(h), rows, cache, index)
-        x = hc_post(h, residual, post, comb)
-
-        residual = x
-        h, post, comb = _hc_pre(x, self.hc_ffn)
-        h = self.ffn(self.ffn_norm(h), token_ids)
-        return hc_post(h, residual, post, comb)
+        normed, x, post, comb = _hc_step(
+            h, residual, post, comb, self.hc_ffn, self.ffn_norm
+        )
+        h = self.ffn(normed, token_ids)
+        return hc_post(h, x, post, comb)
 
 
 class DSparkBlock(DeepseekV4Block):
