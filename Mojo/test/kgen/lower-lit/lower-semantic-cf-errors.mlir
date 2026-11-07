@@ -51,6 +51,28 @@ lit.fn @resolved_fn() {
   lit.end_fn // expected-error {{return expected at end of function with results}}
 }
 
+lit.fn @fallthrough_error() {
+  // expected-error @below {{guard 'else' block must not fall through}}
+  hlcf.unreachable {
+    fallthroughError = "guard 'else' block must not fall through"
+  }
+}
+
+// A semantic exit removes the marker, including when it is nested in
+// structured control flow.
+lit.fn @no_fallthrough_error(%condition: !kgen.scalar<bool>) {
+  hlcf.if %condition {
+    lit.return
+    hlcf.yield
+  } else {
+    lit.return
+    hlcf.yield
+  }
+  hlcf.unreachable {
+    fallthroughError = "guard 'else' block must not fall through"
+  }
+}
+
 // First case always completes, so the second case and else are dead. The
 // match itself still falls through via match.complete.
 lit.fn @unreachable_match_case_and_else() {
