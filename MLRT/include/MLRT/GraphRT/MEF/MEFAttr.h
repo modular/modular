@@ -639,19 +639,6 @@ public:
     return Error(Twine("missing attribute '") + name + "'");
   }
 
-  /// Parse a named field of the specified attribute dictionary as the
-  /// specified type, ignoring it if not present or the wrong type.
-  template <typename ValueType>
-  ErrorOrSuccess decodeIfPresent(StringRef name, ValueType *result) const {
-    // The attribute doesn't have to be present.
-    auto dynAttrValue = this->find(name);
-    if (!dynAttrValue)
-      return success();
-
-    // ... but if it is, it must have the expected type.
-    return dynAttrValue->decode<ValueType>(result);
-  }
-
   /// Print the contents of this dictionary to stderr for debugging.
   void dump() const;
 

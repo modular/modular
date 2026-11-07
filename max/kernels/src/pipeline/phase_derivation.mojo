@@ -28,7 +28,7 @@ Contains:
 from std.collections import List
 
 from .config import PipelineConfig, ScheduleConfig
-from .pipeline_dsl import Pipe, ScheduleEntry
+from .pipeline_dsl import ScheduleEntry
 from .program import MMABlockSpec, PipelineProgram
 from .types import (
     DepEdge,
