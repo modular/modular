@@ -528,8 +528,8 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             q_absorbed=not self.dcp_q_replicate,
             latent_output=latent,
         )
-        # The op claims ``xq``'s token placement for the partials, which lets
-        # the merged heads keep it for ``o_proj`` on a ``(dp, tp)`` mesh.
+        # The partials keep ``xq``'s token placement off the DCP axis, which
+        # lets the merged heads keep it for ``o_proj`` on a ``(dp, tp)`` mesh.
         merged = combine_partial_attention(out, lse, self.dcp_size)
         if latent:
             merged = self._apply_w_vc(merged, attn_kwargs["w_uv"])
@@ -548,30 +548,15 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         """
         nope = self.qk_nope_head_dim
         width = self.kv_lora_rank + self.qk_rope_head_dim
-
-        def absorb(q: TensorValue, w: TensorValue) -> TensorValue:
-            # [h, T, nope] @ [h, nope, kv_lora_rank] -> [h, T, kv_lora_rank]
-            latent = ops.matmul(
-                ops.permute(q[:, :, :nope], [1, 0, 2]),
-                ops.permute(w, [0, 2, 1]),
-            )
-            absorbed = ops.concat(
-                [ops.permute(latent, [1, 0, 2]), q[:, :, nope:]], axis=2
-            )
-            return ops.reshape(absorbed, [q.shape[0], q.shape[1] * width])
-
-        axis = dcp_axis(xq.mesh)
-        local = F.call_on_mesh(
-            absorb,
-            xq.mesh,
-            out_specs=DeviceMapping(
-                xq.mesh,
-                tuple(
-                    Sharded(1) if i == axis else p
-                    for i, p in enumerate(xq.placements)
-                ),
-            ),
-        )(xq, w_uk)
+        # [H, T, nope] @ [H, nope, kv_lora_rank] -> [H, T, kv_lora_rank]; both
+        # sides are head-sharded, so each rank absorbs only its own heads.
+        latent = F.matmul(
+            F.permute(xq[:, :, :nope], [1, 0, 2]), F.permute(w_uk, [0, 2, 1])
+        )
+        absorbed = F.concat(
+            [F.permute(latent, [1, 0, 2]), xq[:, :, nope:]], axis=2
+        )
+        local = absorbed.reshape((absorbed.shape[0], absorbed.shape[1] * width))
         gathered = gather_columns(local, self.dcp_size)
         return gathered.reshape((gathered.shape[0], self.n_heads, width))
 
@@ -581,22 +566,22 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         ``merged`` is ``[T, H / dcp, kv_lora_rank]``, head-sharded over the
         DCP axis. ``w_uv`` is ``[H, v_head_dim, kv_lora_rank]``: head-sharded
         like ``merged`` with a gathered query, replicated with a replicated
-        one, in which case each rank takes its own heads' rows.
+        one. A replicated ``w_uv`` is resharded by head first, which each rank
+        does by slicing its own rows, with no communication.
         """
-        heads = self.n_heads // self.dcp_size
-
-        def project(x: TensorValue, w: TensorValue, rank: int) -> TensorValue:
-            if int(w.shape[0]) != heads:
-                w = w[rank * heads : (rank + 1) * heads]
-            # [h, T, kv_lora_rank] @ [h, kv_lora_rank, v] -> [h, T, v]
-            out = ops.matmul(
-                ops.permute(x, [1, 0, 2]), ops.permute(w, [0, 2, 1])
+        axis = dcp_axis(merged.mesh)
+        w = w_uv.to(
+            DeviceMapping(
+                w_uv.mesh,
+                tuple(
+                    Sharded(0) if i == axis else p
+                    for i, p in enumerate(w_uv.placements)
+                ),
             )
-            return ops.permute(out, [1, 0, 2])
-
-        return F.call_on_mesh(project, merged.mesh, out_specs=merged.mapping)(
-            merged, w_uv, dcp_ranks(merged.mesh, self.dcp_size)
         )
+        # [H, T, kv_lora_rank] @ [H, kv_lora_rank, v] -> [H, T, v]
+        out = F.matmul(F.permute(merged, [1, 0, 2]), F.permute(w, [0, 2, 1]))
+        return F.permute(out, [1, 0, 2])
 
     def forward(
         self,

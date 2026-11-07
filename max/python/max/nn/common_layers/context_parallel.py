@@ -40,7 +40,6 @@ import math
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
 from max.nn.common_layers.mesh_axis import TP, dcp_axis
 from max.nn.kernels import cp_merge_topk
 from max.tensor import Tensor
@@ -117,23 +116,19 @@ def dcp_rank_tensor(mesh: DeviceMesh, dcp: int) -> Tensor:
     stores take it as a host scalar instead (:func:`dcp_ranks`).
     """
 
-    def _rank(rank: int, device: Device) -> TensorValue:
-        return ops.constant(
-            [rank], DType.int32, device=DeviceRef.from_device(device)
-        )
+    def _rank(rank: int, device: Device) -> Tensor:
+        return F.constant([rank], DType.int32, device=device)
 
     return F.call_on_mesh(_rank, mesh)(
         dcp_ranks(mesh, dcp), PerShard(mesh.devices)
     )
 
 
-def _pack_selection(rows: TensorValue, lengths: TensorValue) -> TensorValue:
-    return ops.concat([rows, ops.unsqueeze(lengths, 1)], axis=1)
+def _pack_selection(rows: Tensor, lengths: Tensor) -> Tensor:
+    return F.concat([rows, F.unsqueeze(lengths, 1)], axis=1)
 
 
-def _unpack_selection(
-    selection: TensorValue, width: int
-) -> tuple[TensorValue, TensorValue]:
+def _unpack_selection(selection: Tensor, width: int) -> tuple[Tensor, Tensor]:
     return selection[:, :width], selection[:, width]
 
 
@@ -197,7 +192,7 @@ def combine_partial_attention(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
     return _combine_a2a(out, lse, dcp)
 
 
-def _lse_lanes(lse: TensorValue, dtype: DType) -> list[TensorValue]:
+def _lse_lanes(lse: Tensor, dtype: DType) -> list[Tensor]:
     """Encodes a float32 LSE exactly as ``dtype`` lanes beside the output.
 
     The graph has no bitcast, so a bfloat16 output carries each LSE as three
@@ -215,13 +210,13 @@ def _lse_lanes(lse: TensorValue, dtype: DType) -> list[TensorValue]:
     lanes = []
     rest = lse
     for _ in range(3):
-        lane = ops.cast(rest, dtype)
+        lane = F.cast(rest, dtype)
         lanes.append(lane)
-        rest = rest - ops.cast(lane, DType.float32)
+        rest = rest - F.cast(lane, DType.float32)
     return lanes
 
 
-def _pack_partials(out: TensorValue, lse: TensorValue, dcp: int) -> TensorValue:
+def _pack_partials(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
     """Packs one rank's partials into one chunk per destination rank.
 
     Returns ``[T, dcp, (D + lanes) * h]`` in the output's dtype, ``h = H /
@@ -235,28 +230,24 @@ def _pack_partials(out: TensorValue, lse: TensorValue, dcp: int) -> TensorValue:
     every head's 512-wide row instead left the concat one element per
     thread: 19 us per layer at batch 64 on B200.
     """
-    lse = ops.cast(lse, DType.float32)
+    lse = F.cast(lse, DType.float32)
     # A rank with no keys returns a -inf LSE and zero output; the floor gives
     # it weight 0, or an equal share of zeros when no rank has keys, and
     # keeps the lane split finite.
-    lse = ops.max(
-        lse, ops.constant(_LSE_FLOOR, DType.float32, device=lse.device)
-    )
+    lse = F.max(lse, F.constant(_LSE_FLOOR, DType.float32, device=lse.device))
     tokens = out.shape[0]
     heads, depth = int(out.shape[1]), int(out.shape[2])
     h = heads // dcp
-    rows = ops.permute(ops.reshape(out, [tokens, dcp, h, depth]), [0, 1, 3, 2])
+    rows = F.permute(F.reshape(out, [tokens, dcp, h, depth]), [0, 1, 3, 2])
     lanes = [
-        ops.reshape(lane, [tokens, dcp, 1, h])
+        F.reshape(lane, [tokens, dcp, 1, h])
         for lane in _lse_lanes(lse, out.dtype)
     ]
-    packed = ops.concat([rows, *lanes], axis=2)
-    return ops.reshape(packed, [tokens, dcp, (depth + len(lanes)) * h])
+    packed = F.concat([rows, *lanes], axis=2)
+    return F.reshape(packed, [tokens, dcp, (depth + len(lanes)) * h])
 
 
-def _merge_received(
-    received: TensorValue, partial: TensorValue, dcp: int
-) -> TensorValue:
+def _merge_received(received: Tensor, partial: Tensor, dcp: int) -> Tensor:
     """Merges the ``dcp`` partials of this rank's heads.
 
     ``received`` is ``[T, dcp, (D + lanes) * h]``: chunk ``s`` holds source
@@ -269,16 +260,16 @@ def _merge_received(
     depth = int(partial.shape[2])
     heads = int(partial.shape[1]) // dcp
     width = int(received.shape[2]) // heads
-    split = ops.reshape(received, [tokens, dcp, width, heads])
-    outs = ops.cast(split[:, :, :depth, :], DType.float32)
-    lanes = ops.cast(split[:, :, depth:, :], DType.float32)
-    lse = ops.sum(lanes, axis=2)  # [T, dcp, 1, h]
+    split = F.reshape(received, [tokens, dcp, width, heads])
+    outs = F.cast(split[:, :, :depth, :], DType.float32)
+    lanes = F.cast(split[:, :, depth:, :], DType.float32)
+    lse = F.sum(lanes, axis=2)  # [T, dcp, 1, h]
     # Max-shift before exponentiating.
-    peak = ops.max(lse, axis=1)  # [T, 1, 1, h]
-    weight = ops.exp((lse - peak) * _LN2)
-    weight = weight / ops.sum(weight, axis=1)
-    merged = ops.squeeze(ops.sum(outs * weight, axis=1), 1)  # [T, D, h]
-    return ops.cast(ops.permute(merged, [0, 2, 1]), partial.dtype)
+    peak = F.max(lse, axis=1)  # [T, 1, 1, h]
+    weight = F.exp((lse - peak) * _LN2)
+    weight = weight / F.sum(weight, axis=1)
+    merged = F.squeeze(F.sum(outs * weight, axis=1), 1)  # [T, D, h]
+    return F.cast(F.permute(merged, [0, 2, 1]), partial.dtype)
 
 
 def _combine_a2a(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
@@ -300,10 +291,10 @@ def _combine_a2a(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
         mesh,
         out_specs=_on_dcp_axis(out, Unknown(), Unknown()),
     )(out, lse)
+    # The packed partials are Unknown on the DCP axis, so the exchange
+    # claims nothing either: each rank holds every rank's partials for its
+    # heads, not a slice of one tensor.
     received = F.all_to_all(packed, split_axis=1, concat_axis=1, mesh_axis=axis)
-    # Each rank holds every rank's partials for its heads, not a slice of
-    # one tensor, so drop the Sharded(1) the all-to-all claims.
-    received = received.rebind_mapping(_on_dcp_axis(received, Unknown()))
     return F.call_on_mesh(
         lambda received, partial: _merge_received(received, partial, dcp),
         mesh,

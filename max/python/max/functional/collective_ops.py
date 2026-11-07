@@ -116,7 +116,7 @@ def _even_chunk(sv: TensorValue, axis: int, n: int, index: int) -> TensorValue:
 def _collective(
     t: Tensor,
     mesh_axis: int | str | Sequence[int | str],
-    new_placement: Replicated | Sharded,
+    new_placement: Placement,
     kernel: Callable[..., list[TensorValue]],
     simulated: Callable[[list[TensorValue]], list[TensorValue]],
 ) -> Tensor:
@@ -287,8 +287,11 @@ def all_to_all(
     device order.
 
     The result claims :class:`~max.tensor.sharding.Sharded` along
-    ``split_axis`` on ``mesh_axis``; a caller that exchanges something else,
-    such as partial results, rebinds it.
+    ``split_axis`` on ``mesh_axis`` only when the input is sharded along a
+    different ``concat_axis`` there. Otherwise, for example for per-rank
+    partial results or with both axes equal, the shards are not slices of
+    one tensor and the result is :class:`~max.tensor.sharding.Unknown` on
+    ``mesh_axis``.
 
     Args:
         t: The input distributed tensor. Its shards must have the same shape
@@ -318,7 +321,7 @@ def all_to_all(
     return _collective(
         t,
         mesh_axis,
-        Sharded(split_axis),
+        _all_to_all_placement(t, split_axis, concat_axis, mesh_axis),
         kernel=lambda shards, signal_buffers, group_size=None: ops.all_to_all(
             shards,
             signal_buffers,
@@ -328,6 +331,29 @@ def all_to_all(
         ),
         simulated=simulated,
     )
+
+
+def _all_to_all_placement(
+    t: Tensor,
+    split_axis: int,
+    concat_axis: int,
+    mesh_axis: int | str | Sequence[int | str],
+) -> Placement:
+    """Returns the placement an all-to-all leaves on ``mesh_axis``.
+
+    Chunks of a tensor sharded along ``concat_axis`` reassemble along it, so
+    the result is sharded along ``split_axis``. Anything else is not slices
+    of one tensor afterwards, so it is :class:`~max.tensor.sharding.Unknown`.
+    """
+    rank = t.rank
+    split, concat = split_axis % rank, concat_axis % rank
+    axes = (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
+    placements = [t.placements[t.mesh._resolve_axis(axis)] for axis in axes]
+    if split != concat and all(
+        isinstance(p, Sharded) and p.axis % rank == concat for p in placements
+    ):
+        return Sharded(split)
+    return Unknown()
 
 
 def _split_evenly(sv: TensorValue, axis: int, n: int) -> list[TensorValue]:

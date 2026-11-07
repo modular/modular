@@ -22,7 +22,6 @@ from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -96,12 +95,12 @@ def _replica_rows_on_first_device(t: Tensor, mesh: DeviceMesh) -> Tensor:
     copy moves to the first device, in replica order.
     """
     group = replica_size(mesh)
-    first = DeviceRef.from_device(mesh.devices[0])
+    first = mesh.devices[0]
     rows = [
-        ops.transfer_to(TensorValue(t.local_shards[r * group]), first)
+        t.local_shards[r * group].to(first)
         for r in range(mesh.num_devices // group)
     ]
-    return Tensor.from_graph_value(ops.concat(rows, axis=0))
+    return F.concat(rows, axis=0)
 
 
 def replica_context_lengths(
@@ -129,10 +128,7 @@ def replica_context_lengths(
         mesh.axis_names,
     )
     return Tensor.from_shard_values(
-        [
-            TensorValue(batch_context_lengths[i // group])
-            for i in range(mesh.num_devices)
-        ],
+        [batch_context_lengths[i // group] for i in range(mesh.num_devices)],
         DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
     )
 
