@@ -1013,7 +1013,7 @@ def transfer_into_borrows() raises:
   var c = (CopyAndInitMemType(), CopyAndInitMemType())
   var x: CopyAndInitMemType
   var y: CopyAndInitMemType
-  x, y = c^ # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+  x, y = c^
 
   var d: List[CopyAndInitMemType] = [CopyAndInitMemType(), CopyAndInitMemType()]
   [x, y] = d^ # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}

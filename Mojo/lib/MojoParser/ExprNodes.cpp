@@ -5496,6 +5496,63 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
   return emitter.emitCResult(result, this, dest);
 }
 
+// Split an rvalue tuple into independently owned element references before
+// disarming the aggregate. For `var (a, b) = get_tuple()`, this preserves the
+// children for the bindings while preventing the aggregate destructor from
+// destroying them a second time.
+LogicalResult
+TupleNode::getConsumedElements(CValue tuple, const ExprNode *expr,
+                               IREmitter &emitter,
+                               SmallVectorImpl<CValue> &elements) {
+  auto tupleRef = tuple.getMValueReference();
+  assert(tupleRef && "consuming a tuple requires an MRValue");
+
+  ASTType tupleType = tuple.getRValueType();
+  auto tupleElements = tupleType.getParamBindings().size() == 2
+                           ? sugarDynCastIfPresent<ParamListAttr>(
+                                 tupleType.getParamBindings()[0])
+                           : ParamListAttr();
+  assert(tupleElements && "consuming a tuple requires a Tuple type");
+
+  Location loc = expr->getLocation(emitter);
+  elements.clear();
+  elements.reserve(tupleElements.getValues().size());
+  for (size_t index = 0, e = tupleElements.getValues().size(); index < e;
+       ++index) {
+    CValue intIndex = emitter.emitInt(index, expr->getLoc(), EC_CallParamValue);
+    if (!intIndex)
+      return failure();
+
+    SyntheticNode baseNode(expr->getLoc(), tuple);
+    SyntheticNode indexNode(expr->getLoc(), intIndex);
+    Operand indexOperand(&indexNode, expr->getLoc(),
+                         ArgUnpackStyle::kPositional);
+    SubscriptNode subscript(&baseNode, expr->getLoc(), indexOperand,
+                            expr->getLoc());
+    CValue child = emitter.emitExprCValue(&subscript, EC_TupleElement);
+    Value childRef = child.getMValueReference();
+    if (!childRef)
+      return failure();
+
+    // The subscript is a borrow derived from the aggregate. Round-trip it
+    // through a pointer to create an independently owned reference to the same
+    // storage: this steals responsibility for destroying the element without
+    // moving or copying its bytes.
+    Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
+    auto origin = cast<RefType>(tupleRef.getType()).getOrigin();
+    Value owned = RefFromPointerOp::create(
+        *emitter.builder, loc, pointer, origin,
+        StringAttr::get(emitter.getContext(), "(tuple element)"),
+        /*startsUninit=*/false, /*endsUninit=*/true);
+    elements.push_back(MRValue(owned));
+  }
+
+  // Each element now owns its storage. Disable the aggregate owner so its
+  // destructor cannot destroy the stolen elements a second time.
+  OwnershipMarkDestroyedOp::create(*emitter.builder, loc, tupleRef);
+  return success();
+}
+
 LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
                                                  IREmitter &emitter) const {
   auto getTupleItem = [&](Type eltType, unsigned index) {

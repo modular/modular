@@ -124,6 +124,26 @@ def test_var_decl_patterns(c: Bool) raises:
         pass
 
 
+# Destructuring assignment should consume each rvalue tuple element instead of
+# requiring the aggregate tuple to be implicitly copyable.
+def destructure_rvalue_tuple_assignment():
+    var a: List[Int] = []
+    var b: List[Int] = []
+    var (c, d) = (a^, b^)
+    _ = c
+    _ = d
+
+
+def make_list_tuple() -> Tuple[List[Int], List[Int]]:
+    return (List[Int](), List[Int]())
+
+
+def destructure_returned_rvalue_tuple_assignment():
+    var (a, b) = make_list_tuple()
+    _ = a
+    _ = b
+
+
 # CHECK-LABEL: lit.fn @"test_ref_decl_patterns
 def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>

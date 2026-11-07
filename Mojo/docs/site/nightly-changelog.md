@@ -22,6 +22,10 @@ This version is still a work in progress.
   statements to work with non-movable and linear types, and reduces copies in
   general.
 
+- You can destructure a tuple of transferred non-copyable values into a `var`
+  pattern without copies, such as `var (x, y) = (a^, b^)`. This includes
+  movable types that are not `Copyable`.
+
 - Comparisons now try the reflected method on the right operand when the left
   operand does not support the comparison. For example, `0 < value` can call
   `value.__gt__(0)`.

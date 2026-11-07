@@ -526,6 +526,14 @@ struct TupleNode final : public LValueCapableExprNode {
                          bool isSpeculative) const override;
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
+
+  /// Split an rvalue tuple into owned element references and disarm the tuple.
+  ///
+  /// For example, `var (a, b) = get_tuple()` moves each result element into
+  /// its binding without destroying it again through the aggregate.
+  static LogicalResult getConsumedElements(CValue tuple, const ExprNode *expr,
+                                           IREmitter &emitter,
+                                           SmallVectorImpl<CValue> &elements);
   LogicalResult
   buildCheckList(PatternMatchBuilder &builder, CValue subject,
                  const PatternPath *path,

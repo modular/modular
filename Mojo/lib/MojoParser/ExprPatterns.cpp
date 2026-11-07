@@ -1215,6 +1215,7 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
       rootType.getParamBindings().size() == 2
           ? sugarDynCastIfPresent<ParamListAttr>(rootType.getParamBindings()[0])
           : ParamListAttr();
+  SmallVector<CValue, 4> ownedChildren;
   if (tupleElements) {
     // Wildcards do not have binding paths, but they still need to be projected
     // and owned so that their destructors run after the tuple is disarmed.
@@ -1226,6 +1227,9 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
       child.index = index;
       children.push_back(child);
     }
+    if (failed(TupleNode::getConsumedElements(rootSubject, expr, emitter,
+                                              ownedChildren)))
+      return failure();
   } else {
     auto payload = llvm::find_if(bindings, [](const PatternBoundName &binding) {
       return binding.bindingKind == PatternDeclKind::kVar && binding.path &&
@@ -1240,23 +1244,22 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
   if (!rootRef)
     return success();
   Location loc = expr->getLocation(emitter);
-  SmallVector<CValue, 4> ownedChildren;
-  for (const PatternPath &childPath : children) {
-    CValue child = getPathValue(emitter, &childPath, expr);
-    auto childRef = child.getMValueReference();
-    if (!childRef)
-      return failure();
-    Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
-    Value owned = RefFromPointerOp::create(
-        *emitter.builder, loc, pointer,
-        cast<RefType>(rootRef.getType()).getOrigin(),
-        StringAttr::get(emitter.getContext(), "(pattern child)"),
-        /*startsUninit=*/false, /*endsUninit=*/true);
-    ownedChildren.push_back(MRValue(owned));
+  if (!tupleElements) {
+    for (const PatternPath &childPath : children) {
+      CValue child = getPathValue(emitter, &childPath, expr);
+      auto childRef = child.getMValueReference();
+      if (!childRef)
+        return failure();
+      Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
+      Value owned = RefFromPointerOp::create(
+          *emitter.builder, loc, pointer,
+          cast<RefType>(rootRef.getType()).getOrigin(),
+          StringAttr::get(emitter.getContext(), "(pattern child)"),
+          /*startsUninit=*/false, /*endsUninit=*/true);
+      ownedChildren.push_back(MRValue(owned));
+    }
+    OwnershipMarkDestroyedOp::create(*emitter.builder, loc, rootRef);
   }
-  // Every child now has its own owning reference, so it is safe to suppress
-  // the aggregate destructor without invalidating later sibling projections.
-  OwnershipMarkDestroyedOp::create(*emitter.builder, loc, rootRef);
 
   for (auto [childIndex, childPath] : llvm::enumerate(children)) {
     auto binding =
