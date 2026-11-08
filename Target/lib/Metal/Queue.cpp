@@ -485,6 +485,42 @@ M_driver_queue::execute(M_driver_function_t function,
 
 M_driver_status_t M_driver_queue::synchronize() { return drainPriorWork(); }
 
+M_driver_status_t M_driver_queue::freeAsync(M_driver_memory_t memory) {
+  // A non-owning handle wraps a buffer something else frees.
+  if (!memory->owning)
+    return context->free(memory);
+
+  NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
+      NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+
+  std::lock_guard<std::mutex> lock(mMutex);
+
+  MTL::CommandBuffer *cmdBuffer = mCommandQueue->commandBuffer();
+  if (cmdBuffer == nullptr)
+    return context->device->driver->status.create(
+        "Failed to create command buffer for free_async");
+  encodeDonatedWaits(cmdBuffer);
+  MTL::BlitCommandEncoder *blit = cmdBuffer->blitCommandEncoder();
+  if (blit == nullptr)
+    return context->device->driver->status.create(
+        "Failed to create blit encoder for free_async");
+  blit->waitForFence(mOrderingFence.get());
+  blit->endEncoding();
+
+  // Untracking drops the context's reference, so later launches stop making
+  // the buffer resident; this one keeps it alive until the work queued ahead
+  // of the free, which may still read it, has completed.
+  MTL::Buffer *buffer = memory->mBuffer;
+  buffer->retain();
+  cmdBuffer->addCompletedHandler(^(MTL::CommandBuffer *) {
+    buffer->release();
+  });
+  M_driver_status_t status = context->free(memory);
+  commitWithTimeline(cmdBuffer);
+  mCommitSeq += 1;
+  return status;
+}
+
 M_driver_status_t M_driver_queue::recordEvent(M_driver_event_t event) {
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());

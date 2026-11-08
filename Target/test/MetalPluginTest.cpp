@@ -1204,3 +1204,38 @@ TEST_F(DriverMetalPluginEventTest, PageableCopiesWaitForPriorWork) {
     EXPECT_EQ(pageable[kLength - 1], 2u);
   }
 }
+
+TEST_F(DriverPluginQueueTest, AsyncAllocNullArgs) {
+  EXPECT_SUCCESS(memory_free_async(queues[0], nullptr));
+  EXPECT_EQ(M_DRIVER_STATUS_BAD_QUEUE, memory_free_async(nullptr, nullptr));
+  M_driver_memory_t unused = nullptr;
+  EXPECT_EQ(M_DRIVER_STATUS_BAD_QUEUE, memory_alloc_async(nullptr, 8, &unused));
+}
+
+// free_async is queue-ordered: it returns while a launch that reads the buffer
+// is still running, and that launch still completes.
+TEST_F(DriverMetalPluginEventTest, FreeAsyncWaitsForPriorWork) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queue = queues[i];
+
+    M_driver_memory_t out;
+    volatile uint32_t *outHost;
+    allocWords(context, &out, &outHost);
+
+    M_driver_memory_t iters = nullptr;
+    ASSERT_SUCCESS(
+        memory_alloc_async(queue, kLength * sizeof(uint32_t), &iters));
+    void *itersHost = nullptr;
+    ASSERT_SUCCESS(memory_property(iters, "host_address", &itersHost));
+    fillIters(static_cast<volatile uint32_t *>(itersHost), kLongIters);
+
+    launchStore(queue, functions[i], out, iters, /*marker=*/5);
+    ASSERT_SUCCESS(memory_free_async(queue, iters));
+    EXPECT_NE(outHost[0], 5u) << "free_async must not drain the queue";
+
+    ASSERT_SUCCESS(queue_synchronize(queue));
+    EXPECT_EQ(outHost[0], 5u);
+    EXPECT_EQ(outHost[kLength - 1], 5u);
+  }
+}
