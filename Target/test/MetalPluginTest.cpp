@@ -208,6 +208,23 @@ TEST_F(DriverPluginContextTest, MemoryInfoCappedAtHostAvailability) {
   }
 }
 
+// Metal has no thread-current context, so the saved and active handles are
+// both null.
+TEST_F(DriverPluginContextTest, CurrentContextIsANullNoOp) {
+  for (M_driver_context_t context : contexts) {
+    M_driver_native_handle_t saved = 1;
+    ASSERT_SUCCESS(context_get_current_driver_context(context, &saved));
+    EXPECT_EQ(saved, 0u);
+    ASSERT_SUCCESS(context_set_current(context));
+    M_driver_native_handle_t active = 1;
+    ASSERT_SUCCESS(context_get_current_driver_context(context, &active));
+    EXPECT_EQ(active, 0u);
+    ASSERT_SUCCESS(context_set_current_driver_context(context, saved));
+    EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+              context_get_current_driver_context(context, nullptr));
+  }
+}
+
 struct DriverMetalPluginFunctionTest : DriverPluginQueueTest {
   void SetUp() override {
     DriverPluginQueueTest::SetUp();

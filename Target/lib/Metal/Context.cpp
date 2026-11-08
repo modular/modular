@@ -239,25 +239,34 @@ extern "C" M_driver_status_t M_driver_copy_inter_device_sync(
   return M_DRIVER_STATUS_UNIMPLEMENTED;
 }
 
-// Metal has no driver-level current-context concept (command encoding is
-// bound to explicit queue/context objects, never to the calling thread), and
-// no direct free/total memory query.
+// Metal binds command encoding to explicit queue/context objects, never to
+// the calling thread, so there is no current-context state to install or save.
+// These mirror the legacy MetalDevice and the CPU plugin: a null handle and a
+// no-op restore, so callers that scope a context work unchanged.
 
 extern "C" M_driver_status_t
-M_driver_context_set_current([[maybe_unused]] M_driver_context_t context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+M_driver_context_set_current(M_driver_context_t context) {
+  if (context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  return M_DRIVER_STATUS_SUCCESS;
 }
 
 extern "C" M_driver_status_t M_driver_context_get_current_driver_context(
-    [[maybe_unused]] M_driver_context_t context,
-    [[maybe_unused]] M_driver_native_handle_t *driver_context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+    M_driver_context_t context, M_driver_native_handle_t *driver_context) {
+  if (context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  if (driver_context == nullptr)
+    return M_DRIVER_STATUS_INVALID_ARG;
+  *driver_context = 0;
+  return M_DRIVER_STATUS_SUCCESS;
 }
 
 extern "C" M_driver_status_t M_driver_context_set_current_driver_context(
-    [[maybe_unused]] M_driver_context_t context,
+    M_driver_context_t context,
     [[maybe_unused]] M_driver_native_handle_t driver_context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+  if (context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  return M_DRIVER_STATUS_SUCCESS;
 }
 
 extern "C" M_driver_status_t

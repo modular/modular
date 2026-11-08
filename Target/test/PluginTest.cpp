@@ -200,8 +200,6 @@ TEST_F(DriverPluginContextTest, ContextMemoryInfoBadArgs) {
 }
 
 TEST_F(DriverPluginContextTest, CurrentContextRoundTrip) {
-  if (api == "Metal")
-    GTEST_SKIP() << "current-context state is not implemented for Metal";
   for (M_driver_context_t context : contexts) {
     // Save whatever driver-level context is active (may be null), make this
     // context current, then restore the saved state.
