@@ -30,6 +30,7 @@ from max.benchmark.benchmark_serving import (
 )
 from max.benchmark.benchmark_shared.config import (
     DEFAULT_BENCHMARK_SEED,
+    Endpoint,
     ServingBenchmarkConfig,
 )
 from max.benchmark.benchmark_shared.datasets import DistributionParameter
@@ -465,17 +466,21 @@ class TestRenamedWarmupOption:
 class TestSeedConfigFileLoading:
     """Seed loaded from a YAML config/workload file."""
 
-    def test_yaml_null_maps_to_random(self, tmp_path: Path) -> None:
-        """YAML ``seed: null`` loads as ``None`` (draw a random seed)."""
+    @pytest.mark.parametrize(
+        "seed_yaml",
+        [
+            # YAML null loads as None directly.
+            pytest.param("null", id="yaml_null"),
+            # The string "none" is mapped to None by the validator.
+            pytest.param("none", id="yaml_string_none"),
+        ],
+    )
+    def test_yaml_null_maps_to_random(
+        self, tmp_path: Path, seed_yaml: str
+    ) -> None:
+        """A null-like YAML seed loads as ``None`` (draw a random seed)."""
         cfg_path = tmp_path / "serving.yaml"
-        cfg_path.write_text("model: myorg/llama\nseed: null\n")
-
-        assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed is None
-
-    def test_yaml_string_none_maps_to_random(self, tmp_path: Path) -> None:
-        """YAML ``seed: none`` (string) loads as ``None`` via the validator."""
-        cfg_path = tmp_path / "serving.yaml"
-        cfg_path.write_text("model: myorg/llama\nseed: none\n")
+        cfg_path.write_text(f"model: myorg/llama\nseed: {seed_yaml}\n")
 
         assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed is None
 
@@ -1048,19 +1053,22 @@ class TestImageFlags:
                 image_fraction=0.1, benchmark_task="text-to-image"
             )
 
-    def test_rejects_text_only_endpoint(self) -> None:
-        """A text-only driver would drop the images while stats still count them."""
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            # A text-only driver would drop the images while stats still
+            # count them.
+            pytest.param("/v1/completions", id="text_only_endpoint"),
+            # /v1/responses only routes to OpenResponsesRequestDriver for
+            # pixel-generation tasks, and that driver takes only
+            # PixelGenerationRequestFuncInput, so it never carries input
+            # images.
+            pytest.param("/v1/responses", id="responses_endpoint"),
+        ],
+    )
+    def test_rejects_non_image_endpoint(self, endpoint: Endpoint) -> None:
         with pytest.raises(ValueError, match="image-capable endpoint"):
-            ServingBenchmarkConfig(
-                image_fraction=0.1, endpoint="/v1/completions"
-            )
-
-    def test_rejects_responses_endpoint(self) -> None:
-        """/v1/responses only routes to OpenResponsesRequestDriver for
-        pixel-generation tasks, and that driver takes only
-        PixelGenerationRequestFuncInput, so it never carries input images."""
-        with pytest.raises(ValueError, match="image-capable endpoint"):
-            ServingBenchmarkConfig(image_fraction=0.1, endpoint="/v1/responses")
+            ServingBenchmarkConfig(image_fraction=0.1, endpoint=endpoint)
 
     def test_allows_chat_completions_endpoint(self) -> None:
         config = ServingBenchmarkConfig(

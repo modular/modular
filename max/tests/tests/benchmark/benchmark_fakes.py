@@ -14,6 +14,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSession,
     SessionMessage,
@@ -99,3 +102,8 @@ def make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
             SessionMessage(source="assistant", content="", num_tokens=5)
         )
     return ChatSession(id=session_id, messages=messages)
+
+
+def write_blob(path: Path, **fields: object) -> None:
+    """Writes ``fields`` as a JSON object, standing in for a benchmark result."""
+    path.write_text(json.dumps(fields))
