@@ -22,18 +22,26 @@ def test_socket_options_round_trip() raises:
     assert_false(socket.get_option[ReuseAddress]())
     socket.set_option[ReuseAddress](True)
     assert_true(socket.get_option[ReuseAddress]())
+    socket.set_option[ReuseAddress](False)
+    assert_false(socket.get_option[ReuseAddress]())
 
     assert_false(socket.get_option[ReusePort]())
     socket.set_option[ReusePort](True)
     assert_true(socket.get_option[ReusePort]())
+    socket.set_option[ReusePort](False)
+    assert_false(socket.get_option[ReusePort]())
 
     assert_false(socket.get_option[NoDelay]())
     socket.set_option[NoDelay](True)
     assert_true(socket.get_option[NoDelay]())
+    socket.set_option[NoDelay](False)
+    assert_false(socket.get_option[NoDelay]())
 
     assert_false(socket.get_option[KeepAlive]())
     socket.set_option[KeepAlive](True)
     assert_true(socket.get_option[KeepAlive]())
+    socket.set_option[KeepAlive](False)
+    assert_false(socket.get_option[KeepAlive]())
 
 
 def test_ipv6_socket_options() raises:
@@ -41,6 +49,8 @@ def test_ipv6_socket_options() raises:
     assert_false(socket.get_option[NoDelay]())
     socket.set_option[NoDelay](True)
     assert_true(socket.get_option[NoDelay]())
+    socket.set_option[NoDelay](False)
+    assert_false(socket.get_option[NoDelay]())
 
 
 def test_explicit_close() raises:

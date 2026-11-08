@@ -31,9 +31,8 @@ from ._sys.unix import (
 trait SocketOption:
     """Describes a socket option by the type of its value.
 
-    An option conforms to `GettableSocketOption` if it can be read, to
-    `SettableSocketOption` if it can be set, and to a marker trait, such as
-    `TCPSocketOption`, for each kind of socket that accepts it.
+    An option conforms to `GettableSocketOption` if it can be read, and to
+    `SettableSocketOption` if it can be set.
     """
 
     comptime OptionType: Movable & Deinitable
@@ -76,19 +75,9 @@ trait SettableSocketOption(SocketOption):
         ...
 
 
-trait TCPSocketOption(SocketOption):
-    """Marks a socket option that `TCPSocket` accepts."""
-
-    pass
-
-
-struct FlagOption[
-    name: StaticString,
-    level: c_int,
-    number: c_int,
-    *,
-    tcp_socket: Bool = False,
-](GettableSocketOption, SettableSocketOption, TCPSocketOption where tcp_socket):
+struct FlagOption[name: StaticString, level: c_int, number: c_int](
+    GettableSocketOption, SettableSocketOption
+):
     """Represents a socket option that is either on or off.
 
     Each option of this kind is a `comptime` alias of this type, such as
@@ -99,7 +88,6 @@ struct FlagOption[
         level: The level the option belongs to, as passed to `setsockopt`.
         number: The option's number within its level, which `setsockopt`
             takes as `option_name`.
-        tcp_socket: Whether `TCPSocket` accepts the option.
     """
 
     comptime OptionType = Bool
@@ -134,9 +122,7 @@ struct FlagOption[
         return socket.flag(level=Self.level, name=Self.number)
 
 
-comptime ReuseAddress = FlagOption[
-    "ReuseAddress", _SOL_SOCKET, _SO_REUSEADDR, tcp_socket=True
-]
+comptime ReuseAddress = FlagOption["ReuseAddress", _SOL_SOCKET, _SO_REUSEADDR]
 """Represents `SO_REUSEADDR`: whether the socket can bind a local address that
 connections from an earlier socket still hold.
 
@@ -144,8 +130,6 @@ A server that restarts needs it to bind its port again while connections from
 its last run are still closing.
 """
 
-comptime ReusePort = FlagOption[
-    "ReusePort", _SOL_SOCKET, _SO_REUSEPORT, tcp_socket=True
-]
+comptime ReusePort = FlagOption["ReusePort", _SOL_SOCKET, _SO_REUSEPORT]
 """Represents `SO_REUSEPORT`: whether other sockets can bind the same address
 and port."""

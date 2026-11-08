@@ -32,11 +32,7 @@ from .._sys.unix import (
     AF_INET6 as _AF_INET6,
     SOCK_STREAM as _SOCK_STREAM,
 )
-from ..option import (
-    GettableSocketOption,
-    SettableSocketOption,
-    TCPSocketOption,
-)
+from ..option import GettableSocketOption, SettableSocketOption
 
 
 struct TCPSocket(Movable):
@@ -108,7 +104,7 @@ struct TCPSocket(Movable):
         self._socket^.close()
 
     def set_option[
-        Option: TCPSocketOption & SettableSocketOption
+        Option: SettableSocketOption
     ](self, var option: Option.OptionType) raises IOError:
         """Sets a socket option.
 
@@ -124,7 +120,7 @@ struct TCPSocket(Movable):
         Option.set_option(self._socket, option^)
 
     def get_option[
-        Option: TCPSocketOption & GettableSocketOption
+        Option: GettableSocketOption
     ](self) raises IOError -> Option.OptionType:
         """Returns a socket option's value.
 

@@ -24,9 +24,7 @@ from .._sys.unix import (
 )
 from ..option import FlagOption, ReuseAddress, ReusePort
 
-comptime NoDelay = FlagOption[
-    "NoDelay", _IPPROTO_TCP, _TCP_NODELAY, tcp_socket=True
-]
+comptime NoDelay = FlagOption["NoDelay", _IPPROTO_TCP, _TCP_NODELAY]
 """Represents `TCP_NODELAY`: whether small writes are sent right away instead
 of being batched.
 
@@ -36,8 +34,6 @@ this on sends each write right away, which lowers latency for small messages,
 such as requests and replies, at the cost of sending more packets.
 """
 
-comptime KeepAlive = FlagOption[
-    "KeepAlive", _SOL_SOCKET, _SO_KEEPALIVE, tcp_socket=True
-]
+comptime KeepAlive = FlagOption["KeepAlive", _SOL_SOCKET, _SO_KEEPALIVE]
 """Represents `SO_KEEPALIVE`: whether an idle connection sends probes to check
 that the peer is still there."""
