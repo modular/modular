@@ -22,6 +22,7 @@
 #include "HAL/M_driver_common.h"
 #include "Target/lib/Support/HostMemory.h"
 #include <chrono>
+#include <cstring>
 #include <map>
 #include <string>
 #include <thread>
@@ -190,6 +191,92 @@ TEST_F(DriverPluginContextTest, MaxAllocationSizeMatchesAllocGuard) {
     std::string message = getStatusMessage(status);
     EXPECT_NE(message.find("larger than allowed"), std::string::npos)
         << "Expected the maxBufferLength guard to fire, got: " << message;
+  }
+}
+
+// A wrapped sub-range's host address and synchronous transfers start at the
+// sub-range, not at the base of the buffer that contains it.
+TEST_F(DriverPluginContextTest, WrappedSubRangeHostAccessHonorsOffset) {
+  constexpr uint64_t kSize = 256;
+  constexpr uint64_t kOffset = 64;
+  for (M_driver_context_t context : contexts) {
+    M_driver_memory_t base = nullptr;
+    ASSERT_SUCCESS(memory_alloc_sync(context, kSize, &base));
+    auto freeBase = llvm::scope_exit([&] { memory_free_sync(context, base); });
+    uint64_t address = 0;
+    ASSERT_SUCCESS(
+        memory_property(base, M_DRIVER_MEMORY_PROPERTY_ADDRESS, &address));
+    uint8_t *baseHost = nullptr;
+    ASSERT_SUCCESS(memory_property(base, M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS,
+                                   &baseHost));
+    std::memset(baseHost, 0, kSize);
+
+    M_driver_memory_t sub = nullptr;
+    ASSERT_SUCCESS(memory_wrap(context, address + kOffset, kSize - kOffset,
+                               /*owning=*/false, &sub));
+    auto freeSub = llvm::scope_exit([&] { memory_free_sync(context, sub); });
+    uint8_t *subHost = nullptr;
+    ASSERT_SUCCESS(
+        memory_property(sub, M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS, &subHost));
+    EXPECT_EQ(subHost, baseHost + kOffset);
+
+    M_driver_memory_view view{sub, /*offset=*/0, /*size=*/4};
+    uint8_t written[4] = {1, 2, 3, 4};
+    ASSERT_SUCCESS(copy_to_device_sync(context, &view, written));
+    EXPECT_EQ(baseHost[0], 0u);
+    EXPECT_EQ(baseHost[kOffset], 1u);
+    uint8_t read[4] = {};
+    ASSERT_SUCCESS(copy_from_device_sync(context, read, &view));
+    EXPECT_EQ(read[3], 4u);
+    ASSERT_SUCCESS(set_memory_sync(context, &view, uint8_t(9)));
+    EXPECT_EQ(baseHost[0], 0u);
+    EXPECT_EQ(baseHost[kOffset], 9u);
+  }
+}
+
+// The synchronous paths are host memcpy/memset, so a range past the end of the
+// buffer would touch host memory outside the allocation rather than fault.
+TEST_F(DriverPluginContextTest, SyncHostAccessRejectsOutOfRange) {
+  constexpr uint64_t kSize = 256;
+  constexpr uint64_t kOffset = 64;
+  for (M_driver_context_t context : contexts) {
+    M_driver_memory_t base = nullptr;
+    ASSERT_SUCCESS(memory_alloc_sync(context, kSize, &base));
+    auto freeBase = llvm::scope_exit([&] { memory_free_sync(context, base); });
+    uint64_t address = 0;
+    ASSERT_SUCCESS(
+        memory_property(base, M_DRIVER_MEMORY_PROPERTY_ADDRESS, &address));
+    M_driver_memory_t sub = nullptr;
+    ASSERT_SUCCESS(memory_wrap(context, address + kOffset, kSize - kOffset,
+                               /*owning=*/false, &sub));
+    auto freeSub = llvm::scope_exit([&] { memory_free_sync(context, sub); });
+
+    // In range for the base buffer, past its end once the sub-range offset is
+    // added.
+    M_driver_memory_view past{sub, /*offset=*/kSize - kOffset - 4,
+                              /*size=*/8};
+    M_driver_memory_view wrapping{sub, /*offset=*/UINT64_MAX - 3, /*size=*/8};
+    M_driver_memory_view inRange{base, /*offset=*/0, /*size=*/8};
+    uint8_t host[8] = {};
+    for (M_driver_memory_view *view : {&past, &wrapping}) {
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                copy_to_device_sync(context, view, host));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                copy_from_device_sync(context, host, view));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                copy_intra_device_sync(context, view, &inRange));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                copy_intra_device_sync(context, &inRange, view));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                set_memory_sync(context, view, uint8_t(1)));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                fill_sync(context, view, uint32_t(1), sizeof(uint32_t)));
+    }
+
+    M_driver_memory_view last{sub, /*offset=*/kSize - kOffset - 8,
+                              /*size=*/8};
+    EXPECT_SUCCESS(copy_to_device_sync(context, &last, host));
+    EXPECT_SUCCESS(fill_sync(context, &last, uint32_t(1), sizeof(uint32_t)));
   }
 }
 

@@ -76,9 +76,12 @@ M_driver_status_t M_driver_context::copyToDeviceSync(M_driver_memory_t dst,
                                                      uint64_t dstOffset,
                                                      const void *src,
                                                      uint64_t size) {
-  if (size > 0)
-    memcpy(static_cast<char *>(dst->mBuffer->contents()) + dstOffset, src,
-           size);
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (!dst->containsRange(dstOffset, size))
+    return device->driver->status.create(
+        "Copy size exceeds Metal destination buffer length");
+  memcpy(dst->hostAddress() + dstOffset, src, size);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -86,9 +89,12 @@ M_driver_status_t M_driver_context::copyFromDeviceSync(void *dst,
                                                        M_driver_memory_t src,
                                                        uint64_t srcOffset,
                                                        uint64_t size) {
-  if (size > 0)
-    memcpy(dst, static_cast<char *>(src->mBuffer->contents()) + srcOffset,
-           size);
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (!src->containsRange(srcOffset, size))
+    return device->driver->status.create(
+        "Copy size exceeds Metal source buffer length");
+  memcpy(dst, src->hostAddress() + srcOffset, size);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -97,9 +103,15 @@ M_driver_status_t M_driver_context::copyIntraDeviceSync(M_driver_memory_t dst,
                                                         M_driver_memory_t src,
                                                         uint64_t srcOffset,
                                                         uint64_t size) {
-  if (size > 0)
-    memcpy(static_cast<char *>(dst->mBuffer->contents()) + dstOffset,
-           static_cast<char *>(src->mBuffer->contents()) + srcOffset, size);
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (!dst->containsRange(dstOffset, size))
+    return device->driver->status.create(
+        "Copy size exceeds Metal destination buffer length");
+  if (!src->containsRange(srcOffset, size))
+    return device->driver->status.create(
+        "Copy size exceeds Metal source buffer length");
+  memcpy(dst->hostAddress() + dstOffset, src->hostAddress() + srcOffset, size);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -107,9 +119,12 @@ M_driver_status_t M_driver_context::setMemorySync(M_driver_memory_t dst,
                                                   uint64_t dstOffset,
                                                   uint64_t size,
                                                   uint8_t value) {
-  if (size > 0)
-    memset(static_cast<char *>(dst->mBuffer->contents()) + dstOffset, value,
-           size);
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (!dst->containsRange(dstOffset, size))
+    return device->driver->status.create(
+        "Set size exceeds Metal buffer length");
+  memset(dst->hostAddress() + dstOffset, value, size);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -123,13 +138,16 @@ M_driver_status_t M_driver_context::fillSync(M_driver_memory_t dst,
     return M_DRIVER_STATUS_INVALID_ARG;
   if (valueSize == 1)
     return setMemorySync(dst, dstOffset, size, static_cast<uint8_t>(value));
+  if (!dst->containsRange(dstOffset, size))
+    return device->driver->status.create(
+        "Fill size exceeds Metal buffer length");
 
-  // `dst->mBuffer->contents() + dstOffset` is not guaranteed to be aligned to
+  // `dst->hostAddress() + dstOffset` is not guaranteed to be aligned to
   // `valueSize` -- the fill contract only constrains `size`, not `offset`.
   // Store via memcpy rather than casting to uintN_t* and dereferencing, which
   // would be undefined behavior on a misaligned pointer (and trips
   // -fsanitize=alignment).
-  auto *bytes = static_cast<char *>(dst->mBuffer->contents()) + dstOffset;
+  char *bytes = dst->hostAddress() + dstOffset;
   switch (valueSize) {
   case 2: {
     uint16_t v16 = static_cast<uint16_t>(value);

@@ -25,9 +25,7 @@ M_driver_status_t M_driver_memory::getProperty(llvm::StringRef name,
     return M_DRIVER_STATUS_SUCCESS;
   }
   if (name == M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS) {
-    // Metal allocations use shared storage; contents() is the CPU-visible
-    // address (gpuAddress() is not host-dereferenceable).
-    *static_cast<void **>(value) = mBuffer->contents();
+    *static_cast<void **>(value) = hostAddress();
     return M_DRIVER_STATUS_SUCCESS;
   }
   return M_DRIVER_STATUS_UNKNOWN_PROPERTY_NAME;
