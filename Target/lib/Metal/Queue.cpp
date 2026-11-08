@@ -463,8 +463,12 @@ M_driver_queue::execute(M_driver_function_t function,
 
   // Set resources that might be used by the kernel
   // FIXME: only set resources that are used by the kernel
-  for (const auto &it : context->allocations)
-    encoder->useResource(it.second.get(), MTL::ResourceUsageWrite);
+  {
+    // Another thread may alloc or free on this context mid-walk.
+    std::lock_guard<std::mutex> allocationsLock(context->mutex);
+    for (const auto &it : context->allocations)
+      encoder->useResource(it.second.get(), MTL::ResourceUsageWrite);
+  }
 
   // Bind dynamic threadgroup (shared) memory if the kernel requested it.
   if (sharedMemBytes > 0)
