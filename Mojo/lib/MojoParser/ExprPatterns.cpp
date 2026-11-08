@@ -1893,8 +1893,8 @@ struct CoveredLiteralNode {
 /// `False,False` as total. Applies to tuples and structs of EnumLike fields.
 ///
 /// LiteralSet tracks root Equal spellings (`4`, `"foo"`) for duplicate /
-/// unreachability only — the domain is open, so covering literals never
-/// proves exhaustivity (only a catch-all closes the space).
+/// unreachability. The domain is open, so covering literals never proves
+/// exhaustivity; only a catch-all closes the space.
 struct MatchCoveringSpace {
   enum class Kind : uint8_t {
     Opaque,
@@ -2132,7 +2132,8 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
   }
 
   // Everything else: open Equal-literal universe (Int, String, …). Track
-  // covered spellings for duplicate / unreachability; never prove exhaustivity.
+  // covered spellings for duplicate / unreachability; only a catch-all can
+  // prove exhaustivity.
   space->kind = MatchCoveringSpace::Kind::LiteralSet;
   return space;
 }
@@ -2675,8 +2676,8 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
   //   - Open EnumLike root → OpenCtors bitset for duplicate detection.
   //   - Tuple/struct of EnumLike leaves → flattened Product cell bitset.
   //   - Product larger than kMaxProductCells → TooComplex (needs `_`).
-  //   - Else LiteralSet: track root Equal spellings for duplicates only
-  //     (no exhaustivity — Int/String/… are open universes).
+  //   - Else LiteralSet: track root Equal spellings for duplicates and require
+  //     a catch-all because Int/String/… are open universes.
   //   - Irrefutable unguarded cases close the space.
   //   - Or patterns expand to a union of alternatives; each is covered
   //     independently (guards never shrink the remaining space).
@@ -2758,6 +2759,14 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     // A catch-all would have closed the space via alwaysMatches().
     emitWarning(matchLoc, "'match' is too complex to check for exhaustivity; "
                           "add a '_' case");
+    return {};
+  }
+
+  if (space->kind == MatchCoveringSpace::Kind::LiteralSet) {
+    emitWarning(matchLoc, "'match' is not exhaustive; add a '_' case");
+    if (offerMissingCases)
+      return formatCaseArms({"_"}, caseEntries.back().caseIndent,
+                            caseEntries.back().bodyIndent);
     return {};
   }
 

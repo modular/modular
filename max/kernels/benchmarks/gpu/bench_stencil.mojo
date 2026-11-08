@@ -864,5 +864,7 @@ def main() raises:
                     pad_h,
                     pad_w,
                 ](ctx, m)
+            case _:
+                pass
 
     m.dump_report()

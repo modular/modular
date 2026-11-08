@@ -1662,6 +1662,8 @@ struct BlockScaledMatmulAMD[
                                 schedule_group_barrier(
                                     AMDScheduleBarrierMask.MFMA, Int32(wait), 0
                                 )
+                            case _:
+                                pass
 
             # Prologue.
             comptime for i in range(len(schedule.prologue)):

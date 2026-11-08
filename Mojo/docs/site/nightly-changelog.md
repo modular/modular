@@ -30,6 +30,9 @@ This version is still a work in progress.
   operand does not support the comparison. For example, `0 < value` can call
   `value.__gt__(0)`.
 
+- `match` now warns when literal cases do not include a catch-all pattern,
+  helping identify unmatched values.
+
 - Auto-parameterization now reaches `_` holes nested inside other parameterized
   types, so an unbound parameter at any depth of an argument's type becomes an
   an implicit parameter of the function:

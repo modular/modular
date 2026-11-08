@@ -187,6 +187,8 @@ struct Level(
                 writer.write("ERROR")
             case .CRITICAL:
                 writer.write("CRITICAL")
+            case _:
+                pass
 
 
 # ===-----------------------------------------------------------------------===#

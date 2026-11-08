@@ -226,4 +226,6 @@ def main() raises:
                 run_elementwise[dtype, copy_fn](
                     m, "copy", dims, name=dims_str, ctx=ctx
                 )
+            case _:
+                pass
     m.dump_report()

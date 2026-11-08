@@ -768,6 +768,8 @@ def apply_edge_rules(
                         continue
                     case 2 if c_op.k_offset == KOffsetKind.K_PREV:
                         continue
+                    case _:
+                        pass
 
                 # Compute loop distance.
                 var d = rule.loop_distance

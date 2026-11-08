@@ -1729,6 +1729,8 @@ struct TMATensorTile[
                         Int(coords[4]),
                     ),
                 )
+            case _:
+                pass
 
     @inline(.always)
     def async_multicast_load[

@@ -182,8 +182,9 @@ pattern bound. If the guard is false, matching continues with the next case.
 
 When the subject's type has a fixed set of values, such as `Bool`, `Optional`,
 or another `EnumLike` type, the compiler warns if the cases don't cover every
-value. Subjects with open-ended values, such as `Int` and `String`, don't need
-to be exhaustive.
+value. Literal cases on open-ended subjects, such as `Int` and `String`, also
+need a `case _` catch-all. Use `case _: pass` when unmatched values should do
+nothing.
 
 The compiler also warns about unreachable cases, such as a repeated literal or
 a case that follows one that matches everything.
