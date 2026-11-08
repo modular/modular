@@ -702,8 +702,13 @@ M_driver_queue_execute(M_driver_queue_t queue, M_driver_function_t function,
     return M_DRIVER_STATUS_BAD_QUEUE;
   if (function == nullptr)
     return M_DRIVER_STATUS_BAD_FUNCTION;
-  if (config != nullptr && config->config.gpu.num_attributes > 0)
-    return M_DRIVER_STATUS_UNIMPLEMENTED;
+  if (config == nullptr)
+    return M_DRIVER_STATUS_INVALID_ARG;
+  // Launch attributes are a `CUlaunchAttribute` passthrough (clusters,
+  // programmatic dependent launch, ...), none of which Metal can express.
+  if (config->mode == M_DRIVER_QUEUE_EXECUTE_MODE_GPU &&
+      config->config.gpu.num_attributes > 0)
+    return M_DRIVER_STATUS_UNSUPPORTED;
   return queue->execute(function, config, args, arg_sizes, num_args);
 }
 

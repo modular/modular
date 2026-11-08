@@ -398,6 +398,27 @@ TEST_F(DriverMetalPluginFunctionTest, QueueExecuteRejectsInvalidArgs) {
   }
 }
 
+TEST_F(DriverMetalPluginFunctionTest, QueueExecuteRejectsLaunchAttributes) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    uint64_t attribute[8] = {};
+    M_driver_queue_execute_config_t config = {
+        .mode = M_DRIVER_QUEUE_EXECUTE_MODE_GPU,
+        .config = {.gpu = {
+                       .grid = {1, 1, 1},
+                       .block = {32, 1, 1},
+                       .shared_mem_bytes = 0,
+                       .attributes = attribute,
+                       .num_attributes = 1,
+                   }}};
+    EXPECT_EQ(
+        M_DRIVER_STATUS_UNSUPPORTED,
+        queue_execute(queues[i], functions[i], &config, nullptr, nullptr, 0));
+    EXPECT_EQ(
+        M_DRIVER_STATUS_INVALID_ARG,
+        queue_execute(queues[i], functions[i], nullptr, nullptr, nullptr, 0));
+  }
+}
+
 // Requesting more dynamic threadgroup (shared) memory than the device supports
 // must be rejected. Prior to wiring up `shared_mem_bytes`, the field was
 // silently ignored, so an absurd request would "succeed" and the kernel would
