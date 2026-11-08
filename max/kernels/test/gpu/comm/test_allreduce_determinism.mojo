@@ -375,15 +375,17 @@ def _bit_stable[
     if run == 0:
         run0_hash = rank0_hash
         return True
-    if not run0_hash:
-        return False
-    if rank0_hash.value() != run0_hash.value():
-        print(
-            t"RUN-TO-RUN DIVERGENCE in {what} at run {run} hash"
-            t" {rank0_hash.value()} != run0 hash {run0_hash.value()}"
-        )
-        return False
-    return True
+    match (rank0_hash, run0_hash):
+        case (.Some(got), .Some(want)):
+            if got != want:
+                print(
+                    t"RUN-TO-RUN DIVERGENCE in {what} at run {run} hash"
+                    t" {got} != run0 hash {want}"
+                )
+                return False
+            return True
+        case _:
+            return False
 
 
 def fused_rmsnorm_determinism_test[

@@ -4343,10 +4343,10 @@ struct NullableTileTensor[
         comptime assert (
             name == "ptr"
         ), "NullableTileTensor.__getattr_param__ only support 'ptr'"
-        if not self._storage:
+        if case .Some(storage) = self._storage:
+            result = Self.Engine.unsafe_ptr(storage)
+        else:
             result = None
-            return
-        result = Self.Engine.unsafe_ptr(self._storage.unsafe_value())
 
     @inline(.nodebug)
     def _unsafe_storage_cast[
@@ -4358,11 +4358,11 @@ struct NullableTileTensor[
     ](self) -> Optional[
         Self.Engine.StorageType[to_dtype, to_origin, to_address_space]
     ]:
-        if not self._storage:
-            return None
-        return Self.Engine.unsafe_cast[to_dtype, to_origin, to_address_space](
-            self._storage.unsafe_value()
-        )
+        if case .Some(storage) = self._storage:
+            return Self.Engine.unsafe_cast[
+                to_dtype, to_origin, to_address_space
+            ](storage)
+        return None
 
     @inline(.always)
     def value(

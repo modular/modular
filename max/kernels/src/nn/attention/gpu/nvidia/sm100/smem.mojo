@@ -224,7 +224,7 @@ struct SM100AttentionSMem[
 
     # Scale regions (per-token scale only; zero-sized when scale_dtype is invalid).
     comptime _scale_dt_size: Int = (
-        size_of[Self.scale_dtype_.value()]() if Self.scale_dtype_ else 0
+        size_of[Self.scale_dtype]() if Self.scale_dtype_ else 0
     )
     comptime q_scale_bytes: Int = Self.config.BM * Self._scale_dt_size
     comptime q_scale_byte_offset: Int = (

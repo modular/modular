@@ -67,8 +67,8 @@ comptime logger = Logger()
 def _kernel_grid_shape(
     grid_shape: Optional[Tuple[Int, Int]],
 ) -> OptionalReg[IndexList[2]]:
-    if grid_shape:
-        return Index(grid_shape.value()[0], grid_shape.value()[1])
+    if case .Some(shape) = grid_shape:
+        return Index(shape[0], shape[1])
     return None
 
 

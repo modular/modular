@@ -5096,14 +5096,12 @@ struct MLA_SM100_Decode_Common[
         # A zero-filled gathered row is still a softmax slot. Exclude its
         # padding index without interpreting physical row IDs as positions.
         comptime if SparsePhysicalSentinels:
-            if physical_sentinel_indices:
+            if case .Some(sentinel_ptr) = physical_sentinel_indices:
                 var readable = max(
                     min(logical_indices_len - col_base, chunk), 0
                 )
-                var raw_row = (
-                    physical_sentinel_indices.unsafe_value().unsafe_offset(
-                        (q_token_idx * logical_indices_stride + col_base)
-                    )
+                var raw_row = sentinel_ptr.unsafe_offset(
+                    (q_token_idx * logical_indices_stride + col_base)
                 )
                 comptime use_ballot = (
                     _MLA_SPARSE_SENTINEL_BALLOT != 0
@@ -5650,30 +5648,31 @@ struct MLA_SM100_Decode_Common[
         var fast_idx_lane: Int32 = -1
         var fast_idx_lane_hi: Int32 = -1
         comptime if sentinel_check:
-            if Bool(physical_sentinel_indices) and num_k_tiles > tiles_done:
-                var first_col_base = kv_start_row + col0
-                comptime if windowed:
-                    first_col_base = kv_start_row + (col0 & ~31)
-                var first_readable = max(
-                    min(logical_indices_len - first_col_base, sent_slots), 0
-                )
-                if first_readable > 0:
-                    var first_row = (
-                        physical_sentinel_indices.unsafe_value().unsafe_offset(
+            if case .Some(sentinel_ptr) = physical_sentinel_indices:
+                if num_k_tiles > tiles_done:
+                    var first_col_base = kv_start_row + col0
+                    comptime if windowed:
+                        first_col_base = kv_start_row + (col0 & ~31)
+                    var first_readable = max(
+                        min(logical_indices_len - first_col_base, sent_slots), 0
+                    )
+                    if first_readable > 0:
+                        var first_row = sentinel_ptr.unsafe_offset(
                             (
                                 offset_position.q_token_idx
                                 * logical_indices_stride
                                 + first_col_base
                             )
                         )
-                    )
-                    fast_idx_lane = _sparse_physical_sentinel_lane[
-                        Self.role_local_lane
-                    ](first_row, first_readable)
-                    comptime if half_load > 32:
-                        fast_idx_lane_hi = _sparse_physical_sentinel_lane_hi[
+                        fast_idx_lane = _sparse_physical_sentinel_lane[
                             Self.role_local_lane
                         ](first_row, first_readable)
+                        comptime if half_load > 32:
+                            fast_idx_lane_hi = (
+                                _sparse_physical_sentinel_lane_hi[
+                                    Self.role_local_lane
+                                ](first_row, first_readable)
+                            )
         var _sb = stamp_begin[0]()
         # FA4's split loop: the prefix lies wholly inside the bound, so it runs
         # the mask-free body with no per-tile test and only the tail is tested.
@@ -5840,7 +5839,7 @@ struct MLA_SM100_Decode_Common[
                             <= smx_fast_lim
                         )
                     comptime if sentinel_check:
-                        if Bool(physical_sentinel_indices):
+                        if case .Some(sentinel_ptr) = physical_sentinel_indices:
                             # Same column and read bound as `apply_mask`'s
                             # `SparsePhysicalSentinels` block.
                             var fast_col_base = (
@@ -5929,7 +5928,7 @@ struct MLA_SM100_Decode_Common[
                                     0,
                                 )
                                 if next_readable > 0:
-                                    var next_row = physical_sentinel_indices.unsafe_value().unsafe_offset(
+                                    var next_row = sentinel_ptr.unsafe_offset(
                                         (
                                             offset_position.q_token_idx
                                             * logical_indices_stride
@@ -6701,10 +6700,11 @@ struct MLA_SM100_Decode_Common[
             min(logical_indices_len - col_base16, Self.config.BN_QK >> 2), 0
         )
         var pos: Int32 = -1
-        if logical_indices and tile < num_k_tiles and j < n_readable:
-            pos = logical_indices.unsafe_value()[
-                q_token_idx * logical_indices_stride + col_base16 + j
-            ]
+        if case .Some(indices) = logical_indices:
+            if tile < num_k_tiles and j < n_readable:
+                pos = indices[
+                    q_token_idx * logical_indices_stride + col_base16 + j
+                ]
         return pos
 
     @staticmethod

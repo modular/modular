@@ -431,11 +431,11 @@ def _run_case[
         UInt32(host_cache_len),
     )
     var metadata: OptionalReg[MHADecodeDispatchMetadata] = None
-    if metadata_partitions:
+    if case .Some(partitions) = metadata_partitions:
         metadata = MHADecodeDispatchMetadata(
             batch_size,
             table.max_seq_length_batch,
-            metadata_partitions.value(),
+            partitions,
             host_cache_len,
         )
     var padded = PaddedCollection(
@@ -469,8 +469,8 @@ def _run_case[
     comptime if swa:
         sink_weights = sinks.device_tensor().as_imm().as_unsafe_any_origin()
 
-    if refused:
-        with assert_raises(contains=refused.value()):
+    if case .Some(reason) = refused:
+        with assert_raises(contains=reason):
             flash_attention[ragged=True, sink=swa, cross_p=cross_p](
                 out.device_tensor(),
                 q.device_tensor().as_imm(),

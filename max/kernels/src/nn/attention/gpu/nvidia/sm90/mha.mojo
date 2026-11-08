@@ -2092,9 +2092,10 @@ def _mha_sm90[
                 q_pipeline_state.step()
                 produced_mbar_q[q_idx_old].wait(q_phase_old)
                 var docontinue = advance[False](q_idx_old)
-                if not docontinue:
+                if case .Some(seq_info) = docontinue:
+                    position = get_position(seq_info)
+                else:
                     break
-                position = get_position(docontinue.value())
                 var start, new_end = position.get_start_and_end_for_partitions[
                     page_size=KVLUTType.page_size
                 ](partition, mask)

@@ -312,12 +312,9 @@ struct MatmulCPU:
         ].unsafe_dangling()
         var c_buf = Optional[DeviceBuffer[dtype]]()
         comptime if get_accum_type[dtype]() == dtype:
-            c_buf = ctx.enqueue_create_buffer[dtype](c_layout.product())
-            c_ptr = (
-                c_buf.value()
-                .unsafe_ptr()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-            )
+            var buf = ctx.enqueue_create_buffer[dtype](c_layout.product())
+            c_ptr = buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            c_buf = buf^
         matmul[
             transpose_a=False,
             transpose_b=transpose_b,

@@ -103,13 +103,15 @@ def _sparse_row_packed[
     sparse_topk: Int,
 ) -> Bool:
     var n = sparse_row.row_limit(visible, selection_lag)
-    if not d_indices or n == Int.MAX:
-        return True
-    var row = d_indices.value().unsafe_offset(q_token_idx * indices_stride)
-    if min(n, sparse_topk) > 0 and row[min(n, sparse_topk) - 1] < 0:
-        return False
-    # At or past the slot count, the scan stops before the padding.
-    return n >= sparse_topk or row[n] == -1
+    match d_indices:
+        case .Some(indices) if n != Int.MAX:
+            var row = indices.unsafe_offset(q_token_idx * indices_stride)
+            if min(n, sparse_topk) > 0 and row[min(n, sparse_topk) - 1] < 0:
+                return False
+            # At or past the slot count, the scan stops before the padding.
+            return n >= sparse_topk or row[n] == -1
+        case _:
+            return True
 
 
 @inline(.always)

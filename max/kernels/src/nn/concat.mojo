@@ -1296,7 +1296,11 @@ def _fused_concat_cpu[
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
-        var device_ctx = ctx.value() if ctx else DeviceContext.cpu()
+        var device_ctx: DeviceContext.CPU
+        if case .Some(given) = ctx:
+            device_ctx = given
+        else:
+            device_ctx = DeviceContext.cpu()
         elementwise[
             1,
             _trace_description="concat_fused",

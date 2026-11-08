@@ -865,10 +865,11 @@ def produce[
                 ](tile_summary, tile_state, q_idx_old)
                 # FIXME: persistent kernel that uses a counter
                 # must signal somehow
-                if not docontinue:
+                if case .Some(seq_info) = docontinue:
+                    position = get_position(seq_info)
+                else:
                     break
                 ref pq_mbar = produced_mbar_q.unsafe_value()[q_idx_old]
-                position = get_position(docontinue.value())
                 pq_mbar.expect_bytes(
                     Int32(q_copy_rows * padded_depth * size_of[qkv_type]())
                 )

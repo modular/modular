@@ -3944,14 +3944,13 @@ def _mha_ragged_mixed_step_split[
             ]().unsafe_origin_cast[MutAnyOrigin]()
             var rebased: Optional[DeviceBuffer[.uint32]] = None
             comptime if in_tail:
-                rebased = rebase_row_offsets[with_cache_offsets=False](
+                var rebased_buf = rebase_row_offsets[with_cache_offsets=False](
                     row_offsets, row_offsets, batch, view, context
                 )
-                row_offsets = (
-                    rebased.value()
-                    .unsafe_ptr()
-                    .unsafe_origin_cast[MutAnyOrigin]()
-                )
+                row_offsets = rebased_buf.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ]()
+                rebased = rebased_buf^
             var cache = paged_cache_rows(
                 kv_blocks,
                 page_stride,

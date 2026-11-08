@@ -166,10 +166,11 @@ def _print_svg_impl[
                 cell_size,
                 '" fill="',
             )
-            if color_map and swizzle:
-                writer.write(color_map.value()(idx, 0))
-            else:
-                writer.write(colors[0])
+            match color_map:
+                case .Some(color_fn) if swizzle:
+                    writer.write(color_fn(idx, 0))
+                case _:
+                    writer.write(colors[0])
             writer.write(
                 '" opacity="0.6" stroke="#E1E8ED" stroke-width="1"'
                 ' filter="url(#cellShadow)"/>\n'

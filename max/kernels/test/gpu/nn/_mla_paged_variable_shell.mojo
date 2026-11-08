@@ -1682,8 +1682,7 @@ struct PagedVariableTests[V: MLATestVendor]:
         print(
             t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
             t" q_type: {q_type}  kv_type: {kv_type}  output_type: {ref_type} "
-            t" num_partitions:"
-            t" {num_partitions.value() if num_partitions else -1}"
+            t" num_partitions: {num_partitions.or_else(-1)}"
         )
         for i in range(batch_size):
             print("  batch", i, ": cache_len=", cache_lengths[i])
