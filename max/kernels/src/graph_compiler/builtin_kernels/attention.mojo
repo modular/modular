@@ -113,14 +113,8 @@ from nn.attention.compress_windows import compress_windows_ragged_paged
 from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.gpu.mla_common import SparseRowLayout
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from extensibility import DynamicTensor, InputTensor, OutputTensor
+from extensibility import DynamicTensor
 from extensibility import Fused, Input, LoadAccess, TensorTuple
-from extensibility import (
-    _FusedInputTensor as FusedInputTensor,
-)
-from extensibility import (
-    _MutableInputTensor as MutableInputTensor,
-)
 from std.logger import Logger
 
 comptime logger = Logger()
@@ -6144,7 +6138,7 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
 
 @inline(.always)
 def _cp_sparse_lengths_ptr(
-    sparse_lengths: InputTensor[dtype=.int32, rank=1, ...],
+    sparse_lengths: TileTensor[DType.int32, address_space=.GENERIC, ...],
     num_tokens: Int,
 ) raises -> NonNullPointer[DType.int32]:
     """Returns the per-token valid lengths of a `.cp` op after checking them.
@@ -6152,9 +6146,10 @@ def _cp_sparse_lengths_ptr(
     The ops run the sparse decode with `skip_masked_tiles`, under which
     `topk_lengths` holds one count per query token.
     """
-    if sparse_lengths.dim_size(0) != num_tokens:
+    comptime assert sparse_lengths.rank == 1
+    if Int(sparse_lengths.dim[0]()) != num_tokens:
         raise Error("sparse_lengths must be [query tokens]")
-    return NonNullPointer[DType.int32](sparse_lengths.to_tile_tensor[.int64]())
+    return NonNullPointer[DType.int32](sparse_lengths)
 
 
 @inline(.always)
@@ -6166,14 +6161,15 @@ def _cp_check_rank[dcp_size: Int](dcp_rank: Int32) raises:
 
 @inline(.always)
 def _cp_lse_ptr(
-    lse: OutputTensor[dtype=.float32, rank=2, ...],
+    lse: TileTensor[DType.float32, address_space=.GENERIC, ...],
     num_tokens: Int,
     num_heads: Int,
 ) raises -> NonNullPointer[DType.float32]:
     """Returns the LSE output of a `.cp` op after checking its shape."""
-    if lse.dim_size(0) != num_tokens or lse.dim_size(1) != num_heads:
+    comptime assert lse.rank == 2
+    if Int(lse.dim[0]()) != num_tokens or Int(lse.dim[1]()) != num_heads:
         raise Error("lse must be [query tokens, num_heads]")
-    return NonNullPointer[DType.float32](lse.to_tile_tensor[.int64]())
+    return NonNullPointer[DType.float32](lse)
 
 
 @extensibility.register("attention.mla.graph.decode.paged.fp8.sparse.cp")
@@ -6199,13 +6195,6 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        freq_dtype: DType,
-        gamma_dtype: DType,
-        fp8_dtype: DType,
-        fp8_scale_dtype: DType,
-        cache_dtype: DType,
-        //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -6217,57 +6206,115 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
         # rather than logical token positions.
         physical_indices: Bool,
     ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        lse: OutputTensor[dtype=.float32, rank=2, ...],
-        q: InputTensor[dtype=dtype, rank=3, ...],
-        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
-        w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        lse: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        kv: Some[Input & Fused & LoadAccess],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_norm_gamma: Some[Input & Tensor],
+        w_uk: Some[Input & Tensor],
+        w_uv: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
-        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
-        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
-        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
-        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-        sparse_lengths: InputTensor[dtype=.int32, rank=1, ...],
+        w_uk_scale: Some[Input & Tensor],
+        w_uv_scale: Some[Input & Tensor],
+        scalar_args: Some[Input & Tensor],
+        sparse_indices: Some[Input & Tensor],
+        sparse_lengths: Some[Input & Tensor],
         split_len_bound: Int32,
         dcp_rank: Int32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(lse), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(w_uk), TileTensorable)
+        comptime assert conforms_to(type_of(w_uv), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(w_uk_scale), TileTensorable)
+        comptime assert conforms_to(type_of(w_uv_scale), TileTensorable)
+        comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_lengths), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime fp8_dtype = type_of(w_uk).dtype
+        comptime fp8_scale_dtype = type_of(w_uk_scale).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(lse).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_norm_gamma).rank == 1
+        comptime assert type_of(w_uk).rank == 3
+        comptime assert type_of(w_uv).rank == 3
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(w_uk_scale).rank == 3
+        comptime assert type_of(w_uv_scale).rank == 3
+        comptime assert type_of(scalar_args).rank == 1
+        comptime assert type_of(sparse_indices).rank == 2
+        comptime assert type_of(sparse_lengths).rank == 1
+        comptime assert type_of(q).dtype == dtype
+        comptime assert type_of(w_uv).dtype == fp8_dtype
+        comptime assert type_of(w_uv_scale).dtype == fp8_scale_dtype
+        comptime assert type_of(kv).dtype == DType.bfloat16
         _cp_check_rank[dcp_size](dcp_rank)
         comptime assert context.target.is_gpu(), (
             "attention.mla.graph.decode.paged.fp8.sparse.cp is only supported"
             " on GPU"
         )
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
+
+        comptime assert conforms_to(type_of(kv), UnsafeFusedView)
+        var kv_view = unsafe_fused_view(kv)
+        comptime assert conforms_to(type_of(kv_view), Loadable)
 
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
-            return kv._lambda_load[width=width, element_alignment=width](coords)
+        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+            return rebind[SIMD[.bfloat16, width]](
+                kv_view.load[width=width, element_alignment=width](
+                    Coord(coords)
+                )
+            )
 
-        var num_tokens = q.dim_size(0)
-        var lengths_ptr = _cp_sparse_lengths_ptr(sparse_lengths, num_tokens)
+        var num_tokens = Int(q.shape()[0].value())
+        var lengths_ptr = _cp_sparse_lengths_ptr(
+            sparse_lengths.to_tile_tensor[.int32](), num_tokens
+        )
         var lse_ptr = _cp_lse_ptr(
-            lse, num_tokens, Int(q.static_spec.shape_tuple[1])
+            lse.to_tile_tensor[.float32](),
+            num_tokens,
+            type_of(q)._shape_types[1].static_value,
         )
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
@@ -6275,7 +6322,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
             task_id=get_safe_task_id(context),
         ):
             var gather_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices.to_tile_tensor[.int64](), num_tokens
+                sparse_indices.to_tile_tensor[.int32](), num_tokens
             )
             mla_decode_branch_fp8[
                 kernels=SM100MLAGraph,
@@ -6289,19 +6336,19 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
                 dcp_size=dcp_size,
                 dcp_interleave=dcp_interleave,
             ](
-                output.to_tile_tensor[.int64](),
-                q.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
-                kv_norm_gamma.to_tile_tensor[.int64](),
+                output.to_tile_tensor[dtype](),
+                q.to_tile_tensor[dtype](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
+                kv_norm_gamma.to_tile_tensor(),
                 kv_collection,
                 layer_idx,
                 scale,
                 epsilon,
-                w_uk.to_tile_tensor[.int64](),
-                w_uk_scale.to_tile_tensor[.int64](),
-                w_uv.to_tile_tensor[.int64](),
-                w_uv_scale.to_tile_tensor[.int64](),
+                w_uk.to_tile_tensor[fp8_dtype](),
+                w_uk_scale.to_tile_tensor[fp8_scale_dtype](),
+                w_uv.to_tile_tensor[fp8_dtype](),
+                w_uv_scale.to_tile_tensor[fp8_scale_dtype](),
                 scalar_args.to_tile_tensor[.int64](),
                 kv_input_fn,
                 context,
@@ -6327,10 +6374,6 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
     @inline(.always)
     @staticmethod
     def execute[
-        kv_dtype: DType,
-        freq_dtype: DType,
-        gamma_dtype: DType,
-        //,
         mask_str: StaticString,
         dcp_size: Int,
         dcp_interleave: Int,
@@ -6345,54 +6388,102 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
         # each applies `w_uv` to its own heads after the merge.
         latent_output: Bool = False,
     ](
-        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
-        lse: OutputTensor[dtype=.float32, rank=2, ...],
-        q: InputTensor[dtype=.bfloat16, rank=3, ...],
-        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
-        w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        lse: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        kv: Some[Input & Fused & LoadAccess],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_norm_gamma: Some[Input & Tensor],
+        w_uk: Some[Input & Tensor],
+        w_uv: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
-        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
-        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-        sparse_lengths: InputTensor[dtype=.int32, rank=1, ...],
+        scalar_args: Some[Input & Tensor],
+        sparse_indices: Some[Input & Tensor],
+        sparse_lengths: Some[Input & Tensor],
         split_len_bound: Int32,
         dcp_rank: Int32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(lse), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(w_uk), TileTensorable)
+        comptime assert conforms_to(type_of(w_uv), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_lengths), TileTensorable)
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(lse).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_norm_gamma).rank == 1
+        comptime assert type_of(w_uk).rank == 3
+        comptime assert type_of(w_uv).rank == 3
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(scalar_args).rank == 1
+        comptime assert type_of(sparse_indices).rank == 2
+        comptime assert type_of(sparse_lengths).rank == 1
+        comptime assert type_of(kv).dtype == DType.bfloat16
         _cp_check_rank[dcp_size](dcp_rank)
         comptime assert (
             context.target.is_gpu()
         ), "attention.mla.graph.decode.paged.sparse.cp is only supported on GPU"
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
+
+        comptime assert conforms_to(type_of(kv), UnsafeFusedView)
+        var kv_view = unsafe_fused_view(kv)
+        comptime assert conforms_to(type_of(kv_view), Loadable)
 
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
-            return kv._lambda_load[width=width, element_alignment=width](coords)
+        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+            return rebind[SIMD[.bfloat16, width]](
+                kv_view.load[width=width, element_alignment=width](
+                    Coord(coords)
+                )
+            )
 
-        var num_tokens = q.dim_size(0)
-        var lengths_ptr = _cp_sparse_lengths_ptr(sparse_lengths, num_tokens)
+        var num_tokens = Int(q.shape()[0].value())
+        var lengths_ptr = _cp_sparse_lengths_ptr(
+            sparse_lengths.to_tile_tensor[.int32](), num_tokens
+        )
         var lse_ptr = _cp_lse_ptr(
-            lse, num_tokens, Int(q.static_spec.shape_tuple[1])
+            lse.to_tile_tensor[.float32](),
+            num_tokens,
+            type_of(q)._shape_types[1].static_value,
         )
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
@@ -6400,7 +6491,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
             task_id=get_safe_task_id(context),
         ):
             var gather_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices.to_tile_tensor[.int64](), num_tokens
+                sparse_indices.to_tile_tensor[.int32](), num_tokens
             )
             mla_decode_branch_bf16[
                 kernels=SM100MLAGraph,
@@ -6413,17 +6504,17 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
                 q_absorbed=q_absorbed,
                 latent_output=latent_output,
             ](
-                output.to_tile_tensor[.int64](),
-                q.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
-                kv_norm_gamma.to_tile_tensor[.int64](),
+                output.to_tile_tensor[.bfloat16](),
+                q.to_tile_tensor[.bfloat16](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
+                kv_norm_gamma.to_tile_tensor(),
                 kv_collection,
                 layer_idx,
                 scale,
                 epsilon,
-                w_uk.to_tile_tensor[.int64](),
-                w_uv.to_tile_tensor[.int64](),
+                w_uk.to_tile_tensor[.bfloat16](),
+                w_uv.to_tile_tensor[.bfloat16](),
                 scalar_args.to_tile_tensor[.int64](),
                 kv_input_fn,
                 context,
@@ -6452,9 +6543,6 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
     @inline(.always)
     @staticmethod
     def execute[
-        freq_dtype: DType,
-        gamma_dtype: DType,
-        //,
         mask_str: StaticString,
         dcp_size: Int,
         dcp_interleave: Int,
@@ -6469,30 +6557,30 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
         # each applies `w_uv` to its own heads after the merge.
         latent_output: Bool = False,
     ](
-        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
-        lse: OutputTensor[dtype=.float32, rank=2, ...],
-        q: InputTensor[dtype=.bfloat16, rank=3, ...],
-        kv: FusedInputTensor[dtype=.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
-        w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=.uint8, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_scales: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        output: Some[Output & Tensor],
+        lse: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        kv: Some[Input & Fused & LoadAccess],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_norm_gamma: Some[Input & Tensor],
+        w_uk: Some[Input & Tensor],
+        w_uv: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        kv_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
-        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
-        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-        sparse_lengths: InputTensor[dtype=.int32, rank=1, ...],
+        scalar_args: Some[Input & Tensor],
+        sparse_indices: Some[Input & Tensor],
+        sparse_lengths: Some[Input & Tensor],
         split_len_bound: Int32,
         dcp_rank: Int32,
         context: DeviceContext,
@@ -6506,28 +6594,84 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
             "an NVFP4 MLA cache needs the indexer's physical and scale rows,"
             " not token positions"
         )
-        var kv_collection = generic_get_paged_cache_with_scales(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
-            kv_scales,
-            scales_page_stride,
-            scales_lookup_table,
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(lse), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(w_uk), TileTensorable)
+        comptime assert conforms_to(type_of(w_uv), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(kv_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(scales_lookup_table), TileTensorable
         )
+        comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
+        comptime assert conforms_to(type_of(sparse_lengths), TileTensorable)
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(lse).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_norm_gamma).rank == 1
+        comptime assert type_of(w_uk).rank == 3
+        comptime assert type_of(w_uv).rank == 3
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(kv_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(scales_lookup_table).rank == 2
+        comptime assert type_of(scalar_args).rank == 1
+        comptime assert type_of(sparse_indices).rank == 2
+        comptime assert type_of(sparse_lengths).rank == 1
+        comptime assert type_of(kv).dtype == DType.bfloat16
+        var kv_collection = generic_get_paged_cache_with_scales(
+            kv_blocks.to_tile_tensor[.uint8](),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+            kv_scales.to_tile_tensor[.float8_e4m3fn](),
+            scales_page_stride.to_tile_tensor[.int64](),
+            scales_lookup_table.to_tile_tensor[.uint32](),
+        )
+
+        comptime assert conforms_to(type_of(kv), UnsafeFusedView)
+        var kv_view = unsafe_fused_view(kv)
+        comptime assert conforms_to(type_of(kv_view), Loadable)
 
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv} -> SIMD[.bfloat16, width]:
-            return kv._lambda_load[width=width, element_alignment=width](coords)
+        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+            return rebind[SIMD[.bfloat16, width]](
+                kv_view.load[width=width, element_alignment=width](
+                    Coord(coords)
+                )
+            )
 
-        var num_tokens = q.dim_size(0)
-        var lengths_ptr = _cp_sparse_lengths_ptr(sparse_lengths, num_tokens)
+        var num_tokens = Int(q.shape()[0].value())
+        var lengths_ptr = _cp_sparse_lengths_ptr(
+            sparse_lengths.to_tile_tensor[.int32](), num_tokens
+        )
         var lse_ptr = _cp_lse_ptr(
-            lse, num_tokens, Int(q.static_spec.shape_tuple[1])
+            lse.to_tile_tensor[.float32](),
+            num_tokens,
+            type_of(q)._shape_types[1].static_value,
         )
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
@@ -6535,7 +6679,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
             task_id=get_safe_task_id(context),
         ):
             var gather_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices.to_tile_tensor[.int64](), num_tokens
+                sparse_indices.to_tile_tensor[.int32](), num_tokens
             )
             mla_decode_branch_bf16[
                 kernels=SM100MLAGraph,
@@ -6548,17 +6692,17 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
                 q_absorbed=q_absorbed,
                 latent_output=latent_output,
             ](
-                output.to_tile_tensor[.int64](),
-                q.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
-                kv_norm_gamma.to_tile_tensor[.int64](),
+                output.to_tile_tensor[.bfloat16](),
+                q.to_tile_tensor[.bfloat16](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
+                kv_norm_gamma.to_tile_tensor(),
                 kv_collection,
                 layer_idx,
                 scale,
                 epsilon,
-                w_uk.to_tile_tensor[.int64](),
-                w_uv.to_tile_tensor[.int64](),
+                w_uk.to_tile_tensor[.bfloat16](),
+                w_uv.to_tile_tensor[.bfloat16](),
                 scalar_args.to_tile_tensor[.int64](),
                 kv_input_fn,
                 context,
