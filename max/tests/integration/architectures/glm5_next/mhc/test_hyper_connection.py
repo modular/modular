@@ -319,8 +319,7 @@ def test_write_back_falls_back_outside_the_kernel_limits(
         streams, y, post, comb = (v.tensor for v in graph.inputs)
         mixing = StreamMixing(post=post, comb=comb, xs=y)
         graph.output(hc.write_back(streams, y, mixing))
-    uses_kernel = supported and accelerator_api() == "hip"
-    assert ("hyper_connection.mhc.post" in str(graph)) == uses_kernel
+    assert ("hyper_connection.mhc.post" in str(graph)) == supported
 
 
 def _on_gfx950() -> bool:
