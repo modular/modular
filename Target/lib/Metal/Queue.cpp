@@ -669,12 +669,17 @@ M_driver_status_t M_driver_queue_copy_intra_device(M_driver_queue_t queue,
                                 src->offset, dst->size);
 }
 
-M_driver_status_t M_driver_queue_copy_inter_device(
-    [[maybe_unused]] M_driver_queue_t queue,
-    [[maybe_unused]] M_driver_memory_view_t dst,
-    [[maybe_unused]] M_driver_memory_view_t src,
-    [[maybe_unused]] M_driver_context_t src_context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+// Apple silicon exposes a single GPU, so there is no peer to copy from.
+M_driver_status_t
+M_driver_queue_copy_inter_device(M_driver_queue_t queue,
+                                 [[maybe_unused]] M_driver_memory_view_t dst,
+                                 [[maybe_unused]] M_driver_memory_view_t src,
+                                 M_driver_context_t src_context) {
+  if (queue == nullptr)
+    return M_DRIVER_STATUS_BAD_QUEUE;
+  if (src_context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  return M_DRIVER_STATUS_UNSUPPORTED;
 }
 
 M_driver_status_t M_driver_queue_set_memory(M_driver_queue_t queue,

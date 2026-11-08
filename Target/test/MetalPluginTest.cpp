@@ -1364,3 +1364,19 @@ TEST_F(DriverMetalPluginEventTest, FreeAsyncWaitsForPriorWork) {
     EXPECT_EQ(outHost[kLength - 1], 5u);
   }
 }
+
+// There is never a second Apple GPU to copy from.
+TEST_F(DriverPluginQueueTest, PeerCopyIsUnsupported) {
+  M_driver_memory_t memory = nullptr;
+  ASSERT_SUCCESS(memory_alloc_sync(contexts[0], 64, &memory));
+  auto defer = llvm::scope_exit([&] { memory_free_sync(contexts[0], memory); });
+  M_driver_memory_view view{memory, /*offset=*/0, 64};
+  EXPECT_EQ(M_DRIVER_STATUS_UNSUPPORTED,
+            copy_inter_device_sync(contexts[0], &view, &view, contexts[0]));
+  EXPECT_EQ(M_DRIVER_STATUS_UNSUPPORTED,
+            queue_copy_inter_device(queues[0], &view, &view, contexts[0]));
+  EXPECT_EQ(M_DRIVER_STATUS_BAD_QUEUE,
+            queue_copy_inter_device(nullptr, &view, &view, contexts[0]));
+  EXPECT_EQ(M_DRIVER_STATUS_BAD_CONTEXT,
+            copy_inter_device_sync(nullptr, &view, &view, contexts[0]));
+}

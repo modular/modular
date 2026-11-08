@@ -120,8 +120,8 @@ typedef M_driver_status_t (*M_driver_queue_copy_intra_device_func_ptr_t)(
  * @param[in] src Source device-memory view, on @p src_context's device.
  * @param[in] src_context The context that owns @p src, used to resolve the
  *            peer (source) device.
- * @return Standard Status Protocol, or M_DRIVER_STATUS_UNIMPLEMENTED on
- *         backends without peer-copy support.
+ * @return Standard Status Protocol, or M_DRIVER_STATUS_UNSUPPORTED on
+ *         backends that cannot copy between devices.
  */
 M_DRIVER_API_EXPORT
 M_driver_status_t M_driver_queue_copy_inter_device(

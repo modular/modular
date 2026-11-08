@@ -210,8 +210,8 @@ M_driver_context_destroy(M_driver_context_t context) {
 }
 
 // Synchronous copy C ABI: thin wrappers over the M_driver_context methods
-// above. Metal targets a single GPU, so a peer (inter-device) copy is
-// unimplemented.
+// above. Apple silicon exposes a single GPU, so there is never a peer device
+// to copy from.
 extern "C" M_driver_status_t
 M_driver_copy_to_device_sync(M_driver_context_t context,
                              M_driver_memory_view_t dst, const void *src) {
@@ -249,12 +249,14 @@ M_driver_copy_intra_device_sync(M_driver_context_t context,
                                       src->offset, dst->size);
 }
 
-extern "C" M_driver_status_t M_driver_copy_inter_device_sync(
-    [[maybe_unused]] M_driver_context_t context,
-    [[maybe_unused]] M_driver_memory_view_t dst,
-    [[maybe_unused]] M_driver_memory_view_t src,
-    [[maybe_unused]] M_driver_context_t src_context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+extern "C" M_driver_status_t
+M_driver_copy_inter_device_sync(M_driver_context_t context,
+                                [[maybe_unused]] M_driver_memory_view_t dst,
+                                [[maybe_unused]] M_driver_memory_view_t src,
+                                M_driver_context_t src_context) {
+  if (context == nullptr || src_context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  return M_DRIVER_STATUS_UNSUPPORTED;
 }
 
 // Metal binds command encoding to explicit queue/context objects, never to
