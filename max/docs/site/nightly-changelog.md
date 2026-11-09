@@ -316,6 +316,16 @@ This version is still a work in progress.
   `KVCacheInputsPerDevice`. A KV cache is again one buffer per device, capped
   at that limit.
 
+- Added `Device.architecture_version`, which returns an `ArchitectureVersion`
+  with `major`, `minor` and `stepping` fields so code can compare architectures
+  instead of parsing `architecture_name`: the compute capability on NVIDIA
+  GPUs (`sm_100a` is 10.0.0), the processor version on AMD GPUs (`gfx950` is
+  9.5.0), and the Apple silicon generation on Apple GPUs (an M5 is 5.0.0).
+  Versions compare for equality only, since a higher version is not always a
+  newer part. A virtual device for compile-only mode whose target is an
+  architecture name, such as `sm_100a` or `gfx950`, reports the version of
+  that architecture.
+
 ## C API
 
 ## Kernels and GPU programming

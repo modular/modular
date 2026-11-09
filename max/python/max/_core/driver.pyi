@@ -29,6 +29,42 @@ import max._core.dtype
 import numpy
 from numpy.typing import NDArray
 
+class ArchitectureVersion:
+    """
+    Represents the architecture version of a device.
+
+    The fields follow the vendor's own numbering, so compare versions only
+    between devices with the same :attr:`Device.api`. A version supports
+    ``==`` and hashing but not ordering, because a higher version is not
+    always a newer or more capable part: ``gfx1100`` (RDNA3) is 11.0.0 and
+    ``gfx950`` (CDNA4) is 9.5.0.
+    """
+
+    def __init__(self, major: int, minor: int, stepping: int = 0) -> None:
+        """
+        Creates an architecture version.
+
+        Args:
+            major: The major version.
+            minor: The minor version.
+            stepping: The stepping.
+        """
+
+    @property
+    def major(self) -> int:
+        """The major version."""
+
+    @property
+    def minor(self) -> int:
+        """The minor version."""
+
+    @property
+    def stepping(self) -> int:
+        """The stepping. Only AMD GPUs report a nonzero one."""
+
+    def __eq__(self, arg: object, /) -> bool: ...
+    def __hash__(self) -> int: ...
+
 class Device:
     """
     Represents a compute device available for tensor operations.
@@ -199,6 +235,41 @@ class Device:
 
             device = driver.Accelerator()
             device.architecture_name
+        """
+
+    @property
+    def architecture_version(self) -> ArchitectureVersion:
+        """
+        Returns the architecture version as an :class:`ArchitectureVersion`.
+
+        Compare versions instead of parsing :attr:`architecture_name`:
+
+        - NVIDIA GPUs report the compute capability: ``sm_100a`` is 10.0.0.
+        - AMD GPUs report the processor version: ``gfx950`` is 9.5.0 and
+          ``gfx90a`` is 9.0.10.
+        - Apple GPUs report the Apple silicon generation: an M5 is 5.0.0.
+
+        A virtual device for compile-only mode whose target is an
+        architecture name, such as ``sm_100a`` or ``gfx950``, reports the
+        version of that architecture.
+
+        Raises:
+            ValueError: If the device is the CPU, if its API has no known
+                numbering, or if its architecture name can't be read, as for
+                a virtual device whose target is an alias such as ``mi355x``.
+
+        .. invisible-code-block: python
+
+            from max import driver
+
+        .. skip: next if(driver.accelerator_count() == 0, reason="requires an accelerator")
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            version = device.architecture_version
         """
 
     @property

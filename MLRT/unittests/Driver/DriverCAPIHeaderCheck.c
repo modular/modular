@@ -50,6 +50,9 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
       M_DriverDeviceApi;
   size_t (*device_architecture_name)(const M_DriverDevice *, char *, size_t) =
       M_DriverDeviceArchitectureName;
+  M_DriverStatus (*device_architecture_version)(
+      const M_DriverDevice *, uint32_t *, uint32_t *, uint32_t *) =
+      M_DriverDeviceArchitectureVersion;
   size_t (*device_model_name)(const M_DriverDevice *, char *, size_t) =
       M_DriverDeviceModelName;
   size_t (*device_pci_bus_id)(const M_DriverDevice *, char *, size_t) =
@@ -204,10 +207,11 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          accelerator_count != NULL && accelerator_create != NULL &&
          cpu_create != NULL && device_destroy != NULL && device_id != NULL &&
          device_api != NULL && device_architecture_name != NULL &&
-         device_model_name != NULL && device_pci_bus_id != NULL &&
-         device_uuid != NULL && device_can_access != NULL &&
-         device_enable_peer_access != NULL && device_synchronize != NULL &&
-         device_memory_info != NULL && device_allocation_range != NULL &&
+         device_architecture_version != NULL && device_model_name != NULL &&
+         device_pci_bus_id != NULL && device_uuid != NULL &&
+         device_can_access != NULL && device_enable_peer_access != NULL &&
+         device_synchronize != NULL && device_memory_info != NULL &&
+         device_allocation_range != NULL &&
          device_allocator_memory_info != NULL && device_get_attribute != NULL &&
          device_stream != NULL && stream_enqueue_host_function != NULL &&
          memset_device != NULL && enable_all_peer_access != NULL &&

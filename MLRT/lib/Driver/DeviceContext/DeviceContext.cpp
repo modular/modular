@@ -1945,8 +1945,10 @@ DeviceContext::create(StringRef api, int id) {
 
 MODULAR_CXX_EXPORT ErrorOr<DeviceContextRef>
 DeviceContext::getOrCreate(StringRef api, int id) {
+  // Cached contexts live for the whole process, so the map that holds them
+  // is never destroyed either. A destroyed map would make them leaks.
   static std::mutex mu;
-  static llvm::StringMap<DeviceContext *> contextMap;
+  static auto &contextMap = *new llvm::StringMap<DeviceContext *>();
 
   ErrorOr<DeviceRef> errDev = Device::create(api, id);
   if (errDev.isError())

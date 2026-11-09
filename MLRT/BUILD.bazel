@@ -1062,6 +1062,22 @@ modular_shared_library(
 # include the C++ headers.
 # ---------------------------------------------------------------------------
 
+modular_cc_library(
+    name = "Driver/ArchitectureVersion",
+    srcs = ["lib/Driver/CAPI/ArchitectureVersion.cpp"],
+    hdrs = ["include/MLRT/Driver/CAPI/ArchitectureVersion.h"],
+    includes = ["include"],
+    # libmax and the Python extension each link a copy. The parser holds no
+    # global state, so the copies cannot disagree.
+    tags = ["LINKABLE_MORE_THAN_ONCE"],
+    visibility = ["//MLRT:consumers"],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 # The interface and its implementation, compiled into whoever links it.
 #
 # Like //max/python/max/_core/max_license:DriverPython, this deliberately
@@ -1077,6 +1093,7 @@ modular_cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
+        ":Driver/ArchitectureVersion",
         ":Driver/DeviceContextAPI",
         "//Support:Base",
         "//Support:SymbolExport",

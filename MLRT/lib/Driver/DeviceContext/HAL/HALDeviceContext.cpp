@@ -601,9 +601,10 @@ ErrorOr<DeviceContextRef> DeviceContext::create(StringRef api, int id) {
 
 ErrorOr<DeviceContextRef> DeviceContext::getOrCreate(StringRef api, int id) {
   // Entries are released into the map and kept for process lifetime, so nothing
-  // here races Mojo runtime teardown.
+  // here races Mojo runtime teardown. The map is never destroyed either, so
+  // the entries stay reachable and are not leaks.
   static std::mutex mu;
-  static llvm::StringMap<DeviceContext *> contextMap;
+  static auto &contextMap = *new llvm::StringMap<DeviceContext *>();
 
   auto keyFor = [id](StringRef apiName) {
     return (apiName + "[" + llvm::Twine(id) + "]").str();

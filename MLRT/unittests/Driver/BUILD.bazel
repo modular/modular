@@ -713,6 +713,49 @@ modular_cc_test(
     ],
 )
 
+# The architecture-name parser. Needs no GPU.
+modular_cc_test(
+    name = "ArchitectureVersionTest",
+    size = "small",
+    srcs = ["ArchitectureVersionTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
+        "//MLRT:Driver/ArchitectureVersion",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The driver C API on a virtual HIP device. Needs no GPU and no driver plugin,
+# so the mojo-hal presubmit job also runs it under the HAL device context.
+modular_cc_test(
+    name = "CAPIVirtualDeviceTest",
+    size = "small",
+    srcs = ["CAPIVirtualDeviceTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
+
 # The compiler family's local-arch query (HAL-only, like the library it tests).
 modular_cc_test(
     name = "CompilerDeviceArchTest",

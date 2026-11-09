@@ -105,7 +105,7 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
   EXPECT_EQ(version >> 24, 1u);
-  EXPECT_EQ((version >> 16) & 0xffu, 3u);
+  EXPECT_EQ((version >> 16) & 0xffu, 4u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -221,6 +221,15 @@ TEST(DriverCApi, CpuDeviceReportsIdentity) {
   // The call that sized the name also cleared the error state, so a second
   // sizing call reports the same size.
   EXPECT_EQ(M_DriverDeviceApi(device.get(), nullptr, 0), expected);
+
+  uint32_t major = 1234;
+  EXPECT_EQ(
+      M_DriverDeviceArchitectureVersion(device.get(), &major, nullptr, nullptr),
+      M_DRIVER_NOT_SUPPORTED);
+  EXPECT_EQ(major, 1234u);
+  EXPECT_EQ(
+      M_DriverDeviceArchitectureVersion(nullptr, &major, nullptr, nullptr),
+      M_DRIVER_INVALID_ARGUMENT);
 
   void *context_handle = nullptr;
 #if MODULAR_HAL_DEVICE_CONTEXT
@@ -357,6 +366,49 @@ TEST(DriverCApi, AcceleratorDeviceEnumeration) {
   EXPECT_GT(total, 0u);
 
   EXPECT_EQ(M_DriverDeviceSynchronize(device.get()), M_DRIVER_OK);
+}
+
+// The version comes from the architecture name, so check it against the
+// compute capability the hardware reports. On Metal only the major, the Apple
+// silicon generation, has a hardware counterpart.
+TEST(DriverCApi, AcceleratorArchitectureVersionMatchesTheHardware) {
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK)
+      << lastError();
+  uint32_t major = 0;
+  uint32_t minor = 0;
+  uint32_t stepping = 0;
+  ASSERT_EQ(M_DriverDeviceArchitectureVersion(device.get(), &major, &minor,
+                                              &stepping),
+            M_DRIVER_OK)
+      << lastError();
+
+  using M::Driver::Device;
+  M::ErrorOr<M::Driver::DeviceContextRef> ctx =
+      M::Driver::DeviceContext::getOrCreate(Device::gpuAPI, /*id=*/0);
+  ASSERT_FALSE(ctx.isError()) << ctx.getError();
+  const Device &hw = ctx.get()->device();
+  M::ErrorOr<int> ccMajor =
+      hw.getAttribute(Device::Attribute::COMPUTE_CAPABILITY_MAJOR);
+  ASSERT_FALSE(ccMajor.isError()) << ccMajor.getError();
+  EXPECT_EQ(major, static_cast<uint32_t>(ccMajor.get()));
+  if (hw.api() != Device::metalAPI) {
+    M::ErrorOr<int> ccMinor =
+        hw.getAttribute(Device::Attribute::COMPUTE_CAPABILITY_MINOR);
+    ASSERT_FALSE(ccMinor.isError()) << ccMinor.getError();
+    EXPECT_EQ(minor, static_cast<uint32_t>(ccMinor.get()));
+  }
+  if (hw.api() != Device::hipAPI)
+    EXPECT_EQ(stepping, 0u);
+
+  // Every out-pointer is optional.
+  EXPECT_EQ(M_DriverDeviceArchitectureVersion(device.get(), nullptr, nullptr,
+                                              nullptr),
+            M_DRIVER_OK)
+      << lastError();
 }
 
 TEST(DriverCApi, AcceleratorPeerQueriesOnOneDevice) {

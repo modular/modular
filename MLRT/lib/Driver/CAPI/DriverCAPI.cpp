@@ -27,6 +27,7 @@
 
 #include "MLRT/Driver/CAPI/DriverCAPI.h"
 
+#include "MLRT/Driver/CAPI/ArchitectureVersion.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 
@@ -360,6 +361,37 @@ size_t M_DriverDeviceArchitectureName(const M_DriverDevice *device,
   }
   return copyOutDeviceString("M_DriverDeviceArchitectureName", name.get(),
                              buffer, capacity);
+}
+
+M_DriverStatus M_DriverDeviceArchitectureVersion(const M_DriverDevice *device,
+                                                 uint32_t *out_major,
+                                                 uint32_t *out_minor,
+                                                 uint32_t *out_stepping) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+  const Device &d = contextOf(*device).device();
+  if (d.api() == Device::cpuAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceArchitectureVersion: the CPU device has no "
+                "architecture version");
+  // Failing to read the name is a driver error. A name that does not parse is
+  // a gap in this library, so it is NOT_SUPPORTED.
+  ErrorOr<const char *> name = d.getArchName();
+  if (name.isError())
+    return fail(name, "M_DriverDeviceArchitectureVersion");
+  ErrorOr<M::Driver::ArchitectureVersion> version =
+      M::Driver::parseArchitectureVersion(d.api(), name.get());
+  if (version.isError())
+    return fail(version, "M_DriverDeviceArchitectureVersion",
+                M_DRIVER_NOT_SUPPORTED);
+  const M::Driver::ArchitectureVersion &v = version.get();
+  if (out_major != nullptr)
+    *out_major = v.major;
+  if (out_minor != nullptr)
+    *out_minor = v.minor;
+  if (out_stepping != nullptr)
+    *out_stepping = v.stepping;
+  return succeed();
 }
 
 size_t M_DriverDeviceModelName(const M_DriverDevice *device, char *buffer,

@@ -88,7 +88,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 3
+#define M_DRIVER_CAPI_VERSION_MINOR 4
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -236,9 +236,10 @@ M_DRIVER_API size_t M_DriverDeviceApi(const M_DriverDevice *device,
                                       char *buffer, size_t capacity);
 
 /// Writes the device's architecture name to `buffer`: the CUDA compute
-/// capability (`"sm_90"`), the AMD target (`"gfx950"`), or the Metal GPU
-/// family. Use it to select precompiled kernels. The CPU device has no
-/// architecture name and reports 0 with a message.
+/// capability (`"sm_90a"`), the AMD target (`"gfx950"`), or the Apple silicon
+/// generation with an optional Metal language suffix (`"5-metal4"`). Use it to
+/// select precompiled kernels. The CPU device has no architecture name and
+/// reports 0 with a message.
 ///
 /// Returns the size the name needs including the NUL terminator; copies only
 /// when `capacity` is sufficient.
@@ -247,6 +248,32 @@ M_DRIVER_API size_t M_DriverDeviceApi(const M_DriverDevice *device,
 M_DRIVER_API size_t M_DriverDeviceArchitectureName(const M_DriverDevice *device,
                                                    char *buffer,
                                                    size_t capacity);
+
+/// Writes the device's architecture version to `*out_major`, `*out_minor` and
+/// `*out_stepping`, so a caller compares architectures instead of parsing
+/// `M_DriverDeviceArchitectureName`. The numbers follow the vendor's own
+/// numbering, so compare them only between devices with the same API:
+///
+/// - CUDA: the compute capability. `sm_100a` is 10.0.0; the `a` and `f`
+///   feature-set suffixes are not part of the version.
+/// - HIP: the AMDGPU processor version. `gfx950` is 9.5.0 and `gfx90a` is
+///   9.0.10.
+/// - Metal: the Apple silicon generation. `5-metal4` (an M5) is 5.0.0.
+///
+/// The version is derived from the API and the architecture name alone, so a
+/// virtual device configured with an architecture name such as `sm_100a` or
+/// `gfx950` reports what a real device of that architecture reports. Any
+/// out-pointer may be null.
+///
+/// Returns `M_DRIVER_NOT_SUPPORTED` for the CPU device and for an API or an
+/// architecture name this library cannot read, such as a virtual device
+/// configured with the target alias `mi355x`, and `M_DRIVER_RUNTIME_ERROR`
+/// when the driver cannot report the architecture name.
+///
+/// Mirrors `max._core.driver.Device.architecture_version`.
+M_DRIVER_API M_DriverStatus M_DriverDeviceArchitectureVersion(
+    const M_DriverDevice *device, uint32_t *out_major, uint32_t *out_minor,
+    uint32_t *out_stepping);
 
 /// Writes the device's marketing name to `buffer` (e.g. `"NVIDIA H100"`).
 ///

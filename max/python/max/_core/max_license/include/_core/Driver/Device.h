@@ -15,6 +15,7 @@
 #define SDK_DRIVERAPI_PYTHON_DEVICE_H
 
 #include "AsyncRT/Runtime/CPUDevice.h"
+#include "MLRT/Driver/CAPI/ArchitectureVersion.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/DeviceSpecs.h"
 #include "Support/ErrorOr.h"
@@ -128,6 +129,9 @@ struct Device : public std::enable_shared_from_this<Device> {
 
   // Returns the architecture name for the device.
   std::string getArchName() const;
+
+  // Returns the architecture version for the device.
+  M::Driver::ArchitectureVersion getArchVersion() const;
 
   // Returns the model name of the device (e.g. "NVIDIA B200", "AMD MI300X").
   std::string getModelName() const;

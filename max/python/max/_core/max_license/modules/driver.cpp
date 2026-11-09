@@ -78,6 +78,47 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
         Provides low-level access to hardware devices and memory management.
     )nbdoc";
 
+  using M::Driver::ArchitectureVersion;
+  nb::class_<ArchitectureVersion>(m, "ArchitectureVersion", R"nbdoc(
+      Represents the architecture version of a device.
+
+      The fields follow the vendor's own numbering, so compare versions only
+      between devices with the same :attr:`Device.api`. A version supports
+      ``==`` and hashing but not ordering, because a higher version is not
+      always a newer or more capable part: ``gfx1100`` (RDNA3) is 11.0.0 and
+      ``gfx950`` (CDNA4) is 9.5.0.
+  )nbdoc")
+      .def(
+          "__init__",
+          [](ArchitectureVersion *self, uint32_t major, uint32_t minor,
+             uint32_t stepping) {
+            new (self) ArchitectureVersion{major, minor, stepping};
+          },
+          "major"_a, "minor"_a, "stepping"_a = 0, R"nbdoc(
+        Creates an architecture version.
+
+        Args:
+            major: The major version.
+            minor: The minor version.
+            stepping: The stepping.
+      )nbdoc")
+      .def_ro("major", &ArchitectureVersion::major, "The major version.")
+      .def_ro("minor", &ArchitectureVersion::minor, "The minor version.")
+      .def_ro("stepping", &ArchitectureVersion::stepping,
+              "The stepping. Only AMD GPUs report a nonzero one.")
+      .def(nb::self == nb::self,
+           nb::sig("def __eq__(self, arg: object, /) -> bool"))
+      .def("__hash__",
+           [](const ArchitectureVersion &self) {
+             return nb::hash(
+                 nb::make_tuple(self.major, self.minor, self.stepping));
+           })
+      .def("__repr__", [](const ArchitectureVersion &self) {
+        return "ArchitectureVersion(major=" + std::to_string(self.major) +
+               ", minor=" + std::to_string(self.minor) +
+               ", stepping=" + std::to_string(self.stepping) + ")";
+      });
+
   nb::class_<Python::Device>(m, "Device", R"nbdoc(
       Represents a compute device available for tensor operations.
 
@@ -237,6 +278,39 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
 
             device = driver.Accelerator()
             device.architecture_name
+      )nbdoc")
+      .def_prop_ro("architecture_version", &Python::Device::getArchVersion,
+                   R"nbdoc(
+        Returns the architecture version as an :class:`ArchitectureVersion`.
+
+        Compare versions instead of parsing :attr:`architecture_name`:
+
+        - NVIDIA GPUs report the compute capability: ``sm_100a`` is 10.0.0.
+        - AMD GPUs report the processor version: ``gfx950`` is 9.5.0 and
+          ``gfx90a`` is 9.0.10.
+        - Apple GPUs report the Apple silicon generation: an M5 is 5.0.0.
+
+        A virtual device for compile-only mode whose target is an
+        architecture name, such as ``sm_100a`` or ``gfx950``, reports the
+        version of that architecture.
+
+        Raises:
+            ValueError: If the device is the CPU, if its API has no known
+                numbering, or if its architecture name can't be read, as for
+                a virtual device whose target is an alias such as ``mi355x``.
+
+        .. invisible-code-block: python
+
+            from max import driver
+
+        .. skip: next if(driver.accelerator_count() == 0, reason="requires an accelerator")
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            version = device.architecture_version
       )nbdoc")
       .def_prop_ro("model_name", &Python::Device::getModelName, R"nbdoc(
         Returns the model name of the device.
