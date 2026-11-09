@@ -367,6 +367,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
     ],
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
