@@ -2258,44 +2258,66 @@ struct Struct_moe_create_indices_packed:
         expert_offset: Int,
         local_experts: Int,
     ](
-        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        scales_offset: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        weights: OutputTensor[dtype=DType.float32, rank=2, ...],
-        routing: InputTensor[dtype=DType.float32, rank=2, ...],
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        scales_offset: Some[Output & Tensor],
+        weights: Some[Output & Tensor],
+        routing: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offset), TileTensorable)
+        comptime assert conforms_to(type_of(weights), TileTensorable)
+        comptime assert conforms_to(type_of(routing), TileTensorable)
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(scales_offset).rank == 1
+        comptime assert type_of(weights).rank == 2
+        comptime assert type_of(routing).rank == 2
         comptime assert (
             context.target.is_gpu()
         ), "moe.create.indices.packed is GPU only"
         moe_indices_packed[top_k, local_experts](
             PackedIndicesArgs(
-                routing.unsafe_ptr()
-                .unsafe_mut_cast[False]()
+                routing.to_tile_tensor[.float32]()
+                .ptr.unsafe_mut_cast[False]()
                 .unsafe_origin_cast[ImmUntrackedOrigin](),
-                token_expert_order.unsafe_ptr().unsafe_origin_cast[
+                token_expert_order.to_tile_tensor[
+                    .uint32
+                ]().ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                expert_start_indices.to_tile_tensor[
+                    .uint32
+                ]().ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                restore_token_order.to_tile_tensor[
+                    .uint32
+                ]().ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                expert_ids.to_tile_tensor[.int32]().ptr.unsafe_origin_cast[
                     MutUntrackedOrigin
                 ](),
-                expert_start_indices.unsafe_ptr().unsafe_origin_cast[
+                expert_usage_stats.to_tile_tensor[
+                    .uint32
+                ]().ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                scales_offset.to_tile_tensor[.uint32]().ptr.unsafe_origin_cast[
                     MutUntrackedOrigin
                 ](),
-                restore_token_order.unsafe_ptr().unsafe_origin_cast[
+                weights.to_tile_tensor[.float32]().ptr.unsafe_origin_cast[
                     MutUntrackedOrigin
                 ](),
-                expert_ids.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                expert_usage_stats.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                scales_offset.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                weights.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
-                Int64(routing.dim_size[0]()),
+                Int64(routing.shape()[0].value()),
                 Int64(expert_offset),
             ),
             context,
@@ -2456,29 +2478,47 @@ struct Struct_moe_single_group_router_packed:
     @inline(.always)
     @staticmethod
     def execute[
-        scores_type: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
-        packed: OutputTensor[dtype=scores_type, rank=2, ...],
-        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        packed: Some[Output & Tensor],
+        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(packed), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime scores_type = type_of(expert_scores).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(packed).rank == 2
+        comptime assert type_of(expert_scores).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+        comptime assert type_of(expert_weights).dtype == scores_type
+        comptime assert type_of(packed).dtype == scores_type
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(expert_scores), UnsafeFusedView)
+        var scores_view = unsafe_fused_view(expert_scores)
+        comptime assert conforms_to(type_of(scores_view), Loadable)
+
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
+        ](coords: Coord) {var scores_view} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
-            return expert_scores._lambda_load[width=width](coords)
+            return rebind[SIMD[scores_type, width]](
+                scores_view.load[width=width](coords)
+            )
 
         single_group_router[
             n_routed_experts,
@@ -2486,14 +2526,14 @@ struct Struct_moe_single_group_router_packed:
             norm_weights=norm_weights,
             packed=True,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            expert_scores.runtime_layout(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor[scores_type](),
+            row_major(expert_scores.shape()),
             scores_input_fn,
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor().as_imm(),
             routed_scaling_factor,
             context,
-            packed.to_tile_tensor[.int64]().as_unsafe_any_origin().ptr,
+            packed.to_tile_tensor[scores_type]().as_unsafe_any_origin().ptr,
         )
 
 
@@ -5981,18 +6021,28 @@ struct GatedGroupRMSNorm[group_size: Int]:
 
     @staticmethod
     def execute[
-        dtype: DType,
         gate_dtype: DType,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        y: InputTensor[dtype=dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        y: Some[Input & Tensor],
+        # TODO(GEX-3856): Bind the gate by `Some[Input & Fused & LoadAccess]`
+        # once a trait-bound fused input no longer crashes the KGEN compile
+        # of the gated gate-slice graph on MI355.
         gate: FusedInputTensor[dtype=gate_dtype, rank=2, ...],
-        weight: InputTensor[dtype=.float32, rank=1, ...],
+        weight: Some[Input & Tensor],
         eps: Float32,
         ctx: DeviceContext,
     ) raises:
-        var n_rows = y.dim_size(0)
-        var intermediate = y.dim_size(1)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(y), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(y).rank == 2
+        comptime assert type_of(weight).rank == 1
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(y).dtype == dtype
+        var n_rows = Int(y.shape()[0].value())
+        var intermediate = Int(y.shape()[1].value())
         comptime gs = Self.group_size
         # The kernel floor-divides `intermediate // gs`; a non-multiple would
         # silently drop the tail columns of the last (partial) group. The
@@ -6008,9 +6058,9 @@ struct GatedGroupRMSNorm[group_size: Int]:
         )
         var num_groups = intermediate // gs
 
-        var output_tt = output.to_tile_tensor[.int32]()
-        var y_tt = y.to_tile_tensor[.int32]()
-        var weight_tt = weight.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[dtype]()
+        var y_tt = y.to_tile_tensor[dtype]()
+        var weight_tt = weight.to_tile_tensor[.float32]()
 
         # The gate is often a slice of the in-projection output, fused into
         # this input instead of being copied.
