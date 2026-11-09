@@ -23,7 +23,15 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, _OpaqueType, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    _OpaqueType,
+    ops,
+)
 
 
 @pytest.fixture
@@ -117,6 +125,40 @@ def test_api_scoped_kernel_valid(
         )
 
     session.load(graph)
+
+
+def test_api_scoped_kernel_in_cond_valid(
+    kernel_verification_ops_path: Path,
+) -> None:
+    # `ops.cond` builds each branch in a block outside the graph's module, so
+    # the branch's custom op still needs the graph's device info to match.
+    device = DeviceRef.CPU()
+    tensor_type = TensorType(DType.float32, [64], device=device)
+    graph = Graph(
+        "test_api_scoped_kernel_in_cond_valid",
+        input_types=[tensor_type, tensor_type],
+        output_types=[tensor_type],
+    )
+    with graph:
+        graph._import_kernels([kernel_verification_ops_path])
+        x, y = graph.inputs
+
+        def add() -> TensorValue:
+            return ops.custom(
+                "my_add_cpu_api",
+                device=device,
+                values=[x, y],
+                out_types=[tensor_type],
+            )[0].tensor
+
+        graph.output(
+            *ops.cond(
+                ops.constant(True, DType.bool, device=device),
+                [tensor_type],
+                add,
+                add,
+            )
+        )
 
 
 def _on_blackwell() -> bool:
