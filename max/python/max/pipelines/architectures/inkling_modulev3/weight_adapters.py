@@ -10,39 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Assigns Inkling checkpoint weights to registered role namespaces."""
+"""Assigns Inkling checkpoint tensors to registered role namespaces."""
 
-from __future__ import annotations
+from collections.abc import Sequence
 
-import re
+from max.pipelines.lib.weight_transform import WeightRenaming, WeightRule
+from transformers import PretrainedConfig
 
-from max.graph.weights import WeightData, Weights
-from transformers import AutoConfig
-
-from ..inkling.weight_adapters import (
-    VISION_PREFIX,
-    convert_safetensor_state_dict,
-)
-
-_EXPERT_SCALE = re.compile(
-    r"(\.experts\.w(?:13|2))_weight\.(weight_scale(?:_2)?|input_scale)$"
-)
+from ..inkling.weight_adapters import inkling_weight_rules
 
 
-def convert_registered_state_dict(
-    state_dict: dict[str, Weights],
-    huggingface_config: AutoConfig,
-    **unused_kwargs: object,
-) -> dict[str, WeightData]:
-    """Reuses checkpoint conversion and preserves ModuleV3 expert scale names."""
-    converted = convert_safetensor_state_dict(
-        state_dict, huggingface_config, **unused_kwargs
+def inkling_modulev3_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns rules for the registered decoder and vision modules."""
+    return (
+        WeightRenaming(r"^model\.llm\.", "decoder."),
+        *inkling_weight_rules(huggingface_config),
+        WeightRenaming(
+            r"(\.experts\.w(?:13|2))_weight\.(weight_scale(?:_2)?|input_amax)$",
+            r"\1_\2",
+        ),
     )
-    return {
-        (
-            name
-            if name.startswith(VISION_PREFIX)
-            else "decoder." + _EXPERT_SCALE.sub(r"\1_\2", name)
-        ): value
-        for name, value in converted.items()
-    }

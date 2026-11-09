@@ -27,4 +27,10 @@ class InklingMTPDraft(InklingMultiTokenPredictor):
 
 mtp_draft_registration = DraftRegistration[
     InklingMTPDraft, MTPInklingDraftArchConfig
-](method="mtp", configure=configure_mtp_draft)
+](
+    method="mtp",
+    configure=configure_mtp_draft,
+    # The checkpoint contains every depth; the module builds the requested
+    # speculative width and loads only the weights it declares.
+    strict_weights=False,
+)

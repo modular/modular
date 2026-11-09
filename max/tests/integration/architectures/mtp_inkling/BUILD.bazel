@@ -13,5 +13,6 @@ modular_py_test(
     deps = [
         "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/mtp_inkling",
+        "//max/python/max/pipelines/lib",
     ],
 )

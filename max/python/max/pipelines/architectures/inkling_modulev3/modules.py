@@ -36,11 +36,9 @@ class InklingDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
 
     graph_name = "inkling"
     consumes_vision = True
-    token_position_dtype = DType.uint32
     input_layout = (
         "tokens",
         "input_row_offsets",
-        "token_positions",
         "return_n_logits",
         "vision",
         "kv",
@@ -75,11 +73,9 @@ class InklingDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
     def forward(self, inputs: DecoderInputs[Tensor]) -> DecoderOutputs:
         """Runs both attention and convolution state from the shared KV tree."""
         assert inputs.vision is not None
-        assert inputs.token_positions is not None
         output = self.model(
             inputs.tokens,
             inputs.input_row_offsets,
-            inputs.token_positions,
             inputs.return_n_logits,
             inputs.vision.embeddings,
             inputs.vision.scatter_indices,

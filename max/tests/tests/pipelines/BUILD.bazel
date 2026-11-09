@@ -68,6 +68,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gpt_oss",
         "//max/python/max/pipelines/architectures/gpt_oss_modulev3",
+        "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/granite",
         "//max/python/max/pipelines/architectures/granite_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
