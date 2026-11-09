@@ -52,16 +52,17 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy import graph_groups
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.graph_groups import RaggedBatch
-from max.nn.legacy.kv_cache import MHAKVCacheParams, max_pages_per_request
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MHAKVCacheParams, max_pages_per_request
+from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     MultiKVCacheParams,
     RecurrentStateParams,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy import graph_groups
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.graph_groups import RaggedBatch
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV4.deepseekV4 import DeepseekV4
@@ -105,6 +106,7 @@ from max.pipelines.lib.interfaces import (
     PipelineModel,
     modulev3_ragged_kv_symbolic_input_tree,
 )
+from max.pipelines.lib.module_registration import decoder_input_types
 from max.pipelines.lib.registration_graph_api import (
     graph_api_decoder_input_types,
 )
@@ -196,7 +198,7 @@ def _qwen3_5_kv_params(devices: list[DeviceRef]) -> MultiKVCacheParams:
     )
 
 
-def _ep_config(*, eplb: bool = False) -> EPConfig:
+def _ep_config(*, eplb: bool = False, count: bool = False) -> EPConfig:
     return EPConfig(
         dispatch_dtype=DType.bfloat16,
         combine_dtype=DType.bfloat16,
@@ -207,6 +209,7 @@ def _ep_config(*, eplb: bool = False) -> EPConfig:
         n_gpus_per_node=2,
         n_nodes=1,
         eplb_enabled=eplb,
+        eplb_count_expert_load=count,
         num_moe_layers=3,
         max_replicas=2,
     )
@@ -222,6 +225,12 @@ def _llama3(
         Llama3.input_tree(model, kv_params, needs_hidden_state_input=hidden),
         Llama3.input_types(model, kv_params, needs_hidden_state_input=hidden),
     )
+
+
+def _registered_decoder() -> tuple[_InputTree, _InputTypes]:
+    """A decoder registered by role, whose graph takes its fields by name."""
+    types = decoder_input_types(_kv_params(_gpus(1)), DeviceRef.GPU(0))
+    return types, tuple(tree.leaves(types))
 
 
 def _distributed_llama3() -> tuple[_InputTree, _InputTypes]:
@@ -271,13 +280,18 @@ def _gemma4(*, two_caches: bool = False) -> tuple[_InputTree, _InputTypes]:
 
 
 def _deepseek(
-    cls: Any, *, ep: bool, eplb: bool = False, profile: bool = False
+    cls: Any,
+    *,
+    ep: bool,
+    eplb: bool = False,
+    profile: bool = False,
+    count: bool = False,
 ) -> tuple[_InputTree, _InputTypes]:
     devices = _gpus(2)
     config = _fake(
         devices=devices,
         data_parallel_degree=2,
-        ep_config=_ep_config(eplb=eplb) if ep else None,
+        ep_config=_ep_config(eplb=eplb, count=count) if ep else None,
         # V3.2 builds no profiling counters, so only V3 reads these.
         eplb_profile_enabled=profile,
         num_hidden_layers=3,
@@ -339,6 +353,9 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "deepseekV3": lambda: _deepseek(DeepseekV3, ep=False),
     "deepseekV3_ep": lambda: _deepseek(DeepseekV3, ep=True),
     "deepseekV3_ep_eplb": lambda: _deepseek(DeepseekV3, ep=True, eplb=True),
+    "deepseekV3_ep_expert_load": lambda: _deepseek(
+        DeepseekV3, ep=True, count=True
+    ),
     "deepseekV3_eplb_profile": lambda: _deepseek(
         DeepseekV3, ep=True, profile=True
     ),
@@ -352,6 +369,7 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "mimo_v2": lambda: _per_device_offsets(MiMoV2, two_caches=True),
     "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
     "deepseekV4_multi_device": lambda: _deepseekV4(_gpus(2)),
+    "registered_decoder": _registered_decoder,
 }
 
 
@@ -670,6 +688,17 @@ def test_ep_fetch_buffers_reads_the_input_tree_in_order() -> None:
     }
 
 
+def test_ep_fetch_buffers_reads_the_expert_load_tally_per_device() -> None:
+    manager = EPBatchManager(_ep_config(eplb=True, count=True))
+    paths = _leaf_paths(manager.input_tree())
+    assert paths[-2:] == ["eplb_expert_load.0", "eplb_expert_load.1"]
+    manager.fetch_buffers([_fake(buffer=p, tensor=p) for p in paths])
+    assert manager._eplb_expert_load_per_device == {
+        0: "eplb_expert_load.0",
+        1: "eplb_expert_load.1",
+    }
+
+
 def test_modulev3_input_tree_orders_return_n_logits_before_offsets() -> None:
     """ModuleV3 ``forward`` takes ``(tokens, return_n_logits, row_offsets, *kv)``.
 
@@ -696,6 +725,7 @@ def test_modulev3_input_tree_orders_return_n_logits_before_offsets() -> None:
             "max_cache_length",
             "page_stride",
             "attention_dispatch_metadata",
+            "mixed_step_split",
         )
     ]
     batch = inputs["batch"]

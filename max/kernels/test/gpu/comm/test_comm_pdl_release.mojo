@@ -160,7 +160,7 @@ def _launch_collective[
     kind: Int, ngpus: Int, pdl_level: PDLLevel
 ](
     rank: Int,
-    ctxs: List[DeviceContext],
+    ctxs: List[DeviceContext[]],
     ins: List[DeviceBuffer[dtype]],
     mut outs: List[DeviceBuffer[dtype]],
     gammas: List[DeviceBuffer[dtype]],
@@ -316,7 +316,7 @@ def _launch_collective[
 def _run_once[
     kind: Int, ngpus: Int, pdl_level: PDLLevel
 ](
-    ctxs: List[DeviceContext],
+    ctxs: List[DeviceContext[]],
     ins: List[DeviceBuffer[dtype]],
     mut outs: List[DeviceBuffer[dtype]],
     gammas: List[DeviceBuffer[dtype]],
@@ -344,7 +344,7 @@ def _run_once[
 def _refill[
     ngpus: Int
 ](
-    ctxs: List[DeviceContext],
+    ctxs: List[DeviceContext[]],
     ins: List[DeviceBuffer[dtype]],
     golden: List[DeviceBuffer[dtype]],
     outs: List[DeviceBuffer[dtype]],
@@ -360,7 +360,7 @@ def _refill[
 
 def _probe[
     kind: Int, ngpus: Int, pdl_level: PDLLevel
-](ctxs: List[DeviceContext]) raises -> Int:
+](ctxs: List[DeviceContext[]]) raises -> Int:
     """Returns how many of the `ITERS` overwrite runs changed an output.
 
     `pdl_level` is the collective's own launch level. The dependent always
@@ -524,7 +524,7 @@ def main() raises:
         assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
         comptime ngpus = 2
-        var ctxs = List[DeviceContext]()
+        var ctxs = List[DeviceContext[]]()
         for i in range(ngpus):
             ctxs.append(DeviceContext(device_id=i))
 

@@ -238,14 +238,14 @@ Goal: produce a complete, canonical, verified IR module for the compiler. Steps
 Goal: just enough resolved AST to answer editor queries, cheaply, tolerating
 broken code. Entire body (`Mojo/lib/MojoTooling/ParserDriver.cpp`):
 
-```257:269:Mojo/lib/MojoTooling/ParserDriver.cpp
-MojoASTDeclRef MojoParserContext::parseFileForLSP(unsigned fileId) {
+```286:298:Mojo/lib/MojoTooling/ParserDriver.cpp
+ASTDecl *MojoParserContext::parseFileForLSP(unsigned fileId) {
   ...
   ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
   resolveForLSP(*impl->sharedState.declResolver, *moduleDecl);
   resolveSignaturesForLSP(*impl->sharedState.declResolver);
 
-  return MojoASTDeclRef(moduleDecl);
+  return moduleDecl;
 }
 ```
 
@@ -275,7 +275,7 @@ MojoASTDeclRef MojoParserContext::parseFileForLSP(unsigned fileId) {
 | `eraseUnreachableDecls` (DCE)     | yes                                | **no** (LSP needs imports/aliases) |
 | `sortValueUses` (stable bytecode) | yes                                | **no**                             |
 | `finalizeImportedBytecodeModules` | inline, checked                    | deferred to context destructor     |
-| Return type                       | `OwningOpRef<ModuleOp>` (owned IR) | `MojoASTDeclRef` (decl handle)     |
+| Return type                       | `OwningOpRef<ModuleOp>` (owned IR) | `ASTDecl*` (borrowed decl)         |
 | `ParserListener`                  | typically null                     | `LSPParserListener` (symbol index) |
 
 #### Why the differences exist
@@ -361,14 +361,12 @@ two reference hooks funnel through `registerRef`:
 | `onAliasDecl`, `onFunctionDecl`, `onStructDecl`, `onStructFieldDecl`, `onTraitDecl`, `onVariableDecl`, `onParameterDecl`, `onArgumentDecl` (carries `argName`), `onModuleDecl` (skips main file's own module) | `registerSymbol` |
 | `onRef` (resolved reference), `onModuleImport` (module name in `from M import …`)                                                                                                                             | `registerRef`    |
 
-```604:611:Mojo/tools/mojo-lsp-server/MojoServer.cpp
+```666:671:Mojo/tools/mojo-lsp-server/MojoServer.cpp
 void LSPParserListener::addSymbolDecl(ASTDecl *decl, SMLoc loc,
                                       std::optional<StringRef> identifier) {
-  MojoASTDeclRef declRef(decl);
   if (!identifier)
-    identifier = declRef.getName();
-  symbolIndex.registerSymbol(declRef, identifier,
-                             mainDoc.translateParserLoc(loc));
+    identifier = decl->getName();
+  symbolIndex.registerSymbol(decl, identifier, mainDoc.translateParserLoc(loc));
 }
 ```
 
@@ -376,9 +374,9 @@ void LSPParserListener::addSymbolDecl(ASTDecl *decl, SMLoc loc,
 
 The index separates a **declared entity** from an **occurrence**:
 
-- `Symbol` — a declared entity, keyed by identity (`ASTDecl*`). Holds identifier
-  text, `declRef`, approximate kind, declaration range, and a back-list of
-  `SymbolRef`s. Modules/packages get a zero-length range; everything else gets
+- `Symbol`: a declared entity, keyed by identity (`ASTDecl*`). Holds identifier
+  text, an `ASTDecl*`, a declaration range, and a back-list of `SymbolRef`s.
+  Modules and packages get a zero-length range; everything else gets
   `[loc, loc + identifier.size())`.
 - `SymbolRef` — an occurrence: a source range pointing at **one or more**
   `Symbol`s (multiple because an overloaded name resolves to several decls).
@@ -387,27 +385,21 @@ A declaration's own identifier is *also* inserted as a `SymbolRef` pointing at
 its own `Symbol` — that is what gives the declaration site an entry in the
 interval map.
 
-**A `Symbol` does not copy the decl's info — it borrows a pointer.**
-`MojoASTDeclRef` wraps a raw `ASTDecl*` (a live MLIR `Operation*` in the
-parser's module). The constructor captures only four cheap things: the
-`identifier` string, the `declRef` pointer, an `approximateViewKind`, and an
-arithmetic `range`. This is why creating a `Symbol` for a stdlib decl on
-reference is cheap:
+**A `Symbol` does not copy declaration information; it borrows an `ASTDecl*`.**
+The constructor captures only the identifier string, declaration pointer, and
+arithmetic range. It does not classify the declaration or build a parallel
+tooling representation. Features inspect the typed `ASTDecl` directly:
 
-- **Kind** comes from `declRef.getApproximateDeclKind()` — a fast `isa<>` switch
-  on the decl's operation that returns just the kind enum, never building a
-  view.
-- **Detailed info** (signature snippet, argument list, docstring, markdown) is
-  the "correct but slow path": built lazily via `declRef.getDecl()` (a full
-  `PublicDecl` view) only when a feature needs it (e.g. hover). Both share
-  `getDeclImpl<ResultType>()` in `Mojo/lib/MojoTooling/MojoASTDeclRef.cpp`.
-- **Required at creation:** only a non-empty name (`registerSymbol` bails on an
-  empty identifier). The kind is computed but cheap; the detailed view is never
-  computed at creation.
+- Semantic tokens, rename, and address-space annotations use `isa<>`,
+  `dyn_cast<>`, `getArgNumber()`, and `getParamNumber()` when needed.
+- Hover and completion render signatures, docstrings, and markdown lazily from
+  the `ASTDecl` only when requested.
+- `registerSymbol()` requires only a non-empty name; it does not eagerly
+  compute detailed documentation.
 
 Two consequences:
 
-- *Lifetime:* the `declRef` borrows into IR owned by the per-parse
+- *Lifetime:* the `ASTDecl*` borrows into IR owned by the per-parse
   `MojoParserContext`; the `Symbol`/`SymbolIndex` live in the same `Context`, so
   the pointer is valid for the index's whole life and both are rebuilt together
   next parse.
@@ -434,18 +426,19 @@ static SMRange getRangeForText(SMLoc loc, StringRef text) {
 interval map only if the range is in the main file and the decl is not a
 module/package:
 
-```360:383:Mojo/tools/mojo-lsp-server/MojoServer.cpp
-Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
+```416:440:Mojo/tools/mojo-lsp-server/MojoServer.cpp
+Symbol *SymbolIndex::registerSymbol(ASTDecl *decl,
                                     std::optional<StringRef> identifier,
                                     SMLoc identifierLoc) {
   if (!identifier.has_value() || identifier->empty())
     return nullptr;
   auto [it, _] = symbolTable.try_emplace(
-      &*declRef, std::make_unique<Symbol>(declRef, *identifier, identifierLoc));
+      decl, std::make_unique<Symbol>(decl, *identifier, identifierLoc));
   Symbol &symbol = *it->second;
   if (mainDoc.containsLocation(symbol.range.Start) &&
       mainDoc.containsLocation(symbol.range.End)) {
-    if (!isa_and_nonnull<FileModuleOp, PackageOp>(declRef->getIfOperation()))
+    if (!isa_and_nonnull<FileModuleASTDecl, PackageASTDecl, ImportASTDecl>(
+            decl))
       insertRangeInMainDoc({symbol, symbol.range});
   }
   return &symbol;
@@ -457,17 +450,18 @@ existing `Symbol` if the decl was already declared; otherwise register one on
 the fly. This is how a main-file reference to a **stdlib/imported decl** (whose
 declaration lives outside the main file) still gets a `Symbol`:
 
-```393:419:Mojo/tools/mojo-lsp-server/MojoServer.cpp
+```442:477:Mojo/tools/mojo-lsp-server/MojoServer.cpp
   SmallVector<Symbol *> symbols;
-  for (MojoASTDeclRef ref : declRefs) {
-    if (Symbol *symbol = findSymbol(ref)) {
+  for (ASTDecl *decl : decls) {
+    if (Symbol *symbol = findSymbol(decl)) {
       symbols.push_back(symbol);
       continue;
     }
-    std::optional<StringRef> symName = ref.getName();
-    if (!symName) { /* DK_PublicArgumentDecl edge case: use spelling */ }
+    std::optional<StringRef> symName = decl->getName();
+    if (!symName && isArgumentDecl(decl))
+      symName = spelling;
     if (Symbol *symbol = registerSymbol(
-            ref, symName, mainDoc.translateParserLoc(ref.getLoc())))
+            decl, symName, mainDoc.translateParserLoc(decl->getLoc())))
       symbols.push_back(symbol);
   }
   if (!symbols.empty())
@@ -566,11 +560,11 @@ runs a few early compiler passes. **The only thing it feeds back to the LSP is
 diagnostics** — and it does so by reusing Sink 2 (the same `SourceMgr` diag
 handler), not a new channel. No structural info escapes it.
 
-```926:952:Mojo/tools/mojo-lsp-server/MojoServer.cpp
-void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
+```991:1015:Mojo/tools/mojo-lsp-server/MojoServer.cpp
+void MojoDocument::checkModuleSemantics(ASTDecl *decl) {
   ...
   // Don't check the semantics of the module if there were parser errors.
-  if (hasParserErrors || !decl || !decl.getIfOperation())
+  if (hasParserErrors || !decl || !decl->getIfOperation())
     return;
 
   // Clone the module this decl is in so that we don't mess with the AST, as
@@ -768,9 +762,10 @@ body-resolved only when you trigger the lookup.
 
 `CodeCompletionListener::onMemberLookup` maps each child `ASTDecl` to a typed
 `CodeCompletionResult` (module/package/struct/trait/function/field/variable) via
-a `TypeSwitch`, attaching markdown docs from `getFullMarkdownString`. The
+a `TypeSwitch`. It renders documentation directly from the declaration with
+`getFunctionFullMarkdownString()` or `getPublicDeclFullMarkdownString()`. The
 `onImport` path instead scans the module search directories on the filesystem,
-spinning up throwaway contexts with `parseFileOrPackageNonRecursive` just to
+spinning up throwaway contexts with `parseFileOrPackageNonRecursive()` just to
 pull each candidate module's doc string.
 
 #### What `codeComplete` uses from the parser
@@ -783,7 +778,7 @@ pull each candidate module's doc string.
 | `ParserListener::onImport`                                               | import / module candidates                      |
 | `resolveDeclForListenerLookup` (`resolveBody`)                           | on-demand resolution of target + children       |
 | `findStartOfNextToken` + lexer                                           | compute completion range from the byte offset   |
-| `MojoASTDeclRef` / `PublicDecl` (`getChildren`, `getFullMarkdownString`) | result kinds + docs                             |
+| Typed `ASTDecl` subclasses and MojoTooling rendering helpers             | result kinds + docs                             |
 | `getModuleSearchDirectories` + `parseFileOrPackageNonRecursive`          | filesystem import results + docs                |
 
 #### Contrast with the generalized parse
@@ -848,12 +843,13 @@ overloading — and emit one `Signature` per viable overload. Two notable rules:
 - `self` adjustment: for methods, bump `activeParameter` past the implicit
   `self` so the highlight lines up with the user-visible argument.
 
-The label text comes from the parser's `getDeclarationSnippet`, which also
-returns per-argument offsets (highlight spans into the label string).
+The label text comes from `getFunctionDeclarationSnippet()` or
+`getStructDeclarationSnippet()`, which also return argument or parameter
+offsets (highlight spans into the label string).
 `addDeclDocAndParametersToSignature` zips arguments with offsets to attach each
 parameter's span + markdown doc. `onParameterBinding` is the same shape but
-handles both `PublicFunctionDecl` and `PublicStructDecl` (structs are
-parameterized) via `getParameters()`.
+handles both `DefASTDecl` and `StructASTDecl` (structs are parameterized) using
+their `getUserParamDecls()` methods.
 
 #### Result shape and LSP mapping
 
@@ -868,15 +864,15 @@ underline the active argument within the rendered signature.
 
 #### What `signatureHelp` uses from the parser
 
-| Parser facility                                                                         | Used for                                  |
-|-----------------------------------------------------------------------------------------|-------------------------------------------|
-| `parseFileForLSP` (via `parseCompletionImpl`)                                           | the underlying parse (same as completion) |
-| `ParserListener::isInterestedInLoc`                                                     | coarse buffer filter, refined per-call    |
-| `ParserListener::onCall`                                                                | runtime argument help `f(a, b\|)`         |
-| `ParserListener::onParameterBinding`                                                    | compile-time parameter help `Foo[a, b\|]` |
-| `PublicFunctionDecl` / `PublicStructDecl` (`getArguments`, `getParameters`, `isMethod`) | overload candidates + self detection      |
-| `getDeclarationSnippet`                                                                 | signature label + per-arg offsets         |
-| `getFullMarkdownString` / `getMarkdownDocString`                                        | signature + per-parameter docs            |
+| Parser facility                                                          | Used for                                  |
+|--------------------------------------------------------------------------|-------------------------------------------|
+| `parseFileForLSP` (via `parseCompletionImpl`)                            | the underlying parse (same as completion) |
+| `ParserListener::isInterestedInLoc`                                      | coarse buffer filter, refined per-call    |
+| `ParserListener::onCall`                                                 | runtime argument help `f(a, b\|)`         |
+| `ParserListener::onParameterBinding`                                     | compile-time parameter help `Foo[a, b\|]` |
+| `DefASTDecl` / `StructASTDecl` and their argument/parameter declarations | overload candidates + self detection      |
+| Function and struct declaration-snippet helpers                          | signature label + per-arg offsets         |
+| Function/public-decl markdown helpers                                    | signature + per-parameter docs            |
 
 #### Contrast: `codeComplete` vs `signatureHelp`
 
@@ -1013,7 +1009,7 @@ shared error state so the next block still parses.
    `removeLastREPLExpression`) can corrupt later blocks.
 8. **Scaffolding diagnostics** with no input mapping must be dropped; per-block
    `diags.clear()` is blunt and can mask or leak diagnostics.
-9. **Stdlib coupling**: the preamble hard-imports `std.memory.UnsafePointer` and
+9. **Stdlib coupling**: the preamble hard-imports `std.memory.Pointer` and
    `std.python.python.Python`; a stdlib reorg breaks every block.
 10. **Cost amplification**: runs inside the main parse, and
     `checkModuleSemantics` is invoked **per code block**

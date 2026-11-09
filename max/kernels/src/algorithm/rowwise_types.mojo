@@ -396,7 +396,7 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
         """Returns split-K partials slot `slot`, typed as `S`.
 
         The scratch is an array of fixed `_SPLITK_STATE_BYTES` slots, so it is
-        addressed by slot index: indexing an `UnsafePointer[S]` would stride by
+        addressed by slot index: indexing a `Pointer[S]` would stride by
         `size_of[S]()` and walk off the slot bounds.
 
         Parameters:
@@ -476,70 +476,47 @@ RegisterPassable` lets the kernel struct hold it as a register-passable
 field; the callable trait is non-`capturing` (captures ride the value)."""
 
 
-# TODO(MOCO-4713): Remove this and use a DynamicCoord with
-# wrapper functions where needed
-@fieldwise_init
-struct RowCoord[rank: Int](
-    ImplicitlyCopyable, Movable, TrivialRegisterPassable
-):
-    """A row's coordinates, as a non-variadic handle.
+@inline(.always)
+def dynamic_row_coord[
+    rank: Int
+](row_coords: Coord) -> DynamicCoord[DType.int, rank]:
+    """Converts a row's coords to an all-dynamic `Coord`.
 
-    Wraps an all-dynamic `Coord`: the reduce axis is overwritten per tile,
-    which a statically typed element cannot hold.
-
-    The wrapper is not cosmetic. A `Coord` parameterized by a symbolic rank
-    expands to a variadic pack (`TypeList.splat`), and such a pack does not
-    survive substitution into a closure-type trait bound.
+    The rowwise engine overwrites the reduce axis per tile, which a
+    statically typed element cannot hold, so every element becomes a
+    runtime `Int`.
 
     Parameters:
         rank: The coordinate's rank.
+
+    Args:
+        row_coords: The row's coords, static dims permitted.
+
+    Returns:
+        `row_coords` with every element converted to `Int`.
     """
+    return rebind[DynamicCoord[DType.int, rank]](
+        row_coords.make_dynamic[DType.int]()
+    )
 
-    var coord: DynamicCoord[.int64, Self.rank]
-    """The wrapped coordinates."""
 
-    @inline(.always)
-    @implicit
-    def __init__(out self, row_coords: Coord):
-        """Builds a handle from any `Coord`, dropping static dims.
+@inline(.always)
+def at_axis[axis: Int](coord: Coord, pos: Int) -> type_of(coord):
+    """Returns a copy of `coord` with the reduce axis set to `pos`.
 
-        Args:
-            row_coords: The row's coords, static dims permitted.
-        """
-        self.coord = rebind[DynamicCoord[.int64, Self.rank]](
-            row_coords.make_dynamic[.int64]()
-        )
+    Parameters:
+        axis: The reduce axis to overwrite.
 
-    @inline(.always)
-    def write_axis[axis: Int](mut self, pos: Int):
-        """Sets the reduce axis to `pos`, in place.
+    Args:
+        coord: The coords to copy; element `axis` must be a dynamic `Int`.
+        pos: The column position along the reduce axis.
 
-        Parameters:
-            axis: The reduce axis to overwrite.
-
-        Args:
-            pos: The column position along the reduce axis.
-        """
-        Pointer(to=self.coord[axis]).write(
-            rebind[type_of(self.coord[axis])](Scalar[.int64](pos))
-        )
-
-    @inline(.always)
-    def at_axis[axis: Int](self, pos: Int) -> Self:
-        """A copy with the reduce axis set to `pos`.
-
-        Parameters:
-            axis: The reduce axis to overwrite.
-
-        Args:
-            pos: The column position along the reduce axis.
-
-        Returns:
-            A copy of `self` with element `axis` set to `pos`.
-        """
-        var result = self
-        result.write_axis[axis](pos)
-        return result
+    Returns:
+        A copy of `coord` with element `axis` set to `pos`.
+    """
+    var result = coord
+    result.replace_dynamic[axis](pos)
+    return result
 
 
 @inline(.always)

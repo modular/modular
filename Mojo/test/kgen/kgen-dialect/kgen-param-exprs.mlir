@@ -877,6 +877,22 @@ kgen.generator @bindParams<c, d: type, fn: <index, type>(!pop.array<*(0,0), *(0,
       :!lit.generator<<type, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:3)>}>index>
         #kgen.bind_params<:!lit.generator<<index, type, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>, <true, loc("bind_params":3:3)>}>index> ?, 1, :type ? | "010">,
       :type i64 | "10">>
+  // A fully bound inner bind_params with an undischarged constraint is still
+  // its own generator, so a discharge-only binding flattens into it.
+  // CHECK: declare discharge_after_full_bind = <bind_params(:!lit.generator<<index, {<true, {{.*}}>, <true, {{.*}}>}>index> ?, 1 | "11")>
+  kgen.param.declare discharge_after_full_bind: index =
+    <#kgen.bind_params<
+      :!lit.generator<<{<true, loc("bind_params":4:2)>}>index>
+        #kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":4:1)>, <true, loc("bind_params":4:2)>}>index> ?, 1 | "10">
+      | "1">>
+  // A fully bound inner bind_params instantiates its generator's body, so new
+  // bindings bind that body instead of flattening into the outer generator.
+  // CHECK: declare bind_instantiated_body = <bind_params(:!lit.generator<<index>index> bind_params(:!lit.generator<<index>!lit.generator<<index>index>> ?, 1), 2)>
+  kgen.param.declare bind_instantiated_body: index =
+    <#kgen.bind_params<
+      :!lit.generator<<index>index>
+        #kgen.bind_params<:!lit.generator<<index>!lit.generator<<index>index>> ?, 1>,
+      2>>
   hlcf.return
 }
 

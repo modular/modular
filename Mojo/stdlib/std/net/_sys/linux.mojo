@@ -20,7 +20,14 @@ from std.ffi import c_char, c_int, c_uint, c_ulong, c_ushort, external_call
 from std.sys import size_of
 from std.sys.info import CompilationTarget
 
-from .inet import SockaddrIn, SockaddrIn6, in6_addr, in_addr, in_port_t
+from .inet import (
+    SockaddrIn,
+    SockaddrIn6,
+    SockaddrStorage,
+    in6_addr,
+    in_addr,
+    in_port_t,
+)
 
 comptime sa_family_t = c_ushort
 """C `sa_family_t`: the address family (`AF_*`) of a socket address."""
@@ -166,7 +173,7 @@ comptime _SS_PADSIZE = _SS_SIZE - __SOCKADDR_COMMON_SIZE - size_of[
 
 
 @fieldwise_init
-struct sockaddr_storage(Copyable, Writable):
+struct sockaddr_storage(SockaddrStorage, Writable):
     """C `struct sockaddr_storage`: sized and aligned to hold any address.
 
     Used as the out-parameter for calls that return a peer address
@@ -178,6 +185,14 @@ struct sockaddr_storage(Copyable, Writable):
     """The address family of the stored address (`AF_*`)."""
     var __ss_padding: Array[c_char, _SS_PADSIZE]
     var __ss_align: __ss_aligntype
+
+    def __init__(out self):
+        self.ss_family = 0
+        self.__ss_padding = Array[c_char, _SS_PADSIZE](fill=0)
+        self.__ss_align = 0
+
+    def family(self) -> c_int:
+        return self.ss_family.cast[c_int.dtype]()
 
 
 def accept4(

@@ -4,7 +4,7 @@
 // @liftable_op
 //
 
-// CHECK-LABEL: mgp.model @liftable_op : mof
+// CHECK-LABEL: mgp.model @liftable_op
 // CHECK-DAG:   %[[CH0:.*]] = grt.chain.create ()
 // CHECK-DAG:   %[[CTX:.*]] = mgp.context.create 3
 // CHECK-DAG:   %[[CH1:.*]] = mgp.runtime.create %[[CH0]], %1[1]
@@ -18,7 +18,7 @@
 // CHECK:   mef.output %[[CH0]], %[[BUF]] : !mef.chain, !mgp.buffer
 // CHECK: }
 
-mgp.model @liftable_op : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @liftable_op devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -31,12 +31,12 @@ mgp.model @liftable_op : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
 
 // -----
 
-// CHECK-LABEL: mgp.model @constant_external_mutable : mof
+// CHECK-LABEL: mgp.model @constant_external_mutable
 // CHECK-NOT:   mgp.buffer.constant.external
 // CHECK:     } execute (
 // CHECK:       mgp.buffer.constant.external
 
-mgp.model @constant_external_mutable : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @constant_external_mutable devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -53,12 +53,12 @@ mgp.model @constant_external_mutable : mof devices [#M.device_ref<"cpu", 0>] ini
 // @non_pure_op
 //
 
-// CHECK-LABEL: mgp.model @non_pure_op : mof
+// CHECK-LABEL: mgp.model @non_pure_op
 // CHECK-NEXT:  %{{.*}} = grt.chain.create ()
 // Nothing was lifted.
 // CHECK:       %[[CTX:.*]] = mgp.context.create 2
 
-mgp.model @non_pure_op : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @non_pure_op devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -85,7 +85,7 @@ mgp.model @non_pure_op : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
 // @dont_lift_if_no_computation_saved
 //
 
-// CHECK-LABEL: mgp.model @dont_lift_if_no_computation_saved : mof
+// CHECK-LABEL: mgp.model @dont_lift_if_no_computation_saved
 // CHECK:  %{{.*}} = grt.chain.create ()
 // Nothing changed
 // CHECK:       %[[CTX:.*]] = mgp.context.create 3
@@ -95,7 +95,7 @@ mgp.model @non_pure_op : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
 // CHECK:       mef.output %[[CH0]], %{{.*}}
 // CHECK-NEXT:  }
 
-mgp.model @dont_lift_if_no_computation_saved : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @dont_lift_if_no_computation_saved devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -109,7 +109,7 @@ mgp.model @dont_lift_if_no_computation_saved : mof devices [#M.device_ref<"cpu",
 
 // -----
 
-// CHECK-LABEL: mgp.model @generic_execute : mof
+// CHECK-LABEL: mgp.model @generic_execute
 // CHECK-DAG:     %[[CH0:.*]] = grt.chain.create ()
 // CHECK-DAG:     %[[CTX:.*]] = mgp.context.create 3
 // CHECK-DAG:     %[[CH1:.*]] = mgp.runtime.create %[[CH0]], %1[1]
@@ -121,7 +121,7 @@ mgp.model @dont_lift_if_no_computation_saved : mof devices [#M.device_ref<"cpu",
 // CHECK:         %[[BUF:.*]] = mgp.buffer.get_cached %[[CH0]]
 // CHECK:         %[[OUT:.*]] = "mgp.generic.execute"({{.*}}, %[[BUF]])
 
-mgp.model @generic_execute : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @generic_execute devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -154,12 +154,12 @@ mgp.model @generic_execute : mof devices [#M.device_ref<"cpu", 0>] init (%weight
 // @while
 //
 
-// CHECK-LABEL: mgp.model @while : mof
+// CHECK-LABEL: mgp.model @while
 // Nothing was lifted
 // CHECK-NEXT:  %{{.*}} = grt.chain.create ()
 // CHECK:       %{{.*}} = mgp.context.create 2
 
-mgp.model @while : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @while devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -180,10 +180,10 @@ mgp.model @while : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>
   mef.output %i : !mef.chain
 }
 
-// CHECK-LABEL: mgp.model @extend_lifetime : mof
+// CHECK-LABEL: mgp.model @extend_lifetime
 // CHECK: {{.*}} = mgp.extend.lifetime
 // CHECK:  } execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context
-mgp.model @extend_lifetime : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>, %arg2: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @extend_lifetime devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>, %arg2: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %2 = mgp.runtime.create %0, %1[0]
@@ -206,7 +206,7 @@ mgp.model @extend_lifetime : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref
 // A compiled region whose only extra results are dimensions moves to init.
 // The step keeps the root chain and reads the dimension back.
 
-// CHECK-LABEL: mgp.model @compiled_region_chain_and_dim : mof
+// CHECK-LABEL: mgp.model @compiled_region_chain_and_dim
 // CHECK-DAG: mogg.routine.async
 // CHECK-DAG: mgp.int.cache
 // CHECK: } execute (%[[CH:.*]]: !mef.chain
@@ -214,7 +214,7 @@ mgp.model @extend_lifetime : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref
 // CHECK: mgp.int.get_cached %[[CH]]
 // CHECK: mef.output %[[CH]], {{%.*}} : !mef.chain, !kgen.scalar<si64>
 
-mgp.model @compiled_region_chain_and_dim : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @compiled_region_chain_and_dim devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -235,11 +235,11 @@ mgp.model @compiled_region_chain_and_dim : mof devices [#M.device_ref<"cpu", 0>]
 
 // A tensor result has no cache slot, so the region stays in the step.
 
-// CHECK-LABEL: mgp.model @compiled_region_uncacheable_result : mof
+// CHECK-LABEL: mgp.model @compiled_region_uncacheable_result
 // CHECK: } execute
 // CHECK: mogg.routine.async
 
-mgp.model @compiled_region_uncacheable_result : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @compiled_region_uncacheable_result devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

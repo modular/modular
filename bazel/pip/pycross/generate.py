@@ -66,12 +66,14 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         # Split based on Python versions
         "numpy",
         "scipy",
+        "pandas",
+        "pyarrow",
+        "rpds-py",
         # Unresolvable conflicts between dependency groups.
         # Only add these here if they are not globally
         # resolvable in `override-dependencies` (i.e. we
         # are required to diverge).
         "apache-tvm-ffi",  # vllm 0.30.0 pins 0.1.11; MAX and sglang use 0.1.9
-        "click",  # vllm/sglang need >=8.4.2 via huggingface-hub; MAX tooling needs <8.2
         "compressed-tensors",  # vllm/sglang need 0.17.0; MAX stays on 0.15.0.1
         "cuda-bindings",  # vllm/sglang use CUDA 13; the default groups use CUDA 12
         "cuda-pathfinder",  # Follows cuda-python's split
@@ -81,8 +83,6 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "flash-attn-4",  # sglang 0.5.12.post1 needs 4.0.0b9; the benchmarks use 4.0.0b31
         "flashinfer-cubin",  # sglang pins 0.6.11.post1; MAX uses 0.6.8.post1
         "flashinfer-python",  # MAX, vllm and sglang each pin a different version
-        "hf-xet",  # Follows huggingface-hub's split
-        "huggingface-hub",  # vllm 0.30.0 needs >=1.31, which forces click>=8.4.2
         "idna",  # Follows mcp's split
         "llguidance",  # Not used by MAX directly; vllm pulls 1.7.5, sglang pins 0.7.30
         "mcp",  # vllm 0.30.0 needs mcp 2.x; MAX and sglang use 1.30.0

@@ -26,7 +26,7 @@ from std.utils.index import Index, IndexList
 
 def bench_rms_norm_rope_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank]
-](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
@@ -102,13 +102,12 @@ def bench_rms_norm_rope_gpu[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             rms_norm_rope[
                 dtype,
                 dtype,
                 dtype,
                 rank,
-                target="gpu",
                 multiply_before_cast=False,
             ](
                 input_fn,

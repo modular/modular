@@ -18,8 +18,8 @@
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
-#include "Support/ML/CompiledFrameworkLabel.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -30,7 +30,7 @@ class PrimitiveDescriptor;
 
 /// Instances of this class represent opened and decoded MEF files, allowing
 /// clients to interact with the invokable list, etc.
-class MEFFile : public ReferenceCounted<MEFFile> {
+class MODULAR_CXX_EXPORT MEFFile : public ReferenceCounted<MEFFile> {
 public:
   virtual ~MEFFile();
 
@@ -53,7 +53,7 @@ public:
 
   /// This method inspects the contents of the MEF file to make an educated
   /// guess of what it contains, allowing for better QoI and usability of tools.
-  CompiledFrameworkLabel sniffFileContents() const;
+  const char *sniffFileContents() const;
 
   /// Open a MEF file and install its primitives.
   static ErrorOr<RCRef<MEFFile>> open(BufferRef buffer,
@@ -69,7 +69,7 @@ protected:
 
 /// Return true if the specified file contents look like it is a MEF file, by
 /// checking the magic number.
-bool isMEFFile(llvm::StringRef contents);
+MODULAR_CXX_EXPORT bool isMEFFile(llvm::StringRef contents);
 
 } // namespace M
 

@@ -743,6 +743,32 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """The degree of data parallelism for replicating the model."""
 
+    decode_context_parallel_degree: int = Field(
+        default=1,
+        description=(
+            "Decode context parallelism: the number of attention "
+            "tensor-parallel ranks that split each request's KV cache by "
+            "token position instead of replicating it. Must divide the "
+            "attention tensor-parallel degree; 1 disables it. Set only by "
+            "the gen-mef export: it is not a `max serve` flag, because "
+            "MAX's own KV cache manager doesn't shard by position."
+        ),
+    )
+    """The decode context parallel degree within each attention replica."""
+
+    dcp_q_replicate: bool | None = Field(
+        default=None,
+        description=(
+            "Under decode context parallelism, whether every rank computes "
+            "all of its group's query heads from replicated query weights "
+            "(True) or absorbs its own tensor-parallel heads and all-gathers "
+            "them (False). None takes the default, True, for every "
+            "architecture. Set only by the gen-mef export, like "
+            "decode_context_parallel_degree."
+        ),
+    )
+    """Whether decode context parallel ranks replicate the query."""
+
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
     )
@@ -1824,6 +1850,7 @@ def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
     # For compound types (list, dict) the raw CLI string is JSON, so try
     # json.loads first; fall back to the raw string for plain scalars.
     field_info = MAXModelConfig.model_fields[field_name]
+    assert field_info.annotation is not None
     adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
     try:
         parsed_value = json.loads(raw_value)

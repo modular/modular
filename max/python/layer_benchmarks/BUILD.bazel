@@ -64,7 +64,11 @@ modular_py_library(
     ],
     ignore_unresolved_imports = ["torch"],
     imports = ["."],
-    deps = _TESTBED_DEPS + ["//max/python/max:tree"],
+    deps = _TESTBED_DEPS + [
+        "//max/python/max:tree",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+    ],
 )
 
 modular_py_binary(

@@ -33,7 +33,7 @@ from std.random import random_ui64
 from std.testing import assert_equal, assert_true
 
 from layout import Coord, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE, MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
@@ -501,8 +501,16 @@ def main() raises:
                 ctx
             )
             # A second (N, split) pair, so the controls cannot be passing by
-            # fitting one geometry.
-            test_split_k_epilogue[lane_bytes, 16, 6144, 3072, num_splits=6](ctx)
+            # fitting one geometry. M3.1's MXFP8 table runs N=6144, K=3072
+            # unsplit at this M, so that arm takes K=6144 instead.
+            comptime if lane_bytes == MXFP8_LANE_BYTES:
+                test_split_k_epilogue[lane_bytes, 16, 6144, 6144, num_splits=8](
+                    ctx
+                )
+            else:
+                test_split_k_epilogue[lane_bytes, 16, 6144, 3072, num_splits=6](
+                    ctx
+                )
 
         print(
             "\n--- SK workspace cap: where the dispatcher stops splitting ---"
@@ -511,13 +519,52 @@ def main() raises:
         # N=2560, K=6144 splits 12 ways, so the 128 MiB budget admits
         # M <= 128*1024*1024 / (12 * 2560 * 4) = 1092. Straddle it: a decode M
         # splits, a prefill-shaped M must not (M=2048 would want 240 MiB).
+        # M3.1's MXFP8 table owns that shape, so the MXFP8 arm straddles
+        # K=4096 instead: 8 splits, M <= 1638.
         comptime for lane_bytes in [MXFP4_LANE_BYTES, MXFP8_LANE_BYTES]:
+            comptime K = 6144 if lane_bytes == MXFP4_LANE_BYTES else 4096
             test_dispatch_workspace_cap[
-                lane_bytes, 1024, 2560, 6144, expect_split_k=True
+                lane_bytes, 1024, 2560, K, expect_split_k=True
             ]("cap-under-m1024", ctx)
             test_dispatch_workspace_cap[
-                lane_bytes, 2048, 2560, 6144, expect_split_k=False
+                lane_bytes, 2048, 2560, K, expect_split_k=False
             ]("cap-over-m2048", ctx)
+
+        print("\n--- plain vs split: the wide-N short-K floor ---")
+
+        # A split adds no blocks, only the workspace round trip, so a wide N
+        # that already fills the GPU takes the plain tile. Both sides of the
+        # block floor, which is 3/16 of the CUs (48 blocks on MI355X):
+        # N=8192 at M=64 is 64 blocks and N=16384 at M=128 is 256, both plain;
+        # N=4096 at M=64 is 32 and N=2304 at M=64 is 18, both under the floor
+        # and both still splitting. All four run the MXFP4 path: the gate is
+        # MXFP4-only, so MXFP8 keeps its split here.
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 8192, 2048, expect_split_k=False
+        ]("plain-wide-m64", ctx)
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 128, 16384, 2048, expect_split_k=False
+        ]("plain-wide-m128", ctx)
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 4096, 2048, expect_split_k=True
+        ]("split-floor-32-blocks", ctx)
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 2304, 2048, expect_split_k=True
+        ]("split-narrow-m64", ctx)
+
+        # The K bound of the same gate (`K*elems <= 3072`), crossing it at a
+        # fixed block count so only K decides: M=64 N=8192 is 64 blocks on
+        # either side of the floor. K=3072 sits exactly on the inclusive bound
+        # and must stay plain; K=4096 must split. K is a multiple of 128, so
+        # these are the closest legal points to the bound. Without the K term
+        # the long-K shape would take the plain route and both cases would pass
+        # the floor check alike.
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 8192, 3072, expect_split_k=False
+        ]("plain-k3072-bound", ctx)
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 8192, 4096, expect_split_k=True
+        ]("split-k4096-bound", ctx)
 
         # `N % SK_BN != 0` must route past split-K whatever the workspace says:
         # the matmul writes its f32 workspace through `RegTileWriter`, which

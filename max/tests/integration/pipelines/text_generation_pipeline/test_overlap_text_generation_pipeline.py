@@ -2878,7 +2878,7 @@ def _captured_dispatch_fixture(
     runner._kv_params = MagicMock()
     runner._kv_params.graph_capture_probe_cache_lengths.return_value = [128]
     runner._is_spec_decode = False
-    runner._signal_buffers = []
+    runner._compiled = None
     runner._records = {}
     runner.graph_entries = {}
     runner._host_input_guard_mode = "abort" if host or pinned else None

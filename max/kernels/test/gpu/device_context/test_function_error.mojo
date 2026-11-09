@@ -32,7 +32,7 @@ def test_function_error(ctx: DeviceContext) raises:
             unsafe_from_raw_pointer=res_ptr
         )
         var res_host = DeviceBuffer[.uint32](
-            ctx, res_ptr_owned.unsafe_ptr(), 1, owning=False
+            ctx, res_ptr_owned.ptr(), 1, owning=False
         )
         ctx.enqueue_function[kernel[origin_of(res_host)]](
             res_host, block_dim=(1), grid_dim=(1)

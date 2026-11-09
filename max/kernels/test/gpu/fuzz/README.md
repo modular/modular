@@ -159,6 +159,17 @@ indexer's gate is the load-bearing one -- its scorer sizes split-K from the
 batch size, so a request really is decomposed differently depending on its
 neighbours, and its scores pick the blocks attention reads.
 
+`megaffn_nvfp4` adds a contention axis that the other targets lack: every case
+runs alone on an idle GPU, where all CTAs of a persistent kernel start at
+once. Its `spin_*` fields queue a neighbour on a second stream before each
+launch, either an idle kernel holding `spin_sms` SMs or back-to-back 2-CTA
+grouped GEMMs, so clusters start late and land on SMs that earlier clusters
+freed. It checks every launch with the kernel's own arrival-slot audit and a
+byte-exact compare against the unfused chain, under the default `diff`
+oracle. The production failure it was built after (a cross-CTA ordering bug
+in the mirrored scheduler rings) did not reproduce here: treat a green run as
+no evidence about such races, and a red one as a finding.
+
 Targets that fuzz the input value distribution expose a `dist` spec field
 (uniform/normal/sparse/large/all-equal); NaN/Inf specials are reachable but kept
 out of the auto-mix — they drive the `contract` oracle, not `ref`.
@@ -188,11 +199,13 @@ under `draft_proposal: sampled`, which switches `sampling_logits_dtype` for the
 whole sampling path. The in-source default is `float32`, so the bfloat16 arm
 only gets covered when it is built explicitly.
 
-| Define          | Target                    | Effect                         |
-|-----------------|---------------------------|--------------------------------|
-| `ttsd_bf16=1`   | `topk_topp_sampling_dist` | bfloat16 logits in             |
-| `ttmp_bf16=1`   | `topk_topp_masked_probs`  | bfloat16 logits in             |
-| `argsort_i64=1` | `argsort`                 | int64 keys instead of float32. |
+| Define          | Target                    | Effect                                    |
+|-----------------|---------------------------|-------------------------------------------|
+| `ttsd_bf16=1`   | `topk_topp_sampling_dist` | bfloat16 logits in                        |
+| `ttmp_bf16=1`   | `topk_topp_masked_probs`  | bfloat16 logits in                        |
+| `argsort_i64=1` | `argsort`                 | int64 keys instead of float32.            |
+| `msas_fp8=1`    | `msa_mixed_split`         | FP8 e4m3 main KV cache                    |
+| `msas_heads=4`  | `msa_mixed_split`         | 4 KV and index heads per device (unsplit) |
 
 The corpus records a spec, not a build config, so a replay entry always runs
 under the in-source default. Alternate configs belong in a live sweep, not the

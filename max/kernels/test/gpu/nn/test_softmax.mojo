@@ -21,13 +21,13 @@ from max.gpu import WARP_SIZE, thread_idx, warp_id
 from max.gpu.host import DeviceContext
 from layout import (
     Coord,
-    Layout,
     TensorLayout,
     TileTensor,
     row_major,
     stack_allocation,
 )
 from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout.coord import coord
 from nn.softmax import (
     _online_softmax_iter_for_mma_output,
     _softmax_cpu,
@@ -622,11 +622,12 @@ def _online_softmax_scratch_kernel[
             scores[0, col] = Float32(warp_id() + 2 * iteration)
         _online_softmax_iter_for_mma_output[
             .float32,
-            Layout.row_major(1, 1),
-            Layout.row_major(1, 2),
-            Layout.row_major(WARP_SIZE // 4, 4),
+            coord[1, 1],
+            coord[1, 2],
+            coord[WARP_SIZE // 4, 4],
             use_exp2=True,
-            fragment_layout=Layout.row_major(frag_rows, frag_cols),
+            frag_rows=frag_rows,
+            frag_cols=frag_cols,
         ](accum_fragment, scores_fragment, scratch, rowmax.ptr, rowsum.ptr)
     comptime for row in range(frag_rows):
         output[thread_idx.x, 4 * row] = rowmax[0, row]

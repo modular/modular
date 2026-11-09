@@ -72,7 +72,6 @@ from max.gpu import (
     lane_id,
     thread_idx,
 )
-from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from state_space.gated_delta import pdl_enter, pdl_exit
 
@@ -102,7 +101,6 @@ def gated_delta_conv1d_fwd_gpu[
     Engine: TensorEngine,
     CAPTURE_INPUT: Bool = False,
     qkv_window_LT: TensorLayout = conv_output_ragged_LT,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     batch_size: Int32,
     total_seq_len: Int32,
@@ -139,13 +137,12 @@ def gated_delta_conv1d_fwd_gpu[
     owns to `qkv_window`, which has the output's shape; otherwise
     `qkv_window` is never touched.
 
-    A non-OFF `pdl_level` makes every thread wait for the preceding grid
-    before it reads any operand, since each of them (the input, the weight,
-    the offsets) can be that grid's output. The launch must then carry
-    `pdl_launch_attributes`. `PDLLevel.OVERLAP_AT_BEGINNING` releases the
-    dependent grid at entry, `PDLLevel.ON` after the last store.
+    Every thread waits for the preceding grid before it reads any operand,
+    since each of them (the input, the weight, the offsets) can be that
+    grid's output. The launch must carry `pdl_launch_attributes`; the grid
+    releases its dependent after the last store.
     """
-    pdl_enter[pdl_level]()
+    pdl_enter()
 
     comptime KERNEL_SIZE_MINUS_ONE = KERNEL_SIZE - 1
 
@@ -426,4 +423,4 @@ def gated_delta_conv1d_fwd_gpu[
                         (slot, conv_channel_idx, state_slot_j), state_value
                     )
 
-    pdl_exit[pdl_level]()
+    pdl_exit()

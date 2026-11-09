@@ -41,6 +41,13 @@
 # RUN: mojo run -Xlinker -rpath -Xlinker %t.dir -Xlinker -lfooshared %s \
 # RUN:   | FileCheck %s
 
+# `-Wl,<arg>` passthroughs, the spelling `mojo build` accepts, are expanded
+# into the linker arguments the clang driver would pass, so a target plugin
+# can emit one argument set for both commands.
+# RUN: mojo run -Xlinker -Wl,-L%t.dir -Xlinker -Wl,-lfooshared %s | FileCheck %s
+# RUN: mojo run -Xlinker -Wl,-rpath,%t.dir -Xlinker -Wl,-l,fooshared %s \
+# RUN:   | FileCheck %s
+
 # An absolute path to an existing shared library, loaded directly.
 # RUN: mojo run -Xlinker %t.dir/libfooshared.so %s | FileCheck %s
 

@@ -18,7 +18,7 @@ from typing import Any
 
 from max import functional as F
 from max.graph import TensorValue
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
 from max.tensor import Tensor
 
 

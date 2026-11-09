@@ -45,7 +45,7 @@ from std.math import ceildiv, isnan, rsqrt
 from std.random import random_ui64, seed
 
 from max.gpu import block_dim, block_idx, thread_idx
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
 from max.gpu.memory import external_memory
 from layout import Coord, Idx, TileTensor, row_major
@@ -95,9 +95,6 @@ def poison_all_sms(pattern: Int, ctx: DeviceContext) raises:
         grid_dim=2 * ctx.default_device_info.sm_count,
         block_dim=1024,
         shared_mem_bytes=SMEM_FILL_BYTES,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(SMEM_FILL_BYTES)
-        ),
     )
 
 

@@ -279,7 +279,7 @@ trait DispatchTestT(Deinitable):
     comptime n_tokens_per_rank: Int
     comptime TokenFormatType: TokenFormat
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         ...
 
     @inline(.always)
@@ -287,7 +287,7 @@ trait DispatchTestT(Deinitable):
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         ...
@@ -346,7 +346,7 @@ struct NVFP4DispatchTest[
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
     var device_output_scales_offset_bufs_list: List[DeviceBuffer[.uint32]]
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         self.device_output_bufs_list = List[DeviceBuffer[Self.fp4_dtype]](
             capacity=Self.n_ranks
         )
@@ -383,7 +383,7 @@ struct NVFP4DispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor(
@@ -451,7 +451,7 @@ struct BF16DispatchTest[
 
     var device_output_bufs_list: List[DeviceBuffer[.bfloat16]]
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         self.device_output_bufs_list = List[DeviceBuffer[.bfloat16]](
             capacity=Self.n_ranks
         )
@@ -467,7 +467,7 @@ struct BF16DispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor(
@@ -534,7 +534,7 @@ struct MXDispatchTest[
     var device_output_bufs_list: List[DeviceBuffer[Self.quant_dtype]]
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         self.device_output_bufs_list = List[DeviceBuffer[Self.quant_dtype]](
             capacity=Self.n_ranks
         )
@@ -560,7 +560,7 @@ struct MXDispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor(
@@ -586,7 +586,7 @@ struct MXDispatchTest[
 def bench_dispatch_common[
     DispatchTestType: DispatchTestT,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime input_type = DType.bfloat16
     comptime hidden_size = DispatchTestType.hidden_size
     comptime top_k = DispatchTestType.top_k
@@ -759,7 +759,6 @@ def bench_dispatch_common[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
             use_shmem=False,
         ](
             get_atomic_counters_tensor(dev_idx, slot_idx),
@@ -782,7 +781,6 @@ def bench_dispatch_common[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
         ](
             format_handler,
             get_row_offsets_tensor(dev_idx, slot_idx),
@@ -811,7 +809,6 @@ def bench_dispatch_common[
             n_ranks,
             1,
             False,
-            "gpu",
             use_shmem=False,
         ](
             format_handler,
@@ -854,7 +851,7 @@ def bench_dispatch_common[
     # First, bench the dispatch kernel overhead
 
     @inline(.always)
-    def call_fn_dispatch(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_dispatch(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_dispatch_async(dev_id, cache_iter)
 
@@ -894,7 +891,9 @@ def bench_dispatch_common[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_dispatch_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_dispatch_wait(
+        ctx: DeviceContext[], cache_iter: Int
+    ) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_dispatch_async_wait(dev_id, cache_iter)
 
@@ -943,7 +942,7 @@ def bench_dispatch_common[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_e2e_split(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_e2e_split(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_e2e(dev_id, cache_iter + 1)
 
@@ -988,7 +987,7 @@ def bench_dispatch_common[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_e2e_fused(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+    def call_fn_e2e_fused(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.device().id)
         run_fused_dispatch(dev_id, cache_iter + 1)
 
@@ -1038,7 +1037,7 @@ def bench_dispatch_nvfp4[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = NVFP4DispatchTest[
         fp4_dtype=DType.uint8,
         scales_dtype=DType.float8_e4m3fn,
@@ -1062,7 +1061,7 @@ def bench_dispatch_bf16[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = BF16DispatchTest[
         _hidden_size=hidden_size,
         _top_k=top_k,
@@ -1084,7 +1083,7 @@ def bench_dispatch_mxfp4[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = MXDispatchTest[
         quant_dtype=DType.uint8,
         scales_dtype=DType.float8_e8m0fnu,
@@ -1108,7 +1107,7 @@ def bench_dispatch_mxfp8[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     # OCP E4M3 (`float8_e4m3fn`) is the MXFP8 element encoding CDNA4's
     # f8f6f4 MFMA consumes and the only FP8 flavor `MXFormat` names; the
     # MI300-era `float8_e4m3fnuz` is not an MX wire format.
@@ -1129,7 +1128,7 @@ def bench_dispatch_mxfp8[
 
 def bench_all_formats[
     n_ranks: Int, n_tokens_per_rank: Int, n_slots: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Runs every token format this vendor dispatches with, at one shape."""
     print(
         t"\n===== dispatch shape: tokens_per_rank= {n_tokens_per_rank}  slots="
@@ -1194,7 +1193,7 @@ def main() raises:
         print("This benchmark requires exactly 8 GPUs; skipping.")
         return
 
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(n_ranks):
         ctx.append(DeviceContext(device_id=i))
 

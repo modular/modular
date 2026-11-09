@@ -52,7 +52,7 @@ from std.sys.intrinsics import llvm_intrinsic
 
 from std.utils.coord import Coord
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
 from std.bit import log2_floor

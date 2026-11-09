@@ -118,9 +118,11 @@ struct OperandKindMismatch:
 @extensibility.register("declarative_execute_and_execute_device")
 struct ExecuteAndExecuteDevice:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](res: OutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        res: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
         pass
 
     @staticmethod

@@ -617,11 +617,12 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
     llvm::append_range(result.newResultTypes, oldSig.getResults());
     break;
   case ABI::PromoteError:
-    // For a throwing function, this retains the i1 result by default unless
-    // we're able to lower the normal result or the error result.  If we are
-    // able to lower one of them, we end up with "i1, othertype" as two results
-    // from the KGEN function, if both can be lowered to registers then we
-    // replace the i1 with "variant<normal, error>".
+    // For a throwing function, this retains the scalar<bool> error-state
+    // result by default unless we're able to lower the normal result or the
+    // error result. If we are able to lower one of them, the KGEN function has
+    // scalar<bool> and the lowered value as two results. If both can be
+    // lowered to registers, replace the status with
+    // "variant<normal, error>".
     result.newResultTypes.push_back(
         SIMDType::getScalarBoolType(oldSig.getContext()));
     result.newResultTypes.push_back(loweredErrorType);
@@ -768,7 +769,7 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
                       result.newArgConventions, oldSig.getFnEffects(),
                       oldSig.getMetadata(), oldSig.getArgListAttrs());
     callOp.setCalleeAttr(
-        FuncSymbolGenerator::get(callOp.getCalleeSymbol(), newSig));
+        FuncSymbolGenerator::getParamLess(callOp.getCalleeSymbol(), newSig));
   }
 }
 

@@ -28,20 +28,20 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Linear, Module
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.functional_kernels import (
+from max.nn.common_layers.linear import RowParallelLinear
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_tensor import FP8BlockTensor
+from max.nn.kernels import (
     flash_attention_ragged,
     fused_chunked_qkv_rope_store_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.common_layers.linear import RowParallelLinear
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.common_layers.quant_tensor import FP8BlockTensor
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
 

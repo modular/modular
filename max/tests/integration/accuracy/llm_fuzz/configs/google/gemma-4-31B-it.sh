@@ -17,6 +17,7 @@ batch_size=64
 max_length=131072
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --device-memory-utilization=0.75
   --max-batch-input-tokens 32768
   --enable-prefix-caching

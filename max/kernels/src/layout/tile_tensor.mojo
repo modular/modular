@@ -24,7 +24,7 @@ from std.builtin.int import index as _index
 from std.builtin.rebind import downcast
 from std.collections._conditional import _ComptimeConditional
 from std.memory import unsafe_stack_allocation as _std_stack_allocation
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from max.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer
 from max.gpu.memory import CacheEviction, Fill, async_copy
 from layout._fillers import BATCH_SIZE
@@ -37,12 +37,13 @@ from .swizzle import Swizzle
 
 from .tensor_engine import (
     DevicePointerEngine,
+    StorageIO,
     TensorOps,
     TensorEngine,
     TileIO,
     DefaultEngine,
 )
-from .tile_layout import (
+from .layout import (
     Layout,
     _ModeLeaves,
     _TileKeptLeaves,
@@ -68,13 +69,21 @@ from layout.coord import (
     _Flattened,
     DynamicCoord,
 )
-from .int_tuple import coord_to_int_tuple, _IntTupleToCoordLike
 from .owned_tensor import OwnedTensor
 
 
 @inline(.always)
-def _default_invariant[mut: Bool]() -> Bool:
-    return is_gpu() and mut == False
+def _default_invariant[mut: Bool, address_space: AddressSpace]() -> Bool:
+    # An immutable view only says this code reads through it. Global data a
+    # kernel only reads is safe to load invariant, but shared and local
+    # memory are written by the same kernel, often by this thread just
+    # before, and an invariant load may be hoisted above those writes.
+    return (
+        is_gpu()
+        and not mut
+        and address_space != AddressSpace.SHARED
+        and address_space != AddressSpace.LOCAL
+    )
 
 
 @inline(.always)
@@ -695,6 +704,15 @@ trait MutabilityKnown:
     """True if the value can write the storage it refers to."""
 
 
+# TODO(MOCO-4153): Remove once Mojo supports instance type refinement
+trait _TileTensorLike:
+    """Exposes a `TileTensor`'s parameters, which generic code can't read."""
+
+    comptime _dtype: DType
+    comptime _LayoutType: TensorLayout
+    comptime _Engine: TensorEngine
+
+
 struct TileTensor[
     mut: Bool,
     //,
@@ -711,6 +729,7 @@ struct TileTensor[
     MutabilityKnown,
     TrivialRegisterPassable,
     Writable,
+    _TileTensorLike,
 ):
     """A tensor type with trait-based layouts supporting nested and hierarchical
     indexing.
@@ -742,7 +761,7 @@ struct TileTensor[
     Example:
 
     ```mojo
-    from layout.tile_layout import row_major
+    from layout.layout import row_major
     from layout import TileTensor
     from layout import Idx
 
@@ -868,6 +887,10 @@ struct TileTensor[
 
     comptime mutable = Self.mut
     """Whether the tensor can write its storage, per `origin`."""
+
+    comptime _dtype: DType = Self.dtype
+    comptime _LayoutType: TensorLayout = Self.LayoutType
+    comptime _Engine: TensorEngine = Self.Engine
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -1014,7 +1037,7 @@ struct TileTensor[
 
         ```mojo
         from max.gpu.host import DeviceContext, DeviceBuffer
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
         from layout import Idx
 
@@ -1093,7 +1116,7 @@ struct TileTensor[
 
         ```mojo
         from max.gpu.host import DeviceContext, HostBuffer
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
         from layout import Idx
 
@@ -1249,30 +1272,45 @@ struct TileTensor[
     def _load_storage[
         width: SIMDLength,
         alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
+        invariant: Bool,
+        non_temporal: Bool,
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Loads `width` elements at `offset` through the engine's raw
-        pointer."""
-        return self.ptr.unsafe_load[
-            width=width,
-            alignment=alignment,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
+        pointer, or through `StorageIO.load` for an engine whose storage has
+        none."""
+        comptime if conforms_to(Self.Engine, StorageIO):
+            return downcast[Self.Engine, StorageIO].load[
+                width=width,
+                alignment=alignment,
+                invariant=invariant,
+                non_temporal=non_temporal,
+            ](self._storage, _index(offset))
+        else:
+            return self.ptr.unsafe_load[
+                width=width,
+                alignment=alignment,
+                invariant=invariant,
+                non_temporal=non_temporal,
+            ](offset)
 
     @inline(.nodebug)
     def _store_storage[
         alignment: Int,
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer], value: SIMD[Self.dtype, _]) where Self.mut:
-        """Stores `value` at `offset` through the engine's raw pointer."""
+        """Stores `value` at `offset` through the engine's raw pointer, or
+        through `StorageIO.store` for an engine whose storage has none."""
         # `where Self.mut` does not narrow `Self.origin`'s mutability
-        # parameter to `True`, so cast to the mutable pointer type `store`
-        # requires.
-        self.ptr.unsafe_mut_cast[True]().unsafe_store[
-            alignment=alignment, non_temporal=non_temporal
-        ](offset, value)
+        # parameter to `True`, so cast to the mutable storage or pointer type
+        # `store` requires.
+        comptime if conforms_to(Self.Engine, StorageIO):
+            downcast[Self.Engine, StorageIO].store[
+                alignment=alignment, non_temporal=non_temporal
+            ](self._unsafe_storage_cast[to_mut=True](), _index(offset), value)
+        else:
+            self.ptr.unsafe_mut_cast[True]().unsafe_store[
+                alignment=alignment, non_temporal=non_temporal
+            ](offset, value)
 
     @inline(.nodebug)
     def __getitem__(self, i0: Some[CoordLike]) -> Self.ElementType:
@@ -1492,7 +1530,7 @@ struct TileTensor[
 
         ```mojo
         from layout import TileTensor
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
 
         # 4D tensor: (batch=2, N=8, heads=4, head_dim=16)
         var storage = Array[Float32, 2 * 8 * 4 * 16](fill=0)
@@ -1851,7 +1889,7 @@ struct TileTensor[
         alignment: Int = align_of[
             SIMD[Self.dtype, width]
         ]() if is_gpu() else align_of[Self.dtype](),
-        invariant: Bool = _default_invariant[Self.mut](),
+        invariant: Bool = _default_invariant[Self.mut, Self.address_space](),
         non_temporal: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width]:
         """Load elements from the tensor at the specified coordinates.
@@ -1864,6 +1902,8 @@ struct TileTensor[
             alignment: Memory alignment for the load.
             invariant: If True, the compiler may assume the memory won't be
                 modified during the kernel, enabling load hoisting and caching.
+                Defaults to True on GPU for an immutable view outside shared
+                and local memory.
             non_temporal: If True, indicates the data will not be reused soon,
                 allowing the hardware to bypass caches (e.g., streaming loads).
 
@@ -1959,7 +1999,7 @@ struct TileTensor[
     def raw_load[
         width: SIMDLength = 1,
         alignment: Int = align_of[Self.dtype](),
-        invariant: Bool = _default_invariant[Self.mut](),
+        invariant: Bool = _default_invariant[Self.mut, Self.address_space](),
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Load `width` elements starting at `ptr[offset]`, bypassing the layout.
@@ -1973,7 +2013,8 @@ struct TileTensor[
         Parameters:
             width: Number of elements to load.
             alignment: Memory alignment for the load.
-            invariant: If True, enables load hoisting.
+            invariant: If True, enables load hoisting. Defaults to True on
+                GPU for an immutable view outside shared and local memory.
             non_temporal: If True, indicates the data will not be reused
                 soon, allowing the hardware to bypass caches (e.g.,
                 streaming loads).
@@ -2511,7 +2552,7 @@ struct TileTensor[
 
         ```mojo
         from layout import TileTensor
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
 
         def main():
             var storage = Array[Float32, 4](uninitialized=True)
@@ -2640,7 +2681,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
         from layout.coord import coord
 
@@ -2831,7 +2872,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         var storage = Array[Float32, 16](uninitialized=True)
@@ -2974,7 +3015,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         def main() raises:
@@ -2988,7 +3029,7 @@ struct TileTensor[
         avoid warnings about an unused value:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         var storage = Array[Float32, 3 * 4](uninitialized=True)
@@ -3351,7 +3392,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         comptime layout_3d = row_major[16, 16, 16]()
@@ -3568,7 +3609,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
 
         var storage = Array[Float32, 12](uninitialized=True)
@@ -3630,7 +3671,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout.tile_layout import row_major
+        from layout.layout import row_major
         from layout import TileTensor
         from layout import Idx, Coord
 
@@ -3728,7 +3769,7 @@ struct TileTensor[
         Examples:
             ```mojo
             from layout import TileTensor
-            from layout.tile_layout import row_major
+            from layout.layout import row_major
             var storage = Array[Float32, 12](uninitialized=True)
             var tensor = TileTensor(Span(storage), row_major[3, 4]())
             var dynamic = tensor.make_dynamic[.int64]()
@@ -4496,7 +4537,10 @@ def _pretty_print_elementwise[W: Writer](tensor: TileTensor, mut writer: W):
             tensor._load_storage[
                 width=tensor.element_size,
                 alignment=align_of[tensor.dtype](),
-                invariant=_default_invariant[tensor.mut](),
+                invariant=_default_invariant[
+                    tensor.mut, tensor.address_space
+                ](),
+                non_temporal=False,
             ](offset)
         )
         if i < n - 1:
@@ -5475,30 +5519,3 @@ def flatten_leading[
     return rebind[tensor.ViewType[ResultLayout]](
         tensor.reshape(row_major(merged, tensor.layout.shape[2]()))
     )
-
-
-# ============================================================================
-# LTToTTLayout -- Derive a TileTensor layout type from a legacy Layout
-# ============================================================================
-
-from .int_tuple import product_each as _product_each
-from .layout import Layout as _LegacyLayout
-
-
-comptime LTToTTLayout[lt_layout: _LegacyLayout] = Layout[
-    shape_types=_IntTupleToCoordLike[
-        DType.int64, _product_each(lt_layout.shape)
-    ],
-    stride_types=_IntTupleToCoordLike[
-        DType.int64, _product_each(lt_layout.stride)
-    ],
-]
-"""Derive a TileTensor Layout from a legacy Layout.
-
-Known dimensions become ComptimeInt, UNKNOWN_VALUE dimensions become
-Scalar.  Hierarchical layouts (e.g. from ``tile_to_shape``) are
-collapsed via ``product_each`` so each mode becomes a single value.
-
-Parameters:
-    lt_layout: The legacy Layout to convert.
-"""

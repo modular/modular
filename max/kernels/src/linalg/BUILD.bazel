@@ -29,11 +29,14 @@ exports_files(
     visibility = ["//max/kernels/benchmarks/autotune:__pkg__"],
 )
 
-# Raw sources for the LSP parse-smoke test.
+# Raw sources for the LSP parse-smoke test and for plugin overlays.
 filegroup(
     name = "srcs",
     srcs = glob(["**/*.mojo"]),
-    visibility = ["//Mojo/test/mojo-lsp-server/parse-tree:__pkg__"],
+    visibility = [
+        "//Mojo/test/mojo-lsp-server/parse-tree:__pkg__",
+        "//plugins:__subpackages__",
+    ],
 )
 
 mojo_library(
@@ -47,6 +50,7 @@ mojo_library(
         "//max:_cublas",
         "//max:_rocblas",
         "//max:comm",
+        "//max:extensibility",
         "//max:internal_utils",
         "//max:layout",
         "//max:max_mojo",

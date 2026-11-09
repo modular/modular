@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from typing import TypeAlias
 
 from max import _core, engine
-from max._core.dialects import builtin, kgen, mo, rmo
+from max._core.dialects import builtin, kgen, mo
 from max._interpreter_ops import gc_compile
 from max.driver import Device
 from max.dtype import DType
@@ -138,7 +138,7 @@ def _build_linear_graph(
             dtype, _symbolic_dims(rank, "o"), device=device_ref
         )
         result = Graph.current._add_op_generated(
-            rmo.MoResizeLinearOp,
+            mo.ResizeLinearOp,
             result=out_type,
             input=x,
             size=size,
@@ -169,7 +169,7 @@ def _build_nearest_graph(
             dtype, _symbolic_dims(rank, "o"), device=device_ref
         )
         result = Graph.current._add_op_generated(
-            rmo.MoResizeNearestOp,
+            mo.ResizeNearestOp,
             result=out_type,
             input=x,
             size=size,
@@ -200,7 +200,7 @@ def _build_bicubic_graph(
         )
         (antialias,) = variant
         result = Graph.current._add_op_generated(
-            rmo.MoResizeBicubicOp,
+            mo.ResizeBicubicOp,
             result=out_type,
             input=x,
             size=size,

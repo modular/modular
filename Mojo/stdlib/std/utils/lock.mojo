@@ -18,7 +18,7 @@ automatic lock management. These primitives enable safe concurrent access to
 shared resources in multi-threaded code.
 """
 
-from std.atomic import Atomic
+from std.atomic import Atomic, Ordering
 from std.ffi import external_call
 
 # ===-----------------------------------------------------------------------===#
@@ -77,7 +77,9 @@ struct BlockingSpinLock(Defaultable):
 
         var expected = Int64(Self.UNLOCKED)
         var waiter = SpinWaiter()
-        while not self.counter.compare_exchange(expected, Int64(owner)):
+        while not self.counter.compare_exchange[
+            success_ordering=.ACQUIRE, failure_ordering=.RELAXED
+        ](expected, Int64(owner)):
             # this should be yield
             waiter.wait()
             expected = Self.UNLOCKED
@@ -92,12 +94,13 @@ struct BlockingSpinLock(Defaultable):
             The successful release of the lock.
         """
 
-        var expected = Int64(owner)
-        if self.counter.load() != Int64(owner):
+        # we don't care about anything except the value of the counter here
+        # and any modifications to shared data in the case we're not locked
+        # are UB data races by (almost) definition.
+        if self.counter.load[ordering=Ordering.RELAXED]() != Int64(owner):
             # No one else can modify other than owner
             return False
-        while not self.counter.compare_exchange(expected, Self.UNLOCKED):
-            expected = Int64(owner)
+        self.counter.store[ordering=.RELEASE](Self.UNLOCKED)
         return True
 
 

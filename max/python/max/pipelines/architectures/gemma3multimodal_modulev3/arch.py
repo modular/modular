@@ -15,12 +15,17 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture, TextAndVisionTokenizer
+from max.pipelines.lib import (
+    GraphRole,
+    SupportedArchitecture,
+    TextAndVisionTokenizer,
+)
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Gemma3MultiModalModuleV3BatchProcessor
-from .model import Gemma3MultiModalModelV3
 from .model_config import Gemma3ForConditionalGenerationConfig
+from .modules import Gemma3Decoder, Gemma3VisionEncoder
+from .weight_adapters import convert_registered_state_dict
 
 example_repo_ids = [
     # it = Instruction tuned (recommended).
@@ -38,7 +43,11 @@ gemma3_multimodal_modulev3_arch = SupportedArchitecture(
     example_repo_ids=example_repo_ids,
     default_encoding=Gemma3ForConditionalGenerationConfig.DEFAULT_ENCODING,
     supported_encodings=Gemma3ForConditionalGenerationConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=Gemma3MultiModalModelV3,
+    modules={
+        GraphRole.DECODER: Gemma3Decoder,
+        GraphRole.VISION: Gemma3VisionEncoder,
+    },
+    weight_adapters={WeightsFormat.safetensors: convert_registered_state_dict},
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,

@@ -10,29 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Fused RMSNorm + group-scaled dynamic FP8 quantize vs the unfused pair.
+"""Fused RMSNorm + group-scaled dynamic FP8 quantize against an f64 reference.
 
-`rms_norm_quantize_dynamic_scaled_fp8` must reproduce what the graph runs
-today for a blockwise-FP8 activation: `rms_norm` (bf16 out) followed by
-`quantize_dynamic_scaled_fp8` with `group_size_or_per_token=128`, scales
-laid out `[cols // 128, rows_padded]`. The two paths only differ in the
-sum-of-squares reduction order, so every FP8 byte must match to within one
-FP8 ulp with at most a 0.1% mismatch rate, the group scales must agree to
-within a bf16 ulp, and the dequantized activation of BOTH paths must track
-an f64 reference (cosine >= 0.999). Padded scale columns must stay
-untouched. A canary run with a different weight offset checks the
-comparison can fail.
+`rms_norm_quantize_dynamic_scaled_fp8` must produce a blockwise-FP8
+activation with `group_size_or_per_token=128` scales laid out
+`[cols // 128, rows_padded]`. Each group scale must be the group's amax over
+the FP8 max (clamped to the upper bound) within 1%, every dequantized element
+must be within FP8 rounding of the f64 rms_norm, and the whole activation must
+track it (cosine >= 0.999). Padded scale columns must stay untouched. A canary
+run against a reference with a different weight offset checks the comparison
+can fail. The graph test `test_rms_norm_quantize_fp8_grouped.py` compares the
+fused op against `ops.rms_norm` followed by the quantize.
 """
 
 from std.math import sqrt
-from std.memory import bitcast
 from std.random import rand, seed
-from std.utils.coord import ComptimeInt
+from std.utils.numerics import max_finite
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
-from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
-from builtin_kernels.rowwise_normalization import rms_norm
 from nn.normalization import rms_norm_quantize_dynamic_scaled_fp8
 
 comptime IN_DTYPE = DType.bfloat16
@@ -44,86 +40,14 @@ comptime SENTINEL = Float32(-7.0)
 
 
 struct Diff(ImplicitlyCopyable, Movable):
-    var mismatches: Int
-    var max_ulp: Int
+    var bad: Int
     var scale_rel_max: Float64
-    var cos_fused: Float64
-    var cos_sep: Float64
+    var cos: Float64
 
     def __init__(out self):
-        self.mismatches = 0
-        self.max_ulp = 0
+        self.bad = 0
         self.scale_rel_max = 0.0
-        self.cos_fused = 0.0
-        self.cos_sep = 0.0
-
-
-# One launch per helper: two value closures over one buffer cannot share a
-# scope; dtypes stay parameters so a symbolic `SIMD[dtype, w]` closure fits.
-
-
-def launch_rms_norm[
-    in_dtype: DType,
-    cols: Int,
-    epsilon: Float32,
-    weight_offset: Float32,
-    multiply_before_cast: Bool,
-](
-    ctx: DeviceContext,
-    x_tt: TileTensor[in_dtype, ...],
-    normed_tt: TileTensor[mut=True, in_dtype, ...],
-    gamma_tt: TileTensor[in_dtype, ...],
-    shape: Coord,
-) raises:
-    @inline(.always)
-    def input_fn[
-        width: Int, alignment: Int
-    ](coords: Coord) {var x_tt} -> SIMD[in_dtype, width]:
-        return x_tt.load[width=width, alignment=alignment](coords)
-
-    @inline(.always)
-    def output_fn[
-        width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[in_dtype, width]) {var normed_tt}:
-        normed_tt.store[alignment=alignment](
-            coords, rebind[SIMD[in_dtype, width]](val)
-        )
-
-    rms_norm[
-        in_dtype,
-        2,
-        target="gpu",
-        epsilon=epsilon,
-        weight_offset=weight_offset,
-        multiply_before_cast=multiply_before_cast,
-    ](
-        input_fn,
-        output_fn,
-        shape,
-        ComptimeInt[cols](),
-        gamma_tt,
-        ctx,
-    )
-
-
-def launch_quantize[
-    in_dtype: DType, out_dtype: DType, scale_dtype: DType, cols: Int
-](
-    ctx: DeviceContext,
-    normed_tt: TileTensor[in_dtype, ...],
-    q_tt: TileTensor[mut=True, out_dtype, ...],
-    s_tt: TileTensor[mut=True, scale_dtype, ...],
-    rows: Int,
-) raises:
-    @inline(.always)
-    def input_fn[
-        width: Int, alignment: Int
-    ](row: Int, col: Int) {var normed_tt} -> SIMD[in_dtype, width]:
-        return normed_tt.load[width=width, alignment=alignment]((row, col))
-
-    quantize_dynamic_scaled_fp8[
-        in_dtype=in_dtype, group_size_or_per_token=GROUP, num_cols=cols
-    ](input_fn, q_tt, s_tt, SCALE_UB, ctx, rows)
+        self.cos = 0.0
 
 
 def launch_fused[
@@ -170,9 +94,13 @@ def run_case[
     out_dtype: DType,
     scale_dtype: DType,
     cols: Int,
-    sep_weight_offset: Float32,
     multiply_before_cast: Bool,
-](ctx: DeviceContext, rows: Int, fused_weight_offset: Float32,) raises -> Diff:
+](
+    ctx: DeviceContext,
+    rows: Int,
+    fused_weight_offset: Float32,
+    ref_weight_offset: Float32,
+) raises -> Diff:
     comptime groups = cols // GROUP
     # f32 scales pad rows to a 16-byte multiple, as the graph op does.
     var rows_pad = (rows + 3) // 4 * 4
@@ -199,76 +127,42 @@ def run_case[
 
     comptime eps_f32 = Float32(1e-6)
     var eps = eps_f32.cast[in_dtype]()
-    var fused_off = fused_weight_offset.cast[in_dtype]()
 
     var x_buf = ctx.enqueue_create_buffer[in_dtype](n)
     var gamma_buf = ctx.enqueue_create_buffer[in_dtype](cols)
-    var normed_buf = ctx.enqueue_create_buffer[in_dtype](n)
-    var q_sep_buf = ctx.enqueue_create_buffer[out_dtype](n)
-    var q_fus_buf = ctx.enqueue_create_buffer[out_dtype](n)
-    var s_sep_buf = ctx.enqueue_create_buffer[scale_dtype](groups * rows_pad)
-    var s_fus_buf = ctx.enqueue_create_buffer[scale_dtype](groups * rows_pad)
+    var q_buf = ctx.enqueue_create_buffer[out_dtype](n)
+    var s_buf = ctx.enqueue_create_buffer[scale_dtype](groups * rows_pad)
     ctx.enqueue_copy(x_buf, x_host)
     ctx.enqueue_copy(gamma_buf, gamma_host)
     var sentinel = SENTINEL.cast[scale_dtype]()
-    s_sep_buf.enqueue_fill(sentinel)
-    s_fus_buf.enqueue_fill(sentinel)
+    s_buf.enqueue_fill(sentinel)
 
     var shape = Coord(rows, cols)
-    var scale_shape = Coord(groups, rows_pad)
-
-    # Unfused pair, exactly as `mo.reduce.rms_norm` + the group quantize run.
-    launch_rms_norm[
-        in_dtype, cols, eps_f32, sep_weight_offset, multiply_before_cast
-    ](
-        ctx,
-        TileTensor(x_buf, row_major(shape)),
-        TileTensor(normed_buf, row_major(shape)),
-        TileTensor(gamma_buf, row_major(Coord(cols))),
-        shape,
-    )
-    launch_quantize[in_dtype, out_dtype, scale_dtype, cols](
-        ctx,
-        TileTensor(normed_buf, row_major(shape)),
-        TileTensor(q_sep_buf, row_major(shape)),
-        TileTensor(s_sep_buf, row_major(scale_shape)),
-        rows,
-    )
-
-    # Fused kernel under test.
     launch_fused[in_dtype, out_dtype, scale_dtype, cols, multiply_before_cast](
         ctx,
         TileTensor(x_buf, row_major(shape)),
-        TileTensor(q_fus_buf, row_major(shape)),
-        TileTensor(s_fus_buf, row_major(scale_shape)),
+        TileTensor(q_buf, row_major(shape)),
+        TileTensor(s_buf, row_major(Coord(groups, rows_pad))),
         TileTensor(gamma_buf, row_major(Coord(cols))),
         rows,
         eps,
-        fused_off,
+        fused_weight_offset.cast[in_dtype](),
     )
 
-    var q_sep_host = ctx.enqueue_create_host_buffer[out_dtype](n)
-    var q_fus_host = ctx.enqueue_create_host_buffer[out_dtype](n)
-    var s_sep_host = ctx.enqueue_create_host_buffer[scale_dtype](
-        groups * rows_pad
-    )
-    var s_fus_host = ctx.enqueue_create_host_buffer[scale_dtype](
-        groups * rows_pad
-    )
-    ctx.enqueue_copy(q_sep_host, q_sep_buf)
-    ctx.enqueue_copy(q_fus_host, q_fus_buf)
-    ctx.enqueue_copy(s_sep_host, s_sep_buf)
-    ctx.enqueue_copy(s_fus_host, s_fus_buf)
+    var q_host = ctx.enqueue_create_host_buffer[out_dtype](n)
+    var s_host = ctx.enqueue_create_host_buffer[scale_dtype](groups * rows_pad)
+    ctx.enqueue_copy(q_host, q_buf)
+    ctx.enqueue_copy(s_host, s_buf)
     ctx.synchronize()
 
     var d = Diff()
-    var dot_fus: Float64 = 0.0
-    var dot_sep: Float64 = 0.0
+    var dot: Float64 = 0.0
     var ref_sq: Float64 = 0.0
-    var fus_sq: Float64 = 0.0
-    var sep_sq: Float64 = 0.0
+    var deq_sq: Float64 = 0.0
     var eps64 = Float64(eps.cast[.float32]())
-    var off64 = Float64(fused_off.cast[.float32]())
+    var off64 = Float64(ref_weight_offset)
+    var fp8_max = Float64(max_finite[out_dtype]().cast[.float32]())
+    var refs = List[Float64](length=GROUP, fill=0.0)
     for r in range(rows):
         var ssq: Float64 = 0.0
         for c in range(cols):
@@ -276,57 +170,45 @@ def run_case[
             ssq += xv * xv
         var inv_rms = 1.0 / sqrt(ssq / Float64(cols) + eps64)
         for g in range(groups):
-            var s_sep = Float64(s_sep_host[g * rows_pad + r])
-            var s_fus = Float64(s_fus_host[g * rows_pad + r])
-            if s_sep == Float64(SENTINEL) or s_fus == Float64(SENTINEL):
-                raise Error("a scale for a real row was never written")
-            d.scale_rel_max = max(
-                d.scale_rel_max, abs(s_sep - s_fus) / max(abs(s_sep), 1e-30)
-            )
-            for c in range(g * GROUP, (g + 1) * GROUP):
-                var i = r * cols + c
-                var xv = Float64(x_host[i].cast[.float32]())
+            var amax: Float64 = 0.0
+            for k in range(GROUP):
+                var c = g * GROUP + k
+                var xv = Float64(x_host[r * cols + c].cast[.float32]())
                 var gv = Float64(gamma_host[c].cast[.float32]()) + off64
-                var ref_val = xv * inv_rms * gv
-                var q_sep = q_sep_host[i]
-                var q_fus = q_fus_host[i]
-                var deq_sep = Float64(q_sep.cast[.float32]()) * s_sep
-                var deq_fus = Float64(q_fus.cast[.float32]()) * s_fus
-                dot_fus += ref_val * deq_fus
-                dot_sep += ref_val * deq_sep
-                ref_sq += ref_val * ref_val
-                fus_sq += deq_fus * deq_fus
-                sep_sq += deq_sep * deq_sep
-                var b_sep = Int(bitcast[.uint8](q_sep))
-                var b_fus = Int(bitcast[.uint8](q_fus))
-                if b_sep != b_fus:
-                    d.mismatches += 1
-                    # Same sign: the e4m3 byte order is monotonic, so the
-                    # byte distance is the ulp distance.
-                    var ulp = (
-                        abs(b_sep - b_fus) if (b_sep >> 7)
-                        == (b_fus >> 7) else 999
-                    )
-                    d.max_ulp = max(d.max_ulp, ulp)
-        # Padded scale columns are never written by either path.
-        for g in range(groups):
-            for p in range(rows, rows_pad):
-                if (
-                    s_sep_host[g * rows_pad + p] != sentinel
-                    or s_fus_host[g * rows_pad + p] != sentinel
-                ):
-                    raise Error("a padded scale column was written")
-    d.cos_fused = dot_fus / max(sqrt(ref_sq * fus_sq), 1e-300)
-    d.cos_sep = dot_sep / max(sqrt(ref_sq * sep_sq), 1e-300)
+                refs[k] = xv * inv_rms * gv
+                amax = max(amax, abs(refs[k]))
+            var s = Float64(s_host[g * rows_pad + r])
+            if s == Float64(SENTINEL):
+                raise Error("a scale for a real row was never written")
+            var s_ref = min(amax, Float64(SCALE_UB)) / fp8_max
+            d.scale_rel_max = max(
+                d.scale_rel_max, abs(s - s_ref) / max(s_ref, 1e-30)
+            )
+            for k in range(GROUP):
+                var deq = (
+                    Float64(q_host[r * cols + g * GROUP + k].cast[.float32]())
+                    * s
+                )
+                dot += refs[k] * deq
+                ref_sq += refs[k] * refs[k]
+                deq_sq += deq * deq
+                # FP8 keeps 3 mantissa bits (2^-4 relative rounding), plus
+                # the bf16 and scale rounding; the absolute term covers
+                # values that land on FP8 subnormals.
+                if abs(deq - refs[k]) > 0.1 * abs(refs[k]) + s / 256.0:
+                    d.bad += 1
+    # Padded scale columns are never written.
+    for g in range(groups):
+        for p in range(rows, rows_pad):
+            if s_host[g * rows_pad + p] != sentinel:
+                raise Error("a padded scale column was written")
+    d.cos = dot / max(sqrt(ref_sq * deq_sq), 1e-300)
 
-    # Keep the buffers alive past the launches that read them by pointer.
+    # Keep the buffers alive past the launch that reads them by pointer.
     _ = x_buf
     _ = gamma_buf
-    _ = normed_buf
-    _ = q_sep_buf
-    _ = q_fus_buf
-    _ = s_sep_buf
-    _ = s_fus_buf
+    _ = q_buf
+    _ = s_buf
     return d
 
 
@@ -334,40 +216,30 @@ def check_case[
     cols: Int, multiply_before_cast: Bool
 ](ctx: DeviceContext, rows: Int) raises:
     var d = run_case[
-        IN_DTYPE, OUT_DTYPE, SCALE_DTYPE, cols, 0.0, multiply_before_cast
-    ](ctx, rows, 0.0)
+        IN_DTYPE, OUT_DTYPE, SCALE_DTYPE, cols, multiply_before_cast
+    ](ctx, rows, 0.0, 0.0)
     var n = rows * cols
     print(
-        t"rows={rows} cols={cols} mbc={multiply_before_cast} | fp8"
-        t" mismatches={d.mismatches}/{n} max_ulp={d.max_ulp} scale_rel_max={d.scale_rel_max} cos_fused={d.cos_fused} cos_sep={d.cos_sep}"
+        t"rows={rows} cols={cols} mbc={multiply_before_cast} | bad={d.bad}/{n}"
+        t" scale_rel_max={d.scale_rel_max} cos={d.cos}"
     )
-    if d.cos_sep < 0.999:
-        raise Error("unfused reference pair is off vs the f64 reference")
-    if d.cos_fused < 0.999:
+    if d.cos < 0.999:
         raise Error("fused kernel is off vs the f64 reference")
-    if d.mismatches * 1000 > n:
-        raise Error("fused FP8 bytes mismatch the unfused pair on > 0.1%")
-    if d.max_ulp > 1:
-        raise Error("fused FP8 byte differs from the unfused pair by > 1 ulp")
+    if d.bad > 0:
+        raise Error("fused FP8 values are off the f64 reference")
     # bf16 rounding of one normalized value can move a group max by an ulp.
     if d.scale_rel_max > 1e-2:
-        raise Error("fused group scales diverge from the unfused pair")
+        raise Error("fused group scales diverge from the f64 reference")
 
 
 def check_canary(ctx: DeviceContext) raises:
-    # Different weight offsets must show up as FP8 mismatches, or the byte
-    # comparison above proves nothing (only the pairwise compare is expected).
-    var d = run_case[IN_DTYPE, OUT_DTYPE, SCALE_DTYPE, 2048, 0.0, False](
-        ctx, 5, 1.0
+    # A reference with a different weight offset must fail the checks, or
+    # they prove nothing.
+    var d = run_case[IN_DTYPE, OUT_DTYPE, SCALE_DTYPE, 2048, False](
+        ctx, 5, 1.0, 0.0
     )
-    print(
-        "canary (weight_offset 1.0 vs 0.0): mismatches=",
-        d.mismatches,
-        "/",
-        5 * 2048,
-        sep="",
-    )
-    if d.mismatches * 2 < 5 * 2048:
+    print(t"canary (weight_offset 1.0 vs 0.0): bad={d.bad}/{5 * 2048}")
+    if d.bad * 2 < 5 * 2048 or d.cos >= 0.999:
         raise Error("canary did not trip: the comparison is insensitive")
 
 

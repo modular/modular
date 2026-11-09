@@ -23,7 +23,6 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host.info import is_cpu
 from std.memory import unsafe_stack_allocation
 
 from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
@@ -114,14 +113,12 @@ def _histogram_gpu(
 @extensibility.register("histogram")
 struct Histogram:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: OutputTensor[dtype=.int64, rank=1, ...],
         input: InputTensor[dtype=.uint8, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             _histogram_cpu(output, input)
         else:
             _histogram_gpu(output, input, ctx)

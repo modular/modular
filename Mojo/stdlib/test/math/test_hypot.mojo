@@ -98,11 +98,11 @@ def _run[dtype: DType]() raises where dtype.is_floating_point():
         for base in range(0, length, width):
             var xv = SIMD[dtype, width]()
             var yv = SIMD[dtype, width]()
-            comptime for j in range(width):
+            for j in range(width):
                 xv[j] = xs[base + j]
                 yv[j] = ys[base + j]
             var got = hypot(xv, yv)
-            comptime for j in range(width):
+            for j in range(width):
                 var x = xv[j]
                 var y = yv[j]
                 var expected = libm_call_binary["hypotf", "hypot"](x, y)
@@ -152,7 +152,7 @@ def _check_subnormal_normal_results[
         UInt64(1 << mant),
     )
     comptime if width == 1:
-        comptime for lane in range(4):
+        for lane in range(4):
             assert_equal(
                 _runtime_hypot(xs[lane], ys[lane])
                 ._to_bits_signed()

@@ -251,6 +251,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "max.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "max.dkv.rpc_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "max.dkv.hinted_lookup_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.peer_writeback_hold_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     # Percentages
     "max.dp_active_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
     "max.dp_context_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
@@ -263,6 +264,8 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "max.vision.cache_hit_rate": HISTOGRAM_PERCENT_BUCKETS,
     # Generic counts (tokens / occupancy)
     "max.input_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
+    "max.request.cached_input_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "max.request.uncached_input_tokens": HISTOGRAM_COUNT_BUCKETS,
     "max.output_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
     "max.batch.input_tokens": HISTOGRAM_COUNT_BUCKETS,
     "max.batch.context_tokens": HISTOGRAM_COUNT_BUCKETS,

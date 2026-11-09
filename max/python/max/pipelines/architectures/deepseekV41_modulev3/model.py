@@ -18,7 +18,7 @@ import hashlib
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 import numpy as np
 from max import functional as F
@@ -26,28 +26,15 @@ from max.driver import Buffer, Device, Usage, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.comm.ep import (
-    EPBatchManager,
-    EPCommInitializer,
-    EPConfig,
-    EPInit,
-    calculate_ep_max_tokens_per_rank,
-)
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPInit
 
 # The export's ep_init graph declares its counter buffers by the same word
 # count EPCommInitializer allocates at runtime, so the engine introspects
 # from the MEF the size it must zero-fill at boot.
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,
@@ -78,7 +65,7 @@ from .layers.engram_token_map import (
     check_map_digest,
     compressed_token_map_array,
 )
-from .model_config import DeepseekV41Config
+from .model_config import DeepseekV41Config, RoutedExpertFormat, dispatch_rows
 from .weight_adapters import AdapterResult, EngramTable, engram_embed_tables
 
 logger = logging.getLogger("max.pipelines")
@@ -232,69 +219,60 @@ def _pinned_table(
     return buffer.view(dtype)
 
 
+class _EPTextConfig(Protocol):
+    """The text-config fields :func:`build_ep_config` reads.
+
+    Structural and read-only, so the trunk's ``DeepseekV41Config`` and the
+    HF ``text_config`` the memory planner holds both feed it.
+    """
+
+    @property
+    def hidden_size(self) -> int: ...
+
+    @property
+    def num_hidden_layers(self) -> int: ...
+
+    @property
+    def num_experts_per_tok(self) -> int: ...
+
+    @property
+    def n_routed_experts(self) -> int: ...
+
+    @property
+    def moe_intermediate_size(self) -> int: ...
+
+
 def build_ep_config(
-    pipeline_config: PipelineConfig, text: Any, n_devices: int
+    pipeline_config: PipelineConfig,
+    text: _EPTextConfig,
+    n_devices: int,
+    expert_format: RoutedExpertFormat,
 ) -> EPConfig:
     """Builds the ModuleV3 EP config from the pipeline ``ep_size``.
 
     A module-level function so the memory planner sizes the same buffers
-    the model allocates: ``text`` is any config view carrying
-    ``hidden_size``, ``num_hidden_layers``, ``num_experts_per_tok``,
-    ``n_routed_experts`` and ``moe_intermediate_size`` (the frozen
-    ``DeepseekV41Config`` or the HF ``text_config``).
+    the model allocates.
 
-    NVFP4 dispatch matches both the experts' W4A4 grouped chain (the
-    dispatch quantizes with the checkpoint's static per-expert
-    ``input_scale``, the same scale the tensor-parallel path quantizes
-    with) and vLLM's dispatch cost (about 2.9 KB per routed row). The
-    combine returns bf16, as vLLM's does.
+    The dispatch quantizes rows to the experts' activation format
+    (:meth:`RoutedExpertFormat.dispatch_quant_config`): NVFP4 matches both
+    the W4A4 grouped chain and vLLM's dispatch cost (about 2.9 KB per
+    routed row), and MXFP8 the W4A8 chain (about 5.3 KB). The combine
+    returns bf16, as vLLM's does.
 
     Raises:
         ValueError: If DSpark is on without ``max_batch_size``, which
-            bounds the draft rows the dispatch buffers must also hold.
+            bounds the draft rows the dispatch buffers must also hold
+            (:func:`..model_config.draft_rows` refuses it on every path).
     """
     runtime = pipeline_config.runtime
     ep_size = runtime.ep_size
     dp = pipeline_config.model.data_parallel_degree
-    rows = runtime.max_batch_input_tokens
-    speculative = pipeline_config.speculative
-    if speculative is not None and speculative.speculative_method == "dspark":
-        # Verification runs each request's drafts beside its active tokens,
-        # and the scheduler's token budget counts only the active tokens.
-        if runtime.max_batch_size is None:
-            raise ValueError(
-                "DeepSeek-V4.1 DSpark with expert parallelism needs "
-                "max_batch_size, which bounds the draft rows a verification "
-                "step adds to max_batch_input_tokens"
-            )
-        rows += runtime.max_batch_size * (
-            speculative.num_speculative_tokens or 0
-        )
-    n_layers = int(text.num_hidden_layers)
-    # The routed experts' storage quantization, which the dispatch
-    # token format and the fused SwiGLU kernel read: modelopt NVFP4
-    # (16-value E2M1 blocks, E4M3 per-block scales, static fp32
-    # input scales).
-    dispatch_quant_config = QuantConfig(
-        format=QuantFormat.NVFP4,
-        input_scale=InputScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            origin=ScaleOrigin.STATIC,
-            dtype=DType.float32,
-            block_size=(1, 16),
-        ),
-        weight_scale=WeightScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            dtype=DType.float8_e4m3fn,
-            block_size=(1, 16),
-        ),
-        mlp_quantized_layers=set(range(n_layers)),
-        attn_quantized_layers=set(),
-        can_use_fused_swiglu=True,
-    )
+    rows = dispatch_rows(pipeline_config)
     return EPConfig(
-        dispatch_dtype=DType.uint8,
-        dispatch_quant_config=dispatch_quant_config,
+        dispatch_dtype=expert_format.dispatch_dtype,
+        dispatch_quant_config=expert_format.dispatch_quant_config(
+            int(text.num_hidden_layers)
+        ),
         combine_dtype=DType.bfloat16,
         hidden_size=text.hidden_size,
         top_k=int(text.num_experts_per_tok),
@@ -408,6 +386,10 @@ def engram_static_inputs(
 
     Pinned against ``device``, the pipeline's first.
     """
+    if is_virtual_device_mode():
+        # Compile-only: a virtual device cannot allocate, and nothing ever
+        # feeds these inputs. The ModuleV2 model skips the same work.
+        return {}
     static: dict[str, Buffer] = {}
     for ordinal, table in enumerate(tables):
         weight_name, scale_name = table.table_names(ordinal)
@@ -546,7 +528,12 @@ class DeepseekV41Model(
         self, model_config: DeepseekV41Config, n_devices: int
     ) -> EPConfig:
         """Builds the ModuleV3 EP config from the pipeline ``ep_size``."""
-        return build_ep_config(self.pipeline_config, model_config, n_devices)
+        return build_ep_config(
+            self.pipeline_config,
+            model_config,
+            n_devices,
+            model_config.routed_expert_format,
+        )
 
     @override
     def _init_distributed_runtime(
@@ -662,7 +649,12 @@ class DeepseekV41Model(
         )
         ep_batch_manager: EPBatchManager | None = None
         if pipeline_config.runtime.ep_size > 1:
-            ep_config = build_ep_config(pipeline_config, config, len(devices))
+            ep_config = build_ep_config(
+                pipeline_config,
+                config,
+                len(devices),
+                config.routed_expert_format,
+            )
             context.start_ep(ep_config)
             ep_batch_manager = EPBatchManager(ep_config)
         axis = "dp" if dp > 1 else "tp"

@@ -14,26 +14,33 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kv_cache import KVCacheParams, spec_decode_cache_slack
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import KVCacheParams, spec_decode_cache_slack
+from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
+    ModelOutputConfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelDeploymentConfig,
+    ModuleRuntime,
+)
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.pipelines.weights.quant import parse_quant_config
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -42,8 +49,10 @@ from ..deepseekV3.model_config import mla_kv_cache_quant_config
 
 
 @dataclass(kw_only=True)
-class DeepseekV3Config(ArchConfigWithKVCache):
+class DeepseekV3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     """Configuration for DeepseekV3 models (single-GPU, ModuleV3)."""
+
+    takes_batch_context_lengths: ClassVar[bool] = True
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
@@ -64,7 +73,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     ep_config: EPConfig | None = None
     """Expert-parallel configuration, or ``None`` for replicated/TP experts.
 
-    Set in :meth:`DeepseekV3Model.load_model` when ``--ep-size > 1``.
+    Set by :meth:`apply_runtime` when ``--ep-size > 1``.
     """
 
     data_parallel_degree: int = 1
@@ -119,8 +128,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     quant_config: QuantConfig | None = None
     """Block-scaled quantization config when the checkpoint is FP8/FP4.
 
-    Set from the state-dict-dependent finalization step in
-    :meth:`DeepseekV3Model.load_model`; ``None`` for bf16 checkpoints.
+    Set from the checkpoint by :meth:`finalize`; ``None`` for bf16
+    checkpoints.
     """
 
     mla_o_proj_quantized: bool = True
@@ -300,4 +309,107 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             graph_mode=graph_mode,
             data_parallel_degree=model_config.data_parallel_degree,
             quantization_encoding=quantization_encoding,
+        )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with the checkpoint's quantization.
+
+        The decoder returns only the last token's logits, whatever
+        ``outputs`` asks for.
+
+        Raises:
+            KeyError: If a ``noaux_tc`` router has no correction bias.
+        """
+        del outputs
+        quant_config = None
+        if self.dtype in (
+            DType.float8_e4m3fn,
+            DType.uint8,
+            DType.float4_e2m1fn,
+        ):
+            quant_config = parse_quant_config(
+                huggingface_config, state_dict, self.dtype
+            )
+        correction_bias_dtype = self.correction_bias_dtype
+        if self.topk_method == "noaux_tc":
+            bias = next(
+                (
+                    value
+                    for key, value in state_dict.items()
+                    if key.endswith("e_score_correction_bias")
+                ),
+                None,
+            )
+            if bias is None:
+                raise KeyError("Expected e_score_correction_bias in state_dict")
+            correction_bias_dtype = bias.dtype
+        return replace(
+            self,
+            quant_config=quant_config,
+            correction_bias_dtype=correction_bias_dtype,
+        )
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        """Sizes the expert-parallel buffers for ``runtime``.
+
+        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
+        quantized, else in bf16. The shared expert fuses with the routed ones
+        only when it has their shape and weight layout: a modelopt
+        ``*shared_experts*`` ignore leaves them bf16, which can't be stacked
+        with the packed routed experts.
+        """
+        quant_config = self.quant_config
+        quantized_dispatch = quant_config is not None and (
+            self.dtype.is_float8() or quant_config.is_nvfp4
+        )
+        n_devices = len(runtime.mesh.devices)
+        return EPConfig(
+            dispatch_dtype=self.dtype if quantized_dispatch else DType.bfloat16,
+            dispatch_quant_config=quant_config if quantized_dispatch else None,
+            combine_dtype=DType.bfloat16,
+            hidden_size=self.hidden_size,
+            top_k=self.num_experts_per_tok,
+            n_experts=self.n_routed_experts,
+            max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=runtime.max_batch_input_tokens,
+                ep_size=runtime.ep_size,
+                data_parallel_degree=runtime.data_parallel_degree,
+                use_allreduce=runtime.ep_use_allreduce,
+            ),
+            n_gpus_per_node=n_devices,
+            n_nodes=runtime.ep_size // n_devices,
+            fused_shared_expert=self.n_shared_experts == 1
+            and (
+                quant_config is None
+                or quant_config.shared_experts_use_quant(self.dtype)
+            ),
+            use_allreduce=runtime.ep_use_allreduce,
+        )
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Returns the config placed on the deployment's mesh.
+
+        Raises:
+            NotImplementedError: If data parallelism runs over fewer
+                replicas than devices.
+        """
+        n_devices = len(runtime.mesh.devices)
+        if 1 < runtime.data_parallel_degree != n_devices:
+            raise NotImplementedError(
+                f"data_parallel_degree={runtime.data_parallel_degree} must "
+                f"equal the device count ({n_devices}); dp x tp meshes are "
+                "not supported yet."
+            )
+        return replace(
+            self,
+            mesh=runtime.mesh,
+            ep_config=runtime.ep,
+            max_batch_context_length=(
+                runtime.max_batch_total_tokens or self.max_batch_context_length
+            ),
         )

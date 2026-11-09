@@ -101,6 +101,14 @@ mo.graph @arg_max(%input: !mo.tensor<[?, ?, 5], f32>) -> (!mo.tensor<[?, ?, 1], 
   mo.output %output : !mo.tensor<[?, ?, 1], si64>
 }
 
+// COM: Reducing an axis of length 1 keeps the shape.
+// CHECK: mo.graph @arg_max_unit_axis(%[[INPUT:.*]]: !mo.tensor<[?, 1], f32>) -> !mo.tensor<[?, 1], si64> {
+mo.graph @arg_max_unit_axis(%input: !mo.tensor<[?, 1], f32>) -> (!mo.tensor<[?, 1], si64>) {
+  // CHECK-NEXT: mo.reduce.arg_max(%[[INPUT]]) [axis = 1] : (!mo.tensor<[?, 1], f32>) -> !mo.tensor<[?, 1], si64>
+  %output = mo.reduce.arg_max(%input) [axis = 1] : (!mo.tensor<[?, 1], f32>) -> !mo.tensor<[?, 1], si64>
+  mo.output %output : !mo.tensor<[?, 1], si64>
+}
+
 // CHECK: mo.graph @arg_min(%[[INPUT:.*]]: !mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], si64> {
 mo.graph @arg_min(%input: !mo.tensor<[?, ?, 5], f32>) -> (!mo.tensor<[?, ?, 1], si64>) {
   // CHECK-NEXT: mo.reduce.arg_min(%[[INPUT]]) [axis = 2] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], si64>

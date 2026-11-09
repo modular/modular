@@ -34,7 +34,8 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
@@ -64,20 +65,54 @@ bool isHopperAndAbove(TargetInfoAttr target) {
   return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_103", "sm_120"});
 }
 
+LLVM::InlineAsmOp createInlineAsm(POPLoweringBuilder &builder, Location loc,
+                                  StringRef asmStr, StringRef asmConstraints,
+                                  Type resultType,
+                                  SmallVector<Value> operands) {
+  auto asmDialect =
+      LLVM::AsmDialectAttr::get(builder.getContext(), LLVM::AsmDialect::AD_ATT);
+  return LLVM::InlineAsmOp::create(
+      builder, loc, resultType, operands, asmStr, asmConstraints,
+      /*has_side_effects=*/false,
+      /*is_align_stack=*/false, LLVM::TailCallKind::None,
+      /*convergent=*/false, asmDialect,
+      /*operand_attrs=*/mlir::ArrayAttr());
+}
+
+template <typename IntType>
+Value createConstant(POPLoweringBuilder &builder, Location loc,
+                     uint64_t value) {
+  return LLVM::ConstantOp::create(
+      builder, loc, builder.getIntegerType(sizeof(IntType) * 8), value);
+}
+
+Value createConstant(POPLoweringBuilder &builder, Location loc,
+                     llvm::APFloat value) {
+  return LLVM::ConstantOp::create(builder, loc, builder.getF32Type(), value);
+}
+
+Value extractElement(POPLoweringBuilder &builder, Location loc, Type resultType,
+                     Value value, unsigned index) {
+  return LLVM::ExtractElementOp::create(
+      builder, loc, resultType, value,
+      createConstant<uint32_t>(builder, loc, index));
+}
+
 //===----------------------------------------------------------------------===//
 // NVPTXCastToLLVM
 //===----------------------------------------------------------------------===//
 
 /// Lowers `pop.cast`s that have a faster NVPTX-specific instruction sequence
-/// (fp8/fp16 conversions on Hopper and above). Registered with a higher benefit
-/// than the generic `ConvertPOPCast`, so it runs first; when the cast isn't one
-/// it handles, it fails and the generic pattern takes over.
-struct NVPTXCastToLLVM : public ConvertPOPToLLVMPattern<POP::CastOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+/// (fp8/fp16 conversions on Hopper and above). Failure selects the generic
+/// `pop.cast` lowering.
+class NVPTXCastToLLVM {
+public:
+  explicit NVPTXCastToLLVM(POPToLLVMTypeConverter &converter)
+      : converter(converter) {}
 
-  LogicalResult matchAndRewrite(POP::CastOp op, POP::CastOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    TargetInfoAttr target = getTypeConverter()->getTarget();
+  LogicalResult lower(POP::CastOp op, Value input,
+                      POPLoweringBuilder &builder) const {
+    TargetInfoAttr target = converter.getTarget();
     // These conversions rely on NVPTX instructions available on Hopper+.
     if (!target || !isHopperAndAbove(target))
       return failure();
@@ -97,13 +132,11 @@ struct NVPTXCastToLLVM : public ConvertPOPToLLVMPattern<POP::CastOp> {
     if (!isa<SIMDType>(op.getInput().getType()))
       return failure();
 
-    Value value = adaptor.getInput();
-
     // Convert F32 to F8 (either e4m3fn or e5m2).
     if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
         (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
          toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2)) {
-      return convertF32ToF8OnNVPTX(rewriter, op, value, fromFloatSemantics,
+      return convertF32ToF8OnNVPTX(builder, op, input, fromFloatSemantics,
                                    toFloatSemantics);
     }
 
@@ -111,7 +144,7 @@ struct NVPTXCastToLLVM : public ConvertPOPToLLVMPattern<POP::CastOp> {
     if ((fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
          fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2) &&
         toFloatSemantics == llvm::APFloat::Semantics::S_IEEEhalf) {
-      return convertF8ToF16OnNVPTX(rewriter, op, value, fromFloatSemantics,
+      return convertF8ToF16OnNVPTX(builder, op, input, fromFloatSemantics,
                                    toFloatSemantics);
     }
 
@@ -123,18 +156,18 @@ private:
   /// The conversion relies on NVPTX-specific instructions to perform the
   /// conversion, therefore no need to rely on `fast` attribute on a `pop.cast`.
   LogicalResult
-  convertF32ToF8OnNVPTX(DirectRewriter &rewriter, POP::CastOp op, Value value,
-                        APFloat::Semantics fromFloatSemantics,
+  convertF32ToF8OnNVPTX(POPLoweringBuilder &rewriter, POP::CastOp op,
+                        Value value, APFloat::Semantics fromFloatSemantics,
                         APFloat::Semantics toFloatSemantics) const {
-    assert(isHopperAndAbove(getTypeConverter()->getTarget()) &&
+    assert(isHopperAndAbove(converter.getTarget()) &&
            "lowering of f32 to f8 is only supported on NVIDIA Hopper "
            "architectures or above");
     Location loc = op.getLoc();
     auto simd = cast<SIMDType>(op.getInput().getType());
     const uint64_t size = *simd.getResolvedSize();
 
-    Type f32Type = convertType(rewriter.getF32Type());
-    Type f8Type = convertType(op.getType());
+    Type f32Type = converter.convertType(rewriter.getF32Type());
+    Type f8Type = converter.convertType(op.getType());
 
     StringRef asmStr =
         toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN
@@ -173,11 +206,11 @@ private:
 
   /// Helper function to convert vector of F8 (F8E4M3FN or F8E5M2) to F16 on
   /// NVPTX without replacing the operation
-  Value convertF8ToF16OnNVPTXHelper(DirectRewriter &rewriter, POP::CastOp op,
-                                    Value value,
+  Value convertF8ToF16OnNVPTXHelper(POPLoweringBuilder &rewriter,
+                                    POP::CastOp op, Value value,
                                     APFloat::Semantics fromFloatSemantics,
                                     APFloat::Semantics toFloatSemantics) const {
-    assert(isHopperAndAbove(getTypeConverter()->getTarget()) &&
+    assert(isHopperAndAbove(converter.getTarget()) &&
            "lowering of f8 to f16 or f32 is only supported on NVIDIA Hopper "
            "architectures or above");
     Location loc = op.getLoc();
@@ -236,14 +269,16 @@ private:
   /// perform the conversion, therefore no need to rely on `fast` attribute on a
   /// `pop.cast`.
   LogicalResult
-  convertF8ToF16OnNVPTX(DirectRewriter &rewriter, POP::CastOp op, Value value,
-                        APFloat::Semantics fromFloatSemantics,
+  convertF8ToF16OnNVPTX(POPLoweringBuilder &rewriter, POP::CastOp op,
+                        Value value, APFloat::Semantics fromFloatSemantics,
                         APFloat::Semantics toFloatSemantics) const {
     rewriter.replaceOp(op, convertF8ToF16OnNVPTXHelper(rewriter, op, value,
                                                        fromFloatSemantics,
                                                        toFloatSemantics));
     return success();
   }
+
+  POPToLLVMTypeConverter &converter;
 };
 
 //===----------------------------------------------------------------------===//
@@ -251,14 +286,15 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// Lowers `pop.abs` of f16/bf16 to the NVVM `llvm.nvvm.fabs` intrinsic.
-/// Registered with a higher benefit than the generic `ConvertPOPAbs`; for any
-/// other dtype it fails and the generic pattern takes over.
-struct NVPTXAbsToLLVM : public ConvertPOPToLLVMPattern<POP::AbsOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+/// For any other dtype, failure selects the generic `pop.abs` lowering.
+class NVPTXAbsToLLVM {
+public:
+  explicit NVPTXAbsToLLVM(POPToLLVMTypeConverter &converter)
+      : converter(converter) {}
 
-  LogicalResult matchAndRewrite(POP::AbsOp op, POP::AbsOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    TargetInfoAttr target = getTypeConverter()->getTarget();
+  LogicalResult lower(POP::AbsOp op, Value operand,
+                      POPLoweringBuilder &rewriter) const {
+    TargetInfoAttr target = converter.getTarget();
     if (!target || !target.getTriple().isNVPTX())
       return failure();
 
@@ -268,7 +304,7 @@ struct NVPTXAbsToLLVM : public ConvertPOPToLLVMPattern<POP::AbsOp> {
     if (!(dtype == DType::f16 || dtype == DType::bf16))
       return failure();
 
-    Type type = convertType(op.getType());
+    Type type = converter.convertType(op.getType());
     unsigned size = *op.getType().getResolvedSize();
     assert(llvm::isPowerOf2_32(size) && "Unexpected vector width");
 
@@ -276,7 +312,7 @@ struct NVPTXAbsToLLVM : public ConvertPOPToLLVMPattern<POP::AbsOp> {
     if (size == 1) {
       rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
           op, type, rewriter.getStringAttr(nvvmIntr),
-          SmallVector<Value>{adaptor.getOperand()});
+          SmallVector<Value>{operand});
       return success();
     }
 
@@ -289,11 +325,11 @@ struct NVPTXAbsToLLVM : public ConvertPOPToLLVMPattern<POP::AbsOp> {
     for (unsigned i = 0; i < size; i += 2) {
       auto idx = LLVM::ConstantOp::create(rewriter, loc,
                                           rewriter.getIntegerType(64), i);
-      auto subvec = LLVM::CallIntrinsicOp::create(
-                        rewriter, loc, subvecTy,
-                        rewriter.getStringAttr("llvm.vector.extract"),
-                        {adaptor.getOperand(), idx})
-                        .getResult(0);
+      auto subvec =
+          LLVM::CallIntrinsicOp::create(
+              rewriter, loc, subvecTy,
+              rewriter.getStringAttr("llvm.vector.extract"), {operand, idx})
+              .getResult(0);
       auto abs = LLVM::CallIntrinsicOp::create(rewriter, loc, subvecTy,
                                                rewriter.getStringAttr(nvvmIntr),
                                                {subvec})
@@ -306,6 +342,9 @@ struct NVPTXAbsToLLVM : public ConvertPOPToLLVMPattern<POP::AbsOp> {
     rewriter.replaceOp(op, res);
     return success();
   }
+
+private:
+  POPToLLVMTypeConverter &converter;
 };
 
 //===----------------------------------------------------------------------===//
@@ -331,13 +370,21 @@ public:
     return mlir::isa<mlir::NVVM::BarrierOp>(op);
   }
 
-  void populateLowerPOPToLLVMPatterns(mlir::RewritePatternSet &patterns,
-                                      mlir::LLVMTypeConverter &converter,
-                                      TargetInfoAttr target) const override {
-    patterns.add<NVPTXCastToLLVM, NVPTXAbsToLLVM>(converter,
-                                                  mlir::PatternBenefit(2));
-    // NVVM ops appear only in NVPTX modules; lower them to LLVM here.
-    mlir::populateNVVMToLLVMConversionPatterns(patterns);
+  LogicalResult
+  lowerFunctionLocalPOPToLLVM(Operation *op, ValueRange operands,
+                              mlir::LLVMTypeConverter &converter,
+                              POPLoweringBuilder &builder) const override {
+    auto &popConverter = static_cast<POPToLLVMTypeConverter &>(converter);
+    if (auto cast = dyn_cast<POP::CastOp>(op))
+      return NVPTXCastToLLVM(popConverter)
+          .lower(cast, operands.front(), builder);
+    if (auto abs = dyn_cast<POP::AbsOp>(op))
+      return NVPTXAbsToLLVM(popConverter).lower(abs, operands.front(), builder);
+    return failure();
+  }
+
+  void addPostLowerToLLVMPasses(mlir::OpPassManager &pm) const override {
+    pm.addPass(mlir::createConvertNVVMToLLVMPass());
   }
 
   void markExportedKernel(mlir::Operation *func) const override {

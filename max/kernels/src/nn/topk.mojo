@@ -50,7 +50,7 @@ from layout import (
     row_major,
 )
 from layout.coord import CoordLike, DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.math import log2
 from std.memory import unsafe_stack_allocation
 from nn.gather_scatter import normalize_neg_index
@@ -93,15 +93,53 @@ comptime _TOPK_MAX_BLOCKS_PER_INPUT = 8
 
 
 @inline(.always)
-def _topk_stage2_smem_budget(ctx: DeviceContext) raises -> Int:
+def _topk_stage2_sort_len(num_candidates: Int) -> Int:
+    """`num_candidates` rounded up to a power of two, and at least one.
+
+    Stage 2 orders its candidates with a bitonic network, which needs its input
+    length to be a power of two. The extra slots are padded with the dead
+    sentinel and never reach the output.
+    """
+    var length = 1
+    while length < num_candidates:
+        length <<= 1
+    return length
+
+
+@inline(.always)
+def _topk_stage2_apple_static_bytes[dtype: DType]() -> Int:
+    """Bytes stage 2's Apple static shared-memory allocation covers.
+
+    On Apple the kernel carves its candidate values, candidate slots and sample
+    cache out of one `unsafe_stack_allocation` sized at compile time from
+    `_APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[dtype]]` *values*, so this -- not
+    the SM's shared memory -- is the ceiling its request has to fit. The count
+    is a value count, not a byte count: it happens to be 7680 bytes for
+    `float32`, because `TopK_2[float32]` is 16 bytes and `Scalar[float32]` is 4.
+    """
+    return (
+        _APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[dtype]]
+        * size_of[Scalar[dtype]]()
+    )
+
+
+@inline(.always)
+def _topk_stage2_smem_budget[dtype: DType](ctx: DeviceContext) raises -> Int:
     """The most dynamic shared memory stage 2 may request on `ctx`'s device.
 
     On NVIDIA, 8 KiB under the per-block opt-in limit
     (`MAX_SHARED_MEMORY_PER_BLOCK_OPTIN`), the figure `cuFuncSetAttribute`
     enforces. It is not a fixed offset from the SM's capacity: 48 KiB on
     `sm_52` to `sm_61` whatever the SM holds, the whole SM on `sm_70` and
-    `sm_75`, and 1 KiB under it from `sm_80` on. Other targets pass no
-    ceiling and keep 8 KiB under the SM figure.
+    `sm_75`, and 1 KiB under it from `sm_80` on.
+
+    On Apple, the static allocation itself (`_topk_stage2_apple_static_bytes`),
+    which is much smaller than the SM's shared memory and is the figure the
+    kernel's `unsafe_stack_allocation` actually provides. Sizing the budget
+    against the SM there would let `topk_gpu`'s partition count, and a direct
+    `_topk_gpu` caller, write past that allocation.
+
+    Other targets pass no ceiling and keep 8 KiB under the SM figure.
     """
     comptime if ctx.target.is_nvidia_gpu():
         return (
@@ -110,11 +148,12 @@ def _topk_stage2_smem_budget(ctx: DeviceContext) raises -> Int:
             )
             - _TOPK_STAGE2_SMEM_HEADROOM_BYTES
         )
-    else:
-        return (
-            Int(ctx.default_device_info.shared_memory_per_multiprocessor)
-            - _TOPK_STAGE2_SMEM_HEADROOM_BYTES
-        )
+    comptime if ctx.target.is_apple_gpu():
+        return _topk_stage2_apple_static_bytes[dtype]()
+    return (
+        Int(ctx.default_device_info.shared_memory_per_multiprocessor)
+        - _TOPK_STAGE2_SMEM_HEADROOM_BYTES
+    )
 
 
 @inline(.always)
@@ -124,11 +163,14 @@ def _topk_stage2_smem_bytes[
     """Dynamic shared memory stage 2 requests to reduce its candidates.
 
     A value and an `Int` index for each of the `num_blocks_per_input * max_k`
-    candidates, rounded up to whole warps, plus a value and two indices per
-    sample-cache slot, rounded up to `WARP_SIZE` bytes.
+    candidates, padded to a power of two because stage 2 sorts them with a
+    bitonic network and then rounded up to whole warps, plus a value and two
+    indices per sample-cache slot, rounded up to `WARP_SIZE` bytes.
     """
-    comptime warp_size = DeviceContext.default_device_info.warp_size
-    var num_elem_reduced = align_up(num_blocks_per_input * max_k, warp_size)
+    comptime warp_size = DeviceContext[].default_device_info.warp_size
+    var num_elem_reduced = align_up(
+        _topk_stage2_sort_len(num_blocks_per_input * max_k), warp_size
+    )
     var candidate_bytes = num_elem_reduced * (
         size_of[Scalar[dtype]]() + size_of[DType.int]()
     )
@@ -248,7 +290,6 @@ def top_k[
     //,
     KEngine: TensorEngine,
     largest: Bool = True,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     max_k: Int,
@@ -272,7 +313,6 @@ def top_k[
         out_idx_type: The data dtype of the output indices (default == .int64).
         KEngine: Engine policy of the `k` tensor.
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
-        target: The target to run on.
 
     Args:
         input: The input tensor.
@@ -305,7 +345,7 @@ def top_k[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "top_k",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.device().id),
@@ -315,7 +355,7 @@ def top_k[
         # Clamp max_k
         var bound_max_k = 255 if max_k == -1 else max_k
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert (
                 out_idx_type == .int64
             ), "out_idx_type must be int64 for cpu"
@@ -979,7 +1019,7 @@ struct TopKHeap[T: DType, largest: Bool, M: Int]:
     def best(self) -> TopK_2[Self.T, Self.largest]:
         """Return the best element, ties broken by smallest index.
 
-        Returns a dead TopK_2 (p=-1) when all entries are exhausted.
+        Returns a dead TopK_2 (p=-1) when every slot has been retired.
         """
         var best_u = self.vals[0]
         var best_p = self.idxs[0]
@@ -996,16 +1036,41 @@ struct TopKHeap[T: DType, largest: Bool, M: Int]:
                 ):
                     best_u = self.vals[i]
                     best_p = self.idxs[i]
+        # A retired slot keeps its index, so `best_p` alone no longer says
+        # whether anything is left: the value does.
+        if best_u == _topk_dead_val[Self.T, Self.largest]():
+            return TopK_2[Self.T, Self.largest](
+                p=-1, u=_topk_dead_val[Self.T, Self.largest]()
+            )
         return TopK_2[Self.T, Self.largest](p=Int(best_p), u=best_u)
 
     @inline(.always)
     def remove(mut self, idx: Int):
-        """Remove element by global index, replacing with dead value."""
+        """Retires element `idx`, keeping the index behind as a record.
+
+        The slot's index is left in place so that `retired` can still name the
+        elements this thread has already emitted -- the replacement for writing
+        the dead value over them in the row.
+        """
         var idx32 = Int32(idx)
         comptime for i in range(Self.M):
             if self.idxs[i] == idx32:
                 self.vals[i] = _topk_dead_val[Self.T, Self.largest]()
-                self.idxs[i] = Int32(-1)
+
+    @inline(.always)
+    def retired(self, idx: Int) -> Bool:
+        """Whether this thread has already emitted element `idx` from the heap.
+
+        A slot that was never filled holds index -1 and one that still holds a
+        live element is not retired, so a retired slot is exactly one that has
+        this index and the dead value.
+        """
+        var idx32 = Int32(idx)
+        var dead = _topk_dead_val[Self.T, Self.largest]()
+        comptime for i in range(Self.M):
+            if self.idxs[i] == idx32 and self.vals[i] == dead:
+                return True
+        return False
 
 
 # Function to perform warp-level reduction to find the maximum TopK_2
@@ -1163,6 +1228,296 @@ def _block_reduce_topk[
     return _warp_reduce_topk[T, ascending](block_accum)
 
 
+# Elements a stage-1 thread keeps in its register heap. Past this the block
+# extracts its remaining candidates by re-scanning the row per element, and
+# `_topk_gpu` gives the private copy of the row to that path.
+comptime _TOPK_HEAP_SIZE = 8
+
+
+@inline(.always)
+def _topk_scan_start[T: DType, largest: Bool = True]() -> Scalar[T]:
+    """The value no element in a row can beat, so nothing is retired yet."""
+    comptime if largest:
+        return max_or_inf[T]()
+    else:
+        return min_or_neg_inf[T]()
+
+
+@inline(.always)
+def _topk_scan_heap[
+    T: DType,
+    largest: Bool,
+    M: Int,
+](
+    row: ImmPointer[Scalar[T], ImmutAnyOrigin],
+    start: Int,
+    stop: Int,
+    step: Int,
+    mut heap: TopKHeap[T, largest, M],
+):
+    """Fills `heap` with the thread's slice of `row`, in index order.
+
+    The thread's slice is `start, start + step, ...`; `stop` is the first index
+    past the block's part of the row.
+    """
+    for i in range(start, stop, step):
+        heap.insert(row[i], i)
+
+
+@inline(.always)
+def _topk_scan_take[
+    T: DType,
+    largest: Bool,
+    M: Int,
+](
+    mut best: TopK_2[T, largest],
+    mut eq_seen: Int,
+    val: Scalar[T],
+    idx: Int,
+    thr: Scalar[T],
+    eq_done: Int,
+    mut heap: TopKHeap[T, largest, M],
+):
+    """Offers one element to a scan for the thread's best unselected element.
+
+    `thr` is the value this thread emitted last and `eq_done` how many of its
+    elements at that value it has emitted since. Emissions never improve on
+    `thr`, so every element better than it is gone. An element equal to `thr`
+    may have gone already: from the heap, in which case `heap` still names it,
+    or from an earlier scan, and scans emit the lowest unclaimed indices first,
+    so the first `eq_done` elements equal to `thr` that the heap does not name,
+    in index order, are the ones emitted.
+    """
+    comptime if largest:
+        if val > thr:
+            return
+    else:
+        if val < thr:
+            return
+    if val == thr:
+        if heap.retired(idx):
+            return
+        eq_seen += 1
+        if eq_seen <= eq_done:
+            return
+    best.insert(val, idx)
+
+
+@inline(.always)
+def _topk_scan_best[
+    T: DType,
+    largest: Bool,
+    M: Int,
+](
+    row: ImmPointer[Scalar[T], ImmutAnyOrigin],
+    start: Int,
+    stop: Int,
+    step: Int,
+    thr: Scalar[T],
+    eq_done: Int,
+    mut heap: TopKHeap[T, largest, M],
+) -> TopK_2[T, largest]:
+    """The thread's best element it has not emitted yet, ties to lowest index.
+    """
+    var best = TopK_2[T, largest]()
+    var eq_seen = 0
+    for i in range(start, stop, step):
+        _topk_scan_take[T, largest, M](
+            best, eq_seen, row[i], i, thr, eq_done, heap
+        )
+    return best
+
+
+@__name(t"topk_stage1_inplace_{T}_{out_idx_type}_{largest}")
+def _topk_stage1_inplace[
+    T: DType,
+    out_idx_type: DType,
+    largest: Bool = True,
+](
+    K: Optional[ImmPointer[Int64, ImmutAnyOrigin]],
+    max_k: Int32,
+    num_elements: Int32,
+    num_blocks_per_input: Int32,
+    in_buffer: ImmPointer[Scalar[T], ImmutAnyOrigin],
+    local_topk_vals: MutPointer[
+        Scalar[T], MutAnyOrigin
+    ],  # Output buffer of size num_blocks_per_input * max_k
+    local_topk_idxs: MutPointer[
+        Scalar[out_idx_type], MutAnyOrigin
+    ],  # Output buffer of size num_blocks_per_input * max_k
+):
+    """
+    Computes the Top-K elements within each block.
+
+    This kernel function is the first stage of a two-stage Top-K algorithm.
+    Each thread block processes a portion of the input data and finds its local top-K elements.
+    The local top-K results are stored in global memory for further processing in stage 2.
+
+    The row is only read. Retiring a selected element is a per-thread value
+    threshold plus a count of how many elements at that value the thread has
+    already emitted, rather than the dead-value write to a private copy of the
+    row the two-stage path used to allocate and copy, which cost
+    `2 * batch * num_elements` bytes of traffic per call.
+
+    Parameters:
+        T: Data type of the elements.
+        out_idx_type: DType - The data dtype of the output indices.
+        largest: Bool - Whether to find the maximum or minimum value.
+
+    Args:
+        K: Number of top elements to select per block. Varies for each batch element.
+        max_k: Largest number of top elements to keep for each batch element.
+        num_elements: Size of last dimension of input buffer (vocab size).
+        num_blocks_per_input: Number of blocks used to process the input data.
+        in_buffer: Input buffer of `num_elements` per batch element. Read only.
+        local_topk_vals: Output buffer to store the local top-K values.
+        local_topk_idxs: Output buffer to store the indices of local top-K elements.
+
+    Note:
+        The output buffers (local_topk_vals and local_topk_idxs) should be of size num_blocks_per_input * max_k.
+    """
+    var _max_k = Int(max_k)
+    var _num_elements = Int(num_elements)
+    var _num_blocks_per_input = Int(num_blocks_per_input)
+
+    var tid = thread_idx.x
+    var bid = block_idx.x
+    var block_size = block_dim.x
+
+    var batch_id, block_lane = udivmod(bid, _num_blocks_per_input)
+
+    var block_offset = block_lane * block_size
+    var block_end = _num_elements
+    var stride = block_size * _num_blocks_per_input
+    comptime if is_apple_gpu():
+        # Stage 2 breaks ties between equal values by candidate slot, which is
+        # block-major, so ties come out smallest index first only when each
+        # block owns one ascending range of the row. The strided partition
+        # holds that up to `block_size * num_blocks_per_input` elements, and
+        # Apple's one-simdgroup blocks (see `topk_gpu`) pass that bound at row
+        # lengths `_topk_warp` also serves, so give each block a contiguous
+        # range there.
+        var block_len = align_up(
+            ceildiv(_num_elements, _num_blocks_per_input), block_size
+        )
+        block_offset = block_lane * block_len
+        block_end = min(block_offset + block_len, _num_elements)
+        stride = block_size
+
+    var row = in_buffer.unsafe_offset(batch_id * _num_elements)
+
+    # Hoist per-block output base pointers out of the k loop.
+    var out_vals = local_topk_vals.unsafe_offset(bid * _max_k)
+    var out_idxs = local_topk_idxs.unsafe_offset(bid * _max_k)
+
+    var k_batch = _max_k
+    if case .Some(K) = K:
+        var k_raw = Int(K[batch_id])
+        k_batch = _max_k if k_raw == -1 else k_raw
+
+    # Clamp k_batch to the number of elements we can actually draw from
+    if k_batch > _num_elements:
+        k_batch = _num_elements
+
+    # Shared memory to broadcast the winner index so the owning thread can
+    # retire it (better L1 locality than thread 0).
+    var winner_sram = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
+
+    comptime HEAP_SIZE = _TOPK_HEAP_SIZE
+
+    # Thread `t` owns the row indices `block_offset + t, + stride, ...`. That
+    # mapping is not a free parameter: it decides which thread holds which tied
+    # index, and a heap that has filled every slot evicts its *first* slot at
+    # the threshold, so a thread holding both a tied value and a better one can
+    # lose its lowest tied index before the block emits it. Widening a thread's
+    # slice to a vector regroups exactly that and reorders tied output -- see
+    # `check_tie_after_eviction` in `test_topk_stage1_selection.mojo`.
+    var scan_start = tid + block_offset
+    var scan_step = stride
+
+    var dead_val = _topk_dead_val[T, largest]()
+
+    # What this thread has already emitted: the value of its last emission, and
+    # how many of its elements at that value it has emitted since it started
+    # re-scanning. Elements it emitted from the heap before that are named by
+    # the heap itself (see `TopKHeap.retired`). Until it emits, the threshold
+    # is the best value a row can hold, so nothing is retired.
+    var thr = _topk_scan_start[T, largest]()
+    var eq_done = 0
+
+    var heap = TopKHeap[T, largest, HEAP_SIZE]()
+
+    with PDL():
+        # Phase 1: single scan to build the per-thread register heap.
+        _topk_scan_heap[T, largest, HEAP_SIZE](
+            row, scan_start, block_end, scan_step, heap
+        )
+
+        # Phase 2: Extract winners from heaps without re-scanning.
+        # Threads whose heap is exhausted fall back to re-scanning the row so
+        # that non-top-M elements are still discoverable.
+        var heap_iters = min(k_batch, HEAP_SIZE)
+        for k in range(heap_iters):
+            # Use heap if it has valid entries, else fall back to re-scan.
+            var partial = heap.best()
+            var from_heap = partial.p >= 0
+            if not from_heap:
+                partial = _topk_scan_best[T, largest, HEAP_SIZE](
+                    row, scan_start, block_end, scan_step, thr, eq_done, heap
+                )
+
+            var total = _block_reduce_topk[ascending=largest](partial)
+
+            if tid == 0:
+                out_vals[k] = total.u
+                out_idxs[k] = Int(total.p).cast[out_idx_type]()
+                winner_sram[0] = total.p
+            barrier()
+
+            var winner_p = winner_sram[0]
+            if partial.p == winner_p and partial.u != dead_val:
+                if from_heap:
+                    # The heap keeps the index, so a re-scan can tell this
+                    # element apart from one it has yet to find.
+                    heap.remove(winner_p)
+                    if partial.u != thr:
+                        thr = partial.u
+                        eq_done = 0
+                else:
+                    if partial.u == thr:
+                        eq_done += 1
+                    else:
+                        thr = partial.u
+                        eq_done = 1
+
+        # Phase 3: Fallback to re-scanning the row for the remaining k.
+        for k in range(heap_iters, k_batch):
+            var partial = _topk_scan_best[T, largest, HEAP_SIZE](
+                row, scan_start, block_end, scan_step, thr, eq_done, heap
+            )
+
+            var total = _block_reduce_topk[ascending=largest](partial)
+
+            if tid == 0:
+                out_vals[k] = total.u
+                out_idxs[k] = Int(total.p).cast[out_idx_type]()
+                winner_sram[0] = total.p
+            barrier()
+
+            var winner_p = winner_sram[0]
+            if partial.p == winner_p and partial.u != dead_val:
+                if partial.u == thr:
+                    eq_done += 1
+                else:
+                    thr = partial.u
+                    eq_done = 1
+
+        # Parallel sentinel fill using all threads.
+        for remaining_k in range(k_batch + tid, _max_k, block_size):
+            out_vals[remaining_k] = dead_val
+            out_idxs[remaining_k] = Scalar[out_idx_type](-1)
+
+
 @__name(t"topk_stage1_{T}_{out_idx_type}_{largest}")
 def _topk_stage1[
     T: DType,
@@ -1255,7 +1610,7 @@ def _topk_stage1[
     # can write the dead value (better L1 locality than thread 0).
     var winner_sram = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
 
-    comptime HEAP_SIZE = 8
+    comptime HEAP_SIZE = _TOPK_HEAP_SIZE
 
     var heap = TopKHeap[T, largest, HEAP_SIZE]()
 
@@ -1321,6 +1676,103 @@ def _topk_stage1[
             out_idxs[remaining_k] = Scalar[out_idx_type](-1)
 
 
+@inline(.always)
+def _topk_stage2_before[
+    T: DType, largest: Bool
+](val_a: Scalar[T], slot_a: Int, val_b: Scalar[T], slot_b: Int) -> Bool:
+    """Whether candidate `(val_a, slot_a)` is emitted before `(val_b, slot_b)`.
+
+    Descending by value, and ascending by slot among equal values, which is the
+    order stage 2 produced when it selected its picks one at a time: each pick
+    was the block-wide maximum under `_warp_reduce_topk`'s `reduce_fn`, whose
+    tie rule is the smaller index, and the selected slot was then overwritten
+    with the dead sentinel. `largest=False` flips the value comparison, as the
+    minimum is then the better candidate.
+
+    Slots are distinct, so this is a total order whenever the values compare,
+    which the caller guarantees by replacing NaN with the dead sentinel before
+    sorting.
+    """
+    comptime if largest:
+        if val_a > val_b:
+            return True
+        if val_b > val_a:
+            return False
+    else:
+        if val_a < val_b:
+            return True
+        if val_b < val_a:
+            return False
+    return slot_a < slot_b
+
+
+@inline(.always)
+def _topk_stage2_sort_candidates[
+    T: DType,
+    largest: Bool,
+    v_origin: MutOrigin,
+    s_origin: MutOrigin,
+](
+    vals: MutPointer[Scalar[T], v_origin, address_space=.SHARED],
+    slots: MutPointer[Int, s_origin, address_space=.SHARED],
+    n: Int,
+    tid: Int,
+    num_threads: Int,
+):
+    """Sorts the candidates of one row into emission order, in shared memory.
+
+    `vals[0:n]` holds a candidate value per slot and stays put; `slots[0:n]`
+    starts as `0..n` and comes back holding those slots in
+    `_topk_stage2_before` order, so `slots[0]` is the first pick. `n` must be a
+    power of two.
+
+    Batcher's bitonic network: `log2(n)` merge passes, `log2(n) + 1` substages
+    each on average, one barrier per substage and one compare-exchange per
+    element pair. Sorting all candidates once replaces the `max_k` block-wide
+    reductions stage 2 used to run, one per pick, which for `max_k` candidates
+    per stage-1 block is `max_k * num_blocks_per_input` elements rescanned
+    `max_k` times.
+    """
+    # `merge` is the length of the bitonic sequences the current pass merges and
+    # `stride` the element distance of the current substage.
+    var merge = 2
+    var merge_log2 = 1
+    while merge <= n:
+        var stride = merge >> 1
+        var stride_log2 = merge_log2 - 1
+        while stride > 0:
+            for pair in range(tid, n >> 1, num_threads):
+                # Enumerate the pairs of this substage: the element `i` with
+                # `i & stride == 0` that `pair` names, and its partner
+                # `i | stride`.
+                var i = ((pair >> stride_log2) << (stride_log2 + 1)) | (
+                    pair & (stride - 1)
+                )
+                var j = i | stride
+                var slot_i = slots[i]
+                var slot_j = slots[j]
+                # The first half of each `merge`-sized sequence sorts one way
+                # and the second half the other, so that the sequence is
+                # bitonic going into the next pass.
+                var swap: Bool
+                if (i & merge) == 0:
+                    swap = _topk_stage2_before[T, largest](
+                        vals[slot_j], slot_j, vals[slot_i], slot_i
+                    )
+                else:
+                    swap = _topk_stage2_before[T, largest](
+                        vals[slot_i], slot_i, vals[slot_j], slot_j
+                    )
+                if swap:
+                    slots[i] = slot_j
+                    slots[j] = slot_i
+            barrier()
+            stride >>= 1
+            stride_log2 -= 1
+        merge <<= 1
+        merge_log2 += 1
+
+
 @__name(t"topk_stage2_{T}_{out_idx_type}_{sampling}_{largest}")
 def _topk_stage2[
     T: DType,
@@ -1378,8 +1830,8 @@ def _topk_stage2[
             The sampling kernel writes 0 for rows where no finite logit
             was found (e.g. all-NaN rows); rows default to 1 via memset.
 
-    The function uses shared memory to store and process the local Top-K results,
-    and performs a block-level reduction to find the global Top-K elements.
+    The function orders the candidates stage 1 produced in shared memory with a
+    bitonic sort, then emits the first `k` of them.
     """
     var _max_k = Int(max_k)
     var _num_blocks_per_input = Int(num_blocks_per_input)
@@ -1401,8 +1853,11 @@ def _topk_stage2[
         batch_id * num_elem_reduced
     )
 
-    # Allocate shared memory for values and indices
-    var num_e_rounded = align_up(num_elem_reduced, WARP_SIZE)
+    # Allocate shared memory for values and indices. The candidate array is
+    # padded to a power of two: the sort below is a bitonic network.
+    var num_e_rounded = align_up(
+        _topk_stage2_sort_len(num_elem_reduced), WARP_SIZE
+    )
     var vals_smem_size = num_e_rounded
     var vals_sram = unsafe_stack_allocation[
         _APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[T]],
@@ -1448,6 +1903,9 @@ def _topk_stage2[
             return
 
         comptime if sampling:
+            comptime assert (
+                T.is_floating_point()
+            ), "T must be floating point for sampling"
             # Storing the top-K logits in shmem for sampling
             s_id = idxs_sram.unsafe_offset(vals_smem_size).unsafe_bitcast[Int]()
             # The 2* below is for warp align safety
@@ -1459,98 +1917,102 @@ def _topk_stage2[
         s_sum[0] = Scalar[T](0)
         var max_logit = Scalar[T](0)
 
-        # Cache local top-K results from stage 1 into shared memory
-        for i in range(tid, num_elem_reduced, block_dim.x):
-            vals_sram[i] = _local_topk_vals[i]
+        # Cache local top-K results from stage 1 into shared memory. A slot
+        # that must never be picked -- stage-1 padding, or a NaN, which
+        # `TopK_2.insert`'s strict compare also refuses -- holds the dead
+        # sentinel instead, so it sorts behind every real pick. The tail slots
+        # up to `num_e_rounded` pad the network.
+        var dead_val = _topk_dead_val[T, largest]()
+        for i in range(tid, num_e_rounded, block_dim.x):
+            var val = dead_val
+            if i < num_elem_reduced:
+                val = _local_topk_vals[i]
+                comptime if largest:
+                    if not (val > dead_val):
+                        val = dead_val
+                else:
+                    if not (val < dead_val):
+                        val = dead_val
+            vals_sram[i] = val
             idxs_sram[i] = i
         barrier()
 
-        for k in range(_max_k):
-            if k >= k_batch:
-                # Fill remaining positions with sentinel values for unused elements
-                comptime if not sampling:
-                    if tid == 0:
-                        for remaining_k in range(k, _max_k):
-                            batch_i_topk_vals[remaining_k] = _topk_dead_val[
-                                T, largest
-                            ]()
-                            batch_i_topk_idxs[remaining_k] = Scalar[
-                                out_idx_type
-                            ](-1)
+        # Order the whole candidate set once, then emit it. `idxs_sram` holds
+        # the emission order on return.
+        _topk_stage2_sort_candidates[T, largest](
+            vals_sram,
+            idxs_sram,
+            _topk_stage2_sort_len(num_elem_reduced),
+            tid,
+            block_dim.x,
+        )
+
+        var num_out = min(k_batch, _max_k)
+        comptime if not sampling:
+            # Emit the ordered candidates. Positions past `num_out` asked for
+            # fewer picks than `max_k`; a caller reads all of them and tells
+            # that padding apart by the sentinel.
+            #
+            # An exhausted row (fewer candidates than picks, which stage-1
+            # padding and all-NaN rows produce) emits the sentinel for the
+            # slots past its last real candidate. Their indices are the stage-1
+            # leftovers those slots hold, like the selection this replaced,
+            # rather than `-1`: a caller may use the index as a token id, which
+            # `test_topk_nan_contract` pins.
+            for k in range(tid, _max_k, block_dim.x):
+                var slot = 0
+                var val = dead_val
+                if k < num_out:
+                    slot = idxs_sram[k]
+                    val = vals_sram[slot]
+                # A position is a real pick while `k` has picks left and the
+                # candidate ordered into it beat the sentinel. The position
+                # where the row runs out of candidates keeps that slot's stage-1
+                # leftover index; everything after it is padding with index -1.
+                # The exhausted position cannot be `-1`: a caller may use
+                # `out_idxs[0]` as a token id (see `test_topk_nan_contract`).
+                var exhausted = k < num_out and val == dead_val
+                var first_exhausted = exhausted and (
+                    k == 0 or vals_sram[idxs_sram[k - 1]] != dead_val
+                )
+                if (k < num_out and not exhausted) or first_exhausted:
+                    batch_i_topk_vals[k] = val
+                    batch_i_topk_idxs[k] = _local_topk_idxs[slot]
                 else:
-                    if tid == 0:
-                        for remaining_k in range(k, _max_k):
-                            batch_i_topk_vals[remaining_k] = _topk_dead_val[
-                                T, largest
-                            ]()
-                        # Skip-token sentinel: use 0, not -1. This index is the
-                        # sampled token returned downstream and is used as an
-                        # array index (gather_nd / embedding lookup), where a
-                        # negative index would read out of bounds.
-                        batch_i_topk_idxs[0] = Scalar[out_idx_type](0)
-                break
-
-            # Re-initialize partial for each thread
-            var partial = TopK_2[T, largest]()
-            # TODO: unroll this
-            for i in range(tid, num_elem_reduced, block_dim.x):
-                partial.insert(vals_sram[i], i)
-
-            barrier()
-            # Perform block-level reduction to find the maximum TopK_2
-            var total = _block_reduce_topk[ascending=largest](partial)
-
+                    batch_i_topk_vals[k] = dead_val
+                    batch_i_topk_idxs[k] = Scalar[out_idx_type](-1)
+        else:
+            comptime assert (
+                T.is_floating_point()
+            ), "T must be floating point for sampling"
             if tid == 0:
-                comptime if sampling:
+                # Serial: the softmax the sampler walks is a prefix sum, and
+                # `s_sum` accumulates it in emission order. A dead pick
+                # contributes `exp(-inf) == 0`, so an exhausted row leaves the
+                # walk with only its real picks selectable.
+                for k in range(num_out):
+                    var slot = idxs_sram[k]
+                    var val = vals_sram[slot]
                     if k == 0:
-                        max_logit = total.u
-
-                # Remove the found maximum from consideration in the next iteration
-                idxs_sram[total.p] = -1
-                vals_sram[total.p] = _topk_dead_val[T, largest]()
-
-                comptime if sampling:
-                    comptime assert (
-                        T.is_floating_point()
-                    ), "T must be floating point for sampling"
-                    batch_i_topk_vals[k] = total.u
-                    s_id[k] = total.p
+                        max_logit = val
+                    batch_i_topk_vals[k] = val
+                    s_id[k] = slot
                     var temp_val = Float32(1.0)
                     if case .Some(temperature) = temperature:
                         temp_val = temperature[batch_id]
-                    total.u = exp(
-                        (total.u - max_logit) / max(temp_val.cast[T](), 1e-6)
+                    var exp_val = exp(
+                        (val - max_logit) / max(temp_val.cast[T](), 1e-6)
                     )
-                    s_val2[k] = total.u
-                    s_sum[0] += total.u
-                else:
-                    # Store the global top-K values and indices
-                    batch_i_topk_vals[k] = total.u
-                    batch_i_topk_idxs[k] = _local_topk_idxs[total.p]
-
-                # Nothing selectable is left, so stop reducing -- but the rest
-                # of the row still has to be written. A caller reads all
-                # `max_k` slots and tells the padding apart by the sentinel,
-                # so an unwritten tail is stale device memory read back as
-                # real picks with arbitrary indices. The `k >= k_batch` exit
-                # above fills its own tail; this one never fired there because
-                # `k_batch == max_k` whenever no per-row `k` is passed.
-                if total.u == _topk_dead_val[T, largest]():
-                    comptime if not sampling:
-                        for remaining_k in range(k + 1, _max_k):
-                            batch_i_topk_vals[remaining_k] = _topk_dead_val[
-                                T, largest
-                            ]()
-                            batch_i_topk_idxs[remaining_k] = Scalar[
-                                out_idx_type
-                            ](-1)
-                    else:
-                        for remaining_k in range(k + 1, _max_k):
-                            batch_i_topk_vals[remaining_k] = _topk_dead_val[
-                                T, largest
-                            ]()
-                    break
-            barrier()
+                    s_val2[k] = exp_val
+                    s_sum[0] += exp_val
+                for remaining_k in range(num_out, _max_k):
+                    batch_i_topk_vals[remaining_k] = dead_val
+                if k_batch <= 0 and _max_k > 0:
+                    # Skip-token sentinel: use 0, not -1. This index is the
+                    # sampled token returned downstream and is used as an
+                    # array index (gather_nd / embedding lookup), where a
+                    # negative index would read out of bounds.
+                    batch_i_topk_idxs[0] = Scalar[out_idx_type](0)
 
         # do sampling
         comptime if sampling:
@@ -1879,35 +2341,63 @@ def _topk_gpu[
     if case .Some(k) = k:
         k_ptr = rebind[ImmPointer[Int64, ImmutAnyOrigin]](k.ptr)
 
-    # Enqueue the first kernel (stage 1)
-    var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
-    # Use DMA copy engine instead of kernel-based copy
-    ctx.enqueue_copy(input_buf_tmp, input_buf.to_device_buffer(ctx))
-    comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
-    ctx.enqueue_function[kernel_1](
-        k_ptr,
-        Int32(max_k),
-        Int32(N),
-        Int32(num_blocks_per_input_),
-        input_buf_tmp,
-        device_local_topk_vals.to_device_buffer(ctx),
-        device_local_topk_idxs.to_device_buffer(ctx),
-        grid_dim=grid_dim_stage1,
-        block_dim=block_dim_stage1,
-        attributes=pdl_launch_attributes(PDLLevel.ON),
-    )
-    _ = input_buf_tmp^
+    # Enqueue the first kernel (stage 1). Past the register heap, stage 1
+    # extracts its k by re-scanning the row per element, and the per-thread
+    # bookkeeping that lets it read the row in place costs more there than the
+    # copy it saves: it needs registers the re-scan loop wants for occupancy,
+    # which is what that path is bound by (see the audit in the PR). So the
+    # copy survives exactly where the heap cannot cover k, and the read-only
+    # kernel takes every k the heap can, which is where the copy was pure
+    # overhead.
+    if max_k > _TOPK_HEAP_SIZE:
+        var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
+        # Use DMA copy engine instead of kernel-based copy
+        ctx.enqueue_copy(input_buf_tmp, input_buf.to_device_buffer(ctx))
+        comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
+        ctx.enqueue_function[kernel_1](
+            k_ptr,
+            Int32(max_k),
+            Int32(N),
+            Int32(num_blocks_per_input_),
+            input_buf_tmp,
+            device_local_topk_vals.to_device_buffer(ctx),
+            device_local_topk_idxs.to_device_buffer(ctx),
+            grid_dim=grid_dim_stage1,
+            block_dim=block_dim_stage1,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+        _ = input_buf_tmp^
+    else:
+        comptime kernel_1 = _topk_stage1_inplace[dtype, out_idx_type, largest]
+        ctx.enqueue_function[kernel_1](
+            k_ptr,
+            Int32(max_k),
+            Int32(N),
+            Int32(num_blocks_per_input_),
+            input_buf.to_device_buffer(ctx),
+            device_local_topk_vals.to_device_buffer(ctx),
+            device_local_topk_idxs.to_device_buffer(ctx),
+            grid_dim=grid_dim_stage1,
+            block_dim=block_dim_stage1,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
 
     var shared_mem_bytes_2 = _topk_stage2_smem_bytes[dtype](
         max_k, num_blocks_per_input_
     )
     comptime if ctx.target.is_apple_gpu():
-        if shared_mem_bytes_2 > _APPLE_STATIC_SHMEM_MAX_BYTES:
+        # `shared_mem_bytes_2` is what the kernel indexes, and on Apple it all
+        # comes out of one static allocation of
+        # `_topk_stage2_apple_static_bytes` bytes. `topk_gpu` shrinks the
+        # partition count until the request fits; a caller that pins it, or
+        # calls this function directly, gets an error instead of an overrun.
+        comptime apple_capacity = _topk_stage2_apple_static_bytes[dtype]()
+        if shared_mem_bytes_2 > apple_capacity:
             raise Error(
                 t"shared memory of {shared_mem_bytes_2} exceeds static"
-                t" allocation capacity of {_APPLE_STATIC_SHMEM_MAX_BYTES} for"
-                t" the second stage top-k kernel, consider reducing the"
-                t" block_size or num_blocks_per_input"
+                t" allocation capacity of {apple_capacity} for the second"
+                t" stage top-k kernel, consider reducing the block_size or"
+                t" num_blocks_per_input"
             )
 
     # Define grid and block dimensions for stage 2
@@ -1950,7 +2440,9 @@ def _topk_gpu[
     var stage2_func_attribute = OptionalReg[FuncAttribute]()
     comptime if ctx.target.is_nvidia_gpu():
         stage2_func_attribute = FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(max(_topk_stage2_smem_budget(ctx), shared_mem_bytes_2))
+            UInt32(
+                max(_topk_stage2_smem_budget[dtype](ctx), shared_mem_bytes_2)
+            )
         )
 
     # Enqueue the second kernel (stage 2)
@@ -2254,7 +2746,7 @@ def topk_gpu[
         # the launch's own request formula fits the budget `_topk_gpu` passes
         # as the stage-2 ceiling. This must precede the cache sizing below,
         # which the partition count also sets.
-        var _topk_smem_budget = _topk_stage2_smem_budget(ctx)
+        var _topk_smem_budget = _topk_stage2_smem_budget[dtype](ctx)
         while (
             num_blocks_per_input_ > 1
             and _topk_stage2_smem_bytes[dtype](

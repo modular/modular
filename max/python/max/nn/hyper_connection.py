@@ -19,10 +19,11 @@ from max import functional as F
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.functional import random
-from max.nn.legacy.kernels import mhc_pre_supports
+from max.nn._graph_ops import mhc_pre_supports
+from max.nn.kernels import hyper_connection_gates
+from max.nn.kernels.hyper_connection import mhc_pre
 from max.tensor import Tensor
 
-from .common_layers.functional_kernels import hyper_connection_gates, mhc_pre
 from .module import Module
 from .norm import RMSNorm
 
@@ -56,7 +57,7 @@ class HyperConnection(Module[..., tuple[Tensor, Tensor, Tensor]]):
         hidden_streams = comb @ hidden_streams + post.unsqueeze(-1) * sublayer_out
 
     The gate math always runs in float32. ``collapsed`` is cast back to the
-    input's dtype. Where :func:`~max.nn.legacy.kernels.mhc_pre_supports` accepts the
+    input's dtype. Where :func:`~max.nn._graph_ops.mhc_pre_supports` accepts the
     shape and device, one fused op computes the whole site.
 
     Args:

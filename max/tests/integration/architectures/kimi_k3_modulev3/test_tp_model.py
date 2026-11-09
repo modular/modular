@@ -65,7 +65,6 @@ def _assign_weights(
     Fused weights are interleaved per TP rank, as the weight adapter writes
     them for a ``tp_size``-way TP model.
     """
-    config = model.config
     model.embed_tokens.weight = Tensor(
         raw["embed_tokens.weight"], dtype=DType.float32
     )
@@ -103,12 +102,14 @@ def _assign_weights(
         ap = f"{p}.self_attn"
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            attn.qkv_proj.weight = Tensor(
+            attn.qkvg_proj.weight = Tensor(
                 interleave_for_tp(
                     [
                         raw[f"{ap}.q_proj.weight"],
                         raw[f"{ap}.k_proj.weight"],
                         raw[f"{ap}.v_proj.weight"],
+                        raw[f"{ap}.g_proj.weight"],
+                        raw[f"{ap}.b_proj.weight"],
                     ],
                     tp_size,
                 ),
@@ -119,12 +120,6 @@ def _assign_weights(
             )
             attn.f_b_proj.weight = Tensor(
                 raw[f"{ap}.f_b_proj.weight"], dtype=DType.float32
-            )
-            attn.b_proj.weight = Tensor(
-                raw[f"{ap}.b_proj.weight"], dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                raw[f"{ap}.g_proj.weight"], dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 raw[f"{ap}.o_proj.weight"], dtype=DType.float32
@@ -201,28 +196,14 @@ def _assign_weights(
             ffn.routed_expert_norm.weight = Tensor(
                 raw[f"{mp}.routed_expert_norm.weight"], dtype=DType.float32
             )
-            gate_up = np.stack(
-                [
-                    interleave_for_tp(
-                        [
-                            raw[f"{mp}.experts.{e}.w1.weight"],
-                            raw[f"{mp}.experts.{e}.w3.weight"],
-                        ],
-                        tp_size,
+            for e, expert in enumerate(ffn.experts):
+                for w in ("w1", "w2", "w3"):
+                    projection = getattr(expert, w)
+                    projection.weight = Tensor(
+                        raw[f"{mp}.experts.{e}.{w}.weight"],
+                        dtype=DType.float32,
+                        device=projection.weight.device,
                     )
-                    for e in range(config.num_experts)
-                ],
-                axis=0,
-            )
-            down = np.stack(
-                [
-                    raw[f"{mp}.experts.{e}.w2.weight"]
-                    for e in range(config.num_experts)
-                ],
-                axis=0,
-            )
-            ffn.experts_gate_up_proj = Tensor(gate_up, dtype=DType.float32)
-            ffn.experts_down_proj = Tensor(down, dtype=DType.float32)
             ffn.shared_experts.gate_up_proj.weight = Tensor(
                 interleave_for_tp(
                     [
@@ -240,7 +221,7 @@ def _assign_weights(
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache and gated_delta_conv1d_fwd are both staged as undeclared"
+    "attention.mha.no_cache and gated_delta_conv1d_fwd are both staged as undeclared"
     " custom ops the interpreter can't bind"
 )
 def test_model_tp1_matches_tp2() -> None:

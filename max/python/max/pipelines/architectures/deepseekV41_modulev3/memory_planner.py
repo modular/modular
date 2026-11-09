@@ -20,8 +20,8 @@ from collections.abc import Sequence
 from typing import Any, NamedTuple
 
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.quant_config import fp4_packed_k
+from max.nn.ep_config import EPConfig
+from max.nn.quant_config import fp4_packed_k
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.support.human_readable_formatter import to_human_readable_bytes
 
@@ -37,7 +37,9 @@ from .layers.index_ops import INDEXER_SCORES_BUDGET_BYTES
 from .model import build_ep_config
 from .model_config import (
     DeepseekV41Config,
+    RoutedExpertFormat,
     dspark_expert_counts,
+    forward_rows,
     num_dspark_stages,
 )
 
@@ -130,19 +132,6 @@ def prefill_arena_bytes(config: V41Config, rows: int) -> int:
     return rows * per_token
 
 
-def forward_rows(runtime: Any, max_length: int) -> int:
-    """Query rows of the widest forward ``runtime`` can schedule.
-
-    Without chunked prefill the batch token budget is a soft limit: the
-    scheduler admits a whole request that overshoots what is left of it
-    (BUDGET_REACHED in token_budget.py), so a batch can reach the budget
-    less one token plus one prompt of max_length.
-    """
-    return runtime.max_num_input_tokens or (
-        runtime.max_batch_input_tokens - 1 + max_length
-    )
-
-
 def _dp_ep_config(pipeline_config: Any, text: Any) -> EPConfig | None:
     """The EP config whose buffers a DP run allocates, or ``None``.
 
@@ -159,7 +148,12 @@ def _dp_ep_config(pipeline_config: Any, text: Any) -> EPConfig | None:
         or pipeline_config.model.data_parallel_degree != n_devices
     ):
         return None
-    return build_ep_config(pipeline_config, text, n_devices)
+    return build_ep_config(
+        pipeline_config,
+        text,
+        n_devices,
+        RoutedExpertFormat.of(pipeline_config.model.huggingface_config),
+    )
 
 
 def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
@@ -168,10 +162,12 @@ def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
     The comm buffers are what EP init allocates beside the KV pool. The
     receive pool is the receive-side rows the grouped EP chain holds
     live: the dispatched tokens with their per-block scales and source
-    map, the packed down input the fused gate/up+SwiGLU kernel writes
-    (its epilogue runs the activation and the NVFP4 re-quant, so no bf16
+    map, the quantized down input the fused gate/up+SwiGLU kernel writes
+    (its epilogue runs the activation and the re-quant, so no bf16
     intermediate exists), and the down projection's bf16 output -- all
-    sized for the most rows a device can receive.
+    sized for the most rows a device can receive. Rows and their scales
+    take the dispatch format's width: packed NVFP4 with an E4M3 scale per
+    16 values, or MXFP8 (one byte a value) with an E8M0 scale per 32.
 
     Returns:
         ``(0, 0)`` when the run carries no EP buffers.
@@ -185,7 +181,7 @@ def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
     n_local_experts = int(config.n_experts) // n_ranks
     inter = int(text.moe_intermediate_size)
     quant_config = config.dispatch_quant_config
-    assert quant_config is not None, "the trunk's dispatch is NVFP4-quantized"
+    assert quant_config is not None, "the trunk's dispatch is quantized"
     assert quant_config.input_scale.block_size is not None
     block = quant_config.input_scale.block_size[1]
     tile_rows = -(
@@ -197,13 +193,13 @@ def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
         return tile_rows * tile_cols * _SCALE_TILE_BYTES
 
     pool = (
-        # The dispatched rows, NVFP4-packed with their block scales.
+        # The dispatched rows with their block scales.
         rows * fp4_packed_k(hidden, quant_config)
         + scale_bytes(hidden)
         # The source map, one [rows, 2] int32 entry per row.
         + rows * 2 * 4
         # The fused gate/up+SwiGLU kernel's output: the down projection's
-        # NVFP4-packed input rows with their block scales.
+        # quantized input rows with their block scales.
         + rows * fp4_packed_k(inter, quant_config)
         + scale_bytes(inter)
         # The down projection's bf16 output.
@@ -380,9 +376,8 @@ def dspark_parameters(
     """The drafter's parameters: ``(per stage, once)``.
 
     Layouts follow the checkpoint and ``weight_adapters``: dense MXFP8
-    projections keep compact 32x32-block scales, the four
-    ``_DSPARK_HOST_DEQUANT`` projections load as bf16, and the routed
-    experts are MXFP4 with an E8M0 per 32 elements. Under tensor
+    projections (the attention's included) keep compact 32x32-block scales
+    and the routed experts are MXFP4 with an E8M0 per 32 elements. Under tensor
     parallelism ``layers/dspark.py`` splits ``attn_sink``, ``wq_b``,
     ``wo_a`` and ``wo_b`` and ``layers/moe.py`` the shared expert; the
     rest replicates, the routed experts included
@@ -409,19 +404,13 @@ def dspark_parameters(
     def mxfp8(name: str, n: int, k: int, split: bool) -> DSparkParameter:
         return plain(name, _mxfp8_bytes(n, k), split)
 
-    def dequantized(name: str, n: int, k: int, split: bool) -> DSparkParameter:
-        return DSparkParameter(name, _mxfp8_bytes(n, k), 2 * n * k, split)
-
     stage = [
         plain("attn.attn_sink", heads * 4, split=True),
         plain("attn.q_norm", q_lora * 2),
         plain("attn.kv_norm", head_dim * 2),
-        dequantized("attn.wq_a", q_lora, hidden, split=False),
-        dequantized("attn.wq_b", heads * head_dim, q_lora, split=True),
-        dequantized("attn.wkv", head_dim, hidden, split=False),
-        dequantized(
-            "attn.wo_a", o_rows, heads * head_dim // o_groups, split=True
-        ),
+        mxfp8("attn.wqa_wkv", q_lora + head_dim, hidden, split=False),
+        mxfp8("attn.wq_b", heads * head_dim, q_lora, split=True),
+        mxfp8("attn.wo_a", o_rows, heads * head_dim // o_groups, split=True),
         mxfp8("attn.wo_b", hidden, o_rows, split=True),
         plain("attn_norm", hidden * 2),
         plain("ffn_norm", hidden * 2),

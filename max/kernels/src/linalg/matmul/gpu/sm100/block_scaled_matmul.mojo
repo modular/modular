@@ -27,7 +27,8 @@ from max.gpu.primitives.cluster import (
     cluster_arrive_relaxed,
     cluster_sync,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu import block_id_in_cluster
@@ -51,7 +52,7 @@ from max.gpu.sync import (
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord, TileTensor, coord
 from layout.coord import ComptimeInt, Idx
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -79,7 +80,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
     OutputStage,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
@@ -973,7 +974,6 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 ):
     """Implements the warp-specialized block-scaled matmul kernel for SM100 GPUs using TMA for global-to-shared loads and UMMA for tensor core MMA.
     """
-    comptime assert c_type != .float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime register_based_epilogue = config.register_based_epilogue
@@ -1938,7 +1938,7 @@ def _create_tma_and_launch[
         Int64(sfa_5d_tensor.dim[2]()),
         Idx[sf_atom_u16],
     )
-    var sfa_4d_layout = TileLayout(
+    var sfa_4d_layout = Layout(
         sfa_4d_shape,
         Coord(
             Int64(sfa_5d_tensor.dynamic_stride(0) // 2),
@@ -1954,7 +1954,7 @@ def _create_tma_and_launch[
         Int64(sfb_5d_tensor.dim[2]()),
         Idx[sf_atom_u16],
     )
-    var sfb_4d_layout = TileLayout(
+    var sfb_4d_layout = Layout(
         sfb_4d_shape,
         Coord(
             Int64(sfb_5d_tensor.dynamic_stride(0) // 2),
@@ -1992,9 +1992,6 @@ def _create_tma_and_launch[
     ](ctx, sfb_4d_tensor)
 
     # Shared memory
-    # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
     comptime SmemType = B200BlockScaledMatmulSmem[
         a_type,
         b_type,
@@ -2070,7 +2067,16 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch kernel
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
+            block_dim=(
+                32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
+            ),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -2081,16 +2087,6 @@ def _create_tma_and_launch[
         workspace,
         alpha,
         host_args=(epilogue_fn, compute_fn),
-        grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-        block_dim=(
-            32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
-        ),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
     comptime if enable_profiling:
@@ -2296,11 +2292,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 Idx[1],
             )
 
-    var sfa_5d_layout = TileLayout(
+    var sfa_5d_layout = Layout(
         _scales_5d_shape(a_scales_tensor), _scales_5d_stride(a_scales_tensor)
     )
     var sfa_5d_tensor = a_scales_tensor.as_imm().reshape(sfa_5d_layout)
-    var sfb_5d_layout = TileLayout(
+    var sfb_5d_layout = Layout(
         _scales_5d_shape(b_scales_tensor), _scales_5d_stride(b_scales_tensor)
     )
     var sfb_5d_tensor = b_scales_tensor.as_imm().reshape(sfb_5d_layout)

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from max import functional as F
 from max.nn import Linear, Module
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     masked_flash_attention_gpu as _masked_flash_attention_gpu,
 )
 from max.nn.norm import RMSNorm

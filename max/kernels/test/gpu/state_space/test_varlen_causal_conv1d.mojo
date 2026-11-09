@@ -358,9 +358,12 @@ def run_varlen_causal_conv1d_fwd_gpu[
         launch_gpu[4]()
     elif width == 7:
         launch_gpu[7]()
+    elif width == 10:
+        launch_gpu[10]()
     else:
         raise Error(
-            "Unsupported kernel width: only widths 1, 2, 3, 4, 7 are supported"
+            "Unsupported kernel width: only widths 1, 2, 3, 4, 7, 10 are"
+            " supported"
         )
 
     # Copy GPU results back to host, the final conv_states before the CPU
@@ -574,13 +577,13 @@ def test_varlen_causal_conv1d_fwd_gpu_residual_prefill_shape() raises:
 def test_varlen_causal_conv1d_fwd_gpu_prefill_shapes() raises:
     """Single-sequence prefill at production-relevant lengths, spanning
     multiple tiles and exact tile boundaries (63/64/65, 255/256/257), for
-    each kernel width the models use (2, 3, 4, 7; width 1 also dispatches but
-    no model uses it)."""
+    each kernel width the models use (2, 3, 4, 7, 10; width 1 also dispatches
+    but no model uses it)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
     var seqlens: List[Int] = [63, 64, 65, 255, 256, 257, 512, 4032]
-    var widths: List[Int] = [2, 3, 4, 7]
+    var widths: List[Int] = [2, 3, 4, 7, 10]
     for seqlen in seqlens:
         for width in widths:
             run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
@@ -675,6 +678,14 @@ def test_varlen_causal_conv1d_fwd_gpu_chunk_shorter_than_width() raises:
         dim=8,
         seq_lengths=Index(1, 3, 5),
         width=7,
+        ctx=ctx,
+        nonzero_initial_state=True,
+    )
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "silu"](
+        batch=3,
+        dim=8,
+        seq_lengths=Index(1, 4, 8),
+        width=10,
         ctx=ctx,
         nonzero_initial_state=True,
     )

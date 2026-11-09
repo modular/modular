@@ -19,6 +19,7 @@
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveDescriptor.h"
 #include "Support/ErrorOr.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/SymbolExport.h"
 
 namespace M {
 
@@ -37,7 +38,7 @@ using PrimitiveProfilerEntry =
 
 /// This represents a mapping between the names of the MLIR opcodes to the
 /// implementations of those functions, along with type mappings.
-class PrimitiveRegistry final {
+class MODULAR_CXX_EXPORT PrimitiveRegistry final {
 public:
   PrimitiveRegistry();
   ~PrimitiveRegistry();

@@ -15,7 +15,6 @@
 #include "Mojo/KGENDialect/DebugInfoEncoding.h"
 #include "Mojo/KGENDialect/KGENDType.h"
 #include "Mojo/MojoParser/ASTDecl.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "MojoTypeSystem.h"
 #include "Support/ErrorOr.h"
 #include "lldb/Symbol/CompileUnit.h"

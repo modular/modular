@@ -47,8 +47,22 @@ trait EnumLike:
     ]()[id]
     """Payload type for case `id`."""
 
+    comptime _is_none_type[Type: AnyType] = Type == NoneType
+
+    comptime _enum_has_no_payloads: Bool = TypeList[
+        Trait=AnyType, Self._enum_case_types
+    ].all[Self._is_none_type]()
+    """Whether no case carries a payload."""
+
     def _get_enum_discriminant(self) -> Int:
-        """Return the active case index."""
+        """Return the active case index.
+
+        Different cases must return different discriminants. Two values are
+        equal when their discriminants and payloads are equal, so for a case
+        without a payload the discriminant alone defines the value. An open
+        enum must give each value outside its declared cases a distinct
+        discriminant that is not a case index.
+        """
         ...
 
     # FIXME: Prefer an interior origin so payload refs preserve subject

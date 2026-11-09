@@ -41,7 +41,6 @@ from max.gpu.sync import schedule_barrier as amd_schedule_barrier
 
 from .amd_helpers import amd_scheduling_hints, compare_equal
 from layout import TensorLayout, TileTensor, coord, row_major, stack_allocation
-from layout.layout import blocked_product
 from linalg.matmul.gpu.amd.matmul_mma import MmaOp
 from structured_kernels.amd_tile_io import (
     RegTileLoader,
@@ -70,8 +69,6 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
     @staticmethod
     def execute[
-        # The kind of device this will be run on: "cpu" or "gpu"
-        target: StaticString,
         M: Int,
         N: Int,
         K: Int,
@@ -85,7 +82,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
     ) raises:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
-        comptime if target == "gpu":
+        comptime if ctx.target.is_gpu():
             var a_tt = a.to_tile_tensor().as_unsafe_any_origin()
             var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
 

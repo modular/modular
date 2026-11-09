@@ -301,16 +301,14 @@ def run_case[
         return v_pad_dev.load[width=width](idx)
 
     # The split path: the key at column 0, the value after it.
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         split.get_key_cache(layer),
         (total, num_kv_heads, k_dim),
         offsets,
         k_fn,
         ctx,
     )
-    kv_cache_store_ragged[
-        target="gpu", head_dim_offset=split_params.v_col_base()
-    ](
+    kv_cache_store_ragged[head_dim_offset=split_params.v_col_base(),](
         split.get_value_cache(layer),
         (total, num_kv_heads, v_dim),
         offsets,
@@ -318,7 +316,8 @@ def run_case[
         ctx,
     )
     fused_qk_rope_ragged[
-        SplitCollection.CacheType, interleaved=False, target="gpu"
+        SplitCollection.CacheType,
+        interleaved=False,
     ](
         q_proj=q.device_tensor(),
         input_row_offsets=offsets,
@@ -331,14 +330,14 @@ def run_case[
     )
 
     # The padded production path.
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         padded.get_key_cache(layer),
         (total, num_kv_heads, padded_dim),
         offsets,
         k_pad_fn,
         ctx,
     )
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         padded.get_value_cache(layer),
         (total, num_kv_heads, padded_dim),
         offsets,
@@ -346,7 +345,8 @@ def run_case[
         ctx,
     )
     fused_qk_rope_ragged[
-        PaddedCollection.CacheType, interleaved=False, target="gpu"
+        PaddedCollection.CacheType,
+        interleaved=False,
     ](
         q_proj=q_pad.device_tensor(),
         input_row_offsets=offsets,

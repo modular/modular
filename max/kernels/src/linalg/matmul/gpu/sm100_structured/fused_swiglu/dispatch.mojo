@@ -20,7 +20,7 @@ etc.).
 from std.math import align_up, ceildiv
 from max.gpu import WARP_SIZE, block_dim, global_idx, grid_dim, lane_id
 import max.gpu.primitives.warp as warp
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Idx, TileTensor, row_major
 from std.collections import OptionalReg
@@ -174,7 +174,7 @@ def matmul_swiglu_dispatch_sm100[
 
 
 def matmul_swiglu_dispatch_sm100_bf16[
-    pdl_level: PDLLevel = PDLLevel(0),
+    pdl_level: PDLLevel = PDLLevel.ON,
     has_bias: Bool = False,
 ](
     c_out: TileTensor[mut=True, ...],
@@ -244,6 +244,10 @@ def matmul_swiglu_dispatch_sm100_bf16[
         comptime warps_per_block = threads // WARP_SIZE
         var work_count = ceildiv(m, _FALLBACK_ROWS_PER_WARP) * h
         ctx.enqueue_function[_matmul_swiglu_fallback[has_bias]](
+            GridBlockLaunchConfig(
+                grid_dim=min(ceildiv(work_count, warps_per_block), 65535),
+                block_dim=threads,
+            ),
             MutPointer[BFloat16, MutAnyOrigin](
                 unsafe_from_address=Int(c_out.ptr)
             ),
@@ -264,8 +268,6 @@ def matmul_swiglu_dispatch_sm100_bf16[
             Int64(w_col_stride),
             Int64(out_row_stride),
             Int64(out_col_stride),
-            grid_dim=min(ceildiv(work_count, warps_per_block), 65535),
-            block_dim=threads,
         )
         return
 

@@ -67,26 +67,13 @@ trait Equatable:
             of equality, False otherwise.
         """
 
-        # An `EnumLike` type compares its active case and that case's payload,
-        # not its fields.
+        # An `EnumLike` type compares its active case and that case's payload.
+        # Its fields are storage: an `__enum` has one field that holds the
+        # payload of whichever case is active.
         comptime if conforms_to(Self, EnumLike):
             return _enum_reflection_eq(self, other)
-
-        # Default implementation using reflection: compare all fields
-        comptime r = reflect[Self]
-        comptime names = r.field_names()
-        comptime types = r.field_types()
-
-        comptime for i in range(names.length):
-            comptime T = types[i]
-            comptime assert conforms_to(T, Equatable), _field_conforms_to_error[
-                Parent=Self,
-                FieldIndex=i,
-                ParentConformsTo="Equatable",
-            ]()
-            if r.field_ref[i](self) != r.field_ref[i](other):
-                return False
-        return True
+        else:
+            return _fieldwise_reflection_eq(self, other)
 
     @inline(.always)
     def __ne__(self, other: Self, /) -> Bool:
@@ -104,11 +91,47 @@ trait Equatable:
 
 
 @inline(.always)
+def _fieldwise_reflection_eq[T: Equatable](this: T, other: T) -> Bool:
+    """Compares every field of `T`."""
+    comptime r = reflect[T]
+    comptime names = r.field_names()
+    comptime types = r.field_types()
+
+    comptime for i in range(names.length):
+        comptime FieldType = types[i]
+        comptime assert conforms_to(
+            FieldType, Equatable
+        ), _field_conforms_to_error[
+            Parent=T,
+            FieldIndex=i,
+            ParentConformsTo="Equatable",
+        ]()
+        if r.field_ref[i](this) != r.field_ref[i](other):
+            return False
+    return True
+
+
+@inline(.always)
 def _enum_reflection_eq[T: EnumLike & Equatable](this: T, other: T) -> Bool:
     """Compares the index of the active case, then the payloads of that case."""
     var discriminant = this._get_enum_discriminant()
     if discriminant != other._get_enum_discriminant():
         return False
+    comptime if T._enum_has_no_payloads:
+        return True
+    else:
+        return _enum_payload_eq(this, other, discriminant)
+
+
+# Not always-inline: the case loop unrolls to one branch per case, which would
+# otherwise be copied into every `==` on the type.
+def _enum_payload_eq[
+    T: EnumLike & Equatable
+](this: T, other: T, discriminant: Int) -> Bool:
+    """Compares the payloads of case `discriminant`, active in both values.
+
+    In an open enum, a discriminant that is not a case index has no payload.
+    """
     comptime names = ParameterList[T._enum_case_names]()
     comptime types = TypeList[Trait=AnyType, T._enum_case_types]()
     comptime for i in range(names.length):
@@ -125,7 +148,10 @@ def _enum_reflection_eq[T: EnumLike & Equatable](this: T, other: T) -> Bool:
                     == other._unsafe_get_enum_payload[i]()
                 )
             return True
-    abort("`_get_enum_discriminant` returned an index that names no case")
+    comptime if T._enum_is_exhaustive:
+        abort("`_get_enum_discriminant` returned an index that names no case")
+    else:
+        return True
 
 
 trait Comparable(Equatable):

@@ -106,22 +106,6 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
   }
 }
 
-/// This method atomically updates 'minValue' to 'value' if it is greater than
-/// it is already. This exists because std::atomic doesn't provide a native min
-/// operation.
-template <typename T>
-static void atomicMin(std::atomic<T> &minValue, const T &value) {
-  T previousMin = minValue;
-
-  // Note that compare_exchange_weak updates `previousMin` on failure.
-  SpinWaiter<> waiter;
-  while (previousMin > value &&
-         !minValue.compare_exchange_weak(previousMin, value)) {
-    // Wait a bit and retry.
-    waiter.wait();
-  }
-}
-
 } // namespace M
 
 #endif // SUPPORT_THREADING_ATOMICS_H

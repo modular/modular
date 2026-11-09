@@ -20,7 +20,7 @@ works correctly.
 import extensibility
 
 from max.gpu.host import DeviceContext
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
 
 
 @extensibility.register("read_uninit_output")
@@ -34,17 +34,23 @@ struct ReadUninitOutput:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: OutputTensor,
-        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(x).rank == type_of(output).rank
+        var output_ptr = output.to_tile_tensor[dtype]().ptr
+        var x_ptr = x.to_tile_tensor[dtype]().ptr
+
         # Read from the output BEFORE writing — this is uninitialized.
         # On GPU, the debug allocator has poisoned this with the
         # largest-finite bit pattern.
-        var uninit = output.unsafe_ptr().unsafe_load()
+        var uninit = output_ptr.unsafe_load()
 
         # Write to prevent dead-code elimination.
-        output[0] = x[0] + uninit
+        output_ptr.unsafe_store(x_ptr.unsafe_load() + uninit)

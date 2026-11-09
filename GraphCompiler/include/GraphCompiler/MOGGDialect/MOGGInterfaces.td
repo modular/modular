@@ -136,6 +136,24 @@ def MOGG_FusedEpilogueInterface : OpInterface<"FusedEpilogueInterface"> {
   ];
 }
 
+def MOGG_RowwisePhaseOpInterface : OpInterface<"RowwisePhaseOpInterface"> {
+  let description = [{
+    A phase of a `mogg.call.rowwise` row: a fold (`mogg.rowwise.reduce`) or a
+    per-element phase (`mogg.rowwise.map`). Its body runs once per element of
+    the row, at the index in its only block argument.
+  }];
+
+  let cppNamespace = "::M::MOGG";
+
+  let methods = [
+    InterfaceMethod<
+      "Returns the element index block argument.",
+      "::mlir::BlockArgument", "getIndexArg", (ins), [{}],
+      "return $_op.getBody().front().getArgument(0);"
+    >,
+  ];
+}
+
 def MOGG_KernelTerminator : OpInterface<"KernelTerminator"> {
   let description = [{
     A terminator for `mogg.routine` operation.

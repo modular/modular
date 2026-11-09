@@ -29,7 +29,6 @@ share, until each moves onto :class:`SpecDecodePipelineModel`.
 from __future__ import annotations
 
 import logging
-from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
@@ -38,6 +37,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from max import tree
+from max._artifact.vision import VisionMetadata
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import CompiledModel, InferenceSession, Model
@@ -57,9 +57,9 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn import Module as ModuleV3
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops.sampling import LogitPenalties
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheInputs,
     KVCacheInputsPerDevice,
@@ -68,8 +68,10 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.sampling.penalties import LogitPenalties
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.legacy.graph_groups import DecoderGraphInputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
@@ -92,7 +94,10 @@ from max.pipelines.speculative.spec_adapters import STAGE_BOUNDARY
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     ReplayBatching,
 )
-from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeInputTypeSpec,
+    spec_decode_outputs,
+)
 from max.profiler import traced
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable
@@ -100,7 +105,13 @@ from max.tensor.realization_context import current_realization_context
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture
-from ..graph_specs import GraphRole, graph_callable
+from ..graph_specs import (
+    GraphRole,
+    GraphSpec,
+    compile_and_init_graphs,
+    graph_callable,
+    tp_signals,
+)
 from ..interfaces.arch_config import ArchConfigWithVisionCache
 from ..interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -119,9 +130,18 @@ from ..interfaces.pipeline_model import (
     WeightLoad,
 )
 from ..memory_estimation import MemoryPlan
+from ..module_registration import (
+    ModuleV3DecoderPipelineModel,
+    RegisteredDecoderBuilder,
+)
 from ..pipeline_parallel import PipelinedModel
 from ..pipeline_stage import PipelineStage
-from ..utils import CompilationTimer
+from ..registration_draft import (
+    RegisteredDraftBuilder,
+    default_target_hidden_states,
+)
+from ..registration_runtime import BatchContextLengths
+from ..utils import CompilationTimer, start_checkpoint_prefetch
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
 from ..weight_transform import (
     CheckpointRole,
@@ -187,6 +207,11 @@ class _UnifiedSpecDecodeModelMixin:
         """Distribution outputs: 0 (argmax), 1, or one per replica."""
         return max(0, len(self._spec_decode_model.output_metadata) - 3)
 
+    @property
+    def next_draft_tokens_dtype(self) -> DType:
+        """The dtype the compiled graph emits ``next_draft_tokens`` at."""
+        return self._spec_decode_model.output_metadata[2].dtype
+
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         model_outputs = self._spec_decode_model.execute(*model_inputs.buffers)
         return UnifiedEagleOutputs.from_buffers(model_outputs)
@@ -198,10 +223,21 @@ class _UnifiedSpecDecodeModelMixin:
         ).to(self.devices[0])
 
 
-def _builds_module(arch: SupportedArchitecture) -> bool:
-    """Returns whether ``arch`` implements build_module itself.
+def _registered_decoder(arch: SupportedArchitecture) -> bool:
+    """Returns whether ``arch`` registers a ModuleV3 ``DECODER``."""
+    model = arch.pipeline_model
+    return model is not None and issubclass(model, ModuleV3DecoderPipelineModel)
 
-    Its own pipeline model does, or for a draft with none, its config class.
+
+def _builds_module(
+    arch: SupportedArchitecture, role: GraphRole = GraphRole.DECODER
+) -> bool:
+    """Returns whether ``arch`` supplies a module for the requested role.
+
+    A registered draft declares its factory. A registered ModuleV3 decoder
+    is built by the framework, wherever spec decoding holds a call under its
+    architecture's own name. Legacy components implement ``build_module`` on
+    their pipeline model or draft config class.
 
     This is what tells a pairing that runs through the unified model from
     one that still runs its own spec-decode package. An inherited
@@ -209,14 +245,37 @@ def _builds_module(arch: SupportedArchitecture) -> bool:
     and a legacy spec-decode model can subclass its target's pipeline model,
     as GLM-5.2's ``UnifiedMTPGlm5_2Model`` does ``Glm5_1Model``.
     """
-    builder = _module_builder(arch)
+    if role == GraphRole.DRAFT and arch.draft is not None:
+        return True
+    if role == GraphRole.DECODER and _registered_decoder(arch):
+        return spec_adapters.has_adapter(arch.name)
+    builder = _module_builder(arch, role)
     return (
         arch.pipeline_model is None or issubclass(builder, PipelineModel)
     ) and ("build_module" in vars(builder))
 
 
+def _k3_variant_mismatches_draft(
+    arch_name: str, draft_arch: str | None
+) -> bool:
+    """Returns whether a Kimi K3 variant cannot pair with ``draft_arch``.
+
+    Only the ModuleV3 K3 adapter drives the ``K3DSparkModel`` drafter, and
+    only the graph-API K3 serves every other draft. Config resolution may
+    already have renamed the draft to the graph-API K3's own architecture,
+    so the routing keys on the ModuleV3 drafter's name, not on the raw one.
+    """
+    if draft_arch is None:
+        return False
+    if arch_name == "KimiK3ForConditionalGeneration_ModuleV3":
+        return draft_arch != "K3DSparkModel"
+    if arch_name == "KimiK3ForConditionalGeneration":
+        return draft_arch == "K3DSparkModel"
+    return False
+
+
 def _target_architecture(
-    name: str, prefer_module_v3: bool = False
+    name: str, prefer_module_v3: bool = False, draft_arch: str | None = None
 ) -> SupportedArchitecture | None:
     """Returns the variant of the named target that builds its module.
 
@@ -227,6 +286,8 @@ def _target_architecture(
     for prefer in (prefer_module_v3, not prefer_module_v3):
         arch = ARCH_LOOKUP.find(name, prefer_module_v3=prefer)
         if arch is not None and arch.pipeline_model is not None:
+            if _k3_variant_mismatches_draft(arch.name, draft_arch):
+                continue
             if _builds_module(arch):
                 return arch
     return None
@@ -261,13 +322,17 @@ def _takes_images(
 ) -> bool:
     """Returns whether a pairing takes images.
 
-    It does when its target's own pipeline model builds a vision graph and
-    its draft takes images too.
+    It does when its target builds a vision graph, as its own pipeline
+    model's or as its registration's ``VISION`` module, and its draft takes
+    images too.
     """
-    return (
-        "build_vision_graph" in vars(target.pipeline_model)
-        and InputModality.IMAGE in draft.input_modalities
+    model = target.pipeline_model
+    builds_vision = (
+        model.vision_cls is not None
+        if model is not None and issubclass(model, ModuleV3DecoderPipelineModel)
+        else "build_vision_graph" in vars(model)
     )
+    return builds_vision and InputModality.IMAGE in draft.input_modalities
 
 
 def _batching(arch: SupportedArchitecture) -> type[Any]:
@@ -327,14 +392,23 @@ def spec_decode_architecture(
         return None
     # The target first, so a target that can't pair never imports its
     # draft's architecture.
-    base = _target_architecture(target, prefer_module_v3)
+    base = _target_architecture(target, prefer_module_v3, draft_arch)
     if base is None:
+        return None
+    # A registered decoder pairs only as the variant serving selects: its
+    # graph-API twin keeps its own speculative architectures until it pairs
+    # too.
+    if _registered_decoder(base) and base is not ARCH_LOOKUP.find(
+        target, prefer_module_v3=prefer_module_v3
+    ):
         return None
     draft_arch = draft_arch or base.checkpoint_drafts.get(method)
     if draft_arch is None:
         return None
     draft = _draft_architecture(base, method, draft_arch)
-    if draft is None or not _builds_module(draft):
+    if draft is None or not _builds_module(draft, GraphRole.DRAFT):
+        return None
+    if draft.draft is not None and draft.draft.method != method:
         return None
     modulev3 = _builds_modulev3(base)
     vision = _takes_images(base, draft)
@@ -360,13 +434,14 @@ def spec_decode_architecture(
         batching=_BatchProcessor,
         cascade_pipeline_factory=None,
         supports_device_graph_capture=draft.supports_device_graph_capture,
-        # Nemotron-H, the one recurrent ModuleV3 target, keeps prefix caching
-        # on, as its fused pairing did.
-        # TODO(MXSERV-698): Check that its checkpoints land at the accepted
+        # Recurrent ModuleV3 targets keep prefix caching on, as their fused
+        # pairings did, unless they opt out.
+        # TODO(MXSERV-698): Check that their checkpoints land at the accepted
         # depth, or turn it off here too.
         required_arguments=(
             {**base.required_arguments, "enable_prefix_caching": False}
-            if base.checkpoints_recurrent_state and not modulev3
+            if base.checkpoints_recurrent_state
+            and (not modulev3 or not base.prefix_caching_under_spec)
             else base.required_arguments
         ),
         config=(
@@ -413,7 +488,13 @@ class _Pairing:
         method = speculative.speculative_method
         assert method is not None
         target = _target_architecture(
-            target_arch, pipeline_config.runtime.prefer_module_v3
+            target_arch,
+            pipeline_config.runtime.prefer_module_v3,
+            (
+                draft_model.huggingface_config.architectures[0]
+                if draft_model is not None
+                else None
+            ),
         )
         assert target is not None
         draft_arch = (
@@ -469,12 +550,23 @@ def _pipeline_model(
     return model
 
 
-def _module_builder(arch: SupportedArchitecture) -> Any:
-    """Returns what builds ``arch``'s module.
+def _module_builder(
+    arch: SupportedArchitecture, role: GraphRole = GraphRole.DECODER
+) -> Any:
+    """Returns what builds ``arch``'s requested module role.
 
-    That is its pipeline model, or its config class for a draft that has
-    none.
+    Registered drafts and ModuleV3 decoders use the shared builders. Legacy
+    components use their pipeline model, or their config class for a draft
+    that has none.
     """
+    if role == GraphRole.DRAFT and arch.draft is not None:
+        return RegisteredDraftBuilder(arch)
+    if role == GraphRole.DECODER and _registered_decoder(arch):
+        model = arch.pipeline_model
+        assert model is not None and issubclass(
+            model, ModuleV3DecoderPipelineModel
+        )
+        return RegisteredDecoderBuilder(model)
     return arch.pipeline_model or arch.config
 
 
@@ -570,7 +662,10 @@ def _kv_tree(
 
 
 def _check_pairing(
-    speculative: SpeculativeConfig, draft_config: Any, target_config: Any
+    speculative: SpeculativeConfig,
+    draft_config: Any,
+    target_config: Any,
+    layers: Sequence[int] | None = None,
 ) -> None:
     """Raises if the draft can't run beside the target.
 
@@ -585,10 +680,13 @@ def _check_pairing(
         speculative: The speculative config.
         draft_config: The config the draft's pipeline model built it from.
         target_config: The target's HuggingFace text config.
+        layers: The target layers the draft reads, which default to those
+            its config names.
     """
     method = speculative.speculative_method
     num_layers = target_config.num_hidden_layers
-    layers = proposers.capture_layers(speculative, draft_config)
+    if layers is None:
+        layers = proposers.capture_layers(speculative, draft_config)
     if any(not 0 <= i < num_layers for i in layers):
         raise ValueError(
             f"The {method} draft's target_layer_ids must index the target's"
@@ -867,7 +965,8 @@ class _Inputs(UnifiedSpecDecodeInputs):
     batch_context_lengths: list[Buffer] = field(default_factory=list)
     """Each device's context length, under a distributed signature."""
     ep_inputs: tuple[Buffer, ...] = ()
-    """Expert parallelism's buffers, under a distributed signature."""
+    """Expert parallelism's buffers: beside the distributed inputs, or past
+    the tail of a signature that isn't distributed."""
     trailing: list[Buffer] = field(default_factory=list)
     """Host inputs the target's call takes past the canonical tail."""
     replay_trailing: list[Buffer] = field(default_factory=list)
@@ -876,7 +975,6 @@ class _Inputs(UnifiedSpecDecodeInputs):
     target_inputs: Any = None
     """The target's own prepared inputs, kept only where its batching takes
     part in replay; ``None`` otherwise."""
-    spec: SpecDecodeInputTypeSpec | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -887,52 +985,18 @@ class _Inputs(UnifiedSpecDecodeInputs):
         """
         spec = self.spec
         assert spec is not None
-        kv = tree.leaves(self.kv_cache_inputs) if self.kv_cache_inputs else ()
-        traced = spec.trace_owns_signal_buffers
-        signals = [] if traced else self.signal_buffers
-        # The pipeline sets the images' embeddings and merge positions on
-        # every batch of a target that encodes images.
-        vision = (
-            (*self.vision_embeddings, *self.vision_scatter_indices)
-            if spec.enable_vision
-            else ()
+        buffers = self._spec_decode_buffers(
+            tokens=self.tokens,
+            input_row_offsets=self.input_row_offsets,
+            return_n_logits=self.return_n_logits,
+            host_input_row_offsets=self.host_input_row_offsets,
+            data_parallel_splits=self.data_parallel_splits,
+            signal_buffers=self.signal_buffers,
+            batch_context_lengths=self.batch_context_lengths,
+            ep_inputs=self.ep_inputs,
+            trailing=(*self.trailing, *self.replay_trailing),
         )
-        prefix: tuple[Buffer, ...]
-        if spec.distributed:
-            assert self.host_input_row_offsets is not None
-            assert self.data_parallel_splits is not None
-            prefix = (
-                self.tokens,
-                *vision,
-                self.input_row_offsets,
-                self.host_input_row_offsets,
-                self.return_n_logits,
-                self.data_parallel_splits,
-                *signals,
-                *kv,
-                *self.batch_context_lengths,
-                *self.ep_inputs,
-            )
-        else:
-            if not spec.include_signal_buffers:
-                signals = []
-            prefix = (
-                self.tokens,
-                *vision,
-                self.input_row_offsets,
-                self.return_n_logits,
-                *signals,
-                *kv,
-            )
-        buffers = (
-            *prefix,
-            *self._spec_decode_tail_buffers(
-                include_in_thinking_phase=spec.include_in_thinking_phase,
-            ),
-            *self.trailing,
-            *self.replay_trailing,
-        )
-        if not traced:
+        if not spec.trace_owns_signal_buffers:
             return buffers
         at = (
             len(buffers)
@@ -968,13 +1032,20 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._prepares_batches = _encodes_in_batching(
             target, draft
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
+        self._ep_comm_initializer: EPCommInitializer | None = None
+
+    @property
+    def _target_prepares_inputs(self) -> bool:
+        """Whether the target's batching prepares the batches' inputs."""
+        spec = self.spec_config.input_spec
+        assert spec is not None, "the graph has not been built"
+        return spec.distributed or self._prepares_batches
 
     @cached_property
     def _target_batching(self) -> Any:
-        """The target's batching, where it prepares any of the batches."""
+        """The target's batching, where it prepares or encodes any batches."""
         config = self.spec_config
-        assert config.input_spec is not None, "the graph has not been built"
-        if not (config.input_spec.distributed or self._prepares_batches):
+        if not (self._target_prepares_inputs or self._takes_images):
             return None
         batching = _batching(self._pairing.target)(config.target, self.runtime)
         if isinstance(batching, ReplayBatching):
@@ -987,20 +1058,24 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         """Hands expert parallelism's buffers to the target's batching.
 
         Only a target whose batching takes them, as the pipeline model's own
-        wiring does.
+        wiring does. A signature that isn't distributed takes them from here.
         """
+        self._ep_comm_initializer = initializer
         bind = getattr(self._target_batching, "bind_ep_comm_initializer", None)
         if bind is not None:
             bind(initializer)
 
     def bind_vision_encoder(
-        self, vision_model: Model, session: InferenceSession
+        self,
+        vision_model: Model | CompiledCallable[Any, Any],
+        session: InferenceSession,
     ) -> None:
         """Hands the compiled vision graph to the target's batching.
 
-        A batching that encodes with the target's whole config, as Kimi
-        K2.5's does, gets it too: the pairing keeps only the finalized
-        language config, which has no vision half.
+        A registered target's batching takes the compiled callable, as it
+        does serving alone. A batching that encodes with the target's whole
+        config, as Kimi K2.5's does, gets it too: the pairing keeps only the
+        finalized language config, which has no vision half.
         """
         bind_config = getattr(self._target_batching, "bind_model_config", None)
         if bind_config is not None:
@@ -1049,7 +1124,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 " encodes no images. Drop --speculative-method to serve"
                 " images."
             )
-        if self._target_batching is None:
+        if not self._target_prepares_inputs:
             inputs = super().prepare_initial_token_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
@@ -1061,15 +1136,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             inputs = self._distributed_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
-        # Split off after the target's batching, which may read the tail
-        # child's leaves into the inputs it prepares.
-        tail_key = spec_adapters.tail_kv(arch)
-        if tail_key is not None:
-            assert inputs.kv_cache_inputs is not None
-            inputs.kv_cache_inputs, tail = _split_tail(
-                inputs.kv_cache_inputs, tail_key
-            )
-            inputs.trailing[:0] = spec_adapters.tail_buffers(arch, tail)
         inputs.trailing += spec_adapters.trailing_buffers(
             arch,
             self._method,
@@ -1077,6 +1143,9 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             [ctx for batch in replica_batches for ctx in batch],
             self.runtime.devices,
         )
+        initializer = self._ep_comm_initializer
+        if initializer is not None and not config.input_spec.distributed:
+            inputs.ep_inputs = tuple(initializer.model_inputs())
         if config.input_spec.enable_vision and not self._takes_images:
             embeddings, indices = self._no_images
             inputs.vision_embeddings = embeddings
@@ -1114,10 +1183,9 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             tokens=target.tokens,
             input_row_offsets=target.input_row_offsets,
             return_n_logits=target.return_n_logits,
-            signal_buffers=list(target.signal_buffers),
+            signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=target.kv_cache_inputs,
             seed=self._next_seed(self.runtime.devices[0]),
-            structured_output=spec.enable_structured_output,
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
                 self._pairing.adapter_arch,
@@ -1162,25 +1230,22 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 np.array([0, len(lengths)], dtype=np.int64)
             )
         if context_lengths is None:
-            context_lengths = [
-                Buffer.zeros(shape=[1], dtype=DType.int32)
-                for _ in self.runtime.devices
-            ]
-        # A ModuleV3 target's batching holds no signal buffers, which its
-        # module's trace appends itself.
-        signals = getattr(target, "signal_buffers", self.runtime.signal_buffers)
+            # Under tensor parallelism every device takes the one replica's.
+            devices = len(self.runtime.devices)
+            context_lengths = self._context_lengths.update(
+                list(replica_batches) * (devices // len(replica_batches))
+            )
         return _Inputs(
             tokens=target.tokens,
             input_row_offsets=target.input_row_offsets,
             return_n_logits=target.return_n_logits,
-            signal_buffers=list(signals),
+            signal_buffers=list(self.runtime.signal_buffers),
             host_input_row_offsets=host_offsets,
             data_parallel_splits=splits,
             batch_context_lengths=list(context_lengths),
             ep_inputs=tuple(ep_inputs),
             kv_cache_inputs=target.kv_cache_inputs,
             seed=self._next_seed(self.runtime.devices[0]),
-            structured_output=spec.enable_structured_output,
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
                 self._pairing.adapter_arch,
@@ -1193,6 +1258,18 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 target,
             ),
             target_inputs=target if self._replay_hooks is not None else None,
+        )
+
+    @cached_property
+    def _context_lengths(self) -> BatchContextLengths:
+        """Each device's context length, for a target's batching without them.
+
+        A registered decoder's batching keeps one per replica, and only for
+        the graph it serves alone.
+        """
+        return BatchContextLengths(
+            len(self.runtime.devices),
+            self.runtime.pipeline_config.model.kv_cache.kv_cache_page_size,
         )
 
     @cached_property
@@ -1277,7 +1354,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=kv_cache_inputs,
             seed=seed,
-            structured_output=spec.enable_structured_output,
             spec=spec,
         )
 
@@ -1311,6 +1387,8 @@ class SpecDecodePipelineModel(
     weights, when the target's adapter enables one."""
     _weight_loads: list[WeightLoad]
     """The weight loads the modules deferred to the compile."""
+    _target_config: Any = None
+    """The target's model config, which describes its media for export."""
 
     def __init__(
         self,
@@ -1378,6 +1456,11 @@ class SpecDecodePipelineModel(
         """Distribution outputs: 0 (argmax), 1, or one per replica."""
         return max(0, len(self.model.output_metadata) - 3)
 
+    @property
+    def next_draft_tokens_dtype(self) -> DType:
+        """The dtype the compiled graph emits ``next_draft_tokens`` at."""
+        return self.model.output_metadata[2].dtype
+
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         """Runs the fused graph and names its outputs.
 
@@ -1411,12 +1494,17 @@ class SpecDecodePipelineModel(
 
     @property
     def routed_expert_row_bound(self) -> int | None:
-        """The target's compiled routed-expert row grid, if it sizes one.
-
-        It an export's sidecar records.
-        """
+        """Returns the target's compiled routed-expert row grid, if any."""
+        compiled = getattr(self, "_compiled_routed_expert_row_bound", None)
+        if compiled is not None:
+            return compiled
         config = self.arch_config_as(SpecDecodeArchConfig)
-        return getattr(config.target, "routed_expert_row_bound", None)
+        bound = getattr(config.target, "routed_expert_row_bound", None)
+        return (
+            bound
+            if isinstance(bound, int) and not isinstance(bound, bool)
+            else None
+        )
 
     def release(self, request_id: RequestID) -> None:
         """Frees what the target's batching holds for a finished request."""
@@ -1451,15 +1539,24 @@ class SpecDecodePipelineModel(
         return _Pairing.from_pipeline_config(self.pipeline_config)
 
     @cached_property
-    def signal_buffers(self) -> list[Buffer]:
-        """Returns the signal buffers the target's collectives need."""
+    def takes_signal_buffers(self) -> bool:
+        """Returns whether the graph takes signal buffers.
+
+        The graph's signature depends on this, not on :attr:`signal_buffers`,
+        which is empty under virtual devices.
+        """
         model = self.pairing.target.pipeline_model
         always = (
             model is not None and issubclass(model, AlwaysSignalBuffersMixin)
         ) or spec_adapters.signal_buffer_index(
             self.pairing.adapter_arch
         ) is not None
-        if len(self.devices) <= 1 and not always:
+        return len(self.devices) > 1 or always
+
+    @cached_property
+    def signal_buffers(self) -> list[Buffer]:
+        """Returns the signal buffers the target's collectives need."""
+        if not self.takes_signal_buffers:
             return []
         return Signals.allocate(self.devices)
 
@@ -1468,15 +1565,34 @@ class SpecDecodePipelineModel(
         """Builds the draft and the target, then compiles the fused graph."""
         if error := _stage_error(self.pipeline_config):
             raise ValueError(error)
+        start_checkpoint_prefetch(
+            self.pipeline_config.model, self.pipeline_config.draft_model
+        )
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
+        self._target_config = modules.target_config
         target, draft = modules.target, modules.draft
+        self._compiled_routed_expert_row_bound = next(
+            (
+                layer.ffn.max_tokens_per_expert
+                for layer in getattr(target, "layers", ())
+                if getattr(getattr(layer, "ffn", None), "amd_tp_w4a8", False)
+            ),
+            None,
+        )
         # A draft without its own embedding or head reads the target's, so
         # those weights load once. Drafts declare it as vLLM's do.
-        shared = tuple(
-            slot
-            for slot in ("embed_tokens", "lm_head")
-            if not getattr(draft, f"has_own_{slot}", False)
+        registration = self.pairing.draft.draft
+        if registration is not None:
+            registration.bind_shared_modules(target, draft)
+        shared = (
+            registration.shared_modules
+            if registration is not None
+            else tuple(
+                slot
+                for slot in ("embed_tokens", "lm_head")
+                if not getattr(draft, f"has_own_{slot}", False)
+            )
         )
         draft_weights = {
             name: value
@@ -1486,7 +1602,7 @@ class SpecDecodePipelineModel(
         # A target that names its embedding and head otherwise hands them to
         # its draft's proposer instead.
         for slot in shared:
-            if hasattr(target, slot):
+            if registration is None and hasattr(target, slot):
                 setattr(draft, slot, getattr(target, slot))
 
         # Only a pairing whose target asks for it traces a second graph, and
@@ -1505,7 +1621,7 @@ class SpecDecodePipelineModel(
             self.pipeline_config,
             config.kv_params,
             self.device_refs,
-            include_signal_buffers=bool(self.signal_buffers),
+            include_signal_buffers=self.takes_signal_buffers,
             target=target,
             target_config=modules.target_config,
             draft=draft,
@@ -1538,9 +1654,11 @@ class SpecDecodePipelineModel(
         if compiled is not None:
             self.compiled_modules = {
                 GraphRole.SPEC_DECODER: _graph_callable(
-                    spec.graph, compiled, model
+                    spec.graph, compiled, model, spec.input_tree
                 )
             }
+        if spec.input_tree is not None:
+            self._batching.bind_input_tree(spec.input_tree)
         config.input_spec = spec.input_spec
         self.export_input_types = spec.input_types
         self.export_contract = spec.export_contract
@@ -1631,42 +1749,51 @@ class SpecDecodePipelineModel(
                 None if _builds_modulev3(pairing.target) else self._weight_loads
             ),
         )
-        draft_paths = _draft_checkpoint(
-            self.pipeline_config
-        ).resolved_weight_paths()
+        draft_checkpoint = _draft_checkpoint(self.pipeline_config)
+        draft_paths = draft_checkpoint.resolved_weight_paths()
         draft_context = replace(
             context,
             weights=load_weights(draft_paths),
-            adapter=pairing.draft.weight_adapters.get(
-                weights_format(draft_paths)
-            ),
+            adapter=pairing.draft.checkpoint_adapters(
+                draft_checkpoint.huggingface_config
+            ).get(weights_format(draft_paths)),
             # A draft without a leaf of its own runs on the target's.
             kv_params=config.kv_params.children.get(
                 "draft", config.kv_params.children["target"]
             ),
         )
-        draft_builder = _module_builder(pairing.draft)
+        draft_builder = _module_builder(pairing.draft, GraphRole.DRAFT)
         draft, draft_config = draft_builder.build_module(draft_context)
-        _check_pairing(
-            speculative, draft_config, self.huggingface_config.get_text_config()
+        registration = pairing.draft.draft
+        reads = (
+            registration.target_hidden_states(speculative, draft_config)
+            if registration is not None
+            else default_target_hidden_states(speculative, draft_config)
         )
-        self.drafter_export = getattr(draft_config, "drafter_export", None)
+        _check_pairing(
+            speculative,
+            draft_config,
+            self.huggingface_config.get_text_config(),
+            reads.layer_ids,
+        )
+        if registration is None:
+            self.drafter_export = getattr(draft_config, "drafter_export", None)
+        elif registration.drafter_export is not None:
+            self.drafter_export = registration.drafter_export(
+                draft_context, draft_config
+            )
         # The target verifies every row the driver scores, and returns the
         # hidden states the draft reads.
-        hidden_states = proposers.target_hidden_states(
-            speculative, draft_config
-        )
+        hidden_states = reads.mode
         target_context = replace(
             context,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=hidden_states,
-            target_layer_ids=proposers.capture_layers(
-                speculative, draft_config
-            ),
+            target_layer_ids=reads.layer_ids,
             kv_params=config.kv_params.children["target"],
             encodes_images=_takes_images(pairing.target, pairing.draft),
         )
-        target_builder = _pipeline_model(pairing.target)
+        target_builder = _module_builder(pairing.target)
         target, target_config = target_builder.build_module(target_context)
         # The planner sized the cache from this config before finalizing.
         config.target = target_config
@@ -1678,12 +1805,7 @@ class SpecDecodePipelineModel(
         weights: dict[str, Any] = {}
         named = True
         for name, builder, ctx, module_config in (
-            (
-                "target",
-                _module_builder(pairing.target),
-                target_context,
-                target_config,
-            ),
+            ("target", target_builder, target_context, target_config),
             ("draft", draft_builder, draft_context, draft_config),
         ):
             module_entries = _weight_entries(builder, ctx, module_config)
@@ -1737,11 +1859,23 @@ def _forget_traced_weights(*modules: Any) -> None:
 
 
 def _graph_callable(
-    graph: Graph, compiled: CompiledModel, model: Model
+    graph: Graph,
+    compiled: CompiledModel,
+    model: Model,
+    input_tree: Mapping[str, object] | None = None,
 ) -> CompiledCallable[..., Any]:
-    """Wraps the compiled ``graph`` as the callable an artifact exports."""
+    """Wraps the compiled ``graph`` as the callable an artifact exports.
+
+    The callable takes ``input_tree``, the graph's inputs named by group,
+    when there is one, and the graph's inputs in order otherwise.
+    """
     input_types = [value.type for value in graph.inputs]
-    return graph_callable(compiled, model, input_types, graph.output_tree)
+    return graph_callable(
+        compiled,
+        model,
+        input_types if input_tree is None else input_tree,
+        graph.output_tree,
+    )
 
 
 @dataclass(frozen=True)
@@ -1758,6 +1892,9 @@ class SpecGraph:
     export_contract: Mapping[str, object] | None
     """What the target's engine checks the export's inputs against, if it
     keeps a record of its own."""
+    input_tree: DecoderGraphInputs | None
+    """The graph's inputs named by group, or ``None`` for a signature with
+    inputs no group names."""
 
 
 def build_spec_graph(
@@ -1842,7 +1979,9 @@ def build_spec_graph(
         module=module,
     ) as graph:
         graph.output(
-            *call(nn_model.decode_inputs(graph.inputs, call.kv_params))
+            spec_decode_outputs(
+                call(nn_model.decode_inputs(graph.inputs, call.kv_params))
+            )
         )
 
     return SpecGraph(
@@ -1851,6 +1990,18 @@ def build_spec_graph(
         input_spec=nn_model.input_spec,
         input_types=call.input_types,
         export_contract=call.export_contract,
+        # Penalties, a later stage's boundary and the replay graph's own
+        # inputs have no names, so a graph that takes any stays unnamed.
+        input_tree=(
+            None
+            if call.penalties or call.boundary_count or call.replay_count
+            else nn_model.input_tree(
+                call.kv_params,
+                trailing=spec_adapters.trailing_input_tree(
+                    call.target_arch, call.method, call.target_config
+                ),
+            )
+        ),
     )
 
 
@@ -1966,6 +2117,63 @@ class _DriverCall:
         return self.driver(**call_kwargs)
 
 
+def _proposer(
+    target_arch: str,
+    draft_arch: SupportedArchitecture,
+    verify: Any,
+    draft: Any,
+    draft_config: Any,
+    speculative: SpeculativeConfig,
+    huggingface_config: AutoConfig,
+) -> Any:
+    """Returns what drives the draft, one token a step or a block at a time.
+
+    A target adapter's proposer runs the draft on the target's own state, so
+    it outranks a registered draft's ``create_proposer``, which is only a
+    fallback for a target without one. The method's own proposer runs when
+    neither does.
+    """
+    distributed = _takes_distributed_inputs(verify)
+    proposer: Any
+    if speculative.is_block_draft():
+        proposer = spec_adapters.block_proposer(
+            target_arch, verify, draft, draft_config, speculative
+        )
+    else:
+        proposer = spec_adapters.sequential_proposer(
+            target_arch, verify, draft, draft_config, speculative
+        )
+    # TODO(kathywu): Separate binding a draft to its target from selecting
+    # its proposer, so a target adapter can't silently replace a registered
+    # draft's.
+    registration = draft_arch.draft
+    if proposer is None and registration and registration.create_proposer:
+        proposer = registration.create_proposer(
+            draft,
+            draft_config,
+            speculative=speculative,
+            takes_distributed_inputs=distributed,
+            target_text_config=huggingface_config.get_text_config(),
+        )
+    if proposer is not None:
+        return proposer
+    if speculative.is_block_draft():
+        return proposers.block_proposer(
+            speculative,
+            draft,
+            draft_config,
+            huggingface_config,
+            distributed=distributed,
+        )
+    return proposers.sequential_proposer(
+        speculative,
+        draft,
+        draft_config,
+        huggingface_config,
+        distributed=distributed,
+    )
+
+
 def _driver_call(
     pipeline_config: PipelineConfig,
     kv_params: MultiKVCacheParams,
@@ -2027,27 +2235,15 @@ def _driver_call(
     verify = spec_adapters.verify_for(
         target_arch, target, target_config, hidden_states, draft_config
     )
-    proposer: Any
-    if speculative.is_block_draft():
-        proposer = spec_adapters.block_proposer(
-            target_arch, verify, draft, draft_config, speculative
-        ) or proposers.block_proposer(
-            speculative,
-            draft,
-            draft_config,
-            huggingface_config,
-            distributed=_takes_distributed_inputs(verify),
-        )
-    else:
-        proposer = spec_adapters.sequential_proposer(
-            target_arch, verify, draft, draft_config, speculative
-        ) or proposers.sequential_proposer(
-            speculative,
-            draft,
-            draft_config,
-            huggingface_config,
-            distributed=_takes_distributed_inputs(verify),
-        )
+    proposer = _proposer(
+        target_arch,
+        pairing.draft,
+        verify,
+        draft,
+        draft_config,
+        speculative,
+        huggingface_config,
+    )
     distributed = _takes_distributed_inputs(verify, proposer)
     if distributed and signal_buffer_index is not None:
         # An adapter names the slot in the undistributed signature; the
@@ -2122,7 +2318,6 @@ def _driver_call(
     else:
         nn_model = SequentialDriver(verify, proposer, **driver_kwargs)
 
-    kv_params = _without_tail(kv_params, spec_adapters.tail_kv(target_arch))
     input_types = nn_model.input_types(kv_params)
     return _DriverCall(
         driver=nn_model,
@@ -2157,6 +2352,30 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
 
     vision_model: Model
 
+    def vision_metadata(self) -> VisionMetadata | None:
+        """Returns the target's vision metadata.
+
+        The fused graph takes the target's images.
+        """
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_metadata_for(
+            self.pipeline_config, self._target_config
+        )
+
+    def vision_preprocess_spec(self) -> GraphSpec | None:
+        """Returns the target's image preprocessing graph."""
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_preprocess_spec_for(
+            self.pipeline_config, self._target_config
+        )
+
+    def vision_preprocess_video_spec(self) -> GraphSpec | None:
+        """Returns the target's video preprocessing graph."""
+        target = _pipeline_model(self.pairing.target)
+        return target.vision_preprocess_video_spec_for(
+            self.pipeline_config, self._target_config
+        )
+
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         """Compiles the fused graph, then the target's vision graph.
@@ -2168,10 +2387,24 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
         model = super().load_model(session)
         if self.pipeline_config.model.pipeline_stage is not None:
             return model
-        target = _pipeline_model(self.pairing.target)
         context = ModelLoadContext.from_pipeline_model(self)
+        builder = _module_builder(self.pairing.target)
+        if isinstance(builder, RegisteredDecoderBuilder):
+            self._load_registered_vision(builder, context, session)
+            return model
+        target = _pipeline_model(self.pairing.target)
         with CompilationTimer("vision model") as timer:
-            graph, weights_registry = target.build_vision_graph(context)
+            # A target that names its vision graph's inputs exports them
+            # named, so a serving engine binds them by group.
+            spec = target.build_vision_spec(context)
+            input_tree: Mapping[str, object] | None = None
+            if spec is None:
+                graph, weights_registry = target.build_vision_graph(context)
+            else:
+                graph = spec.trace()
+                weights_registry = dict(spec.weights_registry())
+                assert isinstance(spec.input_types, Mapping)
+                input_tree = spec.input_types
             timer.mark_build_complete()
             compiled = session.compile_reusing_mefs(graph)
             self.vision_model = session.init(
@@ -2180,7 +2413,7 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
         self.compiled_modules = {
             **self.compiled_modules,
             GraphRole.VISION: _graph_callable(
-                graph, compiled, self.vision_model
+                graph, compiled, self.vision_model, input_tree
             ),
         }
         # The target's rules name its whole checkpoint, vision tower included.
@@ -2194,6 +2427,41 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
             }
         self._batching.bind_vision_encoder(self.vision_model, session)
         return model
+
+    def _load_registered_vision(
+        self,
+        builder: RegisteredDecoderBuilder,
+        context: ModelLoadContext,
+        session: InferenceSession,
+    ) -> None:
+        """Compiles a registered target's ``VISION`` module.
+
+        It compiles as it does when the target serves alone, and its
+        callable binds to the target's batching. A target whose ``VISION``
+        module is turned off encodes no images, and its batching refuses
+        them. A checkpoint that loads through rules names its weights.
+        """
+        with CompilationTimer("vision model"):
+            spec = builder.build_vision(
+                context,
+                self.arch_config_as(SpecDecodeArchConfig).target,
+                self.devices[0],
+            )
+            if spec is None:
+                return
+            roles = compile_and_init_graphs(session, {GraphRole.VISION: spec})
+        vision = roles[GraphRole.VISION]
+        self.vision_model = vision.engine_model
+        self.compiled_modules = {
+            **self.compiled_modules,
+            GraphRole.VISION: vision,
+        }
+        if vision_entries := builder.vision_weight_entries(context):
+            self.weight_naming = {
+                **self.weight_naming,
+                GraphRole.VISION: tuple(vision_entries),
+            }
+        self._batching.bind_vision_encoder(vision, session)
 
 
 class _SpecDecodeVisionCachePipelineModel(_SpecDecodeVisionPipelineModel):
@@ -2237,6 +2505,9 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         """Builds the draft and the target, then compiles the fused module."""
+        start_checkpoint_prefetch(
+            self.pipeline_config.model, self.pipeline_config.draft_model
+        )
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
         _share_target_slots(modules)
@@ -2252,7 +2523,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
                 self.pipeline_config,
                 config.kv_params,
                 self.device_refs,
-                include_signal_buffers=bool(self.signal_buffers),
+                include_signal_buffers=self.takes_signal_buffers,
                 target_config=modules.target_config,
                 draft_config=modules.draft_config,
                 hidden_states=modules.hidden_states,
@@ -2266,6 +2537,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
             weights=modules.weights,
             name=_graph_name(self.pairing, call.method),
             signal_buffer_index=call.driver.input_spec.signal_buffer_index,
+            signals_group=tp_signals,
         )
         config.input_spec = call.driver.input_spec
         self.export_input_types = call.input_types
@@ -2300,15 +2572,36 @@ def _share_target_slots(modules: _Modules) -> None:
             continue
         if getattr(draft, slot, None) is None:
             continue
-        if getattr(target, slot, None) is None:
+        found = _target_slot(target, slot)
+        if found is None:
             continue
-        setattr(draft, slot, getattr(target, slot))
-        prefix = f"target.{slot}."
+        path, module = found
+        setattr(draft, slot, module)
+        prefix = f"target.{path}."
         modules.weights.update(
-            (f"draft.{name.removeprefix('target.')}", value)
+            (f"draft.{slot}.{name.removeprefix(prefix)}", value)
             for name, value in list(modules.weights.items())
             if name.startswith(prefix)
         )
+
+
+def _target_slot(target: Any, slot: str) -> tuple[str, Any] | None:
+    """Returns the target's module for ``slot``, and its path.
+
+    That is the target's own attribute, or else its one descendant of that
+    name, as a registered decoder that wraps its language model holds it.
+    """
+    # TODO(kathywu): Replace the descendant search with a shared-slot
+    # contract the registered decoder declares.
+    if hasattr(target, slot):
+        module = getattr(target, slot)
+        return None if module is None else (slot, module)
+    found = [
+        (path, module)
+        for path, module in target.descendants
+        if path.rpartition(".")[2] == slot
+    ]
+    return found[0] if len(found) == 1 else None
 
 
 class _SpecDecodeModule(ModuleV3[..., tuple[Tensor, ...]]):
@@ -2380,46 +2673,6 @@ class _EPRuntime:
                 "EP node ID is not set. Please check if the EP initialization"
                 " is successful."
             )
-
-
-def _without_tail(
-    kv_params: MultiKVCacheParams, tail: str | None
-) -> MultiKVCacheParams:
-    """Returns the KV tree the graph declares among its KV inputs.
-
-    All of it but the target's child it declares in its tail.
-    """
-    if tail is None:
-        return kv_params
-    target = kv_params.children["target"]
-    assert isinstance(target, MultiKVCacheParams)
-    return MultiKVCacheParams.from_params(
-        {
-            **kv_params.children,
-            "target": MultiKVCacheParams.from_params(
-                {k: v for k, v in target.children.items() if k != tail}
-            ),
-        }
-    )
-
-
-def _split_tail(
-    kv_inputs: KVCacheInputs[Buffer, Buffer], tail: str
-) -> tuple[KVCacheInputs[Buffer, Buffer], Any]:
-    """Splits the target's ``tail`` child off a batch's KV inputs.
-
-    The rest stays an ``OrderedDict``, which flattens in declaration order.
-    """
-    assert isinstance(kv_inputs, Mapping)
-    target = kv_inputs["target"]
-    assert isinstance(target, Mapping)
-    rest = OrderedDict((k, v) for k, v in target.items() if k != tail)
-    return (
-        OrderedDict(
-            (k, rest if k == "target" else v) for k, v in kv_inputs.items()
-        ),
-        target[tail],
-    )
 
 
 def _named_leaves(node: Any) -> dict[str, list[Any]]:

@@ -25,7 +25,7 @@ modular_nanobind_library(
     tags = ["no-clang-tidy"],
     deps = [
         "//Support:NanobindUtils",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
         "//max/python/max/_core/max_license:GraphPython",
         "@llvm-project//mlir:IR",
     ],
@@ -42,7 +42,7 @@ modular_nanobind_library(
     deps = [
         "//Mojo:KGENDialect",
         "//Support:NanobindUtils",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
         "//max/python/max/_core/max_license:GraphPython",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
@@ -57,7 +57,7 @@ modular_nanobind_library(
     ],
     deps = [
         "//Support:NanobindUtils",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
         "//max/python/max/_core/max_license:GraphPython",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
@@ -74,7 +74,7 @@ modular_nanobind_library(
     tags = ["no-clang-tidy"],
     deps = [
         "//Support:NanobindUtils",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
         "//max/python/max/_core/max_license:GraphPython",
         "@llvm-project//mlir:IR",
     ],
@@ -90,7 +90,7 @@ modular_nanobind_library(
     tags = ["no-clang-tidy"],
     deps = [
         "//Support:NanobindUtils",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
         "//max/python/max/_core/max_license:GraphPython",
         "@llvm-project//mlir:IR",
     ],
@@ -106,7 +106,7 @@ modular_nanobind_library(
     tags = ["no-clang-tidy"],
     deps = [
         "//Support:NanobindUtils",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
         "//max/python/max/_core/max_license:GraphPython",
         "@llvm-project//mlir:IR",
     ],

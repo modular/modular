@@ -14,11 +14,10 @@
 
 from std.math import ceildiv
 from std.sys import simd_width_of
-from std.sys.info import CompilationTarget
 
 from nn.reshape import reshape
 from max.algorithm import elementwise, sync_parallelize
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from max.runtime.asyncrt import parallelism_level
@@ -141,7 +140,6 @@ def index_tensor[
     dtype: DType,
     indices_type: DType,
     batch_dims: Int,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
@@ -156,7 +154,6 @@ def index_tensor[
         indices_type: Type of indices tensor.
         batch_dims: Number of batch dimensions. The gather of indexing
                     starts from dimension of data[batch_dims:].
-        target: The target architecture to execute on.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -168,16 +165,12 @@ def index_tensor[
 
     """
 
-    comptime if is_cpu[target]():
-        return _index_tensor_1d[
-            batch_dims,
-            target=target,
-        ](data, indices, output, Optional(ctx.assert_cpu_target()))
+    comptime if ctx.target.is_cpu():
+        return _index_tensor_1d[batch_dims,](
+            data, indices, output, Optional(ctx.assert_cpu_target())
+        )
     else:
-        return _index_tensor_impl[
-            batch_dims,
-            target=target,
-        ](data, indices, output, ctx)
+        return _index_tensor_impl[batch_dims,](data, indices, output, ctx)
 
 
 # Note: this is an extremely specialized version of the kernel that only handles
@@ -188,7 +181,6 @@ def _index_tensor_1d[
     indices_type: DType,
     //,
     batch_dims: Int,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
@@ -270,12 +262,11 @@ def _index_tensor_impl[
     indices_type: DType,
     //,
     batch_dims: Int,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime assert (
         data.flat_rank >= 2 and indices.flat_rank >= 2
@@ -320,11 +311,7 @@ def _index_tensor_impl[
             out_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=ctx.T.target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous
@@ -343,35 +330,31 @@ def _index_tensor_impl[
         == 0
     )
 
-    comptime if is_cpu[target]():
-        var cpu_ctx = DeviceContext(api="cpu")
+    comptime if ctx.T.target.is_cpu():
+        var cpu_ctx = DeviceContext.cpu()
         if use_simd:
-            elementwise[
-                target_simd_width,
-                target=target,
-            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
+            elementwise[target_simd_width,](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cpu_ctx,
+            )
         else:
-            elementwise[
-                1,
-                target=target,
-            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
+            elementwise[1,](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cpu_ctx,
+            )
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
-            elementwise[
-                target_simd_width,
-                target=target,
-            ](
+            elementwise[target_simd_width,](
                 index_tensor_elementwise_fn,
                 output.layout.shape_coord(),
                 cuda_ctx,
             )
         else:
-            elementwise[
-                1,
-                target=target,
-            ](
+            elementwise[1,](
                 index_tensor_elementwise_fn,
                 output.layout.shape_coord(),
                 cuda_ctx,

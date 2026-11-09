@@ -290,21 +290,24 @@ void printMatmulReduceScatterSumAttrs(OpAsmPrinter &p, Operation *,
 
 ParseResult parseReduceScatterRMSNormAttrs(OpAsmParser &p,
                                            IntegerAttr &groupSize,
-                                           BoolAttr &hasResidual) {
+                                           BoolAttr &hasResidual,
+                                           IntegerAttr &quantBits) {
   Builder &b = p.getBuilder();
   return parseAttrGroup(
       p, {{"group_size",
            [&] { return p.parseAttribute(groupSize, b.getIntegerType(64)); }},
-          {"has_residual", [&] {
-             return p.parseAttribute(hasResidual, b.getIntegerType(1));
-           }}});
+          {"has_residual",
+           [&] { return p.parseAttribute(hasResidual, b.getIntegerType(1)); }},
+          {"quant_bits",
+           [&] { return p.parseAttribute(quantBits, b.getIntegerType(64)); }}});
 }
 
 void printReduceScatterRMSNormAttrs(OpAsmPrinter &p, Operation *,
-                                    IntegerAttr groupSize,
-                                    BoolAttr hasResidual) {
+                                    IntegerAttr groupSize, BoolAttr hasResidual,
+                                    IntegerAttr quantBits) {
   printAttrGroup(p, {nonDefault("group_size", groupSize, 0),
-                     nonDefault("has_residual", hasResidual, false)});
+                     nonDefault("has_residual", hasResidual, false),
+                     nonDefault("quant_bits", quantBits, 0)});
 }
 
 ParseResult parseAllGatherRMSNormQuantMXFP6Attrs(OpAsmParser &p,
@@ -323,29 +326,34 @@ void printAllGatherRMSNormQuantMXFP6Attrs(OpAsmPrinter &p, Operation *,
                      nonDefault("fp6_format", fp6Format, 0)});
 }
 
-ParseResult parseGroupedMatmulSwigluNvfp4Attrs(OpAsmParser &p,
-                                               StringAttr &activation,
-                                               ElementsAttr &swigluAlpha,
-                                               ElementsAttr &swigluLimit,
-                                               BoolAttr &hasARowScales) {
+ParseResult parseGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmParser &p, StringAttr &activation, ElementsAttr &swigluAlpha,
+    ElementsAttr &swigluLimit, BoolAttr &hasARowScales, IntegerAttr &maxTotalM,
+    BoolAttr &prefillDynamicClaim) {
   Type i1 = p.getBuilder().getIntegerType(1);
+  Type i64 = p.getBuilder().getIntegerType(64);
   return parseAttrGroup(
       p, {{"activation", [&] { return p.parseAttribute(activation); }},
           {"swiglu_alpha", [&] { return p.parseAttribute(swigluAlpha); }},
           {"swiglu_limit", [&] { return p.parseAttribute(swigluLimit); }},
           {"has_a_row_scales",
-           [&] { return p.parseAttribute(hasARowScales, i1); }}});
+           [&] { return p.parseAttribute(hasARowScales, i1); }},
+          {"max_total_m", [&] { return p.parseAttribute(maxTotalM, i64); }},
+          {"prefill_dynamic_claim",
+           [&] { return p.parseAttribute(prefillDynamicClaim, i1); }}});
 }
 
-void printGroupedMatmulSwigluNvfp4Attrs(OpAsmPrinter &p, Operation *,
-                                        StringAttr activation,
-                                        ElementsAttr swigluAlpha,
-                                        ElementsAttr swigluLimit,
-                                        BoolAttr hasARowScales) {
-  printAttrGroup(p, {nonDefault("activation", activation, "silu"),
-                     {"swiglu_alpha", swigluAlpha},
-                     {"swiglu_limit", swigluLimit},
-                     nonDefault("has_a_row_scales", hasARowScales, false)});
+void printGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmPrinter &p, Operation *, StringAttr activation,
+    ElementsAttr swigluAlpha, ElementsAttr swigluLimit, BoolAttr hasARowScales,
+    IntegerAttr maxTotalM, BoolAttr prefillDynamicClaim) {
+  printAttrGroup(
+      p, {nonDefault("activation", activation, "silu"),
+          {"swiglu_alpha", swigluAlpha},
+          {"swiglu_limit", swigluLimit},
+          nonDefault("has_a_row_scales", hasARowScales, false),
+          nonDefault("max_total_m", maxTotalM, 0),
+          nonDefault("prefill_dynamic_claim", prefillDynamicClaim, false)});
 }
 
 ParseResult parseCustomAttrs(OpAsmParser &p, StringAttr &symbol,
@@ -2682,7 +2690,8 @@ LogicalResult ArgNonzeroOp::verify() {
 
 template <typename Op>
 static LogicalResult
-verifyWithRankedInput(Op *op, int64_t axis, int64_t resDim, TensorType inputTy,
+verifyWithRankedInput(Op *op, int64_t axis, bool isReductionAxis,
+                      int64_t resDim, TensorType inputTy,
                       size_t &dynamicOutDims, size_t &reducedDims) {
   auto inDim = inputTy.getShape().getIntDim(axis);
   if (mlir::ShapedType::isDynamic(resDim) ||
@@ -2696,6 +2705,9 @@ verifyWithRankedInput(Op *op, int64_t axis, int64_t resDim, TensorType inputTy,
           "mo.reduce.arg_max: output dimensions must match input "
           "dimensions, except at the reduction axis where the "
           "output dimension must be 1");
+    ++reducedDims;
+  } else if (isReductionAxis && resDim == 1) {
+    // Reducing an axis of length 1 keeps the shape.
     ++reducedDims;
   }
   return success();
@@ -2746,8 +2758,8 @@ static LogicalResult argVerify(Op *op) {
       // below does it, which handles the dynamic cases as well.
 
       if (inputTy.hasRank()) {
-        if (failed(verifyWithRankedInput(op, axis, resDim, inputTy,
-                                         dynamicOutDims, reducedDims)))
+        if (failed(verifyWithRankedInput(op, axis, axis == optAxis, resDim,
+                                         inputTy, dynamicOutDims, reducedDims)))
           return failure();
       } else {
         verifyWithUnrankedInput(axis, resDim, dynamicOutDims, reducedDims);
@@ -3791,6 +3803,28 @@ void AllReduceSumOp::getEffects(
     effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
 }
 
+LogicalResult AllReduceSumOp::replaceWithBundledOps(IRRewriter &rewriter) {
+  Location loc = getLoc();
+  Value inChain = getInChain();
+
+  // Every copy reduces over the whole world rather than its own group: the
+  // kernel indexes the peer arrays by global rank, which is `peer_rank` here,
+  // so slicing a grouped allreduce down to its group's operands would make
+  // each device outside the first group read past the end of its arrays.
+  SmallVector<Value> outputs, outChains;
+  for (auto [rank, origOutput] : llvm::enumerate(getOutputs())) {
+    auto bundled = BundledAllReduceSumOp::create(
+        rewriter, loc, origOutput.getType(), inChain.getType(), getInputs(),
+        getSignalBuffers(), inChain, getGroupSizeAttr(),
+        rewriter.getI64IntegerAttr(rank));
+    outputs.push_back(bundled.getOutput());
+    outChains.push_back(bundled.getOutChain());
+  }
+  ::Impl::replaceDistributedOp(rewriter, getOperation(), getOutputs(),
+                               getOutChain(), outputs, outChains);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // BundledExpandOp
 //===----------------------------------------------------------------------===//
@@ -3825,8 +3859,86 @@ LogicalResult BundledExpandOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// Bundled collectives
+//===----------------------------------------------------------------------===//
+
+/// Checks a bundled collective's `peer_rank` against its world. Absent, the
+/// kernel takes the rank from the device id; set, it must name the signal
+/// buffer on this op's device.
+static LogicalResult verifyPeerRank(Operation *op,
+                                    std::optional<int64_t> peerRank,
+                                    ValueRange signalBuffers,
+                                    DeviceRefAttr device) {
+  if (!peerRank)
+    return success();
+  int64_t numDevices = signalBuffers.size();
+  if (*peerRank < 0 || *peerRank >= numDevices)
+    return op->emitOpError(llvm::formatv(
+        "peer_rank {0} out of range for {1} devices", *peerRank, numDevices));
+  auto peerDevice =
+      cast<BufferType>(signalBuffers[*peerRank].getType()).getDeviceRef();
+  if (device && peerDevice && device != peerDevice)
+    return op->emitOpError(llvm::formatv(
+        "peer_rank {0} names the signal buffer on {1}, but the op runs on {2}",
+        *peerRank, peerDevice, device));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // BundledAllReduceSumOp
 //===----------------------------------------------------------------------===//
+
+LogicalResult BundledAllReduceSumOp::verify() {
+  auto inputs = getInputs();
+  if (inputs.empty())
+    return emitOpError("requires at least one input");
+
+  // Zero (the attribute default) means all devices form one group.
+  int64_t numDevices = inputs.size();
+  int64_t groupSize = getGroupSize();
+  if (groupSize < 0)
+    return emitOpError("group_size must be non-negative");
+  if (groupSize == 0)
+    groupSize = numDevices;
+  if (numDevices % groupSize != 0)
+    return emitOpError(llvm::formatv(
+        "group_size must evenly divide the number of inputs ({0}), but got {1}",
+        numDevices, groupSize));
+
+  auto outputType = cast<TensorType>(getOutput().getType());
+  if (failed(verifyPeerRank(getOperation(), getPeerRank(), getSignalBuffers(),
+                            outputType.getDeviceRef())))
+    return failure();
+
+  // Groups may differ in shape (e.g. per-DP-replica row counts), so shapes
+  // are checked within a group and element types across the world.
+  auto firstType = cast<TensorType>(inputs[0].getType());
+  for (Value input : inputs.drop_front())
+    if (cast<TensorType>(input.getType()).getElementType() !=
+        firstType.getElementType())
+      return emitOpError("all inputs must have the same element type");
+  for (int64_t groupStart = 0; groupStart < numDevices;
+       groupStart += groupSize) {
+    auto groupType = cast<TensorType>(inputs[groupStart].getType());
+    for (int64_t i = groupStart + 1, e = groupStart + groupSize; i < e; ++i)
+      if (cast<TensorType>(inputs[i].getType()).getShape() !=
+          groupType.getShape())
+        return emitOpError(
+            "all inputs in each allreduce group must have the same shape");
+  }
+
+  if (outputType.getElementType() != firstType.getElementType())
+    return emitOpError("the output must have the inputs' element type");
+  if (std::optional<int64_t> peerRank = getPeerRank()) {
+    auto peerType = cast<TensorType>(inputs[*peerRank].getType());
+    if (outputType.getShape() != peerType.getShape())
+      return emitOpError(llvm::formatv(
+          "the output must have the same shape as input {0}, this device's "
+          "own input",
+          *peerRank));
+  }
+  return success();
+}
 
 void BundledAllReduceSumOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
@@ -3865,7 +3977,8 @@ LogicalResult BundledBroadcastOp::verify() {
     return emitError("the output must have the same shape as the input");
   if (outputType.getElementType() != inputType.getElementType())
     return emitError("the output must have the same element type as the input");
-  return success();
+  return verifyPeerRank(getOperation(), getPeerRank(), signalBuffers,
+                        outputType.getDeviceRef());
 }
 
 void BundledBroadcastOp::getEffects(
@@ -3890,6 +4003,9 @@ LogicalResult BundledAllGatherOp::verify() {
         inputs.size(), outputs.size()));
 
   auto device = cast<TensorType>(outputs[0].getType()).getDeviceRef();
+  if (failed(verifyPeerRank(getOperation(), getPeerRank(), getSignalBuffers(),
+                            device)))
+    return failure();
   for (auto [i, pair] : llvm::enumerate(llvm::zip(inputs, outputs))) {
     auto [input, output] = pair;
     auto inputType = cast<TensorType>(input.getType());
@@ -4075,6 +4191,101 @@ LogicalResult ReduceScatterSumOp::verify() {
 }
 
 void ReduceScatterSumOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
+// AllToAllOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult AllToAllOp::verify() {
+  auto inputs = getInputs();
+  if (inputs.empty())
+    return emitError("all_to_all requires at least one input");
+
+  auto outputs = getOutputs();
+  if (outputs.size() != inputs.size())
+    return emitError("number of outputs must match number of inputs");
+  if (getSignalBuffers().size() != inputs.size())
+    return emitError("number of signal buffers must match number of inputs");
+
+  auto firstInputType = getInputTensor(0).getType();
+  int64_t rank = firstInputType.getRank();
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    auto inputType = getInputTensor(i).getType();
+    if (inputType.getElementType() != firstInputType.getElementType())
+      return emitError("all inputs must have the same element type");
+    if (static_cast<int64_t>(inputType.getRank()) != rank)
+      return emitError("all inputs must have the same rank");
+  }
+
+  int64_t ngpus = inputs.size();
+  int64_t groupSize = getGroupSize();
+  if (groupSize < 1)
+    return emitError("group_size must be at least 1");
+  if (ngpus % groupSize != 0)
+    return emitError(llvm::formatv(
+        "group_size must evenly divide the number of inputs ({0}), but got {1}",
+        ngpus, groupSize));
+
+  int64_t splitAxis = getSplitAxis();
+  int64_t concatAxis = getConcatAxis();
+  if (splitAxis < 0 || splitAxis >= rank)
+    return emitError(llvm::formatv("invalid split_axis {0}", splitAxis));
+  if (concatAxis < 0 || concatAxis >= rank)
+    return emitError(llvm::formatv("invalid concat_axis {0}", concatAxis));
+
+  // Inputs in a group exchange chunks and therefore must match in shape.
+  for (int64_t groupStart = 0; groupStart < ngpus; groupStart += groupSize) {
+    auto groupInputType = getInputTensor(groupStart).getType();
+    for (int64_t i = groupStart + 1, e = groupStart + groupSize; i < e; ++i) {
+      if (getInputTensor(i).getType().getShape() != groupInputType.getShape())
+        return emitError(
+            "all inputs in each all_to_all group must have the same shape");
+    }
+  }
+
+  for (int64_t devIdx = 0; devIdx < ngpus; ++devIdx) {
+    auto inputType = getInputTensor(devIdx).getType();
+    auto outputType = getOutputTensor(devIdx).getType();
+    if (outputType.getElementType() != firstInputType.getElementType())
+      return emitError("output element type must match input element type");
+    if (static_cast<int64_t>(outputType.getRank()) != rank)
+      return emitError("output rank must match input rank");
+
+    // The input's shape with the split axis divided by the group size and
+    // the concat axis multiplied by it; dynamic dims stay unchecked.
+    SmallVector<int64_t> expected;
+    for (int64_t i = 0; i < rank; ++i)
+      expected.push_back(inputType.getIntDim(i));
+    if (!mlir::ShapedType::isDynamic(expected[splitAxis])) {
+      if (expected[splitAxis] % groupSize != 0)
+        return emitError(llvm::formatv(
+            "split axis of size {0} does not divide into {1} chunks",
+            expected[splitAxis], groupSize));
+      expected[splitAxis] /= groupSize;
+    }
+    if (!mlir::ShapedType::isDynamic(expected[concatAxis]))
+      expected[concatAxis] *= groupSize;
+    for (int64_t i = 0; i < rank; ++i) {
+      int64_t outputDim = outputType.getIntDim(i);
+      if (mlir::ShapedType::isDynamic(expected[i]) ||
+          mlir::ShapedType::isDynamic(outputDim))
+        continue;
+      if (outputDim != expected[i])
+        return emitError(llvm::formatv("output {0} dim {1} should be {2}",
+                                       devIdx, i, expected[i]));
+    }
+  }
+
+  return success();
+}
+
+void AllToAllOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
   MutableOperandRange signalBuffers = getSignalBuffersMutable();
 
@@ -4500,6 +4711,44 @@ void AllGatherOp::getEffects(
     effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
 }
 
+LogicalResult AllGatherOp::replaceWithBundledOps(IRRewriter &rewriter) {
+  ValueRange inputs = getInputs();
+  auto numDevices = static_cast<int64_t>(inputs.size());
+  int64_t groupSize = getGroupSize();
+  if (groupSize != numDevices)
+    return emitOpError()
+           << "a device graph supports only a full-world allgather "
+              "(group_size equal to the number of inputs, "
+           << numDevices << "), but group_size is " << groupSize
+           << ": a grouped allgather routes part of a shard through a paired "
+              "group's buffers, which a device graph cannot express";
+  if (getSliceRows())
+    return emitOpError()
+           << "a device graph has no per-device form of a row-sliced "
+              "allgather (slice_rows)";
+
+  Location loc = getLoc();
+  Value inChain = getInChain();
+
+  // The distributed op's outputs are device-major: device `d` owns the run
+  // `[d * N, (d + 1) * N)`, one gathered piece per peer.
+  ValueRange origOutputs = getOutputs();
+  SmallVector<Value> outputs, outChains;
+  for (auto rank : llvm::seq(numDevices)) {
+    auto types =
+        llvm::map_to_vector(origOutputs.slice(rank * numDevices, numDevices),
+                            [](Value v) { return v.getType(); });
+    auto bundled = BundledAllGatherOp::create(
+        rewriter, loc, types, inChain.getType(), inputs, getSignalBuffers(),
+        inChain, rewriter.getI64IntegerAttr(rank));
+    llvm::append_range(outputs, bundled.getOutputs());
+    outChains.push_back(bundled.getOutChain());
+  }
+  ::Impl::replaceDistributedOp(rewriter, getOperation(), origOutputs,
+                               getOutChain(), outputs, outChains);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // AllGatherConcatOp
 //===----------------------------------------------------------------------===//
@@ -4647,6 +4896,28 @@ void DistributedBroadcastOp::getEffects(
     effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
 }
 
+LogicalResult
+DistributedBroadcastOp::replaceWithBundledOps(IRRewriter &rewriter) {
+  Location loc = getLoc();
+  Value inChain = getInChain();
+  Value input = getInput();
+
+  // Every device's copy, the root's included, reads the root tensor; stable
+  // marking routes that read through a slot afterwards.
+  SmallVector<Value> outputs, outChains;
+  for (auto [rank, origOutput] : llvm::enumerate(getOutputs())) {
+    auto bundled = BundledBroadcastOp::create(
+        rewriter, loc, origOutput.getType(), inChain.getType(), input,
+        getSignalBuffers(), inChain, getRootAttr(),
+        rewriter.getI64IntegerAttr(rank));
+    outputs.push_back(bundled.getOutput());
+    outChains.push_back(bundled.getOutChain());
+  }
+  ::Impl::replaceDistributedOp(rewriter, getOperation(), getOutputs(),
+                               getOutChain(), outputs, outChains);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // AllReduceAddRMSNormQuantFP8Op
 //===----------------------------------------------------------------------===//
@@ -4676,6 +4947,18 @@ void Composite::DistributedReduceScatterRMSNormOp::getEffects(
 //===----------------------------------------------------------------------===//
 
 void Composite::DistributedAllGatherRMSNormOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
+// DistributedAllGatherGatedResidualRMSNormOp
+//===----------------------------------------------------------------------===//
+
+void Composite::DistributedAllGatherGatedResidualRMSNormOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
   MutableOperandRange signalBuffers = getSignalBuffersMutable();
 
@@ -4720,6 +5003,16 @@ void Composite::DistributedAllReduceRMSNormOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// ReduceRMSNormOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult Composite::ReduceRMSNormOp::verify() {
+  if (cast<TensorType>(getWeight().getType()).getRank() != 1)
+    return emitOpError("weight must be rank 1");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ReduceRMSNormRoPEOp
 //===----------------------------------------------------------------------===//
 
@@ -4731,6 +5024,38 @@ LogicalResult Composite::ReduceRMSNormRoPEOp::verify() {
     return emitOpError("mo.composite.rms_norm_rope is only supported on GPU");
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// QuantizeDynamicScaledFP8Op
+//===----------------------------------------------------------------------===//
+
+LogicalResult Composite::QuantizeDynamicScaledFP8Op::verify() {
+  auto inputTy = cast<TensorType>(getInput().getType());
+  if (inputTy.getRank() != 2)
+    return emitOpError("the input must be [rows, cols]");
+  if (cast<TensorType>(getOutput().getType()).getShape() != inputTy.getShape())
+    return emitOpError("the output must have the same shape as the input");
+  if (cast<TensorType>(getScales().getType()).getRank() != 2)
+    return emitOpError("the scales must be rank 2");
+
+  int64_t groupSize = getGroupSizeOrPerToken().getSExtValue();
+  if (groupSize != -1 && groupSize <= 0)
+    return emitOpError("group_size_or_per_token must be -1 or positive");
+
+  if (std::optional<ElementsAttr> floor = getAmaxFloor()) {
+    auto values = floor->tryGetValues<Attribute>();
+    auto value = values ? dyn_cast<FloatAttr>(*values->begin()) : nullptr;
+    if (!value || !value.getValue().isFinite() || value.getValue().isNegative())
+      return emitOpError("amax_floor must be finite and non-negative");
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// DebugTensorPrintOp
+//===----------------------------------------------------------------------===//
+
+bool DebugTensorPrintOp::isDataTypeAgnostic() { return false; }
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions

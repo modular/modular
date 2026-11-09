@@ -112,7 +112,7 @@ def verify_matmul[
     init_on_gpu: Bool = True,
     enable_normal_epilogue: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     c_shape: Coord,
     a_shape: Coord,
     b_shape: Coord,
@@ -334,7 +334,7 @@ def bench_matmul[
     enable_compute_epilogue: Bool = False,
     enable_normal_epilogue: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     shape_c: Coord,
     shape_a: Coord,
@@ -387,7 +387,7 @@ def bench_matmul[
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     def run_vendor_blas(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         tensor_a: TileTensor[a_type, ...],
         tensor_b: TileTensor[a_type, ...],
         tensor_c: TileTensor[mut=True, c_type, ...],
@@ -403,7 +403,7 @@ def bench_matmul[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {var cb_a, var cb_b, var cb_c, imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
@@ -514,7 +514,7 @@ def create_matmul_bench[
     enable_compute_epilogue: Bool,
     enable_normal_epilogue: Bool,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     m: MType,
     n: NType,

@@ -19,7 +19,7 @@ from max.gpu.host.info import B200
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic
 from std.sys import simd_width_of
-from std.sys import align_of, size_of, get_defined_bool
+from std.sys import size_of, get_defined_bool
 import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
 from max.algorithm.functional import _elementwise_impl_gpu
@@ -42,7 +42,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from layout.tensor_engine import TensorEngine
 from std.logger import Logger
 from std.memory import bitcast
@@ -1270,8 +1270,7 @@ def matmul_dynamic_scaled_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
-    target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -1318,7 +1317,6 @@ def matmul_dynamic_scaled_fp8[
         n_scale_granularity,
         k_scale_granularity,
         transpose_b,
-        target,
         pdl_level,
     ](
         c,
@@ -1343,7 +1341,6 @@ def _matmul_dynamic_scaled_fp8_impl[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -1489,7 +1486,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
             comptime if input_scale_granularity == "tensor":
                 matmul[
-                    target=target,
                     transpose_b=transpose_b,
                     _trace_description=_trace_string,
                 ](
@@ -1497,11 +1493,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                     a,
                     b,
                     scale_compute_lambda_fn_tensor,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx),
                 )
             else:
                 matmul[
-                    target=target,
                     transpose_b=transpose_b,
                     _trace_description=_trace_string,
                 ](
@@ -1509,7 +1504,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                     a,
                     b,
                     scale_compute_lambda_fn,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx),
                 )
 
         else:
@@ -1579,7 +1574,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
                 comptime if input_scale_granularity == "tensor":
                     matmul[
-                        target=target,
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1587,11 +1581,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                         a,
                         b,
                         scaled_output_fn_tensor,
-                        Optional[DeviceContext](ctx),
+                        Optional(ctx),
                     )
                 else:
                     matmul[
-                        target=target,
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1599,7 +1592,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                         a,
                         b,
                         scaled_output_fn,
-                        Optional[DeviceContext](ctx),
+                        Optional(ctx),
                     )
             else:
                 var N_rt = Int(b.dim[b_row_axis]())
@@ -1613,7 +1606,6 @@ def _matmul_dynamic_scaled_fp8_impl[
 
                 comptime if input_scale_granularity == "tensor":
                     matmul[
-                        target=target,
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1621,11 +1613,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                         a,
                         b,
                         scaled_output_fn_tensor,
-                        Optional[DeviceContext](ctx),
+                        Optional(ctx),
                     )
                 else:
                     matmul[
-                        target=target,
                         transpose_b=transpose_b,
                         _trace_description=_trace_string,
                     ](
@@ -1633,7 +1624,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                         a,
                         b,
                         scaled_output_fn,
-                        Optional[DeviceContext](ctx),
+                        Optional(ctx),
                     )
 
     elif (
@@ -2349,7 +2340,7 @@ def blockwise_scaled_fp8_with_epilogue[
     scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
     has_epilogue_fn: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2366,8 +2357,9 @@ def blockwise_scaled_fp8_with_epilogue[
     Callers must allocate `c`; with `has_epilogue_fn` the matmul result is
     written into `c` and then read back by `epilogue_fn`.
 
-    `pdl_level` applies to the SM100 matmul launch only (defaults to
-    `PDLLevel()`, which is off).
+    `pdl_level` applies to the SM100 matmul and epilogue launches. It defaults
+    to `ON`: they wait for their predecessor at entry and release their
+    dependents at exit.
     """
 
     # 1D/2D blockwise scaling with (m, n, k) granularity in
@@ -2521,7 +2513,6 @@ def blockwise_scaled_fp8_with_epilogue[
                 ](c, a, b, a_scales, b_scales, ctx)
             elementwise[
                 simd_size,
-                target="gpu",
                 _trace_description="elementwise_blockwise_scaled_fp8_epilogue",
             ](value_epilogue_wrapper, Coord(m, n), ctx)
         else:

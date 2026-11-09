@@ -46,6 +46,7 @@ TensorT = TypeVar("TensorT", default=Tensor)
 """
 
 _LeafT = TypeVar("_LeafT")
+_SignalT = TypeVar("_SignalT", default=BufferValue)
 
 
 @tree.dataclass(frozen=True, kw_only=True)
@@ -66,7 +67,7 @@ class VisionInputs(Generic[_LeafT]):
 
 
 @tree.dataclass(frozen=True, kw_only=True)
-class DecoderInputs(Generic[TensorT]):
+class DecoderInputs(Generic[TensorT, _SignalT]):
     """The inputs of a ``DECODER`` module's ``forward``.
 
     The decoder graph takes the fields in this order, which is the canonical
@@ -83,6 +84,9 @@ class DecoderInputs(Generic[TensorT]):
 
     input_row_offsets: TensorT
     """Each sequence's start in :attr:`tokens`, shape ``[batch_size + 1]``."""
+
+    token_positions: TensorT | None = None
+    """Each ragged token's absolute sequence position, when declared."""
 
     host_input_row_offsets: TensorT | None = None
     """A CPU copy of :attr:`input_row_offsets`, under data parallelism.
@@ -103,12 +107,14 @@ class DecoderInputs(Generic[TensorT]):
     ``data_parallel_splits[i + 1]``.
     """
 
-    signals: tuple[BufferValue, ...] | None = None
+    signals: tuple[_SignalT, ...] | None = None
     """The allreduce signal buffers, one per device, of a graph-API decoder.
 
     A multi-device graph-API decoder takes them, and so does one that sets
     ``always_signal_buffers``. A ModuleV3 decoder never sees them: its
-    compiled graph adds its own.
+    compiled graph adds its own, where its ``input_layout`` names them.
+    Runtime inputs hold driver buffers; graph-API inputs hold buffer values
+    by default.
     """
 
     kv: Any
@@ -116,7 +122,8 @@ class DecoderInputs(Generic[TensorT]):
 
     batch_context_lengths: tuple[TensorT, ...] | None = None
     """Each data-parallel replica's page-aligned KV context length, a CPU
-    ``int32`` tensor of shape ``[1]`` per replica.
+    ``int32`` tensor of shape ``[1]`` per replica, or one per device for a
+    decoder that sets ``device_context_length_dtype``.
 
     Set when the config sets
     :attr:`~max.pipelines.lib.registration_runtime.DeploymentConfig.takes_batch_context_lengths`,
@@ -135,6 +142,28 @@ class DecoderInputs(Generic[TensorT]):
     The framework binds them into the decoder's LoRA layers before it calls
     the decoder, so a decoder doesn't read them.
     """
+
+    constants: Any = None
+    """The checkpoint-backed deployment inputs, held for the model lifetime."""
+
+    state: tuple[Any, ...] | None = None
+    """The decoder's per-request state, in the order its
+    :class:`~max.pipelines.lib.request_state.RequestStateStore` declares:
+    tensors, or buffers for state the graph updates in place. The
+    architecture defines what each one holds.
+    """
+
+    scratch: tuple[Any, ...] | None = None
+    """The workspace buffers the decoder declares with ``scratch_types``, in
+    its order (see :mod:`~max.pipelines.lib.decoder_scratch`). The same
+    buffers come every step, and nothing in them outlives one."""
+
+    stage_boundary: Any = None
+    """What the previous pipeline stage's decoder returned, in the tree it
+    returned it, on a stage after the first (see
+    :attr:`~max.pipelines.lib.pipeline_stage.PipelineStage.boundary_types`).
+    A stage before the last returns such a tree in place of
+    :class:`DecoderOutputs`."""
 
 
 DecoderOutputs = ModuleV3Outputs

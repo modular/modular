@@ -38,6 +38,7 @@ model:
     device_memory_utilization: 0.78
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   max_batch_input_tokens: 8192
   # Well below the point where the gated-delta state-pool offsets stop fitting

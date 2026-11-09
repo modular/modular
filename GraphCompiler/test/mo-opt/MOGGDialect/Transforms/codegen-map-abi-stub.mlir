@@ -25,7 +25,7 @@
 // CHECK:   var [[PLAYOUT:.*]] = layout.row_major([[PSHAPE]])
 // CHECK:   var [[PIN:.*]] = {{.*}}mogg_tensor_init[DType.float32, 2, False, extensibility.IO.Input, {{[0-9]+}}]({{.*}}.unsafe_bitcast[NoneType](), [[PLAYOUT]])
 // CHECK:   var [[POUT:.*]] = {{.*}}mogg_tensor_init[DType.float32, 2, True, extensibility.IO.Output, {{[0-9]+}}]({{.*}}.unsafe_bitcast[NoneType](), {{.*}})
-// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute[target = "cpu"]([[POUT]], [[PIN]], [[PC]])
+// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute([[POUT]], [[PIN]], [[PC]])
 
 mo.graph @plain(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.custom [symbol = "map_lower_one_plain_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
@@ -46,7 +46,7 @@ mo.graph @dyn(%a: !mo.tensor<[batch, 4], f32>) -> !mo.tensor<[batch, 4], f32> {
 // via `mogg_as_scalar`, passed after the input in the DPS execute call.
 // CHECK: def {{__[A-Za-z0-9_]+}}(
 // CHECK:   var [[SC:.*]] = {{.*}}mogg_as_scalar({{.*}})
-// CHECK:   {{.*}}.MapLowerScalar.execute[target = "cpu"]({{.*}}, {{.*}}, [[SC]], {{.*}})
+// CHECK:   {{.*}}.MapLowerScalar.execute({{.*}}, {{.*}}, [[SC]], {{.*}})
 
 mo.graph @scalar(%a: !mo.tensor<[4], f32>, %s: !mo.tensor<[], f32>) -> !mo.tensor<[4], f32> {
   %c = mo.custom [symbol = "map_lower_scalar", device = #M.device_ref<"cpu", 0>](%a, %s) : (!mo.tensor<[4], f32>, !mo.tensor<[], f32>) -> !mo.tensor<[4], f32>
@@ -59,7 +59,7 @@ mo.graph @scalar(%a: !mo.tensor<[4], f32>, %s: !mo.tensor<[], f32>) -> !mo.tenso
 // CHECK:   var {{.*}} = std.utils.StaticTuple[size = 2]({{.*}}._ptr, {{.*}}._ptr)
 // CHECK:   var {{.*}} = std.utils.StaticTuple[size = 2]({{.*}}.shape(), {{.*}}.shape())
 // CHECK:   var [[VT:.*]] = extensibility.VariadicTensors[{{.*}}static_specs = {{.*}}]({{.*}}, {{.*}})
-// CHECK:   {{.*}}.MapLowerVariadic.execute[target = "cpu"]({{.*}}, [[VT]], {{.*}})
+// CHECK:   {{.*}}.MapLowerVariadic.execute({{.*}}, [[VT]], {{.*}})
 
 mo.graph @variadic(%a: !mo.tensor<[4], f32>, %b: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
   %c = mo.custom [symbol = "map_lower_variadic", device = #M.device_ref<"cpu", 0>](%a, %b) : (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>

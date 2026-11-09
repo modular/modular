@@ -147,7 +147,7 @@ def bench_p2p[
 
     # bench_multicontext requires >= 2 contexts, so always pass both.
     # For unidir only GPU 0 does work; GPU 1 is idle (see bench_iter).
-    var ctxs = List[DeviceContext]()
+    var ctxs = List[DeviceContext[]]()
     ctxs.append(DeviceContext(device_id=0))
     ctxs.append(DeviceContext(device_id=1))
 
@@ -164,11 +164,11 @@ def bench_p2p[
 
     @inline(.always)
     def bench_iter(
-        mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bencher: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut buf0_write, mut buf1_write, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut buf0_write, mut buf1_write, imm}:
             # In unidir mode only GPU 0 does work; GPU 1 is idle.
             comptime if not is_bidir:

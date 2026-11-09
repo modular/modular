@@ -25,7 +25,8 @@ from std.sys import (
 )
 
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
@@ -183,6 +184,14 @@ def _small_MN_gemms_impl[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
+                GridBlockAttributeLaunchConfig(
+                    grid_dim=(
+                        ceildiv(m, config.tile_m),
+                        ceildiv(n, config.tile_n),
+                    ),
+                    block_dim=config.num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                ),
                 c,
                 a.as_imm(),
                 b.as_imm(),
@@ -190,12 +199,6 @@ def _small_MN_gemms_impl[
                 Int32(n),
                 Int32(k),
                 host_args=(epilogue_fn,),
-                grid_dim=(
-                    ceildiv(m, config.tile_m),
-                    ceildiv(n, config.tile_n),
-                ),
-                block_dim=config.num_threads,
-                attributes=pdl_launch_attributes(pdl_level),
             )
         elif has_compute_fn:
             comptime kernel = gemv_split_k_compute_fn[
@@ -219,6 +222,14 @@ def _small_MN_gemms_impl[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
+                GridBlockAttributeLaunchConfig(
+                    grid_dim=(
+                        ceildiv(m, config.tile_m),
+                        ceildiv(n, config.tile_n),
+                    ),
+                    block_dim=config.num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                ),
                 c,
                 a.as_imm(),
                 b.as_imm(),
@@ -226,12 +237,6 @@ def _small_MN_gemms_impl[
                 Int32(n),
                 Int32(k),
                 host_args=(compute_fn,),
-                grid_dim=(
-                    ceildiv(m, config.tile_m),
-                    ceildiv(n, config.tile_n),
-                ),
-                block_dim=config.num_threads,
-                attributes=pdl_launch_attributes(pdl_level),
             )
         else:
             comptime kernel = gemv_split_k[
@@ -254,18 +259,20 @@ def _small_MN_gemms_impl[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
+                GridBlockAttributeLaunchConfig(
+                    grid_dim=(
+                        ceildiv(m, config.tile_m),
+                        ceildiv(n, config.tile_n),
+                    ),
+                    block_dim=config.num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                ),
                 c,
                 a.as_imm(),
                 b.as_imm(),
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                grid_dim=(
-                    ceildiv(m, config.tile_m),
-                    ceildiv(n, config.tile_n),
-                ),
-                block_dim=config.num_threads,
-                attributes=pdl_launch_attributes(pdl_level),
             )
 
 
@@ -307,7 +314,7 @@ def dispatch_gemv[
         transpose_b: Whether `b` is stored transposed (defaults to
             `False`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output
             (defaults to `False`).
         has_compute_fn: Whether to apply `compute_fn` (defaults to
@@ -398,7 +405,7 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -454,7 +461,7 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_compute_fn: Whether to apply `compute_fn`. When False,
             `compute_fn` is ignored (defaults to `True`).
     Args:
@@ -514,7 +521,7 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -1342,7 +1349,7 @@ def matmul_dispatch_sm100_bf16[
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output
             (defaults to `False`).
         has_compute_fn: Whether to apply `compute_fn` (defaults to
@@ -1460,7 +1467,7 @@ def matmul_dispatch_sm100_fp32[
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output
             (defaults to `False`).
         has_compute_fn: Whether to apply `compute_fn` (defaults to
@@ -1579,6 +1586,10 @@ def _vendor_blas_matmul_sm100[
                     b_engine=type_of(b).Engine,
                 ]
                 ctx.enqueue_function[kernel](
+                    GridBlockLaunchConfig(
+                        grid_dim=grid_dim,
+                        block_dim=(BLOCK_DIM, BLOCK_DIM),
+                    ),
                     c,
                     a,
                     b,
@@ -1586,8 +1597,6 @@ def _vendor_blas_matmul_sm100[
                     Int32(n),
                     Int32(k),
                     host_args=(epilogue_fn,),
-                    grid_dim=grid_dim,
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
             elif has_compute_fn:
                 comptime kernel = matmul_kernel_naive_compute_fn[
@@ -1605,6 +1614,10 @@ def _vendor_blas_matmul_sm100[
                     b_engine=type_of(b).Engine,
                 ]
                 ctx.enqueue_function[kernel](
+                    GridBlockLaunchConfig(
+                        grid_dim=grid_dim,
+                        block_dim=(BLOCK_DIM, BLOCK_DIM),
+                    ),
                     c,
                     a,
                     b,
@@ -1612,8 +1625,6 @@ def _vendor_blas_matmul_sm100[
                     Int32(n),
                     Int32(k),
                     host_args=(compute_fn,),
-                    grid_dim=grid_dim,
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
             else:
                 comptime kernel = matmul_kernel_naive[
@@ -1630,14 +1641,16 @@ def _vendor_blas_matmul_sm100[
                     b_engine=type_of(b).Engine,
                 ]
                 ctx.enqueue_function[kernel](
+                    GridBlockLaunchConfig(
+                        grid_dim=grid_dim,
+                        block_dim=(BLOCK_DIM, BLOCK_DIM),
+                    ),
                     c,
                     a,
                     b,
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    grid_dim=grid_dim,
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
                 )
         return
 
@@ -1680,7 +1693,7 @@ def dispatch_sm100_batched_matmul[
     a_type: DType,
     b_type: DType,
     transpose_b: Bool,
-    pdl_level: PDLLevel = PDLLevel.OFF,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
@@ -1698,7 +1711,7 @@ def dispatch_sm100_batched_matmul[
         b_type: Element type of the RHS operand `b`.
         transpose_b: Whether `b` is stored transposed.
         pdl_level: Programmatic dependent launch level for the dispatched
-            kernel (defaults to `PDLLevel.OFF`).
+            kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
     Args:
         c: Output batched matrix as a rank-3 mutable `TileTensor` of
             shape `[batch, M, N]`.
@@ -1896,7 +1909,7 @@ def sm100_heuristic_and_outliers_dispatch[
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_epilogue_tensor: Whether an epilogue tensor is supplied for
             the TMA epilogue load path (defaults to `False`).
         epilogue_is_1d: Whether the epilogue tensor is treated as

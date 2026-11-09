@@ -19,7 +19,8 @@ decoder graph up to ``max_denoising_steps`` times with entropy-bound
 acceptance, a linear temperature schedule, self-conditioning feedback, and
 stable-and-confident early stopping. The accepted canvas, truncated at the
 first EOS, is appended to each request context, so the serving frontend
-streams up to ``canvas_length`` tokens per step.
+streams up to ``canvas_length`` tokens per step. The denoising loop runs
+over at most ``_MAX_CANVAS_BATCH`` requests at a time (see the constant).
 
 Decoder steps never advance the committed context length: canvas K/V land in
 the cache slots after each request's committed length and are overwritten on
@@ -60,6 +61,9 @@ _DEFAULT_GENERATION_PARAMS = {
     "confidence_threshold": 0.005,
     "pad_token_id": 0,
 }
+
+# A denoise step's memory grows with its request count, so cap it.
+_MAX_CANVAS_BATCH = 16
 
 
 class _CanvasTokenView:
@@ -166,12 +170,15 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         row_offsets: Buffer,
         views: list[_CanvasTokenView],
         rng: np.random.Generator,
-    ) -> tuple[Buffer, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Runs one decoder forward and samples a candidate canvas.
 
-        Returns ``(sc_logits_out, argmax, sampled, entropy)``: the device
-        self-conditioning logits to feed back, and host arrays for the
-        argmax canvas, the categorical sample, and per-token entropy.
+        The step reads its self-conditioning logits from ``sc_logits`` and
+        leaves the ones for the next step there.
+
+        Returns:
+            Host arrays for the argmax canvas, the categorical sample, and
+            per-token entropy.
         """
         pm = self._pipeline_model
         device = self._devices[0]
@@ -197,6 +204,8 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
                 kv_cache_inputs=kv_inputs,
             )
         )
+        # A live step output keeps the step's whole activation block alive.
+        sc_logits.inplace_copy_from(sc_out)
 
         argmax = argmax_d.to_numpy().reshape(batch, canvas_len)
         entropy = entropy_d.to_numpy().reshape(batch, canvas_len)
@@ -209,7 +218,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         u = rng.random(n_tokens, dtype=np.float32)
         choice = (cdf < u[:, None]).sum(axis=-1).clip(0, topk_i.shape[1] - 1)
         sampled = topk_i[np.arange(n_tokens), choice].reshape(batch, canvas_len)
-        return sc_out, argmax, sampled, entropy
+        return argmax, sampled, entropy
 
     @staticmethod
     def _accept_and_renoise(
@@ -267,6 +276,25 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
     def _generate_canvas(
         self, canvas_batch: list[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
+        """Denoises the batch's canvases in bounded sub-batches.
+
+        Sub-batching exists only to bound the decoder step's transient
+        memory (see ``_MAX_CANVAS_BATCH``); each request's canvas is
+        denoised exactly as it would be alone.
+        """
+        res: dict[RequestID, TextGenerationOutput] = {}
+        for start in range(0, len(canvas_batch), _MAX_CANVAS_BATCH):
+            res.update(
+                self._denoise_canvas(
+                    canvas_batch[start : start + _MAX_CANVAS_BATCH]
+                )
+            )
+        return res
+
+    def _denoise_canvas(
+        self, canvas_batch: list[TextContext]
+    ) -> dict[RequestID, TextGenerationOutput]:
+        """Runs the full denoise loop for one bounded sub-batch."""
         pm = self._pipeline_model
         config = pm.config  # type: ignore[attr-defined]
         params = self._generation_params()
@@ -311,7 +339,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
 
         for cur_step in range(max_steps, 0, -1):
             temperature = t_min + (t_max - t_min) * (cur_step / max_steps)
-            sc_logits, argmax, sampled, entropy = self._sample_canvas(
+            argmax, sampled, entropy = self._sample_canvas(
                 current,
                 sc_logits,
                 sc_enabled,

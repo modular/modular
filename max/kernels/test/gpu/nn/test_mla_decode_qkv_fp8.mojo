@@ -46,7 +46,7 @@ from layout import (
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import (
     CausalMask,
     NullMask,
@@ -126,7 +126,7 @@ def test[
     num_heads: Int,
     group: Int = 1,
     batch_size: Int = 1,
-](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+](seq_len: Int, num_keys: Int, ctx: DeviceContext[],) raises:
     print(
         t"test_mla_decode_qkv_fp8 batch_size: {batch_size} seq_len:"
         t" {seq_len} num_keys: {num_keys} q_type: {q_type} kv_type:"
@@ -257,11 +257,11 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            flare_mla_decoding[config=config](
+            flare_mla_decoding[config=config, kernels=SM100MLA](
                 out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
@@ -271,7 +271,7 @@ def test[
                 scalar_args_buf_tt,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
-            flare_mla_decoding[config=config](
+            flare_mla_decoding[config=config, kernels=SM100MLA](
                 out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
@@ -410,7 +410,7 @@ def bench[
     num_heads: Int,
     group: Int,
     batch_size: Int,
-](num_keys: Int, ctx: DeviceContext) raises:
+](num_keys: Int, ctx: DeviceContext[]) raises:
     """Benchmark native FP8 MLA decode kernel (no correctness check)."""
     comptime scale = Float32(0.125)
     comptime kv_num_heads = num_heads // group
@@ -478,12 +478,12 @@ def bench[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt, imm
     }:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
@@ -518,7 +518,7 @@ def bench[
 def test_decoding[
     batch_size: Int,
     mla_mask_type: MLAMaskType,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test[
         mla_mask_type,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -557,12 +557,12 @@ def test_decoding[
 # The dispatcher enables fold_q when num_q_heads * q_len <= BM(64) and q_len > 1.
 # Small head groups (num_heads in {8, 16}) at seq_len in {2, 4, 8} exercise the
 # M-dimension fold: BM=64 packs q_len_fold * num_q_heads rows of the same
-# batch element, collapsing grid.y to 1.
+# batch element, collapsing grid_y to 1.
 def test_decoding_fold[
     batch_size: Int,
     num_heads: Int,
     mla_mask_type: MLAMaskType,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test[
         mla_mask_type,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -589,7 +589,7 @@ def test_decoding_fold[
 def run_fold_both_masks[
     batch_size: Int,
     num_heads: Int,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test_decoding_fold[batch_size, num_heads, MLAMaskType.NO_MASK](
         ctx, seq_len, num_keys
     )
@@ -604,7 +604,7 @@ def run_fold_both_masks[
 def run_fold_warp_local[
     batch_size: Int,
     num_heads: Int,
-](ctx: DeviceContext, seq_len: Int) raises:
+](ctx: DeviceContext[], seq_len: Int) raises:
     run_fold_both_masks[batch_size, num_heads](ctx, seq_len, 256)
     test_decoding_fold[batch_size, num_heads, MLAMaskType.CAUSAL](
         ctx, seq_len, 2048
@@ -624,7 +624,7 @@ def test_sw[
     num_heads: Int,
     group: Int = 1,
     batch_size: Int = 1,
-](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+](seq_len: Int, num_keys: Int, ctx: DeviceContext[],) raises:
     print(
         t"test_mla_decode_qkv_fp8 [SlidingWindow] W: {window_size} batch_size:"
         t" {batch_size} seq_len: {seq_len} num_keys: {num_keys} num_heads:"
@@ -728,10 +728,10 @@ def test_sw[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
@@ -843,7 +843,7 @@ def test_decoding_sw[
     batch_size: Int,
     num_heads: Int,
     window_size: Int,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test_sw[
         window_size,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -925,7 +925,7 @@ def main() raises:
 
             # fold-path configs.  num_q_heads * q_len <= BM(64) and
             # q_len > 1 triggers fold_q=True in the dispatcher.  BM=64 packs
-            # q_len_fold * num_q_heads M-rows into a single tile, so grid.y=1.
+            # q_len_fold * num_q_heads M-rows into a single tile, so grid_y=1.
             #
             # Fold path is implemented for NVIDIA SM10x only (mla_decode_qkv_fp8
             # struct fold_q comptime branch).  AMD backend does not yet support

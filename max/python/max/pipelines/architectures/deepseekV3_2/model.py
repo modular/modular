@@ -22,8 +22,8 @@ from max.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.ep_config import EPConfig
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import GraphRole, GraphSpec, PipelineConfig
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig

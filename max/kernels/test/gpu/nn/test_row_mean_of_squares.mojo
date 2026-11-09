@@ -62,7 +62,7 @@ def run_row_mean_of_squares_gpu[
     ](coords: Coord, val: SIMD[out_dtype, width]) {var out_buf} -> None:
         out_buf.store((Int(coords[0]), 0), val)
 
-    row_mean_of_squares[in_dtype, out_dtype, 2, target="gpu"](
+    row_mean_of_squares[in_dtype, out_dtype, 2](
         input_fn, output_fn, Coord(shape), ctx
     )
     ctx.enqueue_copy(out_h, out_d)

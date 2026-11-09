@@ -57,7 +57,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.state_space.kimi_delta import KdaGateMode
+from max.nn._graph_ops.state_space.kimi_delta import KdaGateMode
 from max.pipelines.architectures.kimi_k3_modulev3.layers import (
     kda_attention,
 )
@@ -131,6 +131,10 @@ def _recurrence_mlir(
             *tensors,
             gate_mode=gate_mode,
             out_type=io_type,
+            # The plain build's arm: the pin only matters under
+            # speculation, and the routing under test is the same either
+            # way.
+            pin_fma=False,
         )
         graph.output(TensorValue(out))
     return str(graph)

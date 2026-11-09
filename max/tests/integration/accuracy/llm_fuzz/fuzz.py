@@ -282,6 +282,17 @@ Examples:
         ),
     )
     needle_group.add_argument(
+        "--needle-settle-seconds",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "Wait before each follow-up turn, so a KV tier that saves "
+            "asynchronously has stored the previous turn before it is "
+            "reloaded (default: 0)"
+        ),
+    )
+    needle_group.add_argument(
         "--needle-context-tokens",
         type=int,
         default=None,
@@ -438,6 +449,9 @@ async def run(args: argparse.Namespace) -> int:
     if args.needle_long_conversations < 0:
         print(f"{RED}--needle-long-conversations must be >= 0{RESET}")
         return 1
+    if args.needle_settle_seconds < 0:
+        print(f"{RED}--needle-settle-seconds must be >= 0{RESET}")
+        return 1
 
     model_config = build_model_config(
         args.model,
@@ -462,6 +476,7 @@ async def run(args: argparse.Namespace) -> int:
         needle_turns=args.needle_turns,
         needle_context_tokens=args.needle_context_tokens,
         needle_strict_cache_hits=args.needle_strict_cache_hits,
+        needle_settle_seconds=args.needle_settle_seconds,
     )
 
     exclude_groups: set[str] = set()

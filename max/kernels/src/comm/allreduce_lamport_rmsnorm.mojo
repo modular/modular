@@ -13,10 +13,10 @@
 """Fused one-shot Lamport allreduce + RMSNorm (high-perf protocol).
 
 Grafts the barrier-free Lamport comm protocol from `comm/lamport.mojo` +
-`comm/allreduce.mojo` (in-register local seed, poll-all-peers arrival, 3-way
-generation rotation, fused clear, the device-resident `Signal.lamport_region` /
-`lamport_state`) onto a row-blocked RMSNorm epilogue so the whole TP
-allreduce+RMSNorm producer is a single kernel.
+`comm/allreduce.mojo` (in-register local pack, poll-all-peers arrival, a sum in
+global rank order, 3-way generation rotation, fused clear, the device-resident
+`Signal.lamport_region` / `lamport_state`) onto a row-blocked RMSNorm epilogue
+so the whole TP allreduce+RMSNorm producer is a single kernel.
 
 Layout: with the 128-bit Lamport pack (`atomic_width` = 16B / sizeof(dtype) =
 8 for bf16) one thread owns exactly one pack = one column group of a row
@@ -106,8 +106,6 @@ def _allreduce_lamport_rmsnorm_kernel[
     CLUSTER_SIZE: Int = 1,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
-    pdl: Bool = True,
-    early_launch: Bool = True,
 ](
     result: MutPointer[Scalar[dtype], MutAnyOrigin],
     src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
@@ -160,16 +158,11 @@ def _allreduce_lamport_rmsnorm_kernel[
         2, Scalar[accum_type], address_space=.SHARED
     ]()
 
-    # PDL: wait for the producer, then (if early_launch) release the consumer
-    # immediately so it overlaps the whole AR+RMSNorm. Called by all threads in
-    # the block before any divergence. With `early_launch=False` the trigger is
-    # instead moved to the END of the kernel (after the output is written), so
-    # the consumer overlaps only the tail bookkeeping + grid teardown -- partial
-    # overlap rather than full.
-    comptime if pdl:
-        wait_on_dependent_grids()
-        comptime if early_launch:
-            launch_dependent_grids()
+    # PDL: wait for the producer, then release the consumer immediately so it
+    # overlaps the whole AR+RMSNorm. Called by all threads in the block before
+    # any divergence.
+    wait_on_dependent_grids()
+    launch_dependent_grids()
 
     # This rank's own region (polled) + peer regions in round-robin order.
     var my_region = rank_sigs[my_rank][].lamport_region_ptr[dtype]()
@@ -212,8 +205,8 @@ def _allreduce_lamport_rmsnorm_kernel[
 
         var accum = SIMD[accum_type, atomic_width](0)
         if is_valid:
-            # (a) Local input pack -> producer-sanitize; kept in-register as the
-            # reduction seed, so this rank only touches the ngpus-1 remote slots.
+            # (a) Local input pack -> producer-sanitize; kept in-register, so
+            # this rank only touches the ngpus-1 remote slots.
             var local = remove_neg_zero[dtype, atomic_width](
                 src.unsafe_load[width=atomic_width, alignment=alignment](base)
             )
@@ -232,29 +225,54 @@ def _allreduce_lamport_rmsnorm_kernel[
                 ](push_off * atomic_width, local)
 
             # (d) Poll all ngpus-1 remote slots until none hold the sentinel
-            # (observes parallel arrival rather than per-peer spinning).
-            var peer_packs = Array[SIMD[dtype, atomic_width], ngpus](
+            # (observes parallel arrival rather than per-peer spinning), then
+            # (e) reduce in global rank order 0 .. ngpus-1 in accum_type: a
+            # per-rank order rounds the sum differently on each rank. Branching
+            # once on the rank makes every slot index a compile-time constant,
+            # so the polls keep the round-robin order and `packs` stays in
+            # registers.
+            var packs = Array[SIMD[dtype, atomic_width], ngpus](
                 uninitialized=True
             )
-            var done = False
-            while not done:
-                done = True
-                comptime for i in range(1, ngpus):
-                    var peer = circular_add[ngpus](my_rank, i)
+            comptime if ngpus == 2:
+                # Two terms sum to the same bits in either order, so the
+                # local-first sum is already rank-consistent.
+                var done = False
+                while not done:
                     var slot_off = (
-                        data_gen_off + peer * Lamport.MAX_PACKS + global_pack
+                        data_gen_off
+                        + (1 - my_rank) * Lamport.MAX_PACKS
+                        + global_pack
                     )
-                    var p = my_region.unsafe_load[
+                    packs[1] = my_region.unsafe_load[
                         width=atomic_width, alignment=alignment, volatile=True
                     ](slot_off * atomic_width)
-                    peer_packs[i] = p
-                    if has_neg_zero[dtype, atomic_width](p):
-                        done = False
-
-            # (e) Reduce: in-register local seed + arrived peers, in accum_type.
-            accum = local.cast[accum_type]()
-            comptime for i in range(1, ngpus):
-                accum += peer_packs[i].cast[accum_type]()
+                    done = not has_neg_zero[dtype, atomic_width](packs[1])
+                accum = local.cast[accum_type]() + packs[1].cast[accum_type]()
+            else:
+                comptime for r in range(ngpus):
+                    if my_rank == r:
+                        packs[r] = local
+                        var done = False
+                        while not done:
+                            done = True
+                            comptime for i in range(1, ngpus):
+                                comptime g = (r + i) % ngpus
+                                var slot_off = (
+                                    data_gen_off
+                                    + g * Lamport.MAX_PACKS
+                                    + global_pack
+                                )
+                                packs[g] = my_region.unsafe_load[
+                                    width=atomic_width,
+                                    alignment=alignment,
+                                    volatile=True,
+                                ](slot_off * atomic_width)
+                                if has_neg_zero[dtype, atomic_width](packs[g]):
+                                    done = False
+                        accum = packs[0].cast[accum_type]()
+                        comptime for g in range(1, ngpus):
+                            accum += packs[g].cast[accum_type]()
 
             # The residual is replicated, so each rank adds it locally rather
             # than through the reduction.
@@ -301,17 +319,6 @@ def _allreduce_lamport_rmsnorm_kernel[
                     width=atomic_width, alignment=alignment, volatile=True
                 ](clr_off * atomic_width, sentinel)
 
-    # When the early trigger is disabled, release the consumer HERE instead --
-    # after this block's `result` writes are done, but before the tail
-    # bookkeeping (leftover clear + generation advance) and grid teardown. The
-    # next GEMM thus still overlaps that tail rather than waiting for full grid
-    # completion (partial overlap). launch_dependent_grids makes this block's
-    # prior writes visible to the dependent grid, so triggering after the output
-    # store is correct (strictly safer than the start trigger, which fires before
-    # any output is written).
-    comptime if pdl and not early_launch:
-        launch_dependent_grids()
-
     # (f-tail) If the previous call was LARGER, clear the leftover packs of the
     # reused generation here (empty in the common same-size case).
     var cur_packs = rows * packs_per_row
@@ -345,8 +352,8 @@ def _allreduce_lamport_rmsnorm_kernel[
 
 
 comptime _SINGLE_BLOCK_SIZE = align_down(
-    DeviceContext.default_device_info.max_thread_block_size,
-    DeviceContext.default_device_info.warp_size,
+    DeviceContext[].default_device_info.max_thread_block_size,
+    DeviceContext[].default_device_info.warp_size,
 )
 comptime _CLUSTER_BLOCK_SIZE = 256
 comptime _MAX_CLUSTER_SIZE = 8
@@ -358,7 +365,7 @@ comptime _CLUSTER_MAX_BYTES = 512 * 1024
 
 @inline(.always)
 def _clusters_supported[ngpus: Int]() -> Bool:
-    comptime info = DeviceContext.default_device_info
+    comptime info = DeviceContext[].default_device_info
     return ngpus >= 8 and info.api == "cuda" and info.compute >= H100.compute
 
 
@@ -405,8 +412,6 @@ def _lamport_allreduce_rmsnorm_launch[
     *,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
-    pdl: Bool = True,
-    early_launch: Bool = True,
 ](
     my_rank: Int,
     src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
@@ -465,8 +470,6 @@ def _lamport_allreduce_rmsnorm_launch[
     if rows == 0:
         return
 
-    comptime pdl_level = PDLLevel.ON if pdl else PDLLevel.OFF
-
     def launch[block_size: Int, cluster_size: Int]() raises {imm}:
         comptime kernel = _allreduce_lamport_rmsnorm_kernel[
             ResidualLayoutType=residual.T.LayoutType,
@@ -479,8 +482,6 @@ def _lamport_allreduce_rmsnorm_launch[
             CLUSTER_SIZE=cluster_size,
             has_residual=has_residual,
             multiply_before_cast=multiply_before_cast,
-            pdl=pdl,
-            early_launch=early_launch,
         ]
         var num_clusters = min(MAX_NUM_BLOCKS_UPPER_BOUND // cluster_size, rows)
         ctx.enqueue_function[kernel](
@@ -499,7 +500,7 @@ def _lamport_allreduce_rmsnorm_launch[
             block_dim=block_size,
             cluster_dim=OptionalReg(Dim(cluster_size, 1, 1)) if cluster_size
             > 1 else None,
-            attributes=pdl_launch_attributes(pdl_level),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     comptime if _clusters_supported[ngpus]():
@@ -514,9 +515,6 @@ def _lamport_allreduce_rmsnorm_launch[
 def lamport_allreduce_rmsnorm[
     dtype: DType,
     ngpus: Int,
-    *,
-    pdl: Bool = True,
-    early_launch: Bool = True,
 ](
     my_rank: Int,
     src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
@@ -537,18 +535,15 @@ def lamport_allreduce_rmsnorm[
     including CUDA-graph replay -- rotate the buffers correctly with no per-call
     fill or phase argument.
 
+    The launch carries the PDL attribute, and the kernel waits for its
+    predecessor before any read and releases its dependents at entry so a
+    following GEMM overlaps the whole AR+RMSNorm.
+
     Parameters:
         dtype: Element type (bf16/fp16/fp32 transport).
         ngpus: Number of participating GPUs.
-        pdl: If True (default) launch with PDL and early-trigger the consumer.
-        early_launch: If True (default) and `pdl`, call launch_dependent_grids()
-            at kernel start so the consumer overlaps the whole kernel. If False,
-            the trigger moves to the END (after the output is written), so the
-            consumer overlaps only the tail bookkeeping + grid teardown.
     """
-    _lamport_allreduce_rmsnorm_launch[
-        dtype, ngpus, pdl=pdl, early_launch=early_launch
-    ](
+    _lamport_allreduce_rmsnorm_launch[dtype, ngpus](
         my_rank,
         src,
         dst,

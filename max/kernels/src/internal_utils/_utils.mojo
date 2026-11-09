@@ -13,7 +13,7 @@
 
 import std.time
 from std.collections import Optional
-from std.math import ceildiv, floor
+from std.math import ceildiv, floor, gcd
 from std.os import getenv
 from std.sys import argv, get_defined_bool, get_defined_string
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -393,9 +393,11 @@ def init_vector_gpu[
 
     def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= _len:
-                    return
+            # Every store is guarded, not just the last: the launch rounds the
+            # thread count up to a whole block, so a buffer shorter than four
+            # strides has threads whose first stores already land past the end.
+            if tid >= _len:
+                return
             x[tid] = values[i]
             tid += stride
 
@@ -468,9 +470,10 @@ def _init_block_scaled_scales_gpu[
 
     def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= _len:
-                    return
+            # Same short-buffer guard as `init_vector_gpu`: the last store's
+            # check does not protect the first three.
+            if tid >= _len:
+                return
             x[tid] = Scalar[dtype](values[i])
             tid += stride
 
@@ -537,3 +540,21 @@ def human_readable_size(size: Int) -> String:
     if size >= KB:
         return String(t"{_pretty_print_float(Float64(size) / KB)}KB")
     return String(t"{size}B")
+
+
+def coprime_multiplier(n: Int) -> Int:
+    """Returns a stride that visits every position of a length-`n` ring.
+
+    A stride that shares a factor with `n` revisits a subset of the ring, so
+    synthetic top-k indices built from it would touch too few distinct keys.
+
+    Args:
+        n: Ring length to be coprime with.
+
+    Returns:
+        The first of 3, 5, 7, 11 and 13 coprime with `n`, else 1.
+    """
+    for m in [3, 5, 7, 11, 13]:
+        if gcd(m, n) == 1:
+            return m
+    return 1

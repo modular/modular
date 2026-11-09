@@ -328,15 +328,17 @@ compile-time evaluation folds away any overhead. This generalizes the technique
 behind unified kernel launch to other domains.
 
 A capability is a versioned `Supports<Name>V<N>` trait. Each device holds its
-backend's extension set as `extensions`, and you branch on a capability with
-`conforms_to()`. Inside the branch the type is refined, so the capability's
-methods are only visible where they're supported, and you can't call them by
-accident. For example, peer access between devices:
+backend's extension set behind `extensions()`, and you branch on a capability
+with `conforms_to()`. Inside the branch the type is refined, so the
+capability's methods are only visible where they're supported, and you can't
+call them by accident. For example, peer access between devices:
 
 ```mojo
-comptime Ext = type_of(device.extensions)
+comptime Ext = type_of(device.extensions())
 comptime if conforms_to(Ext, SupportsPeerAccessV1):
-    var peer_access = device.extensions.peer_access()
+    var ok = device.extensions().can_access_peer(
+        device.raw_driver()[], device.handle(), peer.handle()
+    )
 ```
 
 Declaring an extension doesn't require changing the core driver. A backend

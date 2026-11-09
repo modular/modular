@@ -19,7 +19,7 @@ bare causes (MOCO-4307).
 """
 
 from layout import Idx
-from layout.tile_layout import Layout, TensorLayout, row_major
+from layout.layout import Layout, TensorLayout, row_major
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 

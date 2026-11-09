@@ -95,21 +95,6 @@ TEST(TensorShape, constructor) {
     EXPECT_EQ(TensorShape(shape).getAsString(), "1x2x3x4");
   }
 
-  {
-    SmallVector<ssize_t> shape{1, kDynamic, -1, 4};
-    EXPECT_EQ(TensorShape(shape).getAsString(), "1x?x?x4");
-  }
-
-  {
-    SmallVector<size_t> shape{1, static_cast<size_t>(kDynamic), 3, 4};
-    EXPECT_EQ(TensorShape(shape).getAsString(), "1x?x3x4");
-  }
-
-  {
-    SmallVector<uint64_t> shape{1, static_cast<uint64_t>(kDynamic), 3, 4};
-    EXPECT_EQ(TensorShape(shape).getAsString(), "1x?x3x4");
-  }
-
   EXPECT_EQ(TensorShape(kDynamicallyRanked).getAsString(), "*");
 
   EXPECT_EQ(TensorShape({1, 2, 3, 4}).getAsString(), "1x2x3x4");
@@ -190,10 +175,6 @@ TEST(TensorShape, stringizing) {
   EXPECT_EQ(shape({5}).getAsString(), "5");
   EXPECT_EQ(shape({5, 10}).getAsString(), "5x10");
   EXPECT_EQ(shape({5, 10, 20}).getAsString(), "5x10x20");
-  EXPECT_EQ(shape({kDynamic, 10, 20}).getAsString(), "?x10x20");
-  EXPECT_EQ(shape({5, kDynamic, 20}).getAsString(), "5x?x20");
-  EXPECT_EQ(shape({5, 10, kDynamic}).getAsString(), "5x10x?");
-  EXPECT_EQ(shape({kDynamic}).getAsString(), "?");
   EXPECT_EQ(TensorShape(kDynamicallyRanked).getAsString(), "*");
 }
 
@@ -202,13 +183,6 @@ TEST(TensorShape, parsing) {
   EXPECT_EQ(TensorShape::parseFromString("5"), ok(shape({5})));
   EXPECT_EQ(TensorShape::parseFromString("5x10"), ok(shape({5, 10})));
   EXPECT_EQ(TensorShape::parseFromString("5x10x20"), ok(shape({5, 10, 20})));
-  EXPECT_EQ(TensorShape::parseFromString("?x10x20"),
-            ok(shape({kDynamic, 10, 20})));
-  EXPECT_EQ(TensorShape::parseFromString("5x?x20"),
-            ok(shape({5, kDynamic, 20})));
-  EXPECT_EQ(TensorShape::parseFromString("5x10x?"),
-            ok(shape({5, 10, kDynamic})));
-  EXPECT_EQ(TensorShape::parseFromString("?"), ok(shape({kDynamic})));
   EXPECT_EQ(TensorShape::parseFromString("*"),
             ok(TensorShape(kDynamicallyRanked)));
   EXPECT_EQ(TensorShape::parseFromString("2x3.5"),
@@ -225,19 +199,19 @@ TEST(TensorShape, parsing) {
 }
 
 TEST(TensorShape, yamlInput) {
-  llvm::yaml::Input input("shape: 5x?");
+  llvm::yaml::Input input("shape: 5x6");
   ShapeHolder holder;
   input >> holder;
-  EXPECT_EQ(shape({5, kDynamic}), holder.shape);
+  EXPECT_EQ(shape({5, 6}), holder.shape);
 }
 
 TEST(TensorShape, yamlOutput) {
   std::string str;
   llvm::raw_string_ostream os(str);
   llvm::yaml::Output output(os);
-  ShapeHolder holder{shape({5, kDynamic})};
+  ShapeHolder holder{shape({5, 6})};
   output << holder;
-  EXPECT_EQ(str, "---\nshape:           5x?\n...\n");
+  EXPECT_EQ(str, "---\nshape:           5x6\n...\n");
 }
 
 // Regression test for #29927.

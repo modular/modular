@@ -840,13 +840,18 @@ TEST_F(DriverPluginQueueTest, QueueLaunchHostFunc) {
 TEST_F(DriverPluginQueueTest, QueueWaitValue64) {
   if (api != "CUDA" && api != "HIP")
     GTEST_SKIP() << "stream wait-value requires a CUDA or HIP driver";
-  // Pinned host memory is device-visible; pre-set the value so the equality
-  // wait is already satisfied when the queue reaches it.
+  // Pinned host memory is device-visible; pre-set the value so the wait is
+  // already satisfied when the queue reaches it, whether it lands on the
+  // target or has passed it.
   M_driver_memory_t mem = nullptr;
   ASSERT_SUCCESS(memory_alloc_pinned(contexts[0], sizeof(uint64_t), &mem));
   void *addr = nullptr;
   ASSERT_SUCCESS(memory_property(mem, M_DRIVER_MEMORY_PROPERTY_ADDRESS, &addr));
   *static_cast<uint64_t *>(addr) = 42;
+  ASSERT_SUCCESS(
+      queue_wait_value64(queues[0], reinterpret_cast<uint64_t>(addr), 42));
+  ASSERT_SUCCESS(queue_synchronize(queues[0]));
+  *static_cast<uint64_t *>(addr) = 43;
   ASSERT_SUCCESS(
       queue_wait_value64(queues[0], reinterpret_cast<uint64_t>(addr), 42));
   ASSERT_SUCCESS(queue_synchronize(queues[0]));

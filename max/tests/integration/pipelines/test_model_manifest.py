@@ -76,6 +76,13 @@ def _offline_hf_construction() -> Iterator[None]:
         # Some tests force HF_HUB_OFFLINE=False (online path); keep the eager
         # config-existence probe offline so it doesn't hit the network.
         patch("huggingface_hub.file_exists", return_value=False),
+        # Same for the eager generation config load: huggingface-hub retries
+        # network errors with backoff (~23s per call), which times out the
+        # suite. Raising takes the default-GenerationConfig fallback.
+        patch(
+            "max.pipelines.lib.config.model_config.GenerationConfig.from_pretrained",
+            side_effect=OSError("network disabled in tests"),
+        ),
     ):
         yield
 

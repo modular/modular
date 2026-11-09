@@ -13,12 +13,14 @@
 
 # DOC: layout/layouts.mdx
 
-from layout import IntTuple, Layout, print_layout
+from layout import Coord, coord, Idx
 from layout.layout import (
+    Layout,
     blocked_product,
-    make_layout,
-    make_ordered_layout,
-    tile_to_shape,
+    col_major,
+    col_major_nested,
+    row_major,
+    row_major_nested,
     zipped_divide,
 )
 
@@ -26,69 +28,64 @@ from layout.layout import (
 def use_layout_constructor():
     print("layout constructor")
     var tiled_layout = Layout(
-        [[3, 2], [2, 5]],  # shape
-        [[1, 6], [3, 12]],  # strides
+        Coord(coord[3, 2], coord[2, 5]),  # shape
+        Coord(coord[1, 6], coord[3, 12]),  # strides
     )
-    print_layout(tiled_layout)
-    print()
-
-
-def use_tile_to_shape():
-    print("tile to shape")
-    var tts = tile_to_shape(Layout.col_major(3, 2), [6, 10])
-    print_layout(tts)
+    print(tiled_layout)
     print()
 
 
 def use_blocked_product():
     print("blocked product")
-    # Define 2x3 tile
-    var tile = Layout.col_major(3, 2)
+    # Define a 3x2 tile
+    var tile = col_major[3, 2]()
     # Define a 2x5 tiler
-    var tiler = Layout.col_major(2, 5)
-    var blocked = blocked_product(tile.copy(), tiler.copy())
+    var tiler = col_major[2, 5]()
+    var blocked = blocked_product(tile, tiler)
 
     print("Tile:")
-    print_layout(tile)
+    print(tile)
     print("\nTiler:")
-    print_layout(tiler)
+    print(tiler)
     print("\nTiled layout:")
     print(blocked)
     print()
 
 
-def use_make_ordered_layout():
-    print("make ordered layout")
-    var ordered = make_ordered_layout(
-        [[3, 2], [2, 5]],  # shape
-        [[0, 2], [1, 3]],  # order
-    )
-    print(ordered)
-
-
-def use_make_layout():
-    print("make layout")
-    var layout1 = Layout([2, 3], [3, 1])
-    var layout2 = Layout([4, 5], [5, 1])
-    var combined = make_layout(layout1, layout2)
-    print_layout(combined)
-
-
 def use_zipped_divide():
-    # from layout import Layout, IntTuple
-    # from layout.layout import zipped_divide
     print("zipped divide")
-    # Create layouts
-    var base = Layout.row_major(6, 8)
-    var pattern = Layout([2, 2])
-    var result = zipped_divide(base, pattern)
-    print_layout(result)
+    comptime base = row_major[6, 4]()
+    comptime result = zipped_divide[coord[2, 2]](base)
+    print(base)
+    print(result)
+    print(result(coord[1, 1]))
+    print(result(coord[1]))
+    print(result(Coord(coord[1, 0], coord[1, 0])))
+    print()
+
+
+def use_nested_layouts():
+    print("nested layouts")
+    # A re-nested row-major layout: a 2x2 outer grid of 3x4 inner
+    # fragments. Shape ((2, 3), (2, 4)) flattens to (2, 3, 2, 4),
+    # producing row-major strides (24, 8, 4, 1), re-nested as
+    # ((24, 8), (4, 1)).
+    var nested = row_major_nested(
+        Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
+    )
+    print(nested)
+
+    # The column-major variant re-nests col-major strides over the same
+    # flattened shape: (1, 2, 6, 12), re-nested as ((1, 2), (6, 12)).
+    var nested_col = col_major_nested(
+        Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
+    )
+    print(nested_col)
+    print()
 
 
 def main() raises:
     use_layout_constructor()
-    use_tile_to_shape()
     use_blocked_product()
-    use_make_ordered_layout()
-    use_make_layout()
     use_zipped_divide()
+    use_nested_layouts()

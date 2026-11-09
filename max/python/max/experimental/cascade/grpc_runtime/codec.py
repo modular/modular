@@ -30,6 +30,7 @@ import numpy as np
 from max.experimental.cascade.core import Result, ResultIter, Runtime
 from max.experimental.cascade.core.type_hints import async_elem_type
 from pydantic import BaseModel, TypeAdapter
+from typing_extensions import TypeForm
 
 from . import cascade_runtime_v1_pb2 as pb
 
@@ -98,7 +99,7 @@ def is_remote_ref(slot: pb.ValueSlot) -> bool:
 async def decode_value_slot(
     slot: pb.ValueSlot,
     dial: Callable[[str], Runtime],
-    type_hint: object | None = None,
+    type_hint: TypeForm[Any] | None = None,
 ) -> Any:
     """Decode one ValueSlot back into a Python value.
 
@@ -150,7 +151,7 @@ def encode_args(args: Sequence[Any]) -> list[pb.ValueSlot]:
 async def decode_args(
     args: Sequence[pb.ValueSlot],
     dial: Callable[[str], Runtime],
-    arg_types: dict[str, object | None],
+    arg_types: dict[str, TypeForm[Any] | None],
 ) -> list[Any]:
     """Decode a list of ValueSlots back into positional arguments.
 
@@ -180,7 +181,7 @@ def encode_kwargs(kwargs: Mapping[str, Any]) -> dict[str, pb.ValueSlot]:
 async def decode_kwargs(
     kwargs: Mapping[str, pb.ValueSlot],
     dial: Callable[[str], Runtime],
-    kwarg_types: dict[str, object | None],
+    kwarg_types: dict[str, TypeForm[Any] | None],
 ) -> dict[str, Any]:
     """Decode a name -> ValueSlot mapping back into keyword arguments."""
     for kwarg in kwargs:

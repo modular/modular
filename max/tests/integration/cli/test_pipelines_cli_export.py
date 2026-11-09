@@ -37,6 +37,7 @@ def _export_args(output: Path) -> list[str]:
         "--model-path",
         _env("TEST_LLAMA_REPO"),
         f"--custom-architectures={_env('PIPELINES_CUSTOM_ARCHITECTURE')}",
+        "--no-prefer-module-v3",
         "--devices=cpu",
         "--quantization-encoding=float32",
         "--max-length=128",

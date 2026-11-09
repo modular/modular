@@ -26,10 +26,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from _paged_cache_test_utils import build_paged_cache
-from max.driver import Accelerator
+from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.layers.decoder_layer import (
     KimiK3DecoderLayer,
 )
@@ -122,7 +122,7 @@ def _build_layer(
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_decoder_layer_mla_decompressed_ragged_matches_padded() -> None:
     hidden, heads, qk_nope, qk_rope, v_head, q_lora, kv_lora, inter = (
@@ -186,7 +186,7 @@ def test_decoder_layer_mla_decompressed_ragged_matches_padded() -> None:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_decoder_layer_mla_latent_ragged_matches_padded() -> None:
     # The fused MLA prefill/decode kernel only instantiates for a 576-wide
@@ -236,6 +236,9 @@ def test_decoder_layer_mla_latent_ragged_matches_padded() -> None:
             kv_collection=kv_collection,
             input_row_offsets=input_row_offsets,
             buffer_size=_PAGE_SIZE,
+            buffer_length=Tensor(
+                np.array([_PAGE_SIZE], dtype=np.int32), device=CPU()
+            ),
         )
         freqs_cis = kimi_k3_nope_freqs_cis(
             max_seq_len=total_seq_len,

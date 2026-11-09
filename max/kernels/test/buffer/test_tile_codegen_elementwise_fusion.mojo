@@ -25,7 +25,7 @@ from extensibility import ElementwiseFusionTile, get_kernel_tile_shape
 
 from layout import ComptimeInt, RowMajorLayout, TileTensor, row_major
 from layout.tile_io import TileCopier
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 
 from std.testing import TestSuite, assert_equal
 from std.utils.index import IndexList

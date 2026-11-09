@@ -46,14 +46,10 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
+from max.nn.kv_cache import KVCacheParams, KVConnectorType, MultiKVCacheParams
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVConnectorType,
-    MultiKVCacheParams,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.arch import (
     dflash_mimo_v2_modulev3_draft_arch,
 )
@@ -95,11 +91,12 @@ GRAPH_NAME = "unified_dflash_mimo_v2"
 """The graph-API pairing's graph name, which Mach's block-spec executor binds
 by constant."""
 
-N_INPUTS_1DEV = 35
-"""Inputs at 1 device without the bitmask triple (38 with it): the fused
+N_INPUTS_1DEV = 38
+"""Inputs at 1 device without the bitmask triple (41 with it): the fused
 signature's tokens, offsets, return_n_logits, the self-declared signal
-buffer, the 24 KV leaves (8 per group over 3 groups), the draft tokens, the
-6 sampling tails. The grammar bitmask is off: its host-wait op is GPU-only."""
+buffer, the 27 KV leaf inputs (9 per group over 3 groups, the split
+record last), the draft tokens, the 6 sampling tails. The grammar
+bitmask is off: its host-wait op is GPU-only."""
 
 
 def test_construct_kv_params_builds_a_tree_the_dkv_connector_serves(
@@ -372,16 +369,19 @@ def test_the_trace_carries_the_w4a8_chain(
     W8A8 FP8 chain inline."""
     _, text = staged
     for op, expected in (
-        ("mo.moe.create.indices.with.scales.offset", 1),
-        ("mo.grouped.quantize.dynamic.block.scaled.with_row_indices", 1),
+        ("moe.create.indices.with.scales.offset", 1),
+        (
+            "quantization.grouped.quantize.dynamic.block.scaled.with_row_indices",
+            1,
+        ),
         # The plain name is a substring of the row-indexed one, so both
         # grouped quantizes count here.
-        ("mo.grouped.quantize.dynamic.block.scaled", 2),
+        ("quantization.grouped.quantize.dynamic.block.scaled", 2),
         ("mo.composite.grouped_matmul_block_scaled", 2),
         ("ep.fused_silu", 1),
-        ("mo.moe.finalize", 1),
-        ("mo.quantize_dynamic_scaled_float8", 7),
-        ("mo.matmul_dynamic_scaled_fp8", 7),
+        ("moe.finalize", 1),
+        ("mo.composite.quantize_dynamic_scaled_fp8", 7),
+        ("matmul.dynamic_scaled_fp8", 7),
         ("f8e4m3fn", None),
         ("f8e8m0fnu", None),
     ):
@@ -400,10 +400,10 @@ def test_the_trace_carries_the_drafter_kernels(
     stores."""
     _, text = staged
     for op, expected in (
-        ("mo.kv_cache.store.paged.ragged", 16),
-        ("mo.fused_qk_rope.ragged.paged", 8),
-        ("mo.mha.ragged.paged.sink_weights", 5),
-        ("mo.mha.ragged.paged", 6),
+        ("kv_cache.store.paged.ragged", 16),
+        ("kv_cache.fused_qk_rope.ragged.paged", 8),
+        ("attention.mha.ragged.paged.sink_weights", 5),
+        ("attention.mha.ragged.paged", 6),
     ):
         n = text.count(op)
         assert n == expected, f"{op}: expected {expected}, got {n}"

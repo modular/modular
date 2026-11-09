@@ -40,7 +40,6 @@ device.
 is legacy machinery; read its docstring before using it.
 """
 
-from std.memory import AddressSpace
 from std.reflection import reflect
 
 from layout import (
@@ -362,7 +361,7 @@ trait TileTensorable(Tensor):
 
     comptime LayoutType: TensorLayout
     comptime alignment: Int
-    comptime Engine: TensorEngine = CurrentTensorEngine[AddressSpace.GENERIC]
+    comptime Engine: TensorEngine = CurrentTensorEngine[Self.LayoutType]
     """How the argument's backing memory is referenced.
 
     Per-target instantiation metadata like `alignment`, not part of the

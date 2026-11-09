@@ -14,12 +14,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -27,6 +27,10 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.registration_runtime import (
+    DeploymentConfig,
+    ModuleRuntime,
+)
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
@@ -37,7 +41,7 @@ from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class DeepseekV2Config(ArchConfigWithKVCache):
+class DeepseekV2Config(ArchConfigWithKVCache, DeploymentConfig):
     """Configuration for DeepseekV2 models."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
@@ -168,6 +172,21 @@ class DeepseekV2Config(ArchConfigWithKVCache):
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """The number of hidden layers in the checkpoint."""
         return huggingface_config.num_hidden_layers
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Returns the config sized to the planner's batch context.
+
+        Raises:
+            ValueError: If the deployment runs on the CPU.
+        """
+        if any(device.is_host for device in runtime.mesh.devices):
+            raise ValueError("DeepseekV2 currently only supported on gpu.")
+        return replace(
+            self,
+            max_batch_context_length=(
+                runtime.max_batch_total_tokens or self.max_batch_context_length
+            ),
+        )
 
     @override
     @classmethod

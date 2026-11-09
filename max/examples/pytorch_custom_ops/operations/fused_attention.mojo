@@ -59,7 +59,7 @@ from layout import TensorLayout, TileTensor, coord, row_major, stack_allocation
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
 
-from extensibility import register, InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable, register
 
 from std.utils import Index
 
@@ -72,37 +72,16 @@ struct FusedAttention:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
-        //,  # Forces the previous two params to be inferred from the args
         BN: Int,  # Dimension of blocks to split Q into
         BD: Int,  # Dimension of blocks to split K, V into
-        target: StaticString,  # "cpu" or "gpu"
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        query: InputTensor[dtype=dtype, rank=rank, ...],
-        key: InputTensor[dtype=dtype, rank=rank, ...],
-        value: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
+        query: Some[Input & Tensor],
+        key: Some[Input & Tensor],
+        value: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime assert rank == 2, "rank must be 2"
-
-        # Query tensor
-        var Q = query.to_tile_tensor().as_unsafe_any_origin()
-        # Key tensor
-        var K = key.to_tile_tensor().as_unsafe_any_origin()
-        # Value tensor
-        var V = value.to_tile_tensor().as_unsafe_any_origin()
-        # Attention output tensor
-        var O = output.to_tile_tensor().as_unsafe_any_origin()
-
-        comptime if target == "cpu":
-            print("Running on CPU")
-            fused_attention_cpu[BN, BD](Q, K, V, O)
-        else:
-            var dev_ctx = ctx
-            print("Running on GPU")
-            fused_attention_gpu[BN, BD](dev_ctx, Q, K, V, O)
+        fused_attention[BN, BD](output, query, key, value, ctx)
 
 
 # CustomOpLibrary does not support names with '::' in them currently. Create
@@ -111,22 +90,68 @@ struct FusedAttention:
 struct FusedAttentionAlias:
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
-        //,  # Forces the previous two params to be inferred from the args
         BN: Int,  # Dimension of blocks to split Q into
         BD: Int,  # Dimension of blocks to split K, V into
-        target: StaticString,  # "cpu" or "gpu"
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        query: InputTensor[dtype=dtype, rank=rank, ...],
-        key: InputTensor[dtype=dtype, rank=rank, ...],
-        value: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
+        query: Some[Input & Tensor],
+        key: Some[Input & Tensor],
+        value: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        FusedAttention.execute[BN=BN, BD=BD, target=target](
-            output, query, key, value, ctx
-        )
+        fused_attention[BN, BD](output, query, key, value, ctx)
+
+
+def fused_attention[
+    BN: Int,
+    BD: Int,
+](
+    output: Some[Output & Tensor],
+    query: Some[Input & Tensor],
+    key: Some[Input & Tensor],
+    value: Some[Input & Tensor],
+    ctx: DeviceContext,
+) raises:
+    """Computes fused attention on the CPU or GPU for both registrations."""
+    comptime assert conforms_to(type_of(output), TileTensorable)
+    comptime assert conforms_to(type_of(query), TileTensorable)
+    comptime assert conforms_to(type_of(key), TileTensorable)
+    comptime assert conforms_to(type_of(value), TileTensorable)
+    comptime dtype = type_of(output).dtype
+    comptime assert type_of(query).dtype == dtype
+    comptime assert type_of(key).dtype == dtype
+    comptime assert type_of(value).dtype == dtype
+    comptime assert type_of(output).rank == 2, "rank must be 2"
+    comptime assert type_of(query).rank == 2, "rank must be 2"
+    comptime assert type_of(key).rank == 2, "rank must be 2"
+    comptime assert type_of(value).rank == 2, "rank must be 2"
+
+    # The GPU kernel takes plain `TileTensor`s, so each view is rebuilt from
+    # its pointer and layout rather than keeping the argument's own engine.
+    # Query tensor
+    var Q = TileTensor(
+        ptr=query.to_tile_tensor[dtype]().ptr, layout=query.layout()
+    ).as_unsafe_any_origin()
+    # Key tensor
+    var K = TileTensor(
+        ptr=key.to_tile_tensor[dtype]().ptr, layout=key.layout()
+    ).as_unsafe_any_origin()
+    # Value tensor
+    var V = TileTensor(
+        ptr=value.to_tile_tensor[dtype]().ptr, layout=value.layout()
+    ).as_unsafe_any_origin()
+    # Attention output tensor
+    var O = TileTensor(
+        ptr=output.to_tile_tensor[dtype]().ptr, layout=output.layout()
+    ).as_unsafe_any_origin()
+
+    comptime if ctx.target.is_cpu():
+        print("Running on CPU")
+        fused_attention_cpu[BN, BD](Q, K, V, O)
+    else:
+        var dev_ctx = ctx
+        print("Running on GPU")
+        fused_attention_gpu[BN, BD](dev_ctx, Q, K, V, O)
 
 
 @inline(.always)
@@ -222,7 +247,7 @@ def fused_attention_cpu[
                 m_1_delta -= m_2
                 m_1_delta.exp()
                 O_i *= m_1_delta
-                var PV = matmul["cpu"](E, V_tile)
+                var PV = matmul[is_cpu=True](E, V_tile)
                 O_i += PV
                 m_1.copy_from(m_2)
                 l_1.copy_from(l_2)
@@ -235,7 +260,7 @@ def matmul[
     dtype: DType,
     rhs_dtype: DType,
     //,
-    target: StaticString,
+    is_cpu: Bool,
     transpose_b: Bool = False,
 ](
     lhs: TileTensor[dtype, ...],
@@ -251,7 +276,7 @@ def matmul[
         row_major[lhs.static_shape[0], rhs.static_shape[0]]()
     )
 
-    comptime if target == "cpu":
+    comptime if is_cpu:
         comptime for m in range(lhs.static_shape[0]):
             comptime for n in range(rhs.static_shape[1]):
                 res[m, n] = 0.0
@@ -343,7 +368,7 @@ def fused_attention_kernel[
     for tile_n_idx in range(N // BN_1):
         var K_tile = K.tile[BN_1, D](tile_n_idx, 0)
         var V_tile = V.tile[BN_1, BD](tile_n_idx, block_idx.x)
-        var S = matmul["gpu", transpose_b=True](Q_tile, K_tile)
+        var S = matmul[is_cpu=False, transpose_b=True](Q_tile, K_tile)
         var m_2 = stack_allocation[q_dtype](row_major[BN]())
         max[axis=1](S, m_2)
         m_2.max(m_1)
@@ -371,7 +396,7 @@ def fused_attention_kernel[
         m_1_delta -= m_2
         m_1_delta.exp()
         O_i *= m_1_delta
-        var PV = matmul["gpu"](E, V_tile)
+        var PV = matmul[is_cpu=False](E, V_tile)
         O_i += PV
         m_1.copy_from(m_2)
         l_1.copy_from(l_2)

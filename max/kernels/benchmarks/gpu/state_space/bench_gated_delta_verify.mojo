@@ -55,7 +55,7 @@ def _median(times: List[Float64]) -> Float64:
 def _bench[
     state_dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     batch: Int,
     window: Int,
     value_heads: Int,
@@ -143,7 +143,7 @@ def _bench[
     var output = TileTensor(output_d, row_major(total_tokens, value_dim))
 
     def launch(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm batch,
         imm HV,
@@ -197,7 +197,7 @@ def _bench[
         )
 
     def restore(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {imm pool_d, imm pool_initial_d, imm ring_d, imm ring_initial_d,}:
         lctx.enqueue_copy(pool_d, pool_initial_d)
         lctx.enqueue_copy(ring_d, ring_initial_d)

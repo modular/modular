@@ -34,14 +34,16 @@ import logging
 import weakref
 from collections.abc import Callable
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
 import numpy.typing as npt
 import pytest
 from max._entrypoints.cli.generate import _with_debug_defaults, stream_context
-from max.driver import Buffer, DeviceSpec
+from max.driver import CPU, Buffer, DeviceSpec
+from max.dtype import DType
 from max.pipelines.context import (
     EOSTracker,
     GenerationStatus,
@@ -69,6 +71,8 @@ from max.pipelines.lib.log_probabilities import _MAX_TOP_LOGPROBS
 from max.pipelines.lib.pipeline_args import PipelineArgs
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.block_diffusion_text_generation import (
+    _DEFAULT_GENERATION_PARAMS,
+    _MAX_CANVAS_BATCH,
     BlockDiffusionTextGenerationPipeline,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
@@ -911,6 +915,119 @@ def test_block_diffusion_models_point_to_serve(
     _assert_points_to_serve(error, "block diffusion models")
     assert "it ignores temperature, top_k and seed" in str(error.value)
     assert pipeline.kv_manager.claimed == {}
+
+
+def test_block_diffusion_canvas_batches_are_chunked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The denoise loop bounds the decoder step's transient memory by
+    # splitting large canvas batches (vmm_oom in execute_decoder_step at
+    # num_concurrent=64, MAX-1079): _generate_canvas feeds _denoise_canvas
+    # at most _MAX_CANVAS_BATCH requests at a time and merges the results.
+    pipeline: Any = object.__new__(BlockDiffusionTextGenerationPipeline)
+    chunk_sizes: list[int] = []
+
+    def record_chunk(chunk: list[TextContext]) -> dict[Any, Any]:
+        chunk_sizes.append(len(chunk))
+        return {id(ctx): ctx for ctx in chunk}
+
+    monkeypatch.setattr(pipeline, "_denoise_canvas", record_chunk)
+
+    contexts = [
+        object.__new__(TextContext) for _ in range(2 * _MAX_CANVAS_BATCH + 4)
+    ]
+
+    result = pipeline._generate_canvas(contexts)
+
+    assert chunk_sizes == [_MAX_CANVAS_BATCH, _MAX_CANVAS_BATCH, 4]
+    assert result == {id(ctx): ctx for ctx in contexts}
+
+    # A batch within the cap runs as a single, unsplit canvas.
+    chunk_sizes.clear()
+    pipeline._generate_canvas(contexts[:_MAX_CANVAS_BATCH])
+    assert chunk_sizes == [_MAX_CANVAS_BATCH]
+
+
+class _StepOutput(Buffer):
+    """A denoise step output the test can hold weakly."""
+
+
+def _step_output(values: npt.NDArray[Any], dtype: DType) -> _StepOutput:
+    out = _StepOutput(dtype, list(values.shape), CPU())
+    src = Buffer.from_numpy(np.ascontiguousarray(values))
+    out.inplace_copy_from(src.view(dtype, list(values.shape)))
+    return out
+
+
+def test_block_diffusion_denoise_steps_release_their_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A compiled denoise step's outputs are slices of the one block the step's
+    # activations are planned into, and a live slice keeps the whole block.
+    # Feeding a step's self-conditioning logits back to the next step as they
+    # are holds that block through the next step's, which doubles the step's
+    # peak device memory (MAX-1079). The loop copies them into a buffer it
+    # owns and lets the step's output go.
+    canvas_len, vocab, steps = 4, 8, 3
+    pipeline: Any = object.__new__(BlockDiffusionTextGenerationPipeline)
+    model = MagicMock()
+    model.config = SimpleNamespace(
+        canvas_length=canvas_len, text_config=SimpleNamespace(vocab_size=vocab)
+    )
+    monkeypatch.setattr(pipeline, "_pipeline_model", model, raising=False)
+    monkeypatch.setattr(pipeline, "_devices", [CPU()], raising=False)
+    monkeypatch.setattr(pipeline, "_kv_manager", MagicMock(), raising=False)
+    monkeypatch.setattr(
+        pipeline,
+        "_diffusion_params",
+        {**_DEFAULT_GENERATION_PARAMS, "max_denoising_steps": steps},
+        raising=False,
+    )
+    monkeypatch.setattr(pipeline, "_finalize", lambda batch, final_argmax: {})
+
+    # Only the logits output is tracked. On the CPU, to_numpy views a buffer
+    # instead of copying it off a device, so the host arrays the loop keeps
+    # hold the other outputs here, which they don't on a GPU.
+    logits_out: list[weakref.ref[_StepOutput]] = []
+    previous_alive: list[bool] = []
+    fed_back: list[set[int]] = []
+
+    def decoder_step(
+        *, canvas_tokens: Buffer, sc_logits: Buffer, **_: object
+    ) -> tuple[_StepOutput, ...]:
+        if logits_out:
+            previous_alive.append(logits_out[-1]() is not None)
+        bits = sc_logits.view(DType.uint16, list(sc_logits.shape)).to_numpy()
+        fed_back.append(set(np.unique(bits).tolist()))
+        n = canvas_tokens.shape[0]
+        logits = _step_output(
+            np.full((n, vocab), len(logits_out) + 1, np.uint16),
+            DType.bfloat16,
+        )
+        logits_out.append(weakref.ref(logits))
+        # Entropy stays high, so no canvas stops before the last step.
+        return (
+            logits,
+            _step_output(np.zeros(n, np.int64), DType.int64),
+            _step_output(np.full((n, 2), 0.5, np.float32), DType.float32),
+            _step_output(np.zeros((n, 2), np.int64), DType.int64),
+            _step_output(np.ones(n, np.float32), DType.float32),
+        )
+
+    model.execute_decoder_step = decoder_step
+    contexts = [
+        SimpleNamespace(
+            tokens=SimpleNamespace(all=np.arange(3, dtype=np.int64))
+        )
+        for _ in range(2)
+    ]
+
+    pipeline._generate_canvas(contexts)
+
+    # Each step reads the logits the step before it wrote...
+    assert fed_back == [{0}, {1}, {2}]
+    # ...without the loop holding that step's output.
+    assert previous_alive == [False] * (steps - 1)
 
 
 def _vision_pipeline(monkeypatch: pytest.MonkeyPatch) -> FakePipeline:

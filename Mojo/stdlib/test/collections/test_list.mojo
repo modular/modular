@@ -268,7 +268,7 @@ def test_list_reverse_property_test() raises:
         for a, b in zip(forward, reversed(rev)):
             assert_equal(a, b)
 
-    PropTest().test[properties](List[Int].strategy(Int.strategy()))
+    PropTest().test(List[Int].strategy(Int.strategy()), properties)
 
 
 def test_list_reverse() raises:
@@ -1292,12 +1292,11 @@ def test_uninit_ctor() raises:
 
 
 def _test_copyinit_trivial_types[dt: DType]() raises:
-    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    var sizes: List[Int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    comptime for sizes_index in range(len(sizes)):
-        comptime current_size = sizes[sizes_index]
+    for current_size in sizes:
         var x = List[Scalar[dt]]()
         for i in range(current_size):
             x.append(Scalar[dt](i))

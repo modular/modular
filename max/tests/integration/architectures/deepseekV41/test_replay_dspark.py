@@ -25,8 +25,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.deepseekV41 import spec_adapters as adapters
 from max.pipelines.architectures.deepseekV41.dspark_drafter import (
     DeepseekV41DSparkDrafter,

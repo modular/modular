@@ -19,11 +19,8 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-    rope_split_store_ragged,
-)
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import (
     ColumnParallelLinear,
@@ -35,9 +32,9 @@ from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
 )
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.kernels import flash_attention_ragged, rope_split_store_ragged
+from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 
 from .rms_norm import Gemma4RMSNorm

@@ -319,26 +319,6 @@ def unsafe_memmove[
         )
 
 
-@inline(.always)
-@deprecated(use=unsafe_memmove)
-def memmove[
-    T: AnyType
-](*, dest: MutPointer[T, _], src: ImmPointer[T, _], count: Int,):
-    """Copy `count * size_of[T]()` bytes from src to dest.
-
-    Unlike `memcpy`, the memory regions are allowed to overlap.
-
-    Parameters:
-        T: The element type.
-
-    Args:
-        dest: The destination pointer.
-        src: The source pointer.
-        count: The number of elements to copy.
-    """
-    unsafe_memmove(dest=dest, src=src, count=count)
-
-
 # ===-----------------------------------------------------------------------===#
 # memset
 # ===-----------------------------------------------------------------------===#
@@ -486,70 +466,6 @@ def _free(ptr: Optional[MutPointer[...]]):
         # represented exactly as the `KgenPointerType` so we can do a bit-cast.
         var kgen_pointer = Pointer(to=ptr).unsafe_bitcast[KgenPointerType]()[]
         __mlir_op.`pop.aligned_free`(kgen_pointer)
-
-
-# ===-----------------------------------------------------------------------===#
-# is_trivial_* functions
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.nodebug)
-@deprecated(use=IsTriviallyMovable)
-def is_trivially_movable[T: Movable]() -> Bool:
-    """Returns whether `T` has a trivial move constructor.
-
-    A move constructor is trivial when the compiler generates it and all of
-    `T`'s fields are themselves trivially movable. In practice this means the
-    value can be moved by copying its bits to a new location without any
-    additional side effects.
-
-    Parameters:
-        T: The type to check.
-
-    Returns:
-        `True` if `T` has a trivial move constructor.
-    """
-    return T.__move_ctor_is_trivial
-
-
-@inline(.nodebug)
-@deprecated(use=IsTriviallyCopyable)
-def is_trivially_copyable[T: Copyable]() -> Bool:
-    """Returns whether `T` has a trivial copy constructor.
-
-    A copy constructor is trivial when the compiler generates it and all of
-    `T`'s fields are themselves trivially copyable. In practice this means the
-    value can be copied by duplicating its bits to a new location without any
-    additional side effects.
-
-    Parameters:
-        T: The type to check.
-
-    Returns:
-        `True` if `T` has a trivial copy constructor.
-    """
-    return T.__copy_ctor_is_trivial
-
-
-@inline(.nodebug)
-@deprecated(use=IsTriviallyDeinitable)
-def is_trivially_deletable[T: AnyType]() -> Bool:
-    """Returns whether `T` has a trivial destructor.
-
-    A destructor is trivial when the compiler generates it and all of `T`'s
-    fields are themselves trivially destructible. In practice this means
-    `__deinit__` is a no-op. A non-`Deinitable` (linear) type returns `False`
-
-    Parameters:
-        T: The type to check.
-
-    Returns:
-        `True` if `T` has a trivial destructor.
-    """
-    comptime if conforms_to(T, Deinitable):
-        return T.__del__is_trivial
-    else:
-        return False
 
 
 # ===-----------------------------------------------------------------------===#

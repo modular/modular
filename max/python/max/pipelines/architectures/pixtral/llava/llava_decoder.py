@@ -16,17 +16,14 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Layer, LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnLogits,
-    TransformerBlock,
-)
+from max.nn.legacy.transformer import DecoderOutputs, TransformerBlock
 from max.nn.legacy.transformer.transformer import LogitsPostprocessMixin
+from max.nn.outputs import ReturnLogits
 
 
 class Transformer(LogitsPostprocessMixin, Module):

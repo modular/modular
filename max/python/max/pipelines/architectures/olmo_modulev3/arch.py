@@ -15,11 +15,10 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from ..llama3_modulev3 import weight_adapters
-from .model import OlmoModel
+from ..llama3_modulev3 import Llama3Decoder, weight_adapters
 from .model_config import OlmoConfig
 
 olmo_modulev3_arch = SupportedArchitecture(
@@ -29,7 +28,7 @@ olmo_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding=OlmoConfig.DEFAULT_ENCODING,
     supported_encodings=OlmoConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=OlmoModel,
+    modules={GraphRole.DECODER: Llama3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     weight_adapters={

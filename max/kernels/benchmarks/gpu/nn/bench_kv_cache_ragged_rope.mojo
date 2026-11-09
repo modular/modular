@@ -66,7 +66,7 @@ def _get_run_name[
 def execute_kv_cache_ragged_rope[
     dtype: DType, head_dim: Int, num_q_heads: Int, num_kv_heads: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     batch_size: Int,
     seq_len: Int,
@@ -209,11 +209,10 @@ def execute_kv_cache_ragged_rope[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             fused_qk_rope_ragged[
                 kv_collection_device.CacheType,
                 interleaved=False,
-                target="gpu",
             ](
                 TileTensor(q_device, q_layout),
                 TileTensor(input_row_offsets_device, row_major(batch_size + 1)),

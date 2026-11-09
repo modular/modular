@@ -15,6 +15,8 @@
 
 #include "Support/Configuration.h"
 
+#include "mlir/IR/MLIRContext.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
@@ -203,10 +205,30 @@ TargetTraitsRegistry::lookup(const llvm::Triple &triple) const {
   return result;
 }
 
+const TargetTraits *
+TargetTraitsRegistry::traitsForDialect(llvm::StringRef dialectNamespace) const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    if (traits->implementsDialect(dialectNamespace))
+      return traits.get();
+  return nullptr;
+}
+
+bool TargetTraitsRegistry::isKnownDialect(
+    mlir::MLIRContext *ctx, llvm::StringRef dialectNamespace) const {
+  return traitsForDialect(dialectNamespace) ||
+         ctx->getLoadedDialect(dialectNamespace) ||
+         llvm::is_contained(ctx->getAvailableDialects(), dialectNamespace);
+}
+
 void TargetTraitsRegistry::registerAllDialects(
     mlir::DialectRegistry &registry) const {
   for (const std::unique_ptr<TargetTraits> &traits : Targets)
     traits->registerDialects(registry);
+}
+
+void TargetTraitsRegistry::configureContext(mlir::MLIRContext *ctx) const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    traits->configureContext(ctx);
 }
 
 void TargetTraitsRegistry::loadAllDialects(mlir::MLIRContext *ctx) const {
@@ -217,6 +239,13 @@ void TargetTraitsRegistry::loadAllDialects(mlir::MLIRContext *ctx) const {
 void TargetTraitsRegistry::registerAllPasses() const {
   for (const std::unique_ptr<TargetTraits> &traits : Targets)
     traits->registerPasses();
+}
+
+void TargetTraitsRegistry::appendHostLinkArgs(
+    llvm::StringRef accelerator,
+    llvm::SmallVectorImpl<std::string> &args) const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    traits->appendHostLinkArgs(accelerator, args);
 }
 
 } // namespace M::KGEN

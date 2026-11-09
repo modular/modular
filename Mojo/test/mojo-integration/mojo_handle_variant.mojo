@@ -13,7 +13,7 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from std.collections.string import StringSlice
+from std.collections.string import StringSpan
 
 
 struct S:
@@ -45,7 +45,7 @@ def foo(c: Bool):
         pass
 
 
-def fail(str: StringSlice) raises -> S:
+def fail(str: StringSpan) raises -> S:
     if str.byte_length() > 5:
         raise Error(str)
     return S(str.byte_length())

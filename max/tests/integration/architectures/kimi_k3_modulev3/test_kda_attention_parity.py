@@ -45,6 +45,7 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
+from max.nn import Linear
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
@@ -195,12 +196,14 @@ def _make_v3_layer_with_weights(
         conv_kernel_size=CONV_KERNEL,
         gate_lower_bound=gate_lower_bound,
     )
-    layer.qkv_proj.weight = Tensor(
+    layer.qkvg_proj.weight = Tensor(
         interleave_for_tp(
             [
                 weights["q_proj_weight"],
                 weights["k_proj_weight"],
                 weights["v_proj_weight"],
+                weights["g_proj_weight"],
+                weights["b_proj_weight"],
             ],
             1,
         ),
@@ -213,10 +216,8 @@ def _make_v3_layer_with_weights(
     layer.f_b_proj.weight = Tensor(
         weights["f_b_proj_weight"], dtype=DType.float32
     )
-    layer.b_proj.weight = Tensor(weights["b_proj_weight"], dtype=DType.float32)
     layer.a_log = Tensor(weights["a_log"], dtype=DType.float32)
     layer.dt_bias = Tensor(weights["dt_bias"], dtype=DType.float32)
-    layer.g_proj.weight = Tensor(weights["g_proj_weight"], dtype=DType.float32)
     layer.o_norm.weight = Tensor(weights["o_norm_weight"], dtype=DType.float32)
     layer.o_proj.weight = Tensor(weights["o_proj_weight"], dtype=DType.float32)
     return layer
@@ -287,3 +288,46 @@ def test_kda_v3_matches_v2_reference_safe_gate() -> None:
         f" reference's final state: rel_error={state_err}"
     )
     assert not state_np[1].any(), "slot 1 (unused) must not have moved"
+
+
+def test_fused_beta_costs_one_bf16_rounding() -> None:
+    """The beta fold's numerics contract, through the real fused GEMM.
+
+    Beta leaves the fused qkvg GEMM rounded once to the model dtype and
+    widens back to fp32 for the kda op. This runs the actual bf16 GEMM and
+    a split with the layer's sizes, then bounds the beta block's error at
+    bf16's 2^-8 against the fp32 GEMV on the same operands. A GEMM that
+    degraded beta worse -- bf16 accumulation, a wrong operand layout, a
+    double rounding -- fails this bound; the end-to-end parity suite's 1e-2
+    tolerance cannot see any of it. (A split reading the wrong columns is
+    the parity suite's job to catch, not this test's.)
+    """
+    rng = np.random.default_rng(20261105)
+    inner = NUM_HEADS * HEAD_DIM
+    x_np = rng.standard_normal((32, HIDDEN)).astype(np.float32)
+    qkvg_np = rng.standard_normal((4 * inner + NUM_HEADS, HIDDEN)).astype(
+        np.float32
+    )
+
+    # The production path: a bf16 Linear over the fused weight, split by
+    # the layer's global sizes, beta widened to fp32.
+    with default_device(Accelerator()):
+        proj = Linear(in_dim=HIDDEN, out_dim=4 * inner + NUM_HEADS, bias=False)
+        proj.weight = Tensor(qkvg_np).cast(DType.bfloat16)
+        fused = proj(Tensor(x_np).cast(DType.bfloat16))
+        _, _, beta_pre = fused.split([3 * inner, inner, NUM_HEADS], axis=1)
+        beta_fused = beta_pre.cast(DType.float32).to_numpy()
+
+    # The reference: the SAME bf16 operands (the weight rows the GEMM
+    # actually reads, and the bf16 input) widened to fp32, full fp32
+    # logits. Comparing against the fp32-original weight would measure the
+    # weight's storage rounding, not the GEMM.
+    b_b = Tensor(qkvg_np[4 * inner :]).cast(DType.bfloat16)
+    x_b = Tensor(x_np).cast(DType.bfloat16).cast(DType.float32).to_numpy()
+    ref = x_b @ b_b.cast(DType.float32).to_numpy().T
+
+    err = np.abs(beta_fused - ref) / np.maximum(np.abs(ref), 1e-3)
+    assert err.max() <= 2.0**-8, (
+        f"the fused beta block must cost one bf16 rounding (max rel err"
+        f" {err.max():.3e} > 2^-8)"
+    )

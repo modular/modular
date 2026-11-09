@@ -34,6 +34,8 @@ The `e4m3_magnitude_lut` / `e2m1x8_to_e4m3x8` pair mirrors the helpers in
 """
 
 from std.memory import bitcast
+from std.sys import _RegisterPackType
+from std.sys._assembly import inlined_assembly
 
 from max.gpu.intrinsics import byte_permute
 
@@ -129,4 +131,110 @@ def nvfp4_dequant_group(
     var lut = e4m3_magnitude_lut(sf)
     var lo = e2m1x8_to_e4m3x8(words[0], lut)
     var hi = e2m1x8_to_e4m3x8(words[1], lut)
+    return SIMD[DType.uint32, 4](lo[0], lo[1], hi[0], hi[1])
+
+
+@always_inline
+def e4m3x2_to_f16x2(pair: UInt32) -> UInt32:
+    """Widens the two E4M3 bytes in the low half of `pair` to an f16 pair.
+
+    Byte 0 lands in the low half. E4M3 widens exactly to f16.
+    """
+    return inlined_assembly[
+        "cvt.rn.f16x2.e4m3x2 $0, $1;",
+        UInt32,
+        constraints="=r,h",
+        has_side_effect=False,
+    ](UInt16(pair & 0xFFFF))
+
+
+@always_inline
+def e4m3_magnitude_lut_f16(sf2: UInt32) -> SIMD[DType.uint32, 2]:
+    """`e4m3_magnitude_lut` from a broadcast f16 scale pair.
+
+    `m * scale` takes at most 6 significant bits and stays in f16's normal
+    range for every E4M3 scale, so the f16 product is exact and its one
+    rounding to e4m3 gives the f32 table's bytes.
+    """
+    var r = inlined_assembly[
+        """{
+.reg .b32 p0, p1, p2, p3;
+.reg .b16 o0, o1, o2, o3;
+mov.b32 p0, 0x38000000;
+mov.b32 p1, 0x3E003C00;
+mov.b32 p2, 0x42004000;
+mov.b32 p3, 0x46004400;
+mul.rn.f16x2 p0, $2, p0;
+mul.rn.f16x2 p1, $2, p1;
+mul.rn.f16x2 p2, $2, p2;
+mul.rn.f16x2 p3, $2, p3;
+cvt.rn.satfinite.e4m3x2.f16x2 o0, p0;
+cvt.rn.satfinite.e4m3x2.f16x2 o1, p1;
+cvt.rn.satfinite.e4m3x2.f16x2 o2, p2;
+cvt.rn.satfinite.e4m3x2.f16x2 o3, p3;
+mov.b32 $0, {o0, o1};
+mov.b32 $1, {o2, o3};
+}""",
+        _RegisterPackType[UInt32, UInt32],
+        constraints="=r,=r,r",
+        has_side_effect=False,
+    ](sf2)
+    return SIMD[DType.uint32, 2](r[0], r[1])
+
+
+@always_inline
+def e2m1x8_scaled_to_e4m3x8(word: UInt32, sf2: UInt32) -> SIMD[DType.uint32, 2]:
+    """Converts eight e2m1 (element 0 in the low nibble) times a broadcast f16
+    scale pair to eight e4m3 bytes, through the hardware converts.
+
+    Each byte widens to an f16 pair, `mul.f16x2` applies the scale exactly
+    (see `e4m3_magnitude_lut_f16`), and one convert rounds the pair to e4m3,
+    so the bytes match `e2m1x8_to_e4m3x8` for every positive scale.
+    """
+    var r = inlined_assembly[
+        """{
+.reg .b8 b0, b1, b2, b3;
+.reg .b32 h0, h1, h2, h3;
+.reg .b16 o0, o1, o2, o3;
+mov.b32 {b0, b1, b2, b3}, $2;
+cvt.rn.f16x2.e2m1x2 h0, b0;
+cvt.rn.f16x2.e2m1x2 h1, b1;
+cvt.rn.f16x2.e2m1x2 h2, b2;
+cvt.rn.f16x2.e2m1x2 h3, b3;
+mul.rn.f16x2 h0, h0, $3;
+mul.rn.f16x2 h1, h1, $3;
+mul.rn.f16x2 h2, h2, $3;
+mul.rn.f16x2 h3, h3, $3;
+cvt.rn.satfinite.e4m3x2.f16x2 o0, h0;
+cvt.rn.satfinite.e4m3x2.f16x2 o1, h1;
+cvt.rn.satfinite.e4m3x2.f16x2 o2, h2;
+cvt.rn.satfinite.e4m3x2.f16x2 o3, h3;
+mov.b32 $0, {o0, o1};
+mov.b32 $1, {o2, o3};
+}""",
+        _RegisterPackType[UInt32, UInt32],
+        constraints="=r,=r,r,r",
+        has_side_effect=False,
+    ](word, sf2)
+    return SIMD[DType.uint32, 2](r[0], r[1])
+
+
+@always_inline
+def nvfp4_dequant_group_f16[
+    hw_convert: Bool
+](lo_word: UInt32, hi_word: UInt32, sf2: UInt32) -> SIMD[DType.uint32, 4]:
+    """`nvfp4_dequant_group` from a broadcast f16 scale pair.
+
+    `hw_convert` converts every element through the hardware converts;
+    otherwise the f16 products build the byte table that `prmt` indexes.
+    """
+    var lo: SIMD[DType.uint32, 2]
+    var hi: SIMD[DType.uint32, 2]
+    comptime if hw_convert:
+        lo = e2m1x8_scaled_to_e4m3x8(lo_word, sf2)
+        hi = e2m1x8_scaled_to_e4m3x8(hi_word, sf2)
+    else:
+        var lut = e4m3_magnitude_lut_f16(sf2)
+        lo = e2m1x8_to_e4m3x8(lo_word, lut)
+        hi = e2m1x8_to_e4m3x8(hi_word, lut)
     return SIMD[DType.uint32, 4](lo[0], lo[1], hi[0], hi[1])

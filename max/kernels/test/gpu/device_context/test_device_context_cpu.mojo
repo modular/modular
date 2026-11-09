@@ -164,24 +164,24 @@ def test_two_ranges_sequential(ctx: DeviceContext) raises:
 
 
 def test_device_context_array(ctx: DeviceContext) raises:
-    var arr: DeviceContextArray[2] = [ctx, ctx]
+    var arr: DeviceContextArray[2, _] = [ctx, ctx]
     assert_equal(len(arr), 2)
     assert_equal(arr[0].api(), ctx.api())
     assert_equal(arr[1].api(), ctx.api())
 
     # The length is inferred from the element count of the literal.
-    var inferred: DeviceContextArray[_] = [ctx, ctx, ctx]
+    var inferred: DeviceContextArray[_, _] = [ctx, ctx, ctx]
     comptime assert type_of(inferred).length == 3
     assert_equal(len(inferred), 3)
 
     # Direct variadic call, as synthesized by the graph compiler's
     # multi-device lowering.
-    var direct = DeviceContextArray[2](ctx, ctx)
+    var direct = DeviceContextArray[2, _](ctx, ctx)
     assert_equal(len(direct), 2)
     assert_equal(direct[0].api(), ctx.api())
 
 
-def test_context_equality(ctx: DeviceContext) raises:
+def test_context_equality(ctx: DeviceContext.CPU) raises:
     # A copy of the same context refers to the same underlying runtime
     # context, so it compares equal.
     var copy = ctx
@@ -190,7 +190,7 @@ def test_context_equality(ctx: DeviceContext) raises:
 
     # A separately constructed context on the same device is a different
     # runtime context, even though the device ID is identical.
-    var fresh = DeviceContext(api="cpu")
+    var fresh = DeviceContext.cpu()
     assert_false(fresh == ctx)
     assert_true(fresh != ctx)
 
@@ -200,7 +200,7 @@ def test_context_equality(ctx: DeviceContext) raises:
 
 
 def main() raises:
-    with DeviceContext(api="cpu") as ctx:
+    with DeviceContext.cpu() as ctx:
         test_empty_func(ctx)
         test_func_writes_to_memory(ctx)
         test_func_closure_writes_to_memory(ctx)

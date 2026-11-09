@@ -57,7 +57,7 @@ from linalg.mxfp4_dequant import dequant_mxfp4
 def _fill_random_mxfp4_data[
     N: Int, K: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     a_device: DeviceBuffer[.bfloat16],
     b_packed_device: DeviceBuffer[.uint8],
     b_scales_device: DeviceBuffer[.float8_e8m0fnu],
@@ -96,7 +96,7 @@ def _fill_random_mxfp4_data[
 def verify_mxfp4_matmul[
     N: Int, K: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     c_device: DeviceBuffer[.bfloat16],
     a_device: DeviceBuffer[.bfloat16],
     b_packed_device: DeviceBuffer[.uint8],
@@ -118,7 +118,7 @@ def verify_mxfp4_matmul[
     var b_fp8_tt = TileTensor(b_fp8, row_major[N, K]())
     var a_fp8_tt = TileTensor(a_fp8, row_major((M, Idx[K])))
 
-    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
+    from linalg.mxfp4_dequant import _cast_bf16_to_fp8
 
     dequant_mxfp4(
         ctx,
@@ -167,7 +167,7 @@ def verify_mxfp4_matmul[
 
 def bench_dequant_mxfp4[
     N: Int, K: Int
-](ctx: DeviceContext, mut b: Bench,) raises:
+](ctx: DeviceContext[], mut b: Bench,) raises:
     """Benchmark dequant_mxfp4 (packed uint8 + E8M0 scales -> FP8) independently.
     """
     comptime packed_K = K // 2
@@ -198,7 +198,7 @@ def bench_dequant_mxfp4[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut b_fp8_tt, imm}:
         dequant_mxfp4(
             ctx,
@@ -228,7 +228,7 @@ def bench_dequant_mxfp4[
 
 def bench_cast_bf16_to_fp8[
     K: Int
-](ctx: DeviceContext, mut b: Bench, M: Int,) raises:
+](ctx: DeviceContext[], mut b: Bench, M: Int,) raises:
     """Benchmark BF16 to FP8 activation cast independently."""
     comptime fp8_type = DType.float8_e4m3fn
 
@@ -245,11 +245,11 @@ def bench_cast_bf16_to_fp8[
     var a_tt = TileTensor(a_device, row_major((M, Idx[K])))
     var a_fp8_tt = TileTensor(a_fp8_device, row_major((M, Idx[K])))
 
-    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
+    from linalg.mxfp4_dequant import _cast_bf16_to_fp8
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut a_fp8_tt, imm}:
         _cast_bf16_to_fp8(ctx, a_fp8_tt, a_tt, M, K)
 
@@ -270,7 +270,7 @@ def bench_cast_bf16_to_fp8[
 
 def bench_fp8_matmul[
     N: Int, K: Int
-](ctx: DeviceContext, mut b: Bench, M: Int,) raises:
+](ctx: DeviceContext[], mut b: Bench, M: Int,) raises:
     """Benchmark _matmul_gpu on FP8 data (pure GEMM, no dequant)."""
     comptime fp8_type = DType.float8_e4m3fn
 
@@ -297,7 +297,7 @@ def bench_fp8_matmul[
     var a_fp8_tt = TileTensor(a_fp8, row_major((M, Idx[K])))
     var b_fp8_tt = TileTensor(b_fp8, row_major((Idx[N], Idx[K])))
 
-    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
+    from linalg.mxfp4_dequant import _cast_bf16_to_fp8
 
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a_bf16_tt, M, K)
     _cast_bf16_to_fp8(ctx, b_fp8_tt, b_bf16_tt, N, K)
@@ -310,7 +310,7 @@ def bench_fp8_matmul[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut c_tt, imm}:
         _matmul_gpu[use_tensor_core=True, transpose_b=True](
             c_tt, a_fp8_tt, b_fp8_tt, ctx
@@ -332,7 +332,7 @@ def bench_fp8_matmul[
 def bench_mxfp4_matmul[
     N: Int, K: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     M: Int,
     verify: Bool,
@@ -359,9 +359,19 @@ def bench_mxfp4_matmul[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut c_tt, imm}:
-        mxfp4_dequant_matmul_amd(c_tt, a_tt, b_packed_tt, b_scales_tt, ctx)
+        # The benchmark's scales are all 2^0 (see _fill_random_mxfp4_data),
+        # so the weight metadata the dispatcher gates on is exact.
+        mxfp4_dequant_matmul_amd(
+            c_tt,
+            a_tt,
+            b_packed_tt,
+            b_scales_tt,
+            ctx,
+            min_block_scale_exp=127,
+            max_block_scale_exp=127,
+        )
         ctx.synchronize()
 
     if run_benchmark:

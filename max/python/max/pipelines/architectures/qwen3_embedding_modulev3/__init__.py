@@ -13,13 +13,11 @@
 """Qwen3 architecture for embeddings generation."""
 
 from .arch import qwen3_embedding_modulev3_arch
-from .inputs import Qwen3EmbeddingInputs
-from .model import Qwen3EmbeddingModel
+from .encoder import Qwen3Embedding
 from .model_config import Qwen3EmbeddingConfig
 
 __all__ = [
+    "Qwen3Embedding",
     "Qwen3EmbeddingConfig",
-    "Qwen3EmbeddingInputs",
-    "Qwen3EmbeddingModel",
     "qwen3_embedding_modulev3_arch",
 ]

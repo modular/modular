@@ -43,7 +43,7 @@ def resolve_skip_counts(
     request_rate: float,
     max_concurrency: int | None,
     ignore_first_turn_stats: bool,
-    warmup_to_steady_state: bool,
+    warmup_multiturn: bool,
 ) -> tuple[int, int]:
     """Resolves the head and tail request counts to exclude from stats.
 
@@ -58,7 +58,7 @@ def resolve_skip_counts(
         max_concurrency: The run's concurrency limit, or ``None`` for none.
         ignore_first_turn_stats: Whether each session's first turn is
             already dropped.
-        warmup_to_steady_state: Whether sessions start at randomized turns.
+        warmup_multiturn: Whether sessions start at randomized turns.
 
     Returns:
         ``(skip_first, skip_last)`` request counts to exclude from stats.
@@ -94,17 +94,17 @@ def resolve_skip_counts(
     if skip_last is None:
         skip_last = 0
 
-    if ignore_first_turn_stats and skip_first and not warmup_to_steady_state:
-        # Without --warmup-to-steady-state, sessions all start at turn 0,
+    if ignore_first_turn_stats and skip_first and not warmup_multiturn:
+        # Without --warmup-multiturn, sessions all start at turn 0,
         # so --ignore-first-turn-stats already drops the same head requests
         # that --skip-first-n-requests would target. Combining them just
         # trims deeper into the run than the user asked for.
-        # With --warmup-to-steady-state, sessions begin at randomized turn
+        # With --warmup-multiturn, sessions begin at randomized turn
         # offsets, so the two features filter different requests and we
         # want them to compose.
         logger.warning(
             "--ignore-first-turn-stats and --skip-first-n-requests both set"
-            " without --warmup-to-steady-state. --ignore-first-turn-stats"
+            " without --warmup-multiturn. --ignore-first-turn-stats"
             " already drops every session's first turn, so"
             " --skip-first-n-requests would trim deeper than expected."
             " Ignoring --skip-first-n-requests."

@@ -269,6 +269,32 @@ FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
                         [&](ParameterEvaluator &evaluator) {
                           result = simplify(resolved.decl, evaluator);
                         });
+  auto doesConforms = [](FailureOr<TypedAttr> result) {
+    return succeeded(result) && KGEN::isTriviallyTrueProposition(*result);
+  };
+
+  if (doesConforms(result))
+    return result;
+
+  if (auto extension =
+          sugarDynCast<ExtensionAttr>(SugarAttr::strip(getTypeValue()))) {
+    for (TypedAttr ext : extension.getExtensions()) {
+      FailureOr<ResolvedStructHandle> extResolvedOr =
+          context.resolveStructOp(ext, /*acceptAsync=*/false);
+      if (failed(extResolvedOr))
+        continue;
+      FailureOr<TypedAttr> extResult = failure();
+      context.withEvaluator(resolved.decl.getInputParams(),
+                            resolved.paramValues,
+                            [&](ParameterEvaluator &evaluator) {
+                              extResult = simplify(resolved.decl, evaluator);
+                            });
+      // We just need one extension that provides the conformance (this should
+      // mirror how GetWitnessAttr is folded).
+      if (doesConforms(extResult))
+        return extResult;
+    }
+  }
   return result;
 }
 

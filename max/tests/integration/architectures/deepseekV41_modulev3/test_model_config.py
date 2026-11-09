@@ -21,13 +21,14 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     PAGE_SIZE,
     V41Config,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
+    RoutedExpertFormat,
 )
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.speculative.config import (
@@ -220,3 +221,57 @@ def test_v41_config_from_hf_reads_the_nested_text_config() -> None:
         ).num_dspark_stages
         == 1
     )
+
+
+# DeepSeek's own release: dense FP8 with E8M0 32x32 blocks, MXFP4 experts.
+_DEEPSEEK_QUANTIZATION_CONFIG = {
+    "quant_method": "fp8",
+    "activation_scheme": "dynamic",
+    "weight_block_size": [32, 32],
+    "scale_fmt": "ue8m0",
+    "expert_dtype": "fp4",
+}
+# NVIDIA's ModelOpt release: the same dense blocks, NVFP4 experts.
+_MODELOPT_QUANTIZATION_CONFIG = {
+    **_DEEPSEEK_QUANTIZATION_CONFIG,
+    "moe_quant_algo": "NVFP4",
+    "quantized_layers": {"layers.0.ffn.experts": {"quant_algo": "NVFP4"}},
+}
+
+
+@pytest.mark.parametrize(
+    ("quantization_config", "expected"),
+    [
+        (_DEEPSEEK_QUANTIZATION_CONFIG, RoutedExpertFormat.MXFP4),
+        (_MODELOPT_QUANTIZATION_CONFIG, RoutedExpertFormat.NVFP4),
+        ({"quant_method": "modelopt"}, RoutedExpertFormat.NVFP4),
+        (None, RoutedExpertFormat.NVFP4),
+    ],
+)
+def test_routed_expert_format_reads_the_quantization_config(
+    quantization_config: dict[str, Any] | None, expected: RoutedExpertFormat
+) -> None:
+    hf_config = SimpleNamespace(quantization_config=quantization_config)
+    assert RoutedExpertFormat.of(hf_config) is expected
+
+
+def test_routed_expert_format_refuses_an_unknown_quantization() -> None:
+    with pytest.raises(ValueError, match="expert_dtype 'fp4'"):
+        RoutedExpertFormat.from_quantization_config({"quant_method": "fp8"})
+
+
+def test_mxfp4_experts_dispatch_mxfp8_rows_to_the_fused_kernel() -> None:
+    """MXFP4 experts read E4M3 rows with E8M0 scales per 32, as their
+    activations quantize; NVFP4 experts keep their packed rows."""
+    mxfp4 = RoutedExpertFormat.MXFP4
+    config = mxfp4.dispatch_quant_config(40)
+    assert config.is_mxfp8 and config.can_use_fused_swiglu
+    assert mxfp4.dispatch_dtype == DType.float8_e4m3fn
+    assert mxfp4.weight_quant_config().is_mxfp4
+
+    nvfp4 = RoutedExpertFormat.NVFP4
+    config = nvfp4.dispatch_quant_config(40)
+    assert config.is_nvfp4 and config.can_use_fused_swiglu
+    assert config.mlp_quantized_layers == set(range(40))
+    assert nvfp4.dispatch_dtype == DType.uint8
+    assert nvfp4.weight_quant_config().is_nvfp4

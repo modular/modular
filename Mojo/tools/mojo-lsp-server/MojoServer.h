@@ -36,10 +36,6 @@ template <typename T>
 using SendProgressFn =
     llvm::unique_function<void(const llvm::lsp::ProgressParams<T> &)>;
 
-template <typename T>
-using SendProgressFnRef =
-    function_ref<void(const llvm::lsp::ProgressParams<T> &)>;
-
 /// This class implements all of the Mojo related functionality necessary for a
 /// language server. This class allows for keeping the Mojo specific logic
 /// separate from the logic that involves LSP server/client communication.

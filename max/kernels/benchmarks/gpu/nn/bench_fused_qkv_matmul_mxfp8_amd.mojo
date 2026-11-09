@@ -162,7 +162,7 @@ comptime ik_off = iq_off + iq_dim
 def bench_shape[
     HAS_INDEXER: Bool
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     prompt_lens: List[Int],
     regime: String,
@@ -334,7 +334,7 @@ def bench_shape[
     # ============ FUSED: one GEMM, scatter from the epilogue ============
     @inline(.always)
     def fused_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {
         mut cb_hs,
         mut cb_w,
@@ -382,7 +382,7 @@ def bench_shape[
         )
         comptime if HAS_INDEXER:
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             ](
                 hs,
                 iro_tt,
@@ -400,7 +400,7 @@ def bench_shape[
             )
         else:
             generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             ](
                 hs,
                 iro_tt,
@@ -437,7 +437,7 @@ def bench_shape[
     # ============ UNFUSED: one dense GEMM per output band ============
     @inline(.always)
     def unfused_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {
         mut cb_hs,
         mut cb_w,
@@ -543,14 +543,14 @@ def bench_shape[
                 .unsafe_offset(Int(idx[2]))
             ).unsafe_load[width=width]()
 
-        kv_cache_store_ragged[target="gpu"](
+        kv_cache_store_ragged(
             main_collection.get_key_cache(layer_idx),
             (total_seq, MAIN_KV_HEADS, HEAD_SIZE),
             iro_tt,
             k_in,
             ctx,
         )
-        kv_cache_store_ragged[target="gpu"](
+        kv_cache_store_ragged(
             main_collection.get_value_cache(layer_idx),
             (total_seq, MAIN_KV_HEADS, HEAD_SIZE),
             iro_tt,
@@ -558,7 +558,7 @@ def bench_shape[
             ctx,
         )
         comptime if HAS_INDEXER:
-            kv_cache_store_ragged[target="gpu"](
+            kv_cache_store_ragged(
                 index_collection.get_key_cache(layer_idx),
                 (total_seq, 1, HEAD_SIZE),
                 iro_tt,

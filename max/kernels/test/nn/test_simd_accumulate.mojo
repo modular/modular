@@ -60,7 +60,7 @@ def test_accumulate[
     for i in range(2 * length):
         var b_ptr = b_base_ptr.unsafe_offset(i * num_cols * simd_size)
 
-        comptime for j in range(num_cols):
+        for j in range(num_cols):
             b_ptr.unsafe_offset(j * simd_size).unsafe_store(
                 SIMD[type, simd_size](i)
             )
@@ -155,7 +155,7 @@ def test_accumulate_with_offsets[
     for i in range(2 * length):
         var b_ptr = b_base_ptr.unsafe_offset(i * num_cols * simd_size)
 
-        comptime for j in range(num_cols):
+        for j in range(num_cols):
             b_ptr.unsafe_offset(j * simd_size).unsafe_store(
                 SIMD[type, simd_size](i)
             )
@@ -258,8 +258,8 @@ def test_load_store[
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0]]
-    comptime for i in range(num_rows):
-        comptime for j in range(num_cols):
+    for i in range(num_rows):
+        for j in range(num_cols):
             a_ptr.unsafe_store(
                 i * row_size + j * simd_size,
                 SIMD[type, simd_size](i + j),

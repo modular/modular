@@ -31,30 +31,59 @@ import dataclasses
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import ClassVar, TypeVar
+from typing import ClassVar, Protocol, TypeVar
 
+from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, TensorType
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.legacy.graph_groups import EPPayload
+from max.graph import BufferType, DeviceRef, TensorType
+from max.graph.weights import WeightData
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.pipelines.context import TextContext
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
+from .interfaces.pipeline_model import ModelLoadContext
+
 __all__ = [
     "BatchContextLengths",
+    "ConstantInputs",
     "DeploymentConfig",
     "ExpertParallelDeploymentConfig",
+    "ExpertParallelExchange",
+    "ExpertParallelInputs",
     "ModuleRuntime",
     "batch_context_length_types",
     "ep_input_tree",
     "initialize_ep_comm_buffers",
+    "prepare_weights",
     "role_weights",
+    "uses_expert_parallel_exchange",
 ]
 
 _WeightT = TypeVar("_WeightT")
+
+
+@dataclass(frozen=True)
+class ConstantInputs:
+    """The declared graph types and lifetime-owned deployment buffers.
+
+    The buffers stay alive with the batch processor and are passed unchanged
+    every step. They are checkpoint-backed inputs, not mutable workspace.
+    """
+
+    input_types: tree.Tree[TensorType | BufferType]
+    buffers: tree.Tree[Buffer]
+
+    def __post_init__(self) -> None:
+        if is_virtual_device_mode() and not self.buffers:
+            # Compile-only: a virtual device cannot allocate, and only
+            # execution reads the buffers. The declarations still stand.
+            return
+        _, structure = tree.flatten(self.input_types)
+        structure.flatten_up_to(self.buffers)
 
 
 @dataclass(frozen=True)
@@ -84,6 +113,40 @@ class ModuleRuntime:
     ep: EPConfig | None = None
     """The initialized expert-parallel config, under expert parallelism."""
 
+    max_batch_size: int | None = None
+    """The most requests a step holds, as the memory planner sized it, or
+    ``None`` when the caller doesn't size batches."""
+
+
+class ExpertParallelExchange(Protocol):
+    """The initialized exchange's buffers, as each batch passes them."""
+
+    def model_inputs(self) -> Sequence[Buffer]:
+        """Returns the buffers, in the order of the graph's ``ep`` leaves."""
+        ...
+
+
+class ExpertParallelInputs:
+    """How a decoder's graph takes the expert-parallel exchange.
+
+    The default takes :class:`~max.nn.legacy.comm.ep.EPBatchManager`'s
+    inputs: both buffer groups' atomic counters on every device, then their
+    send, receive and count pointer tables. A config whose decoder takes
+    them in another layout sets
+    :attr:`ExpertParallelDeploymentConfig.expert_parallel_inputs` to a
+    subclass.
+    """
+
+    def input_tree(self, ep: EPConfig) -> object:
+        """Returns the decoder's ``ep`` input types for ``ep``."""
+        return EPBatchManager(ep).input_tree()
+
+    def exchange(
+        self, initializer: EPCommInitializer
+    ) -> ExpertParallelExchange:
+        """Returns the buffers of ``initializer`` the graph takes."""
+        return initializer
+
 
 class DeploymentConfig:
     """A registered config that the deployment completes.
@@ -92,6 +155,19 @@ class DeploymentConfig:
     before any module is constructed, and declares through its class fields
     what else the framework does for it. A config that doesn't subclass it
     takes every default.
+    """
+
+    export_ep_init: ClassVar[bool] = False
+    """Whether artifacts include the exchange initialization graph."""
+
+    preserve_checkpoint_keys: ClassVar[bool] = False
+    """Whether finalization reads raw keys before :meth:`prepare_weights`
+    performs the architecture's declared weight transforms.
+    """
+
+    expert_parallel_communication: ClassVar[bool] = True
+    """Whether expert parallelism uses a runtime exchange. A config that
+    disables it validates local expert sharding in :meth:`apply_runtime`.
     """
 
     takes_batch_context_lengths: ClassVar[bool] = False
@@ -106,6 +182,21 @@ class DeploymentConfig:
     holds the weights of several roles. A role without one takes every
     weight (:func:`role_weights`)."""
 
+    def apply_model_load_context(self, context: ModelLoadContext) -> Self:
+        """Returns the config completed with composition-only settings."""
+        del context
+        return self
+
+    def prepare_weights(
+        self, state_dict: Mapping[str, WeightData]
+    ) -> dict[str, WeightData]:
+        """Returns checkpoint weights prepared for the registered modules.
+
+        Serving and composed decoders apply this before role prefixes and
+        parameter dtype conversion. The default preserves every weight.
+        """
+        return dict(state_dict)
+
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
         """Returns the config completed with ``runtime``.
 
@@ -113,6 +204,15 @@ class DeploymentConfig:
         """
         del runtime
         return self
+
+    def export_records(self, runtime: ModuleRuntime) -> Mapping[str, object]:
+        """Returns what an exporter records of the deployment, by name.
+
+        The serving pipeline model keeps them as its ``export_records``,
+        where an exporter reads them. The default records nothing.
+        """
+        del runtime
+        return {}
 
 
 class ExpertParallelDeploymentConfig(DeploymentConfig, abc.ABC):
@@ -128,9 +228,31 @@ class ExpertParallelDeploymentConfig(DeploymentConfig, abc.ABC):
     Exporters read it off the pipeline model to pick the matching
     expert-parallel backend."""
 
+    expert_parallel_inputs: ClassVar[ExpertParallelInputs] = (
+        ExpertParallelInputs()
+    )
+    """How the decoder's graph takes the exchange's buffers."""
+
     @abc.abstractmethod
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
         """Sizes the expert-parallel buffers from the checkpoint's experts."""
+
+
+def uses_expert_parallel_exchange(config: object) -> bool:
+    """Returns whether expert sharding requires exchange initialization."""
+    return (
+        not isinstance(config, DeploymentConfig)
+        or config.expert_parallel_communication
+    )
+
+
+def prepare_weights(
+    state_dict: Mapping[str, WeightData], config: object
+) -> dict[str, WeightData]:
+    """Prepares a checkpoint before selecting registered role weights."""
+    if isinstance(config, DeploymentConfig):
+        return config.prepare_weights(state_dict)
+    return dict(state_dict)
 
 
 def role_weights(
@@ -160,7 +282,7 @@ def initialize_ep_comm_buffers(
     config: ExpertParallelDeploymentConfig,
     runtime: ModuleRuntime,
     session: InferenceSession,
-) -> tuple[ModuleRuntime, EPCommInitializer | None]:
+) -> tuple[ModuleRuntime, ExpertParallelExchange | None]:
     """Sizes and initializes the expert-parallel communication buffers.
 
     It sizes the buffers from the config, then compiles and runs the
@@ -174,9 +296,11 @@ def initialize_ep_comm_buffers(
         session: The session that compiles the init graph.
 
     Returns:
-        ``runtime`` with :attr:`ModuleRuntime.ep` set, and the initializer
-        that owns the buffers. The initializer is ``None`` on virtual
-        devices, which can't run the init graph.
+        ``runtime`` with :attr:`ModuleRuntime.ep` set, and the buffers the
+        decoder's graph takes, as the config's
+        :attr:`~ExpertParallelDeploymentConfig.expert_parallel_inputs`
+        selects them. They are ``None`` on virtual devices, which can't run
+        the init graph.
 
     Raises:
         ValueError: If the expert-parallel size isn't a multiple of the
@@ -189,41 +313,61 @@ def initialize_ep_comm_buffers(
             f"devices on this node ({n_devices})"
         )
     ep = config.expert_parallel_config(runtime)
-    initializer = None
+    exchange = None
     if not is_virtual_device_mode():
         initializer = EPCommInitializer(ep)
         initializer.ep_init(session)
         ep.node_id = initializer.config.node_id
-    return dataclasses.replace(runtime, ep=ep), initializer
+        exchange = config.expert_parallel_inputs.exchange(initializer)
+    return dataclasses.replace(runtime, ep=ep), exchange
 
 
-def ep_input_tree(ep: EPConfig) -> EPPayload:
+def ep_input_tree(
+    config: ExpertParallelDeploymentConfig, ep: EPConfig
+) -> object:
     """Returns the decoder's ``ep`` input types for an initialized config."""
-    return EPBatchManager(ep).input_tree()
+    return config.expert_parallel_inputs.input_tree(ep)
 
 
 def batch_context_length_types(
     data_parallel_degree: int,
+    *,
+    devices_per_replica: int = 1,
+    dtype: DType = DType.int32,
 ) -> tuple[TensorType, ...]:
-    """Returns the ``batch_context_lengths`` input types, one per replica."""
+    """Returns the ``batch_context_lengths`` input types.
+
+    There is one per replica, or with ``devices_per_replica``, one for each
+    device of each replica, a replica's devices in a row.
+    """
     return tuple(
-        TensorType(DType.int32, shape=[1], device=DeviceRef.CPU())
-        for _ in range(max(1, data_parallel_degree))
+        TensorType(dtype, shape=[1], device=DeviceRef.CPU())
+        for _ in range(max(1, data_parallel_degree) * devices_per_replica)
     )
 
 
 class BatchContextLengths:
     """Each replica's page-aligned KV context length, refreshed per batch.
 
-    The buffers persist across batches, and each batch rewrites them in
-    place, so a captured device graph keeps reading the live values.
+    With ``devices_per_replica``, each replica's length fills that many
+    buffers in a row, one for each of its devices. The buffers persist
+    across batches, and each batch rewrites them in place, so a captured
+    device graph keeps reading the live values.
     """
 
-    def __init__(self, data_parallel_degree: int, page_size: int) -> None:
+    def __init__(
+        self,
+        data_parallel_degree: int,
+        page_size: int,
+        *,
+        devices_per_replica: int = 1,
+        dtype: DType = DType.int32,
+    ) -> None:
         self._page_size = page_size
+        self._devices_per_replica = devices_per_replica
         self._buffers = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(max(1, data_parallel_degree))
+            Buffer.zeros(shape=[1], dtype=dtype)
+            for _ in range(max(1, data_parallel_degree) * devices_per_replica)
         ]
 
     def update(
@@ -231,9 +375,12 @@ class BatchContextLengths:
     ) -> list[Buffer]:
         """Writes each replica's context length and returns the buffers."""
         page = self._page_size
-        for buffer, batch in zip(self._buffers, replica_batches, strict=False):
-            buffer.to_numpy()[0] = sum(
+        count = self._devices_per_replica
+        for replica, batch in enumerate(replica_batches):
+            length = sum(
                 (ctx.tokens.current_position + page - 1) // page * page
                 for ctx in batch
             )
+            for buffer in self._buffers[replica * count :][:count]:
+                buffer.to_numpy()[0] = length
         return self._buffers

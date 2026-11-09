@@ -39,17 +39,18 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.graph.weights import WeightData
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops.sampling import AcceptanceSampler
+from max.nn.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     KVCacheParams,
     MultiKVCacheParams,
     padded_lut_cols,
 )
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.legacy.comm import Signals
 from max.nn.legacy.layer import Module
-from max.nn.legacy.sampling import AcceptanceSampler
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2,
@@ -510,6 +511,10 @@ class PagedTree:
                         draft_key.pack_into_buffer(device, max_cache)
                         if draft_key is not None
                         else None
+                    ),
+                    # Every paged leaf declares the record; zeros mean no split.
+                    mixed_step_split=Buffer.from_numpy(
+                        np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)
                     ),
                 )
             )

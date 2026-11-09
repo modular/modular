@@ -86,8 +86,9 @@ trait Hashable:
         Args:
             hasher: The hasher instance to contribute to.
         """
-        # An `EnumLike` type hashes its active case and that case's payload,
-        # not its fields.
+        # An `EnumLike` type hashes its active case and that case's payload.
+        # Its fields are storage: an `__enum` has one field that holds the
+        # payload of whichever case is active.
         comptime if conforms_to(Self, EnumLike):
             _enum_reflection_hash(self, hasher)
             return
@@ -113,6 +114,16 @@ def _enum_reflection_hash[
     """Hashes the index of the active case, then the payload of that case."""
     var discriminant = this._get_enum_discriminant()
     discriminant.__hash__(hasher)
+    comptime if not T._enum_has_no_payloads:
+        _enum_payload_hash(this, hasher, discriminant)
+
+
+# Not always-inline: the case loop unrolls to one branch per case, which would
+# otherwise be copied into every hash of the type.
+def _enum_payload_hash[
+    T: EnumLike & Hashable
+](this: T, mut hasher: Some[Hasher], discriminant: Int):
+    """Hashes the payload of case `discriminant`, if that case has one."""
     comptime names = ParameterList[T._enum_case_names]()
     comptime types = TypeList[Trait=AnyType, T._enum_case_types]()
     comptime for i in range(names.length):
@@ -126,7 +137,8 @@ def _enum_reflection_hash[
                 )
                 this._unsafe_get_enum_payload[i]().__hash__(hasher)
             return
-    abort("`_get_enum_discriminant` returned an index that names no case")
+    comptime if T._enum_is_exhaustive:
+        abort("`_get_enum_discriminant` returned an index that names no case")
 
 
 def hash[

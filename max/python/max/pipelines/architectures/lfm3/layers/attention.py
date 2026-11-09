@@ -20,16 +20,16 @@ from max import functional as F
 from max.driver import Device
 from max.dtype import DType
 from max.nn import Linear, Module
-from max.nn.common_layers.functional_kernels import (
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.kernels import (
     flash_attention_ragged,
     flash_attention_ragged_gpu,
     rope_ragged,
     rope_split_store_ragged,
 )
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 
@@ -67,12 +67,13 @@ class PartialRotaryEmbedding(RotaryEmbedding):
         # the device on every step, which device graph capture rejects.
         if self._freqs_cis is None:
             n = self.head_dim
+            # float32, not float64: Metal has no float64 `log` for the powf.
             iota = F.arange(
-                0, n, step=2, dtype=DType.float64, device=self.device
+                0, n, step=2, dtype=DType.float32, device=self.device
             )
             rotated = 2 * (int(self.partial_rotary_factor * n) // 2)
-            kept = F.cast(iota < rotated, DType.float64)
-            inv_freqs = F.cast(kept / (self.theta ** (iota / n)), DType.float32)
+            kept = F.cast(iota < rotated, DType.float32)
+            inv_freqs = kept / (self.theta ** (iota / n))
             t = F.arange(
                 0, self.max_seq_len * 2, dtype=DType.float32, device=self.device
             )

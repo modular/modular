@@ -51,7 +51,7 @@ gather/scatter loop.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 
 import numpy as np
 from max.driver import accelerator_api, accelerator_architecture_name
@@ -66,12 +66,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weight import Segment
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.stacked_linear import StackedLinear
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     GatedDeltaReplayInputs,
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
@@ -81,6 +76,11 @@ from max.nn.legacy.state_space import (
     kda_chunk_is_registered,
     kda_chunk_supports_head_dims,
 )
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.stacked_linear import StackedLinear
+from max.nn.quant_config import QuantConfig
 
 from ..state_cache import GatedDeltaRingAccess
 
@@ -165,6 +165,7 @@ class GatedDeltaNet(Module, Shardable):
         proj_dtype: DType | None = None,
         quant_config: QuantConfig | None = None,
         output_gate_type: str = "swish",
+        scalar_dtypes: Mapping[str, DType] | None = None,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
@@ -184,6 +185,10 @@ class GatedDeltaNet(Module, Shardable):
                 f"one of {sorted(_OUTPUT_GATE_ACTIVATIONS)}"
             )
         self.output_gate_type = output_gate_type
+        # Checkpoints store the decay scalars and the gated norm in bfloat16
+        # or float32. They are declared as stored and cast to float32 here, so
+        # the checkpoint loads without conversion.
+        self.scalar_dtypes = dict(scalar_dtypes or {})
         self._sharding_strategy: ShardingStrategy | None = None
         # Only in_proj_qkv, in_proj_z and out_proj are quantized; conv1d, the
         # b/a gates, the norm and every activation stay at `dtype`.
@@ -251,10 +256,16 @@ class GatedDeltaNet(Module, Shardable):
 
         # Decay parameters
         self.dt_bias = Weight(
-            "dt_bias", DType.float32, [num_value_heads], device=DeviceRef.CPU()
+            "dt_bias",
+            self.scalar_dtypes.get("dt_bias", DType.float32),
+            [num_value_heads],
+            device=DeviceRef.CPU(),
         )
         self.A_log = Weight(
-            "A_log", DType.float32, [num_value_heads], device=DeviceRef.CPU()
+            "A_log",
+            self.scalar_dtypes.get("A_log", DType.float32),
+            [num_value_heads],
+            device=DeviceRef.CPU(),
         )
 
         # Gated RMSNorm: uses DIRECT weight (weight_offset=0.0), not (1+weight).
@@ -263,7 +274,7 @@ class GatedDeltaNet(Module, Shardable):
         # uses (1 + weight) with zero-initialized weights.
         self.norm = RMSNorm(
             value_head_dim,
-            dtype=DType.float32,
+            dtype=self.scalar_dtypes.get("norm.weight", DType.float32),
             eps=rms_norm_eps,
             weight_offset=0.0,
             multiply_before_cast=False,
@@ -419,6 +430,7 @@ class GatedDeltaNet(Module, Shardable):
                 proj_dtype=self.proj_dtype,
                 quant_config=self.quant_config,
                 output_gate_type=self.output_gate_type,
+                scalar_dtypes=self.scalar_dtypes,
             )
             shard.in_proj = in_proj_shards[i]
             if ba_shards is not None:
@@ -466,7 +478,7 @@ class GatedDeltaNet(Module, Shardable):
                 of writing ``recurrent_pool``, and the caller must fold them
                 before the pool is read again.
             verify_width: The speculative graph's
-                :func:`~max.nn.legacy.state_space.verify_width_operand`. A launch at
+                :func:`~max.nn._graph_ops.state_space.verify_width_operand`. A launch at
                 width zero lands both leaves on the live pools, and a wider
                 one leaves them for the rollback.
 
@@ -493,8 +505,8 @@ class GatedDeltaNet(Module, Shardable):
         qkv_f32 = ops.cast(qkv, DType.float32)  # [N, conv_dim]
 
         # ---- Decay / beta params ----
-        dt_bias = self.dt_bias.to(device)
-        A_log = self.A_log.to(device)
+        dt_bias = ops.cast(self.dt_bias.to(device), DType.float32)
+        A_log = ops.cast(self.A_log.to(device), DType.float32)
         A = ops.exp(ops.cast(A_log, self.ssm_dtype))
         a_float = ops.cast(a_proj, self.ssm_dtype)  # [N, nv]
         # Stabilised softplus: for x>20 return x directly (avoids float32 overflow)

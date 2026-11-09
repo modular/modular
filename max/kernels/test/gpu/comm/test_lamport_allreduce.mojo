@@ -113,7 +113,7 @@ def lamport_allreduce_test[
     ngpus: Int,
     *,
     seed_neg_zero: Bool = False,
-](list_of_ctx: List[DeviceContext], length: Int) raises:
+](list_of_ctx: List[DeviceContext[]], length: Int) raises:
     """Runs the Lamport path for one (dtype, ngpus, length) and asserts the
     result is bitwise-equal to an independent host-computed reference across
     NUM_ITERS generations.
@@ -243,7 +243,7 @@ def lamport_allreduce_test[
 
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                pdl_level=PDLLevel(),
+                pdl_level=PDLLevel.OFF,
             ](
                 in_tensors,
                 out_tensors[i].layout,
@@ -293,7 +293,7 @@ def lamport_allreduce_test[
 def lamport_mixed_size_test[
     dtype: DType,
     ngpus: Int,
-](list_of_ctx: List[DeviceContext], max_length: Int) raises:
+](list_of_ctx: List[DeviceContext[]], max_length: Int) raises:
     """Runs a sequence of DIFFERENT-sized Lamport allreduces sharing ONE signal
     buffer and ONE monotonically-advancing flag, to expose the per-generation
     clear-extent bug.
@@ -430,7 +430,7 @@ def lamport_mixed_size_test[
 
                 _allreduce_lamport_p2p[
                     ngpus=ngpus,
-                    pdl_level=PDLLevel(),
+                    pdl_level=PDLLevel.OFF,
                 ](
                     in_tensors,
                     out_tensors[i].layout,
@@ -446,7 +446,7 @@ def lamport_mixed_size_test[
             # Expected per-call sum, accumulated in fp32 (the kernel's accum
             # type) and cast to dtype, exactly as the kernel does.
             var expected_accum = Float32(0)
-            comptime for i in range(ngpus):
+            for i in range(ngpus):
                 expected_accum += Float32(i + 1) + Float32(call_idx % 5)
             var expected = Scalar[dtype](expected_accum)
 
@@ -476,7 +476,7 @@ def _lamport_random_call[
     dtype: DType,
     ngpus: Int,
 ](
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     length: Int,
     call_idx: Int,
@@ -569,7 +569,7 @@ def _lamport_random_call[
 
 def lamport_mixed_dtype_test[
     ngpus: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Alternates fp32 and bf16 Lamport allreduces on ONE shared signal buffer
     set, as a model that reduces both dtypes through one `Signals` instance
     does.
@@ -617,7 +617,7 @@ def _lamport_rmsnorm_random_call[
     dtype: DType,
     ngpus: Int,
 ](
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     rows: Int,
     cols: Int,
@@ -677,7 +677,7 @@ def _lamport_rmsnorm_random_call[
             expected[j] = expected[j] * norm * gamma[c].cast[DType.float64]()
 
     comptime for i in range(ngpus):
-        lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+        lamport_allreduce_rmsnorm[dtype, ngpus](
             i,
             rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 in_dev[i].unsafe_ptr()
@@ -723,7 +723,7 @@ def _lamport_rmsnorm_random_call[
 
 def lamport_rmsnorm_mixed_dtype_test[
     ngpus: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Interleaves the fused Lamport allreduce + RMSNorm with the plain Lamport
     allreduce, in fp32 and bf16, on ONE shared signal buffer set.
 
@@ -775,7 +775,7 @@ def lamport_rmsnorm_mixed_dtype_test[
 def lamport_coexist_test[
     dtype: DType,
     ngpus: Int,
-](list_of_ctx: List[DeviceContext], small_len: Int, large_len: Int) raises:
+](list_of_ctx: List[DeviceContext[]], small_len: Int, large_len: Int) raises:
     """Interleaves a large barrier-based 2-stage `allreduce` (which uses the
     trailing scratch) between barrier-free Lamport calls on the SAME signal
     buffer, and verifies the Lamport results are unaffected.
@@ -919,7 +919,7 @@ def lamport_coexist_test[
 
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                pdl_level=PDLLevel(),
+                pdl_level=PDLLevel.OFF,
             ](
                 sin_tensors,
                 sout_tensors[i].layout,
@@ -933,7 +933,7 @@ def lamport_coexist_test[
             list_of_ctx[i].synchronize()
 
         var expected_accum = Float32(0)
-        comptime for i in range(ngpus):
+        for i in range(ngpus):
             expected_accum += Float32(i + 1) + Float32(call_idx % 5)
         var expected = Scalar[dtype](expected_accum)
 
@@ -963,7 +963,7 @@ def lamport_coexist_test[
 def lamport_unsynced_skew_test[
     dtype: DType,
     ngpus: Int,
-](list_of_ctx: List[DeviceContext], length: Int) raises:
+](list_of_ctx: List[DeviceContext[]], length: Int) raises:
     """Runs many Lamport allreduces back-to-back with NO cross-rank sync between
     calls, then verifies every call's result in one final pass.
 
@@ -1081,7 +1081,7 @@ def lamport_unsynced_skew_test[
 
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                pdl_level=PDLLevel(),
+                pdl_level=PDLLevel.OFF,
             ](
                 in_tensors,
                 out_capture[i].layout,
@@ -1101,7 +1101,7 @@ def lamport_unsynced_skew_test[
 
     for it in range(NUM_UNSYNCED_ITERS):
         var expected_accum = Float32(0)
-        comptime for i in range(ngpus):
+        for i in range(ngpus):
             expected_accum += Float32(i + 1) + Float32(it % 5)
         var expected = Scalar[dtype](expected_accum)
 
@@ -1125,7 +1125,7 @@ def lamport_unsynced_skew_test[
 def lamport_wrap_test[
     dtype: DType,
     ngpus: Int,
-](list_of_ctx: List[DeviceContext], length: Int) raises:
+](list_of_ctx: List[DeviceContext[]], length: Int) raises:
     """Seeds the device generation counter just below 2^32 and runs a short
     sequence of forced Lamport allreduces across the uint32 wrap, asserting
     every call -- before, at, and after the wrap -- returns the correct sum
@@ -1241,7 +1241,7 @@ def lamport_wrap_test[
 
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                pdl_level=PDLLevel(),
+                pdl_level=PDLLevel.OFF,
             ](
                 in_tensors,
                 out_tensors[i].layout,
@@ -1255,7 +1255,7 @@ def lamport_wrap_test[
             list_of_ctx[i].synchronize()
 
         var expected_accum = Float32(0)
-        comptime for i in range(ngpus):
+        for i in range(ngpus):
             expected_accum += Float32(16 * (call + 1) + (i + 1))
         var expected = Scalar[dtype](expected_accum)
 
@@ -1320,7 +1320,7 @@ def main() raises:
         if DeviceContext.number_of_devices() < num_gpus:
             continue
 
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
@@ -1334,7 +1334,7 @@ def main() raises:
         comptime length = 8 * 1024
         if DeviceContext.number_of_devices() < 2:
             continue
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(2):
             ctx.append(DeviceContext(device_id=i))
         print(_case_str[dtype, True](2, length))
@@ -1349,7 +1349,7 @@ def main() raises:
         comptime dtype = test_dtypes[dtype_idx]
         if DeviceContext.number_of_devices() < 2:
             continue
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(2):
             ctx.append(DeviceContext(device_id=i))
         print("====lamport-allreduce-mixed-", dtype, "-2")
@@ -1369,7 +1369,7 @@ def main() raises:
     if DeviceContext.number_of_devices() >= 2 and not lamport_dispatched:
         print("====lamport-allreduce-mixed-dtype skipped: no Lamport dispatch")
     elif DeviceContext.number_of_devices() >= 2:
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(2):
             ctx.append(DeviceContext(device_id=i))
         print("====lamport-allreduce-mixed-dtype-2")
@@ -1384,7 +1384,7 @@ def main() raises:
         comptime dtype = test_dtypes[dtype_idx]
         if DeviceContext.number_of_devices() < 2:
             continue
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(2):
             ctx.append(DeviceContext(device_id=i))
         print("====lamport-allreduce-coexist-", dtype, "-2")
@@ -1404,7 +1404,7 @@ def main() raises:
         comptime dtype = test_dtypes[dtype_idx]
         if DeviceContext.number_of_devices() < num_gpus:
             continue
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
         print("====lamport-allreduce-unsynced-skew-", dtype, "-", num_gpus)
@@ -1418,7 +1418,7 @@ def main() raises:
         comptime dtype = test_dtypes[dtype_idx]
         if DeviceContext.number_of_devices() < 2:
             continue
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(2):
             ctx.append(DeviceContext(device_id=i))
         print("====lamport-allreduce-wrap-", dtype, "-2")

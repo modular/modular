@@ -30,6 +30,7 @@ speculative:
   draft_proposal: sampled
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   # Off because perf benchmarks measured it degrading prefill and decode.
   ep_fuse_ffn_combine_send: false

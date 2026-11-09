@@ -147,6 +147,7 @@ from std.iter import (
     Iterator,
     StopIteration,
     enumerate,
+    filter,
     iter,
     map,
     next,
@@ -164,7 +165,6 @@ from std.memory import (
     ImmPointer,
     MutPointer,
     Pointer,
-    UnsafePointer,
 )
 from std.origin import (
     AnyOrigin,

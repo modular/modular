@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from max.driver import Device
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 
 
 @runtime_checkable

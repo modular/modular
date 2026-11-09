@@ -525,13 +525,6 @@ def ExtendLifetimeOp : MGP_Op<"extend.lifetime", [
 // ModelOp
 //===----------------------------------------------------------------------===//
 
-def ModelFrameworkAttr : ConfinedAttr<StrAttr, [
-  AttrConstraint<
-    CPred<"CompiledFrameworkLabel::isValidFrameworkName("
-          "cast<StringAttr>($_self).getValue())">,
-    "must be a recognized framework name.">,
-]>;
-
 def ModelOp : MGP_Op<"model", [
   HasOnlyGraphRegion,
   HasParent<"ModuleOp">,
@@ -565,9 +558,8 @@ def ModelOp : MGP_Op<"model", [
     first loaded, and re-uses the resulting context value for each subsequent
     call to 'execute'.
 
-    This op is represented by a subclass of M::Model in the Modular runtime,
-    chosen by the `frameworkName` attribute, which tools inspect to decide
-    which API mediates between framework-specific values and the model's.
+    This op is represented by M::Model in the Modular runtime, which mediates
+    between framework-specific values and the model's.
 
     Additional attributes may be supplied; these names have special meaning:
      - argument_names
@@ -576,7 +568,7 @@ def ModelOp : MGP_Op<"model", [
     Example:
     ```mlir
     // At the top-level
-    mgp.model @example_model : mof { attr="value" }
+    mgp.model @example_model { attr="value" }
       init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
         %ch = mef.chain.new
         %ctx = mgp.context.create 0
@@ -594,7 +586,6 @@ def ModelOp : MGP_Op<"model", [
   //  - The extra attributes must appear last since optional.
   let arguments = (ins
     M_DeviceRefArrayAttr:$devices,
-    ModelFrameworkAttr:$frameworkName,
     TypeAttrOf<FunctionType>:$inputOutputTypes,
     SymbolNameAttr:$sym_name,
     OptionalAttr<StrAttr>:$sym_visibility,
@@ -658,7 +649,6 @@ def ModelOp : MGP_Op<"model", [
     /// locations of the explicit 'execute' arguments, one per input type.
     OpBuilder<(ins
       "StringAttr":$sym_name,
-      "StringRef":$frameworkName,
       "ArrayRef<DeviceRef>":$devices,
       "ArrayRef<Type>":$inputTypes,
       "ArrayRef<Type>":$outputTypes,
@@ -672,7 +662,6 @@ def ModelOp : MGP_Op<"model", [
   let assemblyFormat = [{
     custom<SymbolVisibility>($sym_visibility) `` $sym_name
       (`subgraph` $isSubgraph^)? (`device_graph` $isDeviceGraph^)?
-      `:` custom<ClassName>($frameworkName)
       ($theExtraAttrs^)?
       `devices` $devices
       `init` custom<InitRegion>($init)
@@ -959,7 +948,7 @@ def MGP_CallOp : MGP_Op<"call", [
 
     Example:
     ```mlir
-    mgp.model @subgraph : mof {
+    mgp.model @subgraph {
       init (...) {
         // ...
       }
@@ -969,7 +958,7 @@ def MGP_CallOp : MGP_Op<"call", [
       }
     }
 
-    mgp.model @main : mof {
+    mgp.model @main {
       init (...) {
         // ...
       }

@@ -26,7 +26,6 @@ from max.algorithm.functional import (
 )
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
-from max.gpu.host.info import is_cpu, is_valid_target
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -285,7 +284,7 @@ def memcpy_or_fuse[
         # output lambda might operate on views (e.g., broadcast) that does not
         # always work with indices produced from a linearized address.
         elementwise[simd_width=1](
-            epilogue_wrapper, shape_1d, DeviceContext(api="cpu")
+            epilogue_wrapper, shape_1d, DeviceContext.cpu()
         )
 
 
@@ -738,7 +737,6 @@ def concat[
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
-    target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
@@ -748,16 +746,16 @@ def concat[
     ],
     context: DeviceContext,
 ) raises:
-    """Concatenates ``inputs`` along ``axis`` into ``output`` for the given ``target``.
+    """Concatenates ``inputs`` along ``axis`` into ``output``.
 
-    Dispatches to the CPU or GPU concat implementation based on ``target``.
+    Dispatches to the CPU or GPU concat implementation based on the target of
+    ``context``.
     Returns early when the output tensor is empty.
 
     Parameters:
         input_origin: Origin of the input tensors (inferred).
         InputLayoutType: Layout type of the input tensors (inferred).
         dtype: Element type of the input and output tensors.
-        target: Target device to dispatch to (defaults to ``"cpu"``).
 
     Args:
         output: Destination tensor that receives the concatenated result.
@@ -765,7 +763,7 @@ def concat[
         inputs: Static tuple of input tensors to concatenate.
         context: Device context used to schedule the work.
     """
-    _concat_impl[dtype, target=target, has_epilogue=False](
+    _concat_impl[dtype, has_epilogue=False](
         output, axis, inputs, _no_epilogue, context
     )
 
@@ -777,7 +775,6 @@ def concat[
     EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
-    target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
@@ -790,8 +787,8 @@ def concat[
 ) raises:
     """Concatenates ``inputs`` along ``axis`` into ``output``, applying ``epilogue_fn`` to each element.
 
-    Dispatches to the CPU or GPU concat implementation based on ``target``.
-    Instead of storing into ``output``, each copied element is handed to
+    Dispatches to the CPU or GPU concat implementation based on the target of
+    ``context``. Instead of storing into ``output``, each copied element is handed to
     ``epilogue_fn`` together with its output coordinates. Returns early when
     the output tensor is empty.
 
@@ -800,7 +797,6 @@ def concat[
         InputLayoutType: Layout type of the input tensors (inferred).
         EpilogueFnType: Type of the epilogue function (inferred).
         dtype: Element type of the input and output tensors.
-        target: Target device to dispatch to (defaults to ``"cpu"``).
 
     Args:
         output: Destination tensor that receives the concatenated result.
@@ -809,7 +805,7 @@ def concat[
         epilogue_fn: Elementwise function applied to each copied element.
         context: Device context used to schedule the work.
     """
-    _concat_impl[dtype, target=target, has_epilogue=True](
+    _concat_impl[dtype, has_epilogue=True](
         output, axis, inputs, epilogue_fn, context
     )
 
@@ -821,7 +817,6 @@ def _concat_impl[
     EpilogueFnType: ElementwiseEpilogueFn,
     //,
     dtype: DType,
-    target: StaticString,
     has_epilogue: Bool,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
@@ -833,15 +828,13 @@ def _concat_impl[
     epilogue_fn: EpilogueFnType,
     context: DeviceContext,
 ) raises:
-    comptime assert is_valid_target[target](), "not a valid target"
-
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "concat", task_id=get_safe_task_id(context)
     ):
         # Exit early if the tensors are empty.
         if output.num_elements() == 0:
             return
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             comptime InputTileType = TileTensor[
                 dtype, InputLayoutType, input_origin
             ]
@@ -1159,11 +1152,11 @@ def _concat_gpu_elementwise[
     # dimension, so all elements belong to the same input and we can safely
     # use vectorized loads/stores (float4 = 128-bit transactions).
     comptime if axis != output.rank - 1:
-        elementwise[4, target="gpu", _trace_description="concat"](
+        elementwise[4, _trace_description="concat"](
             per_output_elem, output.layout.shape_coord(), ctx
         )
     else:
-        elementwise[1, target="gpu", _trace_description="concat"](
+        elementwise[1, _trace_description="concat"](
             per_output_elem, output.layout.shape_coord(), ctx
         )
 
@@ -1280,7 +1273,7 @@ def _fused_concat_cpu[
     input_shapes: StaticTuple[DynamicCoord[.int, rank], size],
     input_fn: InputFnType,
     output_0_fn: OutputFnType,
-    ctx: Optional[DeviceContext],
+    ctx: Optional[DeviceContext.CPU],
 ) raises:
     var offset = 0
 
@@ -1303,7 +1296,7 @@ def _fused_concat_cpu[
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
-        var device_ctx = ctx.value() if ctx else DeviceContext(api="cpu")
+        var device_ctx = ctx.value() if ctx else DeviceContext.cpu()
         elementwise[
             1,
             _trace_description="concat_fused",
@@ -1555,19 +1548,16 @@ def _fused_concat_gpu_elementwise[
         if _vec_width > 1 and inner_size % _vec_width == 0:
             elementwise[
                 _vec_width,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
         elif inner_size % 4 == 0:
             elementwise[
                 4,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
         else:
             elementwise[
                 1,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
     else:
@@ -1582,13 +1572,11 @@ def _fused_concat_gpu_elementwise[
         if use_simd_width:
             elementwise[
                 simd_width,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
         else:
             elementwise[
                 1,
-                target="gpu",
                 _trace_description="concat_fused",
             ](per_output_elem, output_layout.shape_coord(), ctx)
 
@@ -1682,7 +1670,6 @@ def _fused_dual_concat_gpu_elementwise[
         if _vec_width > 1 and inner_size % _vec_width == 0:
             dual_elementwise[
                 _vec_width,
-                target="gpu",
                 _trace_description="dual_concat_fused",
             ](
                 output_shape_0,
@@ -1694,7 +1681,6 @@ def _fused_dual_concat_gpu_elementwise[
         elif inner_size % 4 == 0:
             dual_elementwise[
                 4,
-                target="gpu",
                 _trace_description="dual_concat_fused",
             ](
                 output_shape_0,
@@ -1706,7 +1692,6 @@ def _fused_dual_concat_gpu_elementwise[
         else:
             dual_elementwise[
                 1,
-                target="gpu",
                 _trace_description="dual_concat_fused",
             ](
                 output_shape_0,
@@ -1730,7 +1715,6 @@ def _fused_dual_concat_gpu_elementwise[
         if use_simd_width:
             dual_elementwise[
                 simd_width,
-                target="gpu",
                 _trace_description="dual_concat_fused",
             ](
                 output_shape_0,
@@ -1742,7 +1726,6 @@ def _fused_dual_concat_gpu_elementwise[
         else:
             dual_elementwise[
                 1,
-                target="gpu",
                 _trace_description="dual_concat_fused",
             ](
                 output_shape_0,
@@ -1910,7 +1893,6 @@ def fused_concat[
     OutputLayoutType: TensorLayout,
     *,
     axis: Int,
-    target: StaticString = "cpu",
 ](
     input_shapes: StaticTuple[DynamicCoord[.int, rank], _],
     output_layout: OutputLayoutType,
@@ -1923,8 +1905,8 @@ def fused_concat[
     Instead of reading from concrete input tensors, the fused variant drives the
     concat from a caller-supplied ``input_fn`` that produces values on demand,
     allowing the concat to be fused with preceding elementwise operations.
-    Dispatches to the CPU or GPU fused implementation based on ``target`` and
-    returns early when the output tensor is empty.
+    Dispatches to the CPU or GPU fused implementation based on the target of
+    ``ctx`` and returns early when the output tensor is empty.
 
     Parameters:
         dtype: Element type of the input and output tensors.
@@ -1933,7 +1915,6 @@ def fused_concat[
         OutputFnType: Type of the output epilogue function (inferred).
         OutputLayoutType: Layout type of the concatenated output.
         axis: Axis along which to concatenate the inputs.
-        target: Target device to dispatch to (defaults to ``"cpu"``).
 
     Args:
         input_shapes: Static tuple of per-input shapes describing each logical
@@ -1946,21 +1927,19 @@ def fused_concat[
         output_0_fn: Epilogue function that stores each produced element.
         ctx: Device context used to schedule the work.
     """
-    comptime assert is_valid_target[target](), "not a valid target"
-
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "concat", task_id=get_safe_task_id(ctx)
     ):
         # Exit early if the tensors are empty.
         if output_layout.product() == 0:
             return
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             return _fused_concat_cpu[rank, dtype](
                 axis,
                 input_shapes,
                 input_fn,
                 output_0_fn,
-                Optional[DeviceContext](ctx),
+                Optional(ctx.assert_cpu_target()),
             )
         else:
             return _fused_concat_gpu[rank, dtype](

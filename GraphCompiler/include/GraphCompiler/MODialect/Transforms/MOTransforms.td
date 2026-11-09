@@ -237,10 +237,12 @@ def SupportConversionsTest : Pass<"mo-support-conversions-test", "ModuleOp"> {
 }
 
 def ValidateDevicesPass : Pass<"mo-validate-devices", "GraphOp"> {
-  let summary = "Validates that each data type used in tensors in the graph "
-                "can be implemented on the target device.";
+  let summary = "Validates that each data type an op computes on can be "
+                "implemented on the target device.";
   let description = [{
-    Checks the graph's inputs and outputs.
+    Checks the tensor operands and results of every op that is not exempt. An
+    op is exempt when it implements `MO_PreservedDuringKernelLowering` and
+    reports that any data type may pass through it.
   }];
 
   let options = [
@@ -448,6 +450,25 @@ def MergeAdjacentParallels :
   }];
 }
 
+def TmpDecomposeComposites
+    : Pass<"mo-tmp-decompose-composites", "GraphOp"> {
+  let summary = "Replace each composite no kernel implements with its parts.";
+  let description = [{
+    Temporary, until no pattern depends on a composite (rms_norm + rope, for
+    example).
+
+    Runs right before `mo-to-map`, after the patterns that fuse composites
+    with their neighbors. A composite that has no kernel registered for its
+    device becomes the ops it is made of, so the graph compiler fuses them and
+    generates its kernel. A composite a target
+    implements, as plugins do for rms_norm, keeps running that kernel.
+  }];
+
+  let dependentDialects = [
+    "M::MOSH::MOSHDialect",
+  ];
+}
+
 def MarkStableTensorsPass : Pass<"mo-mark-stable-tensors", "GraphOp"> {
   let summary = "Route operands that a kernel's build_graph declares stable "
                 "through mo.stable.create.";
@@ -458,6 +479,9 @@ def MarkStableTensorsPass : Pass<"mo-mark-stable-tensors", "GraphOp"> {
     `StableTensor` / `StableVariadicTensors` argument is rewritten to go
     through `mo.stable.create`, so the operand type carries the `stable` bit
     that kernel-stub setup and emission key off.
+
+    Beforehand, every distributed collective with a per-device form is
+    expanded into one bundled op per participating device
 
     Graphs without the `isDeviceGraph` attribute are no-ops.
   }];

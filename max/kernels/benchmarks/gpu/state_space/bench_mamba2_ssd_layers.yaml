@@ -1,0 +1,62 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_mamba2_ssd_layers
+file: $KERNEL_BENCHMARKS_ROOT/gpu/state_space/bench_mamba2_ssd_layers.mojo
+
+# One chunked SSD chain launch per layer, `layers` launches back to back in one
+# stream, at the served prefill shapes (P 64, N 128, H 32, G 4). The extra
+# quotes preserve each sequence vector as one kbench value rather than a
+# flattened sweep.
+params:
+- $cohort: chunked_p2048_l1
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[2048]'"
+  $ssd-layers: 1
+
+- $cohort: chunked_p2048_l16
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[2048]'"
+  $ssd-layers: 16
+
+- $cohort: chunked_p2048_l24
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[2048]'"
+  $ssd-layers: 24
+
+- $cohort: chunked_p8192_l1
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192]'"
+  $ssd-layers: 1
+
+- $cohort: chunked_p8192_l16
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192]'"
+  $ssd-layers: 16
+
+- $cohort: chunked_p8192_l24
+  $ssd-heads: 32
+  $ssd-head-dim: 64
+  $ssd-groups: 4
+  $sequence_lengths: "'[8192]'"
+  $ssd-layers: 24

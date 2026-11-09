@@ -1,6 +1,6 @@
 // RUN: mo-opt %s --mogg-to-mgp | FileCheck %s --enable-var-scope
 
-// CHECK-LABEL: mgp.model @add_expressions : mof
+// CHECK-LABEL: mgp.model @add_expressions
 // CHECK: } execute
 
 mo.graph @add_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
@@ -23,7 +23,7 @@ mo.graph @add_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @sub_expressions : mof
+// CHECK-LABEL: mgp.model @sub_expressions
 // CHECK: } execute
 mo.graph @sub_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -46,7 +46,7 @@ mo.graph @sub_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @mul_expressions : mof
+// CHECK-LABEL: mgp.model @mul_expressions
 // CHECK: } execute
 mo.graph @mul_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -68,7 +68,7 @@ mo.graph @mul_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @mod_expressions : mof
+// CHECK-LABEL: mgp.model @mod_expressions
 // CHECK: } execute
 mo.graph @mod_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -92,7 +92,7 @@ mo.graph @mod_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @eq_expressions : mof
+// CHECK-LABEL: mgp.model @eq_expressions
 // CHECK: } execute
 mo.graph @eq_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -114,7 +114,7 @@ mo.graph @eq_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @lt_expressions : mof
+// CHECK-LABEL: mgp.model @lt_expressions
 // CHECK: } execute
 mo.graph @lt_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -137,7 +137,7 @@ mo.graph @lt_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @le_expressions : mof
+// CHECK-LABEL: mgp.model @le_expressions
 // CHECK: } execute
 mo.graph @le_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -161,7 +161,7 @@ mo.graph @le_expressions<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @cond_expression : mof
+// CHECK-LABEL: mgp.model @cond_expression
 // CHECK: } execute
 mo.graph @cond_expression<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -188,7 +188,7 @@ mo.graph @cond_expression<X, Y>(%arg0: !mo.tensor<[X, Y], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @bool_expressions : mof
+// CHECK-LABEL: mgp.model @bool_expressions
 // CHECK: } execute
 mo.graph @bool_expressions<E0, E1>(%arg0: !mo.tensor<[E0, E1], f32>) -> !mo.tensor<[], si64> {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -220,7 +220,7 @@ mo.graph @bool_expressions<E0, E1>(%arg0: !mo.tensor<[E0, E1], f32>) -> !mo.tens
 
 // -----
 
-// CHECK-LABEL: mgp.model @complex_expressions : mof
+// CHECK-LABEL: mgp.model @complex_expressions
 // CHECK: } execute
 mo.graph @complex_expressions<X, Y, Z>(%arg0: !mo.tensor<[X, Y, Z], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -241,7 +241,7 @@ mo.graph @complex_expressions<X, Y, Z>(%arg0: !mo.tensor<[X, Y, Z], f32>) {
   mo.output
 }
 
-// CHECK-LABEL: mgp.model @variadic_exprs : mof
+// CHECK-LABEL: mgp.model @variadic_exprs
 // CHECK: } execute
 mo.graph @variadic_exprs<X, Y, Z>(%arg0: !mo.tensor<[X, Y, Z], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -263,7 +263,7 @@ mo.graph @variadic_exprs<X, Y, Z>(%arg0: !mo.tensor<[X, Y, Z], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @shape_attr : mof
+// CHECK-LABEL: mgp.model @shape_attr
 // CHECK: } execute
 mo.graph @shape_attr<X, Y, Z>(%arg0: !mo.tensor<[X, Y, Z], f32>) -> !mo.tensor<[3], si64> {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -290,7 +290,7 @@ mo.graph @shape_attr<X, Y, Z>(%arg0: !mo.tensor<[X, Y, Z], f32>) -> !mo.tensor<[
 
 // -----
 
-// CHECK-LABEL: mgp.model @param_expr_in_output_shape : mof
+// CHECK-LABEL: mgp.model @param_expr_in_output_shape
 // CHECK: } execute
 mo.graph @param_expr_in_output_shape<D0>(
   %arg0: !mo.tensor<[D0, 4], f32>
@@ -312,7 +312,7 @@ mo.graph @param_expr_in_output_shape<D0>(
 
 // -----
 
-// CHECK-LABEL: mgp.model @shift_expressions : mof
+// CHECK-LABEL: mgp.model @shift_expressions
 // CHECK: } execute
 mo.graph @shift_expressions<X, Y, Z>(%arg0: !mo.tensor<[X, Y, Z], f32>) {
   //     CHECK: %[[DIM0:.*]] = mgp.tensor_spec.get_dim[0] %{{.*}}
@@ -337,7 +337,7 @@ mo.graph @shift_expressions<X, Y, Z>(%arg0: !mo.tensor<[X, Y, Z], f32>) {
 
 // -----
 
-// CHECK-LABEL: mgp.model @from_param : mof
+// CHECK-LABEL: mgp.model @from_param
 // CHECK: } execute
 mo.graph @from_param<X, Y, Z>() -> !mo.tensor<[3], si64> {
   // CHECK-DAG: %[[X:.*]] = mosh.param.to_value = <X>

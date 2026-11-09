@@ -21,7 +21,7 @@ from comm.sync import is_p2p_enabled
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_gpu
-from std.memory.unsafe_pointer import pointer_to_int
+from std.memory.pointer import pointer_to_int
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list
 
@@ -31,26 +31,15 @@ from std.sys.info import size_of
 from extensibility import (
     Fused,
     Input,
-    InputTensor,
-    InputVariadicTensors,
     MutableInput,
     Output,
-    OutputTensor,
-    OutputVariadicTensors,
     Storable,
     StoreAccess,
     Tensor,
     TensorTuple,
     TileTensorable,
-)
-from extensibility import (
-    _MutableInputTensor as MutableInputTensor,
-)
-from extensibility import (
-    _MutableInputVariadicTensors as MutableInputVariadicTensors,
-)
-from extensibility import (
-    _FusedOutputTensor as FusedOutputTensor,
+    UnsafeFusedView,
+    unsafe_fused_view,
 )
 
 from comm.device_collective import _launch_device_collective
@@ -76,9 +65,12 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
+    ExpertLoadSink,
+    ExpertLoadTally,
     MXTokenFormat,
     NVBlockScaledTokenFormat,
     ep_dispatch_recv_size,
+    NullExpertLoad,
     fused_silu_kernel,
     fused_silu_mx_kernel,
     fused_silu_mxfp6_kernel,
@@ -109,14 +101,13 @@ struct Struct_ep_init:
         dispatch_scale_dtype: DType,
         dispatch_fmt_str: StaticString,
         //,
-        target: StaticString,
         *,
         nvfp4_dyn_global_scales: Bool = False,
     ](
-        dev_ptrs: OutputTensor[dtype=.uint64, rank=2, ...],
-        my_rank_tensor: OutputTensor[dtype=.int32, rank=1, ...],
-        atomic_counters_0: MutableInputTensor[dtype=.int32, ...],
-        atomic_counters_1: MutableInputTensor[dtype=.int32, ...],
+        dev_ptrs: Some[Output & Tensor],
+        my_rank_tensor: Some[Output & Tensor],
+        atomic_counters_0: Some[MutableInput & Tensor],
+        atomic_counters_1: Some[MutableInput & Tensor],
         context: DeviceContext,
     ) raises:
         """This kernel initializes the vendor library for Expert Parallelism
@@ -133,7 +124,6 @@ struct Struct_ep_init:
             n_nodes: Number of physical nodes.
             dispatch_scale_dtype: DType of the dispatch scale.
             dispatch_fmt_str: String indicating the dispatch format.
-            target: Target for this kernel.
             nvfp4_dyn_global_scales: Whether the `BLOCK_SCALED_NV` messages
                 carry a per-token global scale, which makes them larger.
 
@@ -146,8 +136,16 @@ struct Struct_ep_init:
             atomic_counters_1: Atomic counters for buffer group 1.
             context: GPU device context
         """
+        comptime assert conforms_to(type_of(dev_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(my_rank_tensor), TileTensorable)
+        comptime assert conforms_to(type_of(atomic_counters_0), TileTensorable)
+        comptime assert conforms_to(type_of(atomic_counters_1), TileTensorable)
+        comptime assert type_of(dev_ptrs).rank == 2
+        comptime assert type_of(my_rank_tensor).rank == 1
+        comptime assert type_of(atomic_counters_0).rank == 1
+        comptime assert type_of(atomic_counters_1).rank == 1
         # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
         var gpu_ctx = context
 
         # Calculate buffer sizes for dispatch phase
@@ -233,20 +231,28 @@ struct Struct_ep_init:
         # These counters coordinate work between different thread blocks.
         # A config that can host a fused EP kernel allocates the reserved
         # words too (`allocation_size()`); the memset zeroes them as well.
+        comptime counters_0_size = type_of(atomic_counters_0)._shape_types[
+            0
+        ].static_value
+        comptime counters_1_size = type_of(atomic_counters_1)._shape_types[
+            0
+        ].static_value
         comptime assert (
-            atomic_counters_0.static_spec.static_size
-            == EPLocalSyncCounters[n_experts].total_size()
-            or atomic_counters_0.static_spec.static_size
+            counters_0_size == EPLocalSyncCounters[n_experts].total_size()
+            or counters_0_size
             == EPLocalSyncCounters[n_experts].allocation_size()
         ), "Atomic counters 0 size doesn't match expected size."
-        var atomic_counters_0_buf = atomic_counters_0.to_device_buffer(gpu_ctx)
+        var atomic_counters_0_buf = atomic_counters_0.to_tile_tensor[
+            .int32
+        ]().to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
 
         comptime assert (
-            atomic_counters_1.static_spec.static_size
-            == atomic_counters_0.static_spec.static_size
+            counters_1_size == counters_0_size
         ), "Atomic counters 1 size doesn't match expected size."
-        var atomic_counters_1_buf = atomic_counters_1.to_device_buffer(gpu_ctx)
+        var atomic_counters_1_buf = atomic_counters_1.to_tile_tensor[
+            .int32
+        ]().to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
         var dispatch_send_p: MutPointer[UInt8, MutUntrackedOrigin]
@@ -311,15 +317,17 @@ struct Struct_ep_init:
         )
         gpu_ctx.enqueue_memset(combine_recv_count_buf, UInt64.MAX_FINITE)
 
+        var dev_ptrs_tensor = dev_ptrs.to_tile_tensor[.uint64]()
+
         # Group 0: Dispatch phase buffer pointers
-        dev_ptrs[0, 0] = UInt64(Int(dispatch_send_p))
-        dev_ptrs[0, 1] = UInt64(Int(dispatch_recv_p))
-        dev_ptrs[0, 2] = UInt64(Int(dispatch_recv_count_p))
+        dev_ptrs_tensor[0, 0] = UInt64(Int(dispatch_send_p))
+        dev_ptrs_tensor[0, 1] = UInt64(Int(dispatch_recv_p))
+        dev_ptrs_tensor[0, 2] = UInt64(Int(dispatch_recv_count_p))
 
         # Group 1: Combine phase buffer pointers
-        dev_ptrs[1, 0] = UInt64(pointer_to_int(combine_send_p))
-        dev_ptrs[1, 1] = UInt64(Int(combine_recv_p))
-        dev_ptrs[1, 2] = UInt64(Int(combine_recv_count_p))
+        dev_ptrs_tensor[1, 0] = UInt64(pointer_to_int(combine_send_p))
+        dev_ptrs_tensor[1, 1] = UInt64(Int(combine_recv_p))
+        dev_ptrs_tensor[1, 2] = UInt64(Int(combine_recv_count_p))
 
         # Store current device's rank
         var my_rank: Int32
@@ -328,7 +336,7 @@ struct Struct_ep_init:
             my_rank = Int32(shmem_my_pe())
         else:
             my_rank = Int32(gpu_ctx.device().id)
-        my_rank_tensor[0] = my_rank
+        my_rank_tensor.to_tile_tensor[.int32]()[0] = my_rank
 
 
 @extensibility.register("ep.dispatch_async")
@@ -348,7 +356,6 @@ struct Struct_ep_dispatch_async:
         n_nodes: Int,
         dispatch_fmt_str: StaticString,
         //,
-        target: StaticString,
     ](
         atomic_counters: Some[MutableInput & Tensor],
         input_tokens: Some[Input & Tensor],
@@ -379,7 +386,6 @@ struct Struct_ep_dispatch_async:
             dispatch_fmt_str: String selecting the dispatch token
                 format, either `"BlockwiseFP8"` or `"BF16"`
                 (inferred).
-            target: Compile-time device target.
 
         Args:
             atomic_counters: Atomic counters coordinating work across
@@ -424,7 +430,6 @@ struct Struct_ep_dispatch_async:
                     max_token_per_rank,
                     n_gpus_per_node,
                     n_nodes,
-                    target,
                 ](
                     atomic_counters.to_tile_tensor[.int32](),
                     input_tokens.to_tile_tensor().as_imm(),
@@ -446,7 +451,6 @@ struct Struct_ep_dispatch_async:
                     max_token_per_rank,
                     n_gpus_per_node,
                     n_nodes,
-                    target,
                 ](
                     atomic_counters.to_tile_tensor[.int32](),
                     input_tokens.to_tile_tensor().as_imm(),
@@ -480,7 +484,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
     ](
         atomic_counters: Some[MutableInput & Tensor],
         input_tokens: Some[Input & Tensor],
@@ -509,7 +512,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
                 (inferred).
             n_gpus_per_node: Number of GPUs per node (inferred).
             n_nodes: Number of physical nodes (inferred).
-            target: Compile-time device target.
 
         Args:
             atomic_counters: Atomic counters coordinating work across
@@ -564,7 +566,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             atomic_counters.to_tile_tensor[.int32](),
             input_tokens.to_tile_tensor().as_imm(),
@@ -594,7 +595,6 @@ struct Struct_ep_dispatch_async_mxfp4:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         *,
         MX_FORMAT: StaticString = "auto",
     ](
@@ -625,7 +625,6 @@ struct Struct_ep_dispatch_async_mxfp4:
                 (inferred).
             n_gpus_per_node: Number of GPUs per node (inferred).
             n_nodes: Number of physical nodes (inferred).
-            target: Compile-time device target.
             MX_FORMAT: Name of the MX element format, or `auto` to take it
                 from the dtype. See `MXFormat.from_name`. Names the MX
                 encoding of the wire payload. It cannot be inferred from
@@ -678,7 +677,6 @@ struct Struct_ep_dispatch_async_mxfp4:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             atomic_counters.to_tile_tensor[.int32](),
             input_tokens.to_tile_tensor().as_imm(),
@@ -705,6 +703,27 @@ def _mut_pointer_tile(
     )
 
 
+@inline(.always)
+def _expert_load_tally(
+    expert_load: Some[MutableInput & Tensor], layer_idx: Some[Input & Tensor]
+) -> ExpertLoadTally:
+    """Wraps the `.expert_load` ops' tally inputs: a `[layers,
+    n_local_experts]` uint64 running total and the int32 `[1]` MoE layer index
+    the EPLB router also reads."""
+    comptime assert conforms_to(type_of(expert_load), TileTensorable)
+    comptime assert conforms_to(type_of(layer_idx), TileTensorable)
+    comptime assert type_of(expert_load).rank == 2
+    comptime assert type_of(layer_idx).rank == 1
+    return ExpertLoadTally(
+        MutPointer[UInt64, MutUntrackedOrigin](
+            unsafe_from_address=Int(expert_load.to_tile_tensor[.uint64]().ptr)
+        ),
+        ImmPointer[Int32, ImmUntrackedOrigin](
+            unsafe_from_address=Int(layer_idx.to_tile_tensor[.int32]().ptr)
+        ),
+    )
+
+
 @extensibility.register("ep.dispatch_wait")
 struct Struct_ep_dispatch_wait:
     """Registers the `ep.dispatch_wait` graph op with the graph compiler."""
@@ -719,7 +738,6 @@ struct Struct_ep_dispatch_wait:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         num_input_tokens: Int = -1,
     ](
         output_tokens: Some[Output & Tensor],
@@ -734,6 +752,50 @@ struct Struct_ep_dispatch_wait:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in BF16 format.
         """
+        Struct_ep_dispatch_wait.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            num_input_tokens=num_input_tokens,
+        ](
+            output_tokens,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        num_input_tokens: Int = -1,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch_wait`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(expert_ids), TileTensorable)
@@ -763,7 +825,6 @@ struct Struct_ep_dispatch_wait:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             format_handler,
             row_offsets.to_tile_tensor[.uint32](),
@@ -774,6 +835,60 @@ struct Struct_ep_dispatch_wait:
             atomic_counters.to_tile_tensor[.int32](),
             context,
             num_input_tokens,
+            expert_load=expert_load,
+        )
+
+
+@extensibility.register("ep.dispatch_wait.expert_load")
+struct Struct_ep_dispatch_wait_expert_load:
+    """Registers `ep.dispatch_wait.expert_load`: `ep.dispatch_wait` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        num_input_tokens: Int = -1,
+    ](
+        output_tokens: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch_wait` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch_wait.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            num_input_tokens=num_input_tokens,
+        ](
+            output_tokens,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -792,7 +907,6 @@ struct Struct_ep_dispatch_wait_fp8:
         n_nodes: Int,
         dispatch_scale_granularity: StaticString,
         //,
-        target: StaticString,
         num_input_tokens: Int = -1,
     ](
         output_tokens: Some[Output & Tensor],
@@ -808,6 +922,54 @@ struct Struct_ep_dispatch_wait_fp8:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in Blockwise FP8 format.
         """
+        Struct_ep_dispatch_wait_fp8.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            dispatch_scale_granularity=dispatch_scale_granularity,
+            num_input_tokens=num_input_tokens,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        dispatch_scale_granularity: StaticString,
+        num_input_tokens: Int = -1,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch_wait.fp8`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(output_scales), TileTensorable)
         comptime assert conforms_to(type_of(row_offsets), TileTensorable)
@@ -842,7 +1004,6 @@ struct Struct_ep_dispatch_wait_fp8:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             format_handler,
             row_offsets.to_tile_tensor[.uint32](),
@@ -853,6 +1014,64 @@ struct Struct_ep_dispatch_wait_fp8:
             atomic_counters.to_tile_tensor[.int32](),
             context,
             num_input_tokens,
+            expert_load=expert_load,
+        )
+
+
+@extensibility.register("ep.dispatch_wait.fp8.expert_load")
+struct Struct_ep_dispatch_wait_fp8_expert_load:
+    """Registers `ep.dispatch_wait.fp8.expert_load`: `ep.dispatch_wait.fp8` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        dispatch_scale_granularity: StaticString,
+        //,
+        num_input_tokens: Int = -1,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch_wait.fp8` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch_wait_fp8.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            dispatch_scale_granularity=dispatch_scale_granularity,
+            num_input_tokens=num_input_tokens,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -871,7 +1090,6 @@ struct Struct_ep_dispatch_wait_block_scaled_nv:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         num_input_tokens: Int = -1,
     ](
         output_tokens: Some[Output & Tensor],
@@ -888,6 +1106,54 @@ struct Struct_ep_dispatch_wait_block_scaled_nv:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in NVFP4 format.
         """
+        Struct_ep_dispatch_wait_block_scaled_nv.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            num_input_tokens=num_input_tokens,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            scales_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        num_input_tokens: Int = -1,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        scales_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch_wait.block.scaled.nv`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(output_scales), TileTensorable)
         comptime assert conforms_to(type_of(row_offsets), TileTensorable)
@@ -926,7 +1192,6 @@ struct Struct_ep_dispatch_wait_block_scaled_nv:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             format_handler,
             row_offsets.to_tile_tensor[.uint32](),
@@ -937,6 +1202,64 @@ struct Struct_ep_dispatch_wait_block_scaled_nv:
             atomic_counters.to_tile_tensor[.int32](),
             context,
             num_input_tokens,
+            expert_load=expert_load,
+        )
+
+
+@extensibility.register("ep.dispatch_wait.block.scaled.nv.expert_load")
+struct Struct_ep_dispatch_wait_block_scaled_nv_expert_load:
+    """Registers `ep.dispatch_wait.block.scaled.nv.expert_load`: `ep.dispatch_wait.block.scaled.nv` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        num_input_tokens: Int = -1,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        scales_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch_wait.block.scaled.nv` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch_wait_block_scaled_nv.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            num_input_tokens=num_input_tokens,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            scales_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -955,7 +1278,6 @@ struct Struct_ep_dispatch_wait_mxfp4:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
         num_input_tokens: Int = -1,
         *,
         MX_FORMAT: StaticString = "auto",
@@ -980,6 +1302,55 @@ struct Struct_ep_dispatch_wait_mxfp4:
         expert can receive rounded up to 32, so the scales output tensor has
         shape ``[n_local_experts * max_padded_M, K_SCALES]``.
         """
+        Struct_ep_dispatch_wait_mxfp4.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            num_input_tokens=num_input_tokens,
+            MX_FORMAT=MX_FORMAT,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        num_input_tokens: Int = -1,
+        *,
+        MX_FORMAT: StaticString = "auto",
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch_wait.mxfp4`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(output_scales), TileTensorable)
         comptime assert conforms_to(type_of(row_offsets), TileTensorable)
@@ -1026,7 +1397,6 @@ struct Struct_ep_dispatch_wait_mxfp4:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             format_handler,
             row_offsets.to_tile_tensor[.uint32](),
@@ -1037,6 +1407,65 @@ struct Struct_ep_dispatch_wait_mxfp4:
             atomic_counters.to_tile_tensor[.int32](),
             context,
             num_input_tokens,
+            expert_load=expert_load,
+        )
+
+
+@extensibility.register("ep.dispatch_wait.mxfp4.expert_load")
+struct Struct_ep_dispatch_wait_mxfp4_expert_load:
+    """Registers `ep.dispatch_wait.mxfp4.expert_load`: `ep.dispatch_wait.mxfp4` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        num_input_tokens: Int = -1,
+        *,
+        MX_FORMAT: StaticString = "auto",
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch_wait.mxfp4` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch_wait_mxfp4.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            num_input_tokens=num_input_tokens,
+            MX_FORMAT=MX_FORMAT,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -1057,7 +1486,6 @@ struct Struct_ep_dispatch:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Tensor],
         row_offsets: Some[Output & Tensor],
@@ -1098,7 +1526,6 @@ struct Struct_ep_dispatch:
                 (inferred).
             allreduce_world_size: Number of ranks participating in
                 the allreduce following dispatch (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Output tensor storing the received tokens
@@ -1123,6 +1550,60 @@ struct Struct_ep_dispatch:
                 tokens received per expert.
             context: GPU device context for the current device.
         """
+        Struct_ep_dispatch.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(expert_ids), TileTensorable)
@@ -1158,7 +1639,6 @@ struct Struct_ep_dispatch:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1173,6 +1653,70 @@ struct Struct_ep_dispatch:
             recv_ptrs.to_tile_tensor[.uint64](),
             recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
+            expert_load=expert_load,
+        )
+
+
+@extensibility.register("ep.dispatch.expert_load")
+struct Struct_ep_dispatch_expert_load:
+    """Registers `ep.dispatch.expert_load`: `ep.dispatch` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+    ](
+        output_tokens: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -1194,7 +1738,6 @@ struct Struct_ep_dispatch_fp8:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Tensor],
         output_scales: Some[Output & Tensor],
@@ -1212,6 +1755,64 @@ struct Struct_ep_dispatch_fp8:
         """Execute the fused Expert Parallelism FP8 dispatch kernel. Tokens are
         dispatched in Blockwise FP8 format.
         """
+        Struct_ep_dispatch_fp8.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            dispatch_scale_granularity=dispatch_scale_granularity,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        dispatch_scale_granularity: StaticString,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch.fp8`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(output_scales), TileTensorable)
         comptime assert conforms_to(type_of(row_offsets), TileTensorable)
@@ -1248,7 +1849,6 @@ struct Struct_ep_dispatch_fp8:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1263,6 +1863,74 @@ struct Struct_ep_dispatch_fp8:
             recv_ptrs.to_tile_tensor[.uint64](),
             recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
+            expert_load=expert_load,
+        )
+
+
+@extensibility.register("ep.dispatch.fp8.expert_load")
+struct Struct_ep_dispatch_fp8_expert_load:
+    """Registers `ep.dispatch.fp8.expert_load`: `ep.dispatch.fp8` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        dispatch_scale_granularity: StaticString,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch.fp8` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch_fp8.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            dispatch_scale_granularity=dispatch_scale_granularity,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -1284,7 +1952,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Tensor],
         output_scales: Some[Output & Tensor],
@@ -1322,7 +1989,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
                 (inferred).
             allreduce_world_size: Number of ranks participating in
                 the allreduce following dispatch (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Output tensor storing the received tokens
@@ -1352,6 +2018,66 @@ struct Struct_ep_dispatch_block_scaled_nv:
             input_scales: Global input scales for NVFP4 quantization.
             context: GPU device context for the current device.
         """
+        Struct_ep_dispatch_block_scaled_nv.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            scales_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            input_scales,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        scales_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        input_scales: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch.block.scaled.nv`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(output_scales), TileTensorable)
         comptime assert conforms_to(type_of(row_offsets), TileTensorable)
@@ -1406,7 +2132,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1422,22 +2147,76 @@ struct Struct_ep_dispatch_block_scaled_nv:
             recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
             input_scales_fn,
+            expert_load=expert_load,
         )
 
 
-@inline(.always)
-def _check_rowwise_scales_rows(
-    output_rowwise_scales: OutputTensor[dtype=.bfloat16, rank=1, ...],
-    output_tokens: OutputTensor[rank=2, ...],
-) raises:
-    """Rejects a per-row scales output that cannot hold one scale per
-    received row, since the token format sizes it from `output_tokens`."""
-    if output_rowwise_scales.dim_size(0) != output_tokens.dim_size(0):
-        raise Error(
-            "EP dispatch: output_rowwise_scales has ",
-            output_rowwise_scales.dim_size(0),
-            " rows, but output_tokens has ",
-            output_tokens.dim_size(0),
+@extensibility.register("ep.dispatch.block.scaled.nv.expert_load")
+struct Struct_ep_dispatch_block_scaled_nv_expert_load:
+    """Registers `ep.dispatch.block.scaled.nv.expert_load`: `ep.dispatch.block.scaled.nv` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        scales_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        input_scales: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch.block.scaled.nv` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch_block_scaled_nv.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            scales_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            input_scales,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -1479,7 +2258,6 @@ struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
         output_tokens: Some[Output & Tensor],
         output_scales: Some[Output & Tensor],
@@ -1523,7 +2301,6 @@ struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
                 (inferred).
             allreduce_world_size: Number of ranks participating in
                 the allreduce following dispatch (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Output tensor storing the received tokens
@@ -1555,6 +2332,66 @@ struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
                 tokens received per expert.
             context: GPU device context for the current device.
         """
+        Struct_ep_dispatch_block_scaled_nv_dyn_global_scales.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens,
+            output_scales,
+            output_rowwise_scales,
+            row_offsets,
+            scales_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        output_rowwise_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        scales_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch.block.scaled.nv.dyn_global_scales`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(output_scales), TileTensorable)
         comptime assert conforms_to(
@@ -1611,7 +2448,6 @@ struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1626,6 +2462,78 @@ struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
             recv_ptrs.to_tile_tensor[.uint64](),
             recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
+            expert_load=expert_load,
+        )
+
+
+@extensibility.register(
+    "ep.dispatch.block.scaled.nv.dyn_global_scales.expert_load"
+)
+struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales_expert_load:
+    """Registers `ep.dispatch.block.scaled.nv.dyn_global_scales.expert_load`: `ep.dispatch.block.scaled.nv.dyn_global_scales` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        output_rowwise_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        scales_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch.block.scaled.nv.dyn_global_scales` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch_block_scaled_nv_dyn_global_scales.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens,
+            output_scales,
+            output_rowwise_scales,
+            row_offsets,
+            scales_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -1646,7 +2554,6 @@ struct Struct_ep_dispatch_mxfp4:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
         *,
         MX_FORMAT: StaticString = "auto",
     ](
@@ -1672,6 +2579,65 @@ struct Struct_ep_dispatch_mxfp4:
         most tokens one expert can receive rounded up to 32, so the scales
         output tensor has shape ``[n_local_experts * max_padded_M, K_SCALES]``.
         """
+        Struct_ep_dispatch_mxfp4.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+            MX_FORMAT=MX_FORMAT,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            NullExpertLoad(),
+        )
+
+    @inline(.always)
+    @staticmethod
+    def run[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        *,
+        MX_FORMAT: StaticString = "auto",
+        ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        context: DeviceContext,
+        expert_load: ExpertLoadT,
+    ) raises:
+        """Runs `ep.dispatch.mxfp4`, reporting each local expert's routed-token
+        count to `expert_load`."""
         comptime assert conforms_to(type_of(output_tokens), TileTensorable)
         comptime assert conforms_to(type_of(output_scales), TileTensorable)
         comptime assert conforms_to(type_of(row_offsets), TileTensorable)
@@ -1720,7 +2686,6 @@ struct Struct_ep_dispatch_mxfp4:
             n_gpus_per_node,
             n_nodes,
             fused_shared_expert,
-            target,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
@@ -1735,6 +2700,75 @@ struct Struct_ep_dispatch_mxfp4:
             recv_ptrs.to_tile_tensor[.uint64](),
             recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
+            expert_load=expert_load,
+        )
+
+
+@extensibility.register("ep.dispatch.mxfp4.expert_load")
+struct Struct_ep_dispatch_mxfp4_expert_load:
+    """Registers `ep.dispatch.mxfp4.expert_load`: `ep.dispatch.mxfp4` that also adds each local
+    expert's routed-token count to an EPLB load tally.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+        *,
+        MX_FORMAT: StaticString = "auto",
+    ](
+        output_tokens: Some[Output & Tensor],
+        output_scales: Some[Output & Tensor],
+        row_offsets: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        src_info: Some[Output & Tensor],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        expert_load: Some[MutableInput & Tensor],
+        layer_idx: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Runs `ep.dispatch.mxfp4` and adds each local expert's routed-token count to
+        row `layer_idx[0]` of the `[layers, n_local_experts]` uint64
+        `expert_load` tally."""
+        Struct_ep_dispatch_mxfp4.run[
+            hidden_size=hidden_size,
+            top_k=top_k,
+            n_experts=n_experts,
+            max_token_per_rank=max_token_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=n_nodes,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+            MX_FORMAT=MX_FORMAT,
+        ](
+            output_tokens,
+            output_scales,
+            row_offsets,
+            expert_ids,
+            src_info,
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            context,
+            _expert_load_tally(expert_load, layer_idx),
         )
 
 
@@ -1745,9 +2779,19 @@ struct DistributedEPDispatchBlockScaledNV:
 
     @staticmethod
     def execute[
-        input_dtype: DType,
-        dispatch_dtype: DType,
-        dispatch_scale_dtype: DType,
+        OutTokens: TypeList[Trait=Output & Tensor, ...],
+        OutScales: TypeList[Trait=Output & Tensor, ...],
+        RowOffsets: TypeList[Trait=Output & Tensor, ...],
+        ScalesOffsets: TypeList[Trait=Output & Tensor, ...],
+        ExpertIds: TypeList[Trait=Output & Tensor, ...],
+        SrcInfos: TypeList[Trait=Output & Tensor, ...],
+        InTokens: TypeList[Trait=Input & Tensor, ...],
+        TopkIds: TypeList[Trait=Input & Tensor, ...],
+        SendPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvCountPtrs: TypeList[Trait=Input & Tensor, ...],
+        InScales: TypeList[Trait=Input & Tensor, ...],
+        Counters: TypeList[Trait=MutableInput & Tensor, ...],
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -1756,27 +2800,22 @@ struct DistributedEPDispatchBlockScaledNV:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
-        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
-        output_scales: OutputVariadicTensors[
-            dtype=dispatch_scale_dtype, rank=5, ...
-        ],
-        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
-        scales_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
-        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
-        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        input_scales: InputVariadicTensors[dtype=DType.float32, rank=1, ...],
-        atomic_counters: MutableInputVariadicTensors[
-            dtype=DType.int32, rank=1, ...
-        ],
-        dev_ctxs: DeviceContextArray,
+        output_tokens: TensorTuple[*OutTokens],
+        output_scales: TensorTuple[*OutScales],
+        row_offsets: TensorTuple[*RowOffsets],
+        scales_offsets: TensorTuple[*ScalesOffsets],
+        expert_ids: TensorTuple[*ExpertIds],
+        src_info: TensorTuple[*SrcInfos],
+        input_tokens: TensorTuple[*InTokens],
+        topk_ids: TensorTuple[*TopkIds],
+        send_ptrs: TensorTuple[*SendPtrs],
+        recv_ptrs: TensorTuple[*RecvPtrs],
+        recv_count_ptrs: TensorTuple[*RecvCountPtrs],
+        input_scales: TensorTuple[*InScales],
+        atomic_counters: TensorTuple[*Counters],
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch.
 
@@ -1786,12 +2825,19 @@ struct DistributedEPDispatchBlockScaledNV:
         to the appropriate peer devices.
 
         Parameters:
-            input_dtype: `DType` of the input tokens before quantization
-                (inferred).
-            dispatch_dtype: `DType` used for the quantized token payload
-                during dispatch (inferred).
-            dispatch_scale_dtype: `DType` of the block scales accompanying
-                the dispatched tokens (inferred).
+            OutTokens: The element types of `output_tokens` (inferred).
+            OutScales: The element types of `output_scales` (inferred).
+            RowOffsets: The element types of `row_offsets` (inferred).
+            ScalesOffsets: The element types of `scales_offsets` (inferred).
+            ExpertIds: The element types of `expert_ids` (inferred).
+            SrcInfos: The element types of `src_info` (inferred).
+            InTokens: The element types of `input_tokens` (inferred).
+            TopkIds: The element types of `topk_ids` (inferred).
+            SendPtrs: The element types of `send_ptrs` (inferred).
+            RecvPtrs: The element types of `recv_ptrs` (inferred).
+            RecvCountPtrs: The element types of `recv_count_ptrs` (inferred).
+            InScales: The element types of `input_scales` (inferred).
+            Counters: The element types of `atomic_counters` (inferred).
             hidden_size: Size of the model's hidden dimension (inferred).
             top_k: Number of experts each token is routed to (inferred).
             n_experts: Total number of experts across all GPUs (inferred).
@@ -1801,7 +2847,6 @@ struct DistributedEPDispatchBlockScaledNV:
             n_nodes: Number of physical nodes (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -1834,7 +2879,20 @@ struct DistributedEPDispatchBlockScaledNV:
                 thread blocks, one per device.
             dev_ctxs: List of GPU device contexts, one per device.
         """
-        comptime num_devices = input_tokens.size
+        comptime num_devices = len(InTokens)
+        _check_tensor_tuple[num_devices, OutTokens[0].dtype, 2, *OutTokens]()
+        _check_tensor_tuple[num_devices, OutScales[0].dtype, 5, *OutScales]()
+        _check_tensor_tuple[num_devices, .uint32, 1, *RowOffsets]()
+        _check_tensor_tuple[num_devices, .uint32, 1, *ScalesOffsets]()
+        _check_tensor_tuple[num_devices, .int32, 1, *ExpertIds]()
+        _check_tensor_tuple[num_devices, .int32, 2, *SrcInfos]()
+        _check_tensor_tuple[num_devices, InTokens[0].dtype, 2, *InTokens]()
+        _check_tensor_tuple[num_devices, .int32, 2, *TopkIds]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *SendPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvCountPtrs]()
+        _check_tensor_tuple[num_devices, .float32, 1, *InScales]()
+        _check_tensor_tuple[num_devices, .int32, 1, *Counters]()
 
         var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
@@ -1857,22 +2915,61 @@ struct DistributedEPDispatchBlockScaledNV:
             imm input_scales,
             imm gpu_ctxs,
         }:
-            var out_tokens = output_tokens[index].to_tile_tensor[.int64]()
-            var out_scales = output_scales[index].to_tile_tensor[.int64]()
-            var sc_offsets = scales_offsets[index].to_tile_tensor[.int64]()
-            var in_scales = input_scales[index].to_tile_tensor[.int64]()
+            comptime assert conforms_to(
+                type_of(output_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(output_scales[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(row_offsets[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(scales_offsets[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(expert_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(src_info[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(atomic_counters[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(input_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(topk_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(send_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_count_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(input_scales[index]), TileTensorable
+            )
+            var out_tokens = output_tokens[index].to_tile_tensor()
+            var out_scales = output_scales[index].to_tile_tensor()
+            var sc_offsets = scales_offsets[index].to_tile_tensor[.uint32]()
+            var in_scales = input_scales[index].to_tile_tensor[.float32]()
             comptime assert in_scales.flat_rank == 1
 
             @inline(.always)
             def input_scales_fn[
                 dtype: DType
             ](expert_id: Int) {var in_scales} -> Scalar[dtype]:
-                return in_scales[0].cast[dtype]()
+                return in_scales.load[width=1](Coord(0)).cast[dtype]()
 
             var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
-                out_tokens,
-                out_scales,
-                sc_offsets,
+                _mut_pointer_tile(out_tokens),
+                _mut_pointer_tile(out_scales),
+                _mut_pointer_tile(sc_offsets),
                 gpu_ctxs[index],
             )
 
@@ -1882,24 +2979,23 @@ struct DistributedEPDispatchBlockScaledNV:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
                 # A prefill chunk's dispatch waited on the monitor's serial
                 # per-expert scan and sent one token per CTA at a time; the
                 # histogram count and the warp-per-token send keep the same
                 # bytes and receive layout (KERN-3829). Only single-node NVFP4
-                # without a fused shared expert takes them.
+                # or MXFP8 without a fused shared expert takes them.
                 dispatch_warp_min_tokens=EP_WARP_TOKENS_MIN_TOKENS,
             ](
                 format_handler,
-                row_offsets[index].to_tile_tensor[.int64](),
-                expert_ids[index].to_tile_tensor[.int64](),
-                src_info[index].to_tile_tensor[.int64](),
-                atomic_counters[index].to_tile_tensor[.int64](),
-                input_tokens[index].to_tile_tensor[.int64](),
-                topk_ids[index].to_tile_tensor[.int64](),
-                send_ptrs[index].to_tile_tensor[.int64](),
-                recv_ptrs[index].to_tile_tensor[.int64](),
-                recv_count_ptrs[index].to_tile_tensor[.int64](),
+                row_offsets[index].to_tile_tensor[.uint32](),
+                expert_ids[index].to_tile_tensor[.int32](),
+                src_info[index].to_tile_tensor[.int32](),
+                atomic_counters[index].to_tile_tensor[.int32](),
+                input_tokens[index].to_tile_tensor(),
+                topk_ids[index].to_tile_tensor[.int32](),
+                send_ptrs[index].to_tile_tensor[.uint64](),
+                recv_ptrs[index].to_tile_tensor[.uint64](),
+                recv_count_ptrs[index].to_tile_tensor[.uint64](),
                 gpu_ctxs[index],
                 input_scales_fn,
             )
@@ -1918,9 +3014,19 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
 
     @staticmethod
     def execute[
-        input_dtype: DType,
-        dispatch_dtype: DType,
-        dispatch_scale_dtype: DType,
+        OutTokens: TypeList[Trait=Output & Tensor, ...],
+        OutScales: TypeList[Trait=Output & Tensor, ...],
+        OutRowwiseScales: TypeList[Trait=Output & Tensor, ...],
+        RowOffsets: TypeList[Trait=Output & Tensor, ...],
+        ScalesOffsets: TypeList[Trait=Output & Tensor, ...],
+        ExpertIds: TypeList[Trait=Output & Tensor, ...],
+        SrcInfos: TypeList[Trait=Output & Tensor, ...],
+        InTokens: TypeList[Trait=Input & Tensor, ...],
+        TopkIds: TypeList[Trait=Input & Tensor, ...],
+        SendPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvCountPtrs: TypeList[Trait=Input & Tensor, ...],
+        Counters: TypeList[Trait=MutableInput & Tensor, ...],
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -1929,29 +3035,22 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
-        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
-        output_scales: OutputVariadicTensors[
-            dtype=dispatch_scale_dtype, rank=5, ...
-        ],
-        output_rowwise_scales: OutputVariadicTensors[
-            dtype=DType.bfloat16, rank=1, ...
-        ],
-        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
-        scales_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
-        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
-        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        atomic_counters: MutableInputVariadicTensors[
-            dtype=DType.int32, rank=1, ...
-        ],
-        dev_ctxs: DeviceContextArray,
+        output_tokens: TensorTuple[*OutTokens],
+        output_scales: TensorTuple[*OutScales],
+        output_rowwise_scales: TensorTuple[*OutRowwiseScales],
+        row_offsets: TensorTuple[*RowOffsets],
+        scales_offsets: TensorTuple[*ScalesOffsets],
+        expert_ids: TensorTuple[*ExpertIds],
+        src_info: TensorTuple[*SrcInfos],
+        input_tokens: TensorTuple[*InTokens],
+        topk_ids: TensorTuple[*TopkIds],
+        send_ptrs: TensorTuple[*SendPtrs],
+        recv_ptrs: TensorTuple[*RecvPtrs],
+        recv_count_ptrs: TensorTuple[*RecvCountPtrs],
+        atomic_counters: TensorTuple[*Counters],
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch with dynamic
         global scales.
@@ -1964,12 +3063,20 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
         `output_rowwise_scales`.
 
         Parameters:
-            input_dtype: `DType` of the input tokens before quantization
+            OutTokens: The element types of `output_tokens` (inferred).
+            OutScales: The element types of `output_scales` (inferred).
+            OutRowwiseScales: The element types of `output_rowwise_scales`
                 (inferred).
-            dispatch_dtype: `DType` used for the quantized token payload
-                during dispatch (inferred).
-            dispatch_scale_dtype: `DType` of the block scales accompanying
-                the dispatched tokens (inferred).
+            RowOffsets: The element types of `row_offsets` (inferred).
+            ScalesOffsets: The element types of `scales_offsets` (inferred).
+            ExpertIds: The element types of `expert_ids` (inferred).
+            SrcInfos: The element types of `src_info` (inferred).
+            InTokens: The element types of `input_tokens` (inferred).
+            TopkIds: The element types of `topk_ids` (inferred).
+            SendPtrs: The element types of `send_ptrs` (inferred).
+            RecvPtrs: The element types of `recv_ptrs` (inferred).
+            RecvCountPtrs: The element types of `recv_count_ptrs` (inferred).
+            Counters: The element types of `atomic_counters` (inferred).
             hidden_size: Size of the model's hidden dimension (inferred).
             top_k: Number of experts each token is routed to (inferred).
             n_experts: Total number of experts across all GPUs (inferred).
@@ -1979,7 +3086,6 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
             n_nodes: Number of physical nodes (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -2012,12 +3118,32 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
                 thread blocks, one per device.
             dev_ctxs: List of GPU device contexts, one per device.
         """
-        comptime num_devices = input_tokens.size
+        comptime num_devices = len(InTokens)
+        _check_tensor_tuple[num_devices, OutTokens[0].dtype, 2, *OutTokens]()
+        _check_tensor_tuple[num_devices, OutScales[0].dtype, 5, *OutScales]()
+        _check_tensor_tuple[num_devices, .bfloat16, 1, *OutRowwiseScales]()
+        _check_tensor_tuple[num_devices, .uint32, 1, *RowOffsets]()
+        _check_tensor_tuple[num_devices, .uint32, 1, *ScalesOffsets]()
+        _check_tensor_tuple[num_devices, .int32, 1, *ExpertIds]()
+        _check_tensor_tuple[num_devices, .int32, 2, *SrcInfos]()
+        _check_tensor_tuple[num_devices, InTokens[0].dtype, 2, *InTokens]()
+        _check_tensor_tuple[num_devices, .int32, 2, *TopkIds]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *SendPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvCountPtrs]()
+        _check_tensor_tuple[num_devices, .int32, 1, *Counters]()
 
         var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
         comptime for i in range(num_devices):
+            comptime assert conforms_to(
+                type_of(output_rowwise_scales[i]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(output_tokens[i]), TileTensorable
+            )
             _check_rowwise_scales_rows(
-                output_rowwise_scales[i], output_tokens[i]
+                output_rowwise_scales[i].to_tile_tensor[.bfloat16](),
+                output_tokens[i].to_tile_tensor(),
             )
 
         @inline(.always)
@@ -2039,14 +3165,60 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
             imm recv_count_ptrs,
             imm gpu_ctxs,
         }:
+            comptime assert conforms_to(
+                type_of(output_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(output_scales[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(output_rowwise_scales[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(row_offsets[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(scales_offsets[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(expert_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(src_info[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(atomic_counters[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(input_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(topk_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(send_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_count_ptrs[index]), TileTensorable
+            )
             var format_handler = NVBlockScaledTokenFormat[
                 hidden_size, top_k, nvfp4_dyn_global_scales=True
             ](
-                output_tokens[index].to_tile_tensor[.int64](),
-                output_scales[index].to_tile_tensor[.int64](),
-                scales_offsets[index].to_tile_tensor[.int64](),
+                _mut_pointer_tile(output_tokens[index].to_tile_tensor()),
+                _mut_pointer_tile(output_scales[index].to_tile_tensor()),
+                _mut_pointer_tile(
+                    scales_offsets[index].to_tile_tensor[.uint32]()
+                ),
                 gpu_ctxs[index],
-                output_rowwise_scales[index].unsafe_ptr(),
+                # The format reads the row scales through their flat pointer; a
+                # non-pointer storage policy aborts here at run time.
+                output_rowwise_scales[index]
+                .to_tile_tensor[.bfloat16]()
+                .as_unsafe_any_origin()
+                .ptr,
             )
 
             ep_fused_dispatch_kernel_api[
@@ -2055,18 +3227,17 @@ struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
             ](
                 format_handler,
-                row_offsets[index].to_tile_tensor[.int64](),
-                expert_ids[index].to_tile_tensor[.int64](),
-                src_info[index].to_tile_tensor[.int64](),
-                atomic_counters[index].to_tile_tensor[.int64](),
-                input_tokens[index].to_tile_tensor[.int64](),
-                topk_ids[index].to_tile_tensor[.int64](),
-                send_ptrs[index].to_tile_tensor[.int64](),
-                recv_ptrs[index].to_tile_tensor[.int64](),
-                recv_count_ptrs[index].to_tile_tensor[.int64](),
+                row_offsets[index].to_tile_tensor[.uint32](),
+                expert_ids[index].to_tile_tensor[.int32](),
+                src_info[index].to_tile_tensor[.int32](),
+                atomic_counters[index].to_tile_tensor[.int32](),
+                input_tokens[index].to_tile_tensor(),
+                topk_ids[index].to_tile_tensor[.int32](),
+                send_ptrs[index].to_tile_tensor[.uint64](),
+                recv_ptrs[index].to_tile_tensor[.uint64](),
+                recv_count_ptrs[index].to_tile_tensor[.uint64](),
                 gpu_ctxs[index],
             )
 
@@ -2080,9 +3251,17 @@ struct DistributedEPDispatchMXFP4:
 
     @staticmethod
     def execute[
-        input_dtype: DType,
-        dispatch_dtype: DType,
-        dispatch_scale_dtype: DType,
+        OutTokens: TypeList[Trait=Output & Tensor, ...],
+        OutScales: TypeList[Trait=Output & Tensor, ...],
+        RowOffsets: TypeList[Trait=Output & Tensor, ...],
+        ExpertIds: TypeList[Trait=Output & Tensor, ...],
+        SrcInfos: TypeList[Trait=Output & Tensor, ...],
+        InTokens: TypeList[Trait=Input & Tensor, ...],
+        TopkIds: TypeList[Trait=Input & Tensor, ...],
+        SendPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvCountPtrs: TypeList[Trait=Input & Tensor, ...],
+        Counters: TypeList[Trait=MutableInput & Tensor, ...],
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -2091,27 +3270,22 @@ struct DistributedEPDispatchMXFP4:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
         *,
         mx_format: StaticString = "auto",
     ](
-        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
-        output_scales: OutputVariadicTensors[
-            dtype=dispatch_scale_dtype, rank=2, ...
-        ],
-        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
-        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
-        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        atomic_counters: MutableInputVariadicTensors[
-            dtype=DType.int32, rank=1, ...
-        ],
-        dev_ctxs: DeviceContextArray,
+        output_tokens: TensorTuple[*OutTokens],
+        output_scales: TensorTuple[*OutScales],
+        row_offsets: TensorTuple[*RowOffsets],
+        expert_ids: TensorTuple[*ExpertIds],
+        src_info: TensorTuple[*SrcInfos],
+        input_tokens: TensorTuple[*InTokens],
+        topk_ids: TensorTuple[*TopkIds],
+        send_ptrs: TensorTuple[*SendPtrs],
+        recv_ptrs: TensorTuple[*RecvPtrs],
+        recv_count_ptrs: TensorTuple[*RecvCountPtrs],
+        atomic_counters: TensorTuple[*Counters],
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism MXFP4 dispatch.
 
@@ -2121,12 +3295,17 @@ struct DistributedEPDispatchMXFP4:
         to the appropriate peer devices.
 
         Parameters:
-            input_dtype: `DType` of the input tokens before quantization
-                (inferred).
-            dispatch_dtype: `DType` used for the quantized token payload
-                during dispatch (inferred).
-            dispatch_scale_dtype: `DType` of the per-token scales accompanying
-                the dispatched tokens (inferred).
+            OutTokens: The element types of `output_tokens` (inferred).
+            OutScales: The element types of `output_scales` (inferred).
+            RowOffsets: The element types of `row_offsets` (inferred).
+            ExpertIds: The element types of `expert_ids` (inferred).
+            SrcInfos: The element types of `src_info` (inferred).
+            InTokens: The element types of `input_tokens` (inferred).
+            TopkIds: The element types of `topk_ids` (inferred).
+            SendPtrs: The element types of `send_ptrs` (inferred).
+            RecvPtrs: The element types of `recv_ptrs` (inferred).
+            RecvCountPtrs: The element types of `recv_count_ptrs` (inferred).
+            Counters: The element types of `atomic_counters` (inferred).
             hidden_size: Size of the model's hidden dimension (inferred).
             top_k: Number of experts each token is routed to (inferred).
             n_experts: Total number of experts across all GPUs (inferred).
@@ -2136,7 +3315,6 @@ struct DistributedEPDispatchMXFP4:
             n_nodes: Number of physical nodes (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
             mx_format: Name of the MX element format, or `auto` to take it
                 from the dtype. See `MXFormat.from_name`. Names the MX
@@ -2174,7 +3352,19 @@ struct DistributedEPDispatchMXFP4:
         comptime max_padded_m = align_up(
             max_token_per_rank * n_gpus_per_node * n_nodes, 32
         )
-        comptime num_devices = input_tokens.size
+        comptime num_devices = len(InTokens)
+        comptime dispatch_dtype = OutTokens[0].dtype
+        _check_tensor_tuple[num_devices, OutTokens[0].dtype, 2, *OutTokens]()
+        _check_tensor_tuple[num_devices, OutScales[0].dtype, 2, *OutScales]()
+        _check_tensor_tuple[num_devices, .uint32, 1, *RowOffsets]()
+        _check_tensor_tuple[num_devices, .int32, 1, *ExpertIds]()
+        _check_tensor_tuple[num_devices, .int32, 2, *SrcInfos]()
+        _check_tensor_tuple[num_devices, InTokens[0].dtype, 2, *InTokens]()
+        _check_tensor_tuple[num_devices, .int32, 2, *TopkIds]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *SendPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvCountPtrs]()
+        _check_tensor_tuple[num_devices, .int32, 1, *Counters]()
 
         var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
@@ -2195,8 +3385,41 @@ struct DistributedEPDispatchMXFP4:
             imm recv_count_ptrs,
             imm gpu_ctxs,
         }:
-            var out_tokens = output_tokens[index].to_tile_tensor[.int64]()
-            var out_scales = output_scales[index].to_tile_tensor[.int64]()
+            comptime assert conforms_to(
+                type_of(output_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(output_scales[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(row_offsets[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(expert_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(src_info[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(atomic_counters[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(input_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(topk_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(send_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_count_ptrs[index]), TileTensorable
+            )
+            var out_tokens = output_tokens[index].to_tile_tensor()
+            var out_scales = output_scales[index].to_tile_tensor()
 
             comptime mx_fmt = MXFormat.from_dtype[
                 dispatch_dtype
@@ -2206,8 +3429,8 @@ struct DistributedEPDispatchMXFP4:
                 top_k,
                 mx_format=mx_fmt,
             ](
-                out_tokens,
-                out_scales,
+                _mut_pointer_tile(out_tokens),
+                _mut_pointer_tile(out_scales),
                 max_padded_m,
             )
 
@@ -2217,18 +3440,17 @@ struct DistributedEPDispatchMXFP4:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
             ](
                 format_handler,
-                row_offsets[index].to_tile_tensor[.int64](),
-                expert_ids[index].to_tile_tensor[.int64](),
-                src_info[index].to_tile_tensor[.int64](),
-                atomic_counters[index].to_tile_tensor[.int64](),
-                input_tokens[index].to_tile_tensor[.int64](),
-                topk_ids[index].to_tile_tensor[.int64](),
-                send_ptrs[index].to_tile_tensor[.int64](),
-                recv_ptrs[index].to_tile_tensor[.int64](),
-                recv_count_ptrs[index].to_tile_tensor[.int64](),
+                row_offsets[index].to_tile_tensor[.uint32](),
+                expert_ids[index].to_tile_tensor[.int32](),
+                src_info[index].to_tile_tensor[.int32](),
+                atomic_counters[index].to_tile_tensor[.int32](),
+                input_tokens[index].to_tile_tensor(),
+                topk_ids[index].to_tile_tensor[.int32](),
+                send_ptrs[index].to_tile_tensor[.uint64](),
+                recv_ptrs[index].to_tile_tensor[.uint64](),
+                recv_count_ptrs[index].to_tile_tensor[.uint64](),
                 gpu_ctxs[index],
             )
 
@@ -2242,7 +3464,16 @@ struct DistributedEPDispatch:
 
     @staticmethod
     def execute[
-        dispatch_dtype: DType,
+        OutTokens: TypeList[Trait=Output & Tensor, ...],
+        RowOffsets: TypeList[Trait=Output & Tensor, ...],
+        ExpertIds: TypeList[Trait=Output & Tensor, ...],
+        SrcInfos: TypeList[Trait=Output & Tensor, ...],
+        InTokens: TypeList[Trait=Input & Tensor, ...],
+        TopkIds: TypeList[Trait=Input & Tensor, ...],
+        SendPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvCountPtrs: TypeList[Trait=Input & Tensor, ...],
+        Counters: TypeList[Trait=MutableInput & Tensor, ...],
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -2251,28 +3482,33 @@ struct DistributedEPDispatch:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
-        output_tokens: OutputVariadicTensors[dtype=DType.bfloat16, rank=2, ...],
-        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
-        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        input_tokens: InputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
-        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        atomic_counters: MutableInputVariadicTensors[
-            dtype=DType.int32, rank=1, ...
-        ],
-        dev_ctxs: DeviceContextArray,
+        output_tokens: TensorTuple[*OutTokens],
+        row_offsets: TensorTuple[*RowOffsets],
+        expert_ids: TensorTuple[*ExpertIds],
+        src_info: TensorTuple[*SrcInfos],
+        input_tokens: TensorTuple[*InTokens],
+        topk_ids: TensorTuple[*TopkIds],
+        send_ptrs: TensorTuple[*SendPtrs],
+        recv_ptrs: TensorTuple[*RecvPtrs],
+        recv_count_ptrs: TensorTuple[*RecvCountPtrs],
+        atomic_counters: TensorTuple[*Counters],
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism BF16 dispatch.
 
         Parameters:
-            dispatch_dtype: `DType` used for token dispatch to experts
-                (inferred).
+            OutTokens: The element types of `output_tokens` (inferred).
+            RowOffsets: The element types of `row_offsets` (inferred).
+            ExpertIds: The element types of `expert_ids` (inferred).
+            SrcInfos: The element types of `src_info` (inferred).
+            InTokens: The element types of `input_tokens` (inferred).
+            TopkIds: The element types of `topk_ids` (inferred).
+            SendPtrs: The element types of `send_ptrs` (inferred).
+            RecvPtrs: The element types of `recv_ptrs` (inferred).
+            RecvCountPtrs: The element types of `recv_count_ptrs` (inferred).
+            Counters: The element types of `atomic_counters` (inferred).
             hidden_size: Size of the model's hidden dimension (inferred).
             top_k: Number of experts each token is routed to (inferred).
             n_experts: Total number of experts across all GPUs (inferred).
@@ -2282,7 +3518,6 @@ struct DistributedEPDispatch:
             n_nodes: Number of physical nodes (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -2309,8 +3544,19 @@ struct DistributedEPDispatch:
                 thread blocks, one per device.
             dev_ctxs: List of GPU device contexts, one per device.
         """
-        comptime num_devices = input_tokens.size
+        comptime num_devices = len(InTokens)
+        comptime dispatch_dtype = InTokens[0].dtype
         comptime assert dispatch_dtype == .bfloat16
+        _check_tensor_tuple[num_devices, .bfloat16, 2, *OutTokens]()
+        _check_tensor_tuple[num_devices, .uint32, 1, *RowOffsets]()
+        _check_tensor_tuple[num_devices, .int32, 1, *ExpertIds]()
+        _check_tensor_tuple[num_devices, .int32, 2, *SrcInfos]()
+        _check_tensor_tuple[num_devices, dispatch_dtype, 2, *InTokens]()
+        _check_tensor_tuple[num_devices, .int32, 2, *TopkIds]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *SendPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvCountPtrs]()
+        _check_tensor_tuple[num_devices, .int32, 1, *Counters]()
 
         var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
@@ -2330,7 +3576,37 @@ struct DistributedEPDispatch:
             imm recv_count_ptrs,
             imm gpu_ctxs,
         }:
-            var out_tokens = output_tokens[index].to_tile_tensor[.int64]()
+            comptime assert conforms_to(
+                type_of(output_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(row_offsets[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(expert_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(src_info[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(atomic_counters[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(input_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(topk_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(send_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_count_ptrs[index]), TileTensorable
+            )
+            var out_tokens = output_tokens[index].to_tile_tensor[.bfloat16]()
             var format_handler = BF16TokenFormat[hidden_size, top_k](out_tokens)
 
             ep_fused_dispatch_kernel_api[
@@ -2339,18 +3615,17 @@ struct DistributedEPDispatch:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
             ](
                 format_handler,
-                row_offsets[index].to_tile_tensor[.int64](),
-                expert_ids[index].to_tile_tensor[.int64](),
-                src_info[index].to_tile_tensor[.int64](),
-                atomic_counters[index].to_tile_tensor[.int64](),
-                input_tokens[index].to_tile_tensor[.int64](),
-                topk_ids[index].to_tile_tensor[.int64](),
-                send_ptrs[index].to_tile_tensor[.int64](),
-                recv_ptrs[index].to_tile_tensor[.int64](),
-                recv_count_ptrs[index].to_tile_tensor[.int64](),
+                row_offsets[index].to_tile_tensor[.uint32](),
+                expert_ids[index].to_tile_tensor[.int32](),
+                src_info[index].to_tile_tensor[.int32](),
+                atomic_counters[index].to_tile_tensor[.int32](),
+                input_tokens[index].to_tile_tensor(),
+                topk_ids[index].to_tile_tensor[.int32](),
+                send_ptrs[index].to_tile_tensor[.uint64](),
+                recv_ptrs[index].to_tile_tensor[.uint64](),
+                recv_count_ptrs[index].to_tile_tensor[.uint64](),
                 gpu_ctxs[index],
             )
 
@@ -2364,9 +3639,17 @@ struct DistributedEPDispatchFP8:
 
     @staticmethod
     def execute[
-        input_dtype: DType,
-        dispatch_dtype: DType,
-        dispatch_scale_dtype: DType,
+        OutTokens: TypeList[Trait=Output & Tensor, ...],
+        OutScales: TypeList[Trait=Output & Tensor, ...],
+        RowOffsets: TypeList[Trait=Output & Tensor, ...],
+        ExpertIds: TypeList[Trait=Output & Tensor, ...],
+        SrcInfos: TypeList[Trait=Output & Tensor, ...],
+        InTokens: TypeList[Trait=Input & Tensor, ...],
+        TopkIds: TypeList[Trait=Input & Tensor, ...],
+        SendPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvPtrs: TypeList[Trait=Input & Tensor, ...],
+        RecvCountPtrs: TypeList[Trait=Input & Tensor, ...],
+        Counters: TypeList[Trait=MutableInput & Tensor, ...],
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -2376,25 +3659,20 @@ struct DistributedEPDispatchFP8:
         dispatch_scale_granularity: StaticString,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
-        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
-        output_scales: OutputVariadicTensors[
-            dtype=dispatch_scale_dtype, rank=2, ...
-        ],
-        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
-        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
-        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
-        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
-        atomic_counters: MutableInputVariadicTensors[
-            dtype=DType.int32, rank=1, ...
-        ],
-        dev_ctxs: DeviceContextArray,
+        output_tokens: TensorTuple[*OutTokens],
+        output_scales: TensorTuple[*OutScales],
+        row_offsets: TensorTuple[*RowOffsets],
+        expert_ids: TensorTuple[*ExpertIds],
+        src_info: TensorTuple[*SrcInfos],
+        input_tokens: TensorTuple[*InTokens],
+        topk_ids: TensorTuple[*TopkIds],
+        send_ptrs: TensorTuple[*SendPtrs],
+        recv_ptrs: TensorTuple[*RecvPtrs],
+        recv_count_ptrs: TensorTuple[*RecvCountPtrs],
+        atomic_counters: TensorTuple[*Counters],
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism FP8 dispatch.
 
@@ -2404,12 +3682,17 @@ struct DistributedEPDispatchFP8:
         them to peer devices.
 
         Parameters:
-            input_dtype: `DType` of the input tokens before quantization
-                (inferred).
-            dispatch_dtype: `DType` used for the quantized token payload
-                during dispatch (inferred).
-            dispatch_scale_dtype: `DType` of the block scales accompanying
-                the dispatched tokens (inferred).
+            OutTokens: The element types of `output_tokens` (inferred).
+            OutScales: The element types of `output_scales` (inferred).
+            RowOffsets: The element types of `row_offsets` (inferred).
+            ExpertIds: The element types of `expert_ids` (inferred).
+            SrcInfos: The element types of `src_info` (inferred).
+            InTokens: The element types of `input_tokens` (inferred).
+            TopkIds: The element types of `topk_ids` (inferred).
+            SendPtrs: The element types of `send_ptrs` (inferred).
+            RecvPtrs: The element types of `recv_ptrs` (inferred).
+            RecvCountPtrs: The element types of `recv_count_ptrs` (inferred).
+            Counters: The element types of `atomic_counters` (inferred).
             hidden_size: Size of the model's hidden dimension (inferred).
             top_k: Number of experts each token is routed to (inferred).
             n_experts: Total number of experts across all GPUs (inferred).
@@ -2421,7 +3704,6 @@ struct DistributedEPDispatchFP8:
                 FP8 quantization scales (inferred).
             fused_shared_expert: Whether a shared expert is fused into the
                 dispatch kernel (inferred).
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -2450,7 +3732,18 @@ struct DistributedEPDispatchFP8:
                 thread blocks, one per device.
             dev_ctxs: List of GPU device contexts, one per device.
         """
-        comptime num_devices = input_tokens.size
+        comptime num_devices = len(InTokens)
+        _check_tensor_tuple[num_devices, OutTokens[0].dtype, 2, *OutTokens]()
+        _check_tensor_tuple[num_devices, OutScales[0].dtype, 2, *OutScales]()
+        _check_tensor_tuple[num_devices, .uint32, 1, *RowOffsets]()
+        _check_tensor_tuple[num_devices, .int32, 1, *ExpertIds]()
+        _check_tensor_tuple[num_devices, .int32, 2, *SrcInfos]()
+        _check_tensor_tuple[num_devices, InTokens[0].dtype, 2, *InTokens]()
+        _check_tensor_tuple[num_devices, .int32, 2, *TopkIds]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *SendPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvPtrs]()
+        _check_tensor_tuple[num_devices, .uint64, 1, *RecvCountPtrs]()
+        _check_tensor_tuple[num_devices, .int32, 1, *Counters]()
 
         var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
@@ -2471,10 +3764,43 @@ struct DistributedEPDispatchFP8:
             imm recv_count_ptrs,
             imm gpu_ctxs,
         }:
-            var out_tokens = output_tokens[index].to_tile_tensor[.int64]()
-            var out_scales = output_scales[index].to_tile_tensor[.int64]()
+            comptime assert conforms_to(
+                type_of(output_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(output_scales[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(row_offsets[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(expert_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(src_info[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(atomic_counters[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(input_tokens[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(topk_ids[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(send_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_ptrs[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(recv_count_ptrs[index]), TileTensorable
+            )
+            var out_tokens = output_tokens[index].to_tile_tensor()
+            var out_scales = output_scales[index].to_tile_tensor()
             var format_handler = BlockwiseFP8TokenFormat[hidden_size, top_k](
-                out_tokens, out_scales
+                _mut_pointer_tile(out_tokens), _mut_pointer_tile(out_scales)
             )
 
             ep_fused_dispatch_kernel_api[
@@ -2483,18 +3809,17 @@ struct DistributedEPDispatchFP8:
                 n_gpus_per_node,
                 n_nodes,
                 fused_shared_expert,
-                target,
             ](
                 format_handler,
-                row_offsets[index].to_tile_tensor[.int64](),
-                expert_ids[index].to_tile_tensor[.int64](),
-                src_info[index].to_tile_tensor[.int64](),
-                atomic_counters[index].to_tile_tensor[.int64](),
-                input_tokens[index].to_tile_tensor[.int64](),
-                topk_ids[index].to_tile_tensor[.int64](),
-                send_ptrs[index].to_tile_tensor[.int64](),
-                recv_ptrs[index].to_tile_tensor[.int64](),
-                recv_count_ptrs[index].to_tile_tensor[.int64](),
+                row_offsets[index].to_tile_tensor[.uint32](),
+                expert_ids[index].to_tile_tensor[.int32](),
+                src_info[index].to_tile_tensor[.int32](),
+                atomic_counters[index].to_tile_tensor[.int32](),
+                input_tokens[index].to_tile_tensor(),
+                topk_ids[index].to_tile_tensor[.int32](),
+                send_ptrs[index].to_tile_tensor[.uint64](),
+                recv_ptrs[index].to_tile_tensor[.uint64](),
+                recv_count_ptrs[index].to_tile_tensor[.uint64](),
                 gpu_ctxs[index],
             )
 
@@ -2524,7 +3849,6 @@ struct DistributedEPCombine:
         n_nodes: Int,
         fused_shared_expert: Bool,
         //,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output_tokens: TensorTuple[*Outs],
@@ -2535,7 +3859,7 @@ struct DistributedEPCombine:
         recv_count_ptrs: TensorTuple[*RecvCountPtrs],
         router_weights: TensorTuple[*RouterWeights],
         atomic_counters: TensorTuple[*Counters],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         """Multi-device fused Expert Parallelism combine with output fusion.
 
@@ -2556,7 +3880,6 @@ struct DistributedEPCombine:
             n_nodes: Number of physical nodes.
             fused_shared_expert: Whether a shared expert is fused into the
                 combine kernel.
-            target: Compile-time device target.
             _trace_name: Trace label for this op.
 
         Args:
@@ -2674,7 +3997,6 @@ struct DistributedEPCombine:
                 max_token_per_rank,
                 n_gpus_per_node,
                 n_nodes,
-                target,
                 fused_shared_expert=fused_shared_expert,
             ](
                 coord_to_index_list(output_tokens[index].shape())[0],
@@ -2707,7 +4029,6 @@ struct Struct_ep_combine_async:
         n_gpus_per_node: Int,
         n_nodes: Int,
         //,
-        target: StaticString,
     ](
         atomic_counters: Some[MutableInput & Tensor],
         input_tokens: Some[Input & Tensor],
@@ -2736,7 +4057,6 @@ struct Struct_ep_combine_async:
                 (inferred).
             n_gpus_per_node: Number of GPUs per node (inferred).
             n_nodes: Number of physical nodes (inferred).
-            target: Compile-time device target.
 
         Args:
             atomic_counters: Atomic counters coordinating work across
@@ -2773,7 +4093,6 @@ struct Struct_ep_combine_async:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
             atomic_counters.to_tile_tensor[.int32](),
             input_tokens.to_tile_tensor[combine_dtype](),
@@ -2793,7 +4112,6 @@ struct Struct_ep_combine_wait:
     @staticmethod
     def execute[
         combine_dtype: DType,
-        router_weights_dtype: DType,
         //,
         hidden_size: Int,
         top_k: Int,
@@ -2801,13 +4119,12 @@ struct Struct_ep_combine_wait:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        target: StaticString,
     ](
-        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
-        atomic_counters: MutableInputTensor[dtype=.int32, rank=1, ...],
-        recv_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_count_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
+        output_tokens: Some[Output & Fused & StoreAccess],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        router_weights: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism combine completion kernel.
@@ -2819,8 +4136,6 @@ struct Struct_ep_combine_wait:
         Parameters:
             combine_dtype: `DType` used for the token payload during
                 the combine phase (inferred).
-            router_weights_dtype: `DType` of the router weights
-                tensor used to compute the weighted sum (inferred).
             hidden_size: Size of the model's hidden dimension.
             top_k: Number of experts each token is routed to.
             n_experts: Total number of experts across all GPUs.
@@ -2828,7 +4143,6 @@ struct Struct_ep_combine_wait:
                 receive.
             n_gpus_per_node: Number of GPUs per physical node.
             n_nodes: Number of physical nodes in the deployment.
-            target: Compile-time device target.
 
         Args:
             output_tokens: Fused output tensor storing the weighted
@@ -2845,12 +4159,26 @@ struct Struct_ep_combine_wait:
                 Shape `[num_tokens, top_k]`.
             context: GPU device context for the current device.
         """
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(router_weights), TileTensorable)
+        comptime assert type_of(output_tokens).dtype == combine_dtype
+        comptime assert type_of(output_tokens).rank == 2
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        comptime assert type_of(router_weights).rank == 2
         comptime assert (
-            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
+            type_of(output_tokens)._shape_types[1].static_value == hidden_size
         ), "EP combine: output tokens shape doesn't match hidden size."
-        var router_weights_tensor = router_weights.to_tile_tensor[.int64]()
+        var router_weights_tensor = router_weights.to_tile_tensor()
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
+
+        comptime assert conforms_to(type_of(output_tokens), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output_tokens)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def router_weights_fn[
@@ -2868,12 +4196,10 @@ struct Struct_ep_combine_wait:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
-            output_tokens._fused_store[
-                width=width, element_alignment=alignment
-            ](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[combine_dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         ep_combine_wait_kernel_api[
@@ -2884,16 +4210,241 @@ struct Struct_ep_combine_wait:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
         ](
-            output_tokens.dim_size[0](),
-            atomic_counters.to_tile_tensor[.int64](),
-            recv_ptrs.to_tile_tensor[.int64](),
-            recv_count_ptrs.to_tile_tensor[.int64](),
+            coord_to_index_list(output_tokens.shape())[0],
+            atomic_counters.to_tile_tensor[.int32](),
+            recv_ptrs.to_tile_tensor[.uint64](),
+            recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
             output_fn,
             router_weights_fn,
         )
+
+
+@extensibility.register("ep.combine_async.mx")
+struct Struct_ep_combine_async_mx:
+    """Registers the `ep.combine_async.mx` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        combine_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        *,
+        mx_min_tokens: Int,
+    ](
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        src_info: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        total_tokens: UInt32,
+        context: DeviceContext,
+    ) raises:
+        """`ep.combine_async` that sends MXFP8 messages for large steps.
+
+        When `total_tokens` reaches `mx_min_tokens`, each expert output goes
+        back to its rank as MXFP8 (E4M3 values with an E8M0 scale per 32
+        elements, about half the bytes), which is lossy; smaller steps send it
+        exactly. `total_tokens` must be the same on every rank, and the
+        matching `ep.combine_wait.mx` must get the same value and threshold.
+
+        Parameters:
+            combine_dtype: Expert output dtype (inferred).
+            hidden_size: Model hidden size (inferred).
+            top_k: Experts each token is routed to (inferred).
+            n_experts: Experts across all GPUs (inferred).
+            max_token_per_rank: Most tokens per GPU (inferred).
+            n_gpus_per_node: GPUs per node (inferred).
+            n_nodes: Physical nodes (inferred).
+            mx_min_tokens: Smallest `total_tokens` sent as MXFP8.
+
+        Args:
+            atomic_counters: Atomic counters coordinating the combine.
+            input_tokens: Expert outputs. Shape `[num_tokens, hidden_size]`.
+            src_info: Each row's originating rank and token from the dispatch.
+            send_ptrs: Send buffer pointers for the combine phase.
+            recv_ptrs: Receive buffer pointers for the combine phase.
+            recv_count_ptrs: Receive count buffer pointers.
+            total_tokens: Tokens of the step across all ranks.
+            context: GPU device context for the current device.
+        """
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(input_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(src_info), TileTensorable)
+        comptime assert conforms_to(type_of(send_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(input_tokens).rank == 2
+        comptime assert type_of(src_info).rank == 2
+        comptime assert type_of(send_ptrs).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        var atomic_counters_tile = atomic_counters.to_tile_tensor[.int32]()
+        var input_tokens_tile = input_tokens.to_tile_tensor[combine_dtype]()
+        var src_info_tile = src_info.to_tile_tensor[.int32]()
+        var send_ptrs_tile = send_ptrs.to_tile_tensor[.uint64]()
+        var recv_ptrs_tile = recv_ptrs.to_tile_tensor[.uint64]()
+        var recv_count_ptrs_tile = recv_count_ptrs.to_tile_tensor[.uint64]()
+
+        @inline(.always)
+        def launch[mx_msg: Bool]() raises {imm}:
+            ep_combine_async_kernel_api[
+                combine_dtype,
+                hidden_size,
+                top_k,
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                mx_msg=mx_msg,
+            ](
+                atomic_counters_tile,
+                input_tokens_tile,
+                src_info_tile,
+                send_ptrs_tile,
+                recv_ptrs_tile,
+                recv_count_ptrs_tile,
+                context,
+            )
+
+        if Int(total_tokens) >= mx_min_tokens:
+            launch[True]()
+        else:
+            launch[False]()
+
+
+@extensibility.register("ep.combine_wait.mx")
+struct Struct_ep_combine_wait_mx:
+    """Registers the `ep.combine_wait.mx` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        combine_dtype: DType,
+        //,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        *,
+        mx_min_tokens: Int,
+    ](
+        output_tokens: Some[Output & Fused & StoreAccess],
+        atomic_counters: Some[MutableInput & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        router_weights: Some[Input & Tensor],
+        total_tokens: UInt32,
+        context: DeviceContext,
+    ) raises:
+        """`ep.combine_wait` for the messages `ep.combine_async.mx` sent.
+
+        Reads MXFP8 messages when `total_tokens` reaches `mx_min_tokens` and
+        exact ones otherwise, then computes each token's weighted sum of its
+        routed expert outputs.
+
+        Parameters:
+            combine_dtype: Output dtype (inferred).
+            hidden_size: Model hidden size.
+            top_k: Experts each token is routed to.
+            n_experts: Experts across all GPUs.
+            max_token_per_rank: Most tokens any GPU can receive.
+            n_gpus_per_node: GPUs per physical node.
+            n_nodes: Physical nodes.
+            mx_min_tokens: Smallest `total_tokens` sent as MXFP8.
+
+        Args:
+            output_tokens: `[num_tokens, hidden_size]` weighted sums.
+            atomic_counters: Atomic counters coordinating the combine.
+            recv_ptrs: Receive buffer pointers for the combine phase.
+            recv_count_ptrs: Receive count buffer pointers.
+            router_weights: `[num_tokens, top_k]` router weights.
+            total_tokens: Tokens of the step across all ranks.
+            context: GPU device context for the current device.
+        """
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(router_weights), TileTensorable)
+        comptime assert type_of(output_tokens).dtype == combine_dtype
+        comptime assert type_of(output_tokens).rank == 2
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        comptime assert type_of(router_weights).rank == 2
+        comptime assert (
+            type_of(output_tokens)._shape_types[1].static_value == hidden_size
+        ), "EP combine: output tokens shape doesn't match hidden size."
+        var router_weights_tensor = router_weights.to_tile_tensor()
+        comptime assert router_weights_tensor.flat_rank == 2
+
+        comptime assert conforms_to(type_of(output_tokens), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output_tokens)
+        comptime assert conforms_to(type_of(out_view), Storable)
+
+        @inline(.always)
+        def router_weights_fn[
+            width: Int
+        ](token_idx: Int, topk_id: Int) {var router_weights_tensor} -> SIMD[
+            .float32, width
+        ]:
+            return router_weights_tensor.load[width=width](
+                (token_idx, topk_id)
+            ).cast[.float32]()
+
+        @inline(.always)
+        def output_fn[
+            dtype: DType,
+            width: SIMDLength,
+            *,
+            alignment: Int = 1,
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
+            )
+
+        var num_tokens = coord_to_index_list(output_tokens.shape())[0]
+        var atomic_counters_tile = atomic_counters.to_tile_tensor[.int32]()
+        var recv_ptrs_tile = recv_ptrs.to_tile_tensor[.uint64]()
+        var recv_count_ptrs_tile = recv_count_ptrs.to_tile_tensor[.uint64]()
+
+        @inline(.always)
+        def launch[mx_msg: Bool]() raises {imm}:
+            ep_combine_wait_kernel_api[
+                combine_dtype,
+                hidden_size,
+                top_k,
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                mx_msg=mx_msg,
+            ](
+                num_tokens,
+                atomic_counters_tile,
+                recv_ptrs_tile,
+                recv_count_ptrs_tile,
+                context,
+                output_fn,
+                router_weights_fn,
+            )
+
+        if Int(total_tokens) >= mx_min_tokens:
+            launch[True]()
+        else:
+            launch[False]()
 
 
 @extensibility.register("ep.combine")
@@ -2903,8 +4454,6 @@ struct Struct_ep_combine:
     @inline(.always)
     @staticmethod
     def execute[
-        combine_dtype: DType,
-        router_weights_dtype: DType,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -2914,16 +4463,15 @@ struct Struct_ep_combine:
         fused_shared_expert: Bool,
         skip_a2a: Bool,
         //,
-        target: StaticString,
     ](
-        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
-        atomic_counters: MutableInputTensor[dtype=.int32, rank=1, ...],
-        input_tokens: InputTensor[dtype=combine_dtype, rank=2, ...],
-        src_info: InputTensor[dtype=.int32, rank=2, ...],
-        send_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_count_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
+        output_tokens: Some[Output & Fused & StoreAccess],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        src_info: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        router_weights: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism combine kernel.
@@ -2933,10 +4481,6 @@ struct Struct_ep_combine:
         routed expert outputs for each token.
 
         Parameters:
-            combine_dtype: `DType` used for the token payload during
-                the combine phase (inferred).
-            router_weights_dtype: `DType` of the router weights tensor
-                used to compute the weighted sum (inferred).
             hidden_size: Size of the model's hidden dimension
                 (inferred).
             top_k: Number of experts each token is routed to
@@ -2954,7 +4498,6 @@ struct Struct_ep_combine:
                 expert outputs (inferred).
             skip_a2a: Whether to skip the all-to-all communication and
                 send tokens only within the current device (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Fused output tensor storing the weighted
@@ -2981,12 +4524,32 @@ struct Struct_ep_combine:
         comptime assert (
             not skip_a2a
         ), "ep.combine: skip_a2a is lowered to ep.combine.skip_a2a."
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(input_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(src_info), TileTensorable)
+        comptime assert conforms_to(type_of(send_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(router_weights), TileTensorable)
+        comptime combine_dtype = type_of(output_tokens).dtype
+        comptime assert type_of(output_tokens).rank == 2
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(input_tokens).rank == 2
+        comptime assert type_of(src_info).rank == 2
+        comptime assert type_of(send_ptrs).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        comptime assert type_of(router_weights).rank == 2
         comptime assert (
-            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
+            type_of(output_tokens)._shape_types[1].static_value == hidden_size
         ), "EP combine: output tokens shape doesn't match hidden size."
-        var router_weights_tensor = router_weights.to_tile_tensor[.int64]()
+        var router_weights_tensor = router_weights.to_tile_tensor()
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
+
+        comptime assert conforms_to(type_of(output_tokens), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output_tokens)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def router_weights_fn[
@@ -3004,12 +4567,10 @@ struct Struct_ep_combine:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
-            output_tokens._fused_store[
-                width=width, element_alignment=alignment
-            ](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[combine_dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         ep_fused_combine_kernel_api[
@@ -3019,17 +4580,16 @@ struct Struct_ep_combine:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
         ](
-            output_tokens.dim_size[0](),
-            atomic_counters.to_tile_tensor[.int64](),
-            input_tokens.to_tile_tensor[.int64](),
-            src_info.to_tile_tensor[.int64](),
-            send_ptrs.to_tile_tensor[.int64](),
-            recv_ptrs.to_tile_tensor[.int64](),
-            recv_count_ptrs.to_tile_tensor[.int64](),
+            coord_to_index_list(output_tokens.shape())[0],
+            atomic_counters.to_tile_tensor[.int32](),
+            input_tokens.to_tile_tensor[combine_dtype](),
+            src_info.to_tile_tensor[.int32](),
+            send_ptrs.to_tile_tensor[.uint64](),
+            recv_ptrs.to_tile_tensor[.uint64](),
+            recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
             output_fn,
             router_weights_fn,
@@ -3043,8 +4603,6 @@ struct Struct_ep_combine_skip_a2a:
     @inline(.always)
     @staticmethod
     def execute[
-        combine_dtype: DType,
-        router_weights_dtype: DType,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -3055,17 +4613,16 @@ struct Struct_ep_combine_skip_a2a:
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
-        target: StaticString,
     ](
-        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
-        atomic_counters: MutableInputTensor[dtype=.int32, rank=1, ...],
-        input_tokens: InputTensor[dtype=combine_dtype, rank=2, ...],
-        src_info: InputTensor[dtype=.int32, rank=2, ...],
-        send_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        recv_count_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
-        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
-        topk_ids: InputTensor[dtype=.int32, rank=2, ...],
+        output_tokens: Some[Output & Fused & StoreAccess],
+        atomic_counters: Some[MutableInput & Tensor],
+        input_tokens: Some[Input & Tensor],
+        src_info: Some[Input & Tensor],
+        send_ptrs: Some[Input & Tensor],
+        recv_ptrs: Some[Input & Tensor],
+        recv_count_ptrs: Some[Input & Tensor],
+        router_weights: Some[Input & Tensor],
+        topk_ids: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism combine kernel.
@@ -3077,10 +4634,6 @@ struct Struct_ep_combine_skip_a2a:
         locally using an allreduce of size `allreduce_world_size`.
 
         Parameters:
-            combine_dtype: `DType` used for the token payload during
-                the combine phase (inferred).
-            router_weights_dtype: `DType` of the router weights
-                tensor used to compute the weighted sum (inferred).
             hidden_size: Size of the model's hidden dimension
                 (inferred).
             top_k: Number of experts each token is routed to
@@ -3101,7 +4654,6 @@ struct Struct_ep_combine_skip_a2a:
                 (inferred).
             allreduce_world_size: World size for the local allreduce
                 used when `skip_a2a` is set (inferred).
-            target: Compile-time device target.
 
         Args:
             output_tokens: Fused output tensor storing the weighted
@@ -3128,12 +4680,34 @@ struct Struct_ep_combine_skip_a2a:
                 Shape `[num_tokens, top_k]`.
             context: GPU device context for the current device.
         """
+        comptime assert conforms_to(type_of(atomic_counters), TileTensorable)
+        comptime assert conforms_to(type_of(input_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(src_info), TileTensorable)
+        comptime assert conforms_to(type_of(send_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(recv_count_ptrs), TileTensorable)
+        comptime assert conforms_to(type_of(router_weights), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime combine_dtype = type_of(output_tokens).dtype
+        comptime assert type_of(output_tokens).rank == 2
+        comptime assert type_of(atomic_counters).rank == 1
+        comptime assert type_of(input_tokens).rank == 2
+        comptime assert type_of(src_info).rank == 2
+        comptime assert type_of(send_ptrs).rank == 1
+        comptime assert type_of(recv_ptrs).rank == 1
+        comptime assert type_of(recv_count_ptrs).rank == 1
+        comptime assert type_of(router_weights).rank == 2
+        comptime assert type_of(topk_ids).rank == 2
         comptime assert (
-            Int(output_tokens.static_spec.shape_tuple[1]) == hidden_size
+            type_of(output_tokens)._shape_types[1].static_value == hidden_size
         ), "EP combine: output tokens shape doesn't match hidden size."
-        var router_weights_tensor = router_weights.to_tile_tensor[.int64]()
+        var router_weights_tensor = router_weights.to_tile_tensor()
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
+
+        comptime assert conforms_to(type_of(output_tokens), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output_tokens)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def router_weights_fn[
@@ -3151,12 +4725,10 @@ struct Struct_ep_combine_skip_a2a:
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
-            output_tokens._fused_store[
-                width=width, element_alignment=alignment
-            ](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width, element_alignment=alignment](
                 coords,
-                rebind[SIMD[combine_dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         ep_fused_combine_kernel_api[
@@ -3166,22 +4738,21 @@ struct Struct_ep_combine_skip_a2a:
             max_token_per_rank,
             n_gpus_per_node,
             n_nodes,
-            target,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
         ](
-            output_tokens.dim_size[0](),
-            atomic_counters.to_tile_tensor[.int64](),
-            input_tokens.to_tile_tensor[.int64](),
-            src_info.to_tile_tensor[.int64](),
-            send_ptrs.to_tile_tensor[.int64](),
-            recv_ptrs.to_tile_tensor[.int64](),
-            recv_count_ptrs.to_tile_tensor[.int64](),
+            coord_to_index_list(output_tokens.shape())[0],
+            atomic_counters.to_tile_tensor[.int32](),
+            input_tokens.to_tile_tensor[combine_dtype](),
+            src_info.to_tile_tensor[.int32](),
+            send_ptrs.to_tile_tensor[.uint64](),
+            recv_ptrs.to_tile_tensor[.uint64](),
+            recv_count_ptrs.to_tile_tensor[.uint64](),
             context,
             output_fn,
             router_weights_fn,
-            topk_ids._ptr.as_imm(),
+            topk_ids.to_tile_tensor[.int32]().as_imm().ptr,
         )
 
 
@@ -3192,7 +4763,6 @@ struct Struct_ep_fused_silu:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         activation: StaticString = "silu",
         swiglu_alpha: Float32 = 0.0,
         swiglu_limit: Float32 = 0.0,
@@ -3228,7 +4798,7 @@ struct Struct_ep_fused_silu:
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
         # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
 
         var output_tensor = output.to_tile_tensor()
         var input_tensor = input.to_tile_tensor().as_imm()
@@ -3267,7 +4837,7 @@ struct Struct_ep_fused_silu:
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "ep.fused_silu",
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
@@ -3289,7 +4859,6 @@ struct Struct_ep_fused_silu_mxfp4:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         *,
         max_padded_M: Int,
         activation: StaticString = "silu",
@@ -3341,7 +4910,7 @@ struct Struct_ep_fused_silu_mxfp4:
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
         # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
         comptime assert (
             max_padded_M > 0 and max_padded_M % 32 == 0
         ), "max_padded_M must be a positive multiple of 32"
@@ -3386,7 +4955,7 @@ struct Struct_ep_fused_silu_mxfp4:
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             trace_name,
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
@@ -3410,7 +4979,6 @@ struct Struct_ep_fused_silu_mxfp8:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         *,
         max_padded_M: Int,
         activation: StaticString = "silu",
@@ -3440,7 +5008,6 @@ struct Struct_ep_fused_silu_mxfp8:
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
         Struct_ep_fused_silu_mxfp4.execute[
-            target=target,
             max_padded_M=max_padded_M,
             activation=activation,
             swiglu_alpha=swiglu_alpha,
@@ -3456,7 +5023,6 @@ struct Struct_ep_fused_silu_mxfp6:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         *,
         max_padded_M: Int,
         FP6_FORMAT: Int = 0,
@@ -3494,7 +5060,7 @@ struct Struct_ep_fused_silu_mxfp6:
         comptime assert type_of(scales).rank == 2
         comptime assert type_of(input).rank == 2
         comptime assert type_of(row_offsets).rank == 1
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
         comptime assert (
             max_padded_M > 0 and max_padded_M % 32 == 0
         ), "max_padded_M must be a positive multiple of 32"
@@ -3539,7 +5105,7 @@ struct Struct_ep_fused_silu_mxfp6:
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "ep.fused_silu.mxfp6",
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
@@ -3563,7 +5129,6 @@ struct Struct_ep_fused_silu_nvfp4:
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         activation: StaticString = "silu",
         swiglu_alpha: Float32 = 0.0,
         swiglu_limit: Float32 = 0.0,
@@ -3607,7 +5172,7 @@ struct Struct_ep_fused_silu_nvfp4:
         comptime assert type_of(scales_offsets).rank == 1
         comptime assert type_of(input_scales).rank == 1
         # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert context.target.is_gpu(), "EP is only supported on GPU."
 
         var output_tensor = output.to_tile_tensor()
         var scales_tensor = scales.to_tile_tensor()
@@ -3663,7 +5228,7 @@ struct Struct_ep_fused_silu_nvfp4:
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "ep.fused_silu.nvfp4",
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),

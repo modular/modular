@@ -85,8 +85,8 @@
     "status": 302
   },
   {
-    "source": "/api/mojo/max/gpu/host/device_context/DeviceContext/?",
-    "dest": "/api/mojo/max/gpu/host/device_context/DeviceContextBase/",
+    "source": "/api/mojo/max/gpu/host/device_context/DeviceContextBase/?",
+    "dest": "/api/mojo/max/gpu/host/device_context/DeviceContext/",
     "status": 302
   }
 ]

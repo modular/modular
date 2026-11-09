@@ -399,7 +399,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   }
 
   // We cannot emit a value that contains an origin in its type (e.g. a
-  // StringSpan or UnsafePointer) because the origin will be incorrect -
+  // StringSpan or Pointer) because the origin will be incorrect -
   // referring to immortal compile-time memory.
   if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared)) {
     const ExprNode *expr = value.expr;
@@ -786,6 +786,27 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   // OK, if there is a destination specified, handle them by converging the set
   // of value types we have.
   auto rvType = cValue.getRValueType();
+
+  // An owned pattern binding can reuse the input storage directly. Unlike an
+  // assignment, a pattern declaration has no existing destination to update.
+  // Bind the name to this reference before resolving the destination, which
+  // would otherwise create a VarDeclOp and require a move into it.
+  if (MRValue ownedValue = cValue.getIfMRValue();
+      ownedValue && dest.getPatternDeclKind() == PatternDeclKind::kVar) {
+    if (auto *name = dyn_cast_or_null<DeclRefNode>(dest.getLValueExprNode())) {
+      CValue refinedValue =
+          maybeEmitRefinementRebind({ownedValue, expr}, *this);
+      auto refinedOwnedValue = refinedValue.getIfMRValue();
+      assert(refinedOwnedValue && "Refinement must preserve an MRValue");
+
+      StringAttr nameAttr = StringAttr::get(getContext(), name->spelling);
+      ASTDecl &decl = getDeclResolver().addFullyResolvedDecl(
+          MLValue(refinedOwnedValue), nameAttr, name->getLoc(), &declScope);
+      shared.notifyListenerOnVariableDecl(decl, name->getLoc());
+      dest.representation = NullRepresentation();
+      return MBValue(refinedOwnedValue);
+    }
+  }
 
   // If there is a known type for the destination but the value disagrees, emit
   // an implicit conversion directly into the destination.  This keeps values in
@@ -1337,7 +1358,8 @@ void IREmitter::emitExpressionWithoutEvaluatingIt(
 //===----------------------------------------------------------------------===//
 // Emission helpers for specific value types.
 
-ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
+ASTType IREmitter::emitExprType(const ExprNode *expr,
+                                TypeStrictness strictness) {
   // `None` can be either a type or a dynamic value.  In a type context, we
   // want to treat it as a type.
   const ExprNode *innerExpr = expr->getWithoutParens();
@@ -1356,12 +1378,13 @@ ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   }
 
   auto value = emitExprPValue(expr, EC_Type);
-  return emitType({value, expr}, allowUnbound);
+  return emitType({value, expr}, strictness);
 }
 
 /// This emits the specified PValue as a type, binding defaulted parameters
 /// etc if needed.
-ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
+ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
+                            TypeStrictness strictness) {
   if (!value.ir)
     return {};
 
@@ -1372,9 +1395,8 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
     return {};
   }
 
-  // If the caller accepts a fully unbound type and the type is unbound, return
-  // it now without verifying the bindings.
-  if (allowUnbound)
+  // A partially bound type is returned without verifying the bindings.
+  if (strictness == TypeStrictness::kIncomplete)
     return type;
 
   // Check for a function type.
@@ -1388,28 +1410,39 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
     }
 
     // Function types with non-singleton parameters can only be used at
-    // comptime.
-    for (auto [paramType, pog] : llvm::zip(sig.getInputParamTypes(),
-                                           sig.getParamListAttrs().getPogs())) {
-      // Singleton values like origins are fine. They will be removed by
-      // lowerlit before code generation.
-      if (ASTType(paramType).isSingleton(shared))
-        continue;
+    // comptime. This is only a runtime-ness restriction: it applies when the
+    // type describes runtime storage, not to comptime type values (which are
+    // only checked for concreteness below).
+    if (strictness == TypeStrictness::kConcrete) {
+      for (auto [paramType, pog] : llvm::zip(
+               sig.getInputParamTypes(), sig.getParamListAttrs().getPogs())) {
+        // Singleton values like origins are fine. They will be removed by
+        // lowerlit before code generation.
+        if (ASTType(paramType).isSingleton(shared))
+          continue;
 
-      auto diag =
-          emitError(value.expr->getLoc(),
-                    "cannot use parametric function as a runtime closure")
-          << value.expr->getRange();
-      diag.attachNote(value.expr->getLoc())
-          << "parameter " << ParamDeclRefAttr::get(pog.getName(), paramType)
-          << " of type " << ASTType(paramType) << " is not bound";
-      return {};
+        auto diag =
+            emitError(value.expr->getLoc(),
+                      "cannot use parametric function as a runtime closure")
+            << value.expr->getRange();
+        diag.attachNote(value.expr->getLoc())
+            << "parameter " << ParamDeclRefAttr::get(pog.getName(), paramType)
+            << " of type " << ASTType(paramType) << " is not bound";
+        return {};
+      }
     }
   }
   if (llvm::any_of(type.getParamBindings(),
                    [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
-    emitError(value.expr->getLoc())
-        << type << " is not concrete, use '[]' to bind missing parameters";
+    auto diag = emitError(value.expr->getLoc())
+                << type
+                << " is not concrete, use '[]' to bind missing parameters";
+    // The type printer hides infer-only parameters, so name the missing ones.
+    // A bound signature keeps only its unbound parameters.
+    if (TypeSignatureType sig = type.getSignature())
+      for (size_t idx = 0, e = sig.getNumParams(); idx != e; ++idx)
+        diag.attachNote(value.expr->getLoc())
+            << "missing parameter '" << sig.getParamName(idx).getValue() << "'";
     return {};
   }
 
@@ -2115,7 +2148,8 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   }
 
   // Bind the Origin parameters.
-  originType = litStruct.bindReference({mutBool, litOrigin});
+  originType = litStruct.bindAllReferences(&shared.getEvaluationContext(),
+                                           {mutBool, litOrigin});
 
   // If we are referencing an origin parameter, we need to find the
   // Origin it corresponds to and use that. Consider:

@@ -14,6 +14,7 @@
 #ifndef SUPPORT_DRIVER_DIAGNOSTICFORMAT_H
 #define SUPPORT_DRIVER_DIAGNOSTICFORMAT_H
 
+#include "Support/SymbolExport.h"
 #include "llvm/Support/SourceMgr.h"
 
 #include <cstdint>
@@ -135,7 +136,8 @@ enum class DiagnosticFormat {
 /// Returns an LLVM source manager diagnostic handler for the given diagnostic
 /// format. Text diagnostics are printed in LLVM's default manner, while JSON
 /// diagnostics are printed as textual JSON, each separated by a newline.
-llvm::SourceMgr::DiagHandlerTy getDiagHandler(DiagnosticFormat format);
+MODULAR_CXX_EXPORT llvm::SourceMgr::DiagHandlerTy
+getDiagHandler(DiagnosticFormat format);
 } // namespace M
 
 #endif // SUPPORT_DRIVER_DIAGNOSTICFORMAT_H

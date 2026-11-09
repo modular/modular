@@ -78,7 +78,7 @@ from std.sys import size_of
 
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
@@ -493,9 +493,6 @@ def test_pv_ts_batched[
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=total_smem,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem)
-        ),
     )
     ctx.synchronize()
 

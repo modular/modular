@@ -226,7 +226,8 @@ modular_eager_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"],
-    # Collective signal buffers come from max.nn.legacy, imported lazily.
+    # Collective signal buffers come from max.nn.legacy, imported lazily by
+    # the realization context when the fused collectives allocate them.
     ignore_extra_deps = ["//max/python/max/nn/legacy"],
     imports = ["."],
     tags = ["gpu"],

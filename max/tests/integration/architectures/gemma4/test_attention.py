@@ -417,8 +417,8 @@ def test_attention_global(
 # ---------------------------------------------------------------------------
 # These exercise the native pure-fp8 path: fp8 Q/K/V read directly from the
 # paged cache, Q@K^T and P@V both raw fp8 MMAs at tensorwise scale=1, bf16
-# output. Routes through `mo.rope_split_store.ragged.paged` (outputs roped Q
-# as fp8) and `mo.mha.ragged.paged` (fp8 Q+KV in, bf16 out).
+# output. Routes through `kv_cache.rope_split_store.ragged.paged` (outputs roped Q
+# as fp8) and `attention.mha.ragged.paged` (fp8 Q+KV in, bf16 out).
 # Cosine vs the bf16 baseline must clear the same 0.99 smoke bar. Same
 # sensitivity caveat: random-weight smoke gate, not a sufficient bug-detector
 # — end-to-end serving accuracy (e.g. gsm8k under a real checkpoint) is the

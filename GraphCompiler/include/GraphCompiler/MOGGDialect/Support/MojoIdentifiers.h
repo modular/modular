@@ -63,12 +63,10 @@ constexpr llvm::StringLiteral kOpaqueTypeMappingAttrName =
 using KGEN::kFnRegister;
 using KGEN::kFnRegisterInternal;
 
-/// Indices into `getDecoratorLambdaArgument` for `@extensibility.register`.
-constexpr size_t kRegisterDecoratorArgName = 0;
-constexpr size_t kRegisterDecoratorArgType = 1;
-constexpr size_t kRegisterDecoratorArgApi = 2;
-constexpr size_t kRegisterDecoratorArgArch = 3;
-constexpr size_t kRegisterDecoratorArgModel = 4;
+/// The prefixes of the mangled leaf names of `@extensibility.register(name)`
+/// and `@extensibility.register(name, cond)`.
+constexpr llvm::StringLiteral kRegisterDecoratorPrefix = "register(";
+constexpr llvm::StringLiteral kRegisterCondDecoratorPrefix = "register[";
 
 constexpr llvm::StringLiteral kMoggTargetParameterName = "target";
 
@@ -225,8 +223,9 @@ constexpr llvm::StringLiteral kStructDeviceContext =
     "max.gpu.host.DeviceContext";
 constexpr llvm::StringLiteral kStructDeviceContextArray =
     "max.gpu.host.DeviceContextArray";
-/// `DeviceContext.assert_cpu_target()`: this context as a `DeviceContext.CPU`.
-constexpr llvm::StringLiteral kFnAssertCpuTarget = "assert_cpu_target";
+/// `DeviceContext.assert_default_target()`: this context as a
+/// `DeviceContext[]`. TODO(DRIV-655): Remove along with its uses.
+constexpr llvm::StringLiteral kFnAssertDefaultTarget = "assert_default_target";
 constexpr llvm::StringLiteral kStructDeviceGraph = "max.gpu.host.DeviceGraph";
 constexpr llvm::StringLiteral kStructDeviceGraphBuilder =
     "max.gpu.host.DeviceGraphBuilder";
@@ -260,7 +259,7 @@ constexpr llvm::StringLiteral kStructSIMD = "SIMD";
 constexpr llvm::StringLiteral kStructTileTensor = "layout.TileTensor";
 constexpr llvm::StringLiteral kStructTensorLayout = "layout.TensorLayout";
 constexpr llvm::StringLiteral kStructTileCopier = "layout.tile_io.TileCopier";
-constexpr llvm::StringLiteral kStructTileLayout = "layout.tile_layout.Layout";
+constexpr llvm::StringLiteral kStructTileLayout = "layout.MixedLayout";
 constexpr llvm::StringLiteral kStructMoggOutputStoreFusionTensor =
     "_MoggOutputStoreFusionTensor";
 constexpr llvm::StringLiteral kStructStateContext =
@@ -286,6 +285,10 @@ constexpr llvm::StringLiteral kStructStableVariadicTensors =
     "extensibility.StableVariadicTensors";
 constexpr llvm::StringLiteral kStructTensorTuple = "extensibility.TensorTuple";
 constexpr llvm::StringLiteral kStructStaticString = "StaticString";
+constexpr llvm::StringLiteral kStructMsNoComputeFusionTile =
+    "managed_tensor_slice._NoComputeFusionTile";
+constexpr llvm::StringLiteral kStructMsNoOutputFusionTile =
+    "managed_tensor_slice._NoOutputFusionTile";
 constexpr llvm::StringLiteral kStructMsFusionPack =
     "managed_tensor_slice._FusionPack";
 constexpr llvm::StringLiteral kStructMsFusedInputVariadicTensors =
@@ -300,7 +303,6 @@ constexpr llvm::StringLiteral kStructColor = "max.runtime.tracing.Color";
 constexpr llvm::StringLiteral kFnTraceStart = "start";
 constexpr llvm::StringLiteral kFnTraceEnd = "end";
 constexpr llvm::StringLiteral kParameterColor = "color";
-constexpr llvm::StringLiteral kStructIntTuple = "layout.IntTuple";
 constexpr llvm::StringLiteral kStructCoord = "layout.Coord";
 constexpr llvm::StringLiteral kAliasIdx = "layout.Idx";
 constexpr llvm::StringLiteral kFnRowMajor = "layout.row_major";
@@ -368,7 +370,6 @@ constexpr llvm::StringLiteral kFnMsSimdStoreIntoTensorPointer =
 /// Returns a tile kernel's `(rows, cols)` tile shape.
 constexpr llvm::StringLiteral kFnGetKernelTileShape =
     "managed_tensor_slice.get_kernel_tile_shape";
-constexpr llvm::StringLiteral kFnToIndexList = "layout.to_index_list";
 /// Fully qualified because `std.utils` does not re-export `coord`.
 constexpr llvm::StringLiteral kFnCoordToIndexList =
     "std.utils.coord.coord_to_index_list";
@@ -377,8 +378,11 @@ constexpr llvm::StringLiteral kStructRowwiseContextParams =
     "algorithm.rowwise_types.ContextParams";
 constexpr llvm::StringLiteral kStructRowwiseContext =
     "algorithm.rowwise_types.Context";
-constexpr llvm::StringLiteral kStructRowwiseRowCoord =
-    "algorithm.rowwise_types.RowCoord";
+constexpr llvm::StringLiteral kFuncRowwiseAtAxis =
+    "algorithm.rowwise_types.at_axis";
+/// Fully qualified because `std.utils` does not re-export `coord`.
+constexpr llvm::StringLiteral kAliasDynamicCoord =
+    "std.utils.coord.DynamicCoord";
 /// Package-private, so qualified with `_asyncrt`.
 constexpr llvm::StringLiteral kFnCreateTask =
     "std.runtime._asyncrt.create_task";
@@ -655,6 +659,12 @@ public:
   MojoValue shape() const { return value.get(kShape)(); }
   MojoValue strides() const { return value.get(kStrides)(); }
   MojoValue toTileTensor() const { return value.get(kToTileTensor)(); }
+  MojoValue bindToFusedComputeOutputTile() const {
+    return value.get(kBindToFusedComputeOutputTile);
+  }
+  MojoValue bindToFusedOutputTile() const {
+    return value.get(kBindToFusedOutputTile);
+  }
 
   /// Return the uncalled method handle.
   MojoValue bindToFusedInput() const { return value.get(kBindToFusedInput); }

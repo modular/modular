@@ -462,6 +462,20 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "Distribution of input tokens per request. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none."
         ),
     ),  # type: ignore
+    "max.request.cached_input_tokens": _meter.create_histogram(
+        "max.request.cached_input_tokens",
+        unit="tokens",
+        description=(
+            "Distribution of prompt tokens per request that the prefix cache served. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none. Recorded when the request ends, from the count the server reports to the client in `prompt_tokens_details.cached_tokens`, so a cold cache is a real zero sample. Paired with `max_request_uncached_input_tokens`; the two sum to `max_input_tokens_per_request_tokens` for the same request."
+        ),
+    ),  # type: ignore
+    "max.request.uncached_input_tokens": _meter.create_histogram(
+        "max.request.uncached_input_tokens",
+        unit="tokens",
+        description=(
+            "Distribution of prompt tokens per request that the prefix cache did not serve, i.e. the tokens the model prefilled. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none. Paired with `max_request_cached_input_tokens`; the two sum to `max_input_tokens_per_request_tokens` for the same request."
+        ),
+    ),  # type: ignore
     "max.prefix_coverage_per_request": _meter.create_histogram(
         "max.prefix_coverage_per_request",
         unit="percent",
@@ -505,6 +519,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "max.dkv.hinted_lookup_latency",
         unit="ms",
         description="Mean wall time of a hinted dKV lookup round in a batch's window, from routing to the assembled plan, for rounds in which some entry routed to an attached peer. What MODULAR_DKV_OVERLAP_PEER_LOOKUPS shortens.",
+    ),  # type: ignore
+    "max.dkv.peer_writeback_hold_latency": _meter.create_histogram(
+        "max.dkv.peer_writeback_hold_latency",
+        unit="ms",
+        description="Mean time an offload was held behind a peer write-back in a batch's window, under MODULAR_DKV_OFFLOAD_PEER_LOADS, for offloads whose run follows the blocks a hinted peer filled, directly or through another held run. The head-of-line cost of registering those blocks first.",
     ),  # type: ignore
     "max.dkv.read_blocks": _meter.create_counter(
         "max.dkv.read_blocks",
@@ -622,6 +641,25 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "max.dkv.peer_rounds_while_degraded",
         description="dKV lookups that found the co-located dKV down and still leased a loadable run from a peer the request's cache hint named. Read with max.dkv.prepare_load_degraded, which counts the lookups that left blocks to the co-located dKV, to see how much of a dKV restart the peers covered.",
     ),
+    # What lost cache hints and short peer pulls cost, in blocks (CLIN-2219).
+    # Counters, since take_metrics clears them every batch like the fail-opens
+    # above.
+    "max.dkv.hints_received": _create_counter(
+        "max.dkv.hints_received",
+        description="Cache hints that reached a lookup which counts them, aligned or not, per entry per leaf client. The denominator for the unparseable, no_group_entry and chain_mismatch rejections and for max.dkv.hints_unused. An invalid_source rejection counts per source, not per hint.",
+    ),
+    "max.dkv.own_run_blocks_short_of_hint": _create_counter(
+        "max.dkv.own_run_blocks_short_of_hint",
+        description="Blocks the co-located run fell short of the run the cache hint credited it with.",
+    ),
+    "max.dkv.peer_blocks_short_of_hint": _create_counter(
+        "max.dkv.peer_blocks_short_of_hint",
+        description="Blocks a hinted peer was asked for that neither its answer nor the co-located run covered, a failed read counting from where the co-located run ends. A read sent back to the peer counts on the read that asks again, or at the end of the round when none does. Per hop, so it can count a block max.dkv.own_run_blocks_short_of_hint also counts.",
+    ),
+    "max.dkv.hint_blocks_unserved": _create_counter(
+        "max.dkv.hint_blocks_unserved",
+        description="Blocks each hinted entry's cache hint promised that the finished lookup's plan does not serve, per entry per leaf client like max.dkv.hints_received. The count to rank blocks lost by, since the per hop *_short_of_hint counters can count one block more than once. Counted on the leased path (MAX) only, Mach's presence path does not count it yet.",
+    ),
     # The overlapped hinted lookup (CLIN-2163). Counters, since take_metrics
     # clears them every batch like the fail-opens above.
     "max.dkv.own_runs_short_of_hint": _create_counter(
@@ -635,6 +673,28 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "max.dkv.overlapped_peer_lookups": _create_counter(
         "max.dkv.overlapped_peer_lookups",
         description="dKV peer lookups begun alongside the co-located lookup rather than after it, at most one per round, under MODULAR_DKV_OVERLAP_PEER_LOOKUPS. Zero with the option off; read against max.dkv.hinted_lookups for how often it fires.",
+    ),
+    # The peer-load write-back. Counters, since take_metrics clears them every
+    # batch like the split loads above.
+    "max.dkv.peer_writeback_blocks": _create_counter(
+        "max.dkv.peer_writeback_blocks",
+        description="Blocks a hinted peer filled that were offloaded once their onload landed to write back to the co-located dKV, per leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS, up to the first hash the device prefix cache lacks on a full-attention leaf. Zero with the option off; dKV skips any it already holds, so read against its newly acquired offload count.",
+    ),
+    "max.dkv.peer_writeback_blocks_evicted": _create_counter(
+        "max.dkv.peer_writeback_blocks_evicted",
+        description="Peer-filled hashes a write-back's offload found missing from the device prefix cache while its request still held its own pages, per leaf, with those behind the first on a full-attention leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS. Another request published these as twins and they were evicted after it let them go, and that request normally wrote them to dKV already, so this is not a lost write-back; max.dkv.peer_writeback_blocks_dropped counts the losses.",
+    ),
+    "max.dkv.peer_writeback_blocks_dropped": _create_counter(
+        "max.dkv.peer_writeback_blocks_dropped",
+        description="Peer-filled hashes lost to the co-located dKV, per leaf, under MODULAR_DKV_OFFLOAD_PEER_LOADS: those a write-back found missing from the device prefix cache when its request had let the pages go, by a rollback or a release before the copy landed, with those behind the first on a full-attention leaf. Nobody wrote these back. Read against max.dkv.peer_writeback_blocks for how much of the peer-loaded KV the write-back misses.",
+    ),
+    "max.dkv.peer_writeback_hold_expired": _create_counter(
+        "max.dkv.peer_writeback_hold_expired",
+        description="Peer write-backs not seen to land within their hold deadline, under MODULAR_DKV_OFFLOAD_PEER_LOADS, which then stop holding back the offloads that follow them in their chains. One with an offload held behind it lets dKV briefly register that offload's run ahead of the blocks a hinted peer filled; read against max.dkv.peer_writeback_hold_latency.",
+    ),
+    "max.dkv.peer_writeback_held_offloads": _create_counter(
+        "max.dkv.peer_writeback_held_offloads",
+        description="Offloads released from a hold behind a peer write-back, under MODULAR_DKV_OFFLOAD_PEER_LOADS: those whose run follows the blocks a hinted peer filled, directly or through another held run. The offloads max.dkv.peer_writeback_hold_latency averages over.",
     ),
     "max.dkv.hinted_lookups": _create_counter(
         "max.dkv.hinted_lookups",
@@ -671,6 +731,10 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     # Per-call dKV client counters. Counters, not histograms, so a dashboard
     # derives the per-call mean as time over calls; the rpc_*_latency
     # histograms above record one per-batch mean each.
+    "max.dkv.hint_blocks_forgone_by_reason": _create_counter(
+        "max.dkv.hint_blocks_forgone_by_reason",
+        description="Blocks the peers a rejected or unused cache hint named had offered from the request's first block, by the rejection or unused `reason`, per entry per leaf client. For chain_mismatch only the blocks before the chains part, since the rest were never the request's. Zero for a request sent without chain_start and for a sliding window hint, neither of which can be placed on the hinted chain.",
+    ),
     "max.dkv.hints_rejected_by_reason": _meter.create_counter(
         "max.dkv.hints_rejected_by_reason",
         description="max.dkv.hints_rejected split by `reason`: unparseable bytes, no entry for the group, a chain that disagrees with the request on a block both name, or an instance record that failed validation.",
@@ -2096,6 +2160,28 @@ class _AsyncMetrics:
             ),
         )
 
+    def request_cached_input_tokens(
+        self, value: int, turn: ConversationTurn | None = None
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.request.cached_input_tokens",
+                value,
+                self._with_turn(turn),
+            ),
+        )
+
+    def request_uncached_input_tokens(
+        self, value: int, turn: ConversationTurn | None = None
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.request.uncached_input_tokens",
+                value,
+                self._with_turn(turn),
+            ),
+        )
+
     def prefix_coverage_per_request(
         self, coverage: float, turn: ConversationTurn | None = None
     ) -> None:
@@ -2158,6 +2244,15 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.rpc_read_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_hold_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_hold_latency",
                 latency_ms,
                 self.extra_attributes,
             ),
@@ -2316,6 +2411,26 @@ class _AsyncMetrics:
             ),
         )
 
+    def dkv_hints_received(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hints_received",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hint_blocks_forgone_by_reason(
+        self, value: int, reason: str
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hint_blocks_forgone_by_reason",
+                value,
+                {**self.extra_attributes, "reason": reason},
+            ),
+        )
+
     def dkv_hints_rejected_by_reason(self, value: int, reason: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -2433,6 +2548,33 @@ class _AsyncMetrics:
             ),
         )
 
+    def dkv_own_run_blocks_short_of_hint(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.own_run_blocks_short_of_hint",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_blocks_short_of_hint(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_blocks_short_of_hint",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hint_blocks_unserved(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hint_blocks_unserved",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
     def dkv_own_runs_short_of_hint(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -2455,6 +2597,51 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.overlapped_peer_lookups",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_blocks(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_blocks",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_blocks_evicted(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_blocks_evicted",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_blocks_dropped(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_blocks_dropped",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_hold_expired(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_hold_expired",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_writeback_held_offloads(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_writeback_held_offloads",
                 value,
                 self.extra_attributes,
             ),

@@ -35,13 +35,14 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     KVCacheParams,
     MLAAttnKey,
     padded_lut_cols,
 )
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.support.math import ceildiv
 
 
@@ -211,4 +212,8 @@ def paged_kv_cache_inputs(
         )
         if isinstance(attn_key, MLAAttnKey)
         else None,
+        # Every paged leaf declares the record; zeros mean no split.
+        mixed_step_split=Buffer.from_numpy(
+            np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)
+        ),
     )

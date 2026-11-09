@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 from max.graph.weights import WeightData, Weights
 
@@ -34,6 +35,7 @@ MPNET_SAFETENSOR_MAP: dict[str, str | None] = {
 
 def convert_safetensor_state_dict(
     state_dict: Mapping[str, Weights],
+    **unused_kwargs: Any,
 ) -> dict[str, WeightData]:
     """Maps the checkpoint's tensor names onto the MAX tree."""
     new_state_dict: dict[str, WeightData] = {}

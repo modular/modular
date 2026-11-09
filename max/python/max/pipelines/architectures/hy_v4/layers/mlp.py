@@ -17,7 +17,7 @@ from __future__ import annotations
 from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.quant_linear import QuantizedLinear
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 
 

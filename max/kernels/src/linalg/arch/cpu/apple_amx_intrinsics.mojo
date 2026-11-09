@@ -22,7 +22,7 @@
 from std.sys._assembly import inlined_assembly
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from std.memory import (
     unsafe_memcpy,
     unsafe_memset_zero,

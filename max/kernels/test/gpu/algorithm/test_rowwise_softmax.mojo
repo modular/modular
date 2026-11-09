@@ -47,7 +47,7 @@ def _check[
             width=width, alignment=alignment * align_of[dtype]()
         ](coords)
 
-    softmax[dtype, 2, target="gpu", logsoftmax=logsoftmax](
+    softmax[dtype, 2, logsoftmax=logsoftmax](
         input_fn, Coord(rows, cols), cols, out_t, 1, ctx
     )
     ctx.enqueue_copy(res, out_d)

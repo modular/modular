@@ -107,7 +107,6 @@ build --remote_timeout=10m
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
 build --remote_cache_async
-build --experimental_remote_cache_lease_extension=true
 build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
@@ -116,7 +115,7 @@ build --rewind_lost_inputs
 
 # Local disk cache, tools/bazel opts developers in
 build:disk-cache --disk_cache=~/.cache/bazel-disk-cache
-build:disk-cache --experimental_disk_cache_gc_max_size=100G
+build:disk-cache --disk_cache_gc_max_size=100G
 
 # Include full test log in failed tests
 build --test_output=errors
@@ -133,12 +132,6 @@ build --test_env=MODULAR_TELEMETRY_ENABLED=false
 # Fix parallel tests competing for a single CPU on graviton
 build --test_env=KMP_AFFINITY=none
 
-# Newer Bazel sets HOME=$TEST_TMPDIR in test actions
-# (https://github.com/fmeum/bazel/commit/a3a69aad03b9c24bd52a7b9d19c5160da14203e5),
-# which hides caches under the real home, such as HuggingFace's. Inherit HOME
-# for now, until we migrate to random per-action HOMEs.
-build --test_env=HOME
-
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true
 
@@ -146,9 +139,6 @@ test --test_env=MODULAR_RUNNING_TESTS=true
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY=true
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE=0
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT=100
-
-# Allow --modify_execution_info to be passed any number of times
-common --incompatible_modify_execution_info_additive
 
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
@@ -165,6 +155,34 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
+build --per_file_copt=external/.*llvm-project/.*@-ULLVM_BUILD_STATIC
+build --host_per_file_copt=external/.*llvm-project/.*@-ULLVM_BUILD_STATIC
+# clang has almost no export annotations, so its Basic layer, which liblldb
+# shares through @llvm-project//clang:clangBasic, exports everything.
+build --per_file_copt=external/.*llvm-project/clang/lib/(Basic|Support)/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/clang/lib/(Basic|Support)/.*@-fvisibility=default
+# Nor do LLVM's Debuginfod and HTTP libraries yet, which lldb uses from libLLVM.
+build --per_file_copt=external/.*llvm-project/llvm/lib/(Debuginfod|HTTP)/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/llvm/lib/(Debuginfod|HTTP)/.*@-fvisibility=default
+# MLIR has no export annotations either, so @llvm-project//mlir:MLIR exports
+# it the way CMake's libMLIR does, with default visibility. The toolchain's
+# -fvisibility=hidden is what makes this necessary.
+build --per_file_copt=external/.*llvm-project/mlir/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/mlir/.*@-fvisibility=default
+# abseil and rules_cc's runfiles library are exported from
+# libAsyncRTRuntimeGlobals, and xxhash from libKGENCompilerRTShared. None of
+# them has an export macro outside Windows.
+build --per_file_copt=external/(abseil-cpp|xxhash)[+]/.*@-fvisibility=default
+build --host_per_file_copt=external/(abseil-cpp|xxhash)[+]/.*@-fvisibility=default
+build --per_file_copt=external/rules_cc[+]/cc/runfiles/.*@-fvisibility=default
+build --host_per_file_copt=external/rules_cc[+]/cc/runfiles/.*@-fvisibility=default
+# libxml2 is linked into libLLVM, and lldb calls it directly. It has no export
+# macro outside Windows.
+build --per_file_copt=external/libxml2[+]/.*@-fvisibility=default
+build --host_per_file_copt=external/libxml2[+]/.*@-fvisibility=default
+# zlib-ng is linked into libLLVM, and lld calls it directly.
+build '--per_file_copt=external/zlib-ng[+]/.*@-DZ_EXTERN=extern __attribute__((visibility("default")))'
+build '--host_per_file_copt=external/zlib-ng[+]/.*@-DZ_EXTERN=extern __attribute__((visibility("default")))'
 
 # Upstream NIXL (github.com/ai-dynamo/nixl) uses exceptions internally for
 # error reporting. Public API still surfaces nixl_status_t codes.
@@ -175,6 +193,11 @@ build --per_file_copt=external/.*nixl_upstream.*@-fexceptions,-frtti,-fvisibilit
 # with the open source build, which also compiles jemalloc.
 build --host_per_file_copt=external/jemalloc.*@-fexceptions,-Wno-incompatible-pointer-types-discards-qualifiers,-Wno-string-conversion
 build --per_file_copt=external/jemalloc.*@-fexceptions,-Wno-incompatible-pointer-types-discards-qualifiers,-Wno-string-conversion
+
+# When compiling for CPython 3.15, silence a warning about an uninitialized field. That field is private and gets
+# zero-initialized anyways.
+build --host_per_file_copt=external/grpc.*/src/python/grpcio/grpc/_cython/cygrpc.cpp@-Wno-missing-field-initializers
+build --per_file_copt=external/grpc.*/src/python/grpcio/grpc/_cython/cygrpc.cpp@-Wno-missing-field-initializers
 
 # Enable mypy running on python builds
 build --aspects=//bazel/pip:mypy.bzl%mypy_aspect
@@ -200,9 +223,10 @@ build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
 
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
 build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
-build:cache --remote_downloader=grpcs://modular.buildbuddy.io
-build:cache --remote_downloader_local_fallback
-build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
+# `common` so `query` and `mod` also use the downloader. It needs the cache.
+common:cache --remote_downloader=grpcs://modular.buildbuddy.io
+common:cache --remote_downloader_local_fallback
+common:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
 
 build:remote --config=cache
 build:remote --remote_executor=grpcs://modular.buildbuddy.io

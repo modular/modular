@@ -27,6 +27,8 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
     ],
     imports = ["."],
+    # DISTINF-819: slow enough in CI that `//...` should skip it.
+    per_test_tags = {"test_expert_stacks_cpu.py": ["manual"]},
     # Importing max.pipelines times out pytest collection on contended macOS
     # workers, and macOS adds no coverage to these CPU-only tests.
     target_compatible_with = select({
@@ -41,7 +43,10 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
@@ -63,6 +68,8 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
     ],
     imports = ["."],
+    # DISTINF-819: slow enough in CI that `//...` should skip it.
+    tags = ["manual"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -75,7 +82,10 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -83,6 +93,198 @@ modular_py_test(
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
         requirement("numpy"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "mimo_replica_probe",
+    testonly = True,
+    srcs = ["replica_probe.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "mimo_local_routing_ir",
+    size = "large",
+    srcs = ["test_local_routing_ir.py"],
+    # The checks read the IR dump a compile writes, which a cache hit skips.
+    env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    # One test per shard, so the three compiles run at once; the two gate
+    # cases, which compile nothing, take the remaining shards.
+    shard_count = 5,
+    # The checks target virtual devices, so the host CPU doesn't matter.
+    tags = [
+        "skip-ci-asan",
+        "skip-ci-m7g",
+        "skip-ci-ubsan",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_replica_probe",
+        ":mimo_v3_runner",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("transformers"),
+    ],
+)
+
+# The production, replica-trace and fixture-trace compiles: minutes each on a
+# CPU. Postsubmit, because the target reruns on most MAX Python changes and
+# presubmit keeps the tiny-fixture graph checks above.
+modular_py_test(
+    name = "mimo_local_routing_full_width_ir",
+    size = "enormous",
+    srcs = ["test_local_routing_full_width_ir.py"],
+    # The checks read the IR dump a compile writes, which a cache hit skips.
+    env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    shard_count = 4,
+    # The checks target virtual devices, so the host CPU doesn't matter.
+    tags = [
+        "postsubmit",
+        "skip-ci-asan",
+        "skip-ci-m7g",
+        "skip-ci-ubsan",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_replica_probe",
+        ":mimo_v3_runner",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# The replica check's trace and compare path, on four B200s for the bitwise
+# check and on the two a remote B200 executor exposes for the smoke run. One
+# source runs in both, distinguished by MIMO_REPLICA_TP.
+modular_py_test(
+    name = "mimo_local_routing_replica_gpu",
+    size = "large",
+    # A full-width compile and 56 steps outlast the large-size limit.
+    timeout = "eternal",
+    srcs = ["test_local_routing_replica_gpu.py"],
+    env = {"MIMO_REPLICA_TP": "4"},
+    # Set from a measurement: with the memory-manager log on, this arm's trace
+    # peaks at 3.27 GiB in use per device. The rules cap the manager at this
+    # request less 0.6 GB, so 6 leaves 5.4 GB.
+    exec_properties = {"test.resources:gpu-memory": "6"},
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    precompile_device_count = 4,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":mimo_replica_probe",
+        ":mimo_v3_runner",
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/modeling",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
+)
+
+# The replica check's step and compare path on the two GPUs a remote B200
+# executor exposes, so it runs before a four-GPU box does. Postsubmit: the
+# test takes 20.8 s, under a GPU-minute across its two devices.
+modular_py_test(
+    name = "mimo_local_routing_replica_smoke_gpu",
+    size = "large",
+    timeout = "eternal",
+    srcs = ["test_local_routing_replica_gpu.py"],
+    env = {"MIMO_REPLICA_TP": "2"},
+    # Set from a measurement: with the memory-manager log on, this arm's trace
+    # peaks at 1.60 GiB in use per device. The rules cap the manager at this
+    # request less 0.6 GB, so 5 leaves 4.4 GiB.
+    exec_properties = {"test.resources:gpu-memory": "5"},
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    precompile_device_count = 2,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    deps = [
+        ":mimo_replica_probe",
+        ":mimo_v3_runner",
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/modeling",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
     ],
 )
 
@@ -114,7 +316,9 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
@@ -127,8 +331,9 @@ modular_py_library(
 )
 
 # The V3 model on the tiny fixture vs the V2 harness's HF goldens, TP2 over
-# the target's selected GPU count. The goldens and the fixture are shared
-# with the graph-API harness, not duplicated here.
+# the target's selected GPU count. One source serves TP2 and TP4, distinguished
+# by MIMO_TEST_TP_DEGREE; the goldens and the fixture are shared with the
+# graph-API harness, not duplicated here.
 modular_py_test(
     name = "mimo_v3_numerics_gpu",
     size = "large",
@@ -144,17 +349,75 @@ modular_py_test(
     imports = ["."],
     precompile_device_count = 2,
     precompile_mefs = True,
-    # Postsubmit: an expensive B200 test that presubmit would rerun on any
-    # change to its dependencies.
+    # DISTINF-808: an expensive B200 test, so `//...` skips it rather than
+    # presubmit rerunning it on any change to its dependencies.
     tags = [
         "gpu",
-        "postsubmit",
+        "manual",
     ],
     deps = [
         ":mimo_v3_runner",
         "//max/python/max/driver",
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
         requirement("numpy"),
+    ],
+)
+
+# TP4 replays are manual because the standard remote B200 executor exposes
+# only two devices; their MEFs must be recorded for four devices.
+modular_py_test(
+    name = "mimo_v3_numerics_tp4_gpu",
+    size = "large",
+    srcs = ["test_serving_numerics_gpu.py"],
+    data = ["//max/tests/integration/architectures/mimo_v2:tiny_goldens"],
+    env = {"MIMO_TEST_TP_DEGREE": "4"},
+    exec_properties = {"test.resources:gpu-memory": "3"},
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    precompile_device_count = 4,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":mimo_v3_runner",
+        "//max/python/max/driver",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "mimo_v3_parity_tp4_gpu",
+    size = "large",
+    srcs = ["test_v2_v3_parity_gpu.py"],
+    data = ["//max/tests/integration/architectures/mimo_v2:tiny_goldens"],
+    env = {"MIMO_TEST_TP_DEGREE": "4"},
+    exec_properties = {"test.resources:gpu-memory": "3"},
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    precompile_device_count = 4,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":mimo_v3_runner",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/tests/integration/architectures/mimo_v2:mimo_runner",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 
@@ -187,7 +450,7 @@ modular_py_test(
         ":mimo_v3_runner",
         "//max/python/max/driver",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/tests/integration/architectures/mimo_v2:mimo_runner",
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
         requirement("numpy"),

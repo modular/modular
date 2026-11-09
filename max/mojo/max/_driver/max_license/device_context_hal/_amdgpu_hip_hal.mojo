@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """HIP native-handle accessors for the HAL `DeviceContext`."""
 
-from .device_context_hal import DeviceContext, DeviceFunction, DeviceStream
-from std.memory.unsafe_pointer import unsafe_cast
+from .device_context_hal import DeviceContext, DeviceFunction, DeviceStreamBase
+from std.memory.pointer import unsafe_cast
 
 
 struct _ihipDevice_t:
@@ -45,7 +45,7 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
 
 
 @inline(.always)
-def HIP(stream: DeviceStream) raises -> hipStream_t:
+def HIP(stream: DeviceStreamBase[_]) raises -> hipStream_t:
     """Returns the `hipStream_t` backing a HAL stream.
 
     Args:

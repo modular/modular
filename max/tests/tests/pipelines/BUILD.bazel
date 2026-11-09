@@ -9,7 +9,11 @@ package(default_visibility = [
 # Tests outside this package check their vision layouts against this snapshot.
 exports_files(
     ["testdata/vision_metadata.json"],
-    visibility = ["//mach/crates/multimodal:__pkg__"],
+    visibility = [
+        "//mach:__subpackages__",
+        "//orchestrator/crates/orchestrator:__pkg__",
+        "//orchestrator/crates/orchestrator-engine:__pkg__",
+    ],
 )
 
 # Skip only in macOS CI, so the tests still run on a developer's Mac.
@@ -43,10 +47,15 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max:tensor",
         "//max/python/max/experimental/torch",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/bert",
         "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
@@ -68,16 +77,21 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mistral",
         "//max/python/max/pipelines/architectures/mistral3",
+        "//max/python/max/pipelines/architectures/mpnet",
+        "//max/python/max/pipelines/architectures/mpnet_modulev3",
         "//max/python/max/pipelines/architectures/olmo",
         "//max/python/max/pipelines/architectures/olmo2",
         "//max/python/max/pipelines/architectures/olmo2_modulev3",
         "//max/python/max/pipelines/architectures/olmo3",
+        "//max/python/max/pipelines/architectures/olmo_modulev3",
         "//max/python/max/pipelines/architectures/phi3",
         "//max/python/max/pipelines/architectures/phi3_modulev3",
         "//max/python/max/pipelines/architectures/qwen2",
         "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/architectures/qwen3",
         "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3_embedding",
+        "//max/python/max/pipelines/architectures/qwen3_embedding_modulev3",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
         "//max/python/max/pipelines/architectures/step3p5",
         "//max/python/max/pipelines/lib",
@@ -85,6 +99,7 @@ modular_py_test(
         "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
+        "//max/tests/integration/test_common:mixed_step_split_ops",
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
         requirement("numpy"),
         requirement("safetensors"),
@@ -156,4 +171,14 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
     ],
+)
+
+# Mach's engine-batch and engine-rt tests check their graph contracts against these.
+exports_files(
+    [
+        "testdata/graph_group_kinds.json",
+        "testdata/graph_input_trees.json",
+        "testdata/vision_input_trees.json",
+    ],
+    visibility = ["//mach:__subpackages__"],
 )

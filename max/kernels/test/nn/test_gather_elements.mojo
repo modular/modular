@@ -18,9 +18,9 @@ from std.testing import assert_equal
 
 
 def main() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
 
-    def test_gather_ax1(ctx: DeviceContext) raises:
+    def test_gather_ax1(ctx: DeviceContext.CPU) raises:
         print("== test_gather_ax1")
 
         var data_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
@@ -43,7 +43,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_gather_ax1(ctx)
 
-    def test_gather_ax0(ctx: DeviceContext) raises:
+    def test_gather_ax0(ctx: DeviceContext.CPU) raises:
         print("== test_gather_ax0")
 
         var data_stack: Array[Float32, 9] = [
@@ -78,7 +78,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_gather_ax0(ctx)
 
-    def test_gather_neg_indices(ctx: DeviceContext) raises:
+    def test_gather_neg_indices(ctx: DeviceContext.CPU) raises:
         print("== test_gather_neg_indices")
 
         var data_stack: Array[Float32, 9] = [

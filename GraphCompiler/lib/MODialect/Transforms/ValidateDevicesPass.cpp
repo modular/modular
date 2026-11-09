@@ -15,6 +15,7 @@
 #include "GraphCompiler/MODialect/Transforms/MOTransforms.h"
 #include "mlir/IR/Visitors.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 
 #include "GraphCompiler/MODialect/Transforms/Utils.h"
 
@@ -36,7 +37,7 @@ namespace {
 // ValidateDevicesPass
 //===----------------------------------------------------------------------===//
 //
-// Verifies every input and result tensor dtype is valid for the device
+// Verifies the tensor dtypes the graph computes on are valid for the device
 // architecture. Reports only the first invalid combination.
 
 struct ValidateDevicesPass
@@ -77,34 +78,30 @@ struct ValidateDevicesPass
                     << formatDeviceForUser(device) << "'.";
   }
 
-  LogicalResult process(llvm::Triple::ArchType targetArch, Block *block) {
-    for (Value arg : block->getArguments()) {
-      if (isa<MO::TensorType>(arg.getType())) {
-        TensorType tensorType = dynCastFromTensorLike(arg.getType());
-        LLVM_DEBUG(llvm::dbgs() << "Checking input '" << arg << "'\n");
-        if (!isSupportedArchDTypeCombination(targetArch,
-                                             tensorType.getDtype())) {
-          emitErrorOnOp(block->getParentOp(), tensorType.getDeviceRef(),
-                        tensorType.getDtype().getAsString());
-          return failure();
-        }
+  /// Reports the first dtype on `op` the architecture has no kernels for.
+  LogicalResult checkOp(llvm::Triple::ArchType targetArch, Operation *op) {
+    for (Value value :
+         llvm::concat<Value>(op->getOperands(), op->getResults())) {
+      if (!isa<MO::TensorType>(value.getType()))
+        continue;
+      TensorType tensorType = dynCastFromTensorLike(value.getType());
+      LLVM_DEBUG(llvm::dbgs() << "Checking tensor '" << value << "'\n");
+      if (!isSupportedArchDTypeCombination(targetArch, tensorType.getDtype())) {
+        emitErrorOnOp(op, tensorType.getDeviceRef(),
+                      tensorType.getDtype().getAsString());
+        return failure();
       }
     }
+    return success();
+  }
 
+  LogicalResult process(llvm::Triple::ArchType targetArch) {
     WalkResult result = graphOp->walk([&](Operation *op) {
-      for (Value res : op->getResults()) {
-        if (isa<MO::TensorType>(res.getType())) {
-          TensorType tensorType = dynCastFromTensorLike(res.getType());
-          LLVM_DEBUG(llvm::dbgs() << "Checking result '" << res << "'\n");
-          if (!isSupportedArchDTypeCombination(targetArch,
-                                               tensorType.getDtype())) {
-            emitErrorOnOp(op, tensorType.getDeviceRef(),
-                          tensorType.getDtype().getAsString());
-            return WalkResult::interrupt();
-          }
-        }
-      }
-      return WalkResult::advance();
+      auto preserved = dyn_cast<MO::PreservedDuringKernelLowering>(op);
+      if (preserved && preserved.isDataTypeAgnostic())
+        return WalkResult::advance();
+
+      return WalkResult(checkOp(targetArch, op));
     });
 
     if (result.wasInterrupted())
@@ -146,7 +143,7 @@ struct ValidateDevicesPass
     });
 
     llvm::Triple::ArchType targetArch = targetInfo.getTriple().getArch();
-    if (failed(process(targetArch, graphOp.getBodyBlock()))) {
+    if (failed(process(targetArch))) {
       return signalPassFailure();
     }
   }

@@ -549,7 +549,7 @@ struct StringSpan[origin: ImmOrigin](TrivialRegisterPassable):
         return self._slice._len
 
 
-comptime StaticString = StringSlice[ImmStaticOrigin]
+comptime StaticString = StringSpan[ImmStaticOrigin]
 
 
 struct InlineLevel(ImplicitlyCopyable, TrivialRegisterPassable):
@@ -618,13 +618,13 @@ struct String(ErrorConversionTrait, ImplicitlyCopyable, KeyElement):
     def __len__(self) -> Int:
         return 0
 
-    def __contains__(self, substr: StringSlice) -> Bool:
+    def __contains__(self, substr: StringSpan) -> Bool:
         return True
 
-    def __add__(self, other: StringSlice) -> String:
+    def __add__(self, other: StringSpan) -> String:
         pass
 
-    def __iadd__(mut self, rhs: StringSlice):
+    def __iadd__(mut self, rhs: StringSpan):
         pass
 
     def byte_length(self) -> Int:
@@ -1600,16 +1600,6 @@ struct Pointer[
         return {self._mlir_value}  # allow kgen.pointer to convert.
 
 
-comptime UnsafePointer[
-    mut: Bool,
-    //,
-    T: AnyType,
-    origin: Origin[mut=mut],
-    *,
-    address_space: AddressSpace = .GENERIC,
-] = Pointer[T, origin, address_space=address_space]
-
-
 struct Tuple[*element_types: Movable](ImplicitlyCopyable):
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
@@ -1624,7 +1614,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
             pass
 
     @implicit
-    def __init__(out self, *args: *Self.element_types):
+    def __init__(out self, var *args: *Self.element_types):
         while True:
             pass
 
@@ -1760,8 +1750,9 @@ def paramfor_next_value[
 
 
 struct Optional[T: Movable](
-    Copyable,
+    Copyable where conforms_to(T, Copyable),
     EnumLike,
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
     def __deinit__(deinit self):

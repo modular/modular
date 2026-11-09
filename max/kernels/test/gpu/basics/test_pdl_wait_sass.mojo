@@ -181,7 +181,7 @@ def _sass(ptx: String) raises -> String:
             "nvPTXCompiler failed (",
             status,
             "): ",
-            StringSlice(unsafe_from_utf8=Span(log)[:size]),
+            StringSpan(unsafe_from_utf8=Span(log)[:size]),
         )
     _ = lib.call["nvPTXCompilerGetCompiledProgramSize", Int32](
         handle, Pointer(to=size)

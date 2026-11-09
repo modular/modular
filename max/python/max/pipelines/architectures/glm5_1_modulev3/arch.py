@@ -15,13 +15,9 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from ..deepseekV3_2_modulev3 import weight_adapters
-from ..deepseekV3_modulev3.batch_processor import (
-    DeepseekV3ModuleV3BatchProcessor,
-)
 from ..deepseekV3_modulev3.memory_planner import (
     DeepseekV3ModuleV3MemoryPlanner,
 )
@@ -31,8 +27,10 @@ from ..glm5_1.reasoning import (
 )
 from ..glm5_1.tokenizer import GlmTokenizer
 from ..glm5_1.tool_parser import GlmToolParser  # noqa: F401  registers "glm45"
-from .model import Glm5_1Model
+from .glm5_1 import Glm5_1Decoder
 from .model_config import Glm5_1Config
+from .mtp import Glm5_1MTP, Glm5_1MTPArchConfig, mtp_draft_registration
+from .weight_adapters import glm5_1_mtp_weight_rules, glm5_1_weight_rules
 
 glm5_1_modulev3_arch = SupportedArchitecture(
     name="GlmMoeDsaForCausalLM_ModuleV3",
@@ -48,14 +46,12 @@ glm5_1_modulev3_arch = SupportedArchitecture(
     default_encoding=Glm5_1Config.DEFAULT_ENCODING,
     supported_encodings=Glm5_1Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
-    pipeline_model=Glm5_1Model,
-    batching=DeepseekV3ModuleV3BatchProcessor,
+    modules={GraphRole.DECODER: Glm5_1Decoder},
     tokenizer=GlmTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=glm5_1_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     supports_nvfp4_kv_cache=True,
@@ -66,4 +62,30 @@ glm5_1_modulev3_arch = SupportedArchitecture(
     reasoning_parser="glm45",
     default_structured_output_backend="xgrammar",
     default_structured_output_any_whitespace=True,
+    checkpoint_drafts={"mtp": "MTPGlmMoeDsaDraftModel"},
+    # Mach binds the fused MTP graph by the name the unified module had.
+    spec_decode_graph_names={"mtp": "UnifiedMTPGlm5_2"},
+)
+
+# The NextN layer ships in the target's checkpoint, which has no config of its
+# own, so spec decoding names this architecture from the target's.
+glm5_1_mtp_draft_arch = SupportedArchitecture(
+    name="MTPGlmMoeDsaDraftModel_ModuleV3",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["zai-org/GLM-5.2-FP8"],
+    default_encoding=Glm5_1Config.DEFAULT_ENCODING,
+    supported_encodings=Glm5_1Config.SUPPORTED_ENCODINGS,
+    # Split over the target's devices, as the target is.
+    multi_gpu_supported=True,
+    modules={GraphRole.DRAFT: Glm5_1MTP},
+    draft=mtp_draft_registration,
+    tokenizer=TextTokenizer,
+    context_type=TextContext,
+    default_weights_format=WeightsFormat.safetensors,
+    weight_rules=glm5_1_mtp_weight_rules,
+    use_weight_rules=True,
+    config=Glm5_1MTPArchConfig,
+    requires_max_batch_context_length=True,
+    # The layer reads the same cache layout as the target's.
+    supports_nvfp4_kv_cache=True,
 )

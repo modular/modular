@@ -50,6 +50,9 @@ ProducerDispatch matchProducerDispatch(Operation *op) {
   if (auto viewCopy = dyn_cast<CallViewCopyOp>(op))
     return {op, viewCopy.getContext()};
 
+  if (auto rowwise = dyn_cast<CallRowwiseOp>(op))
+    return {op, rowwise.getContext()};
+
   return {};
 }
 

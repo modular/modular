@@ -31,10 +31,10 @@ a one-call MAX graph so we can:
 
 The hypothesis under test is that
 `grouped_matmul_swiglu_nvfp4_dispatch` rebinds its three output destinations
-to raw `UnsafePointer`s at dispatch time and bundles them in a
+to raw `Pointer`s at dispatch time and bundles them in a
 `RealSwiGLUOutput` struct passed as a kernel argument to
 `ctx.enqueue_function`. CUDA stream capture records the kernel-argument
-packet byte-for-byte; MAX patches `TileTensor` and top-level `UnsafePointer`
+packet byte-for-byte; MAX patches `TileTensor` and top-level `Pointer`
 kernel-args on replay but has no general hook for pointer fields inside
 struct kernel-args. See the byte-exact equivalence test
 `test_grouped_matmul_swiglu_nvfp4_gpu.py` for the full chained-vs-fused
@@ -53,7 +53,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     grouped_matmul_blocked_swiglu,
 )

@@ -13,12 +13,14 @@
 """DeepSeek-V3 mixture-of-experts architecture for text generation."""
 
 from .arch import deepseekV3_modulev3_arch
+from .deepseekV3 import DeepseekV3Decoder
 from .inputs import DeepseekV3Inputs
 from .model import DeepseekV3Model
 from .model_config import DeepseekV3Config
 
 __all__ = [
     "DeepseekV3Config",
+    "DeepseekV3Decoder",
     "DeepseekV3Inputs",
     "DeepseekV3Model",
     "deepseekV3_modulev3_arch",

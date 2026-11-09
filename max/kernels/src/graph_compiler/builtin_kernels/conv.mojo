@@ -26,7 +26,7 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from layout import Coord, IntTuple, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
@@ -73,14 +73,13 @@ from .kernels import (
 )
 
 
-@extensibility.register("mo.convert_e4m3fn_to_e4m3fnuz")
+@extensibility.register("quantization.convert_e4m3fn_to_e4m3fnuz")
 struct ConvertE4M3FNToE4M3FNUZ:
-    """Registers the `mo.convert_e4m3fn_to_e4m3fnuz` graph op with the graph compiler.
+    """Registers the `quantization.convert_e4m3fn_to_e4m3fnuz` graph op with the graph compiler.
     """
 
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         output: Some[Output & Tensor],
@@ -98,11 +97,13 @@ struct ConvertE4M3FNToE4M3FNUZ:
         )
 
 
-@extensibility.register_shape_function("mo.convert_e4m3fn_to_e4m3fnuz")
+@extensibility.register_shape_function(
+    "quantization.convert_e4m3fn_to_e4m3fnuz"
+)
 def convert_e4m3fn_to_e4m3fnuz_shape(
     input: Some[Tensor],
 ) -> IndexList[type_of(input).rank]:
-    """Computes the output shape for the `mo.convert_e4m3fn_to_e4m3fnuz` graph op.
+    """Computes the output shape for the `quantization.convert_e4m3fn_to_e4m3fnuz` graph op.
     """
     comptime assert (
         type_of(input).dtype == .float8_e4m3fn
@@ -120,7 +121,6 @@ struct AvgPool:
     @staticmethod
     def execute[
         count_boundary: Bool,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -140,7 +140,7 @@ struct AvgPool:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        avg_pool[count_boundary=count_boundary, target=target](
+        avg_pool[count_boundary=count_boundary](
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -194,7 +194,6 @@ struct AvgPoolCeilModeTrue:
     @staticmethod
     def execute[
         count_boundary: Bool,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -214,7 +213,7 @@ struct AvgPoolCeilModeTrue:
         comptime int_type = type_of(filter).dtype
         comptime assert type_of(output).rank == 4
         comptime assert type_of(input).rank == 4
-        avg_pool[count_boundary=count_boundary, target=target](
+        avg_pool[count_boundary=count_boundary](
             input.to_tile_tensor[dtype](),
             filter.to_tile_tensor[int_type](),
             strides.to_tile_tensor[int_type](),
@@ -267,7 +266,7 @@ struct PadConstant:
 
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString
+        dtype: DType,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -294,14 +293,14 @@ struct PadConstant:
         # flat pointer this aborts at run time rather than compile time.
         var paddings_ptr = padding.to_tile_tensor().ptr
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             pad_constant(
                 output_tile,
                 input_tile,
                 paddings_ptr,
                 constant,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             pad_constant_gpu(
                 output_tile.ptr,
                 output_tile.layout.shape_coord(),
@@ -312,7 +311,7 @@ struct PadConstant:
                 ctx,
             )
         else:
-            comptime assert False, "Unknown target " + target
+            comptime assert False, "Unknown target"
 
 
 @extensibility.register_shape_function("mo.pad.constant")
@@ -346,9 +345,7 @@ struct PadRepeat:
     """Registers the `mo.pad.repeat` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         padding: Some[Input & Tensor],
@@ -367,9 +364,9 @@ struct PadRepeat:
         # See the note in `mo.pad.constant` on the raw `paddings` pointer.
         var paddings_ptr = padding.to_tile_tensor().ptr
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             pad_repeat(output_tile, input_tile, paddings_ptr)
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             pad_repeat_gpu(
                 output_tile.ptr,
                 output_tile.layout.shape_coord(),
@@ -379,7 +376,7 @@ struct PadRepeat:
                 ctx,
             )
         else:
-            comptime assert False, "Unknown target " + target
+            comptime assert False, "Unknown target"
 
 
 @extensibility.register_shape_function("mo.pad.repeat")
@@ -403,9 +400,7 @@ struct PadReflect:
     """Registers the `mo.pad.reflect` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
         padding: Some[Input & Tensor],
@@ -424,9 +419,9 @@ struct PadReflect:
         # See the note in `mo.pad.constant` on the raw `paddings` pointer.
         var paddings_ptr = padding.to_tile_tensor().ptr
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             pad_reflect(output_tile, input_tile, paddings_ptr)
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             pad_reflect_gpu(
                 output_tile.ptr,
                 output_tile.layout.shape_coord(),
@@ -436,7 +431,7 @@ struct PadReflect:
                 ctx,
             )
         else:
-            comptime assert False, "Unknown target " + target
+            comptime assert False, "Unknown target"
 
 
 @extensibility.register_shape_function("mo.pad.reflect")
@@ -517,7 +512,7 @@ struct _ConvAttrs[spatial_rank: Int]:
         self.padding = _index_list[2 * Self.spatial_rank](paddings)
 
 
-@extensibility.register("mo.conv", type="cpu")
+@extensibility.register("mo.conv", extensibility.CPU)
 struct ConvCPU:
     """Registers the `mo.conv` graph op for CPU devices."""
 
@@ -526,10 +521,9 @@ struct ConvCPU:
         input_layout: StaticString,
         filter_layout: StaticString,
         has_epilogue_fusion: Bool,
-        static_strides: IntTuple,
-        static_dilations: IntTuple,
-        static_padding: IntTuple,
-        target: StaticString,
+        static_strides: Coord,
+        static_dilations: Coord,
+        static_padding: Coord,
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[...],
@@ -573,12 +567,16 @@ struct ConvCPU:
                 pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
                 pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
 
-        comptime input_shape_val = Int(
-            input._static_shape_tuple[input.rank - 1]
-        )  # input C, NHWC
-        comptime filter_shape_val = Int(
-            filter._static_shape_tuple[filter.rank - 2]
-        )  # filter C, RSCF or FRSCf
+        comptime input_shape_val = (
+            input.static_spec.static_layout._shape_types[
+                input.rank - 1
+            ].static_value
+        )  # input C, NHWC; -1 where dynamic
+        comptime filter_shape_val = (
+            filter.static_spec.static_layout._shape_types[
+                filter.rank - 2
+            ].static_value
+        )  # filter C, RSCF or FRSCf; -1 where dynamic
         comptime conv_attr = ConvInfoStatic[input.rank - 2](
             static_padding,
             static_strides,
@@ -662,7 +660,7 @@ def _conv_gpu[
     )
 
 
-@extensibility.register("mo.conv", type="gpu")
+@extensibility.register("mo.conv", extensibility.ACCELERATOR)
 struct ConvGPU:
     """Registers the `mo.conv` graph op for GPU devices.
 
@@ -679,10 +677,9 @@ struct ConvGPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        static_strides: IntTuple,
-        static_dilations: IntTuple,
-        static_padding: IntTuple,
-        target: StaticString,
+        static_strides: Coord,
+        static_dilations: Coord,
+        static_padding: Coord,
         _trace_name: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
@@ -737,10 +734,9 @@ struct ConvGPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        static_strides: IntTuple,
-        static_dilations: IntTuple,
-        static_padding: IntTuple,
-        target: StaticString,
+        static_strides: Coord,
+        static_dilations: Coord,
+        static_padding: Coord,
         _trace_name: StaticString,
     ](
         output: Some[Output & TileTensorable],
@@ -812,50 +808,83 @@ struct Conv2dResidualAdd:
         pad_left: Int,
         pad_right: Int,
         has_bias: Bool,
-        target: StaticString,
     ](
-        output: FusedOutputTensor[...],
-        input: InputTensor[dtype=output.dtype, rank=4, ...],
-        filter: InputTensor[rank=4, ...],
-        source: InputTensor[dtype=output.dtype, rank=4, ...],
-        bias: InputTensor[dtype=output.dtype, rank=1, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Tensor],
+        filter: Some[Input & Tensor],
+        source: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
+        comptime assert conforms_to(type_of(source), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        comptime assert type_of(output).rank == 4
+        comptime assert type_of(input).rank == 4
+        comptime assert type_of(filter).rank == 4
+        comptime assert type_of(source).rank == 4
+        comptime assert type_of(bias).rank == 1
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(source).dtype == dtype
+        comptime assert type_of(bias).dtype == dtype
+
+        # The epilogue runs in the kernels `conv_gpu` launches, so it
+        # copy-captures the access-enabled view rather than the host proxy.
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
+        var bias_tt = bias.to_tile_tensor[dtype]()
+
         @inline(.always)
         def output_fn[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var output, var bias}:
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var out_view, var bias_tt}:
             var result = val
 
             comptime if has_bias:
                 var c_idx = Int(coords[coords.rank - 1])
-                var bias_vec = (
-                    bias.unsafe_ptr()
-                    .unsafe_offset(c_idx)
-                    .unsafe_load[width=_width]()
-                )
+                var bias_vec = bias_tt.ptr.unsafe_offset(c_idx).unsafe_load[
+                    width=_width
+                ]()
                 result = val + bias_vec.cast[_dtype]()
 
-            output._lambda_store[width=_width, element_alignment=_alignment](
-                coords, rebind[SIMD[output.dtype, _width]](result)
+            out_view.store[width=Int(_width), element_alignment=_alignment](
+                coords,
+                rebind[SIMD[type_of(out_view).dtype, Int(_width)]](result),
             )
 
-        comptime assert not is_cpu[
-            target
-        ](), "conv2d_residual_add is only supported on GPU"
+        comptime assert (
+            not ctx.target.is_cpu()
+        ), "conv2d_residual_add is only supported on GPU"
 
-        var input_tt = input.to_tile_tensor[.int64]()
-        var filter_tt = filter.to_tile_tensor[.int64]()
-        var output_tt = output.to_tile_tensor[.int64]()
+        # `conv_gpu` takes its input as mutable but only reads it.
+        var input_imm = input.to_tile_tensor[dtype]()
+        var input_tt = TileTensor(
+            input_imm.ptr.unsafe_mut_cast[True](), input_imm.layout
+        )
+        var filter_tt = filter.to_tile_tensor()
+
+        # TODO(KERN-3840): `output_fn` owns every output store, so `conv_gpu`
+        # gets only the output's shape, over a null pointer it never
+        # dereferences. Pass the output layout instead once the store-epilogue
+        # path down the call stack takes one.
+        var output_ptr: Optional[
+            MutPointer[Scalar[dtype], MutUntrackedOrigin]
+        ] = None
+        var output_tt = TileTensor(
+            output_ptr._unsafe_nullable(), row_major(output.shape())
+        )
 
         var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
         var stride_tuple = IndexList[2](stride_h, stride_w)
         var dilation_tuple = IndexList[2](1, 1)
 
         conv_gpu[
-            input.dtype,
-            filter.dtype,
-            output.dtype,
+            dtype,
+            type_of(filter).dtype,
+            dtype,
             has_epilogue_fn=True,
             filter_is_fcrs=True,
             has_residual=True,
@@ -868,7 +897,9 @@ struct Conv2dResidualAdd:
             pad_tuple,
             1,  # num_groups
             ctx,
-            source.unsafe_ptr().as_unsafe_any_origin(),
+            source.to_tile_tensor[dtype]()
+            .ptr.unsafe_mut_cast[True]()
+            .as_unsafe_any_origin(),
             Float32(1.0),  # beta
             output_fn,
         )
@@ -995,7 +1026,7 @@ def _conv_transpose_cpu[
     )
 
 
-@extensibility.register("mo.conv_transpose", type="cpu")
+@extensibility.register("mo.conv_transpose", extensibility.CPU)
 struct ConvTransposeCPU:
     """Registers the `mo.conv_transpose` graph op for CPU devices.
 
@@ -1012,7 +1043,6 @@ struct ConvTransposeCPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
         input: Some[Input & Tensor],
@@ -1065,7 +1095,6 @@ struct ConvTransposeCPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -1135,7 +1164,7 @@ def _conv_transpose_gpu_attrs[
     )
 
 
-@extensibility.register("mo.conv_transpose", type="gpu")
+@extensibility.register("mo.conv_transpose", extensibility.ACCELERATOR)
 struct ConvTransposeGPU:
     """Registers the `mo.conv_transpose` graph op for GPU devices.
 
@@ -1152,7 +1181,6 @@ struct ConvTransposeGPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Fused & StoreAccess],
         input: Some[Input & Tensor],
@@ -1213,7 +1241,6 @@ struct ConvTransposeGPU:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -1332,18 +1359,18 @@ struct PackConvFilterShape:
 
     @inline(.always)
     @staticmethod
-    def execute(filter_buf: InputTensor) raises:
+    def execute(filter_buf: Some[Input & Tensor]) raises:
         raise Error("Only meant to be used for shape function!")
 
 
 @extensibility.register_shape_function("pack_conv_filter_shape")
 def pack_conv_filter_shape_fn[
-    input_shape: IntTuple,
-    filter_shape: IntTuple,
-    output_shape: IntTuple,
-    strides: IntTuple,
-    dilations: IntTuple,
-    paddings: IntTuple,
+    input_shape: Coord,
+    filter_shape: Coord,
+    output_shape: Coord,
+    strides: Coord,
+    dilations: Coord,
+    paddings: Coord,
     num_groups: Int,
 ](filter_buf: Some[TileTensorable]) -> IndexList[type_of(filter_buf).rank + 1]:
     """
@@ -1368,12 +1395,12 @@ def pack_conv_filter_shape_fn[
     return rebind[IndexList[type_of(filter_buf).rank + 1]](
         pack_filter_shape_conv[
             type_of(filter_buf).dtype,
-            input_shape,
-            filter_shape,
-            output_shape,
-            strides,
-            dilations,
-            paddings,
+            Coord[*input_shape.element_types](),
+            Coord[*filter_shape.element_types](),
+            Coord[*output_shape.element_types](),
+            Coord[*strides.element_types](),
+            Coord[*dilations.element_types](),
+            Coord[*paddings.element_types](),
             num_groups,
         ](filter_buf.to_tile_tensor())
     )

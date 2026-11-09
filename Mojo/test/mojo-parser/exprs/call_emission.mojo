@@ -253,12 +253,11 @@ def test_variadic_and_kw_only_params_indirect[x: Int,
 
 # CHECK-LABEL: lit.fn @"initialize_in_addrspace
 def initialize_in_addrspace(
-    ptr: UnsafePointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)]
+    ptr: Pointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)]
 ):
 
     # Get !lit.ref in addr space #1
-    # CHECK-NEXT: [[PTR:%[0-9]+]] = kgen.rebind %ptr
-    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@Pointer::@"__getitem__{{.*}}([[PTR]])
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
 
     # CHECK-NEXT: [[REGVAL:%.*]] = lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}()
 
@@ -282,11 +281,10 @@ def test_param_refitem[a: SomeRefItemStruct]():
 # CHECK-LABEL: lit.fn @"mutate_in_addrspace
 def mutate_in_addrspace(
     a: ExampleRegPassable,
-    ptr: UnsafePointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
+    ptr: Pointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # Get !lit.ref in addr space #1
-    # CHECK-NEXT: [[PTR:%[0-9]+]] = kgen.rebind %ptr
-    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}([[PTR]])
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
 
     # Use a temporary to get an MLValue in the default address space.
     # CHECK-NEXT: [[REGVAL:%.*]] = lit.ref.load [[PTRREF]] : <!ExampleRegPassable, mut #lit.any.origin, 1>
@@ -450,7 +448,7 @@ struct ThingWithParam[X: Int](Movable where False):
 
 def test_cond_conformance(exclude: Bool):
     comptime local_alias = 42
-    var ptr : UnsafePointer[ThingWithParam[local_alias], AnyOrigin[mut=True]]
+    var ptr : Pointer[ThingWithParam[local_alias], AnyOrigin[mut=True]]
     ptr[] = exclude
 
 

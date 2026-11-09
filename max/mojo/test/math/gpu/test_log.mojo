@@ -52,7 +52,7 @@ def run_elementwise[
         var result = log_fn(val)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, result)
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
         for i in range(length):

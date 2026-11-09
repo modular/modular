@@ -1,7 +1,7 @@
 // RUN: mo-opt %s --mogg-to-mgp | FileCheck %s
 
 // Entry point
-// CHECK-LABEL:   mgp.model @static_reshape : mof
+// CHECK-LABEL:   mgp.model @static_reshape
 //
 // CHECK: } execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context,
 // CHECK-SAME: %[[ARG2:[^:]*]]: !mgp.tensor<?x?xf32>, %[[ARG3:.*]]: !mgp.tensor<?x?xf32>) -> (!mef.chain, !mgp.tensor<?x?xf32>) {
@@ -33,7 +33,7 @@ mo.graph @static_reshape<D4, D5, D6, D7>(%arg0: !mo.tensor<[D4, D5], f32>, %arg1
   mo.output %1 : !mo.tensor<[D6, D7], f32>
 }
 
-// CHECK-LABEL: mgp.model @multi_reshape : mof
+// CHECK-LABEL: mgp.model @multi_reshape
 // CHECK: } execute (%[[CH0:.*]]: !mef.chain,
 
 // CHECK: mgp.tensor.create %[[CH0]]

@@ -25,6 +25,7 @@
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include <cstdint>
 #include <string>
@@ -34,7 +35,7 @@ namespace M::Driver {
 /// A parsed driver version string (`major.minor.patch`). Lives with the
 /// compilation-device layer so it is available regardless of which
 /// DeviceContext implementation is active.
-class DriverVersion {
+class MODULAR_CXX_EXPORT DriverVersion {
 public:
   explicit DriverVersion(std::string version);
   int major() const;

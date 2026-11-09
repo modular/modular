@@ -1,6 +1,7 @@
 [
   "batch_context",
   "conv_states",
+  "decoder_inputs",
   "decoder_outputs",
   "ep_payload",
   "eplb_profile",
@@ -10,6 +11,9 @@
   "mrope_positions",
   "ragged_batch",
   "sparse_indices",
+  "spec_decode",
+  "spec_decode_outputs",
+  "token_bitmask",
   "tp_signals",
   "vision_embeddings",
   "vision_host_max",

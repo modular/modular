@@ -18,7 +18,7 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-from max.nn.legacy.sampling.rejection_sampler import (
+from max.nn._graph_ops.sampling import (
     AcceptanceSampler,
     compute_synthetic_acceptance_base_rate,
 )

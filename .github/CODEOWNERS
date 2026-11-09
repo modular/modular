@@ -20,6 +20,8 @@
 /bazel/public-patches/llvm-elf-extractor-local-copy.patch @modular/sdlc
 /bazel/public-patches/llvm-machinefunction-sti-ref-to-ptr.patch @modular/sdlc
 /bazel/public-patches/llvm-revert-lldb-elf-section-name-string.patch @modular/sdlc
+/bazel/public-patches/llvm-lldb-macosx-objcxx-headers.patch @modular/sdlc
+/bazel/public-patches/llvm-softpromote-scalar-to-vector.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0002-Increase-request-parallelism.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0003-Accept-any-200-from-the-health-endpoint.patch @modular/sdlc
@@ -33,8 +35,10 @@
 /bazel/public-patches/grpc-loads.patch @modular/sdlc
 /bazel/public-patches/grpc-no-macos-x86.patch @modular/sdlc
 /bazel/public-patches/grpc-warnings.patch @modular/sdlc
+/bazel/public-patches/llvm-avx2-bf16-broadcast.patch @modular/sdlc
 /bazel/public-patches/llvm-flag-defaults.patch @modular/sdlc
 /bazel/public-patches/llvm-libxml2-config-setting-visibility.patch @modular/sdlc
+/bazel/public-patches/llvm-shared.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc
 /bazel/public-patches/protobuf-dev-dep.patch @modular/sdlc
 /bazel/public-patches/rules_mojo_toolchain.patch @modular/sdlc
@@ -43,8 +47,10 @@
 /bazel/public-patches/rules_mypy_transitives.patch @modular/sdlc
 /bazel/public-patches/rules_pycross_exports.patch @modular/sdlc
 /bazel/public-patches/rules_pycross_versions.patch @modular/sdlc
+/bazel/public-patches/rules_python_315.patch @modular/sdlc
 /bazel/public-patches/rules_python_revert.patch @modular/sdlc
 /bazel/public-patches/rules_python_wheel.patch @modular/sdlc
+/bazel/public-patches/rules_rust_link_interface_libraries.patch @modular/sdlc
 /bazel/public-patches/rules_rust_pyo3_no_rustfmt_aspect.patch @modular/sdlc
 /bazel/public-patches/tomlplusplus-visibility.patch @modular/sdlc
 /bazel/public-patches/torch-cuda-deps.patch @modular/sdlc
@@ -53,7 +59,6 @@
 /bazel/public-patches/nixl-libfabric-release-inflight.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-vmm-cuda-ctx.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-src-addr-peer-limit.patch @modular/runtime
-/bazel/public-patches/llvm-fix-lldb-dap-console.patch @modular/mojo-tooling
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
 /bazel/public-patches/rules_mojo_bitcode_libs.patch @modular/stdlib
 /bazel/public-patches/libkineto-record-window-end-track.patch @modular/max-sdk
@@ -63,7 +68,6 @@
 /bazel/public-patches/tracy-tls-fix.patch @modular/max-sdk
 /bazel/public-patches/transformers-local-source-symlinks.patch @modular/max-serve
 /bazel/public-patches/xgrammar.patch @modular/max-serve
-/bazel/public-patches/llvm-mlir-timing-recycled-key.patch @modular/mojo-compiler
 /AsyncRT/ @modular/runtime
 /max/docs/site/ @modular/mojo-docs
 /max/docs/site/nightly-changelog.md @modular/public-repo-maintainers
@@ -191,6 +195,7 @@
 /max/tests/integration/accuracy/ @modular/max-serve
 /max/tests/integration/architectures/ @modular/max-serve @copilot-pull-request-reviewer
 /max/tests/integration/pipelines/ @modular/max-sdk
+/max/tests/integration/generate_api/ @modular/max-sdk
 /max/tests/integration/c/ @modular/max-sdk @modular/GraphExecution
 /max/tests/integration/cli/ @modular/max-serve
 /max/tests/integration/dataprocessing/ @modular/max-sdk

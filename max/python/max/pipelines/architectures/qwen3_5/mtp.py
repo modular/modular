@@ -45,8 +45,8 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.transformer.transformer import forward_sharded_layers

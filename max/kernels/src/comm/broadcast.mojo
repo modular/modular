@@ -486,7 +486,8 @@ def broadcast[
     out_engine: TensorEngine,
     //,
     ngpus: Int,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = PDLLevel.ON if ngpus <= 2 else PDLLevel.OFF,
     use_multimem: Bool = False,
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin, Engine=in_engine],

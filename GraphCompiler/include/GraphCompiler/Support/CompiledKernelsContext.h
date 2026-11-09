@@ -17,6 +17,7 @@
 #include "Mojo/Compiler/ObjectCompiler.h"
 #include "Mojo/ExecutionEngine/ExecutionEngine.h"
 #include "Support/AssertStream.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringExtras.h"
 
 namespace M::GML {
@@ -104,7 +105,8 @@ using CompiledKernelAsyncABIFn = void(void **);
 //===----------------------------------------------------------------------===//
 
 // Holds all loaded compiled kernels, in a state slot of the mgp.context.
-class CompiledKernelsContext : public ReferenceCounted<CompiledKernelsContext> {
+class MODULAR_CXX_EXPORT CompiledKernelsContext
+    : public ReferenceCounted<CompiledKernelsContext> {
 public:
   CompiledKernelsContext(KGEN::ExecutionEngine *engine, bool loadDebuginfo)
       : engine(engine), loadDebuginfo(loadDebuginfo) {}

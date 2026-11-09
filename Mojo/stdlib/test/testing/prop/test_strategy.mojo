@@ -64,7 +64,7 @@ def test_string_ascii_strategy() raises:
     for _ in range(10):
         var s = s.value(rng)
         assert_true(1 <= s.byte_length() <= 10)
-        assert_true(StringSlice(s).is_ascii_printable())
+        assert_true(StringSpan(s).is_ascii_printable())
 
     s = String.ascii_strategy(min_len=1, max_len=10, only_printable=False)
     rng = Rng(seed=1234)

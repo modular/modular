@@ -31,7 +31,6 @@ from max.algorithm.functional import (
 )
 from max.gpu.host import DeviceContext
 from std.utils import IndexList
-from std.utils.index import Index
 
 from layout import Coord, Idx, TileTensor, row_major
 from ...packing import pack_b_ndbuffer
@@ -323,7 +322,7 @@ def apple_gemv[
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
     comptime if b_packed == False and not transpose_b:
-        var transposed_b_shape = Index(Int(b.dim[1]()), Int(b.dim[0]()))
+        var transposed_b_shape = (Int(b.dim[1]()), Int(b.dim[0]()))
         transposed_b_alloc = alloc[Scalar[b.dtype]](
             {length = b.num_elements()}
         ).into_managed()
@@ -503,7 +502,7 @@ def apple_matmul[
         # TODO: thread a DeviceContext through the matmul stack so we can
         # drop this local construction.
         elementwise[simd_size, _trace_description="apple_matmul_epilogue"](
-            epilogue_on_col_chunk, (m, n), DeviceContext(api="cpu")
+            epilogue_on_col_chunk, (m, n), DeviceContext.cpu()
         )
 
 

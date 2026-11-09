@@ -210,7 +210,6 @@ def run_layer_norm_rope_ragged_gpu[
         output_dtype,
         freq_dtype,
         rank,
-        target="gpu",
         interleaved=True,
     ](
         input_fn,

@@ -64,7 +64,7 @@ def check_values[
                         (Int(batch), Int(head), Int(row + start), Int(col)),
                         SIMD[.float32, 2](0.25),
                     )
-                    comptime for lane in range(2):
+                    for lane in range(2):
                         var expected = Float32(MASK_VALUE)
                         if row < rows and col + lane < columns:
                             var stored_head = head if rank == 4 else 0

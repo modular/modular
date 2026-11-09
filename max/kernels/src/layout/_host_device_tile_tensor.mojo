@@ -15,7 +15,7 @@ from std.memory import Allocation, Layout, dealloc
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 
-from .tile_layout import TensorLayout
+from .layout import TensorLayout
 from .tile_tensor import TileTensor
 
 
@@ -34,7 +34,7 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
     var _layout: Self.LayoutType
     var _host: Allocation[Scalar[Self.dtype]]
     var _device: Optional[DeviceBuffer[Self.dtype]]
-    var _ctx: Optional[DeviceContext]
+    var _ctx: Optional[DeviceContext[]]
 
     def __init__(out self, layout: Self.LayoutType):
         """Allocates host memory only.
@@ -59,7 +59,7 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
         self._layout = layout
         self._host = alloc(Layout[Scalar[Self.dtype]](length=size))
         self._device = device
-        self._ctx = ctx
+        self._ctx = ctx.assert_default_target()
 
     def __deinit__(deinit self):
         dealloc(self._host^)

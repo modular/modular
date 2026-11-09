@@ -59,7 +59,7 @@ def run_reduce[
     mut m: Bench,
     shape: IndexList[rank],
     reduce_fn: ReduceFnType,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     print("run_reduce", shape)
 
@@ -119,7 +119,7 @@ def run_reduce[
         )
 
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_in, mut res_device, imm}:
         var input_tile = TileTensor(
             cb_in.offset_ptr(iteration),

@@ -14,14 +14,14 @@
 """Shared reference machinery for the V4.1 mHC GPU tests.
 
 The gate oracle is an independent NumPy transcription of the
-``mo.hyper_connection.gates`` math, and the chain helpers build and
+``hyper_connection.gates`` math, and the chain helpers build and
 simulate the trunk's shifted schedule (initial identity -> default
 (fresh-``pre``) site -> identity site -> final collapse) over one device
 or a two-way mesh.
 
 
 The gate oracle is an independent NumPy transcription of the
-``mo.hyper_connection.gates`` math: ``pre = sigmoid(proj * s_pre + b) +
+``hyper_connection.gates`` math: ``pre = sigmoid(proj * s_pre + b) +
 hc_eps``, ``post = 2 * sigmoid(proj * s_post + b)``, and ``comb`` a
 row-softmax over the row-major ``[input, output]`` mixer followed by
 Sinkhorn passes that end on a column normalization.

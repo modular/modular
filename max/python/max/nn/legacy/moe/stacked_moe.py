@@ -28,20 +28,23 @@ from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.graph.weight import _compute_shard_range
-from max.support.math import ceildiv
-from typing_extensions import Self
-
-from ..kernels import (
+from max.nn._graph_ops import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
 )
+from max.nn._graph_ops.moe_quant import (
+    NvMxf4f8Strategy,
+    interleaved_block_scales_shape,
+)
+from max.nn._graph_ops.quant import quantized_grouped_matmul
+from max.nn.quant_config import QuantConfig, QuantFormat
+from max.support.math import ceildiv
+from typing_extensions import Self
+
 from ..layer import Module, Shardable
 from ..linear import MLP
-from ..quant_config import QuantConfig, QuantFormat
-from ..quant_ops import quantized_grouped_matmul
 from .moe import MoEGate
-from .quant_strategy import NvMxf4f8Strategy, interleaved_block_scales_shape
 
 # MX formats share one E8M0 scale per 32 elements.
 _MX_BLOCK = 32

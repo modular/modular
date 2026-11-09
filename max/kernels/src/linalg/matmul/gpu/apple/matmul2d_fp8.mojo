@@ -68,7 +68,7 @@ from std.sys import align_of
 
 from layout import Idx, TensorEngine, TileTensor
 from layout.coord import Coord
-from layout.tile_layout import Layout, TensorLayout
+from layout.layout import Layout, TensorLayout
 
 from linalg.arch.apple.mma import MmaOpApple
 from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5_or_newer

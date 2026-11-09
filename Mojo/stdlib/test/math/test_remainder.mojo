@@ -42,11 +42,11 @@ def _run[dtype: DType, width: Int]() raises where dtype.is_floating_point():
         for base in range(0, length, width):
             var xv = SIMD[dtype, width]()
             var yv = SIMD[dtype, width]()
-            comptime for j in range(width):
+            for j in range(width):
                 xv[j] = xs[base + j]
                 yv[j] = ys[base + j]
             var got = remainder(xv, yv)
-            comptime for j in range(width):
+            for j in range(width):
                 var x = xv[j]
                 var y = yv[j]
                 var expected = libm_call_binary["remainderf", "remainder"](x, y)

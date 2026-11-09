@@ -106,7 +106,7 @@ struct RawDriver(Movable):
     # to some concrete type internally.
     # See DRIV-6, MOCO-3661
 
-    def get_device_count(mut self) raises HALError -> Int64:
+    def device_count(mut self) raises HALError -> Int64:
         var num_devices = MaybeUninit(Int64(0))
         var status = self._raw.base.device_count.get()(
             self._driver_handle, OutParam[Int64](to=num_devices)
@@ -702,8 +702,8 @@ struct RawDriver(Movable):
     def queue_wait_value64(
         self, queue: QueueHandle, device_address: UInt64, value: UInt64
     ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` equals
-        `value` (e.g. cuStreamWaitValue64 with EQ semantics)."""
+        """Enqueues a wait until the 64-bit slot at `device_address` is at
+        least `value` (cuStreamWaitValue64 with GEQ semantics)."""
         var status = self._raw.base.queue_wait_value64.get()(
             queue, device_address, value
         )
@@ -1058,7 +1058,7 @@ struct RawDriver(Movable):
                 message=String(t"failed to execute function: {err.message}"),
             )
 
-    def get_api_name(self) raises HALError -> String:
+    def api_name(self) raises HALError -> String:
         """Retrieve the plugin-reported API name (e.g. "CUDA", "Metal")."""
         var value = MaybeUninit[OpaquePointer[ImmUntrackedOrigin]]()
         var status = self._raw.base.property.get()(

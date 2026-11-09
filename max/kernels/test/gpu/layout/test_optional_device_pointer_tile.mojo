@@ -26,7 +26,7 @@ must leave the buffer untouched when it is `None`.
 
 `Optional[T].device_type` is `Optional[T.device_type]`, so an
 `Optional[DeviceBuffer]` argument is declared by the kernel as an
-`Optional[UnsafePointer]`; the last test covers that conversion.
+`Optional[Pointer]`; the last test covers that conversion.
 """
 
 from layout import TensorLayout, TileTensor, row_major

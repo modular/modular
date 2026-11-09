@@ -15,13 +15,15 @@
 #define SUPPORT_FILESYSTEM_DISKUSAGE_H
 
 #include "Support/ForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include <cstddef>
 #include <filesystem>
 
 namespace M {
 /// Returns the available disk space in the filesystem containing given path.
-ErrorOr<size_t> getAvailableDiskSpace(const std::filesystem::path &path);
+MODULAR_CXX_EXPORT ErrorOr<size_t>
+getAvailableDiskSpace(const std::filesystem::path &path);
 } // namespace M
 
 #endif // SUPPORT_FILESYSTEM_DISKUSAGE_H

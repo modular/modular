@@ -54,7 +54,7 @@ from max.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 
 from pipeline.config import ScheduleConfig, SchedulingStrategy

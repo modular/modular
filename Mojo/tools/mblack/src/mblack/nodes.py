@@ -807,6 +807,7 @@ def is_one_sequence_between(
             commas += 1
             if leaf.parent and leaf.parent.type in {
                 syms.arglist,
+                syms.enum_case_payload,
                 syms.typedargslist,
             }:
                 commas += 1

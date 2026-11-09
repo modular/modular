@@ -73,7 +73,7 @@ def test_kernel_1[
     transpose_b: Bool = True,
     benchmark: Bool = False,
     prob_shape: IndexList[3] = (1, 1, 1),
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     comptime M = prob_shape[0]
     comptime N = prob_shape[1]
     comptime K = prob_shape[2]
@@ -122,7 +122,7 @@ def test_kernel_1[
         comptime num_warmup = 20
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {mut a, mut b, mut c, imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {mut a, mut b, mut c, imm}:
             ctx.enqueue_function[kernel](
                 c.device_tensor(),
                 a.device_tensor(),

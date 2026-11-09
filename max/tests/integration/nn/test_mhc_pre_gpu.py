@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Validates the fused mHC pre-site op against float64 and the op chain.
 
-`mo.mhc.pre` replaces the projection, :func:`hyper_connection_gates`, the
+`hyper_connection.mhc.pre` replaces the projection, :func:`hyper_connection_gates`, the
 stream collapse and the optional input RMSNorm of an mHC site. Its gates are
 held to 1e-4 of a float64 reference; the collapsed row, rounded to bf16, to
 ``rtol * |ref| + 1e-2 * rms(ref)``.
@@ -31,11 +31,7 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import (
-    hyper_connection_gates,
-    mhc_pre,
-    mhc_pre_supports,
-)
+from max.nn._graph_ops import hyper_connection_gates, mhc_pre, mhc_pre_supports
 from torch.utils.dlpack import from_dlpack
 
 _HC = 4

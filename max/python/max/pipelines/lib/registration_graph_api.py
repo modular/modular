@@ -39,7 +39,12 @@ A registered graph-API decoder class can also set:
   encoding overrides the one a weight declares;
 - ``build_module(context, config_cls)``, a classmethod that builds the
   module a speculative-decoding graph calls as its target. The pipeline
-  model then exposes it as its own ``build_module``.
+  model then exposes it as its own ``build_module``;
+- ``state_store(config, *, max_batch_size, devices)``, a classmethod that
+  returns the store of the per-request state it carries between steps (see
+  :mod:`~max.pipelines.lib.request_state`). Its batch processor must be a
+  :class:`~max.pipelines.lib.module_registration.DecoderBatchProcessor`,
+  which feeds the state.
 """
 
 from __future__ import annotations
@@ -50,13 +55,14 @@ from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import (
     BufferType,
+    BufferValue,
     DeviceRef,
     Graph,
     TensorType,
@@ -66,20 +72,19 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.legacy.graph_groups import BatchContext
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.layer import Module as GraphApiModule
-from max.nn.legacy.transformer import (
-    ReturnHiddenStates,
-    ReturnLogits,
-    logits_outputs,
-)
+from max.nn.legacy.transformer import logits_outputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.modeling.types import PipelineTask
 from transformers import AutoConfig
 
 from .graph_specs import GraphRole, GraphSpec
+from .input_binding import _flatten_role_inputs
 from .interfaces.arch_config import ArchConfig, ModelOutputConfig
 from .interfaces.batch_processor import (
     BatchProcessor,
@@ -97,10 +102,29 @@ from .log_probabilities import LogProbabilitiesMixin
 from .module_registration import (
     DecoderBatchProcessor,
     DecoderModelInputs,
+    bind_state_store,
+    device_mesh,
     finalize_config,
     module_pipeline_model,
 )
-from .role_contracts import DecoderInputs, DecoderOutputs
+from .registration_encoder import encoder_pipeline_model
+from .registration_runtime import (
+    DeploymentConfig,
+    ExpertParallelDeploymentConfig,
+    ExpertParallelExchange,
+    ModuleRuntime,
+    batch_context_length_types,
+    ep_input_tree,
+    initialize_ep_comm_buffers,
+)
+from .request_state import (
+    RequestStateGroup,
+    RequestStateMixin,
+    RequestStateStore,
+    split_state_outputs,
+)
+from .role_contracts import DecoderInputs, DecoderOutputs, VisionInputs
+from .weight_transform import CheckpointRole, WeightEntry, WeightTransform
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -116,6 +140,7 @@ __all__ = [
     "graph_api_decoder_input_types",
     "graph_api_pipeline_model",
     "is_graph_api_module",
+    "load_graph_api_module",
     "registered_pipeline_model",
 ]
 
@@ -138,6 +163,38 @@ def is_graph_api_module(module_cls: object) -> bool:
     return isinstance(module_cls, type) and issubclass(
         module_cls, GraphApiModule
     )
+
+
+def load_graph_api_module(
+    module_cls: type[GraphApiModule],
+    config: object,
+    state_dict: Mapping[str, Any],
+    *,
+    strict: bool | None = None,
+) -> GraphApiModule:
+    """Constructs a registered module as ``module_cls(config)`` and loads it.
+
+    The class's ``override_quantization_encoding`` and
+    ``strict_state_dict_loading`` say how ``state_dict`` loads; ``strict``
+    overrides the latter.
+    """
+    # A registered module takes its config, which type[Module] can't say.
+    constructor: Any = module_cls
+    module = constructor(config)
+    assert isinstance(module, GraphApiModule)
+    module.load_state_dict(
+        state_dict,
+        override_quantization_encoding=bool(
+            getattr(module_cls, "override_quantization_encoding", False)
+        ),
+        weight_alignment=1,
+        strict=(
+            getattr(module_cls, "strict_state_dict_loading", True)
+            if strict is None
+            else strict
+        ),
+    )
+    return module
 
 
 def graph_name(module: type[GraphApiModule] | GraphApiModule) -> str:
@@ -174,11 +231,6 @@ def _takes_signals(
     )
 
 
-_DecoderInputTypes = (
-    tree.Tree[Type[Any]] | KVCacheInputs[TensorType, BufferType]
-)
-
-
 def graph_api_decoder_input_types(
     kv_params: KVCacheParamInterface,
     device_refs: Sequence[DeviceRef],
@@ -186,14 +238,18 @@ def graph_api_decoder_input_types(
     signals: bool = False,
     data_parallel_degree: int = 1,
     data_parallel_batch: Sequence[str] = _DATA_PARALLEL_BATCH,
-) -> OrderedDict[str, _DecoderInputTypes]:
+    batch_context_lengths: Sequence[TensorType] | None = None,
+    ep: object | None = None,
+    state: Sequence[Any] = (),
+) -> OrderedDict[str, object]:
     """Returns a graph-API ``DECODER`` graph's input types.
 
     A serving engine places a named decoder input by the kind of the group
     that holds it, so the inputs sit in kinded groups: ``batch`` (tokens, row
     offsets, the logit count and, under data parallelism, each replica's
-    first sequence), then ``signals``, then ``kv``. Their leaves are the
-    graph's inputs, in the canonical order of
+    first sequence), then ``signals`` and ``kv``, followed by any context
+    lengths, expert-parallel exchange and per-request state. Their leaves
+    are the graph's inputs, in the canonical order of
     :class:`~max.pipelines.lib.role_contracts.DecoderInputs`. The row offsets
     are one input on the first device, as for a ModuleV3 decoder; a decoder
     that needs them on every device copies them inside its graph.
@@ -212,6 +268,10 @@ def graph_api_decoder_input_types(
             default the canonical ones, ending with
             ``data_parallel_splits``; a graph that predates the contract may
             also take ``host_input_row_offsets`` or another order.
+        batch_context_lengths: The host context-length types, when the
+            decoder uses them to size its kernels.
+        ep: The expert-parallel exchange's input tree, when enabled.
+        state: The input types of the decoder's per-request state.
     """
     fields = [
         _BATCH_INPUTS[field]
@@ -219,7 +279,7 @@ def graph_api_decoder_input_types(
             data_parallel_batch if data_parallel_degree > 1 else _BATCH
         )
     ]
-    types: OrderedDict[str, _DecoderInputTypes] = OrderedDict(
+    types: OrderedDict[str, object] = OrderedDict(
         batch=ragged_batch_inputs(
             device_refs[0],
             fields,
@@ -229,17 +289,32 @@ def graph_api_decoder_input_types(
     if signals:
         types["signals"] = signal_inputs(list(device_refs))
     types["kv"] = kv_params.get_symbolic_inputs()
+    if batch_context_lengths is not None:
+        types["batch_context_lengths"] = BatchContext(
+            context_lengths=tuple(batch_context_lengths)
+        )
+    if ep is not None:
+        types["ep"] = ep
+    if state:
+        types["state"] = RequestStateGroup(state=tuple(state))
     return types
 
 
 def decoder_outputs(
     outputs: GroupedDecoderOutputs,
+    *,
+    state: Sequence[TensorValue] = (),
 ) -> DecoderOutputs[TensorValue]:
     """Returns a graph-API text model's grouped outputs as the role's.
 
     A graph-API text model names its outputs by group, as
     :func:`~max.nn.legacy.transformer.logits_outputs` does; a registered
     decoder that delegates to one returns them through this.
+
+    Args:
+        outputs: The model's grouped outputs.
+        state: The per-request state the decoder returns for its next step,
+            in the order its store declares.
 
     Raises:
         ValueError: If the outputs hold more than one hidden state.
@@ -258,18 +333,21 @@ def decoder_outputs(
         logits=logits.get("logits"),
         logit_offsets=logits.get("logit_offsets"),
         hidden_states=hidden_states,
+        state=tuple(state) or None,
     )
 
 
 def _graph_outputs(
     outputs: DecoderOutputs[TensorValue],
     return_hidden_states: ReturnHiddenStates,
-) -> GroupedDecoderOutputs:
+) -> GroupedDecoderOutputs | tuple[GroupedDecoderOutputs, RequestStateGroup]:
     """Names a decoder's outputs as an exported graph's outputs.
 
     An exported graph names its outputs by group, so the role's fields go in
     a ``logits`` group, then a ``hidden_states`` group when there are any.
-    Their leaves keep the role's order.
+    Their leaves keep the role's order. The decoder's per-request ``state``
+    follows the groups, in a
+    :class:`~max.pipelines.lib.request_state.RequestStateGroup`.
 
     Raises:
         TypeError: If the decoder returned something other than
@@ -280,13 +358,53 @@ def _graph_outputs(
             "a registered decoder returns DecoderOutputs, not "
             f"{type(outputs).__qualname__}"
         )
-    return logits_outputs(
+    grouped = logits_outputs(
         outputs.next_token_logits,
         outputs.logits,
         outputs.logit_offsets,
         return_hidden_states,
         () if outputs.hidden_states is None else (outputs.hidden_states,),
     )
+    if not outputs.state:
+        return grouped
+    return grouped, RequestStateGroup(state=tuple(outputs.state))
+
+
+def _decoder_input_fields(
+    input_types: Mapping[str, object],
+) -> OrderedDict[str, object]:
+    """Maps graph-API export groups to the shared semantic input fields."""
+    fields: OrderedDict[str, object] = OrderedDict()
+    for name, group in input_types.items():
+        if name == "batch":
+            assert isinstance(group, Mapping)
+            fields.update(
+                (_BATCH_FIELDS[key], value) for key, value in group.items()
+            )
+        elif name == "vision":
+            assert isinstance(group, Mapping)
+            fields[name] = VisionInputs(
+                embeddings=group["image_embeddings"],
+                scatter_indices=group["image_token_indices"],
+            )
+        elif name in ("signals", "state", "batch_context_lengths"):
+            fields[name] = tuple(tree.leaves(group))
+        else:
+            fields[name] = group
+    return fields
+
+
+def _decoder_graph_value(
+    field: str, expected: object, value: Value[Any]
+) -> object:
+    """Lowers a flat graph input to the value the role field consumes."""
+    if field == "kv":
+        return value
+    if field == "state":
+        return value if isinstance(value, BufferValue) else value.tensor
+    if field == "signals" or isinstance(expected, BufferType):
+        return value.buffer
+    return value.tensor
 
 
 class _DecoderGraph(GraphApiModule):
@@ -306,40 +424,36 @@ class _DecoderGraph(GraphApiModule):
     ) -> None:
         super().__init__()
         self.decoder = decoder
-        self._field_types = OrderedDict(input_types)
+        fields = _decoder_input_fields(input_types)
+        self._input_types, self._input_tree_def = tree.flatten(fields)
+        self._leaf_fields = tuple(
+            name
+            for name, field_types in fields.items()
+            for _ in tree.leaves(field_types)
+        )
         self._return_hidden_states = return_hidden_states
 
     def _unflatten_inputs(
         self, values: Sequence[Value[Any]]
     ) -> DecoderInputs[Any]:
-        """Unflattens the graph's flat inputs into the decoder's fields.
+        """Restores the shared role tree from the graph's flat inputs."""
+        converted = [
+            _decoder_graph_value(name, expected, value)
+            for name, expected, value in zip(
+                self._leaf_fields, self._input_types, values, strict=True
+            )
+        ]
+        return DecoderInputs(**tree.unflatten(self._input_tree_def, converted))
 
-        Raises:
-            ValueError: If the input types hold a group the contract doesn't
-                name.
-        """
-        flat = iter(values)
-        fields: dict[str, Any] = {}
-        for name, group in self._field_types.items():
-            leaves, treedef = tree.flatten(group)
-            taken = [next(flat) for _ in leaves]
-            if name == "kv":
-                fields["kv"] = tree.unflatten(treedef, taken)
-            elif name == "signals":
-                fields["signals"] = tuple(v.buffer for v in taken)
-            elif name == "batch":
-                assert isinstance(group, Mapping)
-                for key, value in zip(group, taken, strict=True):
-                    fields[_BATCH_FIELDS[key]] = value.tensor
-            else:
-                raise ValueError(f"a decoder takes no {name!r} inputs")
-        return DecoderInputs(**fields)
-
-    def __call__(self, *values: Value[Any]) -> GroupedDecoderOutputs:
+    def __call__(
+        self, *values: Value[Any]
+    ) -> (
+        GroupedDecoderOutputs | tuple[GroupedDecoderOutputs, RequestStateGroup]
+    ):
         """Runs the decoder on the graph's flat inputs.
 
         Returns:
-            The decoder's outputs, named by group.
+            The decoder's outputs, named by group, then any state.
         """
         return _graph_outputs(
             self.decoder(self._unflatten_inputs(values)),
@@ -386,27 +500,34 @@ class _DecoderGraph(GraphApiModule):
 class GraphApiDecoderModelInputs(DecoderModelInputs):
     """The prepared inputs of a registered graph-API ``DECODER``."""
 
-    signal_buffers: tuple[Buffer, ...] = ()
-    """The allreduce signal buffers, when the graph takes them."""
-
     batch_fields: tuple[str, ...] = _BATCH
     """The batch fields the graph takes, in its order."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """The step's buffers, in the graph's input order."""
-        batch: list[Buffer] = []
-        for field in self.batch_fields:
-            value = getattr(self, field)
-            assert isinstance(value, Buffer), f"no {field} for the graph"
-            batch.append(value)
-        return (
-            *batch,
-            *self.signal_buffers,
-            *(
-                tree.leaves(self.kv_cache_inputs)
-                if self.kv_cache_inputs is not None
-                else ()
+        fields = self.input_fields()
+        structure = self.input_tree_def
+        if structure is None:
+            order = (
+                *self.batch_fields,
+                "signals",
+                "kv",
+                "batch_context_lengths",
+                "ep",
+                "state",
+            )
+            _, structure = tree.flatten(
+                OrderedDict(
+                    (name, getattr(fields, name))
+                    for name in order
+                    if getattr(fields, name) is not None
+                )
+            )
+        return cast(
+            tuple[Buffer, ...],
+            _flatten_role_inputs(
+                structure, fields, flat_fields=("ep",), strict=True
             ),
         )
 
@@ -417,6 +538,13 @@ class GraphApiDecoderBatchProcessor(DecoderBatchProcessor):
     It feeds the fields of the input tree the pipeline model binds, so it
     adds signal buffers only when the graph takes them.
     """
+
+    def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
+        """Binds export metadata and the shared role's semantic input order."""
+        super().bind_input_tree(input_tree)
+        _, self._input_tree_def = tree.flatten(
+            _decoder_input_fields(input_tree)
+        )
 
     def get_symbolic_inputs(
         self,
@@ -455,6 +583,11 @@ class GraphApiDecoderBatchProcessor(DecoderBatchProcessor):
             signal_buffers=signals,
             batch_fields=tuple(_BATCH_FIELDS[name] for name in batch),
             kv_cache_inputs=inputs.kv_cache_inputs,
+            batch_context_lengths=inputs.batch_context_lengths,
+            ep_inputs=inputs.ep_inputs,
+            state=inputs.state,
+            request_ids=inputs.request_ids,
+            input_tree_def=inputs.input_tree_def,
         )
 
 
@@ -488,7 +621,8 @@ class GraphApiDecoderPipelineModel(
 
     :func:`graph_api_pipeline_model` subclasses it for each registration.
     The decoder is constructed as ``decoder_cls(config)`` from the finalized
-    config, which holds the devices it runs on.
+    config, completed with the deployment and expert-parallel runtime before
+    construction.
     """
 
     decoder_cls: ClassVar[type[GraphApiModule]]
@@ -497,6 +631,11 @@ class GraphApiDecoderPipelineModel(
     batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = (
         GraphApiDecoderBatchProcessor
     )
+
+    _state_store: RequestStateStore | None = None
+    _runtime: ModuleRuntime
+    _session: InferenceSession
+    ep_comm_initializer: ExpertParallelExchange | None = None
 
     def __init__(
         self,
@@ -555,10 +694,28 @@ class GraphApiDecoderPipelineModel(
     def _hf_config_for_weights(self) -> AutoConfig | None:
         return self.huggingface_config
 
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads the checkpoint through the architecture's adapter.
+
+        A checkpoint that loads through rules names the decoder's weights.
+        """
+        if isinstance(self.adapter, WeightTransform):
+            self.weight_naming = {
+                GraphRole.DECODER: (
+                    WeightEntry(CheckpointRole.TARGET, self.adapter),
+                )
+            }
+        return super()._load_state_dict()
+
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the graphs with the session used to initialize EP first."""
+        self._session = session
+        return super().load_graphs(session)
+
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         # graph_specs loads these into the decoder it constructs.
         self._checkpoint = state_dict
-        return finalize_config(
+        config = finalize_config(
             self.arch_config,
             self.huggingface_config,
             state_dict,
@@ -567,23 +724,47 @@ class GraphApiDecoderPipelineModel(
                 return_hidden_states=self.return_hidden_states,
             ),
         )
+        settings = self.pipeline_config.runtime
+        runtime = ModuleRuntime(
+            mesh=device_mesh(
+                self.devices, self.pipeline_config.model.data_parallel_degree
+            ),
+            data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
+            max_batch_input_tokens=settings.max_batch_input_tokens,
+            max_batch_total_tokens=self.planned_max_batch_total_tokens,
+            ep_size=settings.ep_size,
+            ep_use_allreduce=settings.ep_use_allreduce,
+            max_batch_size=self.max_batch_size,
+        )
+        if runtime.ep_size > 1:
+            if not isinstance(config, ExpertParallelDeploymentConfig):
+                raise ValueError(
+                    f"{type(config).__qualname__} doesn't support expert "
+                    "parallelism"
+                )
+            runtime, self.ep_comm_initializer = initialize_ep_comm_buffers(
+                config, runtime, self._session
+            )
+        self._runtime = runtime
+        if isinstance(config, DeploymentConfig):
+            return config.apply_runtime(runtime)
+        return config
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
         """Returns the decoder graph, with the checkpoint loaded into it."""
         decoder_cls = type(self).decoder_cls
-        # A registered module takes its config, which type[Module] can't say.
-        constructor: Any = decoder_cls
-        decoder = constructor(model_config)
-        decoder.load_state_dict(
-            self._checkpoint,
-            override_quantization_encoding=bool(
-                getattr(decoder_cls, "override_quantization_encoding", False)
-            ),
-            weight_alignment=1,
-            strict=getattr(decoder_cls, "strict_state_dict_loading", True),
+        decoder = load_graph_api_module(
+            decoder_cls, model_config, self._checkpoint
         )
         # The graph's weights registry holds what it binds; drop the rest.
         self._checkpoint = {}
+        self._state_store = bind_state_store(
+            decoder_cls,
+            model_config,
+            self._batch_processor,
+            max_batch_size=self.max_batch_size,
+            devices=self.devices,
+        )
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
         input_types = self._bind_graph_inputs(
             OrderedDict[str, object](
@@ -598,6 +779,25 @@ class GraphApiDecoderPipelineModel(
                         decoder_cls,
                         "data_parallel_batch_inputs",
                         _DATA_PARALLEL_BATCH,
+                    ),
+                    batch_context_lengths=(
+                        batch_context_length_types(data_parallel_degree)
+                        if isinstance(model_config, DeploymentConfig)
+                        and model_config.takes_batch_context_lengths
+                        else None
+                    ),
+                    ep=(
+                        ep_input_tree(model_config, self._runtime.ep)
+                        if isinstance(
+                            model_config, ExpertParallelDeploymentConfig
+                        )
+                        and self._runtime.ep is not None
+                        else None
+                    ),
+                    state=(
+                        self._state_store.input_types()
+                        if self._state_store is not None
+                        else ()
                     ),
                 )
             )
@@ -615,9 +815,18 @@ class GraphApiDecoderPipelineModel(
         """Runs the decoder on the prepared batch."""
         assert isinstance(model_inputs, GraphApiDecoderModelInputs)
         assert self.batch_processor is not None
-        return self.batch_processor.process_outputs(
-            self.model.execute(*model_inputs.buffers)
+        outputs = self.model.execute(*model_inputs.buffers)
+        if self._state_store is None:
+            return self.batch_processor.process_outputs(outputs)
+        role_outputs, state = split_state_outputs(
+            outputs, self.return_logits, self.return_hidden_states
         )
+        state_outputs: list[Buffer] = []
+        for output in state:
+            assert isinstance(output, Buffer)
+            state_outputs.append(output)
+        self._state_store.update(model_inputs.request_ids, state_outputs)
+        return self.batch_processor.process_outputs(role_outputs)
 
 
 def _build_target_module(
@@ -673,8 +882,21 @@ def graph_api_pipeline_model(
     bases: tuple[type, ...] = (GraphApiDecoderPipelineModel,)
     if getattr(decoder_cls, "always_signal_buffers", False):
         bases = (AlwaysSignalBuffersMixin, *bases)
+    # Only a decoder with state gets the release hooks, which serving
+    # detects by their presence.
+    if hasattr(decoder_cls, "state_store"):
+        bases = (RequestStateMixin, *bases)
     name = f"{decoder_cls.__name__}PipelineModel"
+    layout = (
+        config.ep_dispatch_token_layout
+        if issubclass(config, ExpertParallelDeploymentConfig)
+        else None
+    )
+    exporter_attrs = (
+        {} if layout is None else {"ep_dispatch_token_layout": layout}
+    )
     namespace: dict[str, Any] = {
+        **exporter_attrs,
         "__module__": __name__,
         "__qualname__": name,
         "_registration": registration,
@@ -701,15 +923,20 @@ def registered_pipeline_model(
     """Returns the pipeline model that serves a module registration.
 
     The task picks the pipeline model, since each task prepares its inputs
-    differently; every registration of a task shares it. A text-generation
-    registration whose ``DECODER`` is a graph-API module gets
+    differently; every registration of a task shares it. An
+    embeddings-generation registration gets
+    :func:`~max.pipelines.lib.registration_encoder.encoder_pipeline_model`'s.
+    A text-generation registration whose ``DECODER`` is a graph-API module
+    gets
     :func:`graph_api_pipeline_model`'s; any other gets
     :func:`~max.pipelines.lib.module_registration.module_pipeline_model`'s.
 
     Raises:
-        NotImplementedError: If the task isn't text generation, which is all
-            registered modules serve so far.
+        NotImplementedError: If the task is neither text nor embeddings
+            generation, which is all registered modules serve so far.
     """
+    if task == PipelineTask.EMBEDDINGS_GENERATION:
+        return encoder_pipeline_model(config, modules, batching)
     if task != PipelineTask.TEXT_GENERATION:
         raise NotImplementedError(
             f"registered modules can't serve {task.value} yet"

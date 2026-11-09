@@ -55,7 +55,7 @@ def test[
 ](
     seq_len: Int,
     num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     is_benchmark: Bool = False,
     use_index_input: Bool = False,
 ) raises:
@@ -141,7 +141,7 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         flash_attention[decoding_warp_split_k=decoding_warp_split_k](
             output_device,
@@ -238,7 +238,7 @@ def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     return depths^
 
 
-def test_context_encoding(ctx: DeviceContext) raises:
+def test_context_encoding(ctx: DeviceContext[]) raises:
     test[.bfloat16, depth=127, num_heads=2](111, 121, ctx)
 
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
@@ -376,7 +376,7 @@ def test_decoding[
     num_partitions: Optional[Int],
     split_k: Bool,
     qkv_type: DType = .bfloat16,
-](ctx: DeviceContext, use_index_input: Bool = False) raises:
+](ctx: DeviceContext[], use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     comptime for d in range(len(depths)):
@@ -439,7 +439,7 @@ def test_decoding_large_group[
     num_partitions: Optional[Int] = None,
     split_k: Bool = False,
     qkv_type: DType = .bfloat16,
-](ctx: DeviceContext, use_index_input: Bool = False) raises:
+](ctx: DeviceContext[], use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     comptime for d in range(len(depths)):
@@ -455,7 +455,7 @@ def test_decoding_large_group[
         ](1, 2000, ctx, use_index_input=use_index_input)
 
 
-def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
+def test_flash_attention_sink_kernel(ctx: DeviceContext[], seq_len: Int) raises:
     print("test_flash_attention_sink_kernel")
     comptime batch_size = 1
     comptime num_heads = 2
@@ -539,7 +539,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     var sinks_device = immut_tile_tensor_1d(sinks_dev.unsafe_ptr(), num_heads)
 
     @inline(.always)
-    def launch(ctx: DeviceContext) raises {imm}:
+    def launch(ctx: DeviceContext[]) raises {imm}:
         flash_attention[sink=True](
             out_device,
             q_device,

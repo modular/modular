@@ -392,7 +392,6 @@ def _arg_nonzero_gpu[
 def arg_nonzero[
     dtype: DType,
     output_type: DType,
-    target: StaticString,
 ](
     input_buffer: TileTensor[dtype, ...],
     output_buffer: TileTensor[mut=True, output_type, ...],
@@ -403,15 +402,16 @@ def arg_nonzero[
     Parameters:
         dtype: The element dtype.
         output_type: The integer dtype used for coordinates.
-        target: The target device.
 
     Args:
         input_buffer: The tensor whose nonzero coordinates are returned.
         output_buffer: The `[nnz, input.rank]` coordinate tensor.
         ctx: Device context used to enqueue GPU work.
     """
-    with Trace[TraceLevel.OP, target=target]("arg_nonzero"):
-        comptime if is_cpu[target]():
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
+        "arg_nonzero"
+    ):
+        comptime if ctx.target.is_cpu():
             arg_nonzero(input_buffer, output_buffer)
         else:
             _arg_nonzero_gpu(input_buffer, output_buffer, ctx)

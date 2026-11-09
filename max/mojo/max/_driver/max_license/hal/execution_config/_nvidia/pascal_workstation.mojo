@@ -13,8 +13,8 @@
 """Execution config placeholder for NVIDIA Pascal workstation GPUs (Tesla P40, Tesla P4)."""
 
 from max.gpu.host import ConstantMemoryMapping, Dim, LaunchAttribute
+from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from . import (
-    LaunchAttributeHolderExecutionConfig,
     _CudaExecutionConfigDelegator,
     _BaseCudaExecutionConfig,
     _BaseCudaExecutionConfiguration,

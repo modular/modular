@@ -36,7 +36,7 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import stack_allocation
-from layout.tile_layout import Layout as _NewLayout
+from layout.layout import Layout as _NewLayout
 from layout.tile_io import GenericToLocalTileCopier
 from std.collections import OptionalReg
 from std.utils import IndexList
@@ -54,6 +54,13 @@ from extensibility import (
 )
 
 from ._tile_fusion import _tile_store_consumer
+
+comptime SM100 = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & extensibility.arch("sm_100a")
+)
+"""Holds for CUDA devices with the `sm_100a` architecture."""
 
 
 @fieldwise_init
@@ -249,14 +256,13 @@ struct _NaiveMatmulTileAdapter[
 # resolves to the generic SIMD `mo.matmul` and only the tile-codegen path
 # (flag on) selects this kernel. Expected to be removed once the real tile
 # matmul lands and the tile-codegen transition completes (see GEX-3919).
-@extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")
+@extensibility.register("mo.matmul", SM100)
 struct MatmulTileSM100:
     @staticmethod
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
         has_epilogue_fusion: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: _FusedComputeOutputTileTensor[rank=2, ...],
@@ -269,7 +275,7 @@ struct MatmulTileSM100:
         # this sm_100a registration. Naive, correctness-only GPU matmul on MAX's
         # own Mojo kernel (no vendor BLAS); see `_NaiveMatmulTileAdapter`. Tested
         # at (M, N, K) = (256, 256, 256) f32 on B200.
-        comptime assert is_gpu[target](), "tile-codegen matmul is GPU-only"
+        comptime assert ctx.target.is_gpu(), "tile-codegen matmul is GPU-only"
         comptime assert (
             not transpose_b
         ), "tile-codegen matmul only supports transpose_b=False"
@@ -282,7 +288,9 @@ struct MatmulTileSM100:
         # `get_kernel_tile_shape` default, and that shape must be threaded into
         # the fusion emitter so the epilogue conforms to it — instead of the
         # driver and emitter each independently reading `get_kernel_tile_shape`.
-        comptime tile_shape = get_kernel_tile_shape[c.dtype, target]()
+        comptime tile_shape = get_kernel_tile_shape[
+            c.dtype, ctx.target.device_kind_label()
+        ]()
         comptime TM = tile_shape[0]
         comptime TN = tile_shape[1]
 

@@ -60,10 +60,10 @@ def _run_case[
     ngpus: Int,
     num_cols: Int,
     use_dispatch: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     num_rows: Int,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     dispatch_threshold: Int = RS_NORM_FUSE_THRESHOLD,
 ) raises:
     """Run the fused kernel (or `_dispatch_rs_norm`) and gate both oracles.
@@ -243,7 +243,7 @@ def _run_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[pdl_level=pdl_level](
+            _dispatch_rs_norm(
                 in_bufs,
                 normed_view,
                 sum_view,
@@ -524,8 +524,8 @@ def _run_prod_oracle_case[
     num_cols: Int,
     use_dispatch: Bool = False,
     group_size: Int = ngpus,
-    pdl_level: PDLLevel = PDLLevel(),
-](num_rows: Int, list_of_ctx: List[DeviceContext]) raises -> Int:
+    pdl_level: PDLLevel = PDLLevel.OFF,
+](num_rows: Int, list_of_ctx: List[DeviceContext[]]) raises -> Int:
     """Compare the fused `normed_out` to the ACTUAL M3 production norm; return the
     fused-vs-production exact-mismatch count.
 
@@ -699,10 +699,7 @@ def _run_prod_oracle_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[
-                group_size=group_size,
-                pdl_level=pdl_level,
-            ](
+            _dispatch_rs_norm[group_size=group_size](
                 world_bufs,
                 normed_view,
                 sum_view,
@@ -895,7 +892,7 @@ def _run_residual_case[
     num_cols: Int,
     group_size: Int = ngpus,
     wide_magnitudes: Bool = False,
-](num_rows: Int, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, list_of_ctx: List[DeviceContext[]]) raises:
     """Gate the folded residual against an INDEPENDENT host oracle.
 
     The fold replaces the caller's leader-only pre-add with a per-rank add of
@@ -1342,7 +1339,7 @@ def _run_interleaved_barrier_case[
     ngpus: Int,
     group_size: Int,
     num_cols: Int,
-](num_rows: Int, rounds: Int, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, rounds: Int, list_of_ctx: List[DeviceContext[]]) raises:
     """Deadlock gate: a GROUPED fused RS+norm interleaved with a FULL-WORLD
     reduce-scatter on the SAME `Signal` buffers, looped `rounds` times with a
     single up-front barrier init.
@@ -1584,7 +1581,7 @@ def _run_rank_validation_case[
     in_dtype: DType,
     group_size: Int,
     num_cols: Int,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Gate the public API's rank / shard-shape validation.
 
     A wrong-but-in-range rank is a SELF-CONSISTENT out-of-bounds write -- the
@@ -1772,7 +1769,7 @@ def _run_grouped_suite[
     The full-world cases cannot fail on any of the grouping logic (local rank ==
     device id, one group, whole-world bins), so these are the only cases that
     cover it."""
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(ngpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 
@@ -1836,7 +1833,7 @@ def _run_suite[
     """Run the full correctness suite on `ngpus` GPUs (caller ensures >= ngpus
     are present and P2P is on). Driven at TP2 and TP4 from `main` so a 2-GPU CI
     lane exercises the kernel instead of skipping to a false green."""
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(ngpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 

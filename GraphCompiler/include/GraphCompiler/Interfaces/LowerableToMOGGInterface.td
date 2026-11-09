@@ -35,6 +35,19 @@ def LowerableToMOGGInterface :
       "mlir::LogicalResult",
       "lowerToMOGG",
       (ins "M::MAP::MAPToMOGGState &":$state)>,
+    InterfaceMethod<
+      [{
+        Lower this op inside a tile fusion body, whose values are whole
+        `!mogg.tile`s rather than SIMD vectors. Only ops that can appear in
+        such a body override it.
+      }],
+      "mlir::LogicalResult",
+      "lowerToMOGGTile",
+      (ins "M::MAP::MAPToMOGGState &":$state),
+      /*methodBody=*/"",
+      /*defaultImplementation=*/[{
+        return $_op->emitOpError("MAPToMOGG: op has no tile lowering");
+      }]>,
   ];
 }
 

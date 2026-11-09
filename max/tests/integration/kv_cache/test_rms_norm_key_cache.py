@@ -20,8 +20,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import rms_norm_key_cache
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops import rms_norm_key_cache
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
@@ -129,6 +129,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         scales_page_stride=graph_inputs.scales_page_stride,
         scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        mixed_step_split=graph_inputs.mixed_step_split,
     )
 
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
@@ -199,6 +200,7 @@ def test_partial_rms_norm_key_cache(
         scales_page_stride=graph_inputs.scales_page_stride,
         scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        mixed_step_split=graph_inputs.mixed_step_split,
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
@@ -286,6 +288,7 @@ def test_rms_norm_new_key_cache(
         scales_page_stride=graph_inputs.scales_page_stride,
         scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        mixed_step_split=graph_inputs.mixed_step_split,
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
@@ -419,6 +422,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         scales_page_stride=graph_inputs.scales_page_stride,
         scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        mixed_step_split=graph_inputs.mixed_step_split,
     )
 
     # Create gamma weights for per token normalization

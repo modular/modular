@@ -230,7 +230,7 @@ def dispatch_rdna_conv2d[
         symmetric_padding: Symmetric spatial padding `[pad_h, pad_w]`
             applied to the input.
         num_groups: Number of convolution groups; only `1` is supported.
-        ctx: `DeviceContext` used to enqueue kernels and synchronize.
+        ctx: `DeviceContext` used to enqueue kernels.
         source_ptr: NHWC-contiguous residual source with the same shape as
             `output`; read only when `has_residual=True` (defaults to a
             dangling pointer).
@@ -548,9 +548,9 @@ def dispatch_rdna_conv2d[
                 no_epilogue_fn, no_compute_fn
             )
 
-        # Full sync required to keep filter_buf alive until the kernel completes.
-        # TODO: attach buffer to a stream callback to allow pipelining.
-        ctx.synchronize()
+        # Same lifetime argument as `dispatch_im2col_matmul_conv2d`: every
+        # kernel that reads this scratch was enqueued earlier on this stream,
+        # so the free does not cut its reads short and needs no drain.
         _ = filter_buf^
         return True
 

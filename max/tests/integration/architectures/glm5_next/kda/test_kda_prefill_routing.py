@@ -29,18 +29,15 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.layer import Module
-from max.nn.legacy.state_space import (
-    kda_ring_record_elements,
-    kimi_delta,
-    verify_width_operand,
-)
-from max.nn.legacy.state_space.kimi_delta import (
+from max.nn._graph_ops.state_space import kimi_delta, verify_width_operand
+from max.nn._graph_ops.state_space.kimi_delta import (
     KdaGateMode,
     amd_kda_chunk_workspace_bytes,
     kda_chunk_predicate,
     kda_chunk_workspace_bytes,
+    kda_ring_record_elements,
 )
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.glm5_next.layers import (
     kimi_delta_attention,
 )

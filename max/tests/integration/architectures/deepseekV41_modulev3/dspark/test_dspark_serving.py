@@ -32,11 +32,13 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from dspark_test_support import TESTDATA
+from max import functional as F
+from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.deepseekV41_modulev3 import (
     model as model_module,
@@ -65,12 +67,16 @@ from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     dspark_draft_width,
 )
 from max.pipelines.architectures.dspark_deepseekV41_modulev3 import (
-    DSparkDeepseekV41ModuleV3DraftArchConfig,
+    DSparkDeepseekV41Draft,
     dspark_deepseekV41_modulev3_draft_arch,
+)
+from max.pipelines.architectures.dspark_deepseekV41_modulev3.model import (
+    configure_dspark_draft,
 )
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.lib import (
     BatchProcessorRuntime,
+    GraphRole,
     KVCacheConfig,
     MAXModelConfig,
     ModelManifest,
@@ -78,16 +84,21 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
 )
 from max.pipelines.lib.arch_lookup import ARCH_LOOKUP
+from max.pipelines.lib.module_registration import construct_module, device_mesh
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodePipelineModel,
+    _proposer,
     spec_decode_architecture,
 )
+from max.pipelines.lib.registration_draft import TargetHiddenStates
 from max.pipelines.sampling import SamplingConfig
+from max.pipelines.speculative import proposers
 from max.pipelines.speculative import spec_adapters as registry
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
-    spec_decode_tail_input_types,
+    declared_spec_decode_inputs,
+    spec_decode_input_tree,
 )
 
 BLOCK = 5
@@ -284,6 +295,22 @@ def test_dspark_pairs_the_modulev3_trunk_with_its_modulev3_draft() -> None:
     }
 
 
+def test_the_modulev3_stages_are_a_registered_block_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stages construct through the draft registration, with the RoPE
+    the trunk's checkpoint names."""
+    arch = dspark_deepseekV41_modulev3_draft_arch
+    assert arch.modules == {GraphRole.DRAFT: DSparkDeepseekV41Draft}
+    assert arch.draft is not None
+    assert arch.draft.method == "dspark"
+    assert arch.draft.create_proposer is None
+    assert arch.pipeline_model is None
+    assert not hasattr(arch.config, "build_module")
+    config = configure_dspark_draft(_dp_context(monkeypatch), {})
+    assert config.rope is not None
+
+
 def test_the_graph_api_pairing_is_unchanged() -> None:
     """Without ``--prefer-module-v3`` V4.1 pairs its graph-API trunk."""
     register_all_models()
@@ -327,15 +354,27 @@ def test_the_modulev3_trunk_serves_stochastic_acceptance_and_grammar() -> None:
             registry.check(TARGET, speculative, structured_output)
 
     device = DeviceRef.CPU()
-    plain = spec_decode_tail_input_types(
-        SpecDecodeInputTypeSpec(devices=[device], distributed=False), device
+    kv_params = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=64,
+        num_layers=1,
+        devices=[device],
+        n_kv_heads=1,
     )
-    grammar = spec_decode_tail_input_types(
-        SpecDecodeInputTypeSpec(
-            devices=[device], distributed=False, enable_structured_output=True
-        ),
-        device,
-    )
+
+    def tail(structured_output: bool) -> list[Any]:
+        spec = SpecDecodeInputTypeSpec(
+            devices=[device],
+            distributed=False,
+            enable_structured_output=structured_output,
+        )
+        named = spec_decode_input_tree(
+            spec, declared_spec_decode_inputs(spec, kv_params=kv_params)
+        )
+        return tree.leaves([named["spec"], named.get("bitmask", ())])
+
+    plain = tail(structured_output=False)
+    grammar = tail(structured_output=True)
     # draft_tokens, seed, temperature, top_k, max_k, top_p, min_top_p.
     assert len(plain) == 7
     assert grammar[:7] == plain
@@ -498,10 +537,56 @@ def test_the_stages_build_on_a_data_parallel_mesh(
     config the pairing reads names the trunk's taps and the block's fill
     token."""
     context = _dp_context(monkeypatch)
-    draft, config = DSparkDeepseekV41ModuleV3DraftArchConfig.build_module(
-        context
-    )
+    config = configure_dspark_draft(context, {})
+    devices = [ref.to_device() for ref in config.devices]
+    # As the registered draft's builder constructs it.
+    with F.lazy():
+        draft = construct_module(
+            DSparkDeepseekV41Draft, config, device_mesh(devices, 4)
+        )
+    assert isinstance(draft, DSparkDeepseekV41Draft)
     assert draft.data_parallel_degree == 4
     assert draft.mesh.num_devices == 4
+    assert draft.mesh.axis_names == ("dp",)
     assert config.target_layer_ids == config.dspark_target_layer_ids
     assert config.mask_token_id == config.dspark_noise_token_id
+
+
+def test_the_registered_stages_draft_and_tap_as_before(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The registration keeps what the pairing ran before it: the trunk's
+    adapter supplies the stages' proposer, and the trunk returns the
+    layers the method's helpers name."""
+    context = _dp_context(monkeypatch)
+    speculative = context.pipeline_config.speculative
+    config = configure_dspark_draft(context, {})
+    devices = [ref.to_device() for ref in config.devices]
+    with F.lazy():
+        draft = construct_module(
+            DSparkDeepseekV41Draft, config, device_mesh(devices, 4)
+        )
+    arch = dspark_deepseekV41_modulev3_draft_arch
+    assert arch.draft is not None
+    verify = spec_adapters.DeepseekV41BlockTarget(
+        cast(Any, SimpleNamespace(dp=4)), cast(Any, None)
+    )
+    hf_config: Any = SimpleNamespace(get_text_config=lambda: object())
+    proposer = _proposer(
+        TARGET, arch, verify, draft, config, speculative, hf_config
+    )
+    legacy = registry.block_proposer(
+        TARGET, verify, cast(Any, draft), config, speculative
+    )
+    assert isinstance(proposer, spec_adapters.DSparkDeepseekV41Proposer)
+    assert proposer.drafter is draft
+    assert type(legacy) is type(proposer)
+    reads = arch.draft.target_hidden_states(speculative, config)
+    assert reads == TargetHiddenStates(
+        proposers.target_hidden_states(speculative, config),
+        proposers.capture_layers(speculative, config),
+    )
+    assert reads == TargetHiddenStates(
+        ReturnHiddenStates.SELECTED_LAYERS,
+        tuple(config.dspark_target_layer_ids),
+    )

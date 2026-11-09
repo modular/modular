@@ -13,9 +13,15 @@
 """DeepSeek-V4.1's DSpark stages on ModuleV3, drafting for its ModuleV3 trunk."""
 
 from .arch import dspark_deepseekV41_modulev3_draft_arch
-from .model import DSparkDeepseekV41ModuleV3DraftArchConfig
+from .model import (
+    DSparkDeepseekV41Draft,
+    DSparkDeepseekV41ModuleV3DraftConfig,
+    dspark_draft_registration,
+)
 
 __all__ = [
-    "DSparkDeepseekV41ModuleV3DraftArchConfig",
+    "DSparkDeepseekV41Draft",
+    "DSparkDeepseekV41ModuleV3DraftConfig",
     "dspark_deepseekV41_modulev3_draft_arch",
+    "dspark_draft_registration",
 ]

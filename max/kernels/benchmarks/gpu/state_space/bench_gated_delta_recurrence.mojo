@@ -48,7 +48,7 @@ def _median(times: List[Float64]) -> Float64:
 def _bench[
     state_dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     num_value_heads: Int,
     num_key_heads: Int,
     seq_len: Int,
@@ -131,7 +131,7 @@ def _bench[
     var num_blocks = num_seqs * num_value_heads
 
     def launch(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm out_tt,
         imm pool_tt,

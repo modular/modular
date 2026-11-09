@@ -1,0 +1,166 @@
+# Oracle tests for Kimi K3 (ModuleV3) speculative decoding: the KDA state
+# rollback against non-spec decode, the graph-level adapter checks, and the
+# greedy-parity harness the pairing must satisfy.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_kda_spec_rollback",
+    size = "large",
+    srcs = ["test_kda_spec_rollback.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_py_library(
+    name = "spec_parity",
+    srcs = ["spec_parity.py"],
+    imports = ["."],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_py_library(
+    name = "_tiny_pair",
+    srcs = ["_tiny_pair.py"],
+    imports = ["."],
+    # The Mach fixture test (//mach/tools/gen-mef:k3_inferact_fixture_test)
+    # builds its export pair here, at the production widths the frozen
+    # contract pins.
+    visibility = [
+        "//:__pkg__",
+        "//mach/tools/gen-mef:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
+    deps = [
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+# The one capture check: replay == eager-at-aligned, bit-exact per step.
+# MI355-only: it keys on the AMD decode-branch fold predicate, and an
+# NVIDIA run would grade a different arm split.
+modular_py_test(
+    name = "test_spec_capture",
+    size = "enormous",
+    srcs = ["test_spec_capture.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The pair's architectures are imported by the pipeline registry at
+    # runtime, not by the test, so pydeps must not flag them as unused.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+    ],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":_tiny_pair",
+        ":spec_parity",
+        requirement("numpy"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_adapter_k3",
+    size = "large",
+    srcs = ["test_spec_adapter_k3.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/speculative",
+        "//max/tests/integration/architectures/kimi_k3_modulev3/dspark:dspark_test_data",
+    ],
+)
+
+# The tiny pair's greedy-parity smoke test, at TP1.
+modular_py_test(
+    name = "test_spec_parity",
+    # One real-acceptance E2E and one shared synthetic run, both off one
+    # plain pipeline build.
+    size = "enormous",
+    srcs = ["test_spec_parity.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    # MI355-only: the tiny pair's 4 MLA heads are not bound in the NVIDIA
+    # SM100 dispatch table (compute_mla_dispatch_scalars_runtime).
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The pair's architectures are imported by the pipeline registry at
+    # runtime, not by the test, so pydeps must not flag them as unused.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+    ],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":_tiny_pair",
+        ":spec_parity",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/lib",
+    ],
+)

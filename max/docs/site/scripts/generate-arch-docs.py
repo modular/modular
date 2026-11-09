@@ -153,7 +153,7 @@ def discover_registered_dirs() -> list[str]:
                         continue
                     module = module.lstrip(".")
                     if (
-                        module.endswith("_modulev3")
+                        module.split(".")[0].endswith("_modulev3")
                         or module in UNLISTED_MODULES
                     ):
                         continue

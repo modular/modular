@@ -12,12 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """GLM-5.x (GlmMoeDsa) sparse-attention MoE architecture (ModuleV3)."""
 
-from .arch import glm5_1_modulev3_arch
-from .model import Glm5_1Model
+from .arch import glm5_1_modulev3_arch, glm5_1_mtp_draft_arch
+from .glm5_1 import Glm5_1Decoder
 from .model_config import Glm5_1Config
+from .mtp import Glm5_1MTP
 
 __all__ = [
     "Glm5_1Config",
-    "Glm5_1Model",
+    "Glm5_1Decoder",
+    "Glm5_1MTP",
     "glm5_1_modulev3_arch",
+    "glm5_1_mtp_draft_arch",
 ]

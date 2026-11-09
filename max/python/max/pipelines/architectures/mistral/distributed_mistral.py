@@ -25,9 +25,9 @@ from typing import Any
 from max import tree
 from max.graph import Graph, Type, Value
 from max.graph import Module as GraphModule
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.attention import TensorParallelAttentionWithRope
 from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.linear import MLP, ColumnParallelLinear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import RotaryEmbedding

@@ -13,7 +13,7 @@
 """The MTP depths an Inkling checkpoint ships beside its trunk."""
 
 from .arch import mtp_inkling_draft_arch
-from .model import MTPInklingDraftArchConfig
+from .model_config import MTPInklingDraftArchConfig
 from .weight_adapters import convert_inkling_mtp_state_dict
 
 __all__ = [

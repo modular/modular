@@ -16,6 +16,7 @@ batch_size=64
 max_length=50000
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   # --enable-echo  # Not needed for gsm8k_cot_llama
   --device-memory-utilization=0.6
   --max-batch-input-tokens=128

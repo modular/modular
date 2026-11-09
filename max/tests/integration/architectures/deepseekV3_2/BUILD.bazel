@@ -39,6 +39,8 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
@@ -55,6 +57,8 @@ modular_py_library(
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
     ],
@@ -86,6 +90,7 @@ modular_py_test(
             # Own binary/test targets below.
             "precompile_mla_sparse.py",
             "test_mla_sparse_prefill_graph_gpu.py",
+            "test_mla_sparse_nvfp4_graph_gpu.py",
             "precompile_hadamard.py",
             "test_hadamard_transform.py",
             # Construction-only smoke; runs on CPU (own target below).
@@ -111,7 +116,7 @@ modular_py_test(
     # Each sparse decode test compiles its own graphs (~120-220s each), so
     # split those CPU record actions to compile in parallel.
     precompile_shards = {
-        "test_mla_sparse_decode_graph_gpu.py": 5,
+        "test_mla_sparse_decode_graph_gpu.py": 6,
     },
     tags = [
         "gpu",
@@ -124,6 +129,9 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/kv_cache",
@@ -134,6 +142,44 @@ modular_py_test(
         requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mla_sparse_nvfp4_graph_gpu",
+    size = "large",
+    srcs = ["test_mla_sparse_nvfp4_graph_gpu.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        # The fallback-route cell prefills 16 query tokens over a 4096-row
+        # packed cache at 128 heads.
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    imports = ["."],
+    precompile_mefs = True,
+    precompile_shards = 48,
+    tags = ["gpu"],
+    deps = [
+        ":mla_sparse_test_utils",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -153,6 +199,10 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
     ],
 )
@@ -195,7 +245,7 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
         requirement("numpy"),
     ],
@@ -231,6 +281,13 @@ precompiled_mefs(
         "prefill_fp8_8h",
         "prefill_bf16_64h",
         "prefill_bf16_8h",
+        "prefill_bf16_fp8kv_64h",
+        "prefill_bf16_fp8kv_8h",
+        "prefill_bf16_fp8kv_32h",
+        "prefill_fp8_fp8kv_8h",
+        "prefill_fp8_fp8kv_16h",
+        "prefill_fp8_fp8kv_32h",
+        "prefill_fp8_fp8kv_64h",
         # Disaggregated prefill_only variants for the auto-vs-prefill test.
         "prefill_only_fp8_128h",
         "prefill_only_fp8_8h",
@@ -262,6 +319,7 @@ modular_py_test(
         ":mla_sparse_graphs",
         "//max/python/max:tree",
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",

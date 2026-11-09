@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """CPU reference tests for the mHC stream mixing and collapse steps.
 
-The gate projection (``mo.hyper_connection.gates``) is GPU-only, so these
+The gate projection (``hyper_connection.gates``) is GPU-only, so these
 tests pin the pure-graph pieces every boundary is composed of: the
 ``post``/``comb`` write-back orientation, the carried-``pre`` collapse,
 the final collapse and the identity write-back. The oracles are

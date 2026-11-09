@@ -73,7 +73,9 @@ def pipeline() -> TextGenerationPipeline[TextContext]:
             device_specs=[DeviceSpec.cpu()],
             max_length=512,
             quantization_encoding="float32",
-            runtime=PipelineRuntimeConfig(max_batch_size=4),
+            runtime=PipelineRuntimeConfig(
+                max_batch_size=4, prefer_module_v3=False
+            ),
         )
     )
     _, retrieved = PIPELINE_REGISTRY.retrieve(config)

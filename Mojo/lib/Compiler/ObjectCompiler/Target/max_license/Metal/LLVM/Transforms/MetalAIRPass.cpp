@@ -2218,8 +2218,6 @@ public:
   /// of the new type is inserted at the entry block top; after the rewritten
   /// body is spliced into newFunc, each dummy is replaced with the real arg.
   virtual llvm::Function *updateFunction(llvm::Function &func) final {
-    llvm::LLVMContext &ctx = module.getContext();
-
     // Determine new parameter types from valueTypeMap.
     SmallVector<Type *, 8> newParamTypes;
     for (llvm::Argument &arg : func.args()) {
@@ -2262,7 +2260,7 @@ public:
     SmallVector<unsigned, 8> sameTypeArgIndices;
 
     BasicBlock &entryBB = func.getEntryBlock();
-    IRBuilder<> irBuilder(ctx);
+    IRBuilder<> irBuilder(module);
     irBuilder.SetInsertPoint(entryBB.getFirstNonPHIIt());
 
     // RAUW without the type-equality assertion; needed when old and new types
@@ -3711,7 +3709,7 @@ static bool replaceFNeg(llvm::Module &module) {
     return false;
 
   // Replace fneg instructions by fsub instructions
-  llvm::IRBuilder<> builder(module.getContext());
+  llvm::IRBuilder<> builder(module);
   for (llvm::UnaryOperator *op : worklist) {
     builder.SetInsertPoint(op);
     llvm::Value *in = op->getOperand(0);

@@ -134,20 +134,57 @@ def assert_equal[
         )
 
 
+@inline(.always)
+def assert_equal[
+    T: Equatable & Writable,
+    //,
+](
+    lhs: Optional[T],
+    rhs: T,
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that an `Optional` holds a value equal to `rhs`. If it is empty
+    or holds a different value, an Error is raised.
+
+    Parameters:
+        T: The type of the value the `Optional` holds.
+
+    Args:
+        lhs: The `Optional` to check.
+        rhs: The value `lhs` must hold.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if case .Some(value) = lhs:
+        if value == rhs:
+            return
+    raise _assert_cmp_error["`left == right` comparison"](
+        String(lhs),
+        String(rhs),
+        msg=msg,
+        loc=location.or_else(call_location()),
+    )
+
+
 # TODO: Remove the PythonObject, String and List overloads once we have
 # more powerful traits.
 
 
 # TODO(MSTDL-1071):
 #   Once Mojo supports parametric traits, implement Equatable for
-#   StringSlice such that string slices with different origin types can be
+#   StringSpan such that string slices with different origin types can be
 #   compared, then drop this overload.
 @inline(.always)
 def assert_equal[
     O1: ImmOrigin, O2: ImmOrigin
 ](
-    lhs: List[StringSlice[O1]],
-    rhs: List[StringSlice[O2]],
+    lhs: List[StringSpan[O1]],
+    rhs: List[StringSpan[O2]],
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
@@ -170,7 +207,7 @@ def assert_equal[
 
     # Cast `rhs` to have the same origin as `lhs`, so that we can delegate to
     # `List.__ne__`.
-    var rhs_origin_casted = rebind[List[StringSlice[O1]]](rhs).copy()
+    var rhs_origin_casted = rebind[List[StringSpan[O1]]](rhs).copy()
 
     if lhs != rhs_origin_casted:
         raise _assert_cmp_error["`left == right` comparison"](
@@ -209,13 +246,13 @@ def assert_equal[
 
 @inline(.always)
 def assert_equal(
-    lhs: StringSlice,
-    rhs: StringSlice,
+    lhs: StringSpan,
+    rhs: StringSpan,
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
 ) raises:
-    """Asserts that a `StringSlice` is equal to a `String`.
+    """Asserts that a `StringSpan` is equal to a `String`.
 
     Args:
         lhs: The left-hand side value.

@@ -49,7 +49,7 @@ def _rel_error(got: np.ndarray, want: np.ndarray) -> float:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_mla_tp1_matches_tp2() -> None:
     hidden, heads, qk_nope, qk_rope, v_head, q_lora, kv_lora = (
@@ -196,17 +196,21 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     slot_idx_np = np.arange(batch_size, dtype=np.uint32)
 
     def assign(layer: KimiK3KDAAttention, tp_size: int) -> None:
-        layer.qkv_proj.weight = Tensor(
+        layer.qkvg_proj.weight = Tensor(
             interleave_for_tp(
-                [weights["q_proj"], weights["k_proj"], weights["v_proj"]],
+                [
+                    weights["q_proj"],
+                    weights["k_proj"],
+                    weights["v_proj"],
+                    weights["g_proj"],
+                    weights["b_proj"],
+                ],
                 tp_size,
             ),
             dtype=DType.float32,
         )
         layer.f_a_proj.weight = Tensor(weights["f_a_proj"], dtype=DType.float32)
         layer.f_b_proj.weight = Tensor(weights["f_b_proj"], dtype=DType.float32)
-        layer.b_proj.weight = Tensor(weights["b_proj"], dtype=DType.float32)
-        layer.g_proj.weight = Tensor(weights["g_proj"], dtype=DType.float32)
         layer.o_proj.weight = Tensor(weights["o_proj"], dtype=DType.float32)
         layer.conv_weight = Tensor(
             interleave_for_tp(np.split(conv_weight_np, 3), tp_size),

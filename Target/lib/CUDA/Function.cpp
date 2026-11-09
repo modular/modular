@@ -19,6 +19,7 @@
 
 #include "llvm/ADT/SmallVector.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <memory>
@@ -124,6 +125,31 @@ M_driver_function::load(M_driver_context &ctx, M_driver_runtime_bundle_t bundle,
     return tl::unexpected(cudaErrorStatus(
         &ctx.device.driver, r,
         "cuFuncSetAttribute NON_PORTABLE_CLUSTER_SIZE_ALLOWED"));
+
+  // Lift the dynamic shared memory cap from CUDA's 48 KB default to all a
+  // block can opt into. The cap limits what a launch may request rather than
+  // reserving anything, so one loaded function serves launches of any size.
+  int optinBytes = 0;
+  if (CUresult r = cuda.cuDeviceGetAttribute(
+          &optinBytes, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN,
+          ctx.device.deviceId);
+      r != CUDA_SUCCESS)
+    return tl::unexpected(cudaErrorStatus(
+        &ctx.device.driver, r,
+        "cuDeviceGetAttribute MAX_SHARED_MEMORY_PER_BLOCK_OPTIN"));
+  int staticBytes = 0;
+  if (CUresult r = cuda.cuFuncGetAttribute(
+          &staticBytes, CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, func);
+      r != CUDA_SUCCESS)
+    return tl::unexpected(cudaErrorStatus(
+        &ctx.device.driver, r, "cuFuncGetAttribute SHARED_SIZE_BYTES"));
+  if (CUresult r = cuda.cuFuncSetAttribute(
+          func, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+          std::max(optinBytes - staticBytes, 0));
+      r != CUDA_SUCCESS)
+    return tl::unexpected(
+        cudaErrorStatus(&ctx.device.driver, r,
+                        "cuFuncSetAttribute MAX_DYNAMIC_SHARED_SIZE_BYTES"));
 
   auto ptr = std::make_unique<M_driver_function>(
       M_driver_function{.function = func, .module = bundle->module});

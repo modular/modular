@@ -1248,7 +1248,7 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
           cast<StructASTDecl>(shared.declResolver->addBytecodeDecl(
               &*structOp, structOp.getSymNameAttr(), &shared.getTopLevelDecl(),
               DeclResolvedness::body));
-      structDecl.setSelfType(StructASTDecl::computeSelfType(structOp));
+      structDecl.setSelfType(structDecl.computeSelfType());
       for (auto fn : structOp.getOps<FnOp>()) {
         auto &fnDecl = cast<DefASTDecl>(shared.declResolver->addBytecodeDecl(
             fn, fn.getSourceNameAttr(), &structDecl, DeclResolvedness::body));

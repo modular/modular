@@ -360,7 +360,7 @@ def _check[
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, tan(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(padded), ctx)
+    elementwise[pack_size](func, Coord(padded), ctx)
 
     var worst_gpu = 0.0
     var worst_host = 0.0

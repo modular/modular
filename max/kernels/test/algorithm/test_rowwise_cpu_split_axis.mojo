@@ -14,9 +14,8 @@
 split-axis tiers (few rows, `axis_size >= 262144`). One row takes the
 pointwise split-axis tier; two rows stay one worker per row."""
 
-from std.math import exp, log, sqrt
+from std.math import exp, log
 
-from builtin_kernels.rowwise_normalization import rms_norm
 from builtin_kernels.rowwise_softmax import softmax
 from layout import Coord, TileTensor, row_major
 from std.testing import assert_almost_equal, TestSuite
@@ -44,52 +43,6 @@ def _sample_cols(cols: Int) -> List[Int]:
     return out^
 
 
-def _check_rms_norm[cols: Int](rows: Int) raises:
-    var x = _input(rows, cols)
-    var out = List[Scalar[dtype]](length=rows * cols, fill=0)
-    var gamma_h = List[Scalar[dtype]](length=cols, fill=1)
-    var gamma = TileTensor[mut=False](gamma_h.unsafe_ptr(), row_major(cols))
-    var x_ptr = x.unsafe_ptr()
-    var out_ptr = out.unsafe_ptr()
-    comptime eps = Float32(1e-5)
-
-    @inline(.always)
-    def input_fn[
-        width: Int, alignment: Int
-    ](c: Coord) {var x_ptr} -> SIMD[dtype, width]:
-        var i = Int(c[0]) * cols + Int(c[1])
-        return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
-
-    @inline(.always)
-    def output_fn[
-        width: SIMDLength, alignment: Int
-    ](c: Coord, v: SIMD[dtype, width]) {var out_ptr}:
-        var i = Int(c[0]) * cols + Int(c[1])
-        out_ptr.unsafe_offset(i).unsafe_store[width=width](v)
-
-    rms_norm[dtype, 2, target="cpu", epsilon=eps, weight_offset=Float32(0)](
-        input_fn,
-        output_fn,
-        Coord(Index(rows, cols)),
-        cols,
-        gamma,
-    )
-
-    for r in range(rows):
-        var ss = Float64(0)
-        for c in range(cols):
-            ss += Float64(x[r * cols + c]) ** 2
-        var inv = 1.0 / sqrt(ss / Float64(cols) + Float64(eps))
-        for c in _sample_cols(cols):
-            assert_almost_equal(
-                Float64(out[r * cols + c]),
-                Float64(x[r * cols + c]) * inv,
-                atol=1e-3,
-                msg=String("rms_norm row ", r, " col ", c),
-            )
-    _ = gamma_h^
-
-
 def _check_softmax[cols: Int, logsoftmax: Bool = False](rows: Int) raises:
     var x = _input(rows, cols)
     var out = List[Scalar[dtype]](length=rows * cols, fill=0)
@@ -103,7 +56,7 @@ def _check_softmax[cols: Int, logsoftmax: Bool = False](rows: Int) raises:
         var i = Int(c[0]) * cols + Int(c[1])
         return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
 
-    softmax[dtype, 2, target="cpu", logsoftmax=logsoftmax](
+    softmax[dtype, 2, logsoftmax=logsoftmax](
         input_fn, Coord(Index(rows, cols)), cols, out_t, 1
     )
 
@@ -131,18 +84,6 @@ def _check_softmax[cols: Int, logsoftmax: Bool = False](rows: Int) raises:
                     rtol=1e-3,
                     msg=String("softmax row ", r, " col ", c),
                 )
-
-
-def test_rms_norm_one_row() raises:
-    _check_rms_norm[cols_even](1)
-
-
-def test_rms_norm_one_row_uneven() raises:
-    _check_rms_norm[cols_uneven](1)
-
-
-def test_rms_norm_two_rows() raises:
-    _check_rms_norm[cols_even](2)
 
 
 def test_softmax_one_row() raises:

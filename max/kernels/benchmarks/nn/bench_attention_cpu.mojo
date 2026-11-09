@@ -19,7 +19,6 @@ from std.sys.info import align_of
 from layout import Coord, TileTensor, UNKNOWN_VALUE, row_major
 from nn.attention.cpu.mha import flash_attention
 
-from std.utils import IndexList
 from std.utils.index import Index
 
 
@@ -101,26 +100,22 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
 
     @inline(.always)
     def input_k_fn[
-        simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
-        comptime assert _rank == 3
-        return k.load[width=simd_width, alignment=align_of[dtype]()](Coord(idx))
+        simd_width: Int
+    ](idx: Coord) {imm} -> SIMD[dtype, simd_width]:
+        comptime assert idx.rank == 3
+        return k.load[width=simd_width, alignment=align_of[dtype]()](idx)
 
     @inline(.always)
     def input_v_fn[
-        simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
-        comptime assert _rank == 3
-        return v.load[width=simd_width, alignment=align_of[dtype]()](Coord(idx))
+        simd_width: Int
+    ](idx: Coord) {imm} -> SIMD[dtype, simd_width]:
+        comptime assert idx.rank == 3
+        return v.load[width=simd_width, alignment=align_of[dtype]()](idx)
 
     @inline(.always)
-    def mask_fn[
-        simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
-        comptime assert _rank == 3
-        return mask.load[width=simd_width, alignment=align_of[dtype]()](
-            Coord(idx)
-        )
+    def mask_fn[simd_width: Int](idx: Coord) {imm} -> SIMD[dtype, simd_width]:
+        comptime assert idx.rank == 3
+        return mask.load[width=simd_width, alignment=align_of[dtype]()](idx)
 
     comptime scale = 0.25
 

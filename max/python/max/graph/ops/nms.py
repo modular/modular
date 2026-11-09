@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for non-maximum suppression."""
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 
 from ..dim import Dim
@@ -103,7 +103,7 @@ def non_maximum_suppression(
     )
 
     return Graph.current._add_op_generated(
-        rmo.MoNonMaximumSuppressionOp,
+        mo.NonMaximumSuppressionOp,
         result_type.to_mlir(),
         boxes,
         scores,

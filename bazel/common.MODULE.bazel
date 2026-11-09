@@ -95,11 +95,17 @@ use_repo(toolchains, "default_rust_toolchains")
 rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
 use_repo(rules_rust, "rules_rust")
 
-# The pyo3 rule attaches rustfmt_aspect, which pulls the nightly rustfmt
-# toolchain into every cold build of a pyo3 extension. Nothing reads its
-# output; //:format runs rustfmt directly.
 rules_rust.patch(
-    patches = ["//bazel/public-patches:rules_rust_pyo3_no_rustfmt_aspect.patch"],
+    patches = [
+        # rules_rust prefers a cc dependency's interface library (.ifso) but
+        # links it as -ldylib=<name>, which the linker resolves only to
+        # lib<name>.so; this links the .ifso by its file name instead.
+        "//bazel/public-patches:rules_rust_link_interface_libraries.patch",
+        # The pyo3 rule attaches rustfmt_aspect, which pulls the nightly
+        # rustfmt toolchain into every cold build of a pyo3 extension. Nothing
+        # reads its output; //:format runs rustfmt directly.
+        "//bazel/public-patches:rules_rust_pyo3_no_rustfmt_aspect.patch",
+    ],
     strip = 1,
 )
 
@@ -140,6 +146,8 @@ single_version_override(
         # TODO (SDLC-2681): figure out why this is breaking our code.
         # reverts https://github.com/bazel-contrib/rules_python/pull/3242
         "//bazel/public-patches:rules_python_revert.patch",
+        # TODO: Remove when we bump enough
+        "//bazel/public-patches:rules_python_315.patch",
     ],
     version = "1.8.5",
 )
@@ -150,7 +158,7 @@ single_version_override(
     patches = [
         # https://github.com/jvolkman/rules_pycross/pull/219
         "//bazel/public-patches:rules_pycross_exports.patch",
-        # TODO: Remove when 3.8 is no longer pulled in transitively
+        # TODO: Remove when 3.8 is no longer pulled in transitively. We also use this to add 3.15.
         "//bazel/public-patches:rules_pycross_versions.patch",
     ],
 )
@@ -205,6 +213,7 @@ PYTHON_VERSIONS = [
     "3_12",
     "3_13",
     "3_14",
+    "3_15",
 ]
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
@@ -1150,11 +1159,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "name": "torch_gpt-oss_golden.tar.gz",
         "sha256": "808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
-    },
-    {
-        "name": "torch_olmo-1b-hf_golden.tar.gz",
-        "sha256": "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
     },
     {
         "name": "torch_llama3-8b_q4_k_golden.tar.gz",

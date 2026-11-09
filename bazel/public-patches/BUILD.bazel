@@ -17,8 +17,8 @@ modular_cc_library(name = "empty_lib")
 alias(
     name = "NVPTX",
     actual = select({
-        "//:linux_x86_64": "@nvptxcompiler_x86_64//:NVPTX",
-        "//:linux_aarch64": "@nvptxcompiler_aarch64//:NVPTX",
+        "//:linux_x86_64": "@nvptxcompiler_x86_64//:NVPTX.import",
+        "//:linux_aarch64": "@nvptxcompiler_aarch64//:NVPTX.import",
         "@platforms//os:macos": ":empty_lib",
     }),
 )

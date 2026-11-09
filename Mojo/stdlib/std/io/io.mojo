@@ -25,7 +25,7 @@ from std.ffi import (
     external_call,
     CStringSpan,
 )
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.sys import (
     is_gpu,
     stdin,
@@ -111,15 +111,21 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         """
         return self.read_until_delimiter("\n")
 
-    def read_until_delimiter(self, delimiter: StringSlice) raises -> String:
+    def read_until_delimiter(self, delimiter: StringSpan) raises -> String:
         """Reads an entire line from a stream, up to the `delimiter`.
         Does not include the delimiter in the result.
 
         Args:
-            delimiter: The delimiter to read until.
+            delimiter: The delimiter to read until. Must be a single
+                codepoint.
 
         Returns:
             The text read from the stdin.
+
+        Raises:
+            Error: If `delimiter` is empty or contains more than one
+                codepoint, or if reading fails or reaches EOF before any
+                input.
 
         Examples:
 
@@ -156,19 +162,19 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
+            libc.free(unsafe_cast[Type=NoneType](buffer))
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )
             )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
-        libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
+        libc.free(unsafe_cast[Type=NoneType](buffer))
         return s^
 
 
@@ -281,8 +287,8 @@ def print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StringSlice = " ",
-    end: StringSlice = "\n",
+    sep: StringSpan = " ",
+    end: StringSpan = "\n",
     flush: Bool = False,
     var file: RawFileDescriptor = stdout,
 ):

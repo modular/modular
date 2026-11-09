@@ -14,12 +14,13 @@
 
 import asyncio
 import weakref
+from collections.abc import Sequence
 
 import pytest
 from max import functional as F
-from max.driver import CPU
+from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.graph import Graph
+from max.graph import BufferValue, Graph, ops
 from max.tensor import realization_context as rc
 from max.tensor.executor import CompilingExecutor
 from max.tensor.support import _session
@@ -29,6 +30,71 @@ from max.tensor.tensor import (
     current_realization_context,
     realization_context,
 )
+
+
+class _FailingExecutor:
+    """Fails the first ``failures`` graphs it is handed, then runs for real.
+
+    Letting a later call through is what shows the retry reaches execution
+    instead of failing on a malformed graph.
+    """
+
+    def __init__(self, failures: int = 1) -> None:
+        self.failures = failures
+        self.calls = 0
+        self._inner = CompilingExecutor()
+
+    def execute(
+        self, graph: Graph, inputs: Sequence[Buffer]
+    ) -> Sequence[Buffer | None]:
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise RuntimeError("executor exploded")
+        return self._inner.execute(graph, inputs)
+
+
+class _FailingAfterExecutionExecutor:
+    """Runs the graph for real, then raises on its first call.
+
+    Models a failure that arrives once the graph's work is enqueued, which is
+    the case a retry must not run again.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self._inner = CompilingExecutor()
+
+    def execute(
+        self, graph: Graph, inputs: Sequence[Buffer]
+    ) -> Sequence[Buffer | None]:
+        self.calls += 1
+        results = self._inner.execute(graph, inputs)
+        if self.calls == 1:
+            raise RuntimeError("executor exploded")
+        return results
+
+
+class _BadResultOnceExecutor:
+    """Returns a real result with one non-buffer entry on its first call.
+
+    Every result is rejected before any is applied, so the graph runs but
+    nothing lands.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self._inner = CompilingExecutor()
+
+    def execute(
+        self, graph: Graph, inputs: Sequence[Buffer]
+    ) -> Sequence[Buffer | None]:
+        self.calls += 1
+        results: list[Buffer | None] = list(self._inner.execute(graph, inputs))
+        if self.calls == 1:
+            # Outputs are the seed, then the tensors in creation order, so
+            # index 2 is `b` in the test below; everything before it applies.
+            results[2] = None
+        return results
 
 
 def test_eager_context_executes_on_exit() -> None:
@@ -82,6 +148,223 @@ def test_eager_multiple_operations_batched() -> None:
         assert not any(t.real for t in (a, b, c, d))
 
     assert all(t.real for t in (a, b, c, d))
+
+
+def test_retry_after_a_failed_realization_reruns_the_graph() -> None:
+    """The retry must not trip over the terminator the first attempt left."""
+    executor = _FailingExecutor()
+    ctx = rc.EagerRealizationContext(executor=executor)
+
+    with pytest.raises(RuntimeError, match="executor exploded"):
+        with ctx, realization_context(ctx):
+            a = Tensor.zeros([2, 2])
+            b = a + 1
+
+    assert not b.real
+
+    asyncio.run(b.realize)
+
+    assert b.real
+    assert b.driver_tensor.to(CPU())[0, 0].item() == 1.0
+
+
+def test_a_failure_that_recurs_on_retry_raises_the_original_error() -> None:
+    """Every attempt reports its own failure, never a verifier error."""
+    executor = _FailingExecutor(failures=2)
+    ctx = rc.EagerRealizationContext(executor=executor)
+
+    with pytest.raises(RuntimeError, match="executor exploded"):
+        with ctx, realization_context(ctx):
+            a = Tensor.zeros([2, 2])
+            b = a + 1
+
+    with pytest.raises(RuntimeError, match="executor exploded"):
+        asyncio.run(b.realize)
+
+    assert executor.calls == 2
+    assert not b.real
+
+
+def test_a_retry_does_not_replay_an_in_place_mutation() -> None:
+    """A failure once the graph ran spends the context, not the buffer."""
+    executor = _FailingAfterExecutionExecutor()
+    ctx = rc.EagerRealizationContext(executor=executor)
+    a = Tensor.zeros([1])
+
+    with pytest.raises(RuntimeError, match="executor exploded"):
+        with ctx, realization_context(ctx):
+            F.buffer_store(a, a + 1)
+
+    assert a.driver_tensor.to(CPU())[0].item() == 1.0
+
+    with pytest.raises(RuntimeError, match="after execution began"):
+        a.item()
+
+    assert executor.calls == 1, "a retry would store into `a` a second time"
+    assert a.driver_tensor.to(CPU())[0].item() == 1.0
+
+
+def test_a_failing_stamp_does_not_replace_the_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recording is best effort, and the graph stays extendable regardless."""
+    stamp = rc.stamp_device_write
+
+    def raising(
+        written: Sequence[Buffer],
+        read: Sequence[Buffer] = (),
+        error: str | None = None,
+    ) -> None:
+        raise RuntimeError("event pool exhausted")
+
+    ctx = rc.EagerRealizationContext(executor=_BadResultOnceExecutor())
+    monkeypatch.setattr(rc, "stamp_device_write", raising)
+    with pytest.raises(TypeError, match="Expected all results"):
+        with ctx, realization_context(ctx):
+            a = Tensor.zeros([2, 2])
+            b = a + 1
+
+    assert not b.real
+
+    monkeypatch.setattr(rc, "stamp_device_write", stamp)
+    asyncio.run(b.realize)
+
+    assert b.real
+    assert b.driver_tensor.to(CPU())[0, 0].item() == 1.0
+
+
+def test_a_failure_after_execution_stamps_its_mutated_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A host read of a buffer the graph wrote must wait, even after a failure.
+
+    The executor returned, so the mutated input holds an in-flight device
+    write and gets no poison: the failure path must record a completion for
+    it. The buffers are untracked on a host device, so a CPU run can only
+    check that the bridge is handed them.
+    """
+    source = Tensor.zeros([2, 2])
+    calls: list[tuple[list[Buffer], list[Buffer], str | None]] = []
+    stamp = rc.stamp_device_write
+
+    def recording(
+        written: Sequence[Buffer],
+        read: Sequence[Buffer] = (),
+        error: str | None = None,
+    ) -> None:
+        calls.append((list(written), list(read), error))
+        if len(calls) == 1:
+            raise RuntimeError("event pool exhausted")
+        stamp(written, read, error)
+
+    monkeypatch.setattr(rc, "stamp_device_write", recording)
+    ctx = rc.EagerRealizationContext(executor=CompilingExecutor())
+    with pytest.raises(RuntimeError, match="event pool exhausted"):
+        with ctx, realization_context(ctx):
+            F.buffer_store(source, source + 1)
+            b = source * 2
+
+    assert calls, "the failure path must record a completion"
+    written, read, error = calls[-1]
+    assert error is None, "the work is in flight, not failed"
+    assert source.driver_tensor in written
+    assert b.driver_tensor in written
+    # The mutated input and the two outputs: the seed is staged once, not
+    # duplicated as a pending tensor.
+    assert len(written) == 3
+    assert read, "the submission read its inputs, and the records say so"
+
+
+def test_a_failed_realization_leaves_the_graph_extendable() -> None:
+    """Ops built after a failure still land before the terminator."""
+    executor = _FailingExecutor()
+    ctx = rc.EagerRealizationContext(executor=executor)
+
+    with pytest.raises(RuntimeError, match="executor exploded"):
+        with ctx, realization_context(ctx):
+            a = Tensor.zeros([2, 2])
+            b = a + 1
+
+    with ctx, realization_context(ctx):
+        c = b * 2
+
+    assert c.real
+    assert c.driver_tensor.to(CPU())[0, 0].item() == 2.0
+
+
+def test_a_failed_realization_can_reuse_a_pruned_source() -> None:
+    """A source only a dropped temporary used keeps a usable graph value.
+
+    Finalizing drops the temporary, which erases the source's graph argument,
+    so the cached value has to go with it.
+    """
+    executor = _FailingExecutor()
+    ctx = rc.EagerRealizationContext(executor=executor)
+    source = Tensor.ones([2, 2])
+
+    with pytest.raises(RuntimeError, match="executor exploded"):
+        with ctx, realization_context(ctx):
+            dropped = source + 1
+            b = Tensor.zeros([2, 2]) + 2
+            del dropped
+
+    with ctx, realization_context(ctx):
+        c = source + b
+
+    assert c.real
+    assert c.driver_tensor.to(CPU())[0, 0].item() == 3.0
+
+
+def test_pruned_read_leaves_a_pending_store_unrealized() -> None:
+    """Pruning a dropped read must not realize the tensor a store targets.
+
+    The read leaves an unused read-only argument beside the mutable input the
+    store uses. Treating the pruned argument as the tensor's only source marks
+    it realized, and the pending store silently never happens.
+    """
+    executor = _FailingAfterExecutionExecutor()
+    ctx = rc.EagerRealizationContext(executor=executor)
+    a = Tensor.zeros([1])
+
+    with pytest.raises(RuntimeError, match="executor exploded"):
+        with ctx, realization_context(ctx):
+            dropped = a + 1
+            del dropped
+            F.buffer_store(a, Tensor.ones([1]) + 1)
+
+    # The graph ran, so the context is spent rather than cleanly retryable.
+    assert not a.real
+    with pytest.raises(RuntimeError, match="after execution began"):
+        a.item()
+
+    assert executor.calls == 1, "the store already ran"
+
+
+def test_signal_buffers_survive_pruning_an_unrelated_source() -> None:
+    """Only a pruned signal buffer may reset the cached signal buffers.
+
+    A signal buffer is a ``BufferType`` input, which a mutable source stands
+    in for here: real ones need two accelerators. Resetting the cache for an
+    unrelated argument makes the next collective add the shared runtime
+    buffers to the graph a second time.
+    """
+    ctx = rc.EagerRealizationContext()
+    signal = Tensor.zeros([4], dtype=DType.uint8)
+    unused = Tensor.ones([1])
+
+    with ctx, realization_context(ctx):
+        (buffer,) = ctx.add_mutable_source(signal).values
+        assert isinstance(buffer, BufferValue)
+        ctx.signal_buffers = [buffer]
+        ctx.add_source(unused)
+        loaded = Tensor.from_graph_value(ops.buffer_load(buffer))
+
+    assert loaded.real
+    assert id(unused) not in ctx.source_values, "the unused source was pruned"
+    assert ctx.signal_buffers is not None, (
+        "an unrelated pruned source reset them"
+    )
+    assert ctx.signal_buffers[0] is buffer
 
 
 def test_lazy_context_does_not_execute_on_exit() -> None:

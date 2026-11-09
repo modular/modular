@@ -50,6 +50,7 @@
 
 #include "LogChannels.h"
 #include "MpscRingBuffer.h"
+#include "Support/SymbolExport.h"
 
 #include "llvm/ADT/SmallString.h"
 
@@ -268,7 +269,7 @@ struct LogRecord {
 // Receives formatted log lines and writes to destinations (stdout, file &c).
 class Sink;
 
-class Logger {
+class MODULAR_CXX_EXPORT Logger {
   /// Number of slots in the logger's Ring Buffer.
   static constexpr size_t kRingCapacity = 1u << 12;
   /// How much char data can be stored by each log message.

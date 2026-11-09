@@ -3,6 +3,12 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+_EXTRA_DEPS = {
+    "test_rowwise_public_reduce.mojo": [
+        "//max/kernels/test/common/rowwise_reduce_test_utils",
+    ],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -12,7 +18,7 @@ package(default_visibility = ["//max:consumers"])
             "//max:algorithm",
             "//max:builtin_kernels",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(["**/*.mojo"])
 ]

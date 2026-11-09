@@ -1,7 +1,7 @@
 // RUN: mo-opt %s --mogg-to-mgp | FileCheck %s
 
 
-// CHECK-LABEL: mgp.model @transfer_d2h : mof
+// CHECK-LABEL: mgp.model @transfer_d2h
 //       CHECK: } execute ([[CH:%.*]]: !mef.chain, [[CTX:%.*]]: !mgp.context, {{.*}}
 // CHECK: [[CPY_CH:%.*]] = mgp.buffer.device_to_host {{.*}}, [[DBUF:%.*]], [[HBUF:%.*]], {{.*}} : !mgp.buffer
 // CHECK-NEXT: [[SYNC_CH:%.*]] = mgp.sync([[CPY_CH]]

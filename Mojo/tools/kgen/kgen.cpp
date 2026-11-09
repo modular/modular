@@ -22,7 +22,6 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/Precompile/Precompile.h"
 #include "Mojo/Support/CLOptionUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"
@@ -329,6 +328,18 @@ static LogicalResult createDependencyFile(const CLOptions &clOptions,
 /// Runs the tool pipeline on the file fragment passed in. The pipeline does not
 /// output to the specific ostream provided to it, rather it opens and writes to
 /// files that are designated by the funcs it operates on.
+
+/// Returns whether --mlir-disable-threading was passed. The flag promises
+/// MLIR that nothing touches IR concurrently, so the AsyncRT pipeline must
+/// run single-threaded as well.
+static bool isMLIRThreadingDisabled() {
+  auto &opts = llvm::cl::getRegisteredOptions();
+  auto it = opts.find("mlir-disable-threading");
+  if (it == opts.end())
+    return false;
+  return static_cast<llvm::cl::opt<bool> *>(it->second)->getValue();
+}
+
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                      CLOptions &clOptions) {
   DialectRegistry registry;
@@ -355,6 +366,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   registerKGENToLLVMTranslation(registry);
 
   // Create our context, with a cpuDevice; this should not fail.
+  if (isMLIRThreadingDisabled())
+    clOptions.cpuDeviceOptions.withSingleThreaded();
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen", Init::Options().withCPUDeviceOptions(
                   clOptions.cpuDeviceOptions.withCPUAffinity(false)));
@@ -790,6 +803,8 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
                                ? outputPath.stem().string()
                                : sourceName;
 
+  if (isMLIRThreadingDisabled())
+    clOptions.cpuDeviceOptions.withSingleThreaded();
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen", Init::Options().withCPUDeviceOptions(
                   clOptions.cpuDeviceOptions.withCPUAffinity(false)));
@@ -799,6 +814,7 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
   registerAllKGENDialects(registry);
   registerContext(registry, *ctxOr);
   MLIRContext context(registry, MLIRContext::Threading::DISABLED);
+  configureKGENContext(&context);
 
   llvm::SourceMgr sourceMgr;
   configureSourceMgr(*clOptions.state, clOptions.driverOptions, sourceMgr);
@@ -986,6 +1002,7 @@ int main(int argc, char **argv) {
 
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
+        configureKGENContext(ctx);
         ctx->printOpOnDiagnostic(true);
         ScopedMLIRWarningHandler warningHandler(
             ctx, clOptions.frontendOptions.disableWarnings,

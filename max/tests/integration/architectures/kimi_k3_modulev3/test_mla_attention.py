@@ -53,7 +53,7 @@ def _make_layer() -> KimiK3MLAAttention:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_output_gate_zeroes_the_output() -> None:
     """Forcing ``g_proj``'s weight to a saturating value must zero the
@@ -138,7 +138,7 @@ def test_rope_slice_is_never_rotated() -> None:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_forward_pass_runs_with_correct_shape_and_dtype() -> None:
     """Sanity: the full layer compiles and runs end to end."""

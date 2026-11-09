@@ -617,11 +617,11 @@ struct TestAutoParamsAndSugar[f1: HasSize](Movable where False):
         # expected-error @+1 {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[Int(42)]' to 'HasSize[Int(4)]'}}
         takes4(HasSize[StructWithAlias.size_lit]())
 
-def test_differ_origins(a: Optional[UnsafePointer[Int, UntrackedOrigin[mut=True]]]):
+def test_differ_origins(a: Optional[Pointer[Int, UntrackedOrigin[mut=True]]]):
     # expected-error @below {{cannot implicitly convert}}
     # expected-note @below {{.T.origin of the first value is 'MutUntrackedOrigin' but the second value is 'MutAnyOrigin'}}
     # expected-note @below {{'MutAnyOrigin' is aka 'MutUnsafeAnyOrigin'}}
-    var b : Optional[UnsafePointer[Int, MutAnyOrigin]] = a
+    var b : Optional[Pointer[Int, MutAnyOrigin]] = a
 
 
 struct TakeAnything[T: AnyType, //, a: T](Movable where False):
@@ -696,7 +696,17 @@ struct UnboundFieldContainer[T: AnyType, size: Int](Movable where False):
 
 struct UnboundFieldHolder(Movable where False):
     # expected-error @below {{'UnboundFieldContainer[Int, _]' is not concrete, use '[]' to bind missing parameters}}
+    # expected-note @below {{missing parameter 'size'}}
     var data: UnboundFieldContainer[Int, _]
+
+struct ThreeParams[a: Int, b: Int, c: Int](Movable where False):
+    def __init__(out self): pass
+
+struct InterleavedHoleHolder(Movable where False):
+    # expected-error @below {{'ThreeParams[_, Int(1), _]' is not concrete, use '[]' to bind missing parameters}}
+    # expected-note @below {{missing parameter 'a'}}
+    # expected-note @below {{missing parameter 'c'}}
+    var data: ThreeParams[_, 1, _]
 
 def use_unbound_field_holder():
     var x: UnboundFieldHolder

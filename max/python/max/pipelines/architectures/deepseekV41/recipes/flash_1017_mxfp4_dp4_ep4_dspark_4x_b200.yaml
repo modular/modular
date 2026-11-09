@@ -35,6 +35,7 @@ speculative:
   logits_delivery: replica
 
 runtime:
+  prefer_module_v3: false
   ep_size: 4
   max_batch_size: 16
   max_batch_input_tokens: 8192

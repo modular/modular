@@ -15,6 +15,7 @@
 #define KGEN_MOJOPARSER_PARAMETERINFERENCE_H
 
 #include "InferenceState.h"
+#include "Mojo/MojoParser/SharedState.h"
 #include "OverloadSet.h"
 
 namespace M::KGEN::LIT {

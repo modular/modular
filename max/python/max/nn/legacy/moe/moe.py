@@ -23,20 +23,20 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from typing_extensions import Self
-
-from .._identity import IdentityMap
-from ..activation import GatedActivation
-from ..comm.ep import EPBatchManager
-from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import (
+from max.nn._graph_ops import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
 )
+from max.nn._graph_ops.ep import fused_silu
+from max.nn._identity import IdentityMap
+from max.nn.activation import GatedActivation
+from max.nn.quant_config import QuantConfig
+from typing_extensions import Self
+
+from ..comm.ep import EPBatchManager
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
-from ..quant_config import QuantConfig
 
 
 def make_concatenated_gated_activation_fn(
@@ -247,6 +247,20 @@ class MoE(Module, Shardable):
             ``[gate | up]``. The default ``gate_up_proj`` builds concatenated
             rows; a subclass whose ``gate_up_proj`` returns interleaved rows
             sets this. Defaults to ``False``.
+        fused_swiglu_layout_without_ep: Whether an NVFP4 layer that runs
+            without expert parallelism on one device sigma-permutes its gate-up
+            projection (see ``quant_config.can_use_fused_swiglu``), so its
+            experts take the fused SwiGLU+quant grouped matmul that expert
+            parallelism already uses. Defaults to ``False``.
+        max_routed_rows: An upper bound on the routed rows one forward pass
+            sends through the experts (tokens times ``num_experts_per_token``),
+            or 0 when unknown. The fused MegaFFN sizes its arrival counters
+            from it when the row count is dynamic. Defaults to 0.
+        megaffn_prefill_dynamic_claim: Whether a fused MegaFFN claims its
+            prefill tiles from a shared counter instead of a round-robin
+            share. Set it for a layer that runs beside a kernel holding SMs,
+            such as a pipeline stage's NCCL send. Only the fused SwiGLU path
+            reads it. Defaults to ``False``.
         shared_experts_dtype: Weight storage dtype for shared-expert MLPs. When
             equal to ``dtype`` (routed experts) and ``quant_config`` is set,
             shared experts use the same quantization as routed experts. When
@@ -306,6 +320,9 @@ class MoE(Module, Shardable):
         dtype: DType = DType.bfloat16,
         activation: GatedActivation | None = None,
         interleaved_gate_up: bool = False,
+        fused_swiglu_layout_without_ep: bool = False,
+        max_routed_rows: int = 0,
+        megaffn_prefill_dynamic_claim: bool = False,
         pre_expert_norm_cls: Callable[[], Module] | None = None,
         ep_batch_manager: EPBatchManager | None = None,
         quant_config: QuantConfig | None = None,
@@ -329,6 +346,9 @@ class MoE(Module, Shardable):
         self.dtype = dtype
         self.activation = activation or GatedActivation()
         self.interleaved_gate_up = interleaved_gate_up
+        self.fused_swiglu_layout_without_ep = fused_swiglu_layout_without_ep
+        self.max_routed_rows = max_routed_rows
+        self.megaffn_prefill_dynamic_claim = megaffn_prefill_dynamic_claim
         self.pre_expert_norm_cls = pre_expert_norm_cls
         self.pre_expert_norm = (
             pre_expert_norm_cls() if pre_expert_norm_cls else None
@@ -585,6 +605,9 @@ class MoE(Module, Shardable):
                 dtype=self.dtype,
                 activation=self.activation,
                 interleaved_gate_up=self.interleaved_gate_up,
+                fused_swiglu_layout_without_ep=self.fused_swiglu_layout_without_ep,
+                max_routed_rows=self.max_routed_rows,
+                megaffn_prefill_dynamic_claim=self.megaffn_prefill_dynamic_claim,
                 pre_expert_norm_cls=self.pre_expert_norm_cls,
                 quant_config=self.quant_config,
                 shared_experts_dtype=self.shared_experts_dtype,
@@ -637,12 +660,25 @@ class MoE(Module, Shardable):
         # (gate, up) interleaved N-axis layout that the fused
         # SwiGLU+NVFP4 grouped-matmul kernel consumes. The kernel fuses the
         # activation, so there must be no graph-op gated_activation_fn, and
-        # the layout only makes sense under expert parallelism.
+        # the layout only makes sense under expert parallelism, or on one
+        # device where nothing splits the permuted N axis.
         return (
             self.quant_config is not None
             and self.quant_config.can_use_fused_swiglu
-            and self._ep_batch_manager is not None
+            and (
+                self._ep_batch_manager is not None
+                or self._fuses_swiglu_on_one_device()
+            )
             and self.activation.gated_activation_fn is None
+        )
+
+    def _fuses_swiglu_on_one_device(self) -> bool:
+        """Whether the opt-in fused SwiGLU layout applies without EP."""
+        assert self.quant_config is not None
+        return (
+            self.fused_swiglu_layout_without_ep
+            and self.quant_config.is_nvfp4
+            and len(self.shard_devices) <= 1
         )
 
     @property
@@ -751,10 +787,13 @@ class MoE(Module, Shardable):
         x: TensorValue,
         topk_ids: TensorValue,
         router_weights: TensorValue,
+        layer_idx: TensorValue | None = None,
     ) -> TensorValue:
         """Routed-expert output of the one-launch fused EP MoE.
 
         Only reached when :meth:`_can_fuse_megaffn_ep` is ``True``.
+        ``layer_idx`` is this device's MoE layer index, for expert-load
+        counting.
         """
         raise NotImplementedError(
             "the one-launch fused EP MoE needs quantized (NVFP4 or MXFP8)"

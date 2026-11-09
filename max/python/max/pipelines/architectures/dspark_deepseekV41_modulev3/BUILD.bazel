@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -8,11 +8,13 @@ modular_py_library(
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/dtype",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         # The stages' registration and sequence bound are shared with the
         # graph-API draft.
         "//max/python/max/pipelines/architectures/dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
+        requirement("transformers"),
     ],
 )

@@ -97,7 +97,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @inline(.always)
-    def run_mandelbrot(ctx: DeviceContext) raises {mut out_device}:
+    def run_mandelbrot(ctx: DeviceContext[ctx.target]) raises {mut out_device}:
         ctx.enqueue_function[mandelbrot[origin_of(out_device)]](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),

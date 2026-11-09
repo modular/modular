@@ -32,10 +32,14 @@ MACH_GRAPH_NAMES = {
     },
     "DeepseekV4ForCausalLM": {"dspark": "unified_dspark_deepseekV4"},
     "Gemma4ForConditionalGeneration": {"mtp": "gemma4_with_mtp_graph"},
+    "GlmMoeDsaForCausalLM_ModuleV3": {"mtp": "UnifiedMTPGlm5_2"},
     "KimiK25ForConditionalGeneration": {
         "Eagle3DeepseekV3DraftModel": "eagle3_kimik25_graph",
         "Eagle3MHADeepseekV3DraftModel": "eagle3_mha_kimik25_graph",
         "dflash": "unified_dflash_kimi_k25_graph",
+    },
+    "KimiK3ForConditionalGeneration_ModuleV3": {
+        "dspark": "unified_dspark_kimi_k3_modulev3",
     },
     "MiMoV2ForCausalLM": {"dflash": "unified_dflash_mimo_v2"},
     "Qwen3_5ForConditionalGeneration": {

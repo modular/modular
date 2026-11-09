@@ -23,7 +23,7 @@ and MLA decode shapes.
 
 from std.bit import next_power_of_two, prev_power_of_two
 from max.gpu.host import DeviceAttribute, DeviceContext
-from std.math import ceildiv, clamp
+from std.math import align_up, ceildiv, clamp
 
 # The split-K reducer's `MAX_PARTITIONS` limit.
 comptime MAX_HIP_PARTITIONS = 256
@@ -143,6 +143,47 @@ def cuda_mha_decoding_num_partitions(
     )
 
 
+# The decode fold envelope: S>1 with more query heads per device routes to
+# MLA prefill instead (see `mla_decode_max_seq_len` in mla.mojo), so the fold
+# helper's two-tile rule only applies at or below this head count.
+comptime AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS = 16
+
+
+def amd_mla_decode_fold_num_m_tiles(num_heads: Int, q_seq_len: Int) -> Int:
+    """Number of grid.y M-tiles the AMD MLA decode token-fold launch spans.
+
+    The fold packs `M = num_heads * q_seq_len` query rows into the MMA M
+    dimension. `M <= 16` keeps the legacy BM=16 launch and `M <= 64` one
+    spill-free warp-local tile; past 64 rows the launch would need >= 5
+    warps per CTA, which crosses the 2-waves/SIMD occupancy cliff, so the
+    dispatch ladder (`flare_mla_decoding_dispatch`) splits the rows across
+    two grid.y tiles of `align_up(ceil(M/2), 16)` rows instead -- but only
+    when that half-height tile is head-aligned (`BM_tile % num_heads == 0`),
+    the case the tile-offset row math is validated on. This helper is that
+    ladder rule as a pure function of `(num_heads, q_seq_len)`, so the
+    partition heuristic and the device-graph capture key can count the
+    tiles a launch spans without re-deriving the ladder: each (batch,
+    partition) spawns one CTA per M-tile.
+
+    Args:
+        num_heads: Query heads on this device (fold envelope: <= 16).
+        q_seq_len: Folded query tokens per sequence (S); 1 is plain decode.
+
+    Returns:
+        The M-tile count: 2 for the head-aligned two-tile fold, else 1.
+    """
+    comptime warp_local_m_max = 64
+    if q_seq_len <= 1:
+        return 1
+    var fold_m = num_heads * q_seq_len
+    if align_up(fold_m, 16) <= warp_local_m_max:
+        return 1
+    var bm_tile = align_up(ceildiv(fold_m, 2), 16)
+    if bm_tile % num_heads == 0:
+        return 2
+    return 1
+
+
 def hip_mha_decoding_num_partitions(
     batch_size: Int,
     num_keys: Int,
@@ -150,6 +191,7 @@ def hip_mha_decoding_num_partitions(
     sm_count: Int,
     is_mla: Bool = False,
     block_m: Int = 32,
+    num_m_tiles: Int = 1,
 ) -> Int:
     """Wave-aligned split-K target for MI355X MHA + MLA decode.
 
@@ -192,6 +234,30 @@ def hip_mha_decoding_num_partitions(
       reduce cost. MLA bs=1 is unchanged (two_wave=512 clamps to the 256 cap);
       single-kv-head MHA does move, since its finer split floor doubles pages.
 
+      Multi-tile fold (num_m_tiles > 1, the AMD MLA M > 64 two-tile fold):
+      each (batch, partition) already spans num_m_tiles CTAs, and the
+      split-K workspace round trip (per-partition partials + stats, then
+      the reduce read) scales with np, so past one full wave the extra
+      partitions cost more reduce work than the latency they hide. Target
+      ONE wave of the true CTA count instead, rounded UP to the next
+      power-of-two rung (the mid-point buckets rag the per-partition key
+      stream against the 128-key BN tiles):
+          np_target   = min(next_power_of_two(one_wave), pages)
+      Measured on MI355 (Kimi K3 verify, H=12, fp8 KV, decode+reduce): one
+      wave beats two by 12% at bs=4/32K (np=32 56.9us vs np=64 64.7us) and
+      the single-tile two-wave default (np=128, 84.1us) by 32%; bs=2/32K
+      np=64 vs 128: -24%; bs=3/32K np=64 vs 128: -7%; bs=1/120K np=128 vs
+      256: -15.5%; np=256 at bs=4/32K regresses +36%.
+
+      This target deliberately supersedes `work_floor` (the 1280-key
+      per-partition cap the heads >= 32 branch clamps to): among the
+      measured shapes that cap binds only at 120K context x batch >= 2,
+      and there the curve still falls with np — bs=4/120K: np=32 169.0us
+      < np=64 176.1us < np=128 206.9us < np=192 210.5us (6 reps ABBA) —
+      so the cap's np=96 would sit ~10% above the measured optimum. Once
+      each partition's K-loop runs long, the split-K reduce round trip
+      outweighs the shorter key streams the cap would buy.
+
     Phase 0 sweep (PARTITIONING_PLAN.md) validated MLA-style at h=64:
         bs=1  ctx=131K → np=128 (capped, fills GPU at 1-wave + cap)
         bs=2  ctx=65K  → np=64  (one_wave=64 dominates)
@@ -223,6 +289,11 @@ def hip_mha_decoding_num_partitions(
         is_mla: Whether the caller is the MLA decode path (defaults to `False`).
         block_m: Number of query rows packed into each MLA workgroup. Read
             for MLA only; MHA callers keep the default.
+        num_m_tiles: M-tiles (grid.y blocks) each (batch, partition) spans:
+            2 for the AMD MLA decode two-tile S>1 fold
+            (`amd_mla_decode_fold_num_m_tiles`), 1 for every other caller.
+            Multiplies `ctas_per_partition`, which otherwise counts only the
+            `ceildiv(heads_per_group, block_m)` packing.
     """
     comptime SPLIT_PAGE_SIZE = 256
     comptime MAX_PAGES_PER_SPLIT = 5
@@ -302,8 +373,20 @@ def hip_mha_decoding_num_partitions(
         # heads_per_group < BM).
 
     # MLA-style: also every MHA shape with 32+ kv heads, at any occupancy.
+    # num_m_tiles > 1 only for the AMD MLA two-tile fold: each (batch,
+    # partition) then spans that many grid.y CTAs, which the
+    # ceildiv(heads_per_group, block_m) packing above does not count (the
+    # S=1 multi-tile grid it models is a different launch).
+    #
+    # The product below is the true CTA count only while the head packing is
+    # a single tile (fold heads <= 16 against block_m 32 today); at
+    # heads > block_m it would double-count the packing tiles, so a fold
+    # there must re-derive the count rather than scale this one.
+    assert (
+        num_m_tiles == 1 or ceildiv(heads_per_group, block_m) == 1
+    ), "num_m_tiles > 1 only models a single-tile head packing."
     var ctas_per_partition = max(
-        1, ceildiv(heads_per_group, block_m) * batch_size
+        1, ceildiv(heads_per_group, block_m) * batch_size * num_m_tiles
     )
 
     # Single-kv-head MHA takes a finer split floor: grid_y is 1, so partitions
@@ -345,7 +428,28 @@ def hip_mha_decoding_num_partitions(
         # 256-partition cap = one wave, the most CTAs it can reach. Single-kv-head
         # MHA is capped at 64 instead and does move, because its finer split
         # floor doubles `pages`.
-        np_target = min(two_wave, pages)
+        #
+        # A multi-tile fold launch (num_m_tiles > 1) already splits each
+        # (batch, partition) across num_m_tiles CTAs, and its split-K
+        # workspace round trip (per-partition partials + stats, then the
+        # reduce read) scales with np, so a second partition wave costs more
+        # reduce work than the stalls it hides. Target ONE wave of the true
+        # CTA count instead. Measured on MI355 (Kimi K3 verify, H=12, fp8 KV,
+        # decode+reduce): one wave (np=32 at bs=4/32K, 56.9us) beats two waves
+        # (np=64, 64.7us) by 12% and the single-tile two-wave default (np=128,
+        # 84.1us) by 32%; bs=2/32K np=64 vs 128 -24%; bs=1/120K np=128 vs 256
+        # -15.5%; np=256 at bs=4/32K regresses +36%.
+        var target_wave = two_wave
+        if num_m_tiles > 1:
+            # Round the wave target up to a power-of-two rung. The ladder's
+            # mid-point buckets (48, 96, ...) exist to relieve over-partitioning
+            # in the work-floor branch; on a wave-fill target they rag the
+            # per-partition key stream against the 128-key BN tiles
+            # (32K/48 = 5.33 tiles per partition, a 6-tile pole 50% longer
+            # than np=64's even 4) and measured +10.7% at bs=3/32K (72.5us vs
+            # np=128's 65.5us, 6 reps ABBA) where np=64 measured best (60.7us).
+            target_wave = next_power_of_two(one_wave)
+        np_target = min(target_wave, pages)
     else:
         # MLA num_heads >= 32, MHA with 32+ kv heads (which skips the MHA-style
         # branch at any occupancy, since `heads_per_group < BM` is false), and
@@ -380,7 +484,7 @@ def amd_sparse_mla_decode_num_partitions(
     `topk` tokens of context the kernel's work no longer grows. The count
     is a function of `(batch_size, topk, num_heads, sm_count)` only, so the
     decode kernel and the device-graph capture key
-    (`mla_decode_dispatch_scalars`) compute the same value from the same
+    (`amd_mla_decode_dispatch_scalars`) compute the same value from the same
     inputs.
 
     With `num_heads <= 16` every token is one CTA per partition, and the
@@ -519,6 +623,7 @@ def mha_decoding_num_partitions(
     heads_per_group: Int,
     ctx: DeviceContext,
     is_mla: Bool = False,
+    num_m_tiles: Int = 1,
 ) raises -> Int:
     """Dispatches to the backend-specific decode split-K partition heuristic.
 
@@ -532,6 +637,8 @@ def mha_decoding_num_partitions(
         heads_per_group: Query heads sharing each kv-head group (kv_num_heads for MHA, num_heads for MLA).
         ctx: Device context used to query the backend API and SM count.
         is_mla: Whether the caller is the MLA decode path (HIP only).
+        num_m_tiles: M-tiles each (batch, partition) spans (AMD MLA
+            two-tile fold only; see `hip_mha_decoding_num_partitions`).
 
     Returns:
         Number of split-K partitions for the decode kernel's split-K loop.
@@ -550,6 +657,14 @@ def mha_decoding_num_partitions(
                 heads_per_group,
                 sm_count,
                 is_mla=is_mla,
+                num_m_tiles=num_m_tiles,
+            )
+        # The multi-tile fold is an AMD-only launch geometry; the CUDA
+        # heuristic has no equivalent, so a non-default count here is a
+        # caller bug.
+        if num_m_tiles > 1:
+            raise Error(
+                "num_m_tiles > 1 is only valid on the HIP MLA decode path."
             )
         return cuda_mha_decoding_num_partitions(
             batch_size,
@@ -601,3 +716,88 @@ def mha_decoding_max_num_partitions(
     return mha_decoding_num_partitions(
         batch_size, num_keys, heads_per_group, ctx
     )
+
+
+def amd_mla_decode_dispatch_scalars(
+    batch_size: Int,
+    max_cache_valid_length: Int,
+    q_max_seq_len: Int,
+    num_heads: Int,
+    is_fp8_kv: Bool,
+    ctx: DeviceContext,
+    sparse_indices_stride: Int = 0,
+) raises -> Tuple[Int, Int, Int]:
+    """Returns the AMD MLA decode dispatch metadata.
+
+    Returns `(batch_size, q_max_seq_len, num_partitions)`. The AMD MLA decode
+    kernel bakes its split-K grid from `mha_decoding_num_partitions(...,
+    is_mla=True)` at dispatch time and never reads `num_partitions` from the
+    scalar buffer, so the value serves only as the device-graph capture key.
+    To keep that key equal to the baked grid, dense MLA passes the raw
+    `max_cache_valid_length` and `num_heads` (`kv_heads == 1` for MLA), with
+    no `q_max_seq_len` length adjustment: the query width enters only through
+    the fold's M-tile count (`amd_mla_decode_fold_num_m_tiles`), which the
+    kernel's launch ladder derives from the same `(num_heads, q_max_seq_len)`.
+
+    No AMD sparse op (`sparse_indices_stride > 0`) reads the value either.
+    The FP8-weight sparse ops size their split with
+    `amd_sparse_mla_inplace_decode_num_partitions` of their own token count,
+    and the BF16-weight arm with `amd_sparse_mla_bf16_num_partitions`, so the
+    key depends on `batch_size` and `q_max_seq_len` alone. It matches the
+    BF16 arm on a BF16 cache and, at one query token with an FP8 cache, the
+    FP8-weight ops.
+
+    Args:
+        batch_size: Current decode batch size.
+        max_cache_valid_length: Max valid KV-cache length across the batch.
+        q_max_seq_len: Max query sequence length (1 for decode).
+        num_heads: Number of Q attention heads.
+        is_fp8_kv: Whether the KV cache is FP8.
+        ctx: Device context used to read the CU count.
+        sparse_indices_stride: Selected rows per token for sparse MLA, the
+            sparse index row stride; 0 for dense MLA.
+
+    Returns:
+        The packed `(batch_size, q_max_seq_len, num_partitions)` metadata.
+    """
+    var np: Int
+    if sparse_indices_stride > 0:
+        var sm_count = ctx.device().get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
+        if q_max_seq_len == 1 and is_fp8_kv:
+            np = amd_sparse_mla_inplace_decode_num_partitions(
+                batch_size, sparse_indices_stride, num_heads, sm_count
+            )
+        elif not is_fp8_kv:
+            np = amd_sparse_mla_bf16_num_partitions(
+                batch_size * q_max_seq_len,
+                sparse_indices_stride,
+                num_heads,
+                sm_count,
+            )
+        else:
+            np = mha_decoding_num_partitions(
+                batch_size * q_max_seq_len,
+                sparse_indices_stride,
+                num_heads,
+                ctx,
+                is_mla=True,
+            )
+        return (batch_size, q_max_seq_len, np)
+    # Only inside the decode fold envelope: wider heads route S>1 steps to
+    # prefill, so their decode key keeps the single-tile count.
+    var fold_num_m_tiles = 1
+    if num_heads <= AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS:
+        fold_num_m_tiles = amd_mla_decode_fold_num_m_tiles(
+            num_heads, q_max_seq_len
+        )
+    np = mha_decoding_num_partitions(
+        batch_size,
+        max_cache_valid_length,
+        num_heads,
+        ctx,
+        is_mla=True,
+        num_m_tiles=fold_num_m_tiles,
+    )
+    return (batch_size, q_max_seq_len, np)

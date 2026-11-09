@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from typing import Literal
 
 import numpy as np
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 
 from .. import dtype_promotion
 from ..graph import Graph
@@ -116,7 +116,7 @@ def pad(
 
     if mode == "constant":
         return Graph.current._add_op_generated(
-            rmo.MoPadConstantOp,
+            mo.PadConstantOp,
             result=result_type,
             input=input,
             paddings=padding_tensor,
@@ -128,7 +128,7 @@ def pad(
 
     if mode == "reflect":
         return Graph.current._add_op_generated(
-            rmo.MoPadReflectOp,
+            mo.PadReflectOp,
             result=result_type,
             input=input,
             paddings=padding_tensor,
@@ -137,7 +137,7 @@ def pad(
 
     # mode == "edge"
     return Graph.current._add_op_generated(
-        rmo.MoPadRepeatOp,
+        mo.PadRepeatOp,
         result=result_type,
         input=input,
         paddings=padding_tensor,

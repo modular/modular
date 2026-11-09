@@ -24,6 +24,7 @@
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/DocString.h"
+#include "Mojo/lib/MojoParser/ParserEvaluationContext.h"
 #include "Mojo/lib/MojoParser/Traits.h"
 #include "MojoUtils.h"
 #include "llvm/ADT/STLExtras.h"
@@ -62,14 +63,38 @@ ASTType ASTDecl::getToolingType() {
   if (auto *functionTypeDecl = dyn_cast<FunctionTypeASTDecl>(this))
     return functionTypeDecl->getSignature();
   if (auto *structDecl = dyn_cast<StructASTDecl>(this))
-    return StructASTDecl::computeSelfType(structDecl->getOp());
+    return structDecl->computeSelfType();
   if (auto *traitDecl = dyn_cast<TraitASTDecl>(this))
     return TraitASTDecl::computeSelfType(traitDecl->getOp());
   return {};
 }
 
-/// Returns this argument's ABI convention. Asserts if this is not an
-/// argument declaration.
+StringRef ASTDecl::getToolingKindName() {
+  if (auto *variable = dyn_cast<VarASTDecl>(this))
+    return variable->isArgument() ? "argument" : "variable";
+  if (isa<DefASTDecl>(this))
+    return "function";
+  if (isa<AliasASTDecl>(this))
+    return "alias";
+  if (isa<FileModuleASTDecl, ImportASTDecl>(this))
+    return "module";
+  if (isa<PackageASTDecl>(this))
+    return "package";
+  if (isa<StructASTDecl>(this))
+    return "struct";
+  if (isa<StructFieldASTDecl>(this))
+    return "field";
+  if (isa<TraitASTDecl>(this))
+    return "trait";
+  if (isArgumentDecl())
+    return "argument";
+  if (isUserParameterDecl())
+    return "parameter";
+  return {};
+}
+
+/// Returns this argument's effective ABI convention, including any variadic
+/// convention. Asserts if this is not an argument declaration.
 ArgConvention ASTDecl::getArgConvention() const {
   ssize_t argNumber = getArgNumber();
   assert(argNumber >= 0 && "argument convention requested for non-argument");
@@ -78,7 +103,80 @@ ArgConvention ASTDecl::getArgConvention() const {
   assert(signature && "function argument must have a resolved signature");
   assert(static_cast<size_t>(argNumber) < signature.getNumArguments() &&
          "argument number is out of range");
+  if (signature.isPosVarArg(argNumber))
+    return signature.getVariadicConvention(argNumber);
   return signature.getArgConventions()[argNumber];
+}
+
+static std::pair<PogListAttr, ArrayRef<Type>>
+getPogListAndTypes(const ASTDecl &decl) {
+  ASTDecl *parent = decl.getParentDecl();
+  if (auto *function = dyn_cast_or_null<FnSignatureASTDecl>(parent)) {
+    FnTypeGeneratorType signature = function->getSignature();
+    if (decl.getArgNumber() >= 0) {
+      ArrayRef<Type> types = signature.getArguments();
+      if (auto *def = dyn_cast<DefASTDecl>(function))
+        types = def->getOp().getArgumentTypes();
+      return {signature.getArgListAttrs(), types};
+    }
+    return {signature.getParamListAttrs(), signature.getInputParamTypes()};
+  }
+  if (auto *structDecl = dyn_cast_or_null<StructASTDecl>(parent)) {
+    TypeSignatureType signature = structDecl->getOp().getSignature();
+    return {signature.getParamListAttrs(), signature.getInputParamTypes()};
+  }
+  if (auto *aliasDecl = dyn_cast_or_null<AliasASTDecl>(parent)) {
+    auto signature = cast<GeneratorType>(aliasDecl->getOp().getType());
+    return {signature.getParamListAttrs(), signature.getInputParamTypes()};
+  }
+  llvm_unreachable("argument or parameter must have a signature owner");
+}
+
+static size_t getPogIndex(const ASTDecl &decl, PogListAttr pogs) {
+  if (decl.getArgNumber() >= 0)
+    return static_cast<size_t>(decl.getArgNumber());
+
+  if (auto parameter = dyn_cast_or_null<ParamDeclRefAttr>(
+          decl.getIfIRValue().getIfPValue().get())) {
+    for (size_t index : llvm::seq(pogs.size()))
+      if (pogs.getName(index) == parameter.getName())
+        return index;
+  }
+
+  assert(decl.getParamNumber() >= 0 && "parameter has no signature index");
+  return static_cast<size_t>(decl.getParamNumber());
+}
+
+PogMetadataAttr ASTDecl::getPogMetadata() const {
+  auto [pogs, types] = getPogListAndTypes(*this);
+  size_t index = getPogIndex(*this, pogs);
+  assert(index < pogs.size() &&
+         "POG metadata requested for non-argument or non-parameter");
+  return pogs.getPogs()[index];
+}
+
+VariadicKind ASTDecl::getPogVariadicKind() const {
+  auto [pogs, types] = getPogListAndTypes(*this);
+  size_t index = getPogIndex(*this, pogs);
+  assert(index < pogs.size() &&
+         "POG variadic kind requested for non-argument or non-parameter");
+  return pogs.getVariadicKind(index);
+}
+
+Type ASTDecl::getPogType() const {
+  auto [pogs, types] = getPogListAndTypes(*this);
+  size_t index = getPogIndex(*this, pogs);
+  assert(index < types.size() &&
+         "POG type requested for non-argument or non-parameter");
+  return types[index];
+}
+
+std::optional<TypedAttr> ASTDecl::getPogDefault() const {
+  auto [pogs, types] = getPogListAndTypes(*this);
+  size_t index = getPogIndex(*this, pogs);
+  assert(index < pogs.size() &&
+         "POG default requested for non-argument or non-parameter");
+  return pogs.getDefault(index);
 }
 
 /// Returns whether this argument appears in the user-visible signature.  This
@@ -235,6 +333,27 @@ void FnSignatureASTDecl::setParamDecls(ArrayRef<ASTDecl *> decls) {
 
 void FnSignatureASTDecl::setArgDecls(ArrayRef<ASTDecl *> decls) {
   argDecls = shared.persistentAllocator.internElements(decls);
+}
+
+static bool isUserParameter(const ASTDecl &decl, PogListAttr parameters) {
+  size_t index = getPogIndex(decl, parameters);
+  PassingKind passingKind = parameters.getPassingKind(index);
+  StringRef name = parameters.getName(index);
+  if (passingKind == PassingKind::Implicit)
+    return false;
+  if (demangleParameterName(name, /*forUser=*/true) != name)
+    return false;
+  return passingKind != PassingKind::Inferred || !name.empty();
+}
+
+SmallVector<ASTDecl *> FnSignatureASTDecl::getUserParamDecls() const {
+  SmallVector<ASTDecl *> result;
+  PogListAttr parameters = getSignature().getParamListAttrs();
+  for (ASTDecl *decl : getParamDecls()) {
+    if (decl->getParamNumber() >= 0 && isUserParameter(*decl, parameters))
+      result.push_back(decl);
+  }
+  return result;
 }
 
 /// Return a list of user-declared argument declarations that we'd want to
@@ -465,6 +584,40 @@ LogicalResult ASTDecl::resolveSyntheticBody() {
   llvm_unreachable("do not know how to resolve this synthetic decl body");
 }
 
+bool ASTDecl::isArgumentDecl() const {
+  if (auto *variable = dyn_cast<VarASTDecl>(this))
+    return variable->isArgument();
+  return getArgNumber() >= 0;
+}
+
+bool ASTDecl::isParameterDecl() const { return getParamNumber() >= 0; }
+
+bool ASTDecl::isUserParameterDecl() const {
+  if (!isParameterDecl())
+    return false;
+  ASTDecl *parent = getParentDecl();
+  SmallVector<ASTDecl *> parameters;
+  if (auto *function = dyn_cast_or_null<FnSignatureASTDecl>(parent))
+    parameters = function->getUserParamDecls();
+  else if (auto *structDecl = dyn_cast_or_null<StructASTDecl>(parent))
+    parameters = structDecl->getUserParamDecls();
+  else if (auto *aliasDecl = dyn_cast_or_null<AliasASTDecl>(parent))
+    parameters = aliasDecl->getUserParamDecls();
+  return llvm::is_contained(parameters, this);
+}
+
+bool ASTDecl::isVariableDecl() const {
+  if (auto *variable = dyn_cast<VarASTDecl>(this))
+    return !variable->isArgument();
+  if (isa<AliasASTDecl, ModuleASTDecl, ImportASTDecl, StructASTDecl,
+          StructFieldASTDecl, TraitASTDecl>(this) ||
+      isArgumentDecl() || isParameterDecl())
+    return false;
+  if (auto *irDecl = dyn_cast<IRASTDecl>(this))
+    return static_cast<bool>(irDecl->getCapturedName());
+  return false;
+}
+
 bool ASTDecl::isCallableDecl() const {
   if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
@@ -607,6 +760,16 @@ void StructASTDecl::setParamDecls(ArrayRef<ASTDecl *> decls) {
   paramDecls = shared.persistentAllocator.internElements(decls);
 }
 
+SmallVector<ASTDecl *> StructASTDecl::getUserParamDecls() const {
+  SmallVector<ASTDecl *> result;
+  PogListAttr parameters = getOp().getSignature().getParamListAttrs();
+  for (ASTDecl *decl : getParamDecls()) {
+    if (decl->getParamNumber() >= 0 && isUserParameter(*decl, parameters))
+      result.push_back(decl);
+  }
+  return result;
+}
+
 ASTDecl *StructASTDecl::getParamByName(StringAttr name) const {
   for (ASTDecl *paramDecl : paramDecls) {
     auto paramValue = paramDecl->getIfIRValue().getIfPValue();
@@ -615,6 +778,27 @@ ASTDecl *StructASTDecl::getParamByName(StringAttr name) const {
       return paramDecl;
   }
   return nullptr;
+}
+
+SmallVector<ASTDecl *> AliasASTDecl::getUserParamDecls() const {
+  auto generatorType = dyn_cast<GeneratorType>(getOp().getType());
+  if (!generatorType)
+    return {};
+
+  SmallVector<ASTDecl *> result;
+  PogListAttr parameters = generatorType.getParamListAttrs();
+  for (auto &[name, decls] : getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      ssize_t index = decl->getParamNumber();
+      if (decl->getParentDecl() == this && index >= 0 &&
+          isUserParameter(*decl, parameters))
+        result.push_back(decl);
+    }
+  }
+  llvm::sort(result, [](ASTDecl *lhs, ASTDecl *rhs) {
+    return lhs->getParamNumber() < rhs->getParamNumber();
+  });
+  return result;
 }
 
 /// Collect the struct/trait declaration and all visible extension declarations
@@ -918,8 +1102,8 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
   return getFullyResolvedSymbolRef(op);
 }
 
-/// Given an MLIR op for a struct declaration, return the self type.
-Type StructASTDecl::computeSelfType(StructDeclOp structOp) {
+Type StructASTDecl::computeSelfType() const {
+  StructDeclOp structOp = getOp();
   SmallVector<TypedAttr> parameters;
   for (auto decl : structOp.getParams()) {
     // We're using the parameter from the type declaration scope in the
@@ -929,7 +1113,11 @@ Type StructASTDecl::computeSelfType(StructDeclOp structOp) {
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return structOp.bindReference(parameters);
+  return structOp.legacyBindReference(parameters);
+
+  // FIXME: seems not working due to some auto parameterization issue.
+  // return structOp.bindReference(getShared().getEvaluationContext(),
+  // parameters);
 }
 
 Type TraitASTDecl::computeSelfType(TraitDeclOp traitOp) {

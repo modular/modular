@@ -80,6 +80,9 @@ class RunConfig:
     # prompt. For a deployment expected to serve every reload, such as a KV
     # connector behind a GPU pool sized to evict.
     needle_strict_cache_hits: bool = False
+    # Seconds to wait before each follow-up turn, so a KV tier that saves
+    # asynchronously has stored the previous turn before it is reloaded.
+    needle_settle_seconds: float = 0.0
 
 
 class FuzzClient:

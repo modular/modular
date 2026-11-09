@@ -19,8 +19,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from max.nn.legacy.kv_cache import KVCacheGroupId
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheGroupId
+from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
 class KVLoadRefused(Exception):
@@ -143,9 +143,10 @@ class KVTransfer(Protocol):
     Returned by :meth:`KVConnector.load`. The manager keeps the device blocks
     it handed the connector pinned until :meth:`is_complete` returns ``True``,
     then unpins them exactly once (see the scheduler's ``poll_transfers``
-    loop). A load does not report its blocks back -- the manager allocated
-    them and knows which they are; :class:`KVConnectorTransfer` adds that
-    reporting for an offload, where the connector chooses.
+    loop). Two capability protocols add what a transfer reports back:
+    :class:`KVConnectorTransfer` the blocks an offload took, since the
+    connector chooses them, and :class:`KVWritebackLoadTransfer` the blocks of
+    a load the connector asks the manager to write back.
 
     Connectors (``rust_tiered``, dKV) issue their copies off the forward stream
     and return a handle whose ``is_complete`` flips only once the copy lands.
@@ -196,6 +197,35 @@ class KVConnectorTransfer(KVTransfer, Protocol):
     def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
         """Device (G0) block ids this transfer pins until it completes, per leaf."""
         ...
+
+
+@runtime_checkable
+class KVWritebackLoadTransfer(KVTransfer, Protocol):
+    """A load :class:`KVTransfer` that names blocks to write back.
+
+    A connector that reads from another engine's external tier as well as its
+    own lists the destination blocks a remote peer filled that it asks the
+    manager to write back to its own tier. The list is empty when the
+    connector does not write back, even if a peer filled blocks, and a
+    transfer that is not one of these reads as empty too (see
+    :func:`writeback_blocks_of`).
+    """
+
+    @property
+    def writeback_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
+        """Device (G0) block ids a peer filled to write back, per leaf."""
+        ...
+
+
+def writeback_blocks_of(transfer: KVTransfer) -> Mapping[str, Sequence[int]]:
+    """Returns the blocks of a load the connector asks to write back, per leaf.
+
+    Empty for a transfer that is not a :class:`KVWritebackLoadTransfer`, so a
+    connector that never writes back needs no change.
+    """
+    if isinstance(transfer, KVWritebackLoadTransfer):
+        return transfer.writeback_blocks_per_leaf
+    return {}
 
 
 class CompletedTransfer:

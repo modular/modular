@@ -27,15 +27,19 @@ is the whole per-block pitch. The split's two coordinates are bounded by the
 block count and a block's own rows. The overflow case is checked as
 arithmetic rather than by allocating the hundreds of gigabytes that would
 reach it on a real device.
+
+`ContinuousBatchingKVCache` builds the same split descriptor over its
+per-entry blocks, so its coordinates are held to the same two properties.
 """
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, assert_true
 
-from layout import Idx, row_major
+from layout import Idx, TileTensor, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     PagedKVCacheCollection,
@@ -103,10 +107,6 @@ def _check_decomposition[
     _ = blocks.host_tensor().fill(0)
     blocks.to_device()
 
-    var flat_buf = ctx.enqueue_create_buffer[.uint32](_NUM_PROBES)
-    var row_buf = ctx.enqueue_create_buffer[.int32](_NUM_PROBES)
-    var block_buf = ctx.enqueue_create_buffer[.int32](_NUM_PROBES)
-
     comptime Collection = PagedKVCacheCollection[
         dtype,
         kv_params,
@@ -127,8 +127,77 @@ def _check_decomposition[
 
     # A stride that is not a multiple of the page, so probes land at varied
     # offsets within their blocks rather than always on a boundary.
-    var tok_stride = max(page_size // 3, 1)
-    ctx.enqueue_function[_coords_kernel[type_of(kv)]](
+    # The block pitch in rows: the blocks tensor is
+    # `[blocks, kv=2, layers=1, page_size, heads, head_size]`, and `_stride()`
+    # divides its leading stride by `heads * head_size`.
+    _probe(ctx, kv, max(page_size // 3, 1), 2 * page_size, page_size)
+
+
+def _check_continuous_decomposition[
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    max_seq_len: Int,
+](ctx: DeviceContext) raises:
+    """The continuous cache's split must rebuild its flat row off block 0.
+
+    An entry's sequence is one whole block. A coordinate that left the block
+    in the row would still be right for block 0, so the entry sits in a later
+    block.
+    """
+    comptime num_blocks = 4
+    var lut = ctx.enqueue_create_buffer[.uint32](1)
+    with lut.map_to_host() as lut_host:
+        lut_host[0] = UInt32(num_blocks - 1)
+    var cache_lengths = ctx.enqueue_create_buffer[.uint32](1)
+    with cache_lengths.map_to_host() as lengths_host:
+        lengths_host[0] = UInt32(max_seq_len)
+    var blocks_layout = row_major(
+        Int64(num_blocks),
+        Int64(2),
+        Int64(1),
+        Int64(max_seq_len),
+        Idx[kv_params.num_heads],
+        Idx[kv_params.head_size],
+    )
+    var blocks = ctx.enqueue_create_buffer[dtype](
+        num_blocks * 2 * max_seq_len * kv_params.num_heads * kv_params.head_size
+    )
+
+    comptime Collection = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
+    ]
+    var collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            TileTensor(blocks, blocks_layout).as_unsafe_any_origin()
+        ),
+        TileTensor(cache_lengths, row_major(Int64(1)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(lut, row_major(Int64(1))).as_imm().as_unsafe_any_origin(),
+        UInt32(max_seq_len),
+        UInt32(max_seq_len),
+    )
+    var kv = collection.get_key_cache(0)
+
+    # `[blocks, kv=2, layers=1, max_seq_len, heads, head_size]`, so the block
+    # pitch is two sequences of rows, and a block holds one.
+    _probe(ctx, kv, max_seq_len // _NUM_PROBES, 2 * max_seq_len, max_seq_len)
+
+
+def _probe[
+    cache_t: KVCacheT, //
+](
+    ctx: DeviceContext,
+    kv: cache_t,
+    tok_stride: Int,
+    stride: Int,
+    rows_per_block: Int,
+) raises:
+    """Checks that each probe's split rebuilds its flat row within a block."""
+    var flat_buf = ctx.enqueue_create_buffer[.uint32](_NUM_PROBES)
+    var row_buf = ctx.enqueue_create_buffer[.int32](_NUM_PROBES)
+    var block_buf = ctx.enqueue_create_buffer[.int32](_NUM_PROBES)
+    ctx.enqueue_function[_coords_kernel[cache_t]](
         kv,
         flat_buf.unsafe_ptr(),
         row_buf.unsafe_ptr(),
@@ -146,10 +215,6 @@ def _check_decomposition[
     ctx.enqueue_copy(block_host, block_buf)
     ctx.synchronize()
 
-    # The block pitch in rows: the blocks tensor is
-    # `[blocks, kv=2, layers=1, page_size, heads, head_size]`, and `_stride()`
-    # divides its leading stride by `heads * head_size`.
-    var stride = 2 * page_size
     for i in range(_NUM_PROBES):
         var rebuilt = Int(block_host[i]) * stride + Int(row_host[i])
         assert_equal(
@@ -160,8 +225,8 @@ def _check_decomposition[
         # The row must be an offset *within* a block, not a pool-wide index;
         # that is the whole point of the split.
         assert_true(
-            Int(row_host[i]) < page_size,
-            "row_in_block escaped its page",
+            Int(row_host[i]) < rows_per_block,
+            "row_in_block escaped its block",
         )
 
 
@@ -199,5 +264,8 @@ def main() raises:
             .float8_e4m3fn, KVCacheStaticParams(num_heads=1, head_size=32), 128
         ](ctx)
         _check_decomposition[
+            .bfloat16, KVCacheStaticParams(num_heads=8, head_size=128), 128
+        ](ctx)
+        _check_continuous_decomposition[
             .bfloat16, KVCacheStaticParams(num_heads=8, head_size=128), 128
         ](ctx)

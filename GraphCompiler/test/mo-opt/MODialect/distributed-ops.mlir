@@ -204,11 +204,11 @@ mo.graph @bundled_all_reduce_folds(
 mo.graph @bundled_broadcast(%in: !mo.tensor<[2, 3], f32, gpu:0>, %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>) -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>) attributes {isDeviceGraph} {
   %ch = mo.chain.create()
   // CHECK: %[[B0:.*]], %[[C0:.*]] = mo.bundled.broadcast(%[[IN]], %[[SIG0]], %[[SIG1]], %{{.*}}) : (!mo.tensor<[2, 3], f32, gpu:0>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.chain)
-  %b0, %c0 = mo.bundled.broadcast(%in, %sig0, %sig1, %ch) [root = 0]
+  %b0, %c0 = mo.bundled.broadcast(%in, %sig0, %sig1, %ch) <root = 0>
       : (!mo.tensor<[2, 3], f32, gpu:0>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
      -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.chain)
   // CHECK: %[[B1:.*]], %[[C1:.*]] = mo.bundled.broadcast(%[[IN]], %[[SIG0]], %[[SIG1]], %{{.*}}) : (!mo.tensor<[2, 3], f32, gpu:0>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[2, 3], f32, gpu:1>, !mo.chain)
-  %b1, %c1 = mo.bundled.broadcast(%in, %sig0, %sig1, %ch) [root = 0]
+  %b1, %c1 = mo.bundled.broadcast(%in, %sig0, %sig1, %ch) <root = 0>
       : (!mo.tensor<[2, 3], f32, gpu:0>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
      -> (!mo.tensor<[2, 3], f32, gpu:1>, !mo.chain)
   // CHECK: mo.output %[[B0]], %[[B1]] : !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>
@@ -221,12 +221,12 @@ mo.graph @bundled_broadcast(%in: !mo.tensor<[2, 3], f32, gpu:0>, %sig0: !mo.buff
 // CHECK: (%[[IN:.*]]: !mo.tensor<[2, 3], f32, gpu:1>, %[[SIG0:.*]]: !mo.buffer<[1], ui8, gpu:0>, %[[SIG1:.*]]: !mo.buffer<[1], ui8, gpu:1>
 mo.graph @bundled_broadcast_nonzero_root(%in: !mo.tensor<[2, 3], f32, gpu:1>, %sig0: !mo.buffer<[1], ui8, gpu:0>, %sig1: !mo.buffer<[1], ui8, gpu:1>) -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>) attributes {isDeviceGraph} {
   %ch = mo.chain.create()
-  // CHECK: %[[B0:.*]], %[[C0:.*]] = mo.bundled.broadcast(%[[IN]], %[[SIG0]], %[[SIG1]], %{{.*}}) [root = 1] : (!mo.tensor<[2, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.chain)
-  %b0, %c0 = mo.bundled.broadcast(%in, %sig0, %sig1, %ch) [root = 1]
+  // CHECK: %[[B0:.*]], %[[C0:.*]] = mo.bundled.broadcast(%[[IN]], %[[SIG0]], %[[SIG1]], %{{.*}}) <root = 1> : (!mo.tensor<[2, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.chain)
+  %b0, %c0 = mo.bundled.broadcast(%in, %sig0, %sig1, %ch) <root = 1>
       : (!mo.tensor<[2, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
      -> (!mo.tensor<[2, 3], f32, gpu:0>, !mo.chain)
-  // CHECK: %[[B1:.*]], %[[C1:.*]] = mo.bundled.broadcast(%[[IN]], %[[SIG0]], %[[SIG1]], %{{.*}}) [root = 1] : (!mo.tensor<[2, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[2, 3], f32, gpu:1>, !mo.chain)
-  %b1, %c1 = mo.bundled.broadcast(%in, %sig0, %sig1, %ch) [root = 1]
+  // CHECK: %[[B1:.*]], %[[C1:.*]] = mo.bundled.broadcast(%[[IN]], %[[SIG0]], %[[SIG1]], %{{.*}}) <root = 1> : (!mo.tensor<[2, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[2, 3], f32, gpu:1>, !mo.chain)
+  %b1, %c1 = mo.bundled.broadcast(%in, %sig0, %sig1, %ch) <root = 1>
       : (!mo.tensor<[2, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
      -> (!mo.tensor<[2, 3], f32, gpu:1>, !mo.chain)
   // CHECK: mo.output %[[B0]], %[[B1]] : !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>

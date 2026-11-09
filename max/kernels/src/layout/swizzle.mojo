@@ -39,8 +39,8 @@ from std.math.uutils import udivmod
 from std.bit import log2_floor
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
-from .int_tuple import flatten, IntTuple
-from .layout import Layout
+from .coord import Coord, CoordLike
+from .layout import TensorLayout
 
 # ===-----------------------------------------------------------------------===#
 # Motivation of thread swizzling                                               #
@@ -342,19 +342,28 @@ struct Swizzle(Copyable, Deinitable, TrivialRegisterPassable, Writable):
         )
 
     @inline(.always)
-    def __call__(self, index: IntTuple) -> Int:
-        """Apply swizzle to an IntTuple index.
+    def __call__[
+        element_types: TypeList[Trait=CoordLike, ...],
+        //,
+    ](self, index: Coord[*element_types]) -> Int:
+        """Apply swizzle to a `Coord` index.
 
-        Unwraps the IntTuple and applies the swizzle to the integer
-        value.
+        Unwraps a single-element coordinate and applies the swizzle to the
+        integer value.
+
+        Parameters:
+            element_types: The element types of the coordinate.
 
         Args:
-            index: The IntTuple index to swizzle.
+            index: The coordinate to swizzle.
 
         Returns:
             The swizzled index value.
         """
-        return self.__call__(index.value())
+        comptime assert (
+            type_of(index).__len__() == 1
+        ), "Swizzle expects a single-element coordinate index"
+        return self.__call__(Int(index[0]))
 
     @inline(.always)
     def __call__(self, offset: Int) -> Int:
@@ -524,69 +533,55 @@ def make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
 # ===-----------------------------------------------------------------------===#
 
 
-struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
+struct ComposedLayout[
+    layout_t: TensorLayout,
+    layout_a: layout_t,
+    offset: Optional[Int] = 0,
+](Copyable):
     """Layout composed of a Layout and a Swizzle applied sequentially.
 
     Combines a base layout with a swizzle. The output of the layout is
     input to the swizzle, with an optional offset in between.
 
     Parameters:
+        layout_t: Type of the base layout.
+        layout_a: The base layout the swizzle is applied to.
         offset: Optional offset between layouts (default: 0).
     """
 
-    var layout_a: Layout
-    """The base layout to apply."""
     var layout_b: Swizzle
     """The swizzle to apply."""
 
     @inline(.always)
-    def __init__(out self, var layout_a: Layout, layout_b: Swizzle):
-        """Initialize ComposedLayout with a layout and swizzle.
+    def __init__(out self, layout_b: Swizzle):
+        """Initialize ComposedLayout with a swizzle.
 
         Args:
-            layout_a: The base layout.
             layout_b: The swizzle.
         """
-        comptime if case .Some(offset) = Self.offset:
+        comptime if case .Some(offset_val) = Self.offset:
             comptime assert (
-                offset >= 0
+                offset_val >= 0
             ), "Requires non-negative offset if present"
-        self.layout_a = layout_a^
         self.layout_b = layout_b
 
     @inline(.always)
-    def __call__(self, idx: IntTuple) -> Int:
-        """Apply composed layout to an index.
+    def __call__[
+        element_types: TypeList[Trait=CoordLike, ...],
+        //,
+    ](self, idx: Coord[*element_types]) -> Int:
+        """Apply composed layout to a `Coord` index.
 
-        Applies the layout, then adds offset, then applies the swizzle.
+        Parameters:
+            element_types: The element types of the coordinate.
 
         Args:
-            idx: The index to transform.
+            idx: The coordinate to transform.
 
         Returns:
             The transformed index.
         """
-        var offset_val = Self.offset.or_else(0)
-        return self.layout_b(offset_val + self.layout_a(idx))
-
-    @inline(.always)
-    def __call__(self, idx: IntTuple, offset_val: Int) -> Int:
-        """Apply composed layout with runtime offset.
-
-        Applies the layout, then adds runtime `offset_val`, then the swizzle.
-        Static offset must not be set when using runtime offset.
-
-        Args:
-            idx: The index to transform.
-            offset_val: Runtime offset to apply.
-
-        Returns:
-            The transformed index.
-        """
-        comptime assert (
-            not Self.offset
-        ), "Static offset set; runtime offset not allowed."
-        return self.layout_b(offset_val + self.layout_a(idx))
+        return self.layout_b(Self.offset.or_else(0) + Int(Self.layout_a(idx)))
 
     @inline(.always)
     def size(self) -> Int:
@@ -597,7 +592,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         Returns:
             The size of the base layout.
         """
-        return self.layout_a.size()
+        return Self.layout_a.size()
 
     @inline(.always)
     def cosize(self) -> Int:
@@ -630,16 +625,17 @@ def eval_composed[
     Returns:
         The transformed index after applying both layouts.
     """
+    comptime layout_a_t = type_of(composed_layout.layout_a)
+    comptime assert (
+        layout_a_t.all_dims_known
+    ), "eval_composed requires a static base layout"
+
     var a_idx = idx
     var b_idx = 0
-
-    comptime shape_a = flatten(composed_layout.layout_a.shape)
-    comptime stride_a = flatten(composed_layout.layout_a.stride)
-
     var coord_i: Int
-    comptime for i in range(len(stride_a)):
-        comptime s = shape_a[i].value()
-        comptime st = stride_a[i].value()
+    comptime for i in range(layout_a_t.flat_rank):
+        comptime s = layout_a_t.static_shape[i]
+        comptime st = layout_a_t.static_stride[i]
         a_idx, coord_i = udivmod(a_idx, s)
         b_idx += coord_i * st
 

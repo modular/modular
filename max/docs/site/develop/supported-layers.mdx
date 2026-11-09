@@ -25,7 +25,7 @@ splits a served model across the GPUs you name.
 | Mechanism                          | Layer                                                                                                     | Option or input                              |
 |------------------------------------|-----------------------------------------------------------------------------------------------------------|----------------------------------------------|
 | Rotary embedding                   | [`RotaryEmbedding`](/api/python/generated/max.nn.common_layers.rotary_embedding.RotaryEmbedding/)         | `theta`, `head_dim`, `max_seq_len`           |
-| Interleaved (transposed) rotary    | `RotaryEmbedding`                                                                                         | `interleaved=True` pairs adjacent dimensions |
+| Rotate-half rotary                 | `RotaryEmbedding`                                                                                         | `interleaved=False` (default `True`)         |
 | YaRN-scaled rotary                 | [`YarnRotaryEmbedding`](/api/python/generated/max.nn.common_layers.rotary_embedding.YarnRotaryEmbedding/) | `scaling_params`                             |
 | Banded scaling (Llama 3, LongRoPE) | `RotaryEmbedding` subclass                                                                                | override `freqs_cis_base()`                  |
 | No positional encoding (NoPE)      | none                                                                                                      | assemble attention without a rope layer      |
@@ -38,8 +38,11 @@ splits a served model across the GPUs you name.
 | Offset RMS normalization           | [`GemmaRMSNorm`](/api/python/generated/max.nn.norm.GemmaRMSNorm/)                                         | `dim`, `eps`                                 |
 | Layer normalization                | [`LayerNorm`](/api/python/generated/max.nn.norm.LayerNorm/)                                               | `dim`, `eps`                                 |
 | Quantized projection               | [`Linear`](/api/python/generated/max.nn.Linear/)                                                          | `quant_config`, static per-tensor FP8        |
-| KV cache shape                     | `AttentionWithRope`                                                                                       | `kv_params` from `max.nn.legacy.kv_cache`    |
+| KV cache shape                     | `AttentionWithRope`                                                                                       | `kv_params` from `max.nn.kv_cache`           |
 | Tied input and output embedding    | model, not a layer                                                                                        | logits computed against the embedding weight |
+
+`AttentionWithRope` and the latent attention layers mask causally. A model
+that needs another mask subclasses the attention layer.
 
 The rotary layer builds its frequency table from `theta` and `head_dim`, and
 caches it on first use. A model with a modified frequency schedule subclasses

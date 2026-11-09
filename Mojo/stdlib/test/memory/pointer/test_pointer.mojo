@@ -15,7 +15,7 @@ from std.compile import compile_info
 from std.ffi import external_call
 from max.gpu.host import get_gpu_target
 from std.memory import Allocation, Layout, MaybeUninit, alloc, dealloc
-from std.memory.unsafe_pointer import pointer_to_int
+from std.memory.pointer import pointer_to_int
 from std.sys import align_of, bit_width_of, size_of
 import std.memory.alloc
 
@@ -227,6 +227,15 @@ def test_address_of() raises:
 def test_pointer_to() raises:
     var local = 1
     assert_not_equal(0, Pointer(to=local)[])
+
+
+def test_pointer_to_infers_address_space() raises:
+    var local = 1
+    var shared = Pointer(to=local).unsafe_address_space_cast[.SHARED]()
+    var ptr = Pointer(to=shared[])
+    comptime assert type_of(ptr).address_space == .SHARED
+    assert_equal(Int(ptr), Int(shared))
+    _ = local
 
 
 def test_explicit_copy_of_pointer_address() raises:

@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
@@ -50,4 +52,5 @@ inkling_arch = SupportedArchitecture(
     reasoning_parser="inkling",
     checkpoint_drafts={"mtp": "MTPInklingDraftModel"},
     spec_decode_graph_names={"mtp": "inkling_with_mtp_graph"},
+    format_spec=Path(__file__).parent / "formatspec.json",
 )

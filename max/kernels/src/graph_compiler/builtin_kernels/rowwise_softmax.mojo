@@ -20,10 +20,10 @@ from std.sys import align_of, size_of
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, CoordLike, TileTensor
+from std.utils.coord import DynamicCoord
 from std.utils.numerics import get_accum_type
 
 from algorithm import rowwise
-from algorithm.rowwise_types import RowCoord
 
 from .monoids import ReduceMax, ReduceSum
 
@@ -47,17 +47,15 @@ def softmax[
     & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     logsoftmax: Bool = False,
     reduce_dim: Int = rank - 1,
-    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFn,
     shape: Coord,
     axis_size: AxisSizeT,
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     # softmax's two dependent reduces (row max, then sum of `exp(x - max)`)
     # plus its final normalizing write are passed to the scaffolder as
@@ -73,7 +71,11 @@ def softmax[
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "softmax requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target,
+        64,
+        dtype,
+        accum,
     ]()
 
     @inline(.always)
@@ -88,8 +90,10 @@ def softmax[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
             params, accum, dtype, reduce_dim, row_rank, is_cached=True
@@ -99,9 +103,9 @@ def softmax[
         @inline(.always)
         def vmax[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
-            accum, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]
+        ) {} -> SIMD[accum, width]:
             return tile.cast[accum]()
 
         # Row stats held W-wide (one value broadcast to every lane, or one
@@ -115,7 +119,7 @@ def softmax[
         @inline(.always)
         def vexp[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
+        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
             var row_max
         } -> SIMD[accum, width]:
             return exp(tile.cast[accum]() - row_max.slice[width]())
@@ -130,7 +134,7 @@ def softmax[
         @inline(.always)
         def write[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
+        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
             var row_max,
             var recip,
             var log_denom,
@@ -152,11 +156,11 @@ def softmax[
                     - log_denom.slice[width]()
                 )
                 var result = shifted.cast[dtype]()
-                output.store[alignment=alignment](idx.coord, result)
+                output.store[alignment=alignment](idx, result)
             else:
                 var numerator = exp(tile_accum - row_max.slice[width]())
                 var result = (numerator * recip.slice[width]()).cast[dtype]()
-                output.store[alignment=alignment](idx.coord, result)
+                output.store[alignment=alignment](idx, result)
 
         # `row_max`/`recip`/`log_denom`/`output` ride `write`'s capture list
         # into `elementwise`.
@@ -165,9 +169,10 @@ def softmax[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         computationally_expensive=True,
         num_phases=3,
         dtype_size=size_of[dtype](),
-        pdl_level=pdl_level,
+        # Wait on the predecessor grid, then release dependents early so a
+        # following kernel overlaps its prologue with the softmax.
+        pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
     ](body, shape, context)

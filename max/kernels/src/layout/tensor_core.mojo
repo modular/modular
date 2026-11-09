@@ -78,9 +78,12 @@ from max.gpu.compute.mma import (
     ld_matrix,
     mma,
 )
-from layout.layout import Layout
+from layout.layout import (
+    Layout,
+    col_major,
+    row_major,
+)
 from layout.tile_tensor import TileTensor, stack_allocation
-from layout.tile_layout import col_major, row_major
 from layout.swizzle import (
     ComposedLayout,
     Swizzle,
@@ -90,7 +93,7 @@ from layout.swizzle import (
 from std.memory.unsafe import bitcast
 from std.simd import _has_native_f8_support
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord, DynamicCoord, Idx
 
 
 def num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
@@ -112,8 +115,6 @@ def num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
 
 
 # shapes
-comptime shape_null = DynamicCoord[.int, 3](0, 0, 0)
-"""Null tensor core shape (0x0x0)."""
 comptime shape_16x8x4 = DynamicCoord[.int, 3](16, 8, 4)
 """Tensor core shape 16x8x4."""
 comptime shape_16x8x8 = DynamicCoord[.int, 3](16, 8, 8)
@@ -1277,19 +1278,30 @@ def _load_matrix_frag[
     # on __output_width which in turn depends on num_matrices.
     # lane_offset based on x4 will also work because in case of x1 and x2
     # ld_matrix ignores pointers for lane >= 8 and lane >= 16 respectively.
-    comptime ldmatrix_threadmap = Layout.col_major(16, 2)
 
-    # 4 submatrices layout
-    comptime x4_layout = Layout(
-        [8, 2, 2], [num_mat_per_row, 1, 8 * num_mat_per_row]
-    ) if x4_row_major else Layout([16, 2], [num_mat_per_row, 1])
-
-    comptime ldmatrix_layout = ComposedLayout(
-        x4_layout,
-        swizzle.or_else(Swizzle(0, 0, 1)),
-    )
-
-    var lane_offset = eval_composed[ldmatrix_layout](lane, offset) * simd_size
+    # 4 submatrices layout: `(8, 2, 2)` when the four matrices are arranged in
+    # column-major submatrix order, `(16, 2)` when in row-major order. The two
+    # are different layout types, so each builds its own composed layout.
+    comptime ldm_swizzle = swizzle.or_else(Swizzle(0, 0, 1))
+    var lane_offset: Int
+    comptime if x4_row_major:
+        comptime x4_layout = Layout(
+            Coord(Idx[8], Idx[2], Idx[2]),
+            Coord(Idx[num_mat_per_row], Idx[1], Idx[8 * num_mat_per_row]),
+        )
+        comptime ldmatrix_layout = ComposedLayout[
+            type_of(x4_layout), x4_layout
+        ](ldm_swizzle)
+        lane_offset = eval_composed[ldmatrix_layout](lane, offset) * simd_size
+    else:
+        comptime x4_layout = Layout(
+            Coord(Idx[16], Idx[2]),
+            Coord(Idx[num_mat_per_row], Idx[1]),
+        )
+        comptime ldmatrix_layout = ComposedLayout[
+            type_of(x4_layout), x4_layout
+        ](ldm_swizzle)
+        lane_offset = eval_composed[ldmatrix_layout](lane, offset) * simd_size
 
     # `base_shift` moves the base back by that many elements so the swizzle
     # is evaluated with the index inside the enclosing shared tile.

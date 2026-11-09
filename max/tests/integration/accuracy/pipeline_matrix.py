@@ -42,6 +42,9 @@ class PipelineEntry:
     # swap to a local mount) without changing the pipeline's
     # config-selector key.
     model_path: str | None = None
+    # The Mach recipe to serve; set for a model fuzzed only on Mach, which
+    # has no MAX Serve path. Requests still name `model_path`.
+    mach_key: str | None = None
 
 
 def changed_pipelines(base_ref: str, configs_dir: Path) -> set[str]:

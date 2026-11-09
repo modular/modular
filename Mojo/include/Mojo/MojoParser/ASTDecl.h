@@ -102,6 +102,7 @@ public:
 
   /// Return tooling information for this declaration.
   ASTType getToolingType();
+  StringRef getToolingKindName();
   std::optional<StringRef> getName();
   std::optional<StringRef> getDeprecationWarning();
 
@@ -113,9 +114,34 @@ public:
   /// Returns this parameter's number, or -1 for a non-parameter.
   virtual ssize_t getParamNumber() const { return -1; }
 
-  /// Returns this argument's ABI convention. Asserts if this is not an
-  /// argument declaration.
+  /// Return true if this declaration represents a function argument.
+  bool isArgumentDecl() const;
+
+  /// Return true if this declaration represents a compile-time parameter
+  /// declaration on a function or struct.
+  bool isParameterDecl() const;
+
+  /// Return true if this parameter appears in the user-visible signature.
+  bool isUserParameterDecl() const;
+
+  /// Return true if this declaration represents a variable.
+  bool isVariableDecl() const;
+
+  /// Returns this argument's effective ABI convention, including any variadic
+  /// convention. Asserts if this is not an argument declaration.
   ArgConvention getArgConvention() const;
+
+  /// Return the POG metadata for this argument or parameter declaration.
+  PogMetadataAttr getPogMetadata() const;
+
+  /// Return the variadic kind for this argument or parameter declaration.
+  VariadicKind getPogVariadicKind() const;
+
+  /// Return the source-level type for this argument or parameter declaration.
+  Type getPogType() const;
+
+  /// Return the default value for this argument or parameter, if present.
+  std::optional<TypedAttr> getPogDefault() const;
 
   /// Returns whether this argument appears in the user-visible signature.  This
   /// filters out implicitly declared error slots and result slots, but keeps
@@ -786,6 +812,9 @@ public:
   ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
   ArrayRef<ASTDecl *> getArgDecls() const { return argDecls; }
 
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
+
   /// Return a list of user-declared argument declarations that we'd want to
   /// show in document generation, for example.  This filters out implicitly
   /// declared error slots and result slots, but keeps user-declared "out"
@@ -961,11 +990,14 @@ public:
   LogicalResult resolveSignature(Lexer &lexer) override;
   LogicalResult resolveBody(Lexer &lexer) override;
 
-  /// Compute the `Self` type represented by a struct declaration operation.
-  static Type computeSelfType(StructDeclOp structOp);
+  /// Compute the `Self` type represented by this struct declaration.
+  Type computeSelfType() const;
 
   /// Return this struct's parameter declarations in signature order.
   ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
+
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
 
   /// Return the parameter declaration with the given internal name, if any.
   ASTDecl *getParamByName(StringAttr name) const;
@@ -1018,6 +1050,11 @@ public:
   /// Return the alias operation represented by this declaration.
   AliasDeclOp getOp() const { return cast<AliasDeclOp>(getOperation()); }
   void setOp(AliasDeclOp op) { setOperation(*op.getOperation()); }
+  std::string getToolingValue();
+
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
+
   LogicalResult resolveSignature(Lexer &lexer) override;
   LogicalResult resolveSyntheticSignature() override;
   LogicalResult resolveBody(Lexer &lexer) override;

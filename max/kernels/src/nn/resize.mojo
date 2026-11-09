@@ -247,7 +247,6 @@ def resize_nearest_neighbor[
     coordinate_transformation_mode: CoordinateTransformationMode,
     round_mode: RoundMode,
     dtype: DType,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
@@ -267,13 +266,13 @@ def resize_nearest_neighbor[
         coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
         round_mode: How to round fractional input coordinates to integer indices.
         dtype: Type of input and output.
-        target: The target backend to execute on, such as "cpu" or "gpu".
 
     Args:
         input: The input to be resized.
         output: The output containing the resized input.
         ctx: The device context used to launch the kernel.
     """
+
     _check_resize_shapes(input, output)
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
@@ -343,9 +342,9 @@ def resize_nearest_neighbor[
                     all_pow2_runtime = False
 
             comptime width = (
-                simd_width_of[dtype, target=get_gpu_target()]() if is_gpu[
-                    target
-                ]() else simd_width_of[dtype]()
+                simd_width_of[
+                    dtype, target=get_gpu_target()
+                ]() if ctx.target.is_gpu() else simd_width_of[dtype]()
             )
 
             if all_pow2_runtime:
@@ -368,9 +367,7 @@ def resize_nearest_neighbor[
 
                     output.store[alignment=alignment](out_coords, values)
 
-                elementwise[width, target=target](
-                    nn_shift, output.layout.shape_coord(), ctx
-                )
+                elementwise[width](nn_shift, output.layout.shape_coord(), ctx)
             else:
 
                 def nn_div[
@@ -389,9 +386,7 @@ def resize_nearest_neighbor[
 
                     output.store[alignment=alignment](out_coords, values)
 
-                elementwise[width, target=target](
-                    nn_div, output.layout.shape_coord(), ctx
-                )
+                elementwise[width](nn_div, output.layout.shape_coord(), ctx)
             return
 
     @inline(.always)
@@ -463,11 +458,10 @@ def resize_nearest_neighbor[
         output.store[alignment=alignment](out_coords, values)
 
     comptime width = (
-        16 // size_of[dtype]() if is_gpu[target]() else simd_width_of[dtype]()
+        16
+        // size_of[dtype]() if ctx.target.is_gpu() else simd_width_of[dtype]()
     )
-    elementwise[width, target=target](
-        nn_interpolate, output.layout.shape_coord(), ctx
-    )
+    elementwise[width](nn_interpolate, output.layout.shape_coord(), ctx)
 
 
 @inline(.always)
@@ -730,7 +724,7 @@ def resize_linear_gpu[
         def copy[simd_width: Int, alignment: Int = 1](coords: Coord) {var}:
             output.store(coords, input.load[width=1](coords))
 
-        elementwise[1, target="gpu"](copy, output.layout.shape_coord(), ctx)
+        elementwise[1](copy, output.layout.shape_coord(), ctx)
         return
 
     var scratch = List[DeviceBuffer[dtype]]()
@@ -768,9 +762,7 @@ def resize_linear_gpu[
                 out_buf,
             )
 
-        elementwise[1, target="gpu"](
-            interpolate, out_buf.layout.shape_coord(), ctx
-        )
+        elementwise[1](interpolate, out_buf.layout.shape_coord(), ctx)
 
         in_shape = out_shape
         in_ptr = out_ptr

@@ -109,7 +109,8 @@ def _attn_res_mix(
     )
 
 
-_attn_res_mix_op = F.functional(_attn_res_mix)
+attn_res_mix_op = F.functional(_attn_res_mix)
+"""The mix half of the fused op, published for the model's tap capture."""
 
 
 def kimi_k3_attn_res_mix_norm(
@@ -150,7 +151,7 @@ def kimi_k3_attn_res_mix_norm(
     )
     out_type = TensorType(out_dtype, prefix_sum.shape, device=out_device)
     if int(prefix_sum.shape[-1]) > _MIX_NORM_MAX_HIDDEN:
-        mixed = _attn_res_mix_op(
+        mixed = attn_res_mix_op(
             F.stack(candidates, axis=1),
             proj_weight.cast(out_dtype),
             res_norm_weight.cast(out_dtype),

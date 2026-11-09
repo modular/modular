@@ -15,7 +15,6 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/POPDialect/POPTypes.h"
 
 using namespace M;
@@ -94,14 +93,7 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
   auto refType = sugarCast<LIT::StructType>(typeRef.mlirType);
   return calculateForStructLike(llvm::map_to_vector(
       structOp.getFieldDecls(), [&](LIT::StructFieldOp field) {
-        LIT::ASTType fieldType(field.getTypeAttr().getValue());
-        // If the StructType has parameters, try to evaluate and substitute
-        // them into the type.
-        if (!refType.getParamValues().empty()) {
-          fieldType = context.concretizeType(typeRef, refType.getParamValues(),
-                                             fieldType);
-        }
-        return fieldType;
+        return LIT::ASTType(field.getReboundType(refType));
       }));
 }
 

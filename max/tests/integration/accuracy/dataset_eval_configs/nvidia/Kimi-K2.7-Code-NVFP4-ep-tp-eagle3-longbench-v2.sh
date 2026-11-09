@@ -18,6 +18,7 @@ batch_size=64
 max_length=262144
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --device-memory-utilization=0.75
   --ep-size 8
   --ep-use-allreduce

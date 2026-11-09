@@ -21,6 +21,7 @@
 #include "Config/Version.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 namespace M::KGEN {
@@ -224,7 +225,7 @@ getMLIRBufferAndHeaderFromPrecompiledFile(llvm::MemoryBufferRef buffer);
 // or else an error if ignoreIncompatiblePrecompiledFiles is false. For
 // compressed packages, the returned MojoPrecompiledFileMLIRBuffer owns the
 // decompressed data.
-ErrorOr<MojoPrecompiledFileMLIRBuffer>
+MODULAR_CXX_EXPORT ErrorOr<MojoPrecompiledFileMLIRBuffer>
 getMLIRBufferFromPrecompiledFile(llvm::MemoryBufferRef buffer,
                                  bool ignoreIncompatiblePrecompiledFiles);
 

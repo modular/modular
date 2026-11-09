@@ -40,8 +40,7 @@ public:
   lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override;
   lldb::ChildCacheState Update() override;
   bool MightHaveChildren() override;
-  llvm::Expected<size_t>
-  GetIndexOfChildWithName(lldb_private::ConstString name) override;
+  llvm::Expected<size_t> GetIndexOfChildWithName(llvm::StringRef name) override;
 
 private:
   lldb::addr_t m_slotsAddr = 0;

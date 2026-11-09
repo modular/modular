@@ -31,12 +31,12 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.glm5_next.model_config import SPARSE_ATTENTION
 from max.pipelines.architectures.glm5_next.state_cache import (
@@ -44,8 +44,8 @@ from max.pipelines.architectures.glm5_next.state_cache import (
     INDEXER_CACHE_KEY,
     MLA_CACHE_KEY,
     RECURRENT_LEAF_ID,
+    SPEC_STATE_LEAF_ORDER,
     STATE_CACHE_KEY,
-    STATE_LEAF_ORDER,
     TAIL_RING_LEAF_ID,
 )
 from max.pipelines.lib import ModuleV3Outputs
@@ -62,10 +62,10 @@ from .layers.mlp import build_mlp
 from .layers.sparse_mla import Glm5NextSparseMLA
 from .model_config import Glm5NextConfig
 
-__all__ = ["Glm5Next"]
+__all__ = ["Glm5Next", "Glm5NextTextModel", "state_leaf"]
 
 
-def _state_leaf(
+def state_leaf(
     per_device: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
     leaf_id: str,
     mapping: DeviceMapping,
@@ -76,9 +76,10 @@ def _state_leaf(
 
     A KDA pool holds the state of its own device's heads; the k-pool tail ring
     is the same on every device, since the indexer is replicated. The rows of
-    a request are the same on every device.
+    a request are the same on every device. A speculative cache appends the
+    verify ring, head-split like the KDA state, after the live leaves.
     """
-    index = STATE_LEAF_ORDER.index(leaf_id)
+    index = SPEC_STATE_LEAF_ORDER.index(leaf_id)
     pools = [device.leaves[index].pool for device in per_device]
     pool_mapping: DeviceMapping = mapping
     if head_sharded:
@@ -159,16 +160,53 @@ class Glm5NextTextModel(Module[..., Tensor]):
         state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
         comm_buffers: EPCommBuffers | None,
     ) -> Tensor:
+        """Returns the logits at each request's last token."""
+        h = self.hidden_states(
+            tokens, input_row_offsets, mla, indexer, state, comm_buffers
+        )
+        return project_to_logits(
+            gather_last_tokens(h, input_row_offsets),
+            self.norm,
+            self.lm_head,
+            self.mesh,
+            self.config.vocab_size,
+            None,
+        )
+
+    def hidden_states(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        mla: PagedCacheValues,
+        indexer: PagedCacheValues,
+        state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
+        comm_buffers: EPCommBuffers | None,
+        *,
+        subgraphs: bool = True,
+    ) -> Tensor:
+        """Returns every token's collapsed residual, before the final norm.
+
+        Args:
+            tokens: The batch's token ids, ragged by ``input_row_offsets``.
+            input_row_offsets: Offsets of each request's rows.
+            mla: The sparse layers' latent cache.
+            indexer: The sparse layers' indexer key cache.
+            state: Each device's recurrent-state leaves.
+            comm_buffers: The expert-parallel buffers, or ``None``.
+            subgraphs: Whether layers of one kind share a subgraph. A
+                speculative verify turns it off: its rollback reads what each
+                layer captures, which cannot leave a subgraph.
+        """
         config = self.config
         h = self.embed_tokens(tokens)
         mapping = tokens.mapping
-        conv_pool, conv_rows = _state_leaf(
+        conv_pool, conv_rows = state_leaf(
             state, CONV_LEAF_ID, mapping, head_sharded=True
         )
-        recurrent_pool, recurrent_rows = _state_leaf(
+        recurrent_pool, recurrent_rows = state_leaf(
             state, RECURRENT_LEAF_ID, mapping, head_sharded=True
         )
-        tail_pool, tail_rows = _state_leaf(
+        tail_pool, tail_rows = state_leaf(
             state, TAIL_RING_LEAF_ID, mapping, head_sharded=False
         )
         freqs_cis = F.cast(self.rope.freqs_cis, h.dtype).to(mapping)
@@ -218,18 +256,14 @@ class Glm5NextTextModel(Module[..., Tensor]):
             moe = (
                 "moe" if layer_idx >= config.first_k_dense_replace else "dense"
             )
-            call = as_subgraph(layer, name=f"glm5_next_{layer_type}_{moe}")
+            call = (
+                as_subgraph(layer, name=f"glm5_next_{layer_type}_{moe}")
+                if subgraphs
+                else layer
+            )
             streams = call(streams, attn_args, comm_buffers)
 
-        h = F.mean(streams, axis=1).squeeze(1)
-        return project_to_logits(
-            gather_last_tokens(h, input_row_offsets),
-            self.norm,
-            self.lm_head,
-            self.mesh,
-            config.vocab_size,
-            None,
-        )
+        return F.mean(streams, axis=1).squeeze(1)
 
 
 class Glm5Next(Module[..., ModuleV3Outputs]):

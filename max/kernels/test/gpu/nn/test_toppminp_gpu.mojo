@@ -59,16 +59,16 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
         self.p_threshold = p_threshold
 
 
-def time_kernel[](
+def time_kernel(
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     kernel_name: String,
-    func: Some[def(DeviceContext) raises -> None],
+    func: Some[def(DeviceContext[]) raises -> None],
 ) raises:
     @inline(.always)
     def bench_func(mut m: Bencher) {imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             func(ctx)
 
         bencher_iter_custom(m, kernel_launch, ctx)
@@ -243,7 +243,7 @@ def print_test_case(test_case: TestCase):
 
 
 def test_case_sampling(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     test_case: TestCase,
     fill_fn: Some[
         def[
@@ -354,7 +354,7 @@ def test_case_sampling(
     comptime if DEBUG_BENCH:
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {var}:
+        def run_func(ctx: DeviceContext[]) raises {var}:
             if is_top_p:
                 top_p_sampling_gpu(
                     ctx,
@@ -433,7 +433,7 @@ def test_toppminp_gpu[
     dtype: DType,
     out_idx_type: DType,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     fill_fn: Some[
         def[
             dtype: DType
@@ -600,7 +600,7 @@ def test_minp_max_threshold[
 def test_all_out_idx_types[
     dtype: DType,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     fill_fn: Some[
         def[
             dtype: DType
@@ -620,7 +620,7 @@ def test_all_out_idx_types[
 
 
 def test_all_types(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     fill_fn: Some[
         def[
             dtype: DType

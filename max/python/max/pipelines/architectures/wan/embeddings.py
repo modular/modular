@@ -19,11 +19,11 @@ from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn._graph_ops import rope_ragged_with_position_ids
 from max.nn.legacy.activation import activation_function_from_name
-from max.nn.legacy.kernels import rope_ragged_with_position_ids
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 
 def get_timestep_embedding(

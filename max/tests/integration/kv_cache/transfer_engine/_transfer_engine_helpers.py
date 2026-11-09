@@ -13,6 +13,9 @@
 
 from __future__ import annotations
 
+import faulthandler
+import os
+import signal
 import time
 from collections.abc import Sequence
 from multiprocessing.connection import wait
@@ -20,12 +23,17 @@ from multiprocessing.process import BaseProcess
 
 from max.driver import Buffer
 from max.dtype import DType
-from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.pipelines.kv_cache import KVTransferEngineMetadata
 
 # Under bazel's default 300s medium-test timeout, so a stuck peer fails the
 # test with its captured output rather than being killed as a TIMEOUT.
 _JOIN_TIMEOUT_S = 240.0
+
+# Each spawned peer imports this module. When join_peers sends SIGUSR1, the
+# peer writes its Python stacks to stderr. Use fd 2: pytest can replace
+# sys.stderr with an object that has no file descriptor.
+faulthandler.register(signal.SIGUSR1, file=2, all_threads=True)
 
 
 def view_2d_uint8(buf: Buffer, total_num_pages: int) -> Buffer:
@@ -81,6 +89,12 @@ def join_peers(
             break
         wait([p.sentinel for p in running], timeout=remaining)
     killed = [p for p in procs if p.exitcode is None]
+    for p in killed:
+        assert p.pid is not None
+        os.kill(p.pid, signal.SIGUSR1)
+    if killed:
+        # Give each peer time to write its stacks before the kill.
+        time.sleep(1.0)
     for p in killed:
         p.kill()
         p.join()

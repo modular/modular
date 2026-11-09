@@ -122,16 +122,6 @@ def targets():
     )
 
     native.alias(
-        name = "click@multiple",
-        actual = select({{
-            "@@//:use_aiperf_setting": ":click@8.5.0",
-            "@@//:use_sglang_setting": ":click@8.5.0",
-            "@@//:use_vllm_setting": ":click@8.5.0",
-            "//conditions:default": ":click@8.1.7",
-        }}),
-    )
-
-    native.alias(
         name = "openai@multiple",
         actual = select({{
             "@@//:use_sglang_setting": ":openai@2.6.1",
@@ -165,26 +155,6 @@ def targets():
             "@@//:use_sglang_setting": ":sse-starlette@2.1.2",
             "@@//:use_vllm_setting": ":sse-starlette@3.5.0",
             "//conditions:default": ":sse-starlette@2.1.2",
-        }}),
-    )
-
-    native.alias(
-        name = "hf-xet@multiple",
-        actual = select({{
-            "@@//:use_aiperf_setting": ":hf-xet@1.6.0",
-            "@@//:use_sglang_setting": ":hf-xet@1.6.0",
-            "@@//:use_vllm_setting": ":hf-xet@1.6.0",
-            "//conditions:default": ":hf-xet@1.4.2",
-        }}),
-    )
-
-    native.alias(
-        name = "huggingface-hub@multiple",
-        actual = select({{
-            "@@//:use_aiperf_setting": ":huggingface-hub@1.33.0",
-            "@@//:use_sglang_setting": ":huggingface-hub@1.33.0",
-            "@@//:use_vllm_setting": ":huggingface-hub@1.33.0",
-            "//conditions:default": ":huggingface-hub@1.8.0",
         }}),
     )
 
@@ -607,6 +577,11 @@ def targets():
             ":_env_python_3.10_x86_64-unknown-linux-gnu": ":numpy@2.2.6",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":numpy@2.2.6",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":numpy@2.2.6",
+            ":_env_python_3.15_aarch64-apple-darwin": ":numpy@2.5.4",
+            ":_env_python_3.15_aarch64-unknown-linux-gnu": ":numpy@2.5.4",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu": ":numpy@2.5.4",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu_amd_gpu": ":numpy@2.5.4",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu_nvidia_gpu": ":numpy@2.5.4",
             "//conditions:default": ":numpy@2.3.5",
         }}),
     )
@@ -620,7 +595,51 @@ def targets():
             ":_env_python_3.10_x86_64-unknown-linux-gnu": ":scipy@1.14.1",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":scipy@1.14.1",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":scipy@1.14.1",
+            ":_env_python_3.15_aarch64-apple-darwin": ":scipy@1.18.1",
+            ":_env_python_3.15_aarch64-unknown-linux-gnu": ":scipy@1.18.1",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu": ":scipy@1.18.1",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu_amd_gpu": ":scipy@1.18.1",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu_nvidia_gpu": ":scipy@1.18.1",
             "//conditions:default": ":scipy@1.16.3",
+        }}),
+    )
+
+    native.alias(
+        name = "pyarrow@multiple",
+        testonly = True,
+        actual = select({{
+            ":_env_python_3.10_aarch64-apple-darwin": ":pyarrow@25.0.0",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": ":pyarrow@25.0.0",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": ":pyarrow@25.0.0",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":pyarrow@25.0.0",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":pyarrow@25.0.0",
+            "//conditions:default": ":pyarrow@26.0.0",
+        }}),
+    )
+
+    native.alias(
+        name = "rpds-py@multiple",
+        testonly = True,
+        actual = select({{
+            ":_env_python_3.10_aarch64-apple-darwin": ":rpds-py@0.30.0",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": ":rpds-py@0.30.0",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": ":rpds-py@0.30.0",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":rpds-py@0.30.0",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":rpds-py@0.30.0",
+            "//conditions:default": ":rpds-py@2026.9.1",
+        }}),
+    )
+
+    native.alias(
+        name = "pandas@multiple",
+        testonly = True,
+        actual = select({{
+            ":_env_python_3.15_aarch64-apple-darwin": ":pandas@3.1.0",
+            ":_env_python_3.15_aarch64-unknown-linux-gnu": ":pandas@3.1.0",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu": ":pandas@3.1.0",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu_amd_gpu": ":pandas@3.1.0",
+            ":_env_python_3.15_x86_64-unknown-linux-gnu_nvidia_gpu": ":pandas@3.1.0",
+            "//conditions:default": ":pandas@2.3.3",
         }}),
     )
 

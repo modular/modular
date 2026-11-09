@@ -50,7 +50,7 @@ the mask types the SM100 native prefill kernel accepts, so the `comptime if`
 guard blocks elaboration of the whole body on a non-AMD build, not just its
 execution (mirrors `test_mla_decode_sparse_kv_fp8_gather.mojo`). The native
 SM100 sparse prefill path is already covered by
-`test_mla_prefill_sparse_kv_fp8.mojo` and friends.
+`test_mla_decode_sparse_skip_masked_tiles.mojo` and friends.
 """
 
 from std.math import ceildiv, exp, isnan
@@ -64,12 +64,13 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout
-from nn.attention.gpu.mla import flare_mla_decoding
+from layout.layout import Layout
+from nn.attention.gpu.mla import AMDMLA, flare_mla_decoding
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
     _amd_sparse_mla_gather_kv_rows,
     mla_prefill_branch_sparse_fp8,
+    AMDMLAGraph,
 )
 from nn.attention.mha_mask import NullMask, PaddingMask
 from nn.attention.mha_utils import MHAConfig
@@ -372,7 +373,7 @@ def _run_case[
     )
     var q_padded = TileTensor(
         q_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (total_q, Idx[1], Idx[num_heads], Idx[K_CACHE_DIM]),
             (
                 Idx[num_heads * K_CACHE_DIM],
@@ -384,7 +385,7 @@ def _run_case[
     )
     var out_padded = TileTensor(
         out_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (total_q, Idx[1], Idx[num_heads], Idx[KV_LATENT_DIM]),
             (
                 Idx[num_heads * KV_LATENT_DIM],
@@ -403,6 +404,7 @@ def _run_case[
     flare_mla_decoding[
         config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
         decoding_warp_split_k=False,
+        kernels=AMDMLA,
     ](
         out_padded,
         q_padded,
@@ -426,7 +428,7 @@ def _run_case[
         q_device.unsafe_ptr().unsafe_offset(
             (seq_q_len - 1) * num_heads * K_CACHE_DIM
         ),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[K_CACHE_DIM]),
             (
                 seq_q_len * num_heads * K_CACHE_DIM,
@@ -438,7 +440,7 @@ def _run_case[
     )
     var out_red_padded = TileTensor(
         out_red_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[KV_LATENT_DIM]),
             (
                 Idx[num_heads * KV_LATENT_DIM],
@@ -451,6 +453,7 @@ def _run_case[
     flare_mla_decoding[
         config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
         decoding_warp_split_k=False,
+        kernels=AMDMLA,
     ](
         out_red_padded,
         q_last_padded,
@@ -883,7 +886,7 @@ def _check_attn_sink_guard(ctx: DeviceContext) raises:
             n_scale_granularity=n_scale_gran,
             k_scale_granularity=k_scale_gran,
             indices_stride=indices_stride,
-            target="gpu",
+            kernels=AMDMLAGraph,
         ](
             out_tt,
             q_tt,
@@ -935,7 +938,7 @@ def main() raises:
     # code does NOT block elaboration of that code on the other arch (only
     # a real if/else does), so the whole body must be nested inside the
     # `comptime if` below. The native SM100 sparse prefill path is already
-    # covered by test_mla_prefill_sparse_kv_fp8.mojo and friends.
+    # covered by test_mla_decode_sparse_skip_masked_tiles.mojo and friends.
     comptime if default_accelerator().is_amd_gpu():
         with DeviceContext() as ctx:
             # GLM-5.3 shape: 8 heads, kv_lora_rank 512, qk_rope 64

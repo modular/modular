@@ -67,7 +67,7 @@ from dataclasses import dataclass
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.legacy.kernels import latent_sparse_attention_ragged
+from max.nn._graph_ops import latent_sparse_attention_ragged
 from max.nn.legacy.layer import Module
 from max.nn.legacy.norm.rms_norm import RMSNorm
 
@@ -262,29 +262,28 @@ class DeepseekV4Attention(Module):
         """
         b, s = o.shape[0], o.shape[1]
         group_width = self.n_heads * self.head_dim // self.o_groups
-        # The group axis is the only batch dim, tokens are the rows: a rank-3
-        # [g, b*s, d] @ [g, d, r] with no broadcast on either side. The
-        # earlier [b*s, g, 1, d] @ [1, g, d, r] form broadcast wo_a over every
-        # token, and the graph compiler materializes that broadcast as a
-        # constant per layer -- 24.75 GB each at seq=198 -- which ran the B200
-        # out of memory at model setup (ISSUES.md Issue 32).
-        grouped = ops.transpose(
-            ops.reshape(o, [b * s, self.o_groups, group_width]), 0, 1
-        )
+        rank = self.o_lora_rank
+        rows = ops.reshape(o, [b * s, self.o_groups * group_width])
         weight = self.wo_a.weight.to(o.device)
         if self.wo_a.weight_scale is not None:
             weight = dequantize_fp8_blocks(
                 weight, self.wo_a.weight_scale, o.dtype
             )
-        wo_a = ops.reshape(
-            weight, [self.o_groups, self.o_lora_rank, group_width]
+        # One 2D [b*s, d] @ [d, r] GEMM per group takes the tensor-core path;
+        # a rank-3 [g, b*s, d] @ [g, d, r] matmul lowers to the naive batched
+        # kernel. Broadcasting wo_a over tokens instead would materialize a
+        # per-layer constant that grows with sequence length.
+        flattened = ops.concat(
+            [
+                ops.matmul(
+                    rows[:, g * group_width : (g + 1) * group_width],
+                    ops.transpose(weight[g * rank : (g + 1) * rank, :], 0, 1),
+                )
+                for g in range(self.o_groups)
+            ],
+            axis=-1,
         )
-        # [g, b*s, d] @ [g, d, r] -> [g, b*s, r]
-        projected = ops.matmul(grouped, ops.transpose(wo_a, -1, -2))
-        flattened = ops.reshape(
-            ops.transpose(projected, 0, 1),
-            [b, s, self.o_groups * self.o_lora_rank],
-        )
+        flattened = ops.reshape(flattened, [b, s, self.o_groups * rank])
         return self.wo_b(flattened)
 
     def project(self, x: TensorValue) -> tuple[TensorValue, TensorValue]:

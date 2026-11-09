@@ -32,7 +32,8 @@ from typing import TypeVar
 
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.layer import Module
 from max.nn.legacy.moe import apply_eplb_placement, router_fold_supported
 
@@ -102,6 +103,11 @@ class EplbRuntime:
         Raises:
             ValueError: If the snapshot does not match the model.
         """
+        if self._runtime.eplb_count_expert_load:
+            # The tally indexes rows the way the routing histogram does: one
+            # per profiled layer, dense layers left at zero.
+            ep_config.eplb_count_expert_load = True
+            ep_config.num_moe_layers = self.metadata.num_layers
         path = os.environ.get(EPLB_STATS_ENV)
         if not path:
             return None

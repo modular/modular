@@ -44,6 +44,16 @@ struct LinearPayload(Movable):
         return self.value
 
 
+struct NonMovablePayload(Deinitable, not Movable):
+    var value: Int
+
+    def __init__(out self, value: Int):
+        self.value = value
+
+    def take(deinit self) -> Int:
+        return self.value
+
+
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
@@ -69,6 +79,20 @@ def take_optional_linear_payload() -> Int:
             abort("unreachable")
 
 
+def make_optional_non_movable_payload() -> Optional[NonMovablePayload]:
+    return Optional[NonMovablePayload](
+        init_with=lambda () -> NonMovablePayload: NonMovablePayload(99)
+    )
+
+
+def take_optional_non_movable_payload() -> Int:
+    match make_optional_non_movable_payload():
+        case .Some(var payload):
+            return payload^.take()
+        case .None:
+            abort("unreachable")
+
+
 def make_linear_payload_pair() -> Tuple[LinearPayload, LinearPayload]:
     return (LinearPayload(17), LinearPayload(25))
 
@@ -77,6 +101,18 @@ def take_tuple_linear_payload() -> Int:
     match make_linear_payload_pair():
         case (var payload, _):
             return payload^.take()
+
+
+def take_destructured_linear_payload_pair() -> Int:
+    var (first, second) = make_linear_payload_pair()
+    return first^.take() + second^.take()
+
+
+def take_transferred_linear_payload_pair() -> Int:
+    var first = LinearPayload(31)
+    var second = LinearPayload(41)
+    var (left, right) = (first^, second^)
+    return left^.take() + right^.take()
 
 
 def describe_token(tok: Token) -> String:
@@ -348,8 +384,14 @@ def test_optional():
 
     # CHECK: moved-linear: 42
     print("moved-linear:", take_optional_linear_payload())
+    # CHECK: moved-non-movable: 99
+    print("moved-non-movable:", take_optional_non_movable_payload())
     # CHECK: moved-tuple-linear: 17
     print("moved-tuple-linear:", take_tuple_linear_payload())
+    # CHECK: destructured-tuple-linear: 42
+    print("destructured-tuple-linear:", take_destructured_linear_payload_pair())
+    # CHECK: transferred-tuple-linear: 72
+    print("transferred-tuple-linear:", take_transferred_linear_payload_pair())
 
 
 def test_enum_like_token():

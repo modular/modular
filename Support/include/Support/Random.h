@@ -16,13 +16,14 @@
 
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include <cstdint>
 
 namespace M {
 /// Generate `numBytes` cryptographically-secure random numbers use them to
 /// completely fill `buf`. Returns an error if we were unable to generate random
 /// numbers for whatever reason.
-struct SecureRandomBytesGenerator {
+struct MODULAR_CXX_EXPORT SecureRandomBytesGenerator {
   /// Non-trivial constructors and destructors for Windows.
   SecureRandomBytesGenerator();
   ~SecureRandomBytesGenerator();

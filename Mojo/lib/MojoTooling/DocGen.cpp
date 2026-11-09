@@ -12,16 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/MojoTooling/DocGen.h"
+#include "DocGenSerialization.h"
 
 #include "Config/Version.h"
-#include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
-#include "Mojo/ToolCommon/FrontendOptions.h"
-#include "Support/Driver/DiagnosticFormat.h"
 
-#include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/SourceMgr.h"
@@ -52,14 +48,15 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
   if (!moduleDecl || parserContext.wasErrorEmitted())
     return false;
 
-  std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(moduleDecl);
-  if (!publicDecl)
+  std::optional<llvm::json::Object> serializedDecl =
+      serializeDocDecl(*moduleDecl, parserContext.getSharedState());
+  if (!serializedDecl)
     return false;
 
   llvm::json::OStream jsonOS(os, /*IndentSize=*/2);
   const char *version = getMojoVersionString();
   jsonOS.value(llvm::json::Object({
-      {"decl", publicDecl->toJSON(parserContext)},
+      {"decl", std::move(*serializedDecl)},
       {"version", llvm::formatv("{0}", version).str()},
   }));
 

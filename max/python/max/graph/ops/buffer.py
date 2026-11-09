@@ -15,9 +15,10 @@
 import numpy as np
 from max._core import Attribute
 from max._core import graph as _graph
-from max._core.dialects import kgen, mo, rmo
+from max._core.dialects import kgen, mo
 from max.driver import Buffer
 
+from ..dim import StaticDim
 from ..graph import Graph
 from ..type import BufferType, TensorType
 from ..value import BufferValue, BufferValueLike, TensorValue, TensorValueLike
@@ -56,17 +57,35 @@ def buffer_load(x: BufferValue) -> TensorValue:
     in_chain = Graph.current.device_chains[x.device]
 
     result, output_chain = Graph.current._add_op_generated(
-        rmo.MoMutableLoadOp,
+        mo.MutableLoadOp,
         TensorType(x.dtype, x.shape, x.device),
         mo.ChainType(),
         x,
-        kgen.ParamDeclArrayAttr([]),
         in_chain,
     )
 
     Graph.current.device_chains[x.device] = output_chain
 
     return result.tensor
+
+
+def _with_buffer_shape(source: TensorValue, buffer: BufferValue) -> TensorValue:
+    """Returns ``source`` typed with ``buffer``'s shape, as a store requires.
+
+    Dimensions known on both sides must agree; the rest are asserted equal at
+    runtime.
+    """
+    if source.shape == buffer.shape:
+        return source
+    if source.rank != buffer.rank or any(
+        isinstance(s, StaticDim) and isinstance(b, StaticDim) and s != b
+        for s, b in zip(source.shape, buffer.shape, strict=True)
+    ):
+        raise ValueError(
+            f"expected source to have shape {buffer.shape}, but source had"
+            f" shape {source.shape}"
+        )
+    return source.rebind(buffer.shape)
 
 
 def buffer_store(destination: BufferValueLike, source: TensorValueLike) -> None:
@@ -97,14 +116,14 @@ def buffer_store(destination: BufferValueLike, source: TensorValueLike) -> None:
         source: The tensor whose contents are copied into the buffer.
     """
     destination = BufferValue(destination)
+    source = _with_buffer_shape(TensorValue(source), destination)
     in_chain = Graph.current.device_chains[destination.device]
 
     output_chain = Graph.current._add_op_generated(
-        rmo.MoMutableStoreOp,
+        mo.MutableStoreOp,
         mo.ChainType(),
         destination,
-        TensorValue(source),
-        kgen.ParamDeclArrayAttr([]),
+        source,
         in_chain,
     )[0]
 
@@ -206,15 +225,15 @@ def buffer_store_slice(
         )
 
     output_chain = Graph.current._add_op_generated(
-        rmo.MoMutableStoreSliceOp,
+        mo.MutableStoreSliceOp,
         mo.ChainType(),
         destination,
         source.reshape(unsqueezed_shape),
         starts,
         stops,
         steps,
-        kgen.ParamDeclArrayAttr([]),
         in_chain,
+        kgen.ParamDeclArrayAttr([]),
     )[-1]
 
     Graph.current.device_chains[destination.device] = output_chain

@@ -28,7 +28,7 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import Linear
+from max.nn.legacy.linear import Linear, linear
 from max.nn.legacy.norm import LayerNorm, RMSNorm
 from max.nn.legacy.transformer import forward_sequential_layers
 
@@ -41,15 +41,6 @@ __all__ = [
     "Glm5NextVisionSpatialMerge",
     "Glm5NextVisionTransformer",
 ]
-
-
-def _patch_dim(config: Glm5NextVisionConfig) -> int:
-    return (
-        config.in_channels
-        * config.temporal_patch_size
-        * config.patch_size
-        * config.patch_size
-    )
 
 
 def _spatial_merge_unit(config: Glm5NextVisionConfig) -> int:
@@ -101,25 +92,46 @@ class Glm5NextVisionMLP(Module):
         )
 
 
-class Glm5NextVisionPatchEmbed(Module):
-    """Embeds flattened pixel patches.
+class _PatchProjection(Module):
+    """The checkpoint's ``Conv3d`` patch projection, run as a matmul.
 
-    The reference is a ``Conv3d`` whose kernel equals its stride and covers a
-    whole patch, so it runs here as a matmul over the already-flattened patch
-    rows. The weight adapter flattens the checkpoint's 5-D tensor; its memory
-    order is ``(channel, temporal, height, width)``, which is the order the
-    image processor emits, so no permutation is involved.
+    Its kernel equals its stride and covers a whole patch, so it is a linear
+    map of the already-flattened patch rows. The weight keeps the
+    checkpoint's 5-D shape and is flattened here; its memory order is
+    ``(channel, temporal, height, width)``, which is the order the image
+    processor emits, so no permutation is involved.
     """
 
     def __init__(self, config: Glm5NextVisionConfig, device: DeviceRef) -> None:
         super().__init__()
-        self.proj = Linear(
-            in_dim=_patch_dim(config),
-            out_dim=config.hidden_size,
-            dtype=config.dtype,
+        self.weight = Weight(
+            "weight",
+            config.dtype,
+            [
+                config.hidden_size,
+                config.in_channels,
+                config.temporal_patch_size,
+                config.patch_size,
+                config.patch_size,
+            ],
             device=device,
-            has_bias=True,
         )
+        self.bias = Weight(
+            "bias", config.dtype, [config.hidden_size], device=device
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        weight = self.weight.to(x.device)
+        flat = ops.reshape(weight, [weight.shape[0], -1])
+        return linear(x, flat) + self.bias.to(x.device)
+
+
+class Glm5NextVisionPatchEmbed(Module):
+    """Embeds flattened pixel patches."""
+
+    def __init__(self, config: Glm5NextVisionConfig, device: DeviceRef) -> None:
+        super().__init__()
+        self.proj = _PatchProjection(config, device)
 
     def __call__(self, pixel_values: TensorValue) -> TensorValue:
         return self.proj(pixel_values.cast(self.proj.weight.dtype))

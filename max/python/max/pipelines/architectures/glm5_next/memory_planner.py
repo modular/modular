@@ -39,8 +39,8 @@ instead reserved nothing for any of them, because that base returns ``0``.
 Above roughly 12K context the KV cache dominates instead: 11 KiB per token
 across the 11 sparse-MLA layers, 11.8 GB for a 1M-token sequence.
 
-The vision tower adds a replica per device beyond the checkpoint's one copy,
-and its own activations.
+The vision tower and its activations live on the first device. The cache is
+split evenly, so the first device bounds it, and every device budgets for them.
 """
 
 from __future__ import annotations
@@ -50,7 +50,9 @@ from typing import Any
 
 from max.driver import Device
 from max.graph import DeviceRef
-from max.nn.legacy.state_space.kimi_delta import amd_kda_chunk_workspace_bytes
+from max.nn._graph_ops.state_space.kimi_delta import (
+    amd_kda_chunk_workspace_bytes,
+)
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import override
@@ -70,7 +72,7 @@ _VISION_PEAK_HIDDEN_WIDTHS_PER_PATCH = 48
 
 
 def _vision_tower_bytes(config: Glm5NextConfig) -> int:
-    """Bytes of one tower replica, read off the module the model builds."""
+    """Bytes of the tower's weights, read off the module the model builds."""
     if config.vision_config is None:
         return 0
     tower = Glm5NextVisionTransformer(config.vision_config, DeviceRef.CPU())
@@ -92,17 +94,18 @@ class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
 
     @override
     def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
-        """Adds a vision tower replica on every device but the first.
+        """Charges the vision tower to every device but the first as well.
 
-        The checkpoint carries one copy of the tower, which the base estimate
-        already counts.
+        The base estimate counts the checkpoint's one copy, which the first
+        device holds; the evenly split cache needs every device to budget as
+        the first does.
         """
         config = self._config
         assert isinstance(config, Glm5NextConfig)
-        replicas = len(config.devices) - 1
+        other_devices = len(config.devices) - 1
         return super().estimate_weights_size(
             pipeline_config
-        ) + replicas * _vision_tower_bytes(config)
+        ) + other_devices * _vision_tower_bytes(config)
 
     @override
     def infer_max_batch_size(
@@ -186,7 +189,7 @@ class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
         )
 
     def _vision_activation_bytes(self, pipeline_config: PipelineConfig) -> int:
-        """The tower's peak activations, summed over its replicas.
+        """The tower's peak activations, charged to every device as to the first.
 
         Added to the decoder's rather than overlapped with it: under the
         overlap scheduler a batch's encode can run while the previous batch's

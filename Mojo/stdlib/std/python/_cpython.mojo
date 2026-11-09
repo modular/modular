@@ -22,7 +22,7 @@ from .python_object import PythonObject
 from std.collections import Array
 from std.memory import OpaquePointer
 from std.memory.alloc import alloc, Layout
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.os import abort, getenv, setenv
 from std.os.path import dirname
 from std.pathlib import Path
@@ -266,7 +266,7 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
     var patch: Int
     """The patch version number."""
 
-    def __init__(out self, version: StringSlice):
+    def __init__(out self, version: StringSpan):
         """Initialize a PythonVersion object from a version string.
 
         Args:
@@ -456,8 +456,13 @@ struct PyTypeObject:
 
 
 @fieldwise_init
-struct PyType_Spec(ImplicitlyCopyable, RegisterPassable):
+struct PyType_Spec[slots_origin: MutOrigin](
+    ImplicitlyCopyable, RegisterPassable
+):
     """Structure defining a type's behavior.
+
+    Parameters:
+        slots_origin: The origin of the `slots` array.
 
     References:
     - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
@@ -467,7 +472,7 @@ struct PyType_Spec(ImplicitlyCopyable, RegisterPassable):
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
-    var slots: Optional[Pointer[PyType_Slot, MutUntrackedOrigin]]
+    var slots: Optional[Pointer[PyType_Slot, Self.slots_origin]]
 
 
 # https://github.com/python/cpython/blob/main/Include/typeslots.h
@@ -1186,7 +1191,7 @@ comptime PyType_FromSpec = ExternalFunction[
     "PyType_FromSpec",
     # PyObject *PyType_FromSpec(PyType_Spec *spec)
     def(
-        Optional[Pointer[PyType_Spec, MutAnyOrigin]]
+        Optional[Pointer[PyType_Spec[MutAnyOrigin], MutAnyOrigin]]
     ) thin abi("C") -> PyObjectPtr,
 ]
 comptime PyType_GetFlags = ExternalFunction[
@@ -1522,7 +1527,7 @@ struct GILReleased(Movable):
 
 def _untracked_symbol[
     result_type: AnyType
-](mut lib: OwnedDLHandle, name: StringSlice) -> Optional[
+](mut lib: OwnedDLHandle, name: StringSpan) -> Optional[
     Pointer[result_type, MutUntrackedOrigin]
 ]:
     """Resolves a symbol and drops the borrow tying it to `lib`.
@@ -1544,10 +1549,11 @@ def _untracked_symbol[
     Returns:
         An optional pointer to the symbol, or `None` if not found.
     """
-    var ptr = lib.get_symbol[result_type](name)
-    if not ptr:
-        return None
-    return ptr.unsafe_value().unsafe_origin_cast[MutUntrackedOrigin]()
+    match lib.get_symbol[result_type](name):
+        case .Some(ptr):
+            return ptr.unsafe_origin_cast[MutUntrackedOrigin]()
+        case .None:
+            return None
 
 
 @fieldwise_init
@@ -2074,7 +2080,7 @@ struct CPython(Defaultable, Movable):
 
     def get_error_global(
         self,
-        global_name: StringSlice,
+        global_name: StringSpan,
     ) -> PyObjectPtr:
         """Get a Python read-only reference to the specified global exception
         object.
@@ -2255,7 +2261,7 @@ struct CPython(Defaultable, Movable):
     def PyErr_SetString(
         self,
         type: PyObjectPtr,
-        message: Optional[Pointer[c_char, ImmutAnyOrigin]],
+        message: Optional[ImmPointer[c_char, _]],
     ):
         """This is the most common way to set the error indicator. The first
         argument specifies the exception type; it is normally one of the
@@ -2266,7 +2272,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
         """
-        self._PyErr_SetString(type, message)
+        self._PyErr_SetString(type, unsafe_cast[origin=ImmutAnyOrigin](message))
 
     def PyErr_SetNone(self, type: PyObjectPtr):
         """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
@@ -3151,7 +3157,7 @@ struct CPython(Defaultable, Movable):
         return self._PyType_GetName(type)
 
     def PyType_FromSpec(
-        self, spec: Optional[Pointer[PyType_Spec, MutAnyOrigin]]
+        self, spec: Optional[MutPointer[PyType_Spec[_], _]]
     ) -> PyObjectPtr:
         """Equivalent to `PyType_FromMetaclass(NULL, NULL, spec, NULL)`.
 
@@ -3160,7 +3166,11 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec
         """
-        return self._PyType_FromSpec(spec)
+        return self._PyType_FromSpec(
+            unsafe_cast[Type=PyType_Spec[MutAnyOrigin], origin=MutAnyOrigin](
+                spec
+            )
+        )
 
     # ===-------------------------------------------------------------------===#
     # The None Object
@@ -3371,7 +3381,7 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     # TODO: fix the signature to take str, size, and errors as args
-    def PyUnicode_DecodeUTF8(self, s: StringSlice) -> PyObjectPtr:
+    def PyUnicode_DecodeUTF8(self, s: StringSpan) -> PyObjectPtr:
         """Create a Unicode object by decoding size bytes of the UTF-8 encoded
         string slice `s`. Return `NULL` if an exception was raised by the codec.
 
@@ -3393,7 +3403,7 @@ struct CPython(Defaultable, Movable):
     # TODO: fix signature to take unicode and size as args
     def PyUnicode_AsUTF8AndSize(
         self, obj: PyObjectPtr
-    ) -> Optional[StringSlice[ImmutAnyOrigin]]:
+    ) -> Optional[StringSpan[ImmutAnyOrigin]]:
         """Return a pointer to the UTF-8 encoding of the Unicode object, and
         store the size of the encoded representation (in bytes) in `size`.
 
@@ -3407,7 +3417,7 @@ struct CPython(Defaultable, Movable):
         )
         if length == Py_ssize_t(-1):
             return None
-        return StringSlice[ImmutAnyOrigin](
+        return StringSpan[ImmutAnyOrigin](
             unsafe_from_utf8=Span(
                 unsafe_ptr=ptr.value().unsafe_bitcast[Byte](),
                 length=Int(length),
@@ -3562,16 +3572,21 @@ struct CPython(Defaultable, Movable):
     def PyDict_Next(
         self,
         dict: PyObjectPtr,
-        pos: Optional[Pointer[Py_ssize_t, MutAnyOrigin]],
-        key: Optional[Pointer[PyObjectPtr, MutAnyOrigin]],
-        value: Optional[Pointer[PyObjectPtr, MutAnyOrigin]],
+        pos: Optional[MutPointer[Py_ssize_t, _]],
+        key: Optional[MutPointer[PyObjectPtr, _]],
+        value: Optional[MutPointer[PyObjectPtr, _]],
     ) -> c_int:
         """Iterate over all key-value pairs in the dictionary `dict`.
 
         References:
         - https://docs.python.org/3/c-api/dict.html#c.PyDict_Next
         """
-        return self._PyDict_Next(dict, pos, key, value)
+        return self._PyDict_Next(
+            dict,
+            unsafe_cast[origin=MutAnyOrigin](pos),
+            unsafe_cast[origin=MutAnyOrigin](key),
+            unsafe_cast[origin=MutAnyOrigin](value),
+        )
 
     # ===-------------------------------------------------------------------===#
     # Set Objects
@@ -3641,7 +3656,7 @@ struct CPython(Defaultable, Movable):
     def PyModule_AddFunctions(
         self,
         module: PyObjectPtr,
-        functions: Optional[Pointer[PyMethodDef, MutAnyOrigin]],
+        functions: Optional[MutPointer[PyMethodDef, _]],
     ) -> c_int:
         """Add the functions from the `NULL` terminated `functions` array to
         module.
@@ -3649,12 +3664,14 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions
         """
-        return self._PyModule_AddFunctions(module, functions)
+        return self._PyModule_AddFunctions(
+            module, unsafe_cast[origin=MutAnyOrigin](functions)
+        )
 
     def PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: Optional[Pointer[c_char, ImmutAnyOrigin]],
+        name: Optional[ImmPointer[c_char, _]],
         value: PyObjectPtr,
     ) -> c_int:
         """Add an object to `module` as `name`.
@@ -3662,7 +3679,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
         """
-        return self._PyModule_AddObjectRef(module, name, value)
+        return self._PyModule_AddObjectRef(
+            module, unsafe_cast[origin=ImmutAnyOrigin](name), value
+        )
 
     # ===-------------------------------------------------------------------===#
     # Slice Objects

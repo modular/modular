@@ -16,7 +16,7 @@ from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
 from std.collections.string.string_span import _get_kgen_string
 from std.reflection import SourceLocation
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 from std._gpu import lane_id
 from std._gpu.host.info import (
     NoGPU,
@@ -85,11 +85,11 @@ trait MaxPluginHooks:
         pdl_level: PDLLevel = PDLLevel.ON,
     ](
         func: Some[
-            def[
-                width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) -> None
+            ImplicitlyCopyable
+            & RegisterPassable
+            & (def[width: Int, alignment: Int = 1](Coord) -> None)
         ],
-        shape: IndexList[rank, element_type=_],
+        shape: Coord,
         ctx: DeviceContext,
     ) raises:
         """Per-target plugin hook for `elementwise[...]`.
@@ -374,7 +374,7 @@ trait MaxPluginHooks:
     def enqueue_function_fn[
         *Ts: DevicePassable
     ](
-        ctx: _LegacyDeviceContext.Generic[Self.hooks_target],
+        ctx: _LegacyDeviceContext[Self.hooks_target],
         f: DeviceFunction,
         *args: *Ts,
         grid_dim: Dim,

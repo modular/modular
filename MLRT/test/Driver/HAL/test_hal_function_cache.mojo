@@ -53,10 +53,10 @@ def test_content_dedupes_across_buffers[
     assert_not_equal(Int(copy_a.unsafe_ptr()), Int(copy_b.unsafe_ptr()))
 
     var func_a = ctx.get_or_load_function_dynamic(
-        StringSlice(copy_a), name.copy()
+        StringSpan(copy_a), name.copy()
     )
     var func_b = ctx.get_or_load_function_dynamic(
-        StringSlice(copy_b), name.copy()
+        StringSpan(copy_b), name.copy()
     )
     assert_equal(Int(func_a), Int(func_b))
 
@@ -68,14 +68,14 @@ def test_static_and_dynamic_agree[
     var info = ctx._compile_inner[type_of(scale_kernel), scale_kernel]()
     var name = String(info.function_name)
 
-    var first = ctx.get_or_load_function(info.asm, name.copy())
-    var second = ctx.get_or_load_function(info.asm, name.copy())
+    var first = ctx.get_or_load_function(info.asm, info.function_name)
+    var second = ctx.get_or_load_function(info.asm, info.function_name)
     assert_equal(Int(first), Int(second))
 
     var copied = String()
     copied += info.asm
     var dynamic = ctx.get_or_load_function_dynamic(
-        StringSlice(copied), name.copy()
+        StringSpan(copied), name.copy()
     )
     assert_equal(Int(first), Int(dynamic))
 
@@ -89,7 +89,7 @@ def test_compile_function_inline_uses_cache[
     assert_equal(Int(first), Int(second))
 
     var info = ctx._compile_inner[type_of(scale_kernel), scale_kernel]()
-    var direct = ctx.get_or_load_function(info.asm, String(info.function_name))
+    var direct = ctx.get_or_load_function(info.asm, info.function_name)
     assert_equal(Int(first), Int(direct))
 
 
@@ -138,19 +138,12 @@ def test_cache_key_distinguishes[device_spec: DeviceSpec]() raises:
     """Every component of the key participates, so nothing aliases on a partial
     match."""
     comptime Ctx = Context[device_spec]
-    var base = Ctx._function_cache_key(1, 10, "kernel", None, 0)
+    var base = Ctx._function_cache_key(1, 10, "kernel")
 
-    assert_not_equal(base, Ctx._function_cache_key(2, 10, "kernel", None, 0))
-    assert_not_equal(base, Ctx._function_cache_key(1, 11, "kernel", None, 0))
-    assert_not_equal(base, Ctx._function_cache_key(1, 10, "other", None, 0))
-    assert_not_equal(
-        base, Ctx._function_cache_key(1, 10, "kernel", Int32(8), 0)
-    )
-    assert_not_equal(
-        Ctx._function_cache_key(1, 10, "kernel", Int32(8), 0),
-        Ctx._function_cache_key(1, 10, "kernel", Int32(8), 1),
-    )
-    assert_equal(base, Ctx._function_cache_key(1, 10, "kernel", None, 0))
+    assert_not_equal(base, Ctx._function_cache_key(2, 10, "kernel"))
+    assert_not_equal(base, Ctx._function_cache_key(1, 11, "kernel"))
+    assert_not_equal(base, Ctx._function_cache_key(1, 10, "other"))
+    assert_equal(base, Ctx._function_cache_key(1, 10, "kernel"))
 
 
 def main() raises:

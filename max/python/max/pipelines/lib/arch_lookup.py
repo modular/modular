@@ -34,10 +34,12 @@ from max.nn import Module
 from max.nn.legacy.layer import Module as GraphApiModule
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .graph_specs import GraphRole
 from .interfaces.pipeline_model import PipelineModel
 from .pipeline_executor import PipelineExecutor
 from .registration_graph_api import registered_pipeline_model
 from .tokenizer import TextTokenizer
+from .weight_transform import WeightRule, WeightTransform
 
 if TYPE_CHECKING:
     from max.graph.weights import WeightsAdapter, WeightsFormat
@@ -60,7 +62,7 @@ if TYPE_CHECKING:
 
     from .config import PipelineConfig
     from .interfaces import ArchConfig
-    from .weight_transform import WeightRule
+    from .registration_draft import DraftRegistration
 
 logger = logging.getLogger("max.pipelines")
 
@@ -171,9 +173,18 @@ class SupportedArchitecture:
     The framework constructs each as ``module_cls(config)`` from the
     finalized :attr:`config`, and its ``forward`` (``__call__`` for a
     graph-API :class:`~max.nn.legacy.Module`) takes and returns the role's
-    contract from :mod:`max.pipelines.lib.role_contracts`. Only
-    text-generation ``DECODER`` modules are served so far, with a ``VISION``
-    module beside a ModuleV3 one.
+    contract from :mod:`max.pipelines.lib.role_contracts`. A ``DRAFT`` is a
+    component of a speculative pairing, constructed through :attr:`draft`,
+    and has no standalone serving pipeline.
+    """
+
+    draft: DraftRegistration[Any, Any] | None = field(
+        default=None, kw_only=True
+    )
+    """The registered draft's construction and proposer contract.
+
+    A draft-only architecture has no standalone pipeline model. An architecture
+    with both roles serves its decoder normally until speculation is requested.
     """
 
     task: PipelineTask
@@ -249,6 +260,13 @@ class SupportedArchitecture:
     A prefix hit is safe only where the state that consumed exactly that
     prefix is restored with it."""
 
+    prefix_caching_under_spec: bool = True
+    """Whether a ModuleV3 pairing that speculates over this recurrent target
+    keeps prefix caching on.
+
+    Read only when :attr:`checkpoints_recurrent_state` is set: a graph-API
+    recurrent target always turns it off under speculation."""
+
     context_validators: list[
         Callable[[TextContext | TextAndVisionContext | PixelContext], None]
     ] = field(default_factory=list)
@@ -321,6 +339,24 @@ class SupportedArchitecture:
 
     If None, the artifact carries no FormatSpec and tool calls are served
     unconstrained.
+    """
+
+    tokenizer_family: (
+        tuple[str, str | None]
+        | Callable[[HuggingFaceRepo], tuple[str, str | None] | None]
+        | None
+    ) = None
+    """Optional orchestrator tokenizer family for this architecture's checkpoints.
+
+    The family and flavor the orchestrator builds its fast-path tokenizer
+    from, such as ``("gemma4", "thinking")`` or ``("llama3", None)`` for a
+    family with one flavor, or a callable that takes the model's
+    :class:`HuggingFaceRepo` handle and returns them, or ``None`` for a
+    checkpoint with no family code. ``max export`` records them in the
+    pipeline artifact's ``tokenizer`` section.
+
+    If None, the artifact names no family, and the orchestrator picks it by
+    model name as it does without an artifact.
     """
 
     batching: type[Any] | None = None
@@ -542,15 +578,51 @@ class SupportedArchitecture:
     """
 
     def __post_init__(self) -> None:
+        draft_cls = self.modules.get(GraphRole.DRAFT)
+        if (draft_cls is None) != (self.draft is None):
+            raise ValueError(
+                "DRAFT modules and draft registration must be declared together"
+            )
+        if draft_cls is not None and not issubclass(
+            draft_cls, (Module, GraphApiModule)
+        ):
+            raise TypeError("a registered draft must be a module class")
+        serving = tuple(
+            (role, module)
+            for role, module in self.modules.items()
+            if role != GraphRole.DRAFT
+        )
         # A derived architecture, such as a speculative pairing, keeps the
         # pipeline model it sets.
-        if self.modules and self.pipeline_model is None:
+        if serving and self.pipeline_model is None:
             self.pipeline_model = registered_pipeline_model(
                 self.task,
                 self.config,
-                tuple(self.modules.items()),
+                serving,
                 self.batching,
             )
+
+    def checkpoint_adapters(
+        self, huggingface_config: PretrainedConfig
+    ) -> dict[WeightsFormat, WeightsAdapter]:
+        """Returns the adapters a pipeline loads the checkpoint through.
+
+        Args:
+            huggingface_config: The checkpoint's config, which
+                :attr:`weight_rules` reads.
+
+        Raises:
+            ValueError: If :attr:`use_weight_rules` is set without
+                :attr:`weight_rules`.
+        """
+        if not self.use_weight_rules:
+            return self.weight_adapters
+        if self.weight_rules is None:
+            raise ValueError(
+                f"{self.name} sets use_weight_rules but has no weight_rules"
+            )
+        transform = WeightTransform(self.weight_rules(huggingface_config))
+        return {self.default_weights_format: transform}
 
     def draft_architecture(self, method: str, checkpoint_name: str) -> str:
         """Returns the registered draft architecture of a draft checkpoint.

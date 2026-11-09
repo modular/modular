@@ -59,7 +59,7 @@ from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
-from nn.attention.gpu.mla import flare_mla_prefill
+from nn.attention.gpu.mla import AMDMLA, flare_mla_prefill
 from nn.attention.mha_mask import CausalMask
 
 from _fuzz import boundary_int, collect_args, fill_normal, flag, flag_int
@@ -331,7 +331,7 @@ def run_one_case(
 
     # Kernel under test: on AMD this routes to
     # `Attention[...].mla_prefill(k_rope)` in amd_structured/mla_prefill.mojo.
-    flare_mla_prefill[rank=q_tt.rank](
+    flare_mla_prefill[rank=q_tt.rank, kernels=AMDMLA](
         o_tt,
         q_tt,
         k_tt,

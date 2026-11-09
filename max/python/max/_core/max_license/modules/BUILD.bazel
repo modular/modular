@@ -30,7 +30,7 @@ modular_nanobind_library(
         "//Support:Profiling",
         "//Support:ProfilingRanges",
         "//Support:RequestContext",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
         "//max/python/max/_core/max_license:AsyncRTPython",
         "//max/python/max/_core/max_license:DriverPython",
         "//max/python/max/_core/max_license:EnginePython",

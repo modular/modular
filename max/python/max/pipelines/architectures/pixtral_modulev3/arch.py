@@ -13,20 +13,20 @@
 """Registers Pixtral with the ModuleV3 registry."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.pixtral.tokenizer import PixtralTokenizer
-from max.pipelines.context import TextAndVisionContext
 from max.pipelines.context.context_validators import (
     validate_only_one_image,
     validate_requires_vision_context,
 )
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .batch_processor import PixtralModuleV3BatchProcessor
-from .model import PixtralModel
+from .context import PixtralContext
 from .model_config import PixtralConfig
+from .modules import PixtralDecoder, PixtralRegisteredVision
+from .tokenizer import PixtralModuleV3Tokenizer
 
 pixtral_modulev3_arch = SupportedArchitecture(
     name="LlavaForConditionalGeneration_ModuleV3",
@@ -35,12 +35,15 @@ pixtral_modulev3_arch = SupportedArchitecture(
     example_repo_ids=["mistral-experimental/pixtral-12b"],
     default_encoding=PixtralConfig.DEFAULT_ENCODING,
     supported_encodings=PixtralConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=PixtralModel,
-    tokenizer=PixtralTokenizer,
-    context_type=TextAndVisionContext,
+    modules={
+        GraphRole.DECODER: PixtralDecoder,
+        GraphRole.VISION: PixtralRegisteredVision,
+    },
+    tokenizer=PixtralModuleV3Tokenizer,
+    context_type=PixtralContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.safetensors: weight_adapters.convert_registered_state_dict,
     },
     required_arguments={
         "enable_prefix_caching": False,

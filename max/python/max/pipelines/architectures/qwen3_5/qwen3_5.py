@@ -37,30 +37,27 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.graph_groups import MRoPEPositions
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops.state_space import GatedDeltaReplayInputs
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import MRoPEPositions
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.state_space import GatedDeltaReplayInputs
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnHiddenStates,
-    forward_sequential_layers,
-)
+from max.nn.legacy.transformer import DecoderOutputs, forward_sequential_layers
 from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
 from max.nn.legacy.transformer.transformer import forward_sharded_layers
+from max.nn.outputs import ReturnHiddenStates
+from max.nn.quant_config import QuantConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_batch_inputs,
     signal_inputs,
@@ -193,6 +190,7 @@ class Qwen3_5FullAttentionBlock(Module):
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
         freq_row_ids: list[TensorValue] | None = None,
+        mixed_step_split: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
         """Runs the block over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
@@ -212,10 +210,13 @@ class Qwen3_5FullAttentionBlock(Module):
                         attention_dispatch_metadata=(
                             attention_dispatch_metadata[i]
                         ),
+                        mixed_step_split=(
+                            mixed_step_split[i] if mixed_step_split else None
+                        ),
                     ),
                     freqs_cis[i],
                     input_row_offsets[i],
-                    None if freq_row_ids is None else freq_row_ids[i],
+                    freq_row_ids[i] if freq_row_ids else None,
                 )
                 for i, shard in enumerate(self.self_attn_shards)
             ],
@@ -271,6 +272,7 @@ class Qwen3_5LinearAttentionBlock(Module):
             ssm_dtype=config.mamba_ssm_dtype,
             proj_dtype=storage_dtype(attn_quant_config, compute_dtype),
             quant_config=attn_quant_config,
+            scalar_dtypes=config.linear_attn_scalar_dtypes,
         )
         self.mlp = MLP(
             storage_dtype(mlp_quant_config, compute_dtype),
@@ -655,9 +657,13 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                     ],
                     freqs_cis,
                     row_offsets,
+                    [] if freq_row_ids is None else freq_row_ids,
+                    [
+                        kv.mixed_step_split
+                        for kv in kv_collections
+                        if kv.mixed_step_split is not None
+                    ],
                 ]
-                if freq_row_ids is not None:
-                    full_attn_inputs.append(freq_row_ids)
                 return full_attn_inputs
             # All linear layers share one compiled subgraph, whose body is
             # built from the first of them. Only the arguments vary per call,

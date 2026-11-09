@@ -70,6 +70,7 @@ static int demangle(const State &subcommandState) {
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   MLIRContext context{registry};
+  configureKGENContext(&context);
 
   // If no name was provided on the command-line, read one from stdin.
   std::string name =

@@ -27,10 +27,12 @@
 #include "Support/ErrorOr.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace llvm {
@@ -65,8 +67,38 @@ public:
   virtual void registerDialects(mlir::DialectRegistry &registry) const {}
   /// Loads those dialects into `ctx` (the preload variant).
   virtual void loadDialects(mlir::MLIRContext *ctx) const {}
+  /// Applies the target's settings to a newly created `ctx`, before anything
+  /// runs on it. Some settings (allowing unregistered dialects, say) cannot
+  /// change once the context is in use, so this is for context creation only,
+  /// not for `loadDialects`.
+  ///
+  /// Every tool that creates its own context applies this hook. `kgen-opt`
+  /// drives `MlirOptMain`, whose config carries only
+  /// `allowUnregisteredDialects`; that is the one setting a target can rely
+  /// on there.
+  virtual void configureContext(mlir::MLIRContext *ctx) const {}
   /// Registers the target's passes so tools can run them by name.
   virtual void registerPasses() const {}
+  /// Whether the target owns dialect `dialectNamespace`, whose syntax the
+  /// compiler cannot parse itself.
+  virtual bool implementsDialect(llvm::StringRef dialectNamespace) const {
+    return false;
+  }
+  /// Converts an `__mlir_op` f-string op of an implemented dialect to generic
+  /// form. `wrapped` is a `kgen.func` holding the one op in the dialect's own
+  /// syntax. Returns false with `error` set on failure.
+  virtual bool inlineOpToGeneric(llvm::StringRef wrapped, std::string &out,
+                                 std::string &error) const {
+    return false;
+  }
+  /// Appends the linker arguments a host executable built for `accelerator`
+  /// needs, e.g. the accelerator's runtime library and its search path. The
+  /// same arguments feed `mojo build`'s system link and `mojo run`'s JIT
+  /// library resolver, which expands `-Wl,` passthroughs and treats an rpath
+  /// directory as a search directory.
+  virtual void
+  appendHostLinkArgs(llvm::StringRef accelerator,
+                     llvm::SmallVectorImpl<std::string> &args) const {}
 
   /// Resolves `triple` to the concrete traits that describe it, or null if
   /// these do not. The default returns `this` when `matches`; a dispatcher that
@@ -203,10 +235,20 @@ public:
     return Targets;
   }
 
+  /// The registered target that implements `dialectNamespace`, or null.
+  const TargetTraits *traitsForDialect(llvm::StringRef dialectNamespace) const;
+
+  /// Whether `dialectNamespace` is registered in `ctx` or owned by a target.
+  bool isKnownDialect(mlir::MLIRContext *ctx,
+                      llvm::StringRef dialectNamespace) const;
+
   /// Runs the corresponding hook on every registered target.
   void registerAllDialects(mlir::DialectRegistry &registry) const;
   void loadAllDialects(mlir::MLIRContext *ctx) const;
+  void configureContext(mlir::MLIRContext *ctx) const;
   void registerAllPasses() const;
+  void appendHostLinkArgs(llvm::StringRef accelerator,
+                          llvm::SmallVectorImpl<std::string> &args) const;
 
 private:
   TargetTraitsRegistry() = default;

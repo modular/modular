@@ -100,7 +100,7 @@ comptime offset_dtype = DType.uint32
 
 
 def compute_log_probabilities_1tok[
-    target: StaticString, levels: Int
+    levels: Int
 ](
     output_token_index: Int,
     lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
@@ -115,7 +115,6 @@ def compute_log_probabilities_1tok[
     """Computes log probabilities for a single token position from its logits row.
 
     Parameters:
-        target: Compilation target string, such as `"cpu"` or `"gpu"`.
         levels: Number of heap levels controlling the top-k width; the output
             stores `2**levels` entries per token. When `levels <= 0`, only
             the sampled token's log probability is emitted.
@@ -194,7 +193,7 @@ struct LogProbabilitiesRagged:
 
     @staticmethod
     def execute[
-        target: StaticString, levels: Int
+        levels: Int
     ](
         lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
         lp_tokens: OutputTensor[dtype=token_dtype, rank=2, ...],
@@ -210,7 +209,6 @@ struct LogProbabilitiesRagged:
         """Executes the ragged log-probabilities computation across all batches.
 
         Parameters:
-            target: Compilation target string, such as `"cpu"` or `"gpu"`.
             levels: Number of heap levels controlling the top-k width; the
                 output stores `2**levels` entries per token.
 
@@ -244,10 +242,10 @@ struct LogProbabilitiesRagged:
         if lp_tokens.shape()[1] != 2**levels:
             raise Error("Axis 1 of lp_tokens inconsistent with level setting")
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
 
             def lp_idx_kernel(output_token_index: Int) {imm} -> None:
-                compute_log_probabilities_1tok[target, levels](
+                compute_log_probabilities_1tok[levels](
                     output_token_index=output_token_index,
                     lp_logits=lp_logits,
                     lp_tokens=lp_tokens,
@@ -264,7 +262,7 @@ struct LogProbabilitiesRagged:
                 num_output_tokens,
                 ctx=Optional(ctx.assert_cpu_target()),
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             # `Int` is not device-passable; the closure carries a fixed-width
             # copy of the token count.
             var num_output_tokens_dev = Int32(num_output_tokens)
@@ -283,7 +281,7 @@ struct LogProbabilitiesRagged:
             }:
                 var output_token_index = global_idx.x
                 if output_token_index < Int(num_output_tokens_dev):
-                    compute_log_probabilities_1tok[target, levels](
+                    compute_log_probabilities_1tok[levels](
                         output_token_index=output_token_index,
                         lp_logits=lp_logits,
                         lp_tokens=lp_tokens,

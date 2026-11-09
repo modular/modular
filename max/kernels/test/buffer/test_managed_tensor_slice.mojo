@@ -407,7 +407,7 @@ def _check_value_form_rank1[dtype: DType]() raises:
     def body[width: Int](idx: Coord) {var bias} -> SIMD[dtype, width]:
         return SIMD[dtype, width](bias)
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
     for i in range(N):
@@ -447,7 +447,7 @@ def _check_value_form_rank2[dtype: DType]() raises:
             v[lane] = base_val + Scalar[dtype](lane)
         return v
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
     for r in range(ROWS):
@@ -486,7 +486,7 @@ def _check_capture_outer_tensor[dtype: DType]() raises:
     def body[width: Int](idx: Coord) {var x} -> SIMD[dtype, width]:
         return x.load[width](idx) + 1
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
     for i in range(N):
@@ -518,7 +518,7 @@ def _check_capture_tensor_and_scalar[dtype: DType]() raises:
     def body[width: Int](idx: Coord) {var x, var addend} -> SIMD[dtype, width]:
         return x.load[width](idx) + addend
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
     for i in range(N):
@@ -556,7 +556,7 @@ def _foreach_over_input[
             coord_to_index_list(idx)[0]
         )
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
 
@@ -607,7 +607,7 @@ def _check_simd_width_one[dtype: DType]() raises:
             Scalar[dtype](coord_to_index_list(idx)[0]) * one
         )
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach[simd_width=1](body, out, ctx)
 
     for i in range(N):
@@ -666,7 +666,7 @@ def _check_fused_store[dtype: DType]() raises:
             Scalar[dtype](coord_to_index_list(idx)[0]) * one
         )
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach[simd_width=1](body, fused_out, ctx)
 
     for i in range(N):

@@ -16,7 +16,7 @@ from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.itertools import product
-from layout import Coord, IntTuple, TileTensor, row_major
+from layout import Coord, TileTensor, coord, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -137,9 +137,9 @@ def test[
     )
 
     comptime conv_attr_static = ConvInfoStatic[2](
-        IntTuple(pad_h[0], pad_w[0], pad_h[1], pad_w[1]),
-        IntTuple(stride[0], stride[1]),
-        IntTuple(dilation[0], dilation[1]),
+        coord[pad_h[0], pad_h[1], pad_w[0], pad_w[1]],
+        coord[stride[0], stride[1]],
+        coord[dilation[0], dilation[1]],
         num_groups,
     )
 

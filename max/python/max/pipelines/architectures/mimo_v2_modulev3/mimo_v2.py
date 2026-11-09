@@ -33,14 +33,11 @@ from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers, EPConfig
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MultiKVCacheParams,
-    PagedCacheValues,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.norm import rms_norm
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded
@@ -220,6 +217,19 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
             config.data_parallel_degree,
             config.ep_config,
         )
+        # Local routing is sound only while every reduction feeding the router
+        # input is bit-identical across ranks. The allreduce kernels add peers
+        # in global rank order (`comm/allreduce.mojo`), which
+        # `test_allreduce_determinism` checks at 4 ranks on a 4-GPU host and at
+        # 8 on an 8-GPU host; a new allreduce path, NVLS multimem included,
+        # must keep that order or route through device 0. The collective
+        # backend does not enter into it: vendor CCL reduces each element once
+        # and forwards it, so the ranks receive the same bits. Nor does the
+        # width: a two-way sum is order-independent.
+        self.route_on_every_device = self.mode in (
+            ParallelismMode.TP_TP,
+            ParallelismMode.TP_EP,
+        )
         # DP attention serves one-device replicas: the batch splits over
         # the mesh (one axis, named "dp") and each replica runs the full
         # attention on its own rows, as the DeepSeek ModuleV3 port's DP_EP
@@ -348,6 +358,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
                         norm_topk_prob=config.norm_topk_prob,
                         quant_config=config.quant.experts,
                         ep_batch_manager=ep_batch_manager,
+                        route_on_every_device=self.route_on_every_device,
                     )
                 else:
                     mlp = MiMoV2MoE(
@@ -357,6 +368,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
                         moe_dim=config.moe_intermediate_size,
                         norm_topk_prob=config.norm_topk_prob,
                         quant_config=config.quant.experts,
+                        route_on_every_device=self.route_on_every_device,
                     )
             else:
                 mlp = MiMoV2MLP(

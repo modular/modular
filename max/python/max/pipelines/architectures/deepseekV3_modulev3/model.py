@@ -22,24 +22,20 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.legacy.comm.ep import (
-    EPBatchManager,
-    EPCommInitializer,
-    EPConfig,
-    calculate_ep_max_tokens_per_rank,
-)
-from max.nn.legacy.kv_cache import KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.context import TextContext
+from max.nn.common_layers.mesh_axis import DP, TP
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
+from max.nn.outputs import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.memory_estimation import MemoryPlan
-from max.pipelines.weights.quant import parse_quant_config
+from max.pipelines.lib.registration_runtime import ModuleRuntime
 from max.tensor import default_device
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
@@ -51,123 +47,6 @@ from .deepseekV3 import DeepseekV3
 from .model_config import DeepseekV3Config
 
 logger = logging.getLogger("max.pipelines")
-
-
-def build_ep_config(
-    model: PipelineModel[TextContext],
-    ep_size: int,
-    n_devices: int,
-    model_config: DeepseekV3Config,
-) -> EPConfig:
-    """Builds the ModuleV3 expert-parallel config from the pipeline ``ep_size``.
-
-    A function rather than a method so that a graph-API pipeline model running
-    a ModuleV3 target (unified MTP) can build the target's config too.
-    """
-    if ep_size % n_devices != 0:
-        raise ValueError(
-            f"ep_size={ep_size} must be divisible by the number of GPUs on"
-            f" this node ({n_devices}); for single-node set"
-            f" ep_size={n_devices}."
-        )
-    if model.pipeline_config.runtime.ep_fuse_ffn_combine_send:
-        logger.warning(
-            "ep_fuse_ffn_combine_send is not implemented on ModuleV3; the"
-            " MoE FFN output is materialized before the combine."
-        )
-    ep_max_tokens_per_rank = calculate_ep_max_tokens_per_rank(
-        max_batch_input_tokens=model.pipeline_config.runtime.max_batch_input_tokens,
-        ep_size=ep_size,
-        data_parallel_degree=model.pipeline_config.model.data_parallel_degree,
-        use_allreduce=model.pipeline_config.runtime.ep_use_allreduce,
-    )
-    # Set correct dispatch dtype, depending on the quant config.
-    dispatch_dtype = DType.bfloat16
-    dispatch_quant_config = None
-    quant_config = model_config.quant_config
-    # Only enable shared expert fusion if the shared expert is of the same
-    # shape as routed experts, and carries the same weight layout: a
-    # modelopt ``*shared_experts*`` ignore leaves them bf16, which cannot be
-    # stacked with the packed routed experts.
-    fused_shared_expert = model_config.n_shared_experts == 1 and (
-        quant_config is None
-        or quant_config.shared_experts_use_quant(model.dtype)
-    )
-    if quant_config is not None and (
-        model.dtype.is_float8() or quant_config.is_nvfp4
-    ):
-        dispatch_dtype = model.dtype
-        dispatch_quant_config = quant_config
-    return EPConfig(
-        dispatch_dtype=dispatch_dtype,
-        dispatch_quant_config=dispatch_quant_config,
-        combine_dtype=DType.bfloat16,
-        hidden_size=model_config.hidden_size,
-        top_k=model_config.num_experts_per_tok,
-        n_experts=model_config.n_routed_experts,
-        max_tokens_per_rank=ep_max_tokens_per_rank,
-        n_gpus_per_node=n_devices,
-        n_nodes=ep_size // n_devices,
-        fused_shared_expert=fused_shared_expert,
-        use_allreduce=model.pipeline_config.runtime.ep_use_allreduce,
-    )
-
-
-def create_model_config(
-    model: PipelineModel[TextContext],
-    config_cls: type[DeepseekV3Config],
-    state_dict: dict[str, Any],
-) -> Any:
-    """Builds a ModuleV3 ``config_cls`` config from ``state_dict``.
-
-    A function rather than a method for the same reason as
-    :func:`build_ep_config`.
-    """
-    model_config = config_cls.initialize(
-        model.pipeline_config, max_seq_len=model.max_seq_len
-    )
-    model_config.max_batch_context_length = (
-        model.planned_max_batch_total_tokens
-        or model_config.max_batch_context_length
-    )
-
-    dtype = model.dtype
-    quant_config = None
-    if dtype in (
-        DType.float8_e4m3fn,
-        DType.uint8,
-        DType.float4_e2m1fn,
-    ):
-        quant_config = parse_quant_config(
-            model.huggingface_config, state_dict, dtype
-        )
-    model_config.quant_config = quant_config
-
-    if model_config.topk_method == "noaux_tc":
-        correction_bias_key = None
-        for k in state_dict:
-            if k.endswith("e_score_correction_bias"):
-                correction_bias_key = k
-                break
-        if correction_bias_key is None:
-            raise KeyError("Expected e_score_correction_bias in state_dict")
-        model_config.correction_bias_dtype = state_dict[
-            correction_bias_key
-        ].dtype
-
-    # Only 1-D TP/DP mesh configurations are supported.
-    n_devices = len(model.devices)
-    dp_degree = model.pipeline_config.model.data_parallel_degree
-    if dp_degree > 1 and dp_degree != n_devices:
-        raise NotImplementedError(
-            f"data_parallel_degree={dp_degree} must equal the device "
-            f"count ({n_devices}); dp x tp meshes are not supported yet."
-        )
-    axis_name = "dp" if dp_degree > 1 else "tp"
-    model_config.mesh = DeviceMesh(
-        tuple(model.devices), (n_devices,), (axis_name,)
-    )
-    return model_config
 
 
 class DeepseekV3Model(DeepseekV2Model):
@@ -206,11 +85,32 @@ class DeepseekV3Model(DeepseekV2Model):
             memory_plan=memory_plan,
         )
 
-    def _build_ep_config(
-        self, ep_size: int, n_devices: int, model_config: DeepseekV3Config
-    ) -> EPConfig:
+    def _module_runtime(self) -> ModuleRuntime:
+        """Returns the deployment the config is completed with."""
+        runtime = self.pipeline_config.runtime
+        n_devices = len(self.devices)
+        dp_degree = self.pipeline_config.model.data_parallel_degree
+        return ModuleRuntime(
+            mesh=DeviceMesh(
+                tuple(self.devices),
+                (n_devices,),
+                (DP if dp_degree > 1 else TP,),
+            ),
+            data_parallel_degree=dp_degree,
+            max_batch_input_tokens=runtime.max_batch_input_tokens,
+            max_batch_total_tokens=self.planned_max_batch_total_tokens,
+            ep_size=runtime.ep_size,
+            ep_use_allreduce=runtime.ep_use_allreduce,
+        )
+
+    def _build_ep_config(self, model_config: DeepseekV3Config) -> EPConfig:
         """Build the expert-parallel config from the pipeline ep_size."""
-        return build_ep_config(self, ep_size, n_devices, model_config)
+        if self.pipeline_config.runtime.ep_fuse_ffn_combine_send:
+            logger.warning(
+                "ep_fuse_ffn_combine_send is not implemented on ModuleV3; the"
+                " MoE FFN output is materialized before the combine."
+            )
+        return model_config.expert_parallel_config(self._module_runtime())
 
     @classmethod
     def get_kv_params(
@@ -240,7 +140,18 @@ class DeepseekV3Model(DeepseekV2Model):
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        return create_model_config(self, self.model_config_cls, state_dict)
+        model_config = self.model_config_cls.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
+        model_config = model_config.finalize(
+            self.huggingface_config,
+            state_dict,
+            ModelOutputConfig(
+                return_logits=self.return_logits,
+                return_hidden_states=self.return_hidden_states,
+            ),
+        )
+        return model_config.apply_runtime(self._module_runtime())
 
     @override
     def _module_default_dtype(
@@ -266,8 +177,13 @@ class DeepseekV3Model(DeepseekV2Model):
         # Expert parallelism: ep_size > 1 distributes routed experts across the
         # devices via the NVSHMEM EPBatchManager. The communication buffers are
         # allocated once here and threaded through the graph as extra inputs.
-        n_devices = len(self.devices)
-        ep_config = self._build_ep_config(ep_size, n_devices, model_config)
+        if ep_size % len(self.devices) != 0:
+            raise ValueError(
+                f"ep_size={ep_size} must be divisible by the number of GPUs on"
+                f" this node ({len(self.devices)}); for single-node set"
+                f" ep_size={len(self.devices)}."
+            )
+        ep_config = self._build_ep_config(model_config)
         model_config.ep_config = ep_config
         self._ep_batch_manager = EPBatchManager(ep_config)
         self._modulev3_extra_input_types = self._ep_batch_manager.input_types()

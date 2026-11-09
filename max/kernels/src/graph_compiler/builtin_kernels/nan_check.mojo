@@ -45,10 +45,10 @@ from layout import TileTensor
 def _nan_check_gpu_kernel[
     dtype: DType,
 ](
-    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
     total_elements: Int32,
-    out_nan: MutPointer[Int32, MutAnyOrigin],
-    out_inf: MutPointer[Int32, MutAnyOrigin],
+    out_nan: MutPointer[Int32, MutUntrackedOrigin],
+    out_inf: MutPointer[Int32, MutUntrackedOrigin],
 ):
     """GPU kernel: count NaN/Inf values via parallel reduction."""
     var nan_local = unsafe_stack_allocation[1, Int32, address_space=.SHARED]()
@@ -85,7 +85,6 @@ def _nan_check_gpu_kernel[
 def nan_check_count[
     dtype: DType,
     //,
-    target: StaticString,
 ](
     nan_count_out: TileTensor[mut=True, .int32, ...],
     inf_count_out: TileTensor[mut=True, .int32, ...],
@@ -102,13 +101,11 @@ def nan_check_count[
     # The tensors are indexed as flat pointers; a non-pointer storage policy
     # aborts here at run time.
     var total = input.num_elements()
-    var input_ptr = input.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
-        MutAnyOrigin
-    ]()
-    var out_nan_ptr = nan_count_out.ptr.unsafe_origin_cast[MutAnyOrigin]()
-    var out_inf_ptr = inf_count_out.ptr.unsafe_origin_cast[MutAnyOrigin]()
+    var input_ptr = input.unsafe_ptr().as_imm()
+    var out_nan_ptr = nan_count_out.unsafe_ptr()
+    var out_inf_ptr = inf_count_out.unsafe_ptr()
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         # CPU path: vectorized scan using elementwise with atomic accumulators.
         var nan_acc = alloc(AllocLayout[Int32](length=1)).into_managed()
         var inf_acc = alloc(AllocLayout[Int32](length=1)).into_managed()
@@ -142,8 +139,8 @@ def nan_check_count[
 
         @__name(t"nan_check_zero_counts")
         def zero_counts(
-            nan_ptr: MutPointer[Int32, MutAnyOrigin],
-            inf_ptr: MutPointer[Int32, MutAnyOrigin],
+            nan_ptr: MutPointer[Int32, MutUntrackedOrigin],
+            inf_ptr: MutPointer[Int32, MutUntrackedOrigin],
         ):
             nan_ptr[] = Int32(0)
             inf_ptr[] = Int32(0)

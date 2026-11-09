@@ -719,28 +719,9 @@ TypedAttr FnOp::getFuncLiteralGenerator(
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
                                        fullSig.getParamListAttrs());
-  if (!bindings || llvm::all_of(bindings, llvm::IsaPred<UnboundAttr>)) {
-    // If all the provided bindings are unbound, return the original generator.
-    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
-    // type dependencies, which results in BindParamsAttr being folded in a
-    // wrong way.
-    //
-    // E.g.,
-    //
-    // def takeClosure[
-    //     origins: OriginSet,
-    //     //,
-    //     f: def() capturing[origins] -> None,
-    // ]():
-    //     pass
-    //
-    // where
-    //
-    // `f: def() capturing[origins]` will be replaced to
-    // `f: def() capturing[  ?    ]`. This will make the type dependency on
-    // `origins` unrecoverable.
+  if (!bindings)
     return unboundGen;
-  }
+
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       unboundGen.getContext(), dischargedBodyConstraints);
   return BindParamsAttr::get(unboundGen.getContext(), unboundGen, bindings,
@@ -1292,7 +1273,8 @@ bool StructDeclOp::isSynthetic() { return getSynthetic(); }
 
 ArrayRef<ParamDeclAttr> StructDeclOp::getInputParams() { return getParams(); }
 
-LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
+LIT::StructType
+StructDeclOp::legacyBindReference(ArrayRef<TypedAttr> paramValues) {
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
   TypeSignatureType sig = getSignature();
 
@@ -1311,6 +1293,43 @@ LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   // Compute the resultant signature.
   auto newSig = sig.bind(paramValues);
   return LIT::StructType::get(symbol, paramValues, newSig);
+}
+
+TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
+                                      ArrayRef<TypedAttr> paramValues) {
+  TypeSignatureType sig = getSignature();
+  // create a list of forwarded parameter
+  SmallVector<TypedAttr> forwardParams;
+  for (auto [idx, t] : llvm::enumerate(sig.getParamTypes()))
+    forwardParams.push_back(ParamIndexRefAttr::get(0, idx, t));
+
+  // TODO: we don't need sig in struct type under the generator representation.
+  // Remove it after fully migration.
+  auto newSig = paramValues.empty() ? sig : sig.bind(paramValues);
+  auto st = LIT::StructType::get(getFullyResolvedSymbolRef(*this),
+                                 forwardParams, newSig);
+
+  auto genBody = TypeParamAttr::get(st, StructMetaType::get(st));
+  // A simple type without parameters.
+  if (forwardParams.empty())
+    return genBody;
+
+  auto typeExpr =
+      GeneratorAttr::get(sig.getParamTypes(), genBody, sig.getParamListAttrs());
+  if (paramValues.empty())
+    return typeExpr;
+
+  // TODO: maybe worth a cache here?
+  return BindParamsAttr::get(typeExpr.getContext(), typeExpr, paramValues,
+                             evalCtx);
+}
+
+LIT::StructType
+StructDeclOp::bindAllReferences(ParameterEvaluationContext *evalCtx,
+                                ArrayRef<TypedAttr> paramValues) {
+  TypedAttr typeVal = this->bindReference(evalCtx, paramValues);
+  // must be fully resolved to a struct type.
+  return cast<LIT::StructType>(ParamType::get(typeVal));
 }
 
 std::optional<size_t> StructDeclOp::findFieldIndex(StringRef name) {

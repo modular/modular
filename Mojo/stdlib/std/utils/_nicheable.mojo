@@ -13,6 +13,7 @@
 
 from std.builtin.rebind import downcast
 from std.memory import MaybeUninit
+from std.sys import size_of
 
 
 struct NicheIndex(Equatable, TrivialRegisterPassable):
@@ -376,31 +377,37 @@ struct _NonNegativeScalarNiche[
     there, such as a length.
 
     Niche `i` is stored as `~i` (`-1 - i`). That reaches every negative value
-    but `scalar.MIN`, which would need a niche count of `scalar.MAX + 1`.
+    but `scalar.MIN`, which would need a niche count of `scalar.MAX + 1`. A
+    scalar wider than `Int` is capped at `Int.MAX` niches.
     """
 
     @staticmethod
     @inline(.always)
     def _field[
         origin: Origin, //
-    ](memory: Pointer[MaybeUninit[Self.T], origin]) -> Pointer[Int, origin]:
+    ](memory: Pointer[MaybeUninit[Self.T], origin]) -> Pointer[
+        Scalar[Self.dtype], origin
+    ]:
         comptime assert reflect[Self.T].field[Self.name].T == Scalar[Self.dtype]
         comptime offset = reflect[Self.T].field_offset[name=Self.name]()
         return (
             memory.unsafe_bitcast[Byte]()
             .unsafe_offset(offset)
-            .unsafe_bitcast[Int]()
+            .unsafe_bitcast[Scalar[Self.dtype]]()
         )
 
     @staticmethod
     @inline(.always)
     def niche_count() -> Int:
-        return Int.MAX
+        comptime if size_of[Self.dtype]() > size_of[DType.int]():
+            return Int.MAX
+        else:
+            return Int(Scalar[Self.dtype].MAX)
 
     @staticmethod
     @inline(.always)
     def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self.T], _]):
-        Self._field(memory).unsafe_write(~index)
+        Self._field(memory).unsafe_write(Scalar[Self.dtype](~index))
 
     @staticmethod
     @inline(.always)
@@ -408,4 +415,4 @@ struct _NonNegativeScalarNiche[
         memory: ImmPointer[MaybeUninit[Self.T], _]
     ) -> NicheIndex:
         var value = Self._field(memory)[]
-        return NicheIndex(~value) if value < 0 else NicheIndex.NotANiche
+        return NicheIndex(Int(~value)) if value < 0 else NicheIndex.NotANiche

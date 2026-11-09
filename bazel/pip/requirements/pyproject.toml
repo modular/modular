@@ -49,7 +49,8 @@ dependencies = [
   "munch",
   "mypy",
   "numpy==2.2.6; python_version < '3.11'",
-  "numpy>=2.3.0; python_version >= '3.11'",
+  "numpy==2.3.5; python_version >= '3.11' and python_version < '3.15'",
+  "numpy>=2.5.4; python_version >= '3.15'",
   "nvitop",
   "opentelemetry-api",
   "opentelemetry-exporter-otlp-proto-grpc>=1.28.2",
@@ -61,9 +62,10 @@ dependencies = [
   "prometheus-client",
   "protobuf==6.33.5 ", # Must match bazel protobuf version
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
-  "pyarrow",
+  "pyarrow==25.0.0; python_version < '3.11'",
+  "pyarrow>=26.0.0; python_version >= '3.11'",
   "pydantic",
-  "pydantic_core",
+  "pydantic_core>=2.48.0",
   "pydantic-settings>=2.5.2", # >=2.5.2 required by mcp>=1.30.0
   "pygame-ce",
   "pygments",
@@ -111,10 +113,13 @@ dependencies = [
   "google-auth>=2.48.0",
   "google-cloud-bigquery>=3.40.1",
   "google-cloud-core",
-  "pandas>=1.4.2",
+  "pandas==2.3.3; python_version < '3.15'",
+  "pandas>=3; python_version >= '3.15'",
   "requests>=2.28.0",
   "rich>=12.4.4",
-  "scipy>=1.10.1",
+  "scipy==1.14.1; python_version < '3.11'",
+  "scipy==1.16.3; python_version >= '3.11' and python_version < '3.15'",
+  "scipy>=1.18.1; python_version >= '3.15'",
   "tabulate>=0.8.9",
 
   # benchmarks
@@ -183,12 +188,6 @@ common = [
   # The vllm/sglang dependency groups resolve transformers independently
   # from their own transitive requirements (see template.py).
   "transformers>=5.12.0,<5.13.0",
-  # click 8.2+ removes APIs MAX tooling still uses (e.g. CliRunner's
-  # mix_stderr). The vllm/sglang groups need newer versions for
-  # huggingface-hub>=1.27 (see template.py).
-  "click==8.1.7",
-  "hf-xet==1.4.2",
-  "huggingface-hub==1.8.0",
   "openai==2.11.0",
   # vllm 0.30.0 needs mcp 2.x (see template.py)
   "idna==3.8",
@@ -290,10 +289,6 @@ nvidia-vllm = [
   "torchvision; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "triton; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "transformers==5.12.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
-  # vllm 0.30.0 requires huggingface-hub>=1.31, which requires click>=8.4.2
-  "click==8.5.0",
-  "hf-xet==1.6.0",
-  "huggingface-hub==1.33.0",
   "cuda-pathfinder==1.8.2",
   # vllm 0.30.0 requires openai>=2.25.0
   "openai==2.54.0",
@@ -319,9 +314,6 @@ nvidia-sglang = [
   "flash-attn-4==4.0.0b9",
   # Need to override the URL below
   "outlines-core",
-  "click==8.5.0",
-  "hf-xet==1.6.0",
-  "huggingface-hub==1.33.0",
   "cuda-pathfinder==1.8.2",
   # sglang 0.5.12.post1 pins this exact version
   "openai==2.6.1",
@@ -369,7 +361,9 @@ override-dependencies = [
   "numba==0.65.0",
   # vllm 0.31.0 pins protobuf==7.36.1 on s390x, which we never install on
   "protobuf==6.33.5",
-  "numpy>=2.2.0",
+  "numpy==2.2.6; python_version < '3.11'",
+  "numpy==2.3.5; python_version >= '3.11' and python_version < '3.15'",
+  "numpy>=2.5.4; python_version >= '3.15'",
   # Pin packages to avoid duplicates between dependency groups
   "aiohttp==3.13.3",
   "mistral-common==1.11.6",
@@ -384,7 +378,6 @@ override-dependencies = [
   "pillow>=12.3.0",
   "kaleido==0.2.1",
   "prometheus-client==0.20.0",
-  "pyarrow==22.0.0",
   "pygments==2.18.0",
 ]
 

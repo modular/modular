@@ -10,6 +10,15 @@ package(default_visibility = [
 modular_cc_binary(
     name = "mt",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     mojo_deps = [
         "//max:builtin_kernels",
@@ -21,8 +30,9 @@ modular_cc_binary(
         "//GraphCompiler:FrameworkFrontend",
         "//GraphCompiler:MEFModel",
         "//Init",
+        "//Mojo:CompilerRT.static",
         "//Support:Context",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:ML",
     ],
 )

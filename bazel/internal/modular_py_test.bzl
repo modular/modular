@@ -177,7 +177,6 @@ def _wire_precompile(
         strip_env = _RECORD_STRIP_ENV,
         test_label = "//{}:{}".format(native.package_name(), test_name),
         expansion_targets = data,
-        exec_properties = get_resources_exec_properties(test_name, test = False),
         tags = ["manual"],
         testonly = True,
         target_compatible_with = gpu_constraints + target_compatible_with + _NO_RECORD,
@@ -447,7 +446,7 @@ def modular_py_test(
                 ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []) + replay.deps,
                 shard_count = n_shards,
                 srcs = test_srcs_with_runner,
-                exec_properties = default_exec_properties | get_resources_exec_properties(test_name, test = True) | exec_properties,
+                exec_properties = default_exec_properties | get_resources_exec_properties(test_name) | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with + per_test_target_compatible_with.get(src, []),
                 tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []) + replay.tags,
                 imports = imports,
@@ -506,7 +505,7 @@ def modular_py_test(
             ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []) + replay.deps,
             shard_count = shard_count,
             srcs = srcs + ["//bazel/internal:pytest_runner"],
-            exec_properties = default_exec_properties | get_resources_exec_properties(name, test = True) | exec_properties,
+            exec_properties = default_exec_properties | get_resources_exec_properties(name) | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
             tags = tags + get_resources_tags(name) + replay.tags,
             imports = imports,
@@ -526,7 +525,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ] + ([_PLUGIN] if precompile_mefs else []),
             ignore_unresolved_imports = ignore_unresolved_imports,
-            target_compatible_with = select({
+            target_compatible_with = target_compatible_with + select({
                 # No point in running these, causes "error replanting symlinks" failures
                 "//:asan": ["@platforms//:incompatible"],
                 "//:ubsan": ["@platforms//:incompatible"],

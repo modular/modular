@@ -68,6 +68,8 @@ from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
     get_defined_int,
+    is_amd_gpu,
+    is_nvidia_gpu,
     simd_width_of,
     size_of,
 )
@@ -107,6 +109,7 @@ from .rms_norm_fp8 import rms_norm_fused_fp8
 
 from .allreduce import (
     AllReduceAlgorithm,
+    _load_peers_rotated,
     allreduce,
     allreduce_tuning_table,
 )
@@ -285,13 +288,17 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         rank_sigs, rank_sigs[_my_rank], _my_rank
     )
 
-    # Round-robin access pattern for NVLink load-balancing.
-    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
-    var ptrs = Array[_, ngpus](
-        fill_with_unrolled=lambda [i: Int]() -> PtrType: src_ptrs[
-            (_my_rank + i) % ngpus
-        ]
-    )
+    # Input pointers in global rank order on every rank, so every rank rounds
+    # the reduced sum identically; see `_load_peers_rotated` for the load order.
+    var ptrs = src_ptrs.copy()
+    comptime if ngpus == 2:
+        # Two terms sum to the same bits in either order, so keep the
+        # round-robin order, which also balances the reads.
+        ptrs = Array[_, ngpus](
+            fill_with_unrolled=lambda [i: Int]() -> ImmPointer[
+                Scalar[in_dtype], ImmutAnyOrigin
+            ]: src_ptrs[(_my_rank + i) % ngpus]
+        )
 
     # Row loop: each block processes _rows with stride = grid_dim.
     # For _rows <= grid_dim, the loop body runs exactly once per block.
@@ -303,17 +310,28 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         if is_valid:
             var elem_idx = row * _cols + idx
 
-            comptime for gpu_idx in range(ngpus):
-                vec_data += (
-                    ptrs[gpu_idx]
-                    .unsafe_address_space_cast[_target_address_space]()
-                    .unsafe_load[
-                        width=simd_width,
-                        alignment=simd_width,
-                        invariant=True,
-                    ](elem_idx)
-                    .cast[accum_type]()
-                )
+            comptime if (is_nvidia_gpu() or is_amd_gpu()) and ngpus > 2:
+                comptime for r in range(ngpus):
+                    if _my_rank == r:
+                        var vals = _load_peers_rotated[
+                            ngpus, r, simd_width, alignment=simd_width
+                        ](ptrs, elem_idx)
+                        var accum = SIMD[accum_type, simd_width](0)
+                        comptime for g in range(ngpus):
+                            accum += vals[g].cast[accum_type]()
+                        vec_data = accum
+            else:
+                comptime for gpu_idx in range(ngpus):
+                    vec_data += (
+                        ptrs[gpu_idx]
+                        .unsafe_address_space_cast[_target_address_space]()
+                        .unsafe_load[
+                            width=simd_width,
+                            alignment=simd_width,
+                            invariant=True,
+                        ](elem_idx)
+                        .cast[accum_type]()
+                    )
 
             # Add residual and write pre-norm sum (compile-time gated).
             comptime if has_residual:
@@ -1751,7 +1769,10 @@ def allreduce_rmsnorm[
     in_engine: TensorEngine,
     //,
     multiply_before_cast: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = (
+        PDLLevel.OVERLAP_AT_BEGINNING if ngpus <= 2 else PDLLevel.OFF
+    ),
 ](
     input_buffers: Array[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
@@ -2004,7 +2025,6 @@ def allreduce_residual_rmsnorm[
     in_engine: TensorEngine,
     //,
     multiply_before_cast: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
@@ -2045,15 +2065,6 @@ def allreduce_residual_rmsnorm[
             float32 before the single cast to the output dtype; False casts
             the normalized value to `in_dtype` first and applies gamma in
             `in_dtype`. False requires `out_dtype == in_dtype`.
-        pdl_level: Programmatic dependent launch level. The fused kernels
-            wait for their predecessor before they signal their peers, and
-            release the next kernel after the barrier that retires the peers'
-            reads (`ON`) or right after the wait (`OVERLAP_AT_BEGINNING`). On
-            the split path the allreduce always releases the norm at its exit,
-            and only the norm honors `OVERLAP_AT_BEGINNING`. That level
-            requires the next kernel not to write this kernel's inputs before
-            its own PDL wait, because peers may still be reading them. The
-            Lamport branch always uses PDL.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
@@ -2116,6 +2127,12 @@ def allreduce_residual_rmsnorm[
     )
     var scale_output_1d = scale_output.reshape(row_major(rows))
 
+    # PDL is verified on 2 GPUs only; 4/8-GPU runs stay OFF until someone
+    # measures them. The fused kernels wait for their predecessor before they
+    # signal their peers, and release the next kernel right after that wait.
+    comptime pdl_level = (
+        PDLLevel.OVERLAP_AT_BEGINNING if ngpus <= 2 else PDLLevel.OFF
+    )
     _dispatch_fused_kernel[
         in_dtype,
         out_dtype,

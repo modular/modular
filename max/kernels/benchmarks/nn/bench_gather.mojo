@@ -73,7 +73,7 @@ def bench_gather(mut bencher: Bencher, spec: GatherSpec) raises:
             indices_tensor,
             spec.axis,
             output_tensor,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
 
     bencher.iter(bench_fn)

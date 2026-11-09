@@ -44,7 +44,6 @@ def test_resize_nearest_gpu_upsample() raises:
         resize_nearest_neighbor[
             coordinate_transformation_mode=CoordinateTransformationMode.HalfPixel,
             round_mode=RoundMode.HalfDown,
-            target="gpu",
         ](
             TileTensor(input_device, input_layout),
             TileTensor(output_device, output_layout),
@@ -107,7 +106,6 @@ def test_resize_nearest_gpu_downsample() raises:
         resize_nearest_neighbor[
             coordinate_transformation_mode=CoordinateTransformationMode.Asymmetric,
             round_mode=RoundMode.Floor,
-            target="gpu",
         ](
             TileTensor(input_device, input_layout),
             TileTensor(output_device, output_layout),

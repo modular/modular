@@ -34,7 +34,7 @@ from std.math import ceildiv
 from std.sys import simd_width_of, align_of, size_of
 
 from layout import DefaultEngine, TensorEngine, TileTensor, row_major
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from layout.tma_async import SharedMemBarrier
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

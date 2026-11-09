@@ -89,7 +89,7 @@ def _run[
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, gamma(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(n), ctx)
+    elementwise[pack_size](func, Coord(n), ctx)
 
     var worst_gpu = 0
     var worst_host = 0

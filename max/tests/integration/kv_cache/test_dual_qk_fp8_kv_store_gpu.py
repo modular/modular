@@ -15,7 +15,7 @@
 MiniMax-M3 sparse layers fuse the main-GQA and lightning-indexer per-head
 RMSNorm+RoPE + in-place paged K-cache update into one GPU launch
 (``fused_dual_qk_rms_norm_rope_ragged``, reaching
-``mo.fused_qk_rms_norm_rope.ragged.paged.dual``). The main GQA K cache can use
+``kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual``). The main GQA K cache can use
 a scale-free FP8 e4m3 dtype with *no* per-block dequant scales while Q and the
 indexer's K cache stay BF16, so the op's two paged caches have independent
 dtypes.
@@ -41,11 +41,9 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import fused_dual_qk_rms_norm_rope_ragged
-from max.nn.legacy.kv_cache import (
-    MHAKVCacheParams,
-)
-from max.nn.legacy.kv_cache.input_types import KVCacheInputsPerDevice
+from max.nn._graph_ops import fused_dual_qk_rms_norm_rope_ragged
+from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 

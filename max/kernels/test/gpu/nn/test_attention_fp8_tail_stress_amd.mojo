@@ -28,12 +28,9 @@ from std.testing import assert_true
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import AMDMLA, flare_mla_decoding
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_utils import MHAConfig
-from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
-    MLADispatchScalarArgs,
-)
 
 comptime FP8 = DType.float8_e4m3fn
 comptime NUM_KEYS = 2048
@@ -145,10 +142,9 @@ def mla_share[
     var o_d = ctx.enqueue_create_buffer[DType.bfloat16](o_size)
     ctx.enqueue_copy(q_d, q_h)
     ctx.enqueue_copy(k_d, k_h)
-    var mla_args = MLADispatchScalarArgs[
-        num_heads=num_heads, _is_cache_length_accurate=True
-    ](1, NUM_KEYS, 1, ctx)
-    flare_mla_decoding[config=MHAConfig[FP8](num_heads, depth)](
+    # The AMD decode ignores the dispatch-scalar buffer; pass an empty one.
+    var mla_args = ctx.enqueue_create_buffer[DType.int64](3)
+    flare_mla_decoding[config=MHAConfig[FP8](num_heads, depth), kernels=AMDMLA](
         TileTensor(
             o_d.unsafe_ptr(), row_major((1, 1, Idx[num_heads], Idx[depth_v]))
         ).as_unsafe_any_origin(),
@@ -161,7 +157,7 @@ def mla_share[
         CausalMask(),
         _scale(),
         ctx,
-        mla_args.gpu_tile_tensor(),
+        TileTensor(mla_args.unsafe_ptr(), row_major[3]()),
         num_partitions=num_partitions,
     )
     var o_h = ctx.enqueue_create_host_buffer[DType.bfloat16](o_size)

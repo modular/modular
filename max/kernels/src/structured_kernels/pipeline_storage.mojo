@@ -112,7 +112,6 @@ When the framework doesn't fit:
 """
 
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from layout.tensor_core_async import tile_layout_k_major_typed
 from std.utils.index import IndexList
@@ -236,7 +235,6 @@ struct BlockScaledTileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based array types (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
@@ -350,7 +348,6 @@ struct BlockwiseFP8TileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based array types for A/B (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
@@ -428,7 +425,6 @@ struct OutputTileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
     comptime CTileArray = SMemTileArray2DRowMajor[
@@ -669,9 +665,6 @@ struct SourceTileStorage[
     """
 
     # Source tile layout (row_major for TMA compatibility, matches output)
-    comptime src_tile_layout = Layout.row_major(
-        Self.src_shape[0], Self.src_shape[1]
-    )
 
     # TileTensor-based for source storage and access
     comptime SrcTileArray = SMemTileArray2DRowMajor[

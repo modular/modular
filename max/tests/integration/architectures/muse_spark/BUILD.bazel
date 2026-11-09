@@ -20,6 +20,26 @@ modular_py_test(
     data = [":testdata"],
     deps = [
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/dspark_muse_spark",
+        requirement("transformers"),
+    ],
+)
+
+# The host-side inputs come from muse_glimmer's vision data processing,
+# which Glimmer shares, so this catches an edit there that moves Spark's
+# RoPE tables, window order or position taps off the reference.
+modular_py_test(
+    name = "test_vision",
+    srcs = ["test_vision.py"],
+    data = [":testdata"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/muse_glimmer",
+        "//max/python/max/pipelines/architectures/muse_spark",
+        requirement("numpy"),
+        requirement("torch"),
         requirement("transformers"),
     ],
 )

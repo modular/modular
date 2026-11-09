@@ -33,21 +33,23 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy import Module
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     apply_packed_bitmask,
     apply_penalties_to_logits,
     scatter_set_constant,
     topk_fused_sampling,
     update_frequency_data,
 )
-from max.nn.legacy.sampling import (
-    RejectionSampler,
-    RejectionSamplerWithResiduals,
+from max.nn._graph_ops.sampling import (
     compute_synthetic_acceptance_base_rate,
     greedy_acceptance_sampler,
     stochastic_acceptance_sampler,
     synthetic_acceptance_sampler,
+)
+from max.nn.legacy import Module
+from max.nn.legacy.sampling import (
+    RejectionSampler,
+    RejectionSamplerWithResiduals,
 )
 from max.pipelines.context import TextContext
 

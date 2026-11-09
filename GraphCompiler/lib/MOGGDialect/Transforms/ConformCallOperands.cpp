@@ -47,8 +47,35 @@ namespace {
 SmallVector<Value>
 packOperands(OpBuilder &builder, Location loc, ValueRange operands,
              const KernelDeclIndexToOperandAdaptorMapping &mapping,
+             ArrayRef<KernelDeclOperandAdaptor> kernelArgs,
              M::DeviceRefAttr device, bool &changed) {
   MLIRContext *ctx = builder.getContext();
+
+  // A `TensorTuple` the mapping bound no operand to gets an empty tuple, in
+  // its signature position among the packed operands.
+  SmallVector<uint64_t> emptyTuplePositions;
+  for (const KernelDeclOperandAdaptor &arg : kernelArgs) {
+    if (!arg.isTraitTensorTupleType() || !arg.sourceDescriptor)
+      continue;
+    uint64_t pos = arg.sourceDescriptor->position;
+    if (llvm::none_of(mapping, [&](const auto &entry) {
+          return entry.second.sourceDescriptor &&
+                 entry.second.sourceDescriptor->position == pos;
+        }))
+      emptyTuplePositions.push_back(pos);
+  }
+  auto emptyTuple = emptyTuplePositions.begin();
+  auto packEmptyTuplesBefore = [&](std::optional<uint64_t> pos,
+                                   SmallVectorImpl<Value> &packed) {
+    for (; emptyTuple != emptyTuplePositions.end() &&
+           (!pos || *emptyTuple < *pos);
+         ++emptyTuple) {
+      packed.push_back(TupleCreateOp::create(builder, loc, TupleType::get(ctx),
+                                             ValueRange{},
+                                             VariadicABI::TensorTuple));
+      changed = true;
+    }
+  };
 
   // A NON-fused trait-bound tensor argument (`Tensor` /
   // `TileTensorable`) has its raw `!mogg.tensor` re-presented as the
@@ -79,6 +106,7 @@ packOperands(OpBuilder &builder, Location loc, ValueRange operands,
       continue;
     }
     const KernelDeclOperandAdaptor &arg = it->second;
+    packEmptyTuplesBefore(arg.sourceDescriptor->position, packed);
 
     if (arg.isScalarType()) {
       packed.push_back(ScalarCreateOp::create(
@@ -134,6 +162,7 @@ packOperands(OpBuilder &builder, Location loc, ValueRange operands,
     packed.push_back(operands[i]);
     ++i;
   }
+  packEmptyTuplesBefore(std::nullopt, packed);
   return packed;
 }
 
@@ -188,9 +217,11 @@ packAgainstSignature(Operation *call, const KernelDeclFunctionAdaptor &fn,
   PackedCall packed;
   packed.changed = reconciled;
   packed.inputs = packOperands(builder, call->getLoc(), reconciledInputs,
-                               mapping->operandMapping, device, packed.changed);
-  packed.outputs = packOperands(builder, call->getLoc(), outputs,
-                                mapping->resultMapping, device, packed.changed);
+                               mapping->operandMapping, fn.inputArguments,
+                               device, packed.changed);
+  packed.outputs =
+      packOperands(builder, call->getLoc(), outputs, mapping->resultMapping,
+                   fn.outputArguments, device, packed.changed);
   return packed;
 }
 

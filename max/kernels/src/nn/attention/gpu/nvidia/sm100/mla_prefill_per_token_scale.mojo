@@ -48,7 +48,8 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -69,7 +70,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_generic import (
     warp_idx_to_role,
-    WarpRole,
 )
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     SeqInfo,
@@ -90,59 +90,6 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_utils import (
     select_mla_prefill_config,
     split_smem,
 )
-
-
-struct MLASmemStorage[
-    qkv_dtype: DType, rope_dtype: DType, num_mbars: Int, config: MLAConfig
-]:
-    """Shared memory storage layout for the per-token-scale MLA prefill kernel.
-
-    Holds the Q (nope + rope), KV (nope + rope), q_scale, k_scale, correction,
-    and barrier buffers sized from `config` for one CTA's worth of tile data.
-
-    Parameters:
-        qkv_dtype: `DType` of the Q, K_nope, and V shared-memory buffers.
-        rope_dtype: `DType` of the Q_rope and K_rope shared-memory buffers.
-        num_mbars: Number of shared-memory barriers in the `mbar_base` array.
-        config: `MLAConfig` supplying tile sizes, depths, and pipeline stage
-            counts used to size each buffer.
-    """
-
-    comptime q_nope_bytes = Self.config.BM * Self.config.nope_depth * size_of[
-        Self.qkv_dtype
-    ]()
-    comptime q_rope_bytes = Self.config.BM * Self.config.rope_depth * size_of[
-        Self.rope_dtype
-    ]()
-    comptime q_bytes = Self.q_nope_bytes + Self.q_rope_bytes
-
-    comptime num_kv_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
-
-    # Per-stage K_nope/V data width: the buffer fits the wider of K_nope/V
-    # (shared_kv_cols, padded). Equal for DeepSeek (nope == v).
-    comptime kv_nope_bytes = (
-        Self.config.fa4_config.shared_kv_cols()
-        * Self.config.BN
-        * size_of[Self.qkv_dtype]()
-        * Self.num_kv_stages
-    )
-    comptime kv_rope_bytes = Self.config.rope_depth * Self.config.BN * size_of[
-        Self.rope_dtype
-    ]() * Self.num_kv_stages
-    comptime kv_bytes = Self.kv_nope_bytes + Self.kv_rope_bytes
-
-    comptime q_scale_bytes = Self.config.BM * size_of[DType.float32]()
-    comptime k_scale_bytes = Self.config.BN * size_of[DType.float32]()
-
-    comptime correction_smem_size = Self.config.correction_smem_elements()
-
-    var q_smem: Array[UInt8, Self.q_bytes]
-    var kv_smem: Array[UInt8, Self.kv_bytes]
-    var q_scale_smem: Array[UInt8, Self.q_scale_bytes]
-    var k_scale_smem: Array[UInt8, Self.k_scale_bytes]
-    var correction_smem: Array[Float32, Self.correction_smem_size]
-    var mbar_base: Array[SharedMemBarrier, Self.num_mbars]
-    var tmem_addr: Array[UInt32, 1]
 
 
 __extension SM100MLA:
@@ -2252,6 +2199,12 @@ def mla_sm100_prefill_per_token_scale[
         comptime smem_use = cfg.launch_smem_used()
 
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=smem_use,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
             q_nope_tma_op,
             q_rope_tma_op,
             k_nope_tma_op,
@@ -2265,13 +2218,6 @@ def mla_sm100_prefill_per_token_scale[
             scale,
             UInt32(batch_size),
             pack,
-            grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
-            block_dim=(num_threads, 1, 1),
-            shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
-            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     # --- 1Q / 2Q dispatch (see the generic MLA dispatch for details) ---

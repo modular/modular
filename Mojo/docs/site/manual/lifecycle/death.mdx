@@ -6,7 +6,7 @@ description: >
 ---
 
 <!-- Compiler verified: 2026-10-16, Mojo 1.2.0.dev2026101520 (d2872eb2) -->
-<!-- Last updated: 2026-10-16 -->
+<!-- Last updated: 2026-11-03 -->
 
 Mojo destroys values as soon as they're no longer used. It doesn't wait for
 the end of a code block or even the end of an expression. With Mojo's
@@ -207,19 +207,6 @@ def main():
     # Buf destroyed after p's last use, not after the second line
 ```
 
-{/* [[ FACT: `Buf` and `use_ptr()` are used here and in the "When the
-   origin is gone" example, but the page never defines either, so neither
-   sample compiles as shown.
-   WHY: a reader who pastes the sample gets "use of unknown declaration"
-   before seeing the point about origins; the comments ("Buf destroyed
-   after p's last use") also assume a deinitializer the reader can't see.
-   FIX: introduce them once, before this sample. The test mocks show the
-   shape (death/tests.mojo:391): `Buf` is a `Movable` struct with an `Int`
-   field `v` and a `__deinit__()` that announces destruction; `use_ptr()`
-   reads through a `Pointer[Int, _]`. Either a sentence ("`Buf` is a
-   struct with an `Int` field `v` whose deinitializer prints a message")
-   or a short definition block works. ]] */}
-
 The compiler pushes you toward origins. It rejects `AnyOrigin` in a struct
 field outright, and it refuses to widen `Pointer[Int, origin_of(a._alloc)]`
 to `Pointer[Int, MutAnyOrigin]` implicitly.
@@ -282,8 +269,7 @@ a compiler error. `_ = value` keeps the value alive until the point where you
 need it released or need the pointer to remain valid.
 
 The transfer sigil makes no difference here: `_ = t^` keeps `t` alive
-exactly as `_ = t` does. For why, see [Ownership transfer and
-destruction](/docs/manual/lifecycle/destruction-transfer/).
+exactly as `_ = t` does.
 
 Assigning to the discard pattern can only extend the lifetime of a value,
 it never forces a value to be destroyed.

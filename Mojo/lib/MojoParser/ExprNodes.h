@@ -526,6 +526,14 @@ struct TupleNode final : public LValueCapableExprNode {
                          bool isSpeculative) const override;
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
+
+  /// Split an rvalue tuple into owned element references and disarm the tuple.
+  ///
+  /// For example, `var (a, b) = get_tuple()` moves each result element into
+  /// its binding without destroying it again through the aggregate.
+  static LogicalResult getConsumedElements(CValue tuple, const ExprNode *expr,
+                                           IREmitter &emitter,
+                                           SmallVectorImpl<CValue> &elements);
   LogicalResult
   buildCheckList(PatternMatchBuilder &builder, CValue subject,
                  const PatternPath *path,
@@ -929,11 +937,6 @@ struct MagicFunctionNode final : public ExprNode {
                                           IREmitter &emitter) const;
 
 private:
-  /// Helper to validate and extract the type argument for struct field
-  /// reflection magic functions. Returns the PValue if valid, or emits an
-  /// error and returns std::nullopt.
-  std::optional<PValue>
-  getValidatedStructTypeArg(IREmitter &emitter, StringRef publicApiName) const;
 };
 
 } // namespace M::KGEN::LIT

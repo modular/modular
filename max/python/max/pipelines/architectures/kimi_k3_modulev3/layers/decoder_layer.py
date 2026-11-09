@@ -39,14 +39,14 @@ the FFN; nothing else in the layer changes.
 from __future__ import annotations
 
 from max import functional as F
-from max.nn import Module
+from max.nn import Module, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MLAKVCacheParams
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 
@@ -213,7 +213,11 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             self.post_attention_layernorm_weight,
             self.rms_norm_eps,
         )
-        if isinstance(self.ffn, KimiK3LatentMoE):
+        if isinstance(self.ffn, KimiK3LatentMoE) and ep_config is None:
+            # Every MoE block shares one subgraph, so its per-expert weight
+            # stacking compiles once rather than once per layer.
+            ffn_out = as_subgraph(self.ffn, name="moe_block")(normed2)
+        elif isinstance(self.ffn, KimiK3LatentMoE):
             ffn_out = self.ffn(
                 normed2, ep_config=ep_config, ep_buffers=ep_buffers
             )

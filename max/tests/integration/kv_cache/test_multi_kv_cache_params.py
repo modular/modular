@@ -22,7 +22,8 @@ from max import tree
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
+    MIXED_STEP_SPLIT_SIZE,
     BatchCharacteristics,
     KVCacheAssignments,
     KVCacheInputs,
@@ -40,7 +41,7 @@ from max.nn.legacy.kv_cache import (
     recurrent_leaf,
     recurrent_leaves,
 )
-from max.nn.legacy.kv_cache.utils import MultiAttnKey
+from max.nn.kv_cache.utils import MultiAttnKey
 
 
 def create_kv_cache_params(
@@ -447,8 +448,8 @@ class TestDeepNestedKVCacheTree:
         symbolic = root.get_symbolic_inputs()
 
         flat, treedef = tree.flatten(symbolic)
-        # Each leaf (single GPU) contributes 7 tensors; 6 leaves → 42 total.
-        assert len(flat) == 6 * 7
+        # Every leaf field crosses; the record rides last on each leaf.
+        assert len(flat) == 6 * 8
 
         it = iter(flat)
         reconstructed = tree.unflatten(treedef, it)
@@ -623,7 +624,7 @@ class TestDeepTreeParallelism:
                 {"a": a, "b": b}
             ).get_symbolic_inputs()
         )
-        assert len(flat) == n_devices * 2 * 7
+        assert len(flat) == n_devices * 2 * 8
 
     def test_deep_tree_flatten_unflatten_roundtrip(
         self, n_devices: int, dp_degree: int
@@ -632,8 +633,8 @@ class TestDeepTreeParallelism:
         root = _build_deep_tree(n_devices=n_devices, dp_degree=dp_degree)
         symbolic = root.get_symbolic_inputs()
         flat, treedef = tree.flatten(symbolic)
-        # 6 leaves x n_devices entries x 7 items per device
-        assert len(flat) == 6 * n_devices * 7
+        # Every leaf field crosses per device; the record rides last.
+        assert len(flat) == 6 * n_devices * 8
 
         it = iter(flat)
         reconstructed = tree.unflatten(treedef, it)
@@ -1128,6 +1129,7 @@ def _assignment(*, staged: dict[str, Buffer]) -> KVCacheAssignments:
         batch_characteristics=BatchCharacteristics(
             batch_size=2, max_prompt_length=1, max_cache_valid_length=1
         ),
+        mixed_step_split=_cpu_buffer(MIXED_STEP_SPLIT_SIZE),
     )
 
 

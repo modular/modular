@@ -3,13 +3,46 @@ load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_t
 
 package(default_visibility = ["//max:consumers"])
 
+# Graph-free configs and graph helpers shared by max.nn and max.nn.legacy. Both
+# depend on this target, so it must import neither of them.
+_CORE_SRCS = [
+    "_identity.py",
+    "activation.py",
+    "attention_mask.py",
+    "ep_config.py",
+    "outputs.py",
+    "quant_config.py",
+    "rope_scaling.py",
+]
+
+modular_py_library(
+    name = "core",
+    srcs = _CORE_SRCS,
+    # Examples collect from the whole max/nn directory in runfiles, so the nn
+    # target stays out of them; its examples run in its own test.
+    test_docstring_examples = True,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/support",
+    ],
+)
+
 modular_py_library(
     name = "nn",
-    srcs = glob(["**/*.py"]),
+    srcs = glob(
+        ["**/*.py"],
+        exclude = _CORE_SRCS,
+    ),
     # Several examples compile models; shard to stay under the 800s CI clamp.
     # Listing legacy here keeps its examples out of this test; they run
     # in legacy's own docstring test.
-    docstring_example_deps = ["//max/python/max/nn/legacy"],
+    docstring_example_deps = [
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+    ],
     docstring_example_shard_count = 4,
     docstring_example_test_rule = modular_eager_py_test,
     # numpy and support are used transitively through max.nn.legacy, not directly
@@ -23,12 +56,15 @@ modular_py_library(
         requirement("numpy"),
         requirement("rich"),
         requirement("typing-extensions"),
+        ":core",
         "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/profiler",
         "//max/python/max/support",

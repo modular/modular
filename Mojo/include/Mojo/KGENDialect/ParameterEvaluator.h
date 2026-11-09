@@ -19,6 +19,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/ParameterReplacer.h"
 #include "Support/ForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FunctionExtras.h"
 
@@ -52,10 +53,9 @@ void collectParameterReferences(Attribute attr,
 /// references to named parameters. `requiredSignatureDepth` is set to the
 /// minimum signature depth needed for the type to be valid. This fails if an
 /// invalid parameter expression exists.
-void collectParameterReferences(Type type,
-                                SmallVectorImpl<ParamDeclRefAttr> &results,
-                                bool &hasCtxEvalExpr,
-                                size_t &requiredSignatureDepth);
+MODULAR_CXX_EXPORT void collectParameterReferences(
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasCtxEvalExpr,
+    size_t &requiredSignatureDepth);
 
 /// Return true if the specified type contains parameter references, e.g.
 /// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
@@ -294,7 +294,8 @@ private:
 /// (i.e. not all the index bindings are registered, only a given prefix of the
 /// index bindings are registered), the user can manually set the total number
 /// of index bindings so that the assertion is only triggered for real errors.
-class ParameterEvaluator : public ParameterReplacer<ParameterEvaluator> {
+class MODULAR_CXX_EXPORT ParameterEvaluator
+    : public ParameterReplacer<ParameterEvaluator> {
 public:
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,

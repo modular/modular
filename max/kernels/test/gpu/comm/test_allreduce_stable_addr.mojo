@@ -84,7 +84,7 @@ def _point_slot_at(
 
 
 def _check_outputs(
-    ctxs: List[DeviceContext],
+    ctxs: List[DeviceContext[]],
     out_dev: List[DeviceBuffer[dtype]],
     length: Int,
     expected: Float32,
@@ -104,7 +104,7 @@ def _check_outputs(
 
 def stable_allreduce_test[
     ngpus: Int, *, force_2stage: Bool
-](ctxs: List[DeviceContext], length: Int) raises:
+](ctxs: List[DeviceContext[]], length: Int) raises:
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var in_dev_alt = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -187,7 +187,7 @@ def stable_allreduce_test[
                         coords, rebind[SIMD[dtype, _width]](val)
                     )
 
-                _allreduce_p2p[ngpus=ngpus, pdl_level=PDLLevel()](
+                _allreduce_p2p[ngpus=ngpus, pdl_level=PDLLevel.OFF](
                     in_tensors,
                     out_tensors[i].layout,
                     store_epilogue,
@@ -253,7 +253,7 @@ def main() raises:
         if DeviceContext.number_of_devices() < ngpus:
             continue
 
-        var ctxs = List[DeviceContext]()
+        var ctxs = List[DeviceContext[]]()
         for i in range(ngpus):
             ctxs.append(DeviceContext(device_id=i))
 

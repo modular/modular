@@ -26,7 +26,7 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.kimi_k3_modulev3.layers.output_head import (
     kimi_k3_output_head,
 )

@@ -282,7 +282,7 @@ def test_from_to_bits_roundtrip_property_test() raises:
     var prop_test = PropTest()
 
     comptime for dtype, size in product(dtypes, sizes):
-        prop_test.test[properties[dtype, size]](SIMD[dtype, size].strategy())
+        prop_test.test(SIMD[dtype, size].strategy(), properties[dtype, size])
 
 
 def test_simd_variadic() raises:
@@ -2632,7 +2632,7 @@ def test_slice_aligned_offsets() raises:
 
     var lo, hi = f8.split()
 
-    comptime for i in range(4):
+    for i in range(4):
         assert_equal(lo[i], Float32(i + 1))
         assert_equal(hi[i], Float32(i + 5))
 
@@ -2641,12 +2641,12 @@ def test_slice_aligned_offsets() raises:
     # reached the intrinsic with an index it rejects.
     var f32 = SIMD[DType.float32, 32]()
 
-    comptime for i in range(32):
+    for i in range(32):
         f32[i] = Float32(i)
 
     var wide = f32.slice[16, offset=8]()
 
-    comptime for i in range(16):
+    for i in range(16):
         assert_equal(wide[i], Float32(i + 8))
 
     # Unaligned offsets still take the element-wise path.

@@ -53,18 +53,31 @@ from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
 
+@deprecated(use=StringSpan)
 comptime StringSlice = StringSpan
-"""Provides a compatibility alias for `StringSpan`."""
+"""Deprecated: The former name of `StringSpan`.
 
+Use `StringSpan` instead.
+"""
+
+
+@deprecated(use=StringSpan)
 comptime ImmStringSpan[origin: ImmOrigin] = StringSpan[origin]
-"""Provides read-only access to the string data it views.
+"""Deprecated: An immutable `StringSpan`.
+
+`StringSpan` is always immutable. Use `StringSpan` instead.
 
 Parameters:
     origin: The origin of the string data.
 """
 
-comptime ImmStringSlice = ImmStringSpan
-"""Provides a compatibility alias for `ImmStringSpan`."""
+
+@deprecated(use=StringSpan)
+comptime ImmStringSlice = StringSpan
+"""Deprecated: The former name of `ImmStringSpan`.
+
+Use `StringSpan` instead.
+"""
 
 comptime StaticString = StringSpan[ImmStaticOrigin]
 """An immutable static string span.
@@ -531,7 +544,7 @@ struct StringSpan[origin: ImmOrigin](
             If the Python runtime is not initialized or conversion fails.
         """
         ref cpy = Python().cpython()
-        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # TODO: This should not be necessary, as `StringSpan` is guaranteed to
         # be valid UTF-8.
         var unicode = cpy.PyUnicode_DecodeUTF8(self)
         if not unicode:
@@ -894,23 +907,14 @@ struct StringSpan[origin: ImmOrigin](
             i += 1
         var start_bytes = total_bytes - iter.remaining_byte_length()
 
-        if not end_opt:
-            return Self(
-                unsafe_from_utf8=Span[Byte, Self.origin](
-                    unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(
-                        start_bytes
-                    ),
-                    length=total_bytes - start_bytes,
-                )
-            )
-
-        var end_idx = end_opt.unsafe_value()
-        while i < end_idx:
-            if not iter.next():
-                _ = check_slice_bounds(grapheme, i)
-                break
-            i += 1
-        var end_bytes = total_bytes - iter.remaining_byte_length()
+        var end_bytes = total_bytes
+        if case .Some(end_idx) = end_opt:
+            while i < end_idx:
+                if not iter.next():
+                    _ = check_slice_bounds(grapheme, i)
+                    break
+                i += 1
+            end_bytes = total_bytes - iter.remaining_byte_length()
 
         return Self(
             unsafe_from_utf8=Span[Byte, Self.origin](
@@ -924,7 +928,7 @@ struct StringSpan[origin: ImmOrigin](
         # Show source location where user provided incorrect index by skipping
         # two levels of inlining above this function call.
         var location = call_location[inline_count=2]()
-        check_bounds(idx, self.byte_length(), location)
+        check_bounds(idx, length=self.byte_length(), location=location)
         # Subscripting checks codepoint boundaries unconditionally, to avoid
         # breaking methods that assume valid utf8.
         debug_assert[assert_mode="safe"](
@@ -1048,19 +1052,6 @@ struct StringSpan[origin: ImmOrigin](
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
-
-    @deprecated(use=as_c_string_span)
-    @__allow_legacy_custom_self_type
-    @inline(.always)
-    def as_c_string_slice(
-        self: StaticString,
-    ) -> CStringSpan[ImmStaticOrigin]:
-        """Return a CStringSpan for this StaticString.
-
-        Returns:
-            A c-compatible CStringSpan.
-        """
-        return self.as_c_string_span()
 
     @__allow_legacy_custom_self_type
     @inline(.always)
@@ -1513,10 +1504,10 @@ struct StringSpan[origin: ImmOrigin](
         var iter = self.graphemes()
         var split_bytes = 0
         for _ in range(n):
-            var g = iter.next()
-            if not g:
+            if case .Some(g) = iter.next():
+                split_bytes += g.byte_length()
+            else:
                 break
-            split_bytes += g.unsafe_value().byte_length()
 
         var total = len(self._slice)
         var prefix = Self.Immutable(
@@ -1879,10 +1870,11 @@ struct StringSpan[origin: ImmOrigin](
             substr.as_bytes().as_imm(),
         )
 
-        if not loc:
-            return -1
-
-        return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
+        match loc:
+            case .Some(loc):
+                return Int(loc) - Int(self.unsafe_ptr())
+            case .None:
+                return -1
 
     def rfind(self, substr: StringSpan, start: Int = 0) -> Int:
         """Finds the offset in bytes of the last occurrence of `substr` starting at
@@ -1914,10 +1906,11 @@ struct StringSpan[origin: ImmOrigin](
             substr.as_bytes(),
         )
 
-        if not loc:
-            return -1
-
-        return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
+        match loc:
+            case .Some(loc):
+                return Int(loc) - Int(self.unsafe_ptr())
+            case .None:
+                return -1
 
     @doc_hidden
     @deprecated(use=is_ascii_whitespace)

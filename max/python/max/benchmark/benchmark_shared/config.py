@@ -15,7 +15,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import contextlib
+import logging
+import os
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -40,6 +43,70 @@ from .datasets import (
     TurnSelector,
 )
 from .utils import int_or_none, parse_comma_separated
+
+logger = logging.getLogger(__name__)
+
+# Options renamed in place. The old names keep working, with a warning, so
+# existing scripts and workload files keep their meaning.
+_RENAMED_OPTIONS: Mapping[str, str] = {
+    "warmup_to_steady_state": "warmup_multiturn",
+}
+
+
+def current_option_name(name: str) -> str:
+    """Returns the current name of an option, warning if ``name`` is an old one.
+
+    Args:
+        name: An option name, in snake_case or kebab-case.
+
+    Returns:
+        The option's current name, in the same case as ``name``, or ``name``
+        itself when it was never renamed.
+    """
+    new_name = _RENAMED_OPTIONS.get(name.replace("-", "_"))
+    if new_name is None:
+        return name
+    if "-" in name:
+        new_name = new_name.replace("_", "-")
+    logger.warning(
+        "Option '%s' is deprecated; use '%s' instead.", name, new_name
+    )
+    return new_name
+
+
+@contextlib.contextmanager
+def deprecated_env_vars_renamed(prefix: str) -> Iterator[None]:
+    """Exposes renamed options' old environment variables under their new names.
+
+    The copies exist only inside the ``with`` block, so each parse sees the
+    current environment and nothing leaks into later parses or child
+    processes. A variable already set under the new name wins over the old
+    one.
+
+    Args:
+        prefix: The prefix the CLI reads environment variables under, such as
+            ``MODULAR_``.
+    """
+    added: list[str] = []
+    for old_name, new_name in _RENAMED_OPTIONS.items():
+        old_var = f"{prefix}{old_name.upper()}"
+        if old_var not in os.environ:
+            continue
+        new_var = f"{prefix}{new_name.upper()}"
+        logger.warning(
+            "Environment variable %s is deprecated; use %s instead.",
+            old_var,
+            new_var,
+        )
+        if new_var not in os.environ:
+            os.environ[new_var] = os.environ[old_var]
+            added.append(new_var)
+    try:
+        yield
+    finally:
+        for var in added:
+            os.environ.pop(var, None)
+
 
 # Fixed default seed for the workload generator and request sampling. Scheduled
 # and repeated benchmark runs pin this so run-to-run deltas reflect the change
@@ -411,6 +478,23 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     # values need not be re-validated, and validate_assignment can be removed.
     model_config = ConfigDict(strict=False, validate_assignment=True)
 
+    @classmethod
+    def _current_field_name(cls, key: str) -> str:
+        return current_option_name(key)
+
+    @classmethod
+    def load_config_file(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Loads the config file, then maps renamed options to their new names.
+
+        Args:
+            data: The options given directly, which may name a config file.
+
+        Returns:
+            The merged options, keyed by current field names.
+        """
+        data = super().load_config_file(data)
+        return {current_option_name(k): v for k, v in data.items()}
+
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
@@ -772,6 +856,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
+    steady_state_filtering: bool = Field(
+        default=True,
+        description="Report metrics over an auto-detected steady-state window, with per-request latency outlier rejection. With --no-steady-state-filtering, report over every successful request instead (after manual filters such as --skip-first-n-requests and --skip-last-n-requests) and with no outlier rejection.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
     chat_warmup_delay_ms: float = Field(
         default=0.0,
         description="Delay between starting chat sessions.",
@@ -790,9 +880,9 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    warmup_to_steady_state: bool = Field(
+    warmup_multiturn: bool = Field(
         default=True,
-        description="Attempt to start the benchmark in steady state by starting with a later turn distribution. Disable to start every session at turn 0.",
+        description="Multi-turn workloads only: start each chat session at a randomized later turn, replaying its earlier turns as warmup, so the measured run begins with the turn mix of a long-running server. Disable to start every session at turn 0. Formerly --warmup-to-steady-state, which still works.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -822,7 +912,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     warmup_concurrency: int = Field(
         default=128,
-        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
+        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and multi-turn session warmup (--warmup-multiturn).",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -1111,7 +1201,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     workload_stats_json: str | None = Field(
         default=None,
-        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-to-steady-state, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported.",
+        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-multiturn, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported.",
         json_schema_extra={"group": "Control Flags"},
     )
 

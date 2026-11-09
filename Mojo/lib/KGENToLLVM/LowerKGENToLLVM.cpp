@@ -325,8 +325,7 @@ mapToTypedLLVMFuncAttr(LLVM::LLVMFuncOp func, NamedAttrList &attrs,
     if (!intAttr)
       return Error(Twine("'llvm.") + suffix + "' expects an integer value");
     setOnFunc(LLVM::FunctionEntryCountAttr::get(
-        ctx, intAttr.getValue().getZExtValue(), LLVM::ProfileCountType::Real,
-        /*imports=*/{}));
+        ctx, intAttr.getValue().getZExtValue(), /*imports=*/{}));
     return success();
   }
 

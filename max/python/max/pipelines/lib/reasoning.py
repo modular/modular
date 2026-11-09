@@ -15,12 +15,80 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+import enum
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
-from max.pipelines.modeling.types import PipelineTokenizer, ReasoningParser
+from max.pipelines.modeling.types import (
+    PipelineTokenizer,
+    ReasoningParser,
+    ReasoningSpan,
+)
 
 __all__ = ["get_parser_cls"]
+
+_T = TypeVar("_T")
+
+
+class Route(enum.Enum):
+    """Where a token-routing reasoning parser sends one token.
+
+    ``HOLD`` keeps a token back until a later delta shows where it goes.
+    """
+
+    REASONING = enum.auto()
+    CONTENT = enum.auto()
+    DROP = enum.auto()
+    HOLD = enum.auto()
+
+
+class RoutedSpan(ReasoningSpan):
+    """A reasoning span that routes each token on its own.
+
+    Covers the items the previous delta held back followed by this delta's,
+    one :class:`Route` each. Held items are prepended per element type, since
+    llm.py extracts token ids and log-probabilities from separate sequences of
+    the same length, and the ones this delta holds are stored in ``held``.
+
+    Args:
+        routes: One route per carried and delta item, in order.
+        carried: The items the previous delta held, by element type.
+        held: Where this span stores the items it holds, by element type.
+    """
+
+    def __init__(
+        self,
+        routes: list[Route],
+        carried: dict[type, list[Any]],
+        held: dict[type, list[Any]],
+    ) -> None:
+        super().__init__((0, 0), (0, 0))
+        self._routes = routes
+        self._carried = carried
+        self._held = held
+
+    def _select(self, seq: Sequence[_T], route: Route) -> list[_T]:
+        if not seq:
+            return []
+        key = type(seq[0])
+        routed = list(
+            zip(
+                self._carried.get(key, []) + list(seq),
+                self._routes,
+                strict=True,
+            )
+        )
+        self._held[key] = [x for x, r in routed if r is Route.HOLD]
+        return [x for x, r in routed if r is route]
+
+    def extract_content(self, seq: Sequence[_T]) -> list[_T]:
+        """Returns the items routed to content."""
+        return self._select(seq, Route.CONTENT)
+
+    def extract_reasoning(self, seq: Sequence[_T]) -> list[_T]:
+        """Returns the items routed to reasoning."""
+        return self._select(seq, Route.REASONING)
+
 
 _REASONING_PARSERS: dict[str, type[ReasoningParser]] = {}
 

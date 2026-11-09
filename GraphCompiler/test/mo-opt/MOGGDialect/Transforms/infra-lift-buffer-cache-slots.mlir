@@ -67,7 +67,7 @@ mogg.func @mogg_abi_kernel private()
 // MERGED-NOT: mogg.func @lift_b private
 // MERGED:     mogg.compiled.call @lift_a
 // MERGED:     mogg.compiled.call @lift_a
-mgp.model @top_level subgraph : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>]
+mgp.model @top_level subgraph devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>]
 init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>, %arg2: !mgp.device_context<<"gpu", 0>>) {
     %0 = grt.chain.create ()
     %1 = mgp.context.create 2

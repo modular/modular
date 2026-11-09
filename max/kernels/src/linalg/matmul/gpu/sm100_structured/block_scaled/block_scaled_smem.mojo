@@ -23,7 +23,8 @@ Each SMEM struct is a thin wrapper that adds the appropriate pipeline bundle.
 """
 
 from std.math import align_up
-from layout.tensor_core_async import tile_sf_layout_k_major
+
+from layout.tensor_core_async import tile_sf_layout_k_major_typed
 from std.utils.index import IndexList
 
 from linalg.fp4_utils import (
@@ -94,18 +95,19 @@ struct BlockScaledTileCore[
     # This determines how many K elements each scaling factor covers
     comptime SF_K_GROUP_SIZE = sf_k_group_size[Self.config]()
 
-    # SF layouts use config.vec_sf_size (MXFP8=32, NVFP4=16) and num_sf_k_tiles
-    comptime sfa_smem_layout = tile_sf_layout_k_major[
+    comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         Self.BM,
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
-    ]()
+    ]
 
-    comptime sfb_smem_layout = tile_sf_layout_k_major[
+    comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
         align_up(Self.MMA_N, SF_MN_GROUP_SIZE),
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
-    ]()
+    ]
+
+    # SF layouts use config.vec_sf_size (MXFP8=32, NVFP4=16) and num_sf_k_tiles
 
     # SF tile dimensions (computed via shared helper functions)
     comptime SF_BK = sf_bk[Self.config]()

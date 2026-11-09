@@ -32,7 +32,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, ops
 from max.nn.legacy import Signals
-from max.nn.legacy.transformer import ReturnLogits, logits_postprocess
+from max.nn.legacy.transformer import logits_postprocess
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV41.dspark_drafter import (
     DeepseekV41DSparkDrafter,
 )
@@ -251,7 +252,9 @@ def test_replica_head_matches_device0_head() -> None:
         params: list[npt.NDArray[Any]] = [
             rng.integers(0, VOCAB, batch_size, dtype=np.int64),
             rng.integers(0, 2**63, batch_size, dtype=np.uint64),
-            np.full(batch_size, 1.0, np.float32),
+            # The random head's softmax is peaked at temperature 1, where a
+            # sampled chain can match the argmax one at every position.
+            np.full(batch_size, 4.0, np.float32),
             np.full(batch_size, -1, np.int64),
             np.full(batch_size, 0.95, np.float32),
         ]

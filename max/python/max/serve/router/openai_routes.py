@@ -413,6 +413,12 @@ def record_request_end(
     if input_tokens is not None:
         METRICS.input_tokens(input_tokens)
         METRICS.input_tokens_per_request(input_tokens, turn)
+        if cached_tokens is not None:
+            # A reported zero is a measurement: the server looked and reused
+            # nothing. Only an unreported count skips the pair.
+            cached = min(cached_tokens, input_tokens)
+            METRICS.request_cached_input_tokens(cached, turn)
+            METRICS.request_uncached_input_tokens(input_tokens - cached, turn)
         if cached_tokens is not None and input_tokens > 0:
             METRICS.prefix_coverage_per_request(
                 cached_tokens / input_tokens * 100, turn
@@ -860,8 +866,21 @@ class OpenAIChatResponseGenerator(
                 # Handle streaming tool calls if enabled
                 merged_stream_content: str | None = None
                 tool_call_chunks: list[ChoiceDeltaToolCall] = []
-                if self.parse_tool_calls and chunk.decoded_tokens:
-                    tool_deltas = self.parser.parse_delta(chunk.decoded_tokens)
+                if self.parse_tool_calls and (
+                    chunk.decoded_tokens or chunk.status.is_done
+                ):
+                    tool_deltas = (
+                        self.parser.parse_delta(chunk.decoded_tokens)
+                        if chunk.decoded_tokens
+                        else None
+                    )
+                    # Generation can stop inside a tool call without decoding
+                    # the call's close, so a parser that tracks open calls
+                    # closes them once the stream is done.
+                    finish = getattr(self.parser, "finish", None)
+                    if chunk.status.is_done and finish is not None:
+                        if closing := finish():
+                            tool_deltas = (tool_deltas or []) + closing
                     if tool_deltas is not None:
                         # parse_delta returns [] (not None) once inside the
                         # tool-calls section, even if no deltas are ready yet.
@@ -2362,6 +2381,9 @@ async def openai_create_chat_completion(
             | getattr(tokenizer, "extra_chat_roles", frozenset()),
             preprocessed_image_mask=preprocessed_image_probe(tokenizer),
         )
+        accepts_token_prompt_media = bool(
+            getattr(tokenizer, "accepts_token_prompt_media", False)
+        )
 
         pipeline_config = get_app_pipeline_config(request.app)
 
@@ -2586,6 +2608,14 @@ async def openai_create_chat_completion(
         # exclusive on TextGenerationRequest, so omit ``messages`` in that
         # case. If both are sent on the wire, ``prompt_tokens`` wins.
         prompt_token_ids = completion_request.prompt_tokens
+        token_prompt_media = bool(prompt_token_ids) and bool(
+            request_images or request_videos
+        )
+        if token_prompt_media and not accepts_token_prompt_media:
+            raise InputError(
+                "prompt_tokens cannot carry images or videos for this model; "
+                "send them in messages"
+            )
         chat_template_options = completion_request.resolved_chat_template_kwargs
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
@@ -2595,6 +2625,10 @@ async def openai_create_chat_completion(
             images=request_images,
             decoded_images=request_decoded_images,
             videos=request_videos,
+            token_prompt_media_validated=token_prompt_media,
+            token_prompt_messages=request_messages
+            if token_prompt_media
+            else [],
             max_decoded_bytes=request_max_decoded_bytes,
             tools=tools,
             timestamp_ns=request.state.request_timer.start_ns,

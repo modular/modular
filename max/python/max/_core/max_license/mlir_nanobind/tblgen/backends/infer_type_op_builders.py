@@ -42,6 +42,7 @@ from ..types import (
     DefaultValuedAttr,
     Op,
     OpBuilder,
+    OptionalAttr,
     TypeConstraint,
     Variadic,
     python_variable_name,
@@ -103,6 +104,8 @@ class Variant:
     populator_extra_param: str
 
     def param_type(self, arg: Arg) -> str:
+        if isinstance(arg.entry, OptionalAttr):
+            return f"std::optional<{arg.type.cpp}>"
         return arg.type.cpp
 
     def populate(self, arg: Arg, op: Op) -> str:
@@ -111,6 +114,13 @@ class Variant:
             # Both single Value (``TypedValue<T>``) and ``ValueRange``
             # (variadic) use the same ``state.addOperands(...)`` overload.
             return f"state.addOperands({py_name});"
+        if isinstance(arg.entry, OptionalAttr):
+            # Python passes ``None`` for an absent optional attribute.
+            return (
+                f"if ({py_name}) "
+                f"state.getOrAddProperties<{op.type.cpp}::Properties>()"
+                f".{arg.name} = *{py_name};"
+            )
         if isinstance(arg.entry, Attr):
             # Direct field assignment into the op's Properties struct,
             # the same pattern ODS uses for wrapped-attr builders. The
@@ -164,8 +174,20 @@ UNWRAPPED = _UnwrappedVariant(
 # ---------------------------------------------------------------------- #
 
 
-def _arg_annotation(arg: Arg, variant: Variant | None = None) -> str:
+def _has_default(arg: Arg, variant: Variant | None) -> bool:
+    return isinstance(arg.entry, OptionalAttr) or (
+        variant is UNWRAPPED and isinstance(arg.entry, DefaultValuedAttr)
+    )
+
+
+def _arg_annotation(
+    arg: Arg, variant: Variant | None = None, *, may_default: bool = True
+) -> str:
     """``nb::arg("name")`` for one Python parameter.
+
+    An ``OptionalAttr`` accepts ``None``, and defaults to it when every later
+    parameter has a default too (Python rejects a default followed by a
+    required parameter).
 
     For ``DefaultValuedAttr`` args in the unwrapped variant, emit the ODS
     default expression directly — it's typed as the attr's ``returnType``,
@@ -177,6 +199,9 @@ def _arg_annotation(arg: Arg, variant: Variant | None = None) -> str:
     omit the arg so the unwrapped overload's default kicks in.
     """
     name_part = f'nb::arg("{python_variable_name(arg.name)}")'
+    if isinstance(arg.entry, OptionalAttr):
+        name_part = f"{name_part}.none()"
+        return f"{name_part} = nb::none()" if may_default else name_part
     if variant is UNWRAPPED and isinstance(arg.entry, DefaultValuedAttr):
         return f"{name_part} = {arg.entry.default}"
     return name_part
@@ -202,7 +227,16 @@ def _separate_arg_def(
         f"      {body}\n"
         f"    }}"
     )
-    annotations = ", ".join(_arg_annotation(a, variant) for a in args)
+    annotations = ", ".join(
+        _arg_annotation(
+            a,
+            variant,
+            may_default=all(
+                _has_default(later, variant) for later in args[i + 1 :]
+            ),
+        )
+        for i, a in enumerate(args)
+    )
     return (
         f".def(nb::new_(::M::Graph::Python::{variant.bind_helper}"
         f"<{op.type.cpp}>({populator})), "

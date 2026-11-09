@@ -20,9 +20,9 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.norm.layer_norm import LayerNorm
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor

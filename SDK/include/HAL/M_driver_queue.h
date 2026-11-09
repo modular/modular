@@ -354,15 +354,17 @@ typedef M_driver_status_t (*M_driver_queue_launch_host_func_func_ptr_t)(
     M_driver_queue_t queue, void (*fn)(void *), void *user_data);
 
 /**
- * Enqueue a wait until the 64-bit value at `device_address` equals `value`.
+ * Enqueue a wait until the 64-bit value at `device_address` is at least
+ * `value`.
  *
  * The queue stalls at this node until the device-visible 64-bit slot holds
- * `value`; preceding work is unaffected and subsequent work does not start
- * until the wait is satisfied.
+ * `value` or more; preceding work is unaffected and subsequent work does not
+ * start until the wait is satisfied. Keep values below 2^63: HIP compares
+ * them as signed.
  *
  * @param[in] queue The queue to enqueue the wait on.
  * @param[in] device_address Device-visible address of the 64-bit slot.
- * @param[in] value The value to wait for (equality).
+ * @param[in] value The value to wait for.
  * @return Standard Status Protocol. Backends without stream memory ops
  *         report a non-success status.
  */

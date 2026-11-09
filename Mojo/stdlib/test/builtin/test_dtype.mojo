@@ -71,9 +71,10 @@ def test_is_xxx() raises:
         test: def(DType) thin -> Bool,
         true_dtypes: List[DType],
     ]() raises:
-        comptime for dt in all_dtypes:
-            comptime res = dt in true_dtypes
-            assert_equal(test(dt), res)
+        var dtypes = materialize[all_dtypes]()
+        var true_list = materialize[true_dtypes]()
+        for dt in dtypes:
+            assert_equal(test(dt), dt in true_list)
 
     # _is_category[DType.is_integral, integral_dtypes]()
     # _is_category[DType.is_floating_point, float_dtypes]()
@@ -103,7 +104,8 @@ def test_from_str() raises:
     assert_false(DType._from_str("blahblah"))
     assert_false(DType._from_str("DType.blahblah"))
 
-    comptime for dt in all_dtypes:
+    var dtypes = materialize[all_dtypes]()
+    for dt in dtypes:
         assert_equal(DType._from_str(String(dt)), dt)
 
 

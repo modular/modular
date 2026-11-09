@@ -222,7 +222,7 @@ bool M::KGEN::Mojo::mojoOptionalSummaryProvider(ValueObject &valobj,
   // Note: Optional[T] where T is UnsafeNicheable uses _NichedOptionalStorage,
   // which has no `_impl` field. parseVariantInfo returns {} in that case, so
   // this formatter falls back to LLDB's default display for those types (e.g.
-  // Optional[UnsafePointer[T]]). See _NichedOptionalStorage in variant.mojo.
+  // Optional[Pointer[T]]). See _NichedOptionalStorage in variant.mojo.
   ValueObjectSP obj = valobj.GetNonSyntheticValue();
   if (!obj)
     return false;

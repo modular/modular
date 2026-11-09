@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .plugin import OpaquePointer, FunctionHandle, OutParam, ContextHandle
-from ._plugin._overlay import HAL_PLUGINS
+from ._plugin._impl import HalPluginForTarget
 from std.collections import OptionalReg
 from .buffer import Buffer, BufferView
 from .context import Context
@@ -46,9 +46,9 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
     var _queue_is_stream: Bool
     var _self_ref: WeakPointer[Self]
 
-    comptime HALExtensions = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.device_spec]()
-    ].HookFor[DeviceSpec.target[Self.device_spec]()].extensions
+    comptime HALExtensions = HalPluginForTarget[
+        DeviceSpec.target[Self.device_spec]()
+    ].extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
 
@@ -276,8 +276,8 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
     def wait_value64(
         mut self, device_address: UInt64, value: UInt64
     ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` equals
-        `value`. Runs after all previous Stream ops."""
+        """Enqueues a wait until the 64-bit slot at `device_address` is at
+        least `value`. Runs after all previous Stream ops."""
         self._chain_wait()
         self._queue[].wait_value64(device_address, value)
         self._chain_signal()

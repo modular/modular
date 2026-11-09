@@ -33,7 +33,7 @@ from linalg.bmm import (
 from std.utils.index import Index, IndexList
 
 from layout import TileTensor, Coord, CoordLike, Idx, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -335,7 +335,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     # Construct non-row-major TileTensors for c: strides (N, B*N, 1) instead
     # of the row-major (M*N, N, 1).
-    var c_non_rm_layout = TileLayout(
+    var c_non_rm_layout = Layout(
         Coord(Idx[B], M, Idx[N]),
         Coord(Idx[N], Idx[B * N], Idx[1]),
     )

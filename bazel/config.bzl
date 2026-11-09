@@ -49,3 +49,15 @@ KERNEL_PROFILING_LOCAL_DEFINES = [
     "MODULAR_ENABLE_GPU_PROFILING=0",
     "MODULAR_ENABLE_GPU_PROFILING_DETAILED=0",
 ]
+
+ASYNCRT_PROFILING_OPTIONS = [
+    "off",
+    "on",
+    "firehose",
+    "compiler",
+    "interpreter",
+    "mojo0_asyncrt0_other1",
+    "mojo0_asyncrt1_other1",
+    "mojo1_asyncrt0_other1",
+    "mojo1_asyncrt1_other1",
+]

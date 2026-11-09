@@ -24,7 +24,7 @@ from max.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
 from max.gpu.memory import fence_async_view_proxy, external_memory
@@ -452,7 +452,7 @@ def blackwell_kernel_5[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
@@ -518,9 +518,6 @@ def blackwell_kernel_5[
         ),
         block_dim=(128),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
 
 
@@ -539,7 +536,7 @@ def test_blackwell_kernel_5[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     print(
         "mma_"
         + "s"
@@ -617,7 +614,7 @@ def test_blackwell_kernel_5[
         comptime num_warmup = 20
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {mut c, imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {mut c, imm}:
             blackwell_kernel_5[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -694,7 +691,7 @@ def make_dic_of_shapes() -> (
     return dic^
 
 
-def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+def benchmark_blackwell_matmul(ctx: DeviceContext[]) raises:
     comptime a_type = DType.bfloat16
     comptime b_type = DType.bfloat16
     comptime c_type = DType.bfloat16

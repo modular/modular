@@ -37,19 +37,10 @@ scenarios=
 k2vv_mode=
 circuit_breaker=0
 
-# Known failures were observed on the NVFP4 single-GPU lane (no speculative
-# decoding, TP=1). Reusing the list until this lane has its own failure data.
-# shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/nemotron-known-failures.sh"
-
-# TODO(SERVOPT-1726): fix the DSpark + structured-output truncation, then drop
-# these two exclusions.
-# Failures observed only on this lane: the response is cut off mid-string
-# ("Unterminated string starting at: line 1 column 13") on structured output
-# under DSpark speculative decoding. One test fails per run and which one
-# varies (run 38523298418: reasoning-disabled-response-format-json-object;
-# run 38525961906: structured_json_streaming), so this is likely a MAX bug
-# rather than test-specific; excluded to get a baseline, not a fix. Not in the
-# single-GPU list, so excluded here rather than in the shared .txt.
-exclude="${exclude},openrouter_tests:reasoning-disabled-response-format-json-object"
-exclude="${exclude},openrouter_tests:structured_json_streaming"
+# Deliberately empty: no known-failure exemptions. A failing test is a bug to
+# fix, not an entry to add here.
+# TODO(SERVOPT-1726): MAX Serve under DSpark cuts structured output off
+# mid-string, so the MAX lane can fail
+# openrouter_tests:reasoning-disabled-response-format-json-object and
+# openrouter_tests:structured_json_streaming. Both pass on Mach.
+exclude=

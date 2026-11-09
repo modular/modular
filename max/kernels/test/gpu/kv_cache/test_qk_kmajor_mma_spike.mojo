@@ -69,7 +69,6 @@ from max.gpu import block_idx
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
-    FuncAttribute,
     default_accelerator,
 )
 from max.gpu.host.nvidia.tma import (
@@ -95,7 +94,7 @@ from layout import (
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core_async import tile_layout_k_major_typed
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -125,7 +124,7 @@ comptime _tile_layout_k_major[
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle,
     page_dense: Bool,
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(Idx[_CM_NUM_ROWS], Idx[mn_dim // _CM_NUM_ROWS]),
         Coord(
@@ -193,7 +192,7 @@ comptime _tile_layout_k_major_chunkinner[
     mn_dim: Int,
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle,
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(Idx[_CM_NUM_ROWS], Idx[mn_dim // _CM_NUM_ROWS]),
         Coord(
@@ -561,9 +560,6 @@ def run_qk_spike[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
     else:
         # Baseline arm: default box (BN, gran) -> global chunk-outer, matching
@@ -593,9 +589,6 @@ def run_qk_spike[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
 
     cpu_qk_naive(o_ref.host_tensor(), q.host_tensor(), k.host_tensor())

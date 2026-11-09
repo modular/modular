@@ -11,10 +11,11 @@ modular_py_test(
     srcs = ["test_weight_adapter.py"],
     deps = [
         requirement("numpy"),
-        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
     ],
 )
 
@@ -72,7 +73,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
         requirement("torch"),
     ],

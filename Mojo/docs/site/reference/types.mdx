@@ -75,7 +75,7 @@ caller to guarantee validity.
 
 A string literal in source is a `StringLiteral`. It materializes to a
 `String` at runtime, or to a `StringSpan` when the context requires a view.
-`StringSlice` remains available as a compatibility alias for `StringSpan`.
+`StringSlice`, the former name of `StringSpan`, is a deprecated alias.
 For details, see [String
 literals](/docs/reference/literals/#string-literals).
 
@@ -172,8 +172,6 @@ use `Optional[Pointer]` to model a pointer that may be absent.
 <!-- markdownlint-enable MD013 -->
 
 `OpaquePointer` and the `MutX` and `ImmX` forms are aliases of `Pointer`.
-`UnsafePointer` is a deprecated alias for `Pointer`, kept for code written
-before the two types were unified.
 
 For an overview of pointer types, see
 [Intro to pointers](/docs/manual/pointers/). For memory allocation and pointer

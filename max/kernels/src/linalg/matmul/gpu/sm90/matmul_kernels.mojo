@@ -32,11 +32,6 @@ from max.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.primitives.grid_controls import (
-    PDLLevel,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
-)
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import (
     block_id_in_cluster,
@@ -53,7 +48,6 @@ from max.gpu.memory import (
 from layout import (
     Coord,
     Idx,
-    Layout,
     MixedLayout,
     DefaultEngine,
     TensorLayout,
@@ -63,7 +57,6 @@ from layout import (
 )
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    tile_layout_k_major,
     warpgroup_fence,
 )
 from layout.tma_async import (
@@ -89,7 +82,7 @@ from structured_kernels.tile_types import (
     SMemTileArrayWithLayout,
     SMemTileArray2DRowMajor,
 )
-from layout.tile_layout import Layout as _Layout
+from layout.layout import Layout as _Layout
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
@@ -244,7 +237,8 @@ struct HopperMatmulSM90Kernel[
     a_layout: TensorLayout,
     b_layout: TensorLayout,
     c_layout: TensorLayout,
-    c_smem_layout: Layout,
+    c_smem_rows: Int,
+    c_smem_cols: Int,
     block_tile_shape: Tuple[Int, Int, Int],
     wgmma_shape: Tuple[Int, Int, Int],
     cluster_shape: Tuple[Int, Int, Int],
@@ -257,7 +251,6 @@ struct HopperMatmulSM90Kernel[
     partitioned_multicast: Bool = False,
     use_tma_store: Bool = False,
     promotion_frequency: Int = 1,
-    pdl_level: PDLLevel = PDLLevel(),
     hilbert_swizzle: Bool = False,
     k_group_size: Int = 1,
     swapAB: Bool = False,
@@ -279,7 +272,8 @@ struct HopperMatmulSM90Kernel[
         a_layout: Memory layout of the A matrix.
         b_layout: Memory layout of the B matrix.
         c_layout: Memory layout of the C matrix.
-        c_smem_layout: Shared memory layout for the output tile.
+        c_smem_rows: Row count of the output tile's shared memory layout.
+        c_smem_cols: Column count of the output tile's shared memory layout.
         block_tile_shape: Tile dimensions `[M, N, K]` processed by each
             thread block.
         wgmma_shape: Dimensions for each WGMMA instruction `[M, N, K]`.
@@ -300,7 +294,6 @@ struct HopperMatmulSM90Kernel[
             regular stores).
         promotion_frequency: How often FP8 accumulation is promoted to
             higher precision.
-        pdl_level: Programmatic Dependency Launch (PDL) level.
         hilbert_swizzle: Whether Hilbert-curve thread block scheduling is
             used.
         k_group_size: Number of K-dimension tiles loaded and consumed per
@@ -338,13 +331,6 @@ struct HopperMatmulSM90Kernel[
         Int(Self.wgmma_shape[0]) * Int(Self.wgmma_shape[1]) // 128
     )
 
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, Self.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, Self.b_swizzle
-    ]()
-
     comptime adjusted_num_pipeline_stages = Self.num_pipeline_stages // Self.k_group_size
 
     # TMA expected bytes per pipeline stage (combined A + B tiles)
@@ -374,8 +360,8 @@ struct HopperMatmulSM90Kernel[
         Self.BM,
         Self.BN,
         Self.BK,
-        Self.c_smem_layout.shape[0].value(),  # WG_BM
-        Self.c_smem_layout.shape[1].value(),  # WG_BN
+        Self.c_smem_rows,  # WG_BM
+        Self.c_smem_cols,  # WG_BN
         Self.num_pipeline_stages,
         Self.k_group_size,
         128,  # swizzle_bytes (matches TensorMapSwizzle.SWIZZLE_128B default)
@@ -447,9 +433,6 @@ struct HopperMatmulSM90Kernel[
     @inline(.always)
     def finalize_kernel():
         """Common finalization for all kernel variants."""
-
-        comptime if Self.pdl_level >= PDLLevel.OVERLAP_AT_END:
-            launch_dependent_grids()
 
         # Synchronize all thread blocks in the cluster before kernel exit
         # to ensure shared memory isn't deallocated while other blocks are still using it
@@ -1016,13 +999,6 @@ struct HopperMatmulSM90Kernel[
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
             # Producer warp group
-
-            # Check and wait for PDL grids if needed
-            comptime if (
-                Self.pdl_level > PDLLevel.OFF
-                and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-            ):
-                wait_on_dependent_grids()
 
             _ = Self.setup_producer()
 

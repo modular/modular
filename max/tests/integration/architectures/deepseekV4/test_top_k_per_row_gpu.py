@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``mo.top_k.per_row`` against ``mo.top_k`` in the same graph.
+"""``reduction.top_k.per_row`` against ``mo.top_k`` in the same graph.
 
 The DeepSeek-V4 indexer's shape: 2048 candidates, 512 kept, a masked tail of
 ``-inf`` past each row's live candidates, and a pick count per row equal to
@@ -38,7 +38,7 @@ from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import top_k_per_row
+from max.nn._graph_ops import top_k_per_row
 from max.pipelines.architectures.deepseekV4.layers.indexer import (
     DeepseekV4Indexer,
 )

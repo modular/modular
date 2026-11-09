@@ -18,6 +18,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
+from ..glm5_1.arch import glm_format_spec
 from ..glm5_1.model_config import Glm5_1Config
 from ..glm5_1.reasoning import (
     GlmReasoningParser,  # noqa: F401  registers "glm45"
@@ -26,7 +27,7 @@ from ..glm5_1.tokenizer import GlmTokenizer
 from ..glm5_1.tool_parser import GlmToolParser  # noqa: F401  registers "glm45"
 from .batch_processor import UnifiedMTPGlm5_2BatchProcessor
 from .model import UnifiedMTPGlm5_2Model
-from .weight_adapters import convert_with_mtp_state_dict
+from .weight_adapters import unified_mtp_glm5_2_weight_rules
 
 unified_mtp_glm5_2_arch = SupportedArchitecture(
     name="UnifiedMTPGlmMoeDsaForCausalLM",
@@ -45,9 +46,8 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     tokenizer=GlmTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_with_mtp_state_dict,
-    },
+    weight_rules=unified_mtp_glm5_2_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=Glm5_1Config,
@@ -55,6 +55,7 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     batching=UnifiedMTPGlm5_2BatchProcessor,
     tool_parser="glm45",
     reasoning_parser="glm45",
+    format_spec=glm_format_spec,
     # The draft layer copies the target's MLA cache params, so it reads the
     # same NVFP4 layout through the same sparse MLA kernels.
     supports_nvfp4_kv_cache=True,

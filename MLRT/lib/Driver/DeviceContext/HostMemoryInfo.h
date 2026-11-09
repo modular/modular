@@ -16,21 +16,22 @@
 
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 
 namespace M::Driver {
 
 /// Returns host physical memory, with system-wide availability as the free
 /// size. See M::Target::queryHostMemory.
-ErrorOr<Device::MemInfo> getHostMemoryInfo();
+MODULAR_CXX_EXPORT ErrorOr<Device::MemInfo> getHostMemoryInfo();
 
 /// Returns host availability for a device that shares physical memory with
 /// the host, capped at the device's capacity. Devices with their own memory,
 /// such as integrated parts with private HBM, keep the caller's figures.
-ErrorOr<Device::MemInfo>
+MODULAR_CXX_EXPORT ErrorOr<Device::MemInfo>
 getHostUnifiedMemoryInfo(Device::MemInfo deviceMemoryInfo);
 
 /// Same, with the host figures supplied by the caller.
-ErrorOr<Device::MemInfo>
+MODULAR_CXX_EXPORT ErrorOr<Device::MemInfo>
 getHostUnifiedMemoryInfo(Device::MemInfo deviceMemoryInfo,
                          Device::MemInfo hostMemoryInfo);
 

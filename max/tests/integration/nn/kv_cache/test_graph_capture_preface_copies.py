@@ -38,7 +38,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from max.driver import Buffer, batch_inplace_copy
-from max.nn.legacy.kv_cache import BatchCharacteristics, MLAAttnKey
+from max.nn.kv_cache import BatchCharacteristics, MLAAttnKey
 from max.pipelines.lib import graph_capture
 from max.pipelines.lib.graph_capture import GraphEntry, ServeGraphCaptureRunner
 
@@ -117,7 +117,7 @@ def _make_replay_runner() -> ServeGraphCaptureRunner:
     runner._records = {}
     runner.graph_entries = {}
     runner._engine_model = MagicMock()
-    runner._signal_buffers = []
+    runner._compiled = None
     runner._host_input_guard_mode = None
     return runner
 

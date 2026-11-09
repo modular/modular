@@ -561,13 +561,13 @@ def argmax_with_bias_gpu[
             next_power_of_two(ceildiv(split_len, simd_width)), 1024
         )
         block_size = max(block_size, warp_size)
-        # Same-type scans with both vocabularies static use 70--77 registers per
+        # Scans with both vocabularies static fully unroll the loop and keep
+        # every SIMD accumulator in registers, using 70--77 registers per
         # thread on B200, exceeding the 64-register budget at 1024 threads.
         # Use 512 threads for these specializations; keep other specializations
         # on their existing launch sizes.
         comptime if (
             ctx.target.is_nvidia_gpu()
-            and dtype == bias_dtype
             and (
                 logits.LayoutType._shape_types[2].is_static_value
                 and bias.LayoutType._shape_types[1].is_static_value

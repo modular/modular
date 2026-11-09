@@ -243,7 +243,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     rows: Int,
     cols: Int,
     scales_dtype: DType = .float32,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Verify fused kernel against separate allreduce → fused RMSNorm+FP8."""
     comptime length = rows * cols
 
@@ -436,7 +436,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     dtype: DType,
     rows: Int,
     cols: Int,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Verify the no-quant path (out_dtype == in_dtype) of the non-residual
     fused kernel.
 
@@ -604,7 +604,7 @@ def test_fused_allreduce_rmsnorm_noquant_latent[
     ngpus: Int,
     dtype: DType,
     multiply_before_cast: Bool,
-](list_of_ctx: List[DeviceContext], rows: Int, cols: Int,) raises:
+](list_of_ctx: List[DeviceContext[]], rows: Int, cols: Int,) raises:
     """Verify the no-residual no-quant fused kernel at the latent-MoE shape.
 
     K3's TP latent-MoE reduces bf16 `[M, 3584]` partials (decode M = 1..8,
@@ -784,7 +784,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     cols: Int,
     *,
     no_scratch: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Verify fused kernel with residual add against separate paths.
 
     With `no_scratch` the signal buffers end at the `Signal` header, so
@@ -1044,7 +1044,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     rows: Int,
     cols: Int,
     multiply_before_cast: Bool = True,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Verify the no-quant path (out_dtype == in_dtype) of the fused kernel.
 
     Exercises allreduce + residual add + RMSNorm with a `dtype` output (no FP8
@@ -1253,7 +1253,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
 def _residual_rmsnorm_call[
     ngpus: Int, cols: Int, *, force_lamport: Bool, multiply_before_cast: Bool
 ](
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     rows: Int,
     call_idx: Int,
@@ -1335,7 +1335,6 @@ def _residual_rmsnorm_call[
                 ngpus,
                 has_residual=True,
                 multiply_before_cast=multiply_before_cast,
-                pdl=False,
             ](
                 i,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -1421,7 +1420,7 @@ def _residual_rmsnorm_call[
 
 def test_lamport_residual_rmsnorm_sequence[
     ngpus: Int, cols: Int, multiply_before_cast: Bool = True
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Chains fused allreduce + residual + RMSNorm calls on one signal buffer
     set, alternating the forced Lamport launch with the public dispatch.
 
@@ -1485,7 +1484,7 @@ comptime test_gpu_counts = (2, 4, 8)
 
 def _signal_buffers[
     ngpus: Int
-](list_of_ctx: List[DeviceContext], scratch_bytes: Int) raises -> List[
+](list_of_ctx: List[DeviceContext[]], scratch_bytes: Int) raises -> List[
     DeviceBuffer[.uint8]
 ]:
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
@@ -1503,7 +1502,7 @@ def _signal_buffers[
 
 def test_residual_rmsnorm_rank_not_ordinal[
     ngpus: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Runs on GPUs whose ordinals differ from their positions in the group,
     as with `--devices gpu:4,5,6,7`. A rank taken from `ctx.device().id` would
     index past the group's buffers. The row counts cover the Lamport kernel
@@ -1533,7 +1532,7 @@ def test_residual_rmsnorm_rank_not_ordinal[
 
 def test_residual_rmsnorm_no_scratch[
     ngpus: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Gives the fused op no scratch behind the `Signal` headers. Payloads the
     dispatch would stage through scratch must take the 1-stage kernel."""
     print("  test_residual_rmsnorm_no_scratch[", ngpus, "]")
@@ -1552,7 +1551,7 @@ def test_residual_rmsnorm_no_scratch[
 
 def test_residual_rmsnorm_without_p2p[
     ngpus: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Runs before peer access is enabled, as on a host without P2P. The
     fused op must reduce through the plain allreduce's staged copies and
     normalize separately instead of raising."""
@@ -1578,7 +1577,7 @@ def test_residual_rmsnorm_without_p2p[
 
 def test_fused_allreduce_rmsnorm_zero_rows[
     ngpus: Int, dtype: DType, cols: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Verify both entry points return without launching on a zero-row batch.
 
     A step that skips speculative drafting runs the drafter's collectives on
@@ -1815,7 +1814,7 @@ def test_pdl_ordering[
     rows: Int,
     cols: Int,
     pdl_level: PDLLevel,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Verify PDL waits for the producer and publishes to its consumer.
 
     A late-writing producer fills each rank's input, residual and gamma after
@@ -2039,52 +2038,25 @@ def test_pdl_ordering[
                 scales_dev[i], row_major(Idx[rows], Idx[1])
             )
             var gamma_tensor = TileTensor(gamma_dev[i], row_major(cols))
-            if pass_idx == 0:
-                allreduce_residual_rmsnorm(
-                    in_tiles,
-                    residual_tile.as_imm(),
-                    out_tile,
-                    res_out_tile,
-                    gamma_tensor,
-                    Float32(1e-5),
-                    Scalar[in_dtype](0.0),
-                    scale_ub,
-                    scales_tile,
-                    rank_sigs,
-                    c,
-                    my_rank=i,
-                )
-            else:
-                allreduce_residual_rmsnorm[pdl_level=pdl_level](
-                    in_tiles,
-                    residual_tile.as_imm(),
-                    out_tile,
-                    res_out_tile,
-                    gamma_tensor,
-                    Float32(1e-5),
-                    Scalar[in_dtype](0.0),
-                    scale_ub,
-                    scales_tile,
-                    rank_sigs,
-                    c,
-                    my_rank=i,
-                )
-                if is_pdl_pass:
-                    comptime if pdl_level == PDLLevel.ON:
-                        # The release follows the barrier that retires the
-                        # peers' reads, so reusing the input right away must
-                        # not corrupt a peer's result.
-                        c.enqueue_function[_early_overwrite[in_dtype]](
-                            in_dev[i],
-                            Int32(length),
-                            grid_dim=592,
-                            block_dim=256,
-                            attributes=pdl_launch_attributes(PDLLevel.ON),
-                        )
-                    _copy_after_wait(c, out_cons[i], out_dev[i], length)
-                    _copy_after_wait(c, res_out_cons[i], res_out_dev[i], length)
-                    comptime if quantize:
-                        _copy_after_wait(c, scales_cons[i], scales_dev[i], rows)
+            allreduce_residual_rmsnorm(
+                in_tiles,
+                residual_tile.as_imm(),
+                out_tile,
+                res_out_tile,
+                gamma_tensor,
+                Float32(1e-5),
+                Scalar[in_dtype](0.0),
+                scale_ub,
+                scales_tile,
+                rank_sigs,
+                c,
+                my_rank=i,
+            )
+            if is_pdl_pass:
+                _copy_after_wait(c, out_cons[i], out_dev[i], length)
+                _copy_after_wait(c, res_out_cons[i], res_out_dev[i], length)
+                comptime if quantize:
+                    _copy_after_wait(c, scales_cons[i], scales_dev[i], rows)
         group_end()
 
         for i in range(ngpus):
@@ -2156,7 +2128,7 @@ def main() raises:
     if is_p2p_enabled():
         print("  skipped: peer access is already enabled")
     else:
-        var no_p2p_ctx = List[DeviceContext]()
+        var no_p2p_ctx = List[DeviceContext[]]()
         for i in range(2):
             no_p2p_ctx.append(DeviceContext(device_id=i))
         test_residual_rmsnorm_without_p2p[2](no_p2p_ctx)
@@ -2170,7 +2142,7 @@ def main() raises:
         if num_devices < num_gpus:
             continue
 
-        var list_of_ctx = List[DeviceContext]()
+        var list_of_ctx = List[DeviceContext[]]()
         for i in range(num_gpus):
             list_of_ctx.append(DeviceContext(device_id=i))
 
@@ -2455,7 +2427,7 @@ def main() raises:
     comptime for gpu_idx in range(2):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if num_devices >= 2 * num_gpus:
-            var offset_ctx = List[DeviceContext]()
+            var offset_ctx = List[DeviceContext[]]()
             for i in range(num_gpus):
                 offset_ctx.append(DeviceContext(device_id=num_gpus + i))
             test_residual_rmsnorm_rank_not_ordinal[num_gpus](offset_ctx)

@@ -77,12 +77,3 @@ def field_of_transfer():
     # CHECK: "fixIts":[{"end":{"column":11,"line":[[#@LINE+2]]},"start":{"column":10,"line":[[#@LINE+2]]},"text":""}]
     # CHECK-SAME: "message":"this value is borrowed here, so the transfer has no effect and can be removed"
     _ = f^.field
-
-
-def tuple_destructure():
-    var t = (String(), String())
-    var x: String
-    var y: String
-    # CHECK: "fixIts":[{"end":{"column":14,"line":[[#@LINE+2]]},"start":{"column":13,"line":[[#@LINE+2]]},"text":""}]
-    # CHECK-SAME: "message":"this value is borrowed here, so the transfer has no effect and can be removed"
-    x, y = t^

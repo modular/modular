@@ -14,13 +14,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .batch_processor import HYV4BatchProcessor
+from .decoder import HYV4Decoder
 from .memory_planner import HYV4MemoryPlanner
-from .model import HYV4Model
 from .model_config import HYV4Config
 from .reasoning import HYV4ReasoningParser  # noqa: F401  registers "hy_v4"
 from .tokenizer import HYV4Tokenizer
@@ -32,7 +31,7 @@ hy_v4_arch = SupportedArchitecture(
     example_repo_ids=["tencent/Hy4-preview-FP8"],
     default_encoding=HYV4Config.DEFAULT_ENCODING,
     supported_encodings=HYV4Config.SUPPORTED_ENCODINGS,
-    pipeline_model=HYV4Model,
+    modules={GraphRole.DECODER: HYV4Decoder},
     tokenizer=HYV4Tokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -43,7 +42,6 @@ hy_v4_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=HYV4Config,
-    batching=HYV4BatchProcessor,
     memory_planner=HYV4MemoryPlanner,
     tool_parser="hy_v4",
     reasoning_parser="hy_v4",

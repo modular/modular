@@ -17,7 +17,7 @@ from std.memory import bitcast
 from std.utils.index import StaticTuple
 from layout import TileTensor
 from layout.coord import Coord, Idx
-from layout.tile_layout import Layout as InternalLayout
+from layout.layout import Layout as InternalLayout
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (

@@ -121,7 +121,9 @@ def copy2_n(
 
 
 @inline(.never)
-def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
+def bench_pdl_copy(
+    mut b: Bench, *, length: Int, context: DeviceContext[]
+) raises:
     comptime dtype = DType.float32
     var a_host = List(length=length, fill=Scalar[dtype](0))
     var b_host = List(length=length, fill=Scalar[dtype](0))
@@ -148,7 +150,7 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {mut b_device, mut c_device, imm}:
         for _ in range(10):
             context.enqueue_function[copy1](
@@ -188,7 +190,7 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
 
 @inline(.never)
-def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
+def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext[]) raises:
     comptime dtype = DType.float32
     var a_host = List(length=length, fill=Scalar[dtype](0))
     var b_host = List(length=length, fill=Scalar[dtype](0))
@@ -215,7 +217,7 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {mut b_device, mut c_device, imm}:
         for _ in range(10):
             context.enqueue_function[copy1_n](

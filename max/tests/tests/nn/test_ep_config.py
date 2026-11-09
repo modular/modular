@@ -20,15 +20,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Type
-from max.nn.legacy.comm.ep import calculate_ep_max_tokens_per_rank, ep_kernels
-from max.nn.legacy.comm.ep.ep_config import (
-    _EP_LOCAL_SYNC_RESERVED_WORDS,
-    NUM_GROUPS,
-    EPConfig,
-    _ep_fused_moe_requested,
-    estimate_ep_memory_usage,
-)
-from max.nn.legacy.comm.ep.ep_kernels import (
+from max.nn._graph_ops import ep as ep_kernels
+from max.nn._graph_ops.ep import (
     _call_mega_ffn_ep_fused,
     _call_mega_ffn_ep_fused_init,
     _call_mega_ffn_ep_fused_plan,
@@ -40,6 +33,14 @@ from max.nn.legacy.comm.ep.ep_kernels import (
     call_ep_dispatch_async,
     call_ep_dispatch_wait,
 )
+from max.nn.ep_config import (
+    _EP_LOCAL_SYNC_RESERVED_WORDS,
+    NUM_GROUPS,
+    EPConfig,
+    _ep_fused_moe_requested,
+    calculate_ep_max_tokens_per_rank,
+    estimate_ep_memory_usage,
+)
 from max.nn.legacy.comm.ep.ep_manager import (
     _ep_counter_words,
     _ep_sync_counter_bytes,
@@ -47,7 +48,7 @@ from max.nn.legacy.comm.ep.ep_manager import (
     _plan_fused_moe_workspace,
     get_ep_local_sync_counters_size,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -316,6 +317,17 @@ def test_ffn_combine_send_rejects_fused_shared_expert() -> None:
         _validate_ffn_combine_send_config(
             _ffn_send_config(fused_shared_expert=True)
         )
+
+
+def test_combine_mx_accepts_the_split_combine() -> None:
+    """The happy path must not raise, or the negative case proves nothing."""
+    dataclasses.replace(_base_ep_config(), combine_mx_min_tokens=2048)
+
+
+def test_combine_mx_rejects_ffn_combine_send() -> None:
+    """The fused send writes bfloat16, which the MXFP8 wait would misread."""
+    with pytest.raises(ValueError, match="fused FFN combine send"):
+        dataclasses.replace(_ffn_send_config(), combine_mx_min_tokens=2048)
 
 
 def _nvfp4_quant_config() -> QuantConfig:
@@ -686,6 +698,44 @@ def test_fused_moe_plan_follows_the_backend(
             refusal,
         )
     assert _plan_fused_moe_workspace(_ep2_fused_config()) == nv24
+
+
+def test_fused_moe_plan_serves_the_top6_cell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A top-6 MoE cell, split over 2 ranks, is served: 192
+    routed experts (96 local), top-6, hidden 5120, MoE width 2304, NVFP4, at
+    a 128-token per-rank capacity, on the decode token block. Its
+    neighbors keep the chain: top-k 8 at the same shape, one token of capacity
+    more, and 384 routed experts over 2 ranks (192 local, past
+    the scheduler's 128)."""
+    monkeypatch.setattr(ep_kernels, "accelerator_api", lambda: "cuda")
+    top6 = _ep2_fused_config(
+        n_experts=192,
+        top_k=6,
+        hidden_size=5120,
+        moe_dim=2304,
+        max_tokens_per_rank=128,
+    )
+    cells, *refusals = _fused_moe_plans(
+        [
+            _fused_moe_parameters(config)
+            for config in (
+                top6,
+                dataclasses.replace(top6, top_k=8),
+                dataclasses.replace(top6, max_tokens_per_rank=129),
+                dataclasses.replace(top6, n_experts=384),
+            )
+        ]
+    )
+    assert cells[1:] == (8, ""), cells
+    assert cells[0] > 0, cells
+    reasons = ("local experts", "capacity", "local experts")
+    for answer, reason in zip(refusals, reasons, strict=True):
+        assert (answer[0], answer[1]) == (0, 0) and reason in answer[2], (
+            reason,
+            answer,
+        )
 
 
 def test_fused_moe_bound_covers_every_format_of_its_element_type(

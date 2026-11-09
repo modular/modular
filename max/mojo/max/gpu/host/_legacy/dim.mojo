@@ -141,9 +141,10 @@ struct Dim(TrivialRegisterPassable, Writable):
         Returns:
             The value of the dimension at the given index.
         """
-        assert idx >= 0 and idx < 3, String(
-            t"dimension index out of range: {idx}"
-        )
+        # Keep the message a t-string, formatted only if the assert fires. A
+        # `String` message is built on every access, even with asserts off,
+        # and each kernel launch reads a dozen or more dims.
+        assert idx >= 0 and idx < 3, t"dimension index out of range: {idx}"
         if idx == 0:
             return Int(self._value[0])
         if idx == 1:

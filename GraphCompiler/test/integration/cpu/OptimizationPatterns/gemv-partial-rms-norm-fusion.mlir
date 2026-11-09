@@ -11,7 +11,7 @@
 // CHECK-SAME: {epsilon = #M.dense_array<9.99999997E-7> : tensor<f32>, weight_offset = #M.dense_array<0.000000e+00> : tensor<f32>}
 // CHECK-NOT: mo.matmul
 // CHECK-NOT: mo.slice
-// CHECK-NOT: mo.reduce.rms_norm
+// CHECK-NOT: mo.composite.reduce.rms_norm
 mo.graph @gemv_partial_rms_norm_basic(
   %x: !mo.tensor<[1, 7168], bf16, gpu:0>,
   %W: !mo.tensor<[7168, 2112], bf16, gpu:0>,
@@ -31,7 +31,7 @@ mo.graph @gemv_partial_rms_norm_basic(
     -> !mo.tensor<[1, 1536], bf16, gpu:0>
 
   // RMS norm on the sliced portion (multiply_before_cast=true for fusion)
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} :
     (!mo.tensor<[1, 1536], bf16, gpu:0>, !mo.tensor<[1536], bf16, gpu:0>) -> !mo.tensor<[1, 1536], bf16, gpu:0>
 
@@ -51,7 +51,7 @@ mo.graph @gemv_partial_rms_norm_basic(
 
 // Wrong device (CPU) - pattern should not fire
 // CHECK-LABEL: mo.graph @cpu_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @cpu_not_fused(
   %x: !mo.tensor<[1, 1024], f32, cpu:0>,
@@ -69,7 +69,7 @@ mo.graph @cpu_not_fused(
     (!mo.tensor<[1, 512], f32, cpu:0>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>)
     -> !mo.tensor<[1, 256], f32, cpu:0>
 
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[1, 256], f32, cpu:0>, !mo.tensor<[256], f32, cpu:0>) -> !mo.tensor<[1, 256], f32, cpu:0>
 
@@ -84,7 +84,7 @@ mo.graph @cpu_not_fused(
 
 // M > 1 (not GEMV) - pattern should not fire
 // CHECK-LABEL: mo.graph @m_not_one_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @m_not_one_not_fused(
   %x: !mo.tensor<[4, 1024], f32, gpu:0>,
@@ -102,7 +102,7 @@ mo.graph @m_not_one_not_fused(
     (!mo.tensor<[4, 512], f32, gpu:0>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>)
     -> !mo.tensor<[4, 256], f32, gpu:0>
 
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[4, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[4, 256], f32, gpu:0>
 
@@ -117,7 +117,7 @@ mo.graph @m_not_one_not_fused(
 
 // Missing transpose_b - pattern should not fire
 // CHECK-LABEL: mo.graph @transpose_b_false_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @transpose_b_false_not_fused(
   %x: !mo.tensor<[1, 1024], f32, gpu:0>,
@@ -135,7 +135,7 @@ mo.graph @transpose_b_false_not_fused(
     (!mo.tensor<[1, 512], f32, gpu:0>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>)
     -> !mo.tensor<[1, 256], f32, gpu:0>
 
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[1, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[1, 256], f32, gpu:0>
 
@@ -150,7 +150,7 @@ mo.graph @transpose_b_false_not_fused(
 
 // Non-unit step - pattern should not fire
 // CHECK-LABEL: mo.graph @non_unit_step_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @non_unit_step_not_fused(
   %x: !mo.tensor<[1, 1024], f32, gpu:0>,
@@ -169,7 +169,7 @@ mo.graph @non_unit_step_not_fused(
     (!mo.tensor<[1, 512], f32, gpu:0>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>)
     -> !mo.tensor<[1, 128], f32, gpu:0>
 
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[1, 128], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[1, 128], f32, gpu:0>
 
@@ -185,7 +185,7 @@ mo.graph @non_unit_step_not_fused(
 
 // Missing unnormed slice - pattern should not fire
 // CHECK-LABEL: mo.graph @missing_unnormed_slice_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @missing_unnormed_slice_not_fused(
   %x: !mo.tensor<[1, 1024], f32, gpu:0>,
@@ -197,7 +197,7 @@ mo.graph @missing_unnormed_slice_not_fused(
     -> !mo.tensor<[1, 512], f32, gpu:0>
 
   // RMS norm on the entire output (no slicing)
-  %normed = mo.reduce.rms_norm(%gemv, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%gemv, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[1, 512], f32, gpu:0>, !mo.tensor<[512], f32, gpu:0>) -> !mo.tensor<[1, 512], f32, gpu:0>
 
@@ -206,7 +206,7 @@ mo.graph @missing_unnormed_slice_not_fused(
 
 // Matmul has other user - pattern should not fire
 // CHECK-LABEL: mo.graph @matmul_has_other_user_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @matmul_has_other_user_not_fused(
   %x: !mo.tensor<[1, 1024], f32, gpu:0>,
@@ -227,7 +227,7 @@ mo.graph @matmul_has_other_user_not_fused(
     (!mo.tensor<[1, 512], f32, gpu:0>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>)
     -> !mo.tensor<[1, 256], f32, gpu:0>
 
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[1, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[1, 256], f32, gpu:0>
 
@@ -242,7 +242,7 @@ mo.graph @matmul_has_other_user_not_fused(
 
 // Normed slice has other user - pattern should not fire
 // CHECK-LABEL: mo.graph @normed_slice_has_other_user_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @normed_slice_has_other_user_not_fused(
   %x: !mo.tensor<[1, 1024], f32, gpu:0>,
@@ -263,7 +263,7 @@ mo.graph @normed_slice_has_other_user_not_fused(
   // Second use of normed_slice - prevents fusion
   %slice_copy = mo.add(%normed_slice, %normed_slice) : !mo.tensor<[1, 256], f32, gpu:0>
 
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[1, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[1, 256], f32, gpu:0>
 
@@ -278,7 +278,7 @@ mo.graph @normed_slice_has_other_user_not_fused(
 
 // Non-constant slice bounds - pattern should not fire
 // CHECK-LABEL: mo.graph @non_constant_slice_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @non_constant_slice_not_fused(
   %x: !mo.tensor<[1, 1024], f32, gpu:0>,
@@ -297,7 +297,7 @@ mo.graph @non_constant_slice_not_fused(
     (!mo.tensor<[1, 512], f32, gpu:0>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>)
     -> !mo.tensor<[1, ?], f32, gpu:0>
 
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[1, ?], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[1, ?], f32, gpu:0>
 
@@ -312,7 +312,7 @@ mo.graph @non_constant_slice_not_fused(
 
 // multiply_before_cast=false (Llama-style) - pattern should not fire
 // CHECK-LABEL: mo.graph @multiply_before_cast_false_not_fused
-// CHECK: mo.reduce.rms_norm
+// CHECK: mo.composite.reduce.rms_norm
 // CHECK-NOT: matmul_fused_partial_rms_norm
 mo.graph @multiply_before_cast_false_not_fused(
   %x: !mo.tensor<[1, 1024], f32, gpu:0>,
@@ -331,7 +331,7 @@ mo.graph @multiply_before_cast_false_not_fused(
     -> !mo.tensor<[1, 256], f32, gpu:0>
 
   // multiply_before_cast=false prevents fusion (kernel hardcodes true)
-  %normed = mo.reduce.rms_norm(%normed_slice, %gamma)
+  %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma)
     {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} :
     (!mo.tensor<[1, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[1, 256], f32, gpu:0>
 

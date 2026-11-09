@@ -148,7 +148,7 @@ def can_mutate[FuncType: def() -> None](impl: FuncType):
 
 def s4_demo[
     o: Origin[mut=True]
-](ptr: UnsafePointer[Int, o, address_space=.GENERIC],):
+](ptr: Pointer[Int, o, address_space=.GENERIC],):
     def write() {imm ptr}:
         ptr.store(0, 3)
 
@@ -162,13 +162,13 @@ def s4_demo[
 
 def must_be_imm_only[
     Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None
-](impl: FuncType, ptr: UnsafePointer[Int, o, address_space=.GENERIC],):
+](impl: FuncType, ptr: Pointer[Int, o, address_space=.GENERIC],):
     impl()
 
 
 def s5_demo[
     o: Origin[mut=True]
-](ptr: UnsafePointer[Int, o, address_space=.GENERIC],):
+](ptr: Pointer[Int, o, address_space=.GENERIC],):
     var immut_ptr = ptr.as_imm()
 
     def imm() {imm immut_ptr}:

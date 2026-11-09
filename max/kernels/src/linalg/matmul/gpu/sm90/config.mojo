@@ -54,7 +54,6 @@ struct MatmulConfig[
     var num_k_partitions: Int
     var num_consumer: Int
     var partitioned_multicast: Bool
-    var _pdl_level: PDLLevel
     var k_group_size: Int
 
     def __init__(
@@ -66,7 +65,6 @@ struct MatmulConfig[
         num_k_partitions: Int,
         num_consumer: Int,
         partitioned_multicast: Bool,
-        pdl_level: PDLLevel,
         k_group_size: Int,
     ):
         """Initialize MatmulConfig with explicit values for all fields.
@@ -83,8 +81,6 @@ struct MatmulConfig[
                 into.
             num_consumer: Number of consumer warp groups.
             partitioned_multicast: Whether to use partitioned TMA multicast.
-            pdl_level: Programmatic dependent launch level for grid
-                controls.
             k_group_size: Number of K iterations grouped per pipeline stage.
         """
         self.block_tile_shape = block_tile_shape
@@ -94,7 +90,6 @@ struct MatmulConfig[
         self.num_k_partitions = num_k_partitions
         self.num_consumer = num_consumer
         self.partitioned_multicast = partitioned_multicast
-        self._pdl_level = pdl_level
         self.k_group_size = k_group_size
 
     def __init__(
@@ -104,7 +99,6 @@ struct MatmulConfig[
         k: Int,
         num_k_partitions: Int = 1,
         partitioned_multicast: Bool = False,
-        pdl_level: PDLLevel = PDLLevel.OFF,
         k_groups: Optional[Int] = None,
         consumer_groups: Optional[Int] = None,
         swapAB: Bool = False,
@@ -117,7 +111,6 @@ struct MatmulConfig[
             k: The K dimension of the matmul.
             num_k_partitions: Number of K partitions.
             partitioned_multicast: Whether to use partitioned multicast.
-            pdl_level: PDL level for grid controls.
             k_groups: How many pipeline (loads and stores) are grouped together.
             consumer_groups: The number of consumer groups.
             swapAB: Whether to swap A and B.
@@ -179,7 +172,6 @@ struct MatmulConfig[
         self.num_k_partitions = num_k_partitions
         self.num_consumer = num_consumer_groups
         self.partitioned_multicast = partitioned_multicast
-        self._pdl_level = pdl_level
 
         # Compute max pipeline stages.
         self.num_pipeline_stages = 4  # Default for compilation
@@ -248,9 +240,6 @@ struct MatmulConfig[
             smem_leftover // producer_consumer_smem_per_stage
         )
 
-    def pdl_level(self) -> PDLLevel:
-        return self._pdl_level
-
     def to_base_config(
         self,
     ) -> BaseMatmulConfig[
@@ -267,7 +256,7 @@ struct MatmulConfig[
             num_k_partitions=self.num_k_partitions,
             num_consumer=self.num_consumer,
             partitioned_multicast=self.partitioned_multicast,
-            pdl_level=self._pdl_level,
+            pdl_level=PDLLevel.OFF,
             k_group_size=self.k_group_size,
         )
 
@@ -360,7 +349,6 @@ def build_configs[
     transpose_b: Bool = True,
     num_k_partitions: Int = 1,
     partitioned_multicast: Bool = False,
-    pdl_level: PDLLevel = PDLLevel.OFF,
     k_groups: Optional[Int] = None,
     consumer_groups: Optional[Int] = None,
     swapAB: Bool = False,
@@ -384,8 +372,6 @@ def build_configs[
             (defaults to 1).
         partitioned_multicast: Whether to use partitioned TMA multicast
             (defaults to `False`).
-        pdl_level: Programmatic dependent launch level for grid controls
-            (defaults to `PDLLevel.OFF`).
         k_groups: Optional override for the K-grouping size; `None` lets
             the heuristic decide (defaults to `None`).
         consumer_groups: Optional override for the number of consumer warp
@@ -405,7 +391,6 @@ def build_configs[
             K,
             num_k_partitions=num_k_partitions,
             partitioned_multicast=partitioned_multicast,
-            pdl_level=pdl_level,
             k_groups=k_groups,
             consumer_groups=consumer_groups,
             swapAB=swapAB,
@@ -420,7 +405,6 @@ def build_configs[
             K,
             num_k_partitions=num_k_partitions,
             partitioned_multicast=partitioned_multicast,
-            pdl_level=pdl_level,
             k_groups=k_groups,
             consumer_groups=consumer_groups,
             swapAB=swapAB,
@@ -445,7 +429,6 @@ def swapAB_smallM[
     num_k_partitions: Int,
     num_consumer: Int,
     partitioned_multicast: Bool,
-    pdl_level: PDLLevel,
     k_group_size: Int = 0,
     num_pipeline_stages: Int = 0,
 ) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
@@ -477,8 +460,6 @@ def swapAB_smallM[
             into.
         num_consumer: Number of consumer warp groups.
         partitioned_multicast: Whether to use partitioned TMA multicast.
-        pdl_level: Programmatic dependent launch level for grid
-            controls.
         k_group_size: Number of K iterations grouped per pipeline stage,
             or 0 to auto-compute (defaults to 0).
         num_pipeline_stages: Number of pipeline stages for
@@ -540,7 +521,6 @@ def swapAB_smallM[
         num_k_partitions,
         num_consumer,
         partitioned_multicast,
-        pdl_level,
         k_group_size,
     )
 
@@ -564,9 +544,7 @@ def swapAB_smallM_ceildiv[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](m: Int, pdl_level: PDLLevel) -> MatmulConfig[
-    a_type, b_type, c_type, transpose_b
-]:
+](m: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     """Config for m < 41 range with BN = ceildiv(m, 8) * 8 pattern.
 
     Pattern:
@@ -582,8 +560,6 @@ def swapAB_smallM_ceildiv[
 
     Args:
         m: The M dimension of the matmul, less than 41.
-        pdl_level: Programmatic dependent launch level for grid
-            controls.
     """
     var bn = ualign_up(m, 8)
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -594,7 +570,6 @@ def swapAB_smallM_ceildiv[
         num_k_partitions=1,
         num_consumer=1,
         partitioned_multicast=False,
-        pdl_level=pdl_level,
         k_group_size=1,
     )
 
@@ -604,9 +579,7 @@ def swapAB_midM_linear[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](m: Int, pdl_level: PDLLevel) -> MatmulConfig[
-    a_type, b_type, c_type, transpose_b
-]:
+](m: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     """Config for m in [65, 128] range with linear BN pattern.
 
     Pattern:
@@ -622,8 +595,6 @@ def swapAB_midM_linear[
 
     Args:
         m: The M dimension of the matmul, in the range [65, 128].
-        pdl_level: Programmatic dependent launch level for grid
-            controls.
     """
     var bucket = ufloordiv(m - 65, 16)
     var bn = 40 + bucket * 8
@@ -635,7 +606,6 @@ def swapAB_midM_linear[
         num_k_partitions=1,
         num_consumer=1,
         partitioned_multicast=False,
-        pdl_level=pdl_level,
         k_group_size=1,
     )
 
@@ -645,9 +615,7 @@ def swapAB_largeM_clustered[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](m: Int, pdl_level: PDLLevel) -> MatmulConfig[
-    a_type, b_type, c_type, transpose_b
-]:
+](m: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     """Config for m in [129, 240] range with cluster=(2,1,1).
 
     Pattern:
@@ -664,8 +632,6 @@ def swapAB_largeM_clustered[
 
     Args:
         m: The M dimension of the matmul, in the range [129, 240].
-        pdl_level: Programmatic dependent launch level for grid
-            controls.
     """
     var bucket = ufloordiv(m - 129, 16)
     var bn = 72 + bucket * 8
@@ -687,7 +653,6 @@ def swapAB_largeM_clustered[
         num_k_partitions=1,
         num_consumer=1,
         partitioned_multicast=False,
-        pdl_level=pdl_level,
         k_group_size=2,
     )
 

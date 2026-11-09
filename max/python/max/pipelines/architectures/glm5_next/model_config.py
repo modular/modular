@@ -27,7 +27,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache.cache_params import (
     CacheLeafParamInterface,
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
@@ -37,7 +37,7 @@ from max.nn.legacy.kv_cache.cache_params import (
     recurrent_leaf,
     spec_decode_cache_slack,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     indexer_selection_width,
 )
@@ -676,6 +676,8 @@ class Glm5NextConfig(DeepseekV3_2Config, ArchConfigWithVisionCache):
                 index_kpool,
                 getattr(text_config, "index_kpool_always_select_tail", True),
             ),
+            # The sparse decode passes per-token top-k lengths.
+            sparse_fixed_topk=False,
         )
 
         # The indexer's K cache holds one *pooled* key per `index_kpool` tokens.
@@ -711,12 +713,9 @@ class Glm5NextConfig(DeepseekV3_2Config, ArchConfigWithVisionCache):
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
-        # No kernel reads the indexer leaf's dispatch metadata, but it is part
-        # of the composite capture key, so it must not move with the context.
         assert isinstance(indexer_kv_params, MLAKVCacheParams)
-        indexer_kv_params = replace(
-            indexer_kv_params,
-            sparse_indices_stride=mla_kv_params.sparse_indices_stride,
+        indexer_kv_params = indexer_kv_params.joining_sparse_dispatch_of(
+            mla_kv_params
         )
         children: dict[str, CacheLeafParamInterface] = {
             MLA_CACHE_KEY: mla_kv_params,

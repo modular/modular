@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo, rmo
 from max.dtype import DType
 
 from ..dim import DimLike
@@ -216,7 +216,7 @@ def roi_align(
     ratio_val = constant(sampling_ratio, DType.float32, host)
 
     return Graph.current._add_op_generated(
-        rmo.MoRoiAlignOp,
+        mo.RoiAlignOp,
         result_type,
         input,
         rois,

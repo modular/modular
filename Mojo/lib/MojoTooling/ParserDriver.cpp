@@ -16,33 +16,23 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/Lexer.h"
-#include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/MojoParser/SharedState.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
-#include "Mojo/POPDialect/POPDialect.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 
-#include "ParserDriverImpl.h"
-#include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "MojoToolingInternals.h"
 #include "Support/Filesystem/Paths.h"
-#include "Support/Telemetry/Telemetry.h"
-#include "mlir/Bytecode/Encoding.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
-#include "mlir/IR/Verifier.h"
-#include "mlir/Support/Timing.h"
-#include "llvm/ADT/ScopeExit.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SourceMgr.h"
 
+#include <deque>
 #include <filesystem>
 
 using namespace M;
@@ -58,8 +48,7 @@ using llvm::SourceMgr;
 MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                               const KGEN::CompilationOptions &options,
                               const FrontendOptions &frontendOptions)
-    : sharedState(sourceMgr, context, options, frontendOptions),
-      replLocMapper(sourceMgr) {
+    : sharedState(sourceMgr, context, options, frontendOptions) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
   topLevelDecl = &cast<TopLevelModuleASTDecl>(sharedState.declResolver->addDecl(
@@ -93,40 +82,8 @@ llvm::SourceMgr &MojoParserContext::getSourceMgr() {
 
 SharedState &MojoParserContext::getSharedState() { return impl->sharedState; }
 
-std::vector<std::string>
-MojoParserContext::getModuleSearchDirectories(unsigned fileId) {
-  std::vector<std::string> searchDirs;
-  impl->sharedState.getModuleLoader().traverseImportDirectories(
-      fileId, [&](StringRef dir) {
-        searchDirs.push_back(dir.str());
-        return WalkResult::advance();
-      });
-  return searchDirs;
-}
-
 const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
   return impl->sharedState.options;
-}
-
-const FrontendOptions &MojoParserContext::getFrontendOptions() {
-  return impl->sharedState.frontendOptions;
-}
-
-ASTDecl *MojoParserContext::getTraitDecl(KGEN::TraitSymbolAttr traitSymbol) {
-  return &impl->sharedState.declResolver->getDeclForTypeSymbol(
-      traitSymbol.getSymbol());
-}
-
-ASTType MojoParserContext::concretizeType(ASTType base,
-                                          ArrayRef<TypedAttr> params,
-                                          ASTType type) {
-  KGEN::ParameterEvaluator evaluator(
-      cast<StructASTDecl>(base.getDecl(getSharedState()))
-          ->getOp()
-          .getInputParams(),
-      params);
-
-  return ASTType(evaluator.replace(evaluator.getReboundType(type.mlirType)));
 }
 
 //===----------------------------------------------------------------------===//

@@ -15,14 +15,12 @@
 from .attention import Qwen3AttentionNoCache
 from .pooling import last_token_pool, normalize_embeddings
 from .transformer import (
-    Qwen3Embedding,
     Qwen3EmbeddingTransformer,
     Qwen3EmbeddingTransformerBlock,
 )
 
 __all__ = [
     "Qwen3AttentionNoCache",
-    "Qwen3Embedding",
     "Qwen3EmbeddingTransformer",
     "Qwen3EmbeddingTransformerBlock",
     "last_token_pool",

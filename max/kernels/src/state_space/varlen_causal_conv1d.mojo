@@ -833,19 +833,14 @@ def causal_conv1d_varlen_fwd_gpu[
     silu_activation: Bool = False,
     use_residual: Bool = False,
     channels_last: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     weight: TileTensor[dtype, weight_LT, _, Engine=Engine],
-    bias: TileTensor[dtype, bias_LT, _, Engine=Engine],
-    query_start_loc: TileTensor[.int32, query_start_loc_LT, _, Engine=Engine],
-    has_initial_state: TileTensor[
-        .bool, has_initial_state_LT, _, Engine=Engine
-    ],
-    update_state: TileTensor[.bool, update_state_LT, _, Engine=Engine],
-    conv_states: TileTensor[
-        conv_states_dtype, conv_states_LT, _, Engine=Engine
-    ],
-    output: TileTensor[dtype, output_LT, _, Engine=Engine],
+    bias: TileTensor[dtype, bias_LT, _, Engine=_],
+    query_start_loc: TileTensor[.int32, query_start_loc_LT, _, Engine=_],
+    has_initial_state: TileTensor[.bool, has_initial_state_LT, _, Engine=_],
+    update_state: TileTensor[.bool, update_state_LT, _, Engine=_],
+    conv_states: TileTensor[conv_states_dtype, conv_states_LT, _, Engine=_],
+    output: TileTensor[dtype, output_LT, _, Engine=_],
     x_addr: Int,
     x_row_stride: Int,
     x_fn: XFn,
@@ -880,7 +875,8 @@ def causal_conv1d_varlen_fwd_gpu[
         update_state_LT: Layout type of `update_state`.
         conv_states_LT: Layout type of `conv_states`.
         output_LT: Layout type of `output`.
-        Engine: Engine shared by all tile operands.
+        Engine: Engine of `weight`. The launched kernel takes one engine for
+            every tile operand, so the others must match it.
         XFn: Reads `x` at its physical `(row, column)` index, claiming
             `alignment` elements of alignment.
         SlotFn: Reads the conv-state slot of each sequence.
@@ -890,8 +886,6 @@ def causal_conv1d_varlen_fwd_gpu[
             the activation.
         channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
             rather than `(dim, total_seqlen)`.
-        pdl_level: Programmatic dependent launch level. Every enabled level
-            waits on the predecessor grid, including `NO_WAIT_OVERLAP_AT_END`.
 
     Args:
         weight: Weight tensor of shape `(dim, width)`.
@@ -969,7 +963,7 @@ def causal_conv1d_varlen_fwd_gpu[
         # (256 to 1024 tokens measured on B200) the early-resident tile grid
         # cost 8 to 10 us per layer, and at that size the launch gap PDL
         # hides is a rounding error anyway.
-        launch[1, True, pdl_level]()
+        launch[1, True, PDLLevel.ON]()
         return
 
     comptime if channels_last:

@@ -57,8 +57,6 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using nixl_py_notifs_t = std::map<std::string, std::vector<nb::bytes>>;
-
 struct nixlNotPostedError : std::runtime_error {
   nixlNotPostedError(const std::string &what) : runtime_error(what) {}
 };

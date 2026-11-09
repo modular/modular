@@ -1,0 +1,63 @@
+diff --git a/python/versions.bzl b/python/versions.bzl
+index 3299a9f1..220cac93 100644
+--- a/python/versions.bzl
++++ b/python/versions.bzl
+@@ -1037,28 +1037,28 @@ TOOL_VERSIONS = {
+             "x86_64-unknown-linux-gnu-freethreaded": "python/install",
+         },
+     },
+-    "3.15.0a2": {
+-        "url": "20251209/cpython-{python_version}+20251209-{platform}-{build}.{ext}",
++    "3.15.0": {
++        "url": "20261013/cpython-{python_version}+20261013-{platform}-{build}.{ext}",
+         "sha256": {
+-            "aarch64-apple-darwin": "5851f3744fbd39e3e323844cf4f68d7763fb25546aa5ffbb71b1b5ab69c56616",
+-            "aarch64-unknown-linux-gnu": "17ba65d669be3052524e03b4d1426c072ef38df2a9065ff4525d1f4d1bc9f82c",
+-            "ppc64le-unknown-linux-gnu": "5585bd7c5eefe28b9bf544d902cad9a2f81f33c618f2a1d3c006cbfcdec77abc",
+-            "riscv64-unknown-linux-gnu": "bb7252edaffd422bd1c044a4764dfcf83a5d7159942f445abbef524e54ea79a0",
+-            "s390x-unknown-linux-gnu": "03a90ffa9f92d4cf4caeefb9d15f0b39c05c1e60ade6688f32165f957db4f8f3",
+-            "x86_64-apple-darwin": "cee576de4919cd422dbc31eb85d3c145ee82acec84f651daaf32dc669b5149c9",
+-            "x86_64-pc-windows-msvc": "e538475ee249eacf63bfdae0e70af73e9c47360e6dd3d6825e7a35107e177de5",
+-            "aarch64-pc-windows-msvc": "39bc2fcac13aeba7d650f76badf63350a81c86167a62174cb092eab7a749f4a5",
+-            "x86_64-unknown-linux-gnu": "58addaabfab2de422180d32543fb3878ffc984c8a2e4005ff658a5cd83b31fc7",
+-            "x86_64-unknown-linux-musl": "dcf844400dc2e7f5f3604e994532e4d49db45f4deefe9afdf6809ca1bc6532ee",
+-            "aarch64-apple-darwin-freethreaded": "5b34488580df13df051a2e84e43cfca2ab28fdd7a61052f35988eb8b481b894a",
+-            "aarch64-unknown-linux-gnu-freethreaded": "0c2c83236f6e28c103e2660a82be94b2459ee8cfdd90f5dd82f0d503ca2aec09",
+-            "ppc64le-unknown-linux-gnu-freethreaded": "216842df2377fd032f279ded7fd23d7bdbd92d4c1fa7619523bc0dbdef5bd212",
+-            "riscv64-unknown-linux-gnu-freethreaded": "2a8b56f318d2e21b01b54909554c53d81871b9bb05d23ea7808dde9acec4dc7e",
+-            "s390x-unknown-linux-gnu-freethreaded": "06c4ca3983aad20723f68786e3663ab49fee1bf09326f341649205ed79d34fc6",
+-            "x86_64-apple-darwin-freethreaded": "4d8102b70ea9fe726ee3ae9ad9e9bc4cbe0b6ed18f7989c81aef81de578f0163",
+-            "x86_64-pc-windows-msvc-freethreaded": "6ff71bac78d650ce621fe6db49f06290e48bcceb61f69cccc7728584f70b6346",
+-            "aarch64-pc-windows-msvc-freethreaded": "3d99152b4e29b947fb1cfc8d035d1d511e50aeed72886ff4a5fd0a3694bd0b51",
+-            "x86_64-unknown-linux-gnu-freethreaded": "70f552e213734c0e260a57603bee504dd7ed0e78a10558b591e724ea8730fef5",
++            "aarch64-apple-darwin": "f5d1d82e2f5660d4decae5d2b7470631850bcd7bd39595d9c3cca3c5ee54eae7",
++            "aarch64-unknown-linux-gnu": "26a54e8fbde81bcc39ba35ad855a6a573295c023793c20fff1670a560649bcd7",
++            "ppc64le-unknown-linux-gnu": "11ebc4cb684bbf560fda28b53123cdd3dad186147d6125efcaee93cdf16e9398",
++            "riscv64-unknown-linux-gnu": "1940425d8b55276a976784caaf25881b976c696525a644de3a41747c2b9113bd",
++            "s390x-unknown-linux-gnu": "2d299795a6c993d016c674573089e7aee9031ab55243bc9a30373da016a4ab09",
++            "x86_64-apple-darwin": "c4adbda246262a55920ec0804f5a6a9a3a1e5948f3423da71926320b2489e50e",
++            "x86_64-pc-windows-msvc": "0d9950ba8c6399203e60ed6a2452fc4e8def35c83fb6da00ec815784b7887483",
++            "aarch64-pc-windows-msvc": "588a4d0817d74fd632c235868a8218f63baee4ce40126ebe16b5e1826a1b86ba",
++            "x86_64-unknown-linux-gnu": "e02a368dd5dc76ffe0599e5109ad6c1ee84e597910758b0e006bab25372a8921",
++            "x86_64-unknown-linux-musl": "357e22749a58bc664d0ff3c126618182da30a7d691615a2e569c3ca46017cb4e",
++            "aarch64-apple-darwin-freethreaded": "ebd2cb28b6cf134660382d7a6b482a46b115917771d04857205ae79558b842e8",
++            "aarch64-unknown-linux-gnu-freethreaded": "cdee375c16dfbcc0e056dc04051d6d7c6adc087d66f3c9146818b36b6cacf082",
++            "ppc64le-unknown-linux-gnu-freethreaded": "779ed1f5d3a9e4802662dee17f6c32bca70e87ceae6a9ae4926eb2184ac3c17e",
++            "riscv64-unknown-linux-gnu-freethreaded": "18f6ccda82ef3c8e01da18b63d785102409b2658e17e1e7cc4f1dd7f02542c66",
++            "s390x-unknown-linux-gnu-freethreaded": "78ca9490923a98d04ef1dc39ab644b78f5a6866950c60222ae50c4f91028825e",
++            "x86_64-apple-darwin-freethreaded": "49bdcd38155ac67a7e1c5f4c04b411a41f04db43a109bcb5296b81e095cdb767",
++            "x86_64-pc-windows-msvc-freethreaded": "a966ece53897b836a54db82bc4c2cf683572d33313f0cb0b42e3343df7e500ca",
++            "aarch64-pc-windows-msvc-freethreaded": "5b3102dceefdd3cf9b1aa496a57e79e1e2e49b9ada41b1a115b749f95d6e2ee2",
++            "x86_64-unknown-linux-gnu-freethreaded": "6f28d0cf288253466985697a6274cb3236ecee6bee15750f5e25074aa9ad6a85",
+         },
+         "strip_prefix": {
+             "aarch64-apple-darwin": "python",
+@@ -1092,7 +1092,7 @@ MINOR_MAPPING = {
+     "3.12": "3.12.12",
+     "3.13": "3.13.11",
+     "3.14": "3.14.2",
+-    "3.15": "3.15.0a2",
++    "3.15": "3.15.0",
+ }
+ 
+ def _generate_platforms():

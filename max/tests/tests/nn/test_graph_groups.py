@@ -25,6 +25,7 @@ from max.nn.legacy import graph_groups
 from max.nn.legacy.graph_groups import (
     BatchContext,
     ConvStates,
+    DecoderGraphInputs,
     DecoderOutputs,
     EPLBProfile,
     EPPayload,
@@ -35,6 +36,9 @@ from max.nn.legacy.graph_groups import (
     MRoPEPositions,
     RaggedBatch,
     SparseIndices,
+    SpecDecode,
+    SpecDecodeOutputs,
+    TokenBitmask,
     TPSignals,
     VisionEmbeddings,
     VisionHostMax,
@@ -44,7 +48,8 @@ from max.nn.legacy.graph_groups import (
     VisionSegments,
     VisionSelfIndex,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, logits_outputs
+from max.nn.legacy.transformer import logits_outputs
+from max.nn.outputs import ReturnHiddenStates
 
 
 def _values(n: int) -> list[TensorValue]:
@@ -71,6 +76,7 @@ def _examples() -> list[GraphGroup[Any, Any]]:
         ConvStates(states=(a,)),
         SparseIndices(rows=(b,)),
         DecoderOutputs(logits=logits, hidden_states=HiddenStates(all=(a,))),
+        DecoderGraphInputs(tokens=t, vision=VisionMerge(image_embeddings=t)),
         VisionRows(pixel_values=(t,), grid_thw=t),
         VisionSegments(cu_seqlens=(t,)),
         VisionRowIndex(pool_gather_index=(t,)),
@@ -78,6 +84,11 @@ def _examples() -> list[GraphGroup[Any, Any]]:
         VisionHostMax(max_seqlen=t),
         VisionEmbeddings(image_embeddings=(a, b)),
         ItemPositions(position_ids=a, position_advance=b),
+        SpecDecode(draft_tokens=t, seed=t),
+        TokenBitmask(
+            pinned_bitmask=t, wait_payload=buf, device_bitmask_scratch=buf
+        ),
+        SpecDecodeOutputs(num_accepted=a, next_tokens=b, next_draft_tokens=a),
     ]
 
 

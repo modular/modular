@@ -20,6 +20,8 @@
 #include "IREmitter.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "OverloadSet.h"
+#include "ParamBindings.h"
 
 #include "Mojo/LITDialect/LITOps.h"
 
@@ -281,6 +283,27 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
                 << " elements into tuple binding with " << eltLValues.size()
                 << " elements";
     return BValue();
+  }
+
+  // If the value is an MRValue, we can extract the elements directly as
+  // individual RValues to avoid copying them into the ultimate destination.
+  if (value.ir.getIfMRValue()) {
+    SmallVector<CValue, 4> elements;
+    if (failed(TupleNode::getConsumedElements(value.ir, value.expr, emitter,
+                                              elements)))
+      return BValue();
+
+    for (auto [element, lvalue] : llvm::zip(elements, eltLValues)) {
+      LValue lv = lvalue.ir.getIfLValue();
+      assert(lv && "Each dest is known to be an lvalue");
+      ExprDest eltDest(lv, EC_TupleElement);
+      if (!emitter.emitCResult(element, value.expr, eltDest)) {
+        eltDest.resetForError(emitter);
+        return BValue();
+      }
+    }
+
+    return MRValue(value.ir.getMValueReference());
   }
 
   // Emit the input value to a BValue, loading it if it is an LValue and

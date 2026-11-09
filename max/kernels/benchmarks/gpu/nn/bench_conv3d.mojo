@@ -45,7 +45,6 @@ from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import (
     Idx,
-    Layout,
     TileTensor,
     row_major,
 )
@@ -86,7 +85,7 @@ def bench_conv3d[
     filter_r: Int,
     filter_s: Int,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     label: String,
     impl: String,
@@ -102,18 +101,10 @@ def bench_conv3d[
     var h_out = (in_height + 2 * pad_h - filter_r) // stride_h + 1
     var w_out = (in_width + 2 * pad_w - filter_s) // stride_w + 1
 
-    comptime input_layout = Layout.row_major(
-        batch, in_depth, in_height, in_width, in_channels
+    var input_size = batch * in_depth * in_height * in_width * in_channels
+    var filter_size = (
+        filter_q * filter_r * filter_s * in_channels * out_channels
     )
-    comptime filter_qrscf_layout = Layout.row_major(
-        filter_q, filter_r, filter_s, in_channels, out_channels
-    )
-    comptime filter_fcqrs_layout = Layout.row_major(
-        out_channels, in_channels, filter_q, filter_r, filter_s
-    )
-
-    var input_size = comptime (input_layout.size())
-    var filter_size = comptime (filter_qrscf_layout.size())
     var output_size = batch * d_out * h_out * w_out * out_channels
 
     var flops = compute_conv3d_flops(
@@ -352,7 +343,7 @@ def bench_conv3d[
             mut bencher: Bencher,
         ) raises {var input_tt, var filter_qrscf_tt, var output_tt, imm,}:
             @inline(.always)
-            def kernel(ctx: DeviceContext) raises {imm}:
+            def kernel(ctx: DeviceContext[]) raises {imm}:
                 _ = dispatch_im2col_matmul_conv3d(
                     input_tt,
                     filter_qrscf_tt,
@@ -378,7 +369,7 @@ def bench_conv3d[
             mut bencher: Bencher,
         ) raises {var input_tt, var filter_qrscf_tt, var output_tt, imm,}:
             @inline(.always)
-            def kernel(ctx: DeviceContext) raises {imm}:
+            def kernel(ctx: DeviceContext[]) raises {imm}:
                 _ = dispatch_1x1x1_matmul_conv3d(
                     input_tt,
                     filter_qrscf_tt,
@@ -405,7 +396,7 @@ def bench_conv3d[
                 mut bencher: Bencher,
             ) raises {var input_tt, var filter_qrscf_tt, var output_tt, imm,}:
                 @inline(.always)
-                def kernel(ctx: DeviceContext) raises {imm}:
+                def kernel(ctx: DeviceContext[]) raises {imm}:
                     _ = dispatch_qslice_conv3d_sm100(
                         input_tt,
                         filter_qrscf_tt,
@@ -435,7 +426,7 @@ def bench_conv3d[
                 mut bencher: Bencher,
             ) raises {var input_tt, var filter_qrscf_tt, var output_tt, imm,}:
                 @inline(.always)
-                def kernel(ctx: DeviceContext) raises {imm}:
+                def kernel(ctx: DeviceContext[]) raises {imm}:
                     _ = dispatch_amd_4wave_conv3d[
                         input_type=dtype,
                         filter_type=dtype,
@@ -470,7 +461,7 @@ def bench_conv3d[
                 mut bencher: Bencher,
             ) raises {var filter_qrscf_tt, imm,}:
                 @inline(.always)
-                def kernel(ctx: DeviceContext) raises {imm}:
+                def kernel(ctx: DeviceContext[]) raises {imm}:
                     conv_miopen(
                         input_tt,
                         filter_qrscf_tt,
@@ -497,7 +488,7 @@ def bench_conv3d[
                 mut bencher: Bencher,
             ) raises {var input_tt, var filter_fcqrs_tt, var output_tt, imm,}:
                 @inline(.always)
-                def kernel(ctx: DeviceContext) raises {imm}:
+                def kernel(ctx: DeviceContext[]) raises {imm}:
                     conv3d_cudnn(
                         input_tt,
                         filter_fcqrs_tt,
@@ -539,7 +530,7 @@ def bench_conv3d[
             mut bencher: Bencher,
         ) raises {var input_tt, var filter_qrscf_tt, var output_tt, imm,}:
             @inline(.always)
-            def kernel(ctx: DeviceContext) raises {imm}:
+            def kernel(ctx: DeviceContext[]) raises {imm}:
                 ctx.enqueue_function[naive_kernel](
                     input_tt.as_unsafe_any_origin(),
                     filter_qrscf_tt.as_unsafe_any_origin(),

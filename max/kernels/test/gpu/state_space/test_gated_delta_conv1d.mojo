@@ -22,7 +22,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.random import rand
 from state_space.gated_delta_conv1d import (
     CONV1D_TOKENS_PER_BLOCK,

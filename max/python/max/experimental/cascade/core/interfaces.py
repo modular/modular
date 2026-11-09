@@ -47,6 +47,7 @@ from max.experimental.cascade.core.type_hints import (
     return_type,
     stream_elem_type,
 )
+from typing_extensions import TypeForm
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -159,7 +160,7 @@ class Runtime(AsyncExitStack, ABC):
         ...
 
     def make_result(
-        self, result_id: str, type_hint: object | None
+        self, result_id: str, type_hint: TypeForm[Any] | None
     ) -> Result[T]:
         """Build the :py:class:`Result` a proxy returns for a call.
 
@@ -170,7 +171,7 @@ class Runtime(AsyncExitStack, ABC):
         return Result(result_id, self, type_hint)
 
     def make_result_iter(
-        self, result_id: str, type_hint: object | None
+        self, result_id: str, type_hint: TypeForm[Any] | None
     ) -> ResultIter[T]:
         """Build the :py:class:`ResultIter` a proxy returns for a stream.
 

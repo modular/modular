@@ -81,7 +81,7 @@ def test_nested_unbound_param[
 
 # A struct parameter whose type depends on another (`origin` on `mut`), with an
 # overload taking an auto-parameterized `other: P`, whose own parameters'
-# types refer to each other, as in `UnsafePointer(to=x)`.
+# types refer to each other, as in `Pointer(to=x)`.
 
 
 struct P[mut: Bool, //, T: AnyType, origin: Origin[mut=mut]]:

@@ -31,33 +31,25 @@ against the verified HF reference and is ready to logit-verify once invocable.
 from __future__ import annotations
 
 import functools
+import logging
 import math
-from collections.abc import Iterable, Sequence
-from pathlib import Path
-from typing import Any
+from collections.abc import Iterable, Mapping, Sequence
 
 from max import tree
-from max.driver import accelerator_api
+from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import (
-    BufferType,
     BufferValue,
     DeviceRef,
-    Graph,
     ShardingStrategy,
-    TensorType,
     TensorValue,
     TensorValueLike,
-    Type,
-    Value,
     Weight,
     ops,
 )
-from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kernels import (
+from max.graph.weights import WeightData
+from max.nn._graph_ops import (
     flash_attention_ragged,
     grouped_matmul_ragged,
     moe_create_indices,
@@ -65,29 +57,32 @@ from max.nn.legacy.kernels import (
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    KVCacheParams,
-    PagedCacheValues,
-)
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import MLP, Linear
-from max.nn.legacy.moe import GatedActivation, MoE, MoEGate
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     causal_conv1d_varlen_fwd,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnLogits,
-    logits_postprocess,
+from max.nn.activation import GatedActivation
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+    PagedCacheValues,
+    RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.moe import MoE, MoEGate
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import logits_postprocess
+from max.nn.quant_config import QuantConfig
+from max.pipelines.lib.registration_graph_api import decoder_outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 
-from .model_config import NemotronHConfig
+from .model_config import ATTN_CACHE_KEY, STATE_CACHE_KEY, NemotronHConfig
+
+logger = logging.getLogger("max.pipelines")
 
 
 def _relu2(x: TensorValue) -> TensorValue:
@@ -108,24 +103,6 @@ def _weight_dtype(
     if quant_config is not None:
         return DType.float8_e4m3fn
     return model_dtype
-
-
-def _ssm_state_dtype() -> DType:
-    """SSM state-pool STORAGE dtype: bf16 on Apple GPUs, fp32 elsewhere.
-
-    The Mamba-2 SSD scan always accumulates its recurrence in fp32 registers;
-    this only selects the storage dtype of the persistent slot-indexed state
-    pool. On Apple silicon the pool read+write dominates the decode-step
-    traffic, and only the Apple GPU kernel implements the bf16 load ->
-    fp32-accumulate -> round-on-store path, so bf16 is gated to Apple
-    (matching the kernel-side guard in
-    ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``).
-    """
-    try:
-        is_apple = accelerator_api() == "metal"
-    except Exception:
-        is_apple = False
-    return DType.bfloat16 if is_apple else DType.float32
 
 
 class NemotronHMLP(Module):
@@ -524,7 +501,7 @@ class NemotronHAttention(Module):
     ) -> None:
         super().__init__()
         dev = config.devices[0]
-        self.kv_params: KVCacheParams = config.kv_params
+        self.kv_params: KVCacheParams = config.attn_kv_params
         self.kv_layer_idx = kv_layer_idx
         # Preserve the activation dtype at the FP8 attention output boundary.
         self.dtype = config.dtype
@@ -637,14 +614,14 @@ class NemotronHAttention(Module):
 class NemotronHMamba2Mixer(Module):
     """Mamba-2 mixer (selective state-space), matching ``NemotronHMamba2Mixer``.
 
-    State plumbing (carried by ``model.py``):
-    * conv1d state lives in a slot-indexed pool mutated in place by
+    State plumbing (pools and row ids come from the KV cache manager):
+    * conv1d state lives in a pool mutated in place by
       ``causal_conv1d_varlen_fwd`` (handles prefill + decode).
-    * SSM state lives in a slot-indexed pool (fp32; bf16 on Apple GPUs — see
-      ``_ssm_state_dtype``) mutated in place by
+    * SSM state lives in a pool (fp32; bf16 on Apple GPUs — see
+      ``model_config._ssm_state_dtype``) mutated in place by
       ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``: the kernel reads initial
-      state from ``ssm_pool[slot_idx[b]]`` and writes the final state back to
-      the same slot without any graph-side gather/scatter_nd/buffer_store.
+      state from ``ssm_pool[ssm_rows[b]]`` and writes the final state back to
+      the same row without any graph-side gather/scatter_nd/buffer_store.
       The SSD kernel serves both prefill and decode (decode = seqlen-1 seqs).
     """
 
@@ -771,20 +748,22 @@ class NemotronHMamba2Mixer(Module):
         self,
         x: TensorValue,
         conv_pool: BufferValue,
+        conv_rows: TensorValue,
         ssm_pool: BufferValue,
+        ssm_rows: TensorValue,
         has_initial_state: TensorValue,
-        slot_idx: TensorValue,
         query_start_loc: TensorValue,
     ) -> TensorValue:
         """Returns ``output[N, hidden]``.
 
-        Per-mamba-layer state lives in two mutable graph-input pools:
+        This layer's state lives in two mutable pools, each addressed by this
+        layer's ``[batch]`` row ids:
 
         * conv: ``causal_conv1d_varlen_fwd`` mutates ``conv_pool`` in place at
-          slot ``cache_indices[b] = slot_idx[b]`` (Qwen3.5 conv pattern).
+          row ``conv_rows[b]`` (Qwen3.5 conv pattern).
         * SSM: ``mamba2_ssd_chunk_scan_varlen_fwd_inplace`` reads initial state
-          from ``ssm_pool[slot_idx[b]]`` and writes the updated final state back
-          to the same slot in-place (no graph-side gather/scatter_nd/
+          from ``ssm_pool[ssm_rows[b]]`` and writes the updated final state back
+          to the same row in-place (no graph-side gather/scatter_nd/
           buffer_store whole-pool RMW).
 
         ``query_start_loc`` is the ragged ``input_row_offsets``; both kernels
@@ -824,8 +803,8 @@ class NemotronHMamba2Mixer(Module):
                 [self.conv_dim]
             )
         )
-        # Slot-indexed in-place conv: the kernel reads+writes the conv pool at
-        # slot ``cache_indices[b] = slot_idx[b]`` (Qwen3.5 GatedDeltaNet conv
+        # Row-indexed in-place conv: the kernel reads+writes the conv pool at
+        # row ``cache_indices[b] = conv_rows[b]`` (Qwen3.5 GatedDeltaNet conv
         # pattern). No graph-side gather/scatter — the pool is mutated directly.
         # ``channels_last=True``: the op consumes/produces the tokens-major
         # [N, conv_dim] layout the surrounding graph already carries,
@@ -838,7 +817,7 @@ class NemotronHMamba2Mixer(Module):
             bias=conv_bias,
             conv_states=conv_pool,
             query_start_loc=query_start_loc,
-            cache_indices=slot_idx,
+            cache_indices=conv_rows,
             has_initial_state=has_initial_state,
             activation="silu",
             channels_last=True,
@@ -861,8 +840,8 @@ class NemotronHMamba2Mixer(Module):
         dt_bias = ops.cast(self.dt_bias.to(device), self.dtype)
 
         # In-place SSM-pool RMW: the kernel reads initial state from
-        # ssm_pool[slot_idx[b]] (when has_initial_state[b]) and writes the
-        # updated final state back to the same slot directly — no graph-side
+        # ssm_pool[ssm_rows[b]] (when has_initial_state[b]) and writes the
+        # updated final state back to the same row directly — no graph-side
         # buffer_load/gather/scatter_nd/buffer_store whole-pool round-trip.
         # This eliminates ~30% of decode GPU wall-clock (B200 profile).
         y = mamba2_ssd_chunk_scan_varlen_fwd_inplace(
@@ -876,7 +855,7 @@ class NemotronHMamba2Mixer(Module):
             ssm_pool=ssm_pool,
             query_start_loc=query_start_loc,
             has_initial_state=has_initial_state,
-            cache_indices=ops.cast(slot_idx, DType.uint32),
+            cache_indices=ssm_rows,
         )
         y = ops.reshape(y, [-1, self.intermediate])
 
@@ -952,19 +931,27 @@ class NemotronHBlock(Module):
 
 
 class NemotronH(Module):
-    """Full Nemotron-H decoder: embed -> hybrid blocks -> norm -> lm_head."""
+    """Full Nemotron-H decoder: embed -> hybrid blocks -> norm -> lm_head.
 
-    def __init__(
-        self,
-        config: NemotronHConfig,
-        *,
-        quant_config: QuantConfig | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-    ) -> None:
+    Registered for the ``DECODER`` role. Its Mamba layers keep each request's
+    conv and SSM state in the KV cache's state leaves, which the graph updates
+    in place.
+    """
+
+    graph_name = "nemotron_h"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
+
+    override_quantization_encoding = True
+    # Missing and unused checkpoint weights are logged by load_state_dict.
+    strict_state_dict_loading = False
+
+    def __init__(self, config: NemotronHConfig) -> None:
         super().__init__()
         self.config = config
         self.kv_params = config.kv_params
-        self.return_logits = return_logits
+        self.return_logits = config.return_logits
+        quant_config = config.quant_config
         dev = config.devices[0]
 
         self.embed_tokens = Embedding(
@@ -1016,34 +1003,66 @@ class NemotronH(Module):
             has_bias=False,
         )
 
-        # Dims for state pool allocation (model.py reads these).
-        self.num_mamba_layers = len(self.mamba_layer_indices)
-        self.conv_dim = config.conv_dim
-        self.conv_kernel = config.conv_kernel
-        self.mamba_nheads = config.mamba_num_heads
-        self.mamba_head_dim = config.mamba_head_dim
-        self.dstate = config.ssm_state_size
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, DLPackArray | WeightData],
+        *,
+        override_quantization_encoding: bool = False,
+        weight_alignment: int | None = None,
+        strict: bool = True,
+    ) -> None:
+        """Loads the checkpoint, logging the weights it lacks or doesn't use."""
+        expected = set(self.raw_state_dict())
+        provided = set(state_dict)
+        if missing := expected - provided:
+            logger.warning(
+                f"Nemotron-H load_state_dict: {len(missing)} MISSING weights"
+                f" (not in checkpoint): {sorted(missing)[:30]}"
+                + ("..." if len(missing) > 30 else "")
+            )
+        if unused := provided - expected:
+            logger.info(
+                f"Nemotron-H load_state_dict: {len(unused)} unused checkpoint"
+                f" keys: {sorted(unused)[:20]}"
+                + ("..." if len(unused) > 20 else "")
+            )
+        super().load_state_dict(
+            state_dict,
+            override_quantization_encoding=override_quantization_encoding,
+            weight_alignment=weight_alignment,
+            strict=strict,
+        )
 
     def __call__(
-        self,
-        tokens: TensorValue,
-        input_row_offsets: TensorValue,
-        return_n_logits: TensorValue,
-        kv_collections: list[PagedCacheValues],
-        slot_idx: TensorValue,
-        conv_pools: list[BufferValue],
-        ssm_pools: list[BufferValue],
-        has_initial_state: TensorValue,
-    ) -> DecoderOutputs:
+        self, inputs: DecoderInputs[TensorValue]
+    ) -> DecoderOutputs[TensorValue]:
         """Run the hybrid stack.
 
-        Returns the logits tuple from :func:`logits_postprocess`. The conv and
-        SSM pools are mutable graph inputs mutated in place at slot
-        ``slot_idx[batch_item]`` (the SSD kernel reads/writes the ssm_pool
-        directly via ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``), so the
-        only graph outputs are the logits.
+        The conv and SSM pools of the KV cache's state leaves are mutated in
+        place at each Mamba layer's row of ``live_row_ids`` (the SSD kernel
+        reads/writes the ssm_pool directly via
+        ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``), so the only graph
+        outputs are the logits.
         """
-        h = self.embed_tokens(tokens)
+        kv_tree = self.kv_params.unflatten_kv_inputs(
+            iter(tree.leaves(inputs.kv))
+        )
+        kv_collections = tree.leaves(
+            kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
+        )
+        (state,) = tree.leaves(
+            kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+        )
+        # In the order NemotronHConfig.construct_kv_params declares them.
+        conv, ssm = state.leaves
+        input_row_offsets = inputs.input_row_offsets
+        h = self.embed_tokens(inputs.tokens)
+        # The KV cache manager zeroes a request's state rows before its first
+        # forward, so every request can resume from its rows.
+        has_initial_state = ops.broadcast_to(
+            ops.constant(True, DType.bool, device=h.device),
+            [conv.live_row_ids.shape[1]],
+        )
 
         kv_i = 0
         mamba_i = 0
@@ -1053,10 +1072,11 @@ class NemotronH(Module):
             if block.kind == "mamba":
                 out = block.mixer(
                     normed,
-                    conv_pools[mamba_i],
-                    ssm_pools[mamba_i],
+                    conv.pool,
+                    conv.live_row_id(mamba_i),
+                    ssm.pool,
+                    ssm.live_row_id(mamba_i),
                     has_initial_state,
-                    slot_idx,
                     input_row_offsets,
                 )
                 mamba_i += 1
@@ -1080,149 +1100,13 @@ class NemotronH(Module):
                 out = block.mixer(normed)
             h = residual + out
 
-        return logits_postprocess(
-            h,
-            input_row_offsets,
-            return_n_logits,
-            self.norm_f,
-            self.lm_head,
-            self.return_logits,
-        )
-
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> tuple[TensorType | BufferType, ...]:
-        """Graph input types for the Nemotron-H language graph.
-
-        Order: ``tokens, input_row_offsets, return_n_logits, *kv_inputs,
-        slot_idx, *conv_pools, *ssm_pools, has_initial_state``. The conv pools
-        are model-dtype mutable buffers; the SSM pools are mutable buffers of
-        ``_ssm_state_dtype()`` (fp32; bf16 on Apple GPUs, storage only — the
-        scan accumulates in fp32) mutated in place by
-        ``mamba2_ssd_chunk_scan_varlen_fwd_inplace`` at
-        slot ``slot_idx[batch_item]``. ``has_initial_state`` is ``[batch]``
-        bool (empty for a fresh prefill, all-True for decode).
-        """
-        dev = self.config.devices[0]
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=dev
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=dev
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        kv_types = list(kv_params.flattened_kv_inputs())
-
-        slot_idx_type = TensorType(
-            DType.uint32, shape=["batch_size"], device=dev
-        )
-        conv_pool_types: list[TensorType | BufferType] = [
-            BufferType(
-                self.config.dtype,
-                shape=["max_slots", self.conv_dim, self.conv_kernel - 1],
-                device=dev,
+        return decoder_outputs(
+            logits_postprocess(
+                h,
+                input_row_offsets,
+                inputs.return_n_logits,
+                self.norm_f,
+                self.lm_head,
+                self.return_logits,
             )
-            for _ in range(self.num_mamba_layers)
-        ]
-        ssm_pool_types: list[TensorType | BufferType] = [
-            BufferType(
-                _ssm_state_dtype(),
-                shape=[
-                    "max_slots",
-                    self.mamba_nheads,
-                    self.mamba_head_dim,
-                    self.dstate,
-                ],
-                device=dev,
-            )
-            for _ in range(self.num_mamba_layers)
-        ]
-        has_initial_state_type = TensorType(
-            DType.bool, shape=["has_initial_state_len"], device=dev
-        )
-
-        base: list[TensorType | BufferType] = [
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-        ]
-        return tuple(
-            base
-            + kv_types
-            + [slot_idx_type]
-            + conv_pool_types
-            + ssm_pool_types
-            + [has_initial_state_type]
-        )
-
-    def trace(
-        self,
-        *input_types: Type[Any],
-        name: str | None = None,
-        module: GraphModule | None = None,
-        custom_extensions: Iterable[Path] = (),
-        is_device_graph: bool = False,
-    ) -> Graph:
-        """Traces the graph, whose inputs are :meth:`input_types`.
-
-        Adapts the flat graph inputs to :meth:`__call__`: splits them into
-        the batch, the KV cache, the slot indices, the conv and SSM state
-        pools and ``has_initial_state``.
-
-        Args:
-            *input_types: The graph's input types, as :meth:`input_types`
-                returns them.
-            name: The name of the graph. Defaults to the class's qualified
-                name.
-            module: The MLIR module to add the graph to. Defaults to a new
-                module.
-            custom_extensions: Paths to custom kernel libraries the graph
-                uses.
-            is_device_graph: Whether to build a device graph.
-
-        Returns:
-            The traced :class:`~max.graph.Graph`.
-        """
-        num_mamba = self.num_mamba_layers
-
-        def forward(
-            tokens: Value[Any],
-            input_row_offsets: Value[Any],
-            return_n_logits: Value[Any],
-            *variadic: Value[Any],
-        ) -> DecoderOutputs:
-            # The KV inputs come first, then slot_idx, the conv pools, the
-            # SSM pools and has_initial_state.
-            kv_count = len(variadic) - 1 - num_mamba * 2 - 1
-            kv_collections = tree.leaves(
-                self.kv_params.unflatten_kv_inputs(iter(variadic[:kv_count])),
-                leaf=KVCacheInputsPerDevice,
-            )
-            idx = kv_count
-            slot_idx = variadic[idx].tensor
-            idx += 1
-            conv_pools = [variadic[idx + i].buffer for i in range(num_mamba)]
-            idx += num_mamba
-            ssm_pools = [variadic[idx + i].buffer for i in range(num_mamba)]
-            idx += num_mamba
-            return self(
-                tokens.tensor,
-                input_row_offsets.tensor,
-                return_n_logits.tensor,
-                kv_collections,
-                slot_idx,
-                conv_pools,
-                ssm_pools,
-                variadic[idx].tensor,
-            )
-
-        return Graph(
-            type(self).__qualname__ if name is None else name,
-            forward,
-            input_types=input_types,
-            custom_extensions=list(custom_extensions),
-            module=module,
-            is_device_graph=is_device_graph,
         )

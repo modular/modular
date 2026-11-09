@@ -24,7 +24,7 @@ import extensibility
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 
-from extensibility import InputTensor, OutputTensor, Tensor
+from extensibility import Input, Output, Tensor, TileTensorable
 from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
@@ -63,44 +63,65 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    def execute[
-        dtype: DType,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        x: OutputTensor[dtype=dtype, rank=4, ...],
-        out_z: OutputTensor[dtype=dtype, rank=3, ...],
-        u: InputTensor[dtype=dtype, rank=3, ...],
-        delta: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=4, ...],
-        C: InputTensor[dtype=dtype, rank=4, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        z: InputTensor[dtype=dtype, rank=3, ...],
-        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Output & Tensor],
+        out_z: Some[Output & Tensor],
+        u: Some[Input & Tensor],
+        delta: Some[Input & Tensor],
+        A: Some[Input & Tensor],
+        B: Some[Input & Tensor],
+        C: Some[Input & Tensor],
+        D: Some[Input & Tensor],
+        z: Some[Input & Tensor],
+        delta_bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(out_z), TileTensorable)
+        comptime assert conforms_to(type_of(u), TileTensorable)
+        comptime assert conforms_to(type_of(delta), TileTensorable)
+        comptime assert conforms_to(type_of(A), TileTensorable)
+        comptime assert conforms_to(type_of(B), TileTensorable)
+        comptime assert conforms_to(type_of(C), TileTensorable)
+        comptime assert conforms_to(type_of(D), TileTensorable)
+        comptime assert conforms_to(type_of(z), TileTensorable)
+        comptime assert conforms_to(type_of(delta_bias), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(x).rank == 4
+        comptime assert type_of(out_z).rank == 3
+        comptime assert type_of(u).rank == 3
+        comptime assert type_of(delta).rank == 3
+        comptime assert type_of(A).rank == 2
+        comptime assert type_of(B).rank == 4
+        comptime assert type_of(C).rank == 4
+        comptime assert type_of(D).rank == 1
+        comptime assert type_of(z).rank == 3
+        comptime assert type_of(delta_bias).rank == 1
+
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
 
-        var batch = output.dim_size(0)
-        var dim = output.dim_size(1)
-        var seqlen = output.dim_size(2)
-        var dstate = A.dim_size(1)
-        var n_groups = B.dim_size(1)
+        var batch = Int(output.shape()[0].value())
+        var dim = Int(output.shape()[1].value())
+        var seqlen = Int(output.shape()[2].value())
+        var dstate = Int(A.shape()[1].value())
+        var n_groups = Int(B.shape()[1].value())
         var group_size = dim // n_groups
 
-        var output_tt = output.to_tile_tensor[.int32]()
-        var x_tt = x.to_tile_tensor[.int32]()
-        var out_z_tt = out_z.to_tile_tensor[.int32]()
-        var u_tt = u.to_tile_tensor[.int32]()
-        var delta_tt = delta.to_tile_tensor[.int32]()
-        var A_tt = A.to_tile_tensor[.int32]()
-        var B_tt = B.to_tile_tensor[.int32]()
-        var C_tt = C.to_tile_tensor[.int32]()
-        var D_tt = D.to_tile_tensor[.int32]()
-        var z_tt = z.to_tile_tensor[.int32]()
-        var delta_bias_tt = delta_bias.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[dtype]()
+        var x_tt = x.to_tile_tensor[dtype]()
+        var out_z_tt = out_z.to_tile_tensor[dtype]()
+        var u_tt = u.to_tile_tensor[dtype]()
+        var delta_tt = delta.to_tile_tensor[dtype]()
+        var A_tt = A.to_tile_tensor[dtype]()
+        var B_tt = B.to_tile_tensor[dtype]()
+        var C_tt = C.to_tile_tensor[dtype]()
+        var D_tt = D.to_tile_tensor[dtype]()
+        var z_tt = z.to_tile_tensor[dtype]()
+        var delta_bias_tt = delta_bias.to_tile_tensor[dtype]()
 
         comptime delta_softplus_int8: Int8 = Int8(
             1
@@ -113,7 +134,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
 
         # Dispatch runtime dstate to compile-time DSTATE for comptime for
         # loop unrolling and guaranteed register allocation on GPU.
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             if dstate == 16:
                 selective_scan_fwd_cpu[
                     dtype,
@@ -160,7 +181,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_tt,
                     Optional(ctx.assert_cpu_target()),
                 )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
@@ -251,7 +272,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     block_dim=(BLOCK_SIZE,),
                 )
         else:
-            raise Error("Unsupported target: " + target)
+            raise Error("Unsupported target")
 
 
 @extensibility.register_shape_function("selective_scan_fwd")
@@ -336,36 +357,49 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    def execute[
-        dtype: DType,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        x: OutputTensor[dtype=dtype, rank=4, ...],
-        u: InputTensor[dtype=dtype, rank=3, ...],
-        delta: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=4, ...],
-        C: InputTensor[dtype=dtype, rank=4, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Output & Tensor],
+        u: Some[Input & Tensor],
+        delta: Some[Input & Tensor],
+        A: Some[Input & Tensor],
+        B: Some[Input & Tensor],
+        C: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(u), TileTensorable)
+        comptime assert conforms_to(type_of(delta), TileTensorable)
+        comptime assert conforms_to(type_of(A), TileTensorable)
+        comptime assert conforms_to(type_of(B), TileTensorable)
+        comptime assert conforms_to(type_of(C), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(x).rank == 4
+        comptime assert type_of(u).rank == 3
+        comptime assert type_of(delta).rank == 3
+        comptime assert type_of(A).rank == 2
+        comptime assert type_of(B).rank == 4
+        comptime assert type_of(C).rank == 4
+
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
 
-        var batch = output.dim_size(0)
-        var dim = output.dim_size(1)
-        var seqlen = output.dim_size(2)
-        var dstate = A.dim_size(1)
-        var n_groups = B.dim_size(1)
+        var batch = Int(output.shape()[0].value())
+        var dim = Int(output.shape()[1].value())
+        var seqlen = Int(output.shape()[2].value())
+        var dstate = Int(A.shape()[1].value())
+        var n_groups = Int(B.shape()[1].value())
         var group_size = dim // n_groups
 
-        var output_tt = output.to_tile_tensor[.int32]()
-        var x_tt = x.to_tile_tensor[.int32]()
-        var u_tt = u.to_tile_tensor[.int32]()
-        var delta_tt = delta.to_tile_tensor[.int32]()
-        var A_tt = A.to_tile_tensor[.int32]()
-        var B_tt = B.to_tile_tensor[.int32]()
-        var C_tt = C.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[dtype]()
+        var x_tt = x.to_tile_tensor[dtype]()
+        var u_tt = u.to_tile_tensor[dtype]()
+        var delta_tt = delta.to_tile_tensor[dtype]()
+        var A_tt = A.to_tile_tensor[dtype]()
+        var B_tt = B.to_tile_tensor[dtype]()
+        var C_tt = C.to_tile_tensor[dtype]()
 
         comptime delta_softplus_int8: Int8 = Int8(
             1
@@ -376,7 +410,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                 String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             if dstate == 16:
                 selective_scan_fwd_cpu_minimal[
                     dtype,
@@ -415,7 +449,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     C_tt,
                     Optional(ctx.assert_cpu_target()),
                 )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
@@ -560,40 +594,61 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    def execute[
-        dtype: DType,
-        target: StaticString,
-    ](
-        state_out: OutputTensor[dtype=dtype, rank=3, ...],
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        state_in: InputTensor[dtype=dtype, rank=3, ...],
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        dt: InputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        z: InputTensor[dtype=dtype, rank=2, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
+    def execute(
+        state_out: Some[Output & Tensor],
+        output: Some[Output & Tensor],
+        state_in: Some[Input & Tensor],
+        x: Some[Input & Tensor],
+        dt: Some[Input & Tensor],
+        A: Some[Input & Tensor],
+        B: Some[Input & Tensor],
+        C: Some[Input & Tensor],
+        D: Some[Input & Tensor],
+        z: Some[Input & Tensor],
+        dt_bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var batch = state_out.dim_size(0)
-        var dim = state_out.dim_size(1)
-        var dstate = state_out.dim_size(2)
-        var n_groups = B.dim_size(1)
+        comptime assert conforms_to(type_of(state_out), TileTensorable)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(state_in), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(dt), TileTensorable)
+        comptime assert conforms_to(type_of(A), TileTensorable)
+        comptime assert conforms_to(type_of(B), TileTensorable)
+        comptime assert conforms_to(type_of(C), TileTensorable)
+        comptime assert conforms_to(type_of(D), TileTensorable)
+        comptime assert conforms_to(type_of(z), TileTensorable)
+        comptime assert conforms_to(type_of(dt_bias), TileTensorable)
+        comptime dtype = type_of(state_out).dtype
+        comptime assert type_of(state_out).rank == 3
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(state_in).rank == 3
+        comptime assert type_of(x).rank == 2
+        comptime assert type_of(dt).rank == 2
+        comptime assert type_of(A).rank == 2
+        comptime assert type_of(B).rank == 3
+        comptime assert type_of(C).rank == 3
+        comptime assert type_of(D).rank == 1
+        comptime assert type_of(z).rank == 2
+        comptime assert type_of(dt_bias).rank == 1
+
+        var batch = Int(state_out.shape()[0].value())
+        var dim = Int(state_out.shape()[1].value())
+        var dstate = Int(state_out.shape()[2].value())
+        var n_groups = Int(B.shape()[1].value())
         var group_size = dim // n_groups
 
-        var state_out_tt = state_out.to_tile_tensor[.int32]()
-        var output_tt = output.to_tile_tensor[.int32]()
-        var state_in_tt = state_in.to_tile_tensor[.int32]()
-        var x_tt = x.to_tile_tensor[.int32]()
-        var dt_tt = dt.to_tile_tensor[.int32]()
-        var A_tt = A.to_tile_tensor[.int32]()
-        var B_tt = B.to_tile_tensor[.int32]()
-        var C_tt = C.to_tile_tensor[.int32]()
-        var D_tt = D.to_tile_tensor[.int32]()
-        var z_tt = z.to_tile_tensor[.int32]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
+        var state_out_tt = state_out.to_tile_tensor[dtype]()
+        var output_tt = output.to_tile_tensor[dtype]()
+        var state_in_tt = state_in.to_tile_tensor[dtype]()
+        var x_tt = x.to_tile_tensor[dtype]()
+        var dt_tt = dt.to_tile_tensor[dtype]()
+        var A_tt = A.to_tile_tensor[dtype]()
+        var B_tt = B.to_tile_tensor[dtype]()
+        var C_tt = C.to_tile_tensor[dtype]()
+        var D_tt = D.to_tile_tensor[dtype]()
+        var z_tt = z.to_tile_tensor[dtype]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[dtype]()
 
         comptime delta_softplus_int8: Int8 = Int8(
             1
@@ -604,7 +659,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                 String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             if dstate == 16:
                 selective_scan_update_cpu[
                     dtype,
@@ -649,7 +704,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     dt_bias_tt,
                     Optional(ctx.assert_cpu_target()),
                 )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
@@ -738,7 +793,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     block_dim=(BLOCK_SIZE,),
                 )
         else:
-            raise Error("Unsupported target: " + target)
+            raise Error("Unsupported target")
 
 
 @extensibility.register_shape_function("selective_scan_update")

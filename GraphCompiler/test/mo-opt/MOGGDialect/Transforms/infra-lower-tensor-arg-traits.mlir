@@ -153,11 +153,11 @@
 // EMIT-DAG: _MoggTensorIO.MUTABLE_INPUT
 //
 // The trait kernel's `execute` is called with the assembled dense values.
-// EMIT-DAG: TraitAddSome.execute[target = "cpu"]
+// EMIT-DAG: TraitAddSome.execute
 //
 // Fused-store trait kernel (full pipeline): stub builds fusion wrapper from capture.
 // EMIT-DAG: _MoggOutputStoreFusionTensor[
-// EMIT-DAG: TraitFusedStoreDouble.execute[target = "cpu"]
+// EMIT-DAG: TraitFusedStoreDouble.execute
 
 // A trait kernel's tensor arguments lower to `mogg.tensor_arg.__init__`
 // carrying the distilled `#mogg.tensor_arg` contract, while a legacy

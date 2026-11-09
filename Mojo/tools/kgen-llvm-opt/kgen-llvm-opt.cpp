@@ -424,8 +424,8 @@ int main(int argc, char **argv) {
   codegen::setFunctionAttributes(*module, cpuStr, featuresStr);
 
   llvm::PassInstrumentationCallbacks pic;
-  PassBuilder pb(targetMachine.get(), PipelineTuningOptions(),
-                 /*PGOOpt=*/std::nullopt, &pic);
+  PassBuilder pb(module->getContext(), targetMachine.get(),
+                 PipelineTuningOptions(), /*PGOOpt=*/std::nullopt, &pic);
   M::KGEN::registerKGENLLVMPasses(pb);
   ModulePassManager mpm;
   if (!clOptions.disableOptimizationPasses)

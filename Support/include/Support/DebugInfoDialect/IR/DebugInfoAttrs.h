@@ -78,6 +78,7 @@ public:
 
 #define GET_ATTRDEF_CLASSES
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h.inc"
+#include "Support/SymbolExport.h"
 
 //===----------------------------------------------------------------------===//
 // Support
@@ -174,13 +175,14 @@ WalkResult walkLocation(Location loc, LocWalkPolicy policy,
                         function_ref<WalkResult(Location)> walkFn);
 
 /// Wrapper for `walkLocation` that visits fused debug scopes of locations.
-WalkResult walkScope(Location loc, LocWalkPolicy policy,
-                     function_ref<WalkResult(DIScopeAttr)> walkFn);
+MODULAR_CXX_EXPORT WalkResult
+walkScope(Location loc, LocWalkPolicy policy,
+          function_ref<WalkResult(DIScopeAttr)> walkFn);
 
 /// Extract the original source location from a call location, taking into
 /// account debuginfo and other structure within locations. Returns null if a
 /// FileLineColLoc cannot be found.
-FileLineColLoc extractSourceLoc(Location callLoc);
+MODULAR_CXX_EXPORT FileLineColLoc extractSourceLoc(Location callLoc);
 
 /// Strip all debug scopes from this location recursively.
 /// If a debug scope is fused with only one location, the fused location will be

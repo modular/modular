@@ -30,15 +30,15 @@ from max.nn import Module, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.embedding import Embedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor

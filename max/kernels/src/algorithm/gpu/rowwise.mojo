@@ -69,7 +69,6 @@ from algorithm.rowwise_types import (
     ContextParams,
     ReduceTier,
     RowBody,
-    RowCoord,
     _SPLITK_STATE_BYTES,
     _num_outputs_excluding_axis,
 )
@@ -563,14 +562,14 @@ struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):
 @inline(.always)
 def reduce[
     params: ContextParams,
-    rank: Int,
     //,
-    TileFn: ImplicitlyCopyable & (def[ws: Int](RowCoord[rank]) -> None),
 ](
-    row_coords: RowCoord[rank],
+    row_coords: Coord,
     axis_size: Int,
     mut ctx: Context[params],
-    tile_fn: TileFn,
+    tile_fn: Some[
+        ImplicitlyCopyable & (def[ws: Int](type_of(row_coords)) -> None)
+    ],
 ):
     """Drives the tier-aware iteration over the reduce axis, with no
     monoid state — pure per-tile iteration for map/emit terminals (see
@@ -606,7 +605,6 @@ def reduce[
 
     Parameters:
         params: The comptime dispatch parameters.
-        TileFn: The value-closure type of `tile_fn`.
 
     Args:
         row_coords: The current row's coords. `ctx.axis` is the
@@ -619,7 +617,7 @@ def reduce[
 
     comptime if ctx._tier == ReduceTier.Serial:
         for k in range(axis_size):
-            coords.write_axis[ctx.axis](k)
+            coords.replace_dynamic[ctx.axis](k)
             tile_fn[1](coords)
     elif ctx._tier == ReduceTier.Warp:
         # One warp covers the row, grid-striding by `WARP_SIZE * sw` to
@@ -637,11 +635,11 @@ def reduce[
             if lane_base < axis_size:
                 var lane_count = min(axis_size - lane_base, sw)
                 if lane_count == sw:
-                    coords.write_axis[ctx.axis](lane_base)
+                    coords.replace_dynamic[ctx.axis](lane_base)
                     tile_fn[sw](coords)
                 else:
                     for j in range(lane_count):
-                        coords.write_axis[ctx.axis](lane_base + j)
+                        coords.replace_dynamic[ctx.axis](lane_base + j)
                         tile_fn[1](coords)
     elif ctx.emit_tile_width > 1:
         # Tiled (SIMD-on-outputs). One thread owns `emit_tile_width`
@@ -649,7 +647,7 @@ def reduce[
         # dim — the body's tile_fn dispatches each lane.
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords.write_axis[ctx.axis](k)
+            coords.replace_dynamic[ctx.axis](k)
             tile_fn[W](coords)
     elif ctx._tier == ReduceTier.Splitk:
         # Split-K iteration: threads stripe `sw`-wide tiles across
@@ -666,7 +664,7 @@ def reduce[
         # needs no ragged tail: every in-range `elem_idx` has a full tile behind
         # it.
         for elem_idx in range(row_tid * sw, axis_size, row_total_threads * sw):
-            coords.write_axis[ctx.axis](elem_idx)
+            coords.replace_dynamic[ctx.axis](elem_idx)
             tile_fn[sw](coords)
     else:
         # Block tier (cooperative, simd along axis).
@@ -677,11 +675,11 @@ def reduce[
             if lane_base < axis_size:
                 var lane_count = min(axis_size - lane_base, ctx.simd_width)
                 if lane_count == ctx.simd_width:
-                    coords.write_axis[ctx.axis](lane_base)
+                    coords.replace_dynamic[ctx.axis](lane_base)
                     tile_fn[ctx.simd_width](coords)
                 else:
                     for j in range(lane_count):
-                        coords.write_axis[ctx.axis](lane_base + j)
+                        coords.replace_dynamic[ctx.axis](lane_base + j)
                         tile_fn[1](coords)
 
 
@@ -689,16 +687,16 @@ def reduce[
 def reduce[
     State: ReduceOp,
     params: ContextParams,
-    rank: Int,
     //,
-    TileFn: ImplicitlyCopyable
-    & (def[ws: Int](mut State, RowCoord[rank]) -> None),
 ](
-    row_coords: RowCoord[rank],
+    row_coords: Coord,
     axis_size: Int,
     mut ctx: Context[params],
     mut state: State,
-    tile_fn: TileFn,
+    tile_fn: Some[
+        ImplicitlyCopyable
+        & (def[ws: Int](mut State, type_of(row_coords)) -> None)
+    ],
 ):
     """State-carrying overload of `reduce`: same tier-aware iteration as
     above, but `tile_fn` takes the caller's monoid `state` as a `mut`
@@ -708,7 +706,6 @@ def reduce[
     Parameters:
         State: The monoid type being accumulated.
         params: The comptime dispatch parameters.
-        TileFn: The value-closure type of `tile_fn`.
 
     Args:
         row_coords: The current row's coords. `ctx.axis` is the
@@ -724,7 +721,7 @@ def reduce[
 
     comptime if ctx._tier == ReduceTier.Serial:
         for k in range(axis_size):
-            coords.write_axis[ctx.axis](k)
+            coords.replace_dynamic[ctx.axis](k)
             tile_fn[1](state, coords)
     elif ctx._tier == ReduceTier.Warp:
         comptime sw = ctx.simd_width
@@ -735,16 +732,16 @@ def reduce[
             if lane_base < axis_size:
                 var lane_count = min(axis_size - lane_base, sw)
                 if lane_count == sw:
-                    coords.write_axis[ctx.axis](lane_base)
+                    coords.replace_dynamic[ctx.axis](lane_base)
                     tile_fn[sw](state, coords)
                 else:
                     for j in range(lane_count):
-                        coords.write_axis[ctx.axis](lane_base + j)
+                        coords.replace_dynamic[ctx.axis](lane_base + j)
                         tile_fn[1](state, coords)
     elif ctx.emit_tile_width > 1:
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords.write_axis[ctx.axis](k)
+            coords.replace_dynamic[ctx.axis](k)
             tile_fn[W](state, coords)
     elif ctx._tier == ReduceTier.Splitk:
         comptime sw = ctx.simd_width
@@ -761,7 +758,7 @@ def reduce[
             for elem_idx in range(
                 row_tid * sw, axis_size, row_total_threads * sw
             ):
-                coords.write_axis[ctx.axis](elem_idx)
+                coords.replace_dynamic[ctx.axis](elem_idx)
                 tile_fn[sw](state, coords)
     else:
         comptime BLOCK_SPAN = ctx.BLOCK_SIZE * ctx.simd_width
@@ -771,11 +768,11 @@ def reduce[
             if lane_base < axis_size:
                 var lane_count = min(axis_size - lane_base, ctx.simd_width)
                 if lane_count == ctx.simd_width:
-                    coords.write_axis[ctx.axis](lane_base)
+                    coords.replace_dynamic[ctx.axis](lane_base)
                     tile_fn[ctx.simd_width](state, coords)
                 else:
                     for j in range(lane_count):
-                        coords.write_axis[ctx.axis](lane_base + j)
+                        coords.replace_dynamic[ctx.axis](lane_base + j)
                         tile_fn[1](state, coords)
 
 

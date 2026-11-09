@@ -16,11 +16,27 @@ This version is still a work in progress.
 - `__exit__(self, error: E)` now additionally supports `var self` and
   `deinit self`, similar to the non-error `__exit__`.
 
-- You can transfer ownership of a payload from an rvalue enum/tuple subject with
-  a `var` case binding, enabling `case .Some(var value):` and
+- You can bind a non-`Movable` payload from an rvalue enum or tuple subject
+  with a `var` case binding, enabling `case .Some(var value):` and
   `case (var x, var y):` without copies. This allows `match` and `if case`
-  statements work more conveniently with linear types, and reduces copies in
+  statements to work with non-movable and linear types, and reduces copies in
   general.
+
+- You can destructure a tuple of transferred non-copyable values into a `var`
+  pattern without copies, such as `var (x, y) = (a^, b^)`. This includes
+  movable types that are not `Copyable`.
+
+- Comparisons now try the reflected method on the right operand when the left
+  operand does not support the comparison. For example, `0 < value` can call
+  `value.__gt__(0)`.
+
+- Auto-parameterization now reaches `_` holes nested inside other parameterized
+  types, so an unbound parameter at any depth of an argument's type becomes an
+  an implicit parameter of the function:
+
+  ```mojo
+  def process(p: Optional[Pointer[Int, _]]): ...
+  ```
 
 ## Language changes
 
@@ -54,6 +70,9 @@ This version is still a work in progress.
   don't satisfy the condition. Previously, only an always-false conformance's
   message was reported.
 
+- `@explicit_destroy("<message>")` on a trait is deprecated and now emits a
+  warning. Only structs support a custom linear type error message.
+
 - Precompiled packages now no longer leak names and provide the same surface as
   the same packages compiled from source. This may break your code (especially
   from `std`):
@@ -69,6 +88,10 @@ This version is still a work in progress.
 
 - `List.insert`
 - `List.clear`
+- `Pointer.__init__(to=)`
+- `Pointer.__eq__`
+- `Pointer.__ne__`
+- `Pointer.unsafe_bitcast`
 
 ## Library performance improvements
 
@@ -90,7 +113,47 @@ This version is still a work in progress.
 
 ## Library changes
 
+- An optional mutable pointer now implicitly converts to an optional
+  immutable pointer, as `Pointer` does.
+
 - Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
+
+- Added a builtin `filter()`, which takes an iterable and a predicate closure
+  and yields the elements the predicate accepts:
+  `filter(items, lambda (x: Int) -> Bool: x > 0)`.
+
+- `take_while()` and `drop_while()` in `std.itertools` now take the predicate
+  as an argument instead of a compile-time parameter, so it can be a closure
+  that captures values. Write `take_while(items, pred)` instead of
+  `take_while[pred](items)`.
+
+- `Span.binary_search_by()` no longer takes the comparator as a compile-time
+  parameter. Pass it as an argument, `span.binary_search_by(cmp)`, which also
+  lets it capture the value being searched for.
+
+- `QuickBench.run()` in `std.benchmark` now takes a single closure with no
+  arguments in place of its eleven overloads for functions of 0 to 10
+  arguments. Capture the inputs instead of passing them separately:
+  `qb.run(lambda () {x} -> Float32: exp(x), bench_id=BenchId("exp"))`.
+
+- `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
+  now raise an `Error` instead of aborting when the string is empty. They also
+  raise when the string holds more than one codepoint; previously they
+  silently returned the first codepoint unless assertions were enabled.
+  Callers must now handle the error with `try` or a `raises` function. On a
+  string literal, both never raise, and a literal that isn't exactly one
+  codepoint is a compile-time error.
+
+  ```mojo
+  var text = String("🔥")
+  var codepoint = ord(text)  # 128293; raises if `text` isn't one codepoint
+  comptime letter = ord("a")  # 97; never raises
+  ```
+
+- `pow()` now takes a modulus as a third argument, like Python's `pow()`:
+  `pow(base, exp, mod)` computes `base ** exp % mod` for integers of up to 64
+  bits without overflowing. The result has the sign of `mod`, and a negative
+  `exp` uses the modular inverse of `base`, so `pow(3, -1, 7)` is `5`.
 
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
@@ -152,6 +215,12 @@ This version is still a work in progress.
 - `ArcPointer` element types no longer need to be `Deinitable`. Destroy an
   `ArcPointer` of a non-`Deinitable` type with the new `deinit_with()` method.
 
+- Added an `OwnedPointer(init_with=)` initializer that constructs the value in
+  place, so the element type doesn't need to be `Movable`, and an
+  `OwnedPointer.deinit_with()` method that destroys an `OwnedPointer` whose
+  element type isn't `Deinitable`. The initializers that copied a value into the
+  allocation are now deprecated.
+
 - `FileHandle` now owns its descriptor through a `FileDescriptor` and always
   refers to an open file. It is no longer `Defaultable`, and `close()`
   consumes the handle (`f^.close()`) instead of leaving it in an invalid
@@ -175,6 +244,26 @@ This version is still a work in progress.
   def fill(buf: Optional[MutPointer[Byte, _]]): ...
   ```
 
+- The `StringSlice`, `ImmStringSpan`, and `ImmStringSlice` aliases are
+  deprecated. Use `StringSpan` instead. `StringSpan` is always immutable, so
+  the `Imm` variants are redundant.
+
+- `Span` now conforms to `Equatable` when its element type does.
+
+- `Optional.value()`, `Optional.unsafe_value()`, and `Optional.__getitem__()`
+  now return a reference with an interior origin of the `Optional`.
+  Reassigning the `Optional`, or calling a `mut self` method on it
+  invalidates outstanding references to its value. Reading through
+  such a reference afterward used to compile and read a destroyed value; it is
+  now a compile error:
+
+  ```mojo
+  var opt = Optional(5)
+  ref i = opt.value()
+  opt = None
+  print(i)  # error: use of invalidated interior reference 'opt["value"]'
+  ```
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and
@@ -196,6 +285,22 @@ This version is still a work in progress.
   `ConversionToPythonErrorType`.
 
 ## Tooling changes
+
+- `mojo build` and `mojo run` can now report what elaboration produced, to
+  show which compile-time code makes a compile slow. `--elaboration-stats`
+  lists each `comptime for` loop with its iteration count and the operations
+  its unrolled iterations produced. It also lists the calls that compile-time
+  evaluation made to the interpreter, summed by function and by call site,
+  with their cache hits and the CPU time spent interpreting. The
+  report has one part for each pipeline that elaborated: the host and each
+  accelerator target. This option is hidden; use `--help-hidden` to list it.
+
+  Like the timing reports, the report prints as text to stderr by default.
+  `--timing-json` prints it as JSON instead, under an `elaboration` key, and
+  `--timing-file` writes it to a file instead of stderr. If the compilation
+  hits the cache, elaboration is skipped and nothing is reported. Clear
+  compilation cache or point `MODULAR_CACHE_DIR` at an empty directory
+  to get a full report.
 
 ## Removed
 
@@ -233,6 +338,52 @@ This version is still a work in progress.
   trait, and `pow()` now takes `SIMD` values only. Nothing conformed to
   `CeilDivableRaising`, so the raising `ceildiv()` overload is removed too.
 
+- Removed APIs that were deprecated in Mojo 1.1 or earlier. Use the
+  replacement in each case:
+
+  - The `UnsafePointer` alias and the `std.memory.unsafe_pointer` module that
+    defined it. Use `Pointer`.
+
+  - The `Pointer` methods `load()`, `store()`, `strided_load()`,
+    `strided_store()`, `gather()`, `scatter()`, `free()`, `bitcast()`,
+    `address_space_cast()`, and `take_pointee()`. Use their `unsafe_`-prefixed
+    spellings, such as `unsafe_load()`.
+
+  - `Pointer.mut_cast()`. Spell the mutability in the pointer type
+    (`ImmPointer` or `MutPointer`), or use `unsafe_mut_cast()`.
+
+  - Subtracting an integer from a `Pointer` and the `+=` and `-=` operators.
+    Use `unsafe_offset()`. Adding an integer and positional indexing such as
+    `ptr[i]` remain deprecated.
+
+  - `memmove()`. Use `unsafe_memmove()`.
+
+  - The `alloc[T](count)` overload. Use `alloc(Layout[T](length=count))`,
+    which returns an `Allocation`, or `unsafe_alloc[T](count)` for a raw
+    pointer.
+
+  - `is_trivially_movable()`, `is_trivially_copyable()`, and
+    `is_trivially_deletable()`. Use `IsTriviallyMovable[T]`,
+    `IsTriviallyCopyable[T]`, and `IsTriviallyDeinitable[T]` from
+    `std.traits`.
+
+  - The `CStringSlice` alias and `as_c_string_slice()` on `String`,
+    `StringSlice`, and `StringLiteral`. Use `CStringSpan` and
+    `as_c_string_span()`.
+
+  - `unsafe_ptr()` on `ArcPointer`, `OwnedPointer`, `CStringSpan`, and
+    `StringLiteral`. Use `ptr()`.
+
+  - `String.capacity()` and `String.reserve()`. Use `capacity_bytes()` and
+    `reserve_bytes()`.
+
+  - `Tuple.element_types` and `VariadicPack.element_types`. Use `Ts`.
+
+  - The `AnyType` and `Deinitable` aliases in `std.builtin.anytype`, and the
+    `Movable`, `Copyable`, and `ImplicitlyCopyable` aliases in
+    `std.builtin.value`. These traits live in `std.traits` and are still
+    exported from the prelude.
+
 ## Fixed
 
 - `SIMD.slice()` no longer passes `llvm.vector.extract` an offset that is not
@@ -244,3 +395,6 @@ This version is still a work in progress.
 
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns.
+
+- A `comptime if conforms_to(T, Deinitable)` guard now correctly refines `T`
+  and deinits it after its last use.

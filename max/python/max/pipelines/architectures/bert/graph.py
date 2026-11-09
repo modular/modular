@@ -26,13 +26,15 @@ import math
 
 import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.graph import DeviceRef, TensorValue, ops
+from max.nn._graph_ops import flash_attention
 from max.nn.legacy.activation import activation_function_from_name
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import LayerNorm
 from max.nn.legacy.sequential import Sequential
+from max.pipelines.lib.registration_encoder import EncoderInputs
 
 from .model_config import BertModelConfig
 
@@ -99,7 +101,7 @@ class BertEmbeddings(Module):
 
 
 class BertSelfAttention(Module):
-    """Multi-head self-attention with a transposed head layout."""
+    """Multi-head self-attention."""
 
     def __init__(self, config: BertModelConfig) -> None:
         hf_config = config.huggingface_config
@@ -133,39 +135,38 @@ class BertSelfAttention(Module):
             has_bias=True,
         )
 
-    def transpose_for_scores(self, x: TensorValue) -> TensorValue:
+    def split_heads(self, x: TensorValue) -> TensorValue:
         """Splits the last axis into attention heads."""
-        new_x_shape = x.shape[:-1] + [
-            self.num_attention_heads,
-            self.attention_head_size,
-        ]
-        x = ops.reshape(x, new_x_shape)
-        return ops.permute(x, [0, 2, 1, 3])
+        return ops.reshape(
+            x,
+            x.shape[:-1] + [self.num_attention_heads, self.attention_head_size],
+        )
 
     def __call__(
         self, hidden_states: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
-        """Runs self-attention over the hidden states."""
-        query_layer = self.transpose_for_scores(self.query(hidden_states))
-        key_layer = self.transpose_for_scores(self.key(hidden_states))
-        value_layer = self.transpose_for_scores(self.value(hidden_states))
+        """Runs self-attention over the hidden states.
 
-        attention_scores = query_layer @ key_layer.transpose(-1, -2)
-        attention_scores = attention_scores / math.sqrt(
-            self.attention_head_size
+        Args:
+            hidden_states: The activations, of shape
+                ``[batch_size, seq_len, hidden_size]``.
+            attention_mask: The additive mask, of shape
+                ``[batch_size, seq_len, seq_len]``.
+
+        Returns:
+            The attention output, of shape
+            ``[batch_size, seq_len, hidden_size]``.
+        """
+        context_layer = flash_attention(
+            self.split_heads(self.query(hidden_states)),
+            self.split_heads(self.key(hidden_states)),
+            self.split_heads(self.value(hidden_states)),
+            scale=1.0 / math.sqrt(self.attention_head_size),
+            mask=attention_mask,
         )
-
-        attention_scores = attention_scores + attention_mask
-
-        attention_probs = ops.softmax(attention_scores)
-
-        context_layer = attention_probs @ value_layer
-
-        context_layer = ops.permute(context_layer, [0, 2, 1, 3])
-        new_context_shape = context_layer.shape[:-2] + [self.all_head_size]
-        context_layer = ops.reshape(context_layer, new_context_shape)
-
-        return context_layer
+        return ops.reshape(
+            context_layer, context_layer.shape[:-2] + [self.all_head_size]
+        )
 
 
 class BertSelfOutput(Module):
@@ -317,7 +318,15 @@ class BertEncoder(Module):
 
 
 class BertModel(Module):
-    """The BERT encoder with its embeddings."""
+    """The BERT encoder with its embeddings, registered for ``ENCODER``.
+
+    It takes a padded batch and returns each sequence's embeddings, pooled
+    over its tokens when the pipeline pools embeddings.
+    """
+
+    graph_name = "bert"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
 
     def __init__(
         self,
@@ -328,35 +337,20 @@ class BertModel(Module):
         self.pool_outputs = config.pool_embeddings
         self.device = config.device
 
-    def input_types(self) -> tuple[TensorType, TensorType]:
-        """Returns the graph's input types: input IDs and attention mask."""
-        return (
-            TensorType(
-                DType.int64, shape=["batch_size", "seq_len"], device=self.device
-            ),
-            TensorType(
-                DType.float32,
-                shape=["batch_size", "seq_len"],
-                device=self.device,
-            ),
-        )
+    def __call__(self, inputs: EncoderInputs[TensorValue]) -> TensorValue:
+        """Runs the model over the batch's token IDs."""
+        attention_mask = inputs.attention_mask
+        assert attention_mask is not None
+        embedding_output = self.embeddings(input_ids=inputs.tokens)
 
-    def __call__(
-        self,
-        input_ids: TensorValue,
-        attention_mask: TensorValue,
-        token_type_ids: TensorValue | None = None,
-    ) -> TensorValue:
-        """Runs the model over the input ids."""
-        embedding_output = self.embeddings(
-            input_ids=input_ids, token_type_ids=token_type_ids
-        )
-
-        extended_attention_mask = ops.reshape(
-            attention_mask, ("batch_size", 1, 1, "seq_len")
+        # Masks padded keys for every query. Unlike float32's minimum, the fill
+        # stays finite in bfloat16.
+        extended_attention_mask = ops.broadcast_to(
+            ops.reshape(attention_mask, ("batch_size", 1, "seq_len")),
+            ("batch_size", "seq_len", "seq_len"),
         )
         extended_attention_mask = (1 - extended_attention_mask) * float(
-            np.finfo(np.float32).min
+            np.finfo(np.float16).min
         )
 
         encoded_results = self.encoder(

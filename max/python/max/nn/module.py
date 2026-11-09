@@ -562,7 +562,7 @@ class Module(Generic[_P, _R]):
 
     def trace(
         self,
-        *input_types: InputType,
+        *input_types: tree.Tree[InputType],
         name: str | None = None,
         custom_extensions: Iterable[Path] = (),
         allow_subgraphs: bool = True,
@@ -598,7 +598,8 @@ class Module(Generic[_P, _R]):
         Args:
             *input_types: The type of each tensor argument of ``forward``, as
                 a :class:`~max.graph.TensorType` or a
-                :class:`~max.tensor.sharding.TensorLayout`.
+                :class:`~max.tensor.sharding.TensorLayout`, or a tree of them
+                for an argument that is a tree of tensors.
             name: The name of the graph. Defaults to the class's qualified
                 name.
             custom_extensions: Paths to custom Mojo kernel libraries.
@@ -628,7 +629,7 @@ class Module(Generic[_P, _R]):
 
     def compile(
         self,
-        *input_types: InputType,
+        *input_types: tree.Tree[InputType],
         weights: Mapping[str, DLPackArray] | None = None,
         session: InferenceSession | None = None,
         name: str | None = None,
@@ -637,6 +638,7 @@ class Module(Generic[_P, _R]):
         allow_subgraphs: bool = True,
         is_device_graph: bool = False,
         signal_buffer_index: int | None = None,
+        signals_group: compilation.SignalsGroup | None = None,
     ) -> compilation.CompiledCallable[_P, _R]:
         """Traces ``forward`` and compiles it into a callable.
 
@@ -678,8 +680,9 @@ class Module(Generic[_P, _R]):
         Args:
             *input_types: The type of each tensor argument of ``forward``, as
                 a :class:`~max.graph.TensorType` or a
-                :class:`~max.tensor.sharding.TensorLayout`. The device
-                of each type determines where the computation runs.
+                :class:`~max.tensor.sharding.TensorLayout`, or a tree of them
+                for an argument that is a tree of tensors. The device of each
+                type determines where the computation runs.
             weights: The values of the parameters, keyed by the names that
                 :attr:`parameters` yields. Defaults to the values currently
                 held by this module.
@@ -699,6 +702,9 @@ class Module(Generic[_P, _R]):
             is_device_graph: Whether to build a device graph.
             signal_buffer_index: The graph input position of the signal
                 buffers. See :func:`~max.tensor.compilation.stage`.
+            signals_group: Names the signal buffers in the callable's
+                serialized signature. See
+                :meth:`~max.tensor.compilation.CompiledCallable.graph_signature`.
 
         Returns:
             A :class:`~max.tensor.compilation.CompiledCallable` with
@@ -728,12 +734,15 @@ class Module(Generic[_P, _R]):
             )
             timer.mark_build_complete()
             return compilation.CompiledCallable(
-                staged, registry, session=session
+                staged,
+                registry,
+                session=session,
+                signals_group=signals_group,
             )
 
     def stage(
         self,
-        *input_types: InputType,
+        *input_types: tree.Tree[InputType],
         weights: Mapping[str, DLPackArray] | None = None,
         name: str | None = None,
         custom_extensions: Iterable[Path] = (),

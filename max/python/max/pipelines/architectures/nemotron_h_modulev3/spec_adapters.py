@@ -44,10 +44,10 @@ from typing import TYPE_CHECKING, Any
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
+from max.nn._graph_ops import argmax_with_bias
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kernels import argmax_with_bias
-from max.nn.legacy.kv_cache import RecurrentStateInputsPerDevice
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.kv_cache import RecurrentStateInputsPerDevice
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import as_graph_values
 from max.pipelines.speculative.block_driver import (
     Accepted,

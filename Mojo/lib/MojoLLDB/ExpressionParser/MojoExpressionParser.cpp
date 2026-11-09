@@ -26,8 +26,8 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/EntryPoint.h"
+#include "Mojo/MojoREPL/REPL.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/Support/Constants.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
@@ -194,7 +194,7 @@ static std::string formatSMDiagnostic(const llvm::SMDiagnostic &diag,
 namespace {
 /// This class implements a parser listener that communicates between the Mojo
 /// parser and the repl.
-class LLDBMojoREPLListener : public MojoParserREPLListener {
+class LLDBMojoREPLListener : public MojoREPLListener {
 public:
   LLDBMojoREPLListener(
       StringRef currentModuleName, MojoUserExpression &expr,
@@ -276,7 +276,7 @@ public:
   bool shouldPersistVariable(StringRef name, mlir::Type type) override {
     auto canPersist = [&] {
       // We always persist internal repl variables used for execution state.
-      if (MojoParserContext::isHiddenPersistentVariable(name))
+      if (MojoREPLContext::isHiddenPersistentVariable(name))
         return true;
       // Check if we were requested not to persist anything.
       if (options.GetSuppressPersistentResult())
@@ -333,6 +333,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   }
 
   MojoParserContext &parserContext = impl->typeSystem->getParserContext();
+  MojoREPLContext &replContext = impl->typeSystem->getREPLContext();
   MLIRContext *ctx = impl->typeSystem->getMLIRContext();
   llvm::SourceMgr &sourceMgr = parserContext.getSourceMgr();
 
@@ -368,8 +369,8 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
       llvm::MemoryBuffer::getMemBufferCopy(impl->expr.Text(), exprModuleName),
       llvm::SMLoc());
   impl->expr.setFunctionName(exprFnName);
-  MojoParserContext::ParsedREPLExpr result = parserContext.parseREPLExpression(
-      listener, exprFileId, exprFnName, variables);
+  MojoREPLContext::ParsedExpression result =
+      replContext.parseExpression(listener, exprFileId, exprFnName, variables);
 
   // If the parser supplied a fixed expression, abort processing and use that
   // expression instead.
@@ -390,7 +391,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     // If the parser was actually successful, make sure to reset it so that we
     // don't include the un-fixed module in the REPL history.
     if (result.isValid())
-      parserContext.removeLastREPLExpression();
+      replContext.removeLastExpression();
     return failure();
   }
 
@@ -401,14 +402,14 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // Setup a diagnostic handler to process diagnostics emitted during lowering.
   struct MLIRDiagnosticHandlerContext {
     LLDBMojoREPLListener &listener;
-    MojoParserContext &parserContext;
+    MojoREPLContext &replContext;
   };
-  MLIRDiagnosticHandlerContext handlerContext{listener, parserContext};
+  MLIRDiagnosticHandlerContext handlerContext{listener, replContext};
   sourceMgr.setDiagHandler(
       [](const llvm::SMDiagnostic &diag, void *context) {
         auto *ctx = static_cast<MLIRDiagnosticHandlerContext *>(context);
         ctx->listener.notifyDiagnostics(
-            ctx->parserContext.getREPLLocMapper().mapDiagnostic(diag));
+            ctx->replContext.getLocMapper().mapDiagnostic(diag));
       },
       &handlerContext);
 
@@ -416,7 +417,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   auto returnErrorCleanup = [&] {
     // If we encounter an error anywhere during compilation, make sure the
     // parser doesn't include this expression in the REPL history.
-    parserContext.removeLastREPLExpression();
+    replContext.removeLastExpression();
     return failure();
   };
 

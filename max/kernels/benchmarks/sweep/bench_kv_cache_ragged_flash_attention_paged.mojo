@@ -154,7 +154,7 @@ def _run_name(
 
 
 def _digest(
-    ctx: DeviceContext, output: DeviceBuffer[dtype, ...], n: Int
+    ctx: DeviceContext[], output: DeviceBuffer[dtype, ...], n: Int
 ) raises:
     # A GROSS-ERROR detector -- wrong keys, an unmasked tail, NaN -- not an
     # oracle: 8 samples cannot localize a defect. It is sensitive only
@@ -225,7 +225,7 @@ struct MHACache(Movable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         footprint: Footprint,
         layout: PageLayout,
         on_host: Bool,
@@ -267,7 +267,7 @@ struct Workspace(Movable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         footprint: Footprint,
         on_host: Bool,
         verify: Bool,
@@ -311,7 +311,7 @@ struct Workspace(Movable):
 
 
 def run_config(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut h: SweepHarness,
     mut cache: MHACache,
     mut ws: Workspace,
@@ -466,7 +466,7 @@ def run_config(
 
     @inline(.always)
     def kernel_launch(
-        launch_ctx: DeviceContext, copy: Int
+        launch_ctx: DeviceContext[], copy: Int
     ) raises {mut out_tt, imm}:
         var kv_collection = kv_at(copy)
         var k_cache = kv_collection.get_key_cache(layer_idx)

@@ -1402,11 +1402,6 @@ struct VariadicPack[
         Ts: The list of types held by the argument pack.
     """
 
-    @deprecated(use=Ts)
-    comptime element_types = Self.Ts
-    """The list of types held by the argument pack. Deprecated alias for `Ts`.
-    """
-
     comptime _mlir_type = __mlir_type[
         `!lit.ref.pack<:param_list<`,
         Self.element_trait,
@@ -1613,9 +1608,9 @@ struct VariadicPack[
     ](
         self,
         mut writer: Some[Writer],
-        start: StringSlice[O1] = StaticString(""),
-        end: StringSlice[O2] = StaticString(""),
-        sep: StringSlice[O3] = StaticString(", "),
+        start: StringSpan[O1] = StaticString(""),
+        end: StringSpan[O2] = StaticString(""),
+        sep: StringSpan[O3] = StaticString(", "),
     ) where Self.Ts.all_conforms_to[Writable]():
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
@@ -1625,9 +1620,9 @@ struct VariadicPack[
         enclosed by start and end delimiters.
 
         Parameters:
-            O1: The origin of the open `StringSlice`.
-            O2: The origin of the close `StringSlice`.
-            O3: The origin of the separator `StringSlice`.
+            O1: The origin of the open `StringSpan`.
+            O2: The origin of the close `StringSpan`.
+            O3: The origin of the separator `StringSpan`.
             is_repr: Whether to use repr formatting for elements.
 
         Args:

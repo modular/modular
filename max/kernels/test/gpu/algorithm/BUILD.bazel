@@ -12,6 +12,12 @@ _EXTRA_CONSTRAINTS = {
     }),
 }
 
+_EXTRA_DEPS = {
+    "test_rowwise_public_reduce.mojo": [
+        "//max/kernels/test/common/rowwise_reduce_test_utils",
+    ],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -27,7 +33,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:builtin_kernels",
             "//max:layout",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(["**/*.mojo"])
 ]

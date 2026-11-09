@@ -82,7 +82,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.memory import external_memory
@@ -560,7 +560,7 @@ def main() raises:
         ]
 
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {mut sink, imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {mut sink, imm}:
             ctx.enqueue_function[kernel](
                 a_tma_op,
                 b_tma_op,
@@ -568,9 +568,6 @@ def main() raises:
                 grid_dim=(1, 1, 1),
                 block_dim=(num_threads,),
                 shared_mem_bytes=smem_use,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(smem_use)
-                ),
             )
 
         @inline(.always)

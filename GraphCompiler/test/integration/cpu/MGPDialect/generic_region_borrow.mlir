@@ -12,7 +12,7 @@
 // CHECK-NEXT: Tensor(4xui8, TensorBufferRef(0x[[PTR_VAL_1:[[:xdigit:]]*]],
 // CHECK-NEXT: Tensor(4xui8, TensorBufferRef(0x[[PTR_VAL_0]]
 
-mgp.model @buffer_borrow_intrinsic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_borrow_intrinsic devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %2 = mgp.runtime.create %0, %1[1]
@@ -50,7 +50,7 @@ mgp.model @buffer_borrow_intrinsic : mof devices [#M.device_ref<"cpu", 0>] init 
 // Output2 should have the pointer of buf2 with storage of buf1
 // CHECK-NEXT: Tensor(3xf32, TensorBufferRef(0x[[CONST_PTR_VAL]], 12)
 
-mgp.model @buffer_borrow_constant : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_borrow_constant devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %2 = mgp.runtime.create %0, %1[1]

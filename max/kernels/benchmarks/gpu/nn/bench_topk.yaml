@@ -67,3 +67,29 @@ params:
   out_idx_type: [DType.uint64]
   sampling: [True]
   USE_FI_TOPK_KERNEL: [True]
+
+# Fused softmax + sampler from raw logits, no distribution: the kernel that
+# runs one CTA per row and splits a row across a resident block group when the
+# device has multiprocessors to spare. `num_coop_blocks=0` is the production
+# path, which sizes the group from the device; 1 pins one block per row.
+- $N: [128256, 256000]
+  $K: [1, 50]
+  $batch_size: [1, 8, 32, 128]
+  $topp_dist: [True]
+  $emit_dist: [False]
+  $num_coop_blocks: [0]
+  $in_dtype: ["bfloat16"]
+  $fill_fn_name: ["fill_normal_hash"]
+  out_idx_type: [DType.int64]
+
+# Group-size sweep at the batches where the split changes the shape of a pass:
+# one row leaves the device idle, eight rows start to fill it.
+- $N: [128256, 256000]
+  $K: [1, 50]
+  $batch_size: [1, 8]
+  $topp_dist: [True]
+  $emit_dist: [False]
+  $num_coop_blocks: [1, 2, 4, 8]
+  $in_dtype: ["bfloat16"]
+  $fill_fn_name: ["fill_normal_hash"]
+  out_idx_type: [DType.int64]

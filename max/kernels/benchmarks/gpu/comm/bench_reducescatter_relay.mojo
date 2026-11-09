@@ -154,7 +154,7 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(WORLD):
         list_of_ctx.append(DeviceContext(device_id=i))
 
@@ -237,7 +237,7 @@ def main() raises:
     def out_tile(rank: Int, numel: Int) {imm} -> OutTileType:
         return TileTensor(out_ptrs[rank], row_major(numel))
 
-    comptime sm_version = DeviceContext.default_device_info.version
+    comptime sm_version = DeviceContext[].default_device_info.version
 
     @inline(.always)
     def table_recipe(part: Int) {imm} -> RelayTuningConfig:
@@ -249,7 +249,10 @@ def main() raises:
 
     @inline(.always)
     def launch_baseline(
-        rank: Int, ctx: DeviceContext, part: Int, max_num_blocks: Optional[Int]
+        rank: Int,
+        ctx: DeviceContext[],
+        part: Int,
+        max_num_blocks: Optional[Int],
     ) raises {imm}:
         # The group is presented as its own world, so `reducescatter` sees one
         # group and leaves the relay gate shut.
@@ -298,7 +301,7 @@ def main() raises:
     @inline(.always)
     def launch_relay(
         rank: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         part: Int,
         override: Optional[RelayTuningConfig],
     ) raises {imm}:
@@ -383,7 +386,7 @@ def main() raises:
 
     @inline(.always)
     def measure[
-        LaunchType: def(Int, DeviceContext) raises -> None
+        LaunchType: def(Int, DeviceContext[]) raises -> None
     ](launch: LaunchType, part: Int) raises {mut times_ms, imm} -> Float64:
         for gpu_idx in range(WORLD):
             list_of_ctx[gpu_idx].enqueue_memset[dtype](out_bufs[gpu_idx], 0)
@@ -392,7 +395,7 @@ def main() raises:
         def per_gpu(rank: Int) raises {mut times_ms, imm}:
             var ctx = list_of_ctx[rank]
 
-            def one_iter(c: DeviceContext) raises {imm}:
+            def one_iter(c: DeviceContext[]) raises {imm}:
                 launch(rank, c)
 
             for _ in range(warmup):
@@ -412,7 +415,7 @@ def main() raises:
     def run_baseline(
         part: Int, max_num_blocks: Optional[Int], label: String
     ) raises {mut times_ms, imm} -> Float64:
-        def launch(rank: Int, ctx: DeviceContext) raises {imm}:
+        def launch(rank: Int, ctx: DeviceContext[]) raises {imm}:
             launch_baseline(rank, ctx, part, max_num_blocks)
 
         var ms = measure(launch, part)
@@ -423,7 +426,7 @@ def main() raises:
     def run_relay(
         part: Int, override: Optional[RelayTuningConfig], label: String
     ) raises {mut times_ms, imm} -> Float64:
-        def launch(rank: Int, ctx: DeviceContext) raises {imm}:
+        def launch(rank: Int, ctx: DeviceContext[]) raises {imm}:
             launch_relay(rank, ctx, part, override)
 
         var ms = measure(launch, part)

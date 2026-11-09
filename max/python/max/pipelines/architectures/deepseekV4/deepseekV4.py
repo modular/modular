@@ -53,10 +53,12 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import (
+    BufferType,
     BufferValue,
     DeviceRef,
     Graph,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     Type,
     Value,
@@ -64,18 +66,19 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
+from max.nn._graph_ops import _is_sm10x_gpu
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.hyper_connection import HyperConnection
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm
 from max.nn.legacy.transformer import (
     DecoderOutputs,
-    ReturnHiddenStates,
     forward_sequential_layers,
     logits_postprocess,
 )
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_kv_symbolic_input_tree,
 )
@@ -175,6 +178,126 @@ def _hc_pre(
     )
 
 
+Carry = tuple[TensorValue, TensorValue, TensorValue, TensorValue]
+"""A sublayer output and the streams it is not yet written back to.
+
+``(h, x, post, comb)`` has the shapes ``[b, s, d]``, ``[b, s, hc, d]``,
+``[b, s, hc]`` and ``[b, s, hc, hc]``. It represents the streams
+``hc_post(h, x, post, comb)``.
+"""
+
+
+def initial_carry(streams: TensorValue) -> Carry:
+    """The :data:`Carry` that represents ``streams`` exactly.
+
+    ``h`` and ``post`` are zero and ``comb`` is the identity, so the float32
+    write-back returns ``streams`` with no rounding.
+    """
+    b, s, hc_mult, d = streams.shape
+    device = streams.device
+    h = ops.broadcast_to(ops.constant(0.0, streams.dtype, device), [b, s, d])
+    post = ops.broadcast_to(
+        ops.constant(0.0, DType.float32, device), [b, s, hc_mult]
+    )
+    hc = int(hc_mult)
+    identity = [[float(i == j) for j in range(hc)] for i in range(hc)]
+    comb = ops.broadcast_to(
+        ops.constant(identity, DType.float32, device),
+        [b, s, hc_mult, hc_mult],
+    )
+    return h, streams, post, comb
+
+
+def written_back(carry: Carry) -> TensorValue:
+    """The ``[b, s, hc, d]`` streams that ``carry`` represents."""
+    return hc_post(*carry)
+
+
+# Arrival counters one ``hyper_connection.mega_mhc`` call keeps.
+_MEGA_MHC_COUNTERS = 1136
+
+
+def _hc_step(
+    h: TensorValue,
+    residual: TensorValue,
+    post: TensorValue,
+    comb: TensorValue,
+    hc: HyperConnection,
+    norm: RMSNorm,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+    """``hc_post`` of one sublayer, then ``_hc_pre`` and the norm of the next.
+
+    Returns the next sublayer's normalized ``[b, s, d]`` input, the new
+    ``[b, s, hc, d]`` streams and the next site's ``post`` and ``comb``. On
+    SM100 the whole step is one ``hyper_connection.mega_mhc`` op (unshifted:
+    the collapse uses the new site's own ``pre``), whose mix projection runs
+    in TF32.
+    """
+    # The kernel reads bf16 streams and supports hidden sizes that are
+    # multiples of 1024; anything else keeps the graph path.
+    if not (
+        residual.device.is_gpu()
+        and _is_sm10x_gpu()
+        and hc.hc_mult == 4
+        and residual.dtype == DType.bfloat16
+        and hc.hidden_size % 1024 == 0
+    ):
+        x = hc_post(h, residual, post, comb)
+        y, post, comb = _hc_pre(x, hc)
+        return norm(y), x, post, comb
+
+    b, s = residual.shape[0], residual.shape[1]
+    hc_mult, d = hc.hc_mult, hc.hidden_size
+    device = residual.device
+    flat_residual = ops.reshape(residual, [-1, hc_mult, d])
+    rows = flat_residual.shape[0]
+    flat_post = ops.reshape(post, [-1, hc_mult])
+    results = ops.inplace_custom(
+        "hyper_connection.mega_mhc",
+        device=device,
+        values=[
+            ops.reshape(ops.cast(h, DType.bfloat16), [-1, d]),
+            flat_residual,
+            flat_post,
+            ops.reshape(comb, [-1, hc_mult * hc_mult]),
+            # Read only by the shifted collapse.
+            flat_post,
+            hc.hc_fn.to(device),
+            hc.hc_scale.to(device),
+            hc.hc_base.to(device),
+            norm.weight.to(device).cast(DType.bfloat16),
+            ops.buffer_create(
+                BufferType(DType.uint64, [_MEGA_MHC_COUNTERS], device=device),
+                init_value=0,
+            ),
+        ],
+        out_types=[
+            TensorType(DType.bfloat16, [rows, hc_mult, d], device),
+            TensorType(DType.float32, [rows, hc_mult], device),
+            TensorType(DType.float32, [rows, hc_mult], device),
+            TensorType(DType.float32, [rows, hc_mult * hc_mult], device),
+            TensorType(DType.bfloat16, [rows, d], device),
+        ],
+        parameters={
+            "hidden": d,
+            "shifted": False,
+            "hc_norm_eps": hc.rms_norm_eps,
+            "hc_pre_eps": hc.hc_eps,
+            "hc_post_scale": 2.0,
+            "sinkhorn_eps": hc.hc_eps,
+            "sinkhorn_iters": hc.hc_sinkhorn_iters,
+            "rms_norm_eps": norm.eps,
+        },
+    )
+    streams, _, new_post, new_comb, normed = (r.tensor for r in results)
+    return (
+        ops.reshape(normed, [b, s, d]),
+        ops.reshape(streams, [b, s, hc_mult, d]),
+        ops.reshape(new_post, [b, s, hc_mult]),
+        ops.reshape(new_comb, [b, s, hc_mult, hc_mult]),
+    )
+
+
 def subgraph_layer_groups(config: DeepseekV4Config) -> list[list[int]]:
     """The trunk layers that can share one subgraph body, in layer order.
 
@@ -226,13 +349,13 @@ class DeepseekV4Block(Module):
     @staticmethod
     def tensor_parallel(
         blocks: Sequence[DeepseekV4Block],
-        xs: Sequence[TensorValue],
+        carries: Sequence[Carry],
         rows: Sequence[RaggedRows],
         token_ids: Sequence[TensorValue],
         caches: Sequence[DeepseekV4Cache],
         signal_buffers: Sequence[BufferValue],
         indices: Sequence[LayerIndex | None] | None = None,
-    ) -> list[TensorValue]:
+    ) -> list[Carry]:
         """:meth:`__call__` on every device; ``blocks`` holds a replica each.
 
         Each device's attention covers its share of the heads and returns a
@@ -246,14 +369,14 @@ class DeepseekV4Block(Module):
         """
         if indices is None:
             indices = [None] * len(blocks)
-        contracted = [
-            _hc_pre(x, block.hc_attn)
-            for block, x in zip(blocks, xs, strict=True)
+        entered = [
+            _hc_step(*carry, block.hc_attn, block.attn_norm)
+            for block, carry in zip(blocks, carries, strict=True)
         ]
         states = [
-            block.attn.begin(block.attn_norm(h), row, cache, index)
-            for block, (h, _, _), row, cache, index in zip(
-                blocks, contracted, rows, caches, indices, strict=True
+            block.attn.begin(normed, row, cache, index)
+            for block, (normed, _, _, _), row, cache, index in zip(
+                blocks, entered, rows, caches, indices, strict=True
             )
         ]
         if blocks[0].attn.indexer is not None:
@@ -277,55 +400,50 @@ class DeepseekV4Block(Module):
             )
         ]
         attended = ops.allreduce.sum(partials, signal_buffers)
-        xs = [
-            hc_post(h, residual, post, comb)
-            for h, residual, (_, post, comb) in zip(
-                attended, xs, contracted, strict=True
+        steps = [
+            _hc_step(h, x, post, comb, block.hc_ffn, block.ffn_norm)
+            for block, h, (_, x, post, comb) in zip(
+                blocks, attended, entered, strict=True
             )
-        ]
-
-        contracted = [
-            _hc_pre(x, block.hc_ffn)
-            for block, x in zip(blocks, xs, strict=True)
         ]
         moved = DeepseekV4MoE.tensor_parallel(
             [block.ffn for block in blocks],
-            [
-                block.ffn_norm(h)
-                for block, (h, _, _) in zip(blocks, contracted, strict=True)
-            ],
+            [normed for normed, _, _, _ in steps],
             token_ids,
             signal_buffers,
         )
         return [
-            hc_post(h, x, post, comb)
-            for h, x, (_, post, comb) in zip(moved, xs, contracted, strict=True)
+            (h, x, post, comb)
+            for h, (_, x, post, comb) in zip(moved, steps, strict=True)
         ]
 
     def __call__(
         self,
+        h: TensorValue,
         x: TensorValue,
+        post: TensorValue,
+        comb: TensorValue,
         rows: RaggedRows,
         token_ids: TensorValue,
         cache: DeepseekV4Cache | None = None,
         index: LayerIndex | None = None,
-    ) -> TensorValue:
-        """``[1, T, hc, d]`` in, ``[1, T, hc, d]`` out.
+    ) -> Carry:
+        """The block applied to a :data:`Carry`, as the next :data:`Carry`.
 
-        Two identical wrappings. Each reads ``post`` and ``comb`` off the state
-        *before* its sublayer runs, so the mixing weights describe the incoming
-        stream, not the outgoing one. ``index`` is the block's place in the
-        leaves, ``None`` for constants.
+        The block writes back the input carry before attention. It does not
+        write back its MoE output, which is ``h`` in the returned carry. Each
+        mHC step reads ``post`` and ``comb`` from the streams before its
+        sublayer runs, so the mixing weights describe the incoming streams.
+        ``index`` is the block's place in the leaves, ``None`` for constants.
         """
-        residual = x
-        h, post, comb = _hc_pre(x, self.hc_attn)
-        h = self.attn(self.attn_norm(h), rows, cache, index)
-        x = hc_post(h, residual, post, comb)
-
-        residual = x
-        h, post, comb = _hc_pre(x, self.hc_ffn)
-        h = self.ffn(self.ffn_norm(h), token_ids)
-        return hc_post(h, residual, post, comb)
+        normed, x, post, comb = _hc_step(
+            h, x, post, comb, self.hc_attn, self.attn_norm
+        )
+        h = self.attn(normed, rows, cache, index)
+        normed, x, post, comb = _hc_step(
+            h, x, post, comb, self.hc_ffn, self.ffn_norm
+        )
+        return self.ffn(normed, token_ids), x, post, comb
 
 
 class DSparkBlock(DeepseekV4Block):
@@ -582,16 +700,24 @@ class _TensorParallelBlock(Module):
 
     def __call__(
         self,
-        xs: list[TensorValue],
+        carries: list[list[TensorValue]],
         rows: list[RaggedRows],
         token_ids: list[TensorValue],
         caches: list[DeepseekV4Cache],
         signal_buffers: list[BufferValue],
         indices: list[LayerIndex],
     ) -> list[TensorValue]:
-        return DeepseekV4Block.tensor_parallel(
-            self.replicas, xs, rows, token_ids, caches, signal_buffers, indices
+        """The next :data:`Carry` of each device, as four tensors per device."""
+        out = DeepseekV4Block.tensor_parallel(
+            self.replicas,
+            [(h, x, post, comb) for h, x, post, comb in carries],
+            rows,
+            token_ids,
+            caches,
+            signal_buffers,
+            indices,
         )
+        return [t for carry in out for t in carry]
 
 
 class DeepseekV4(Module):
@@ -700,13 +826,16 @@ class DeepseekV4(Module):
             ``[1, T, hidden]`` the contracted stream before ``norm``, and
             ``[1, T, hidden * n_targets]`` the trunk state DSpark would read.
         """
-        h = expand_copies(self.embed(tokens), self.config.hc_mult)
+        carry = initial_carry(
+            expand_copies(self.embed(tokens), self.config.hc_mult)
+        )
         targets = set(self.config.dspark_target_layer_ids)
         collected: list[TensorValue] = []
 
         def collect(layer_idx: int, out: list[TensorValue]) -> None:
             if layer_idx in targets:
-                collected.append(out[0])
+                h, x, post, comb = out
+                collected.append(written_back((h, x, post, comb)))
 
         def inputs_for_layer(
             layer_idx: int, hs: list[TensorValue]
@@ -714,12 +843,12 @@ class DeepseekV4(Module):
             block = self.layers[layer_idx]
             assert isinstance(block, DeepseekV4Block)
             index = block.attn.layer_index()
-            return [hs[0], rows, tokens, cache, index]
+            return [*hs, rows, tokens, cache, index]
 
-        (h,) = forward_sequential_layers(
+        h, x, post, comb = forward_sequential_layers(
             list(self.layers),
             inputs_for_layer=inputs_for_layer,
-            initial_hidden_states=[h],
+            initial_hidden_states=list(carry),
             on_layer_output=collect,
             subgraph_layer_groups=(
                 self.subgraph_groups if cache is not None else None
@@ -727,7 +856,10 @@ class DeepseekV4(Module):
             name_for_subgraph=lambda g: f"dsv4_block_{g}",
             weight_prefix_for_layer=lambda i: f"layers.{i}.",
         )
-        return self.contract_head(h), self.collect_main_hidden(collected)
+        return (
+            self.contract_head(written_back((h, x, post, comb))),
+            self.collect_main_hidden(collected),
+        )
 
     def __call__(
         self,
@@ -1046,16 +1178,25 @@ class DeepseekV4(Module):
         """
         lead = replicas[0]
         targets = set(lead.config.dspark_target_layer_ids)
-        hs = [
-            expand_copies(replica.embed(tok), lead.config.hc_mult)
+        carries = [
+            initial_carry(
+                expand_copies(replica.embed(tok), lead.config.hc_mult)
+            )
             for replica, tok in zip(replicas, tokens, strict=True)
         ]
         collected: list[list[TensorValue]] = [[] for _ in replicas]
+        n_dev = len(replicas)
+
+        def per_device(flat: list[TensorValue]) -> list[list[TensorValue]]:
+            """``flat`` split into one four-tensor carry per device."""
+            return [flat[4 * i : 4 * i + 4] for i in range(n_dev)]
 
         def collect(layer_idx: int, out: list[TensorValue]) -> None:
             if collect_main_hidden and layer_idx in targets:
-                for per_dev, h in zip(collected, out, strict=True):
-                    per_dev.append(h)
+                for per_dev, (h, x, post, comb) in zip(
+                    collected, per_device(out), strict=True
+                ):
+                    per_dev.append(written_back((h, x, post, comb)))
 
         if len(lead.tp_blocks) != len(lead.layers):
             raise ValueError(
@@ -1066,7 +1207,7 @@ class DeepseekV4(Module):
             layer_idx: int, xs: list[TensorValue]
         ) -> list[Tree[Any]]:
             return [
-                xs,
+                per_device(xs),
                 list(rows),
                 list(tokens),
                 list(caches),
@@ -1077,7 +1218,7 @@ class DeepseekV4(Module):
         hs = forward_sequential_layers(
             list(lead.tp_blocks),
             inputs_for_layer=inputs_for_layer,
-            initial_hidden_states=hs,
+            initial_hidden_states=[t for carry in carries for t in carry],
             on_layer_output=collect,
             subgraph_layer_groups=lead.subgraph_groups,
             name_for_subgraph=lambda g: f"dsv4_block_tp_{g}",
@@ -1088,7 +1229,8 @@ class DeepseekV4(Module):
             if collect_main_hidden
             else []
         )
-        return lead.contract_head(hs[0]), main_hidden
+        h, x, post, comb = per_device(hs)[0]
+        return lead.contract_head(written_back((h, x, post, comb))), main_hidden
 
 
 def _shard_blocks(

@@ -112,7 +112,7 @@ def _check_verification_result[
     BLOCK_SIZE: Int,
     NUM_BLOCKS: Int,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     c_device: DeviceBuffer[c_type],
     c_device_ref: DeviceBuffer[c_type],
     c_size: Int,
@@ -198,7 +198,7 @@ def bench_matmul_1d_tma_epilogue[
     *,
     variant: StringLiteral,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     M: Int,
     init_type: InitializationType,
@@ -230,7 +230,7 @@ def bench_matmul_1d_tma_epilogue[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {var cb_a, var cb_b, var cb_c, var cb_bias, imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
@@ -455,7 +455,7 @@ def create_1d_tma_epilogue_benches[
     N: Int,
     K: Int,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     M: Int,
     init_type: InitializationType,

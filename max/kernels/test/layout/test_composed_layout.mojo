@@ -11,66 +11,88 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import *
+from layout import Coord, Idx, coord
 from layout.swizzle import ComposedLayout, Swizzle
+from layout.layout import Layout
 from std.testing import assert_equal
 
 
-def test_composed_layout() raises:
-    print("== test_composed_layout")
+comptime _BASE_SHAPE = Coord(Idx[6], Idx[2])
+"""Shape shared by the composed-layout fixtures."""
 
-    comptime layout_a = Layout(IntTuple(6, 2), IntTuple(8, 2))
-    comptime layout_b = Layout(IntTuple(4, 3), IntTuple(3, 1))
-
-    comptime comp_layout = composition(layout_a, layout_b)
-
-    assert_equal(comptime (comp_layout(0)), 0)
-    assert_equal(comptime (comp_layout(1)), 24)
-    assert_equal(comptime (comp_layout(2)), 2)
-    assert_equal(comptime (comp_layout(3)), 26)
-    assert_equal(comptime (comp_layout(4)), 8)
-    assert_equal(comptime (comp_layout(5)), 32)
-    assert_equal(comptime (comp_layout(6)), 10)
-    assert_equal(comptime (comp_layout(7)), 34)
-    assert_equal(comptime (comp_layout(8)), 16)
-    assert_equal(comptime (comp_layout(9)), 40)
-    assert_equal(comptime (comp_layout(10)), 18)
-    assert_equal(comptime (comp_layout(11)), 42)
+comptime _BASE_STRIDE = Coord(Idx[8], Idx[2])
+"""Strides shared by the composed-layout fixtures."""
 
 
 def test_composed_layout_swizzle() raises:
     print("== test_composed_layout_swizzle")
 
     var swizzle = Swizzle(1, 0, 2)
-    var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
+    comptime layout = Layout(_BASE_SHAPE, _BASE_STRIDE)
 
-    var comp_layout = ComposedLayout(layout^, swizzle)
+    var comp_layout = ComposedLayout[type_of(layout), layout](swizzle)
 
-    assert_equal(comp_layout(0), 0)
-    assert_equal(comp_layout(1), 8)
-    assert_equal(comp_layout(2), 16)
-    assert_equal(comp_layout(3), 24)
-    assert_equal(comp_layout(4), 32)
-    assert_equal(comp_layout(5), 40)
+    assert_equal(comp_layout(Coord(Idx[0], Idx[0])), 0)
+    assert_equal(comp_layout(Coord(Idx[1], Idx[0])), 8)
+    assert_equal(comp_layout(Coord(Idx[2], Idx[0])), 16)
+    assert_equal(comp_layout(Coord(Idx[3], Idx[0])), 24)
+    assert_equal(comp_layout(Coord(Idx[4], Idx[0])), 32)
+    assert_equal(comp_layout(Coord(Idx[5], Idx[0])), 40)
 
 
 def test_composed_layout_swizzle_rt() raises:
     print("== test_composed_layout_swizzle_rt")
 
     var swizzle = Swizzle(1, 0, 2)
-    var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
+    comptime layout = Layout(_BASE_SHAPE, _BASE_STRIDE)
 
-    var comp_layout = ComposedLayout(layout^, swizzle)
+    var comp_layout = ComposedLayout[type_of(layout), layout](swizzle)
 
-    assert_equal(comp_layout(0), 0)
-    assert_equal(comp_layout(1), 8)
-    assert_equal(comp_layout(2), 16)
-    assert_equal(comp_layout(3), 24)
-    assert_equal(comp_layout(4), 32)
-    assert_equal(comp_layout(5), 40)
+    assert_equal(comp_layout(Coord(0, 0)), 0)
+    assert_equal(comp_layout(Coord(1, 0)), 8)
+    assert_equal(comp_layout(Coord(2, 0)), 16)
+    assert_equal(comp_layout(Coord(3, 0)), 24)
+    assert_equal(comp_layout(Coord(4, 0)), 32)
+    assert_equal(comp_layout(Coord(5, 0)), 40)
+
+
+def test_layout_coord_index() raises:
+    print("== test_layout_coord_index")
+
+    comptime layout = Layout(_BASE_SHAPE, _BASE_STRIDE)
+
+    # Compile-time Coord leaves must match the same crd2idx arithmetic as
+    # runtime Coord leaves.
+    comptime for i in range(6):
+        comptime for j in range(2):
+            assert_equal(
+                layout(coord[i, j]),
+                layout(Coord(Idx[i], Idx[j])),
+            )
+
+    # `coord[i, j]` and an explicit static `Coord` must agree.
+    comptime for i in range(6):
+        comptime for j in range(2):
+            assert_equal(layout(coord[i, j]), layout(Coord(Idx[i], Idx[j])))
+
+
+def test_composed_layout_coord() raises:
+    print("== test_composed_layout_coord")
+
+    var swizzle = Swizzle(1, 0, 2)
+    comptime layout = Layout(_BASE_SHAPE, _BASE_STRIDE)
+    var comp_layout = ComposedLayout[type_of(layout), layout](swizzle)
+
+    # A composed layout is the swizzle applied to the base layout's offset.
+    for i in range(6):
+        for j in range(2):
+            assert_equal(
+                comp_layout(Coord(i, j)), swizzle(Int(layout(Coord(i, j))))
+            )
 
 
 def main() raises:
-    test_composed_layout()
     test_composed_layout_swizzle()
     test_composed_layout_swizzle_rt()
+    test_layout_coord_index()
+    test_composed_layout_coord()

@@ -2230,52 +2230,6 @@ def MO_ReduceMaxOp : MO_ImplicitAxisReductionOp<"reduce.max"> {
 // Normalization ops
 //===----------------------------------------------------------------------===//
 
-def MO_ReduceRMSNormOp : MO_TensorOp<"reduce.rms_norm", [
-  AllDTypesMatch<["input", "result"]>,
-  AllShapeAttrsMatch<["input", "result"]>,
-  MO_ParamDeclaration,
-  MO_SingleDevice,
-  Pure,
-]> {
-  let summary = "RMS normalization operation";
-  let description = [{
-    Computes `input / sqrt(mean(input^2) + epsilon) * (weight + weight_offset)`.
-
-    `epsilon` and `weight_offset` are compile-time constants: targets that
-    need scalar constants as attributes cannot take them as operands.
-
-    `multiply_before_cast` false (Llama-style) casts to the output dtype
-    before multiplying by the weight; true (Gemma-style) multiplies first.
-
-    Example:
-
-    ```mlir
-      %res = mo.reduce.rms_norm(%input, %weight)
-        {epsilon = #M.dense_array<9.99999997E-7> : tensor<f32>,
-         weight_offset = #M.dense_array<0.0> : tensor<f32>,
-         multiply_before_cast = false} :
-        (!mo.tensor<[2, 3], bf16, gpu:0>, !mo.tensor<[3], bf16, gpu:0>)
-        -> !mo.tensor<[2, 3], bf16, gpu:0>
-    ```
-  }];
-
-  let arguments = (ins
-    MO_Tensor:$input,
-    MO_Tensor:$weight,
-    MO_F32ScalarAttr:$epsilon,
-    MO_F32ScalarAttr:$weight_offset,
-    BoolAttr:$multiply_before_cast,
-    MO_ParamDecls:$outputParamDecls
-  );
-  let results = (outs MO_Tensor:$result);
-  let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls) `(` operands `)`
-    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
-    `multiply_before_cast` `=` $multiply_before_cast `}` attr-dict `:`
-    functional-type(operands, results)
-  }];
-}
-
 def MO_ReduceGroupNormOp : MO_TensorOp<"reduce.group_norm", [
   AllShapeAttrsMatch<["input", "result"]>,
   MO_ParamDeclaration,
@@ -4528,7 +4482,8 @@ def MO_DebugPrintOp : MO_TensorOp<"debug.print", [
 //===----------------------------------------------------------------------===//
 
 def MO_DebugTensorPrintOp : MO_TensorOp<"debug.tensor.print", [
-  MO_PreservedDuringKernelLowering,
+  DeclareOpInterfaceMethods<MO_PreservedDuringKernelLowering,
+    ["isDataTypeAgnostic"]>,
   MO_SingleDeviceWithHostOperands<[], ["input"]>,
   MemoryEffects<[MemWrite]>,
 ]> {
@@ -4956,6 +4911,7 @@ def MO_MutableStoreOp : MO_MutableOp<"mutable.store", [
 }
 
 def MO_MutableStoreSliceOp : MO_MutableOp<"mutable.store.slice", [
+  AllDTypesMatch<["inBuffer", "slice"]>,
   MO_SingleDeviceWithHostOperands<
     /*hostOperands*/["start", "stop", "step"],
     /*deviceOperands*/["inBuffer", "slice"]>,
@@ -5020,6 +4976,7 @@ class MO_DistributedOp<string name, list<Trait> traits = []> :
 def MO_AllReduceSumOp : MO_DistributedOp<"distributed.allreduce.sum", [
   AllTypesMatch<["inputs", "outputs"]>,
   MO_MultiDevice,
+  MO_DistributedExpansion,
 ]> {
   let summary = "Allreduce sum across N devices.";
   let description = [{
@@ -5089,9 +5046,17 @@ def MO_BundledAllReduceSumOp : MO_TensorOp<"bundled.allreduce.sum", [
 ]> {
   let summary = "Per-device allreduce sum, for use inside mo.parallel.";
   let description = [{
-    Per-device allreduce sum inside `mo.parallel`. Takes N peer tensors (from
-    `mo.bundled.expand`), N signal buffers captured from graph scope (chain
-    guarded by the parent's `buffers(...)` clause), and a chain.
+    Per-device allreduce sum inside `mo.parallel`, or in a device graph.
+    Takes the tensors of all N devices in the world (from `mo.bundled.expand`,
+    or through stable slots in a device graph), their N signal buffers
+    (captured from graph scope, chain guarded by the parent's `buffers(...)`
+    clause), and a chain.
+
+    A nonzero `group_size` splits the world into contiguous independent
+    groups, as on `mo.distributed.allreduce.sum`; this device reduces only
+    with the peers in its own group, and shapes need only match within a
+    group. `peer_rank` is this device's index in the world, so in `inputs`
+    and `signalBuffers`.
 
     Example:
     ```mlir
@@ -5110,18 +5075,22 @@ def MO_BundledAllReduceSumOp : MO_TensorOp<"bundled.allreduce.sum", [
     }
     ```
   }];
+  let hasVerifier = 1;
   let hasFolder = 1;
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
     Variadic<MO_Buffer>:$signalBuffers,
-    MO_Chain:$inChain
+    MO_Chain:$inChain,
+    DefaultValuedAttr<I64Attr, "0">:$group_size,
+    OptionalAttr<I64Attr>:$peer_rank
   );
   let results = (outs
     MO_Tensor:$output,
     MO_Chain:$outChain
   );
   let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` functional-type(operands, results)
+    `(` operands `)` prop-dict attr-dict `:`
+    functional-type(operands, results)
   }];
 }
 
@@ -5142,7 +5111,9 @@ def MO_BundledBroadcastOp : MO_TensorOp<"bundled.broadcast", [
     this device's output. Every copy, the root's included, reads `input`,
     which the device-graph lowering routes through a stable address slot.
     `root` is the root's index in the signal buffer list, which holds one
-    buffer per device.
+    buffer per device. `peer_rank` is this device's index in that list;
+    without it the kernel takes the rank from the physical device id, which
+    is right only when the devices are 0..N-1 in order.
   }];
   let hasVerifier = 1;
   let hasFolder = 1;
@@ -5150,14 +5121,15 @@ def MO_BundledBroadcastOp : MO_TensorOp<"bundled.broadcast", [
     MO_Tensor:$input,
     Variadic<MO_Buffer>:$signalBuffers,
     MO_Chain:$inChain,
-    DefaultValuedAttr<I64Attr, "0">:$root
+    DefaultValuedAttr<I64Attr, "0">:$root,
+    OptionalAttr<I64Attr>:$peer_rank
   );
   let results = (outs
     MO_Tensor:$output,
     MO_Chain:$outChain
   );
   let assemblyFormat = [{
-    `(` operands `)` (` ` `[` `root` `=` $root^ `]`)? attr-dict `:`
+    `(` operands `)` prop-dict attr-dict `:`
     functional-type(operands, results)
   }];
 }
@@ -5182,21 +5154,26 @@ def MO_BundledAllGatherOp : MO_TensorOp<"bundled.allgather", [
     device, and produces this device's gathered pieces, one per peer in peer
     order, each with the peer's shape on this device. A grouped allgather
     routes part of a shard through a paired group's buffers, which a device
-    graph cannot express, so `group_size` has no per-device form.
+    graph cannot express, so `group_size` has no per-device form. `peer_rank`
+    is this device's index in `inputs` and `signalBuffers`; without it the
+    kernel takes the rank from the physical device id, which is right only
+    when the devices are 0..N-1 in order.
   }];
   let hasVerifier = 1;
   let hasFolder = 1;
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
     Variadic<MO_Buffer>:$signalBuffers,
-    MO_Chain:$inChain
+    MO_Chain:$inChain,
+    OptionalAttr<I64Attr>:$peer_rank
   );
   let results = (outs
     Variadic<MO_Tensor>:$outputs,
     MO_Chain:$outChain
   );
   let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` functional-type(operands, results)
+    `(` operands `)` prop-dict attr-dict `:`
+    functional-type(operands, results)
   }];
 }
 
@@ -5228,6 +5205,41 @@ def MO_ReduceScatterSumOp : MO_DistributedOp<"distributed.reducescatter.sum", [
 }
 
 
+def MO_AllToAllOp : MO_DistributedOp<"distributed.all_to_all", [
+  MO_MultiDevice,
+]> {
+  let summary = "All-to-all across N devices.";
+  let description = [{
+    Each device splits its input into `group_size` equal chunks along
+    `split_axis` and sends chunk `j` to rank `j` of its group; each device's
+    output concatenates the chunks it receives, in source rank order, along
+    `concat_axis`. An output has its input's shape with `split_axis` divided
+    by `group_size` and `concat_axis` multiplied by it.
+
+    `group_size` splits the devices into contiguous independent groups (e.g.
+    the TP groups of DP replicas); inputs must have the same shape within a
+    group.
+  }];
+  let hasVerifier = 1;
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    MO_Chain:$inChain,
+    I64Attr:$split_axis,
+    I64Attr:$concat_axis,
+    I64Attr:$group_size
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$outputs,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)` `{` `split_axis` `=` $split_axis `,` `concat_axis` `=`
+    $concat_axis `,` `group_size` `=` $group_size `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
 def MO_DistributedScatterOp : MO_DistributedOp<"distributed.scatter", [
   MO_MultiDevice,
 ]> {
@@ -5257,6 +5269,7 @@ def MO_DistributedScatterOp : MO_DistributedOp<"distributed.scatter", [
 def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
   MO_HasDeviceInterface,
   MO_MultiDevice,
+  MO_DistributedExpansion,
 ]> {
   let summary = "AllGather across N devices (variadic).";
   let description = [{
@@ -5614,6 +5627,7 @@ def MO_DistributedBroadcastOp : MO_Op<"distributed.broadcast", [
   MO_HasDeviceInterface,
   MO_MultiDeviceFrom<"outputs">,
   MO_TensorOpInterface,
+  MO_DistributedExpansion,
 ]> {
   let summary = "Broadcast from root device to all participating devices.";
   let description = [{

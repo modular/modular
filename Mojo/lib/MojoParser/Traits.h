@@ -15,7 +15,8 @@
 #define KGEN_MOJOPARSER_TRAITS_H
 
 #include "Mojo/LITDialect/LITOps.h"
-#include "Mojo/MojoParser/ASTDecl.h"
+#include "Mojo/MojoParser/ASTType.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M::KGEN {
@@ -23,7 +24,8 @@ class GetWitnessAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-class ASTDecl;
+class ConformanceASTDecl;
+class DeclResolver;
 class SharedState;
 class FnTypeGeneratorType;
 class MojoInflightDiag;

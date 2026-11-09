@@ -24,7 +24,6 @@ from std.utils.coord import Coord
 def random_normal[
     dtype: DType,
     //,
-    target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength](idx: Coord, val: SIMD[dtype, width]),
@@ -54,7 +53,6 @@ def random_normal[
 
     Parameters:
         dtype: The data type to generate.
-        target: The target to run on.
         OutputFn: The type of the function which stores the generated values.
 
     Args:
@@ -86,8 +84,8 @@ def random_normal[
     # to within_thread = 0 for every element.
     var grid_block: Int
 
-    comptime if target == "gpu":
-        comptime info = DeviceContext.default_device_info
+    comptime if ctx.target.is_gpu():
+        comptime info = DeviceContext[].default_device_info
         comptime MAX_GRID = (
             info.sm_count * (info.threads_per_multiprocessor // BLOCK_SIZE)
         )
@@ -111,4 +109,4 @@ def random_normal[
         var value = four[within_thread].cast[dtype]()
         output_fn[width=1](idx, SIMD[dtype, 1](value))
 
-    elementwise[simd_width=1, target=target](generate, shape, ctx)
+    elementwise[simd_width=1](generate, shape, ctx)

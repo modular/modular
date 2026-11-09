@@ -20,8 +20,8 @@ warp-specialized blockwise FP8 kernel with register-based accumulation.
 from std.math import align_up, ceildiv
 from std.sys import get_defined_bool, size_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
-from max.gpu.host.info import B200
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import TileTensor, coord
 from structured_kernels.tile_types import create_tma_tile
@@ -74,7 +74,7 @@ def blockwise_fp8_matmul[
             elements (defaults to 128). Set smaller when the matmul's N-tile
             spans multiple finer-grained scale blocks.
         pdl_level: Programmatic dependent launch level for the structured
-            kernel (defaults to `PDLLevel()`, which is off). Ignored by the
+            kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`). Ignored by the
             legacy kernel selected with `USE_LEGACY_BLOCKWISE_FP8`.
 
     Args:
@@ -157,7 +157,6 @@ def blockwise_fp8_matmul[
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]())
 
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime SmemType = BlockwiseFP8Smem[
         a_type,
         b_type,
@@ -241,7 +240,14 @@ def blockwise_fp8_matmul[
 
     var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
-    ctx.enqueue_function[Kernel.run, dump_asm=False](
+    ctx.enqueue_function[Kernel.run](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps
+            block_dim=(32 * 7),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -250,12 +256,4 @@ def blockwise_fp8_matmul[
         Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
-        grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps
-        block_dim=(32 * 7),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-        attributes=pdl_launch_attributes(pdl_level),
     )

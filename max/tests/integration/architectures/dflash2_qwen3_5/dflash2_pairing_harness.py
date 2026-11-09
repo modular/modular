@@ -29,7 +29,7 @@ from typing import Any, NamedTuple, cast
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Graph
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -37,7 +37,7 @@ from max.nn.legacy.kv_cache import (
     recurrent_leaf,
 )
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash2_qwen3_5 import DFlash2Qwen3_5
 from max.pipelines.architectures.dflash2_qwen3_5.model_config import (

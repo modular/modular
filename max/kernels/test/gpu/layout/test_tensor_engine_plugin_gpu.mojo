@@ -60,7 +60,7 @@ comptime _HookTile[origin: MutOrigin] = TileTensor[
     .float32,
     _Layout,
     origin,
-    Engine=CurrentTensorEngine[AddressSpace.GENERIC],
+    Engine=CurrentTensorEngine[_Layout, AddressSpace.GENERIC],
 ]
 """A tile whose engine comes from the hook rather than a literal engine name.
 

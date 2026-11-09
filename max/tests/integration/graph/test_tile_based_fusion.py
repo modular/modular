@@ -22,35 +22,41 @@ fused ``mo.matmul`` + bias ``mo.add`` epilogue. The ``mo.add``/``mo.matmul``
 cases are each covered both with runtime inputs and with a compile-time-constant
 operand.
 
-The ``mo.reduce.rms_norm`` cases exercise the STORE variant of tile-based
-epilogue fusion (the fused epilogue owns the store), as opposed to the COMPUTE
-variant used by the matmul epilogue (the epilogue returns a value the primary
-kernel stores): a bare ``rms_norm`` (no epilogue) and a fused ``rms_norm`` +
-broadcast ``mo.mul`` store epilogue.
+The ``tile_rms_norm`` cases exercise the STORE variant of tile-based epilogue
+fusion (the fused epilogue owns the store), as opposed to the COMPUTE variant
+used by the matmul epilogue (the epilogue returns a value the primary kernel
+stores): a bare ``tile_rms_norm`` (no epilogue) and a fused ``tile_rms_norm`` +
+broadcast ``mo.mul`` store epilogue. ``tile_rms_norm`` is a naive tile kernel
+from the ``tile_store_ops`` test package, run as a custom op.
 """
 
 from __future__ import annotations
+
+import os
+from pathlib import Path
 
 import numpy as np
 import pytest
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
-
-# TODO(GEX-4211): Re-enable once the advanced (MAP) fusion path implements
-# tile-based fusion. `tile_based_fusion=True` selects tile kernels whose
-# fused-output epilogue MAP does not yet lower ("MAP-driven epilogue fusion
-# into a tile fused-output kernel argument is not yet supported"), so these
-# tests fail once advanced fusion is the default. Disabled rather than deleted
-# so the coverage returns with the feature; it was a temporary stopgap ahead of
-# flipping the new fusion system on by default.
-pytestmark = pytest.mark.skip(
-    reason="TODO(GEX-4211): tile_based_fusion not yet implemented on the "
-    "advanced (MAP) fusion path; re-enable after the switch flips."
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 _SHAPE = [256, 256]
+
+
+def _tile_store_ops_path() -> Path:
+    return Path(os.environ["MODULAR_TILE_STORE_OPS_PATH"])
+
+
+def _tile_rms_norm(x: TensorValue, gamma: TensorValue) -> TensorValue:
+    """The naive tile rms_norm kernel, with epsilon 1e-6."""
+    return ops.custom(
+        "tile_rms_norm",
+        x.device,
+        [x, gamma],
+        [TensorType(x.dtype, x.shape, device=x.device)],
+    )[0].tensor
 
 
 def _run_tile_based_fusion(
@@ -207,7 +213,7 @@ def _rms_norm_ref(
 
 
 def test_tile_based_fusion_rms_norm() -> None:
-    """A standalone ``mo.reduce.rms_norm`` runs under the tile programming model.
+    """A standalone ``tile_rms_norm`` runs under the tile programming model.
 
     Exercises the tile store kernel's no-epilogue path (the driver stores
     directly; no ``OutputFusionTile`` is bound).
@@ -223,9 +229,10 @@ def test_tile_based_fusion_rms_norm() -> None:
             TensorType(DType.float32, _SHAPE, device=gpu),
             TensorType(DType.float32, [_SHAPE[1]], device=gpu),
         ],
+        custom_extensions=[_tile_store_ops_path()],
     ) as graph:
         x, gamma = (v.tensor for v in graph.inputs)
-        graph.output(ops.rms_norm(x, gamma, epsilon=1e-6))
+        graph.output(_tile_rms_norm(x, gamma))
 
     a = np.random.randn(*_SHAPE).astype(np.float32)
     g = np.random.randn(_SHAPE[1]).astype(np.float32)
@@ -235,7 +242,7 @@ def test_tile_based_fusion_rms_norm() -> None:
 
 
 def test_tile_based_fusion_rms_norm_mul() -> None:
-    """A fused ``mo.reduce.rms_norm`` + broadcast ``mo.mul`` store epilogue.
+    """A fused ``tile_rms_norm`` + broadcast ``mo.mul`` store epilogue.
 
     Exercises the STORE variant of tile-based epilogue fusion: the graph
     compiler binds the ``mo.mul`` as an ``OutputFusionTile`` and the fusion
@@ -254,9 +261,10 @@ def test_tile_based_fusion_rms_norm_mul() -> None:
             TensorType(DType.float32, [_SHAPE[1]], device=gpu),
             TensorType(DType.float32, scale_shape, device=gpu),
         ],
+        custom_extensions=[_tile_store_ops_path()],
     ) as graph:
         x, gamma, scale = (v.tensor for v in graph.inputs)
-        graph.output(ops.mul(ops.rms_norm(x, gamma, epsilon=1e-6), scale))
+        graph.output(ops.mul(_tile_rms_norm(x, gamma), scale))
 
     a = np.random.randn(*_SHAPE).astype(np.float32)
     g = np.random.randn(_SHAPE[1]).astype(np.float32)
@@ -269,7 +277,7 @@ def test_tile_based_fusion_rms_norm_mul() -> None:
 
 
 def test_tile_based_fusion_rms_norm_residual_add() -> None:
-    """A fused ``mo.reduce.rms_norm`` + full-tensor residual ``mo.add`` store epilogue.
+    """A fused ``tile_rms_norm`` + full-tensor residual ``mo.add`` store epilogue.
 
     Exercises the STORE variant (``OutputFusionTile``) capturing a full ``[M, N]``
     residual as a ``TileTensor`` aux input (vs the broadcast ``[1, N]`` scale in
@@ -287,9 +295,10 @@ def test_tile_based_fusion_rms_norm_residual_add() -> None:
             TensorType(DType.float32, [_SHAPE[1]], device=gpu),
             TensorType(DType.float32, _SHAPE, device=gpu),
         ],
+        custom_extensions=[_tile_store_ops_path()],
     ) as graph:
         x, gamma, residual = (v.tensor for v in graph.inputs)
-        graph.output(ops.add(ops.rms_norm(x, gamma, epsilon=1e-6), residual))
+        graph.output(ops.add(_tile_rms_norm(x, gamma), residual))
 
     a = np.random.randn(*_SHAPE).astype(np.float32)
     g = np.random.randn(_SHAPE[1]).astype(np.float32)

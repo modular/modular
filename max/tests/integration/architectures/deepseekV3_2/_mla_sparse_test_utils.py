@@ -21,13 +21,35 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
 )
 from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
+
+
+def make_deepseek_rope(
+    num_heads: int, max_seq_len: int
+) -> DeepseekYarnRotaryEmbedding:
+    """Builds the DeepSeek YaRN rope (64-wide) for ``num_heads`` heads."""
+    return DeepseekYarnRotaryEmbedding(
+        dim=64,
+        n_heads=num_heads,
+        theta=10000.0,
+        max_seq_len=max_seq_len,
+        scaling_params=DeepseekYarnRopeScalingParams(
+            scaling_factor=40.0,
+            original_max_position_embeddings=4096,
+            beta_fast=32,
+            beta_slow=1,
+            mscale=1.0,
+            mscale_all_dim=1.0,
+        ),
+    )
 
 
 def random_weights(

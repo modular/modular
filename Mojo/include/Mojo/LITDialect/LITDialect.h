@@ -22,6 +22,8 @@
 #include "mlir/IR/Dialect.h"
 
 // Pull in the dialect definition.
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LITDialect.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_LITDIALECT_H

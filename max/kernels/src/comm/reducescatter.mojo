@@ -23,7 +23,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
@@ -881,7 +881,8 @@ def _reducescatter_p2p[
     *,
     axis: Int = 0,
     has_residual: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = PDLLevel.ON if ngpus <= 2 else PDLLevel.OFF,
     use_multimem: Bool = False,
     group_size: Int = ngpus,
 ](
@@ -1408,7 +1409,8 @@ def reducescatter[
     out_layout: TensorLayout,
     out_origin: MutOrigin,
     has_residual: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = PDLLevel.ON if ngpus <= 2 else PDLLevel.OFF,
     *,
     axis: Int = 0,
     use_multimem: Bool = False,
@@ -1542,7 +1544,8 @@ def reducescatter[
     out_layout: TensorLayout,
     OutputLambdaType: CollectiveEpilogueFn,
     //,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = PDLLevel.ON if ngpus <= 2 else PDLLevel.OFF,
     *,
     axis: Int = 0,
     use_multimem: Bool = False,

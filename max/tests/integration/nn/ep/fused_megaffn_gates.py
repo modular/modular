@@ -52,12 +52,8 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import (
-    EPBatchManager,
-    EPCommInitializer,
-    EPConfig,
-    ep_manager,
-)
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, ep_manager
 from max.nn.legacy.comm.ep.ep_manager import (
     _bound_fused_moe_workspace,
     _plan_fused_moe_workspace,
@@ -66,7 +62,7 @@ from max.nn.legacy.comm.ep.ep_manager import logger as ep_init_logger
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.moe import MoEQuantized
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

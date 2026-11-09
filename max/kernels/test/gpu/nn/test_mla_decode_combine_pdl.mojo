@@ -59,7 +59,7 @@ from std.memory import bitcast
 from std.time import perf_counter_ns, sleep
 
 from layout import Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from linalg.bmm import _batched_matmul_gpu
 from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -183,6 +183,7 @@ def _combine[
         ragged=ragged,
         warps_per_head=warps_per_head,
         split_parallel=split_parallel,
+        pdl=True,
     ](
         o_accum,
         lse_accum,
@@ -399,6 +400,7 @@ def _combine_heads[
         num_splits=num_splits,
         ragged=False,
         warps_per_head=2,
+        pdl=True,
     ](
         o_tt,
         lse_tt,
@@ -466,7 +468,7 @@ def test_combine_to_bmm_pdl[
     )
     # The graph's `W_UV` views: batch = heads, strided over the buffers.
     var a_3d = a_tt.reshape(
-        TileLayout(
+        Layout(
             (Idx[heads], num_rows, Idx[HEAD_DIM]),
             (Idx[HEAD_DIM], Idx[heads * HEAD_DIM], Idx[1]),
         )
@@ -477,7 +479,7 @@ def test_combine_to_bmm_pdl[
     var c_3d = TileTensor(
         c_buf, row_major((num_rows, Idx[heads], Idx[BMM_N]))
     ).reshape(
-        TileLayout(
+        Layout(
             (Idx[heads], num_rows, Idx[BMM_N]),
             (Idx[BMM_N], Idx[heads * BMM_N], Idx[1]),
         )

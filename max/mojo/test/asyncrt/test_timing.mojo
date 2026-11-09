@@ -16,7 +16,7 @@ from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
-def _timed_iter_func(context: DeviceContext, iter: Int) raises:
+def _timed_iter_func(context: DeviceContext[], iter: Int) raises:
     comptime length = 64
 
     var in_host = context.enqueue_create_host_buffer[.float32](length)
@@ -45,7 +45,7 @@ def _timed_iter_func(context: DeviceContext, iter: Int) raises:
         )
 
 
-def _timed_func(context: DeviceContext) raises:
+def _timed_func(context: DeviceContext[]) raises:
     _timed_iter_func(context, 2)
 
 

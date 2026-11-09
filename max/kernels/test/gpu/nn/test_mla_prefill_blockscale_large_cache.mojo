@@ -52,7 +52,7 @@ from std.memory import alloc
 from std.memory.alloc import unsafe_alloc
 from std.utils.numerics import isinf, isnan
 from nn.attention.mha_mask import CausalMask
-from nn.attention.gpu.mla import flare_mla_prefill
+from nn.attention.gpu.mla import SM100MLA, flare_mla_prefill
 from max.gpu.host.info import _is_sm10x_gpu
 from std.testing import assert_equal
 
@@ -251,7 +251,7 @@ def run_finite_check[
     var kv_cache = kv_collection.get_key_cache(0)
 
     print("    launching...")
-    flare_mla_prefill[rank=3](
+    flare_mla_prefill[rank=3, kernels=SM100MLA](
         output_device,
         q_device,
         k_device,

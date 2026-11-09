@@ -45,7 +45,7 @@ from .memory_planner import Glm5NextMemoryPlanner
 from .model import Glm5NextModel
 from .model_config import Glm5NextConfig
 from .tokenizer import Glm5NextTokenizer
-from .weight_adapters import convert_glm5_next_state_dict
+from .weight_adapters import glm5_next_weight_rules
 
 __all__ = ["glm5_next_arch"]
 
@@ -67,9 +67,8 @@ glm5_next_arch = SupportedArchitecture(
     batching=Glm5NextBatchProcessor,
     tokenizer=Glm5NextTokenizer,
     context_type=Glm5NextTextAndVisionContext,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_glm5_next_state_dict,
-    },
+    weight_rules=glm5_next_weight_rules,
+    use_weight_rules=True,
     config=Glm5NextConfig,
     memory_planner=Glm5NextMemoryPlanner,
     # A speculative pairing serves with prefix caching off: the KDA state

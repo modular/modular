@@ -53,7 +53,6 @@ from std.random import randn, seed
 
 from max.gpu import *
 from max.gpu.host import DeviceContext, HostBuffer
-from max.gpu.primitives.grid_controls import PDLLevel
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mla_index_kpool import (
@@ -62,11 +61,11 @@ from nn.attention.gpu.mla_index_kpool import (
 )
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import SparseRowLayout
+from nn.attention.gpu.mla_common import SparseRowLayout
 from std.utils.numerics import min_or_neg_inf
 
 comptime Q_DEPTH = 576
@@ -261,7 +260,6 @@ def run_case[
         kpool,
         pool_topk,
         select_tail,
-        PDLLevel.OFF,
     ]
     ctx.enqueue_function[expand_kernel](
         expand_out,
@@ -426,6 +424,7 @@ def run_case[
             sparse_row=SparseRowLayout(
                 kpool=kpool, pool_topk=pool_topk, select_tail=select_tail
             ),
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -447,6 +446,7 @@ def run_case[
             config=MHAConfig[kv_type](NUM_HEADS, Q_DEPTH),
             ragged=True,
             sparse=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,

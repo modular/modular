@@ -56,7 +56,7 @@ def _check_inputs[
     var worst_x = Scalar[dtype](0)
     for i in range(0, len(inputs) - width + 1, width):
         var v = SIMD[dtype, width]()
-        comptime for j in range(width):
+        for j in range(width):
             v[j] = inputs[i + j]
         var got = tan(v)
         for j in range(width):

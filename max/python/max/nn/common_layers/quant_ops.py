@@ -15,10 +15,9 @@
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 from max import functional as F
 from max.driver import (
@@ -28,19 +27,36 @@ from max.driver import (
     accelerator_architecture_name,
 )
 from max.dtype import DType
-from max.graph import TensorValue
-from max.nn.common_layers.functional_kernels import (
-    fused_silu,
-    fused_silu_quantized,
-    grouped_matmul_ragged,
-)
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kernels import _is_amd_gpu
-from max.nn.legacy.kernels import (
+from max.graph import DeviceRef, TensorValue
+from max.nn._graph_ops import _is_amd_gpu
+from max.nn._graph_ops import (
     grouped_matmul_blocked_swiglu as _grouped_matmul_blocked_swiglu,
 )
-from max.nn.legacy.quant_config import (
+from max.nn._graph_ops.ep import uses_mx_ep_token_format
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import EPConfig
+from max.nn.kernels import (
+    block_scales_interleave,
+    dynamic_block_scaled_matmul,
+    dynamic_block_scaled_matmul_amd,
+    dynamic_scaled_matmul,
+    fused_silu,
+    fused_silu_quantized,
+    grouped_dynamic_scaled_fp8_matmul,
+    grouped_matmul_block_scaled,
+    grouped_matmul_ragged,
+    grouped_quantize_dynamic_block_scaled,
+    quantize_dynamic_block_scaled,
+    quantize_dynamic_block_scaled_mxfp4,
+    quantize_dynamic_scaled_float8,
+    silu_quantize_fp8,
+)
+from max.nn.kernels.quant import (
+    grouped_ffn_blockwise_fp8_amd,
+    grouped_matmul_blocked_swiglu,
+    stack_blockwise_mega_ffn_b,
+)
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -52,26 +68,12 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 from max.tensor.sharding.placements import Sharded
 
-from .quant_kernels import (
-    block_scales_interleave,
-    dynamic_block_scaled_matmul,
-    dynamic_block_scaled_matmul_amd,
-    dynamic_scaled_matmul,
-    grouped_dynamic_scaled_fp8_matmul,
-    grouped_ffn_blockwise_fp8_amd,
-    grouped_matmul_block_scaled,
-    grouped_quantize_dynamic_block_scaled,
-    preshuffle_blockwise_fp8_b,
-    quantize_dynamic_block_scaled,
-    quantize_dynamic_block_scaled_mxfp4,
-    quantize_dynamic_scaled_float8,
-    silu_quantize_fp8,
-)
 from .quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
     MXFP4Quantizer,
     MXFP4Tensor,
+    MXFP8Activation,
     MXFP8Quantizer,
     MXFP8Tensor,
     NVFP4Activation,
@@ -79,6 +81,7 @@ from .quant_tensor import (
     NVFP4TensorQuantizer,
     QuantAwareTensor,
     all_fp8_block,
+    all_mxfp4,
     all_mxfp8,
     all_nvfp4,
 )
@@ -117,6 +120,8 @@ class EPDispatchPayload:
     - FP8 dispatch: adds ``scales``.
     - NVFP4 dispatch: adds ``scales`` and ``scales_offset``; ``usage_stats`` is
       absent (the NVFP4 grouped matmul synthesizes its own host stats).
+    - MXFP8 dispatch in the NVIDIA block-scaled layout: adds ``scales`` and
+      ``scales_offset`` beside ``usage_stats``.
     """
 
     tokens: list[Tensor]
@@ -156,6 +161,30 @@ class EPDispatchPayload:
                 scales=scales,
                 scales_offset=scales_offset,
             )
+        dispatch_config = ep_config.dispatch_quant_config
+        if (
+            dispatch_config is not None
+            and dispatch_config.is_mxfp8
+            and not uses_mx_ep_token_format(ep_config)
+        ):
+            # The block-scaled layout pads each expert's scales to whole
+            # 128-row tiles, located by a per-expert offset, as NVFP4's do.
+            (
+                tokens,
+                scales,
+                expert_start,
+                scales_offset,
+                expert_ids,
+                usage_stats,
+            ) = columns
+            return cls(
+                tokens=tokens,
+                expert_start=expert_start,
+                expert_ids=expert_ids,
+                usage_stats=usage_stats,
+                scales=scales,
+                scales_offset=scales_offset,
+            )
         else:
             fp8_dispatch = (
                 ep_config.dispatch_dtype.is_float8()
@@ -175,28 +204,49 @@ class EPDispatchPayload:
     def per_device_tokens(
         self,
         *,
-        nvfp4_global_scale: Tensor | None = None,
+        nvfp4_global_scale: Tensor | Sequence[Tensor] | None = None,
     ) -> Sequence[QuantAwareTensor]:
         """Wrap the raw per-device token columns into activations.
 
         Args:
             nvfp4_global_scale: Uniform NVFP4 activation scale the dispatch
-                quantized with (the max static ``input_scale`` across experts);
-                required when the payload carries NVFP4 tokens.
+                quantized with (the max static ``input_scale`` across experts),
+                or one copy of it per device; required when the payload
+                carries NVFP4 tokens.
         """
+        if (
+            self.scales_offset is not None
+            and self.scales is not None
+            and self.scales[0].dtype == DType.float8_e8m0fnu
+        ):
+            return [
+                MXFP8Activation(data=d, scales=s, scales_offset=o)
+                for d, s, o in zip(
+                    self.tokens, self.scales, self.scales_offset, strict=True
+                )
+            ]
         if self.scales_offset is not None:
             assert self.scales is not None and nvfp4_global_scale is not None, (
                 "NVFP4 tokens require dispatch scales and the uniform scale"
+            )
+            global_scales = (
+                [nvfp4_global_scale] * len(self.tokens)
+                if isinstance(nvfp4_global_scale, Tensor)
+                else nvfp4_global_scale
             )
             return [
                 NVFP4Activation(
                     data=d,
                     scales=s,
-                    input_scale=nvfp4_global_scale,
+                    input_scale=g,
                     scales_offset=o,
                 )
-                for d, s, o in zip(
-                    self.tokens, self.scales, self.scales_offset, strict=True
+                for d, s, o, g in zip(
+                    self.tokens,
+                    self.scales,
+                    self.scales_offset,
+                    global_scales,
+                    strict=True,
                 )
             ]
         if self.scales is not None:
@@ -284,7 +334,11 @@ class _QuantizerFactory(Protocol):
     """Wraps a native-precision tensor, quantizing it on first use."""
 
     def __call__(
-        self, tensor: Tensor, block_size: tuple[int, int]
+        self,
+        tensor: Tensor,
+        block_size: tuple[int, int],
+        *,
+        report_error: bool = False,
     ) -> QuantAwareTensor: ...
 
 
@@ -337,10 +391,23 @@ def quantized_weight(
 
     There are three cases to consider: no config, a pre-quantized checkpoint,
     and quantize-on-load.
+
+    With ``quant_config.report_error``, a quantize-on-load weight also
+    prints its quantization error when it is quantized (see
+    :class:`~.quant_tensor._Quantizer`).
+
+    Raises:
+        ValueError: If ``quant_config.report_error`` is set but the weight is
+            not quantized on load, so there is no quantization to measure.
     """
     shape = (int(out_dim), int(in_dim))
     if quant_config is None:
         return Tensor.zeros(shape)
+    if quant_config.report_error and not quant_config.quantizes_on_load:
+        raise ValueError(
+            "report_error needs a weight that is quantized on load; "
+            "there is no quantization to measure otherwise"
+        )
 
     registry = _QUANTIZERS if quant_config.quantizes_on_load else _CONTAINERS
     if quant_config.format not in registry:
@@ -366,12 +433,9 @@ def quantized_weight(
         return _QUANTIZERS[quant_config.format](
             Tensor.zeros(shape, dtype=routed_weight_dtype(quant_config)),
             block_size=block_size,
+            report_error=quant_config.report_error,
         )
     return _CONTAINERS[quant_config.format].zeros(shape, block_size=block_size)
-
-
-_BLOCKWISE_MEGA_FFN_PERMUTE_GROUP = 8
-"""Experts per permute when :func:`stack_blockwise_mega_ffn` stacks a layer."""
 
 
 def stack_blockwise_mega_ffn(
@@ -380,9 +444,8 @@ def stack_blockwise_mega_ffn(
     """Stacks FP8 expert weights in the blockwise MegaFFN's 32-byte-lane order.
 
     As :func:`stack` of each expert's projections concatenated along ``N``,
-    with each expert's weight bytes permuted the way the op reads them. Init
-    concatenates, stacks and permutes on the host and moves only the result
-    to ``device``.
+    with each expert's weight bytes permuted the way the op reads them. The
+    host permutes each expert and copies it into ``device``'s stack.
 
     Args:
         experts: Each expert's :class:`FP8BlockTensor` projections in slot
@@ -393,30 +456,27 @@ def stack_blockwise_mega_ffn(
     Returns:
         The permuted weight stack and the row-major scale stack.
     """
-    # Any of this done on the device leaves a temporary freed between
-    # resident stacks; those holes left a 0.9-utilization KV cache no
-    # contiguous block. Groups bound the host's temporaries to a fraction of
-    # the experts.
-    items = [
-        join_projections([_fp8_block_on(p, CPU()) for p in projections])
-        for projections in experts
-    ]
-    assert all_fp8_block(items)
-    first = items[0]
-    assert isinstance(first, FP8BlockTensor)
-    n = len(items)
-    n_groups = -(-n // _BLOCKWISE_MEGA_FFN_PERMUTE_GROUP)
-    bounds = [n * g // n_groups for g in range(n_groups + 1)]
-    groups = [
-        preshuffle_blockwise_fp8_b(
-            F.stack([w.weight for w in items[lo:hi]], axis=0)
-        )
-        for lo, hi in itertools.pairwise(bounds)
-    ]
-    weight = groups[0] if n_groups == 1 else F.concat(groups, axis=0)
-    scales = F.stack([w.weight_scale_inv for w in items], axis=0)
+    # The op reads the projections from the host: a join, stack or permute
+    # on the device leaves a temporary freed between resident stacks, and
+    # those holes left a 0.9-utilization KV cache no contiguous block.
+    host = [[_fp8_block_on(p, CPU()) for p in ps] for ps in experts]
+    first = host[0][0]
+    weight = stack_blockwise_mega_ffn_b(
+        [p.weight for ps in host for p in ps],
+        len(host),
+        DeviceRef.from_device(device),
+    )
+    scales = F.stack(
+        [
+            F.concat([p.weight_scale_inv for p in ps], axis=0)
+            if len(ps) > 1
+            else ps[0].weight_scale_inv
+            for ps in host
+        ],
+        axis=0,
+    )
     return FP8BlockTensor(
-        weight=weight.to(device),
+        weight=weight,
         weight_scale_inv=scales.to(device),
         block_size=first.block_size,
     )
@@ -480,6 +540,13 @@ def stack(items: list[QuantAwareTensor], axis: int = 0) -> QuantAwareTensor:
     if isinstance(first, MXFP8Tensor):
         assert all_mxfp8(items)
         return MXFP8Tensor(
+            weight=F.stack([w.weight for w in items], axis=axis),
+            weight_scale=F.stack([w.weight_scale for w in items], axis=axis),
+            block_size=first.block_size,
+        )
+    if isinstance(first, MXFP4Tensor):
+        assert all_mxfp4(items)
+        return MXFP4Tensor(
             weight=F.stack([w.weight for w in items], axis=axis),
             weight_scale=F.stack([w.weight_scale for w in items], axis=axis),
             block_size=first.block_size,
@@ -643,6 +710,12 @@ def concat_weights(
             "first is"
         )
         return concat_mxfp8(*weights, axis=axis)
+    if isinstance(weights[0], MXFP4Tensor):
+        assert all_mxfp4(weights), (
+            "concat_weights requires all weights to be MXFP4Tensor when the "
+            "first is"
+        )
+        return concat_mxfp4(*weights, axis=axis)
     assert all(isinstance(w, Tensor) for w in weights)
     return F.concat(list(weights), axis=axis)
 
@@ -829,6 +902,7 @@ def grouped_matmul(
     out_type: DType = DType.bfloat16,
     estimated_total_m: Tensor | None = None,
     decode_grid_m_cap: int = 0,
+    expert_scales: Tensor | None = None,
 ) -> Tensor:
     """Grouped (MoE) matmul dispatching on the stacked-weight type.
 
@@ -837,7 +911,10 @@ def grouped_matmul(
     :class:`FP8BlockTensor` weight, it runs the block-scaled FP8 grouped
     matmul kernel. For an :class:`NVFP4Tensor` weight, it runs the SM100
     block-scaled FP4 grouped matmul (``scales_offset`` required); likewise
-    for an :class:`MXFP8Tensor` weight with the block-scaled FP8 kernel.
+    for an :class:`MXFP8Tensor` weight with the block-scaled FP8 kernel, and
+    for an :class:`MXFP4Tensor` weight with it at W4A8 (MXFP8 activations
+    against the packed E2M1 weights). The MX branches quantize bf16
+    activations here or take :class:`MXFP8Activation` rows as they are.
 
     Args:
         x: Ragged activations of shape ``[total_tokens, K]``.
@@ -859,6 +936,8 @@ def grouped_matmul(
             bf16 branch.
         decode_grid_m_cap: Capture-safe decode grid.y cap for the MI355 FP8
             kernel; 0 disables. Ignored elsewhere.
+        expert_scales: The NVFP4 branch's precomputed
+            ``weight_scale_2 * input_scale`` on the device; ``None`` derives it.
     """
     if isinstance(weight, NVFP4Tensor):
         if isinstance(x, NVFP4Activation):
@@ -885,7 +964,8 @@ def grouped_matmul(
                 out_type=DType.uint8,
             )
             act_scale = weight.input_scale
-        expert_scales = (weight.weight_scale_2 * act_scale).to(x_fp4.mesh)
+        if expert_scales is None:
+            expert_scales = (weight.weight_scale_2 * act_scale).to(x_fp4.mesh)
         return _block_scaled_grouped_matmul(
             x_fp4,
             weight,
@@ -897,28 +977,34 @@ def grouped_matmul(
             estimated_total_m=estimated_total_m,
             out_type=out_type,
         )
-    if isinstance(weight, MXFP8Tensor):
-        assert isinstance(x, Tensor), (
-            "MXFP8 grouped matmul expects bf16 activations (quantized here)"
-        )
-        assert scales_offset is not None, (
-            "MXFP8 grouped matmul requires scales_offset from "
-            "moe_create_indices(needs_scales_offset=True)"
-        )
-        # MXFP8 has no per-tensor scale; the kernels take unit ones.
+    if isinstance(weight, (MXFP8Tensor, MXFP4Tensor)):
+        # Both MX weights read MXFP8 activations: MXFP4 runs W4A8. MX has no
+        # per-tensor scale; the kernels take unit ones.
         unit_scales = F.broadcast_to(
-            F.constant(1.0, DType.float32, device=x.device), expert_ids.shape
+            F.constant(1.0, DType.float32, device=expert_ids.device),
+            expert_ids.shape,
         )
-        x_fp8, x_scales = grouped_quantize_dynamic_block_scaled(
-            x,
-            row_offsets=expert_start_indices,
-            scales_offsets=scales_offset,
-            expert_ids=expert_ids,
-            sf_tensor=unit_scales,
-            sf_vector_size=_MX_SF_VECTOR_SIZE,
-            scales_type=DType.float8_e8m0fnu,
-            out_type=DType.float8_e4m3fn,
-        )
+        if isinstance(x, MXFP8Activation):
+            x_fp8, x_scales = x.data, x.scales
+            scales_offset = x.scales_offset
+        else:
+            assert isinstance(x, Tensor), (
+                "MX grouped matmul expects bf16 or MXFP8 activations"
+            )
+            assert scales_offset is not None, (
+                "MX grouped matmul requires scales_offset from "
+                "moe_create_indices(needs_scales_offset=True)"
+            )
+            x_fp8, x_scales = grouped_quantize_dynamic_block_scaled(
+                x,
+                row_offsets=expert_start_indices,
+                scales_offsets=scales_offset,
+                expert_ids=expert_ids,
+                sf_tensor=unit_scales,
+                sf_vector_size=_MX_SF_VECTOR_SIZE,
+                scales_type=DType.float8_e8m0fnu,
+                out_type=DType.float8_e4m3fn,
+            )
         return _block_scaled_grouped_matmul(
             x_fp8,
             weight,
@@ -988,9 +1074,23 @@ def interleave_grouped_scales(
     )
 
 
+def kernel_grouped_scales(
+    scales: Tensor, sf_vector_size: int = _NVFP4_SF_VECTOR_SIZE
+) -> Tensor:
+    """Returns ``scales`` in the grouped matmuls' layout.
+
+    Scales already interleaved by :func:`interleave_grouped_scales` (rank 6)
+    pass through, so a caller can interleave a weight's scales once, where
+    init owns them, instead of on every call.
+    """
+    if len(scales.shape) == 6:
+        return scales
+    return interleave_grouped_scales(scales, sf_vector_size=sf_vector_size)
+
+
 def _block_scaled_grouped_matmul(
     x_quantized: Tensor,
-    weight: NVFP4Tensor | MXFP8Tensor,
+    weight: NVFP4Tensor | MXFP8Tensor | MXFP4Tensor,
     x_scales: Tensor,
     scales_offset: Tensor,
     expert_start_indices: Tensor,
@@ -1000,8 +1100,8 @@ def _block_scaled_grouped_matmul(
     estimated_total_m: Tensor | None = None,
     out_type: DType = DType.bfloat16,
 ) -> Tensor:
-    """Block-scaled NVFP4 or MXFP8 grouped matmul on quantized activations."""
-    b_scales = interleave_grouped_scales(
+    """Block-scaled NVFP4, MXFP8 or W4A8 grouped matmul on quantized rows."""
+    b_scales = kernel_grouped_scales(
         weight.weight_scale, sf_vector_size=weight.block_size[1]
     )
     # With no estimate, the dispatcher picks its tile regime from the row
@@ -1026,6 +1126,35 @@ def _block_scaled_grouped_matmul(
     )
 
 
+def _sigma_permute_rows(t: Tensor) -> Tensor:
+    """Interleaves the gate and up row halves of ``[E, 2D, C]`` stacks."""
+    e = int(t.shape[0])
+    two_d = int(t.shape[1])
+    c = int(t.shape[-1])
+    return (
+        t.reshape([e, 2, two_d // 2, c])
+        .permute([0, 2, 1, 3])
+        .reshape([e, two_d, c])
+    )
+
+
+def sigma_permute_gate_up(
+    weight: NVFP4Tensor | MXFP4Tensor | MXFP8Tensor,
+) -> NVFP4Tensor | MXFP4Tensor | MXFP8Tensor:
+    """Interleaves stacked ``[gate; up]`` rows for the fused SwiGLU kernels.
+
+    Dispatches on the weight type: NVFP4 keeps its per-expert scalars
+    (:func:`sigma_permute_gate_up_nvfp4`), and the MX formats carry none.
+    """
+    if isinstance(weight, NVFP4Tensor):
+        return sigma_permute_gate_up_nvfp4(weight)
+    return type(weight)(
+        weight=_sigma_permute_rows(weight.weight),
+        weight_scale=_sigma_permute_rows(weight.weight_scale),
+        block_size=weight.block_size,
+    )
+
+
 def sigma_permute_gate_up_nvfp4(weight: NVFP4Tensor) -> NVFP4Tensor:
     """Sigma-permutation when fused SwiGLU+NVFP4 is enabled.
 
@@ -1035,24 +1164,38 @@ def sigma_permute_gate_up_nvfp4(weight: NVFP4Tensor) -> NVFP4Tensor:
     This sits before NvMxf4f8Strategy.prepare_weight_scales lifts to the
     5D tcgen05 layout the kernel expects.
     """
-
-    def _perm(t: Tensor) -> Tensor:
-        e = int(t.shape[0])
-        two_d = int(t.shape[1])
-        c = int(t.shape[-1])
-        return (
-            t.reshape([e, 2, two_d // 2, c])
-            .permute([0, 2, 1, 3])
-            .reshape([e, two_d, c])
-        )
-
     return NVFP4Tensor(
-        weight=_perm(weight.weight),
-        weight_scale=_perm(weight.weight_scale),
+        weight=_sigma_permute_rows(weight.weight),
+        weight_scale=_sigma_permute_rows(weight.weight_scale),
         weight_scale_2=weight.weight_scale_2,
         input_scale=weight.input_scale,
         block_size=weight.block_size,
     )
+
+
+class NVFP4ExpertScales(NamedTuple):
+    """An NVFP4 gate/up + down pair's per-expert weight-only scalars.
+
+    Built outside a cond, init computes them once.
+    """
+
+    gate_up: Tensor
+    """``gate_up.weight_scale_2`` times the dispatch's input scale."""
+    down_input_inv: Tensor
+    """``1 / down.input_scale``, which the fused SwiGLU re-quantizes with."""
+    down: Tensor
+    """``down.weight_scale_2 * down.input_scale``."""
+
+    @classmethod
+    def of(
+        cls, gate_up: NVFP4Tensor, down: NVFP4Tensor, input_scale: Tensor
+    ) -> NVFP4ExpertScales:
+        """Derives the scalars for activations quantized with ``input_scale``."""
+        return cls(
+            gate_up.weight_scale_2 * input_scale,
+            1.0 / down.input_scale,
+            down.weight_scale_2 * down.input_scale,
+        )
 
 
 def grouped_matmul_swiglu_nvfp4_ep(
@@ -1063,21 +1206,20 @@ def grouped_matmul_swiglu_nvfp4_ep(
     scales_offset: Tensor,
     expert_ids: Tensor,
     expert_scales: Tensor,
-    down_input_scale: Tensor,
+    c_input_scales: Tensor,
     *,
     estimated_total_m: Tensor | None = None,
     activation: GatedActivation | None = None,
 ) -> tuple[Tensor, Tensor]:
-    """Fused NVFP4 gate/up grouped matmul + SwiGLU + re-quantize (EP path)."""
-    b_scales = interleave_grouped_scales(weight.weight_scale)
+    """Fused NVFP4 gate/up grouped matmul + SwiGLU + re-quantize (EP path).
+
+    ``c_input_scales`` is the inverted down input scale the kernel takes.
+    """
+    b_scales = kernel_grouped_scales(weight.weight_scale)
     num_active = int(expert_ids.shape[0])
     usage_stats_host = F.constant(
         [8192, num_active], dtype=DType.uint32, device=CPU()
     )
-    # The fused kernel consumes the inverted down input scale internally;
-    # invert here to match the fused_silu_quantized path, which passes the raw
-    # scale (and inverts it itself).
-    c_input_scales = 1.0 / down_input_scale
     c_packed, c_scales = _grouped_matmul_blocked_swiglu(
         TensorValue(tokens),
         TensorValue(weight.weight),
@@ -1097,6 +1239,45 @@ def grouped_matmul_swiglu_nvfp4_ep(
     return Tensor.from_graph_value(c_packed), Tensor.from_graph_value(c_scales)
 
 
+def grouped_matmul_swiglu_mx_ep(
+    tokens: MXFP8Activation,
+    weight: MXFP4Tensor | MXFP8Tensor,
+    expert_start_indices: Tensor,
+    expert_ids: Tensor,
+    *,
+    estimated_total_m: Tensor | None = None,
+    activation: GatedActivation | None = None,
+) -> MXFP8Activation:
+    """Fused MX gate/up grouped matmul + SwiGLU + MXFP8 re-quantize (EP path).
+
+    ``weight`` must be sigma-permuted (:func:`sigma_permute_gate_up`).
+    With the down projection's grouped matmul reading the result, the
+    graph compiler fuses the pair into one MegaFFN launch.
+    """
+    b_scales = interleave_grouped_scales(
+        weight.weight_scale, sf_vector_size=_MX_SF_VECTOR_SIZE
+    )
+    num_active = int(expert_ids.shape[0])
+    usage_stats_host = F.constant(
+        [8192, num_active], dtype=DType.uint32, device=CPU()
+    )
+    c_packed, c_scales = grouped_matmul_blocked_swiglu(
+        tokens.data,
+        weight.weight,
+        tokens.scales,
+        b_scales,
+        expert_start_indices,
+        tokens.scales_offset,
+        expert_ids,
+        usage_stats_host,
+        estimated_total_m=estimated_total_m,
+        activation=activation,
+    )
+    return MXFP8Activation(
+        data=c_packed, scales=c_scales, scales_offset=tokens.scales_offset
+    )
+
+
 def grouped_matmul_silu(
     tokens: QuantAwareTensor,
     gate_up: QuantAwareTensor,
@@ -1111,6 +1292,7 @@ def grouped_matmul_silu(
     decode_grid_m_cap: int = 0,
     activation: GatedActivation | None = None,
     swiglu_limit: float = 0.0,
+    scales: NVFP4ExpertScales | None = None,
 ) -> QuantAwareTensor:
     """Gate/up grouped matmul + SwiGLU, returning the down-projection input.
 
@@ -1120,15 +1302,32 @@ def grouped_matmul_silu(
     ``activation`` overrides the gated activation (the asymmetric training
     clamp, on V4.1). A non-zero ``swiglu_limit`` clamps the activation's
     inputs, ``silu(min(gate, limit)) * clamp(up, -limit, limit)``, which
-    GLM-5.3-Flash needs.
+    GLM-5.3-Flash needs. The fused NVFP4 path reads ``scales`` when given,
+    else derives them.
     """
     # Pre-quantized EP activations carry their own per-expert scale offset;
     # single-device tokens rely on the caller-supplied one.
     offset = (
         tokens.scales_offset
-        if isinstance(tokens, NVFP4Activation)
+        if isinstance(tokens, (NVFP4Activation, MXFP8Activation))
         else scales_offset
     )
+    if (
+        isinstance(tokens, MXFP8Activation)
+        and quant_config is not None
+        and quant_config.can_use_fused_swiglu
+        and accum_dtype is None
+        and not swiglu_limit
+    ):
+        assert isinstance(gate_up, (MXFP4Tensor, MXFP8Tensor))
+        return grouped_matmul_swiglu_mx_ep(
+            tokens,
+            gate_up,
+            expert_start_indices,
+            expert_ids,
+            estimated_total_m=estimated_total_m,
+            activation=activation,
+        )
     if (
         isinstance(tokens, NVFP4Activation)
         and quant_config is not None
@@ -1145,7 +1344,9 @@ def grouped_matmul_silu(
         assert offset is not None
         # Gate/up epilogue uses the uniform scale the dispatch quantized with;
         # the down input is re-quantized with the per-expert down.input_scale.
-        gate_up_scale = gate_up.weight_scale_2 * tokens.input_scale
+        scales = scales or NVFP4ExpertScales.of(
+            gate_up, down, tokens.input_scale
+        )
         c_packed, c_scales = grouped_matmul_swiglu_nvfp4_ep(
             tokens.data,
             tokens.scales,
@@ -1153,8 +1354,8 @@ def grouped_matmul_silu(
             expert_start_indices,
             offset,
             expert_ids,
-            gate_up_scale,
-            down.input_scale,
+            scales.gate_up,
+            scales.down_input_inv,
             estimated_total_m=estimated_total_m,
             activation=activation,
         )
@@ -1180,10 +1381,9 @@ def grouped_matmul_silu(
     # down matmul quantize.
     prequantized = isinstance(tokens, (FP8BlockActivation, NVFP4Activation))
     # The down matmul quantizes from bf16 only, so a float32 SwiGLU output has
-    # to be packed by the fused quantized SiLU. A bf16 output does not need it
-    # and must not take it. That kernel gives each expert group a share of the
-    # GPU's SMs, so it cannot be built for a model with more experts than the
-    # GPU has SMs.
+    # to be packed by the fused quantized SiLU. A bf16 output does not need
+    # it since the down matmul quantizes bf16 itself, with the same static
+    # per-expert input scale, and lands on the same result.
     requant_weight = (
         down
         if prequantized
@@ -1513,6 +1713,63 @@ def concat_nvfp4(*tensors: NVFP4Tensor, axis: int = 0) -> NVFP4Tensor:
         weight_scale=F.concat([q.weight_scale for q in tensors], axis=0),
         weight_scale_2=tensors[0].weight_scale_2,
         input_scale=tensors[0].input_scale,
+        block_size=block_size,
+    )
+
+
+def gate_scaled_nvfp4(gate_up: NVFP4Tensor) -> NVFP4Tensor:
+    """A fused gate/up stack carrying only its gate's per-tensor scales.
+
+    ``gate_up`` keeps ``[E, 2]`` ``(gate, up)`` scales; the result keeps the
+    gate's, as :func:`concat_nvfp4` does.
+    """
+    return NVFP4Tensor(
+        weight=gate_up.weight,
+        weight_scale=gate_up.weight_scale,
+        weight_scale_2=gate_up.weight_scale_2[:, 0],
+        input_scale=gate_up.input_scale[:, 0],
+        block_size=gate_up.block_size,
+    )
+
+
+def fold_up_scale_nvfp4(down: NVFP4Tensor, gate_up: NVFP4Tensor) -> NVFP4Tensor:
+    """Folds the up/gate scale ratio of a fused gate/up stack into ``down``.
+
+    A fused gate/up weight keeps only the gate's ``weight_scale_2``, so SwiGLU
+    yields ``v / r`` with ``r = up / gate`` scale. Quantizing that with
+    ``input_scale / r`` gives ``v``'s FP4 codes, and ``weight_scale_2 * r``
+    restores the scale in the down epilogue.
+    """
+    ratio = gate_up.weight_scale_2[:, 1] / gate_up.weight_scale_2[:, 0]
+    # The cast round trip keeps the compiler from folding a consumer's
+    # ``1 / input_scale`` into this quotient: one rounding instead of the
+    # two the per-expert form gave, and different FP4 codes.
+    input_scale = (down.input_scale / ratio).cast(DType.float64)
+    return NVFP4Tensor(
+        weight=down.weight,
+        weight_scale=down.weight_scale,
+        weight_scale_2=down.weight_scale_2 * ratio,
+        input_scale=input_scale.cast(DType.float32),
+        block_size=down.block_size,
+    )
+
+
+def concat_mxfp4(*tensors: MXFP4Tensor, axis: int = 0) -> MXFP4Tensor:
+    """Concatenate two or more :class:`MXFP4Tensor`s along an output axis.
+
+    Any axis but the packed K axis: with no per-tensor scale, the weights and
+    their block scales concatenate alike, stacked experts included.
+    """
+    if not tensors:
+        raise ValueError("concat_mxfp4 requires at least one tensor")
+    block_size = tensors[0].block_size
+    if any(q.block_size != block_size for q in tensors[1:]):
+        raise ValueError("All MXFP4Tensors must have the same block_size")
+    if axis in (-1, len(tensors[0].weight.shape) - 1):
+        raise ValueError("MXFP4Tensor concat cannot split the packed K axis")
+    return MXFP4Tensor(
+        weight=F.concat([q.weight for q in tensors], axis=axis),
+        weight_scale=F.concat([q.weight_scale for q in tensors], axis=axis),
         block_size=block_size,
     )
 

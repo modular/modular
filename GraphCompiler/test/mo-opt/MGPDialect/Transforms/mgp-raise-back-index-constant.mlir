@@ -32,7 +32,7 @@ mogg.func @raise_multi private(%chain: !mef.chain, %ctx: !mgp.context) -> (index
   mogg.output %idx : index
 }
 
-mgp.model @top subgraph : mof devices [#M.device_ref<"cpu", 0>]
+mgp.model @top subgraph devices [#M.device_ref<"cpu", 0>]
 init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
     %0 = grt.chain.create ()
     %1 = mgp.context.create 1

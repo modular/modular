@@ -23,7 +23,8 @@ from std.testing import assert_almost_equal, assert_equal
 from max.gpu import WARP_SIZE, thread_idx, warp_id
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
-from layout import Layout, TensorLayout, TileTensor, row_major, stack_allocation
+from layout import TensorLayout, TileTensor, row_major, stack_allocation
+from layout.coord import coord
 from nn.softmax import _online_softmax_iter_for_mma_output
 
 comptime NUM_THREADS = 64
@@ -96,11 +97,12 @@ def _kernel[
                     )
         _online_softmax_iter_for_mma_output[
             .float32,
-            Layout.row_major(2, 2),
-            Layout.row_major(1, 2),
-            Layout.row_major(8, 4),
+            coord[2, 2],
+            coord[1, 2],
+            coord[8, 4],
             use_exp2=True,
-            fragment_layout=Layout.row_major(1, 2),
+            frag_rows=1,
+            frag_cols=2,
         ](accum_fragment, scores_fragment, scratch, rowmax.ptr, rowsum.ptr)
     comptime for m in range(2):
         output[thread_idx.x, m] = rowmax[m, 0]

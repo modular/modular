@@ -16,11 +16,10 @@ from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from ..inkling.memory_planner import InklingMemoryPlanner
-from ..inkling.model_config import InklingConfig
 from ..inkling.reasoning import (
     InklingReasoningParser,  # noqa: F401  registers "inkling"
 )
@@ -28,8 +27,10 @@ from ..inkling.tokenizer import InklingTokenizer
 from ..inkling.tool_parser import (
     InklingToolParser,  # noqa: F401  registers "inkling"
 )
-from ..inkling.weight_adapters import convert_safetensor_state_dict
-from .model import InklingModel
+from .model_config import InklingConfig
+from .modules import InklingDecoder, InklingVision
+from .registered_batch_processor import InklingModuleV3BatchProcessor
+from .weight_adapters import convert_registered_state_dict
 
 inkling_modulev3_arch = SupportedArchitecture(
     name="InklingForConditionalGeneration_ModuleV3",
@@ -39,13 +40,17 @@ inkling_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=InklingConfig.DEFAULT_ENCODING,
     supported_encodings=InklingConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=InklingModel,
+    modules={
+        GraphRole.DECODER: InklingDecoder,
+        GraphRole.VISION: InklingVision,
+    },
+    batching=InklingModuleV3BatchProcessor,
     tokenizer=InklingTokenizer,
     context_type=TextAndVisionContext,
     config=InklingConfig,
     tool_parser="inkling",
     weight_adapters={
-        WeightsFormat.safetensors: convert_safetensor_state_dict,
+        WeightsFormat.safetensors: convert_registered_state_dict,
     },
     multi_gpu_supported=True,
     supports_device_graph_capture=True,

@@ -29,6 +29,7 @@ model:
     enable_prefix_caching: false  # prefix-cache determinism unverified on MI355
 
 runtime:
+  prefer_module_v3: false
   ep_size: 2
   max_batch_input_tokens: 8192
   max_batch_size: 8

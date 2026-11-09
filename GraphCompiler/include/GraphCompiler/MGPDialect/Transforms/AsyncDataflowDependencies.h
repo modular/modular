@@ -106,8 +106,6 @@ public:
 
   /// What aspects of the analysis are required.
   enum AnalysisLevel {
-    /// sameAs, maybeSameAs, isAlwaysReady, impliesReady
-    kImpliesReady,
     /// areDisjoint
     kDisjoint,
     /// exclusiveSet, isNonSelfOverlapping

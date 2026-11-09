@@ -852,6 +852,15 @@ public:
            hipCtxGetCurrent_ != nullptr;
   }
 
+  /// Whether this driver can read and reorder the dependent edges of a node in
+  /// a captured graph.
+  bool canReorderGraphEdges() const {
+    return hipStreamGetCaptureInfo_v2_ != nullptr &&
+           hipGraphNodeGetDependentNodes_ != nullptr &&
+           hipGraphRemoveDependencies_ != nullptr &&
+           hipGraphAddDependencies_ != nullptr;
+  }
+
   // Declared by hand: HIP_FUNC cannot take a zero-argument entry point, since
   // an empty argument list still expands to one parameter.
   Result hipGetLastError() const { return hipGetLastError_(); }

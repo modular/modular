@@ -27,13 +27,24 @@ def api() -> String:
     return "default"
 
 
-def create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
+def create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext[]:
     # Create an instance of the DeviceContext
-    var test_ctx: DeviceContext
+    var test_ctx: DeviceContext[]
 
     comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         print("Using DeviceContext: V2 - " + api())
-        test_ctx = DeviceContext(device_id=device_id, api=api())
+        var requested_api = api()
+        # The api is chosen at runtime, so the CPU variant builds a CPU-target
+        # context (what the constructor requires for "cpu") and rebinds it to
+        # the `DeviceContext[]` the suites are written against.
+        # TODO(MSTDL-3329): Return a `DeviceContext.Unknown` instead, which is
+        # agnostic to the static target, and drop this rebind.
+        if requested_api == "cpu":
+            test_ctx = rebind_var[DeviceContext[]](
+                DeviceContext.CPU(device_id=device_id, api=requested_api^)
+            )
+        else:
+            test_ctx = DeviceContext(device_id=device_id, api=requested_api^)
     elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():
         raise Error("DeviceContextV1 is unsupported")
     else:
