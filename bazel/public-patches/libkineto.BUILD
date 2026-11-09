@@ -1,19 +1,19 @@
 # Bazel build for libkineto.
 #
-# Pinned to the SHA bundled with torch==2.12.0+cu130 (April 2026), the
-# pairing empirically validated against HTA 0.5.0 in the initial spike.
+# Sources come from pytorch/pytorch at the v2.15.0 tag, the libkineto bundled
+# with torch==2.15.0 (pytorch/kineto is archived). The repo root holds only
+# libkineto/{include,src,libkineto_defs.bzl}, fetched file by file by
+# libkineto.bzl.
 #
 # ----------------------------------------------------------------------
-# Cross-cutting build fixes maintained by this file (revisit on SHA bump):
+# Cross-cutting build fixes maintained by this file (revisit on pin bump):
 #
 #   1. Source list comes from libkineto's own libkineto_defs.bzl — plain
-#      Starlark, load()-able directly. The only Bazel-specific tweak
-#      needed is deduping src/Demangle.cpp (CMake silently dedupes; Bazel
-#      does not).
-#   2. -fexceptions + -frtti are added to LIBKINETO_COPTS because the rest
-#      of the MAX codebase compiles with -fno-exceptions / -fno-rtti and
-#      libkineto needs both. The flags are scoped via `copts` so they do
-#      not leak to dependents.
+#      Starlark, load()-able directly. The source lists are deduped because
+#      CMake silently dedupes and Bazel does not; older pins listed
+#      src/Demangle.cpp twice.
+#   2. LIBKINETO_COPTS turns exceptions back on and silences a warning the
+#      MAX toolchain promotes to an error; see the comment on it below.
 #   3. CUDA's cuda_runtime.h includes "crt/host_config.h", which the
 #      cuda_x86_64 / cuda_sbsa redistributables don't ship. No special
 #      handling is needed here: cuda_runtime_headers (cuda_cudart.BUILD's
@@ -22,7 +22,7 @@
 #   4. ENABLE_IPC_FABRIC is defined so libkineto's IpcFabricConfigClient /
 #      DaemonConfigLoader connect to a Dynolog daemon for on-demand captures.
 #      The required ipcfabric headers come from @dynolog//:ipcfabric_headers
-#      (see dynolog.BUILD for why the kineto tarball can't supply them).
+#      rather than libkineto's vendored copy (see dynolog.BUILD).
 #      Verified end-to-end against Dynolog 0.6.0.
 #
 # Deferred (intentionally gated off in v1):
@@ -75,13 +75,14 @@ cc_library(
 
 # Upstream libkineto exports KINETO_COMPILER_FLAGS from libkineto_defs.bzl:
 # ["-fexceptions", "-Wno-deprecated-declarations", "-Wno-unused-function",
-#  "-Wno-unused-private-field"]. Reusing it keeps us in sync across SHA
-# bumps. We add -frtti on top because libkineto uses dynamic_cast in
-# CuptiRangeProfilerConfig.h and the MAX toolchain default is -fno-rtti.
-# Both -fexceptions and -frtti are scoped via `copts` so they apply to
-# libkineto's own sources but do not leak to dependents (the rest of the
-# MAX codebase compiles with -fno-exceptions / -fno-rtti).
-LIBKINETO_COPTS = KINETO_COMPILER_FLAGS + ["-frtti"]
+#  "-Wno-unused-private-field"]. Reusing it keeps us in sync across pin
+# bumps. -fexceptions is scoped via `copts` so it applies to libkineto's own
+# sources but does not leak to dependents (the rest of the MAX codebase
+# compiles with -fno-exceptions). The sources we build no longer need RTTI
+# (only the unbuilt xpupti plugin uses dynamic_cast), so they keep the MAX
+# default -fno-rtti. Upstream writes `std::scoped_lock lock(m)` throughout,
+# which -Werror,-Wctad-maybe-unsupported rejects.
+LIBKINETO_COPTS = KINETO_COMPILER_FLAGS + ["-Wno-ctad-maybe-unsupported"]
 
 # Defines that only libkineto's own sources need. `local_defines` means
 # they apply during compilation of this cc_library's `srcs` but do not
@@ -100,12 +101,11 @@ LIBKINETO_LOCAL_DEFINES = [
 # libkineto's GPU backends are compile-time mutually exclusive (the #if
 # HAS_CUPTI / #elif HAS_ROCTRACER chain in ActivityProfilerController.cpp
 # does no runtime vendor detection), so the AMD flavor is a sibling
-# cc_library rather than extra defines on :libkineto. HAS_ROCTRACER is the
-# single umbrella define for both AMD paths at this SHA; leaving
-# ROCTRACER_FALLBACK undefined selects the rocprofiler-sdk implementation
-# (what upstream CMake auto-picks for ROCm >= 6.4) instead of the deprecated
-# legacy-roctracer one. __HIP_PLATFORM_AMD__ propagates from the
-# rocprofiler/HIP headers dep, so it is not repeated here.
+# cc_library rather than extra defines on :libkineto. HAS_ROCTRACER is still
+# the AMD backend define even though upstream removed the legacy roctracer
+# path; it now selects the rocprofiler-sdk implementation unconditionally.
+# __HIP_PLATFORM_AMD__ propagates from the rocprofiler/HIP headers dep, so it
+# is not repeated here.
 LIBKINETO_ROCM_LOCAL_DEFINES = [
     "KINETO_NAMESPACE=libkineto",
     "HAS_ROCTRACER=1",
@@ -133,11 +133,11 @@ cc_library(
     ],
 )
 
-# Upstream libkineto_defs.bzl lists src/Demangle.cpp in both the cupti
-# source list and the cpu-only source list. CMake's add_library dedupes
-# silently; Bazel's srcs attribute does not. Starlark lacks set literals,
-# so we use a dict whose keys are the dedup set, then sort for stable
-# action keys across builds.
+# Older libkineto_defs.bzl listed src/Demangle.cpp in both the cupti source
+# list and the cpu-only source list. CMake's add_library dedupes silently;
+# Bazel's srcs attribute does not, so keep the dedup as a guard for pin
+# bumps. Starlark lacks set literals, so we use a dict whose keys are the
+# dedup set, then sort for stable action keys across builds.
 _LIBKINETO_CUPTI_SRCS = sorted({
     "libkineto/" + src: None
     for src in get_libkineto_cupti_srcs(with_api = False)
@@ -175,9 +175,8 @@ cc_library(
     ],
 )
 
-# Sorted-set shape mirrors _LIBKINETO_CUPTI_SRCS above. At this SHA the
-# rocprofiler list has no duplicate (only the cupti list carries Demangle.cpp
-# twice), so the dedup just guards future SHA bumps.
+# Sorted-set shape mirrors _LIBKINETO_CUPTI_SRCS above; the dedup guards
+# future pin bumps.
 _LIBKINETO_ROCM_SRCS = sorted({
     "libkineto/" + src: None
     for src in get_libkineto_rocprofiler_srcs(with_api = False)
