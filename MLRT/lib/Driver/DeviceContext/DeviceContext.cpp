@@ -1988,6 +1988,14 @@ DeviceContext::operator==(const DeviceContext &other) const {
     return false;
   void *streamOther = (*errStream)->ptr();
 
+  // A backend with no native stream (the CPU, a virtual device) reports a null
+  // one, so two null streams say nothing about which device each context is
+  // on. Without this a CPU context equals a virtual accelerator's, and moving
+  // a host buffer to the virtual device hands back the host buffer.
+  if (!streamThis && !streamOther)
+    return device().api() == other.device().api() &&
+           device().id() == other.device().id();
+
   return streamThis == streamOther;
 }
 
