@@ -10,17 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Checks the fused NVFP4 EP dispatch's prefill send against the stock kernel.
+"""Checks the fused EP dispatch's prefill send against the stock kernel.
 
 Runs on every visible GPU (1, 2, 4 or 8) at DeepSeek-V4.1's shape: hidden
-5120, top-k 6, 96 experts a rank. `dispatch_warp_min_tokens` picks the kernel:
--1 is stock, and any other value counts experts with the histogram monitor and
-sends one token per warp from that many tokens a rank on. Each variant (the
+5120, top-k 6, 96 experts a rank, for both wire formats that take the warp
+send: NVFP4 and MXFP8 (the rows DeepSeek-V4.1's MXFP4 experts read).
+`dispatch_warp_min_tokens` picks the kernel: -1 is stock, and any other value
+counts experts with the histogram monitor and sends one token per warp from
+that many tokens a rank on. Each variant (the
 histogram with the per-CTA send, the default `EP_WARP_TOKENS_MIN_TOKENS`, and
 the warp send at every count) dispatches the same tokens as stock, and its
 result must equal stock's as sets keyed by (destination rank, local expert,
 source rank, source token): the receive buffer's messages, and the copy-out
-the grouped GEMM reads (FP4 codes, the 5D scale-factor tiles, src_info), plus
+the grouped GEMM reads (codes, the 5D scale-factor tiles, src_info), plus
 the per (expert, source rank) row counts, which must also match the routing.
 Each (local expert, source rank) of the receive buffer must list exactly the
 source tokens the routing sends it, and each listed token's message must
@@ -54,6 +56,7 @@ from comm.sync import enable_p2p
 from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from layout import TileTensor, Idx, row_major
 from linalg.fp4_utils import (
+    MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     SF_ATOM_K,
     SF_ATOM_M,
@@ -73,9 +76,6 @@ from std.testing import assert_equal, assert_true
 comptime HIDDEN = 5120
 comptime TOP_K = 6
 comptime N_LOCAL = 96
-comptime CODE_BYTES = HIDDEN // 2
-comptime N_SCALES = HIDDEN // NVFP4_SF_VECTOR_SIZE
-comptime K_TILES = HIDDEN // (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
 
 # `dispatch_warp_min_tokens` values besides the default: the stock kernel, the
 # histogram monitor with the per-CTA send (a threshold above every count), and
@@ -124,17 +124,28 @@ def legalize_topk_ids(ids: MutPointer[Int32, _], n_tokens: Int, n_experts: Int):
                     randint(row.unsafe_offset(i), 1, 0, n_experts - 1)
 
 
-struct DispatchCase[n_ranks: Int, max_tokens: Int]:
-    """Buffers and launches of the NVFP4 fused dispatch on `n_ranks` GPUs."""
+struct DispatchCase[n_ranks: Int, max_tokens: Int, mxfp8: Bool]:
+    """Buffers and launches of the NVFP4 (or, with `mxfp8`, MXFP8) fused
+    dispatch on `n_ranks` GPUs."""
 
+    comptime quant_dtype = DType.float8_e4m3fn if Self.mxfp8 else DType.uint8
+    comptime scales_dtype = (
+        DType.float8_e8m0fnu if Self.mxfp8 else DType.float8_e4m3fn
+    )
+    comptime sf_vector = (
+        MXFP8_SF_VECTOR_SIZE if Self.mxfp8 else NVFP4_SF_VECTOR_SIZE
+    )
+    comptime code_bytes = HIDDEN if Self.mxfp8 else HIDDEN // 2
+    comptime n_scales = HIDDEN // Self.sf_vector
+    comptime k_tiles = HIDDEN // (Self.sf_vector * SF_ATOM_K)
     comptime n_experts = N_LOCAL * Self.n_ranks
     comptime max_recv = Self.n_ranks * Self.max_tokens * TOP_K
     comptime scales_rows = Self.max_recv + N_LOCAL * SF_MN_GROUP_SIZE
-    comptime out_layout = row_major((Idx[Self.max_recv], Idx[CODE_BYTES]))
+    comptime out_layout = row_major((Idx[Self.max_recv], Idx[Self.code_bytes]))
     comptime scales_layout = row_major(
         (
             Self.scales_rows // SF_MN_GROUP_SIZE,
-            Idx[K_TILES],
+            Idx[Self.k_tiles],
             Idx[SF_ATOM_M[0]],
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
@@ -142,8 +153,8 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
     )
     comptime offsets_layout = row_major[N_LOCAL]()
     comptime Fmt = NVBlockScaledTokenFormat[
-        quant_dtype=DType.uint8,
-        scales_dtype=DType.float8_e4m3fn,
+        quant_dtype=Self.quant_dtype,
+        scales_dtype=Self.scales_dtype,
         output_layout=type_of(Self.out_layout),
         scales_offset_layout=type_of(Self.offsets_layout),
         HIDDEN,
@@ -174,8 +185,8 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
     var counters: List[DeviceBuffer[.int32]]
     var tokens: List[DeviceBuffer[.bfloat16]]
     var topk: List[DeviceBuffer[.int32]]
-    var codes: List[DeviceBuffer[.uint8]]
-    var scales: List[DeviceBuffer[.float8_e4m3fn]]
+    var codes: List[DeviceBuffer[Self.quant_dtype]]
+    var scales: List[DeviceBuffer[Self.scales_dtype]]
     var scales_offsets: List[DeviceBuffer[.uint32]]
     var row_offsets: List[DeviceBuffer[.uint32]]
     var expert_ids: List[DeviceBuffer[.int32]]
@@ -219,8 +230,8 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
             self.counters.append(ctx.enqueue_create_buffer[.int32](Self.n_counters))
             self.tokens.append(ctx.enqueue_create_buffer[.bfloat16](max(Self.max_tokens, 1) * HIDDEN))
             self.topk.append(ctx.enqueue_create_buffer[.int32](max(Self.max_tokens, 1) * TOP_K))
-            self.codes.append(ctx.enqueue_create_buffer[.uint8](Self.max_recv * CODE_BYTES))
-            self.scales.append(ctx.enqueue_create_buffer[.float8_e4m3fn](Self.scales_rows * N_SCALES))
+            self.codes.append(ctx.enqueue_create_buffer[Self.quant_dtype](Self.max_recv * Self.code_bytes))
+            self.scales.append(ctx.enqueue_create_buffer[Self.scales_dtype](Self.scales_rows * Self.n_scales))
             self.scales_offsets.append(ctx.enqueue_create_buffer[.uint32](N_LOCAL))
             self.row_offsets.append(ctx.enqueue_create_buffer[.uint32](N_LOCAL + 1))
             self.expert_ids.append(ctx.enqueue_create_buffer[.int32](N_LOCAL))
@@ -288,13 +299,18 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
             var ctx = self.ctxs[r]
             ctx.enqueue_memset(self.counters[r], Int32(0))
             ctx.enqueue_memset(self.recv_count[r], UInt64.MAX_FINITE)
-            ctx.enqueue_memset(self.codes[r], UInt8(0))
+            ctx.enqueue_memset(
+                self.codes[r].create_sub_buffer[.uint8](
+                    0, Self.max_recv * Self.code_bytes
+                ),
+                UInt8(0),
+            )
             ctx.enqueue_memset(self.src_info[r], Int32(-1))
             if poison:
                 ctx.enqueue_memset(self.recv[r], UInt8(0xFF))
                 ctx.enqueue_memset(
                     self.scales[r].create_sub_buffer[.uint8](
-                        0, Self.scales_rows * N_SCALES
+                        0, Self.scales_rows * Self.n_scales
                     ),
                     UInt8(0xFF),
                 )
@@ -310,7 +326,6 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
             Self.n_ranks,
             1,
             False,
-            "gpu",
             dispatch_warp_min_tokens=min_tokens,
         ](
             self.handlers[r],
@@ -434,10 +449,11 @@ struct Snapshot(Movable):
 
 
 def snapshot[
-    n_ranks: Int, max_tokens: Int
+    n_ranks: Int, max_tokens: Int, mxfp8: Bool
 ](
-    dc: DispatchCase[n_ranks, max_tokens], host: HostInputs, r: Int
+    dc: DispatchCase[n_ranks, max_tokens, mxfp8], host: HostInputs, r: Int
 ) raises -> Snapshot:
+    comptime code_bytes = type_of(dc).code_bytes
     var s = Snapshot()
     var ctx = dc.ctxs[r]
     s.row_offsets = List[UInt32](length=N_LOCAL + 1, fill=0)
@@ -447,7 +463,7 @@ def snapshot[
     ctx.synchronize()
     var rows = Int(s.row_offsets[N_LOCAL])
     s.src_info = List[Int32](length=max(rows, 1) * 2, fill=0)
-    s.codes = List[UInt8](length=max(rows, 1) * CODE_BYTES, fill=0)
+    s.codes = List[UInt8](length=max(rows, 1) * code_bytes, fill=0)
     if rows > 0:
         ctx.enqueue_copy(
             s.src_info.unsafe_ptr(),
@@ -455,9 +471,9 @@ def snapshot[
         )
         ctx.enqueue_copy(
             s.codes.unsafe_ptr(),
-            dc.codes[r].create_sub_buffer[.uint8](0, rows * CODE_BYTES),
+            dc.codes[r].create_sub_buffer[.uint8](0, rows * code_bytes),
         )
-    var n_scale_bytes = dc.scales_rows * N_SCALES
+    var n_scale_bytes = dc.scales_rows * dc.n_scales
     s.scales = List[UInt8](length=n_scale_bytes, fill=0)
     ctx.enqueue_copy(
         s.scales.unsafe_ptr(),
@@ -486,7 +502,9 @@ def snapshot[
     return s^
 
 
-def scale_index(s: Snapshot, expert: Int, row: Int, k: Int) -> Int:
+def scale_index(
+    s: Snapshot, expert: Int, row: Int, k: Int, k_tiles: Int
+) -> Int:
     """Where the copy-out put scale `k` of output row `row` in the 5D
     scale-factor tiles: tile `t` of an expert's rows takes block
     `start // 128 + scales_offset[expert] + t`, row `u` of the tile."""
@@ -499,7 +517,7 @@ def scale_index(s: Snapshot, expert: Int, row: Int, k: Int) -> Int:
     )
     var u = local % SF_MN_GROUP_SIZE
     return (
-        ((block * K_TILES + k // SF_ATOM_K) * SF_ATOM_M[0] + u % SF_ATOM_M[0])
+        ((block * k_tiles + k // SF_ATOM_K) * SF_ATOM_M[0] + u % SF_ATOM_M[0])
         * SF_ATOM_M[1]
         + u // SF_ATOM_M[0]
     ) * SF_ATOM_K + k % SF_ATOM_K
@@ -525,7 +543,7 @@ def rows_by_key(
 
 
 def compare[
-    n_ranks: Int, max_tokens: Int
+    n_ranks: Int, max_tokens: Int, mxfp8: Bool
 ](
     host: HostInputs,
     ref_snaps: List[Snapshot],
@@ -538,6 +556,8 @@ def compare[
     routing, the receive buffer's messages, and the copy-out's codes,
     scales and src_info.
     """
+    comptime DC = DispatchCase[n_ranks, max_tokens, mxfp8]
+    comptime code_bytes = DC.code_bytes
     var bad = 0
     for d in range(n_ranks):
         ref s0 = ref_snaps[d]
@@ -570,17 +590,17 @@ def compare[
                     continue
                 if s0.src_info[2 * r0 + 1] != s1.src_info[2 * r1 + 1]:
                     bad += 1
-                for b in range(CODE_BYTES):
+                for b in range(code_bytes):
                     if (
-                        s0.codes[r0 * CODE_BYTES + b]
-                        != s1.codes[r1 * CODE_BYTES + b]
+                        s0.codes[r0 * code_bytes + b]
+                        != s1.codes[r1 * code_bytes + b]
                     ):
                         bad += 1
                         break
-                for k in range(N_SCALES):
+                for k in range(DC.n_scales):
                     if (
-                        s0.scales[scale_index(s0, e, r0, k)]
-                        != s1.scales[scale_index(s1, e, r1, k)]
+                        s0.scales[scale_index(s0, e, r0, k, DC.k_tiles)]
+                        != s1.scales[scale_index(s1, e, r1, k, DC.k_tiles)]
                     ):
                         bad += 1
                         break
@@ -615,7 +635,7 @@ def compare[
                     if not routed:
                         continue
                     var row = (src * max_tokens + t) * msg_bytes
-                    var off = row + CODE_BYTES + N_SCALES
+                    var off = row + DC.Fmt.src_info_offset()
                     var named = Int(
                         Int32(s1.recv[off])
                         | (Int32(s1.recv[off + 1]) << 8)
@@ -632,10 +652,10 @@ def compare[
 
 
 def snapshots[
-    n_ranks: Int, max_tokens: Int
-](dc: DispatchCase[n_ranks, max_tokens], host: HostInputs) raises -> List[
-    Snapshot
-]:
+    n_ranks: Int, max_tokens: Int, mxfp8: Bool
+](
+    dc: DispatchCase[n_ranks, max_tokens, mxfp8], host: HostInputs
+) raises -> List[Snapshot]:
     var out = List[Snapshot]()
     for r in range(n_ranks):
         out.append(snapshot(dc, host, r))
@@ -643,9 +663,9 @@ def snapshots[
 
 
 def run_variant[
-    n_ranks: Int, max_tokens: Int, min_tokens: Int
+    n_ranks: Int, max_tokens: Int, mxfp8: Bool, min_tokens: Int
 ](
-    dc: DispatchCase[n_ranks, max_tokens],
+    dc: DispatchCase[n_ranks, max_tokens, mxfp8],
     host: HostInputs,
     stock: List[Snapshot],
     name: StaticString,
@@ -653,7 +673,7 @@ def run_variant[
 ) raises -> List[Snapshot]:
     dc.run[min_tokens](host)
     var snaps = snapshots(dc, host)
-    var bad = compare[n_ranks, max_tokens](host, stock, snaps, dc.msg)
+    var bad = compare[n_ranks, max_tokens, mxfp8](host, stock, snaps, dc.msg)
     print("   ", name, "mismatches", bad)
     if expect_fail:
         assert_true(bad > 0, "a planted fault passed the check")
@@ -663,9 +683,9 @@ def run_variant[
 
 
 def check_tokens[
-    n_ranks: Int, max_tokens: Int
-](dc: DispatchCase[n_ranks, max_tokens], n_tokens: List[Int]) raises:
-    print(t"== ranks {n_ranks} tokens", end="")
+    n_ranks: Int, max_tokens: Int, mxfp8: Bool
+](dc: DispatchCase[n_ranks, max_tokens, mxfp8], n_tokens: List[Int]) raises:
+    print(t"== mxfp8 {mxfp8} ranks {n_ranks} tokens", end="")
     for r in range(n_ranks):
         print(" ", n_tokens[r], end="")
     print()
@@ -675,17 +695,17 @@ def check_tokens[
     var stock = snapshots(dc, host)
     # The stock result must itself match the routing.
     assert_equal(
-        compare[n_ranks, max_tokens](host, stock, stock, dc.msg),
+        compare[n_ranks, max_tokens, mxfp8](host, stock, stock, dc.msg),
         0,
         "stock dispatch disagrees with the routing",
     )
-    _ = run_variant[n_ranks, max_tokens, PER_CTA_SEND](
+    _ = run_variant[n_ranks, max_tokens, mxfp8, PER_CTA_SEND](
         dc, host, stock, "histogram, per-CTA send"
     )
-    _ = run_variant[n_ranks, max_tokens, EP_WARP_TOKENS_MIN_TOKENS](
+    _ = run_variant[n_ranks, max_tokens, mxfp8, EP_WARP_TOKENS_MIN_TOKENS](
         dc, host, stock, "final (warp send from the threshold, histogram)"
     )
-    var snaps = run_variant[n_ranks, max_tokens, WARP_SEND](
+    var snaps = run_variant[n_ranks, max_tokens, mxfp8, WARP_SEND](
         dc, host, stock, "warp send at every count, histogram"
     )
 
@@ -697,7 +717,7 @@ def check_tokens[
         return
     # A corrupted copy-out byte.
     snaps[d].codes[0] ^= 0x5A
-    var bad = compare[n_ranks, max_tokens](host, stock, snaps, dc.msg)
+    var bad = compare[n_ranks, max_tokens, mxfp8](host, stock, snaps, dc.msg)
     print("    planted: corrupted code byte mismatches", bad)
     assert_true(bad > 0, "a corrupted code byte passed the check")
     snaps[d].codes[0] ^= 0x5A
@@ -709,7 +729,7 @@ def check_tokens[
     var dropped = snaps[d].row_offsets[e + 1] - snaps[d].row_offsets[e]
     for i in range(e + 1, N_LOCAL + 1):
         snaps[d].row_offsets[i] -= dropped
-    bad = compare[n_ranks, max_tokens](host, stock, snaps, dc.msg)
+    bad = compare[n_ranks, max_tokens, mxfp8](host, stock, snaps, dc.msg)
     print("    planted: dropped expert count mismatches", bad)
     assert_true(bad > 0, "a dropped expert count passed the check")
     for i in range(e + 1, N_LOCAL + 1):
@@ -720,7 +740,7 @@ def check_tokens[
         src += 1
     ref listed = snaps[d].index[(e * n_ranks + src) * max_tokens * INDEX_WORDS]
     listed = Int32((Int(listed) + 1) % max(n_tokens[src], 2))
-    bad = compare[n_ranks, max_tokens](host, stock, snaps, dc.msg)
+    bad = compare[n_ranks, max_tokens, mxfp8](host, stock, snaps, dc.msg)
     print("    planted: wrong receive token index mismatches", bad)
     assert_true(bad > 0, "a wrong receive token index passed the check")
     # A changed input element changes that token's codes or scales.
@@ -728,16 +748,16 @@ def check_tokens[
     while n_tokens[r0] == 0:
         r0 += 1
     dc.poke(r0, 0, BFloat16(1000.0))
-    _ = run_variant[n_ranks, max_tokens, WARP_SEND](
+    _ = run_variant[n_ranks, max_tokens, mxfp8, WARP_SEND](
         dc, host, stock, "planted: changed input", expect_fail=True
     )
     dc.poke(r0, 0, host.x[r0][0])
 
 
 def rotated_medians[
-    n_ranks: Int, max_tokens: Int
+    n_ranks: Int, max_tokens: Int, mxfp8: Bool
 ](
-    dc: DispatchCase[n_ranks, max_tokens],
+    dc: DispatchCase[n_ranks, max_tokens, mxfp8],
     n_tokens: List[Int],
     arms: List[Int],
 ) raises -> List[List[Float64]]:
@@ -761,8 +781,10 @@ def rotated_medians[
 
 
 def time_arms[
-    n_ranks: Int, max_tokens: Int
-](dc: DispatchCase[n_ranks, max_tokens], n: Int, label: StaticString) raises:
+    n_ranks: Int, max_tokens: Int, mxfp8: Bool
+](
+    dc: DispatchCase[n_ranks, max_tokens, mxfp8], n: Int, label: StaticString
+) raises:
     """Times stock, the histogram alone, the final config and a stock control
     at `n` uploaded tokens a rank."""
     var names: List[StaticString] = [
@@ -780,14 +802,14 @@ def time_arms[
     var med = rotated_medians(dc, List[Int](length=n_ranks, fill=n), arms)
     for arm in range(len(arms)):
         print(
-            t"{label} summary {names[arm]} median over rounds us"
+            t"{label} mxfp8 {mxfp8} summary {names[arm]} median over rounds us"
             t" {med[arm][1]} rounds {med[arm][0]} {med[arm][1]} {med[arm][2]}"
         )
 
 
 def sweep[
-    n_ranks: Int, max_tokens: Int
-](dc: DispatchCase[n_ranks, max_tokens]) raises:
+    n_ranks: Int, max_tokens: Int, mxfp8: Bool
+](dc: DispatchCase[n_ranks, max_tokens, mxfp8]) raises:
     """Stock, both sends with the histogram, and a second per-CTA arm as the
     control, over uploaded-token prefixes."""
     var counts: List[Int] = [
@@ -809,23 +831,28 @@ def sweep[
         var n = min(c, max_tokens)
         var med = rotated_medians(dc, List[Int](length=n_ranks, fill=n), arms)
         print(
-            t"SWEEP tokens {n} stock us {med[0][1]} per-CTA send+histogram us"
-            t" {med[1][1]} warp send+histogram us {med[2][1]} per-CTA control"
-            t" us {med[3][1]} warp rounds {med[2][0]} {med[2][2]} per-CTA"
-            t" rounds {med[1][0]} {med[1][2]}"
+            t"SWEEP mxfp8 {mxfp8} tokens {n} stock us {med[0][1]} per-CTA"
+            t" send+histogram us {med[1][1]} warp send+histogram us"
+            t" {med[2][1]} per-CTA control us {med[3][1]} warp rounds"
+            t" {med[2][0]} {med[2][2]} per-CTA rounds {med[1][0]} {med[1][2]}"
         )
 
 
 def run_all[n_ranks: Int](ctxs: List[DeviceContext[]]) raises:
+    run_format[n_ranks, False](ctxs)
+    run_format[n_ranks, True](ctxs)
+
+
+def run_format[n_ranks: Int, mxfp8: Bool](ctxs: List[DeviceContext[]]) raises:
     comptime big = 8168
-    var small_case = DispatchCase[n_ranks, 512](ctxs)
+    var small_case = DispatchCase[n_ranks, 512, mxfp8](ctxs)
     for n in [0, 1, 13, 509]:
         check_tokens(small_case, List[Int](length=n_ranks, fill=n))
     comptime if n_ranks > 1:
         var ragged = List[Int](length=n_ranks, fill=509)
         ragged[1] = 0
         check_tokens(small_case, ragged)
-    var big_case = DispatchCase[n_ranks, big](ctxs)
+    var big_case = DispatchCase[n_ranks, big, mxfp8](ctxs)
     check_tokens(big_case, List[Int](length=n_ranks, fill=big))
     if getenv("EP_DISPATCH_AB") == "1":
         big_case.upload(
@@ -839,7 +866,7 @@ def run_all[n_ranks: Int](ctxs: List[DeviceContext[]]) raises:
 def main() raises:
     comptime assert (
         default_accelerator().is_nvidia_gpu()
-    ), "the NVFP4 dispatch format is tested on NVIDIA GPUs"
+    ), "the NVFP4 and MXFP8 dispatch formats are tested on NVIDIA GPUs"
     var n = DeviceContext.number_of_devices()
     if n > 1 and not enable_p2p():
         raise Error("Cannot enable P2P Mem Access!")

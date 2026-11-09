@@ -49,7 +49,7 @@ def check_list_length[
 
 
 # ===-----------------------------------------------------------------------===#
-# comptime for (was @parameter for) implementation details
+# comptime for implementation details
 # ===-----------------------------------------------------------------------===#
 
 

@@ -54,8 +54,5 @@ class SBDebuggerUtils
 class SBTargetUtils
     : public Detail::SBClassUtils<lldb::SBTarget, lldb::TargetSP> {};
 
-class SBValueUtils
-    : public Detail::SBClassUtils<lldb::SBValue, lldb::ValueObjectSP> {};
-
 } // namespace M::KGEN::Mojo
 #endif // KGEN_LIB_MOJOLLDB_SCRIPTINGBRIDGE_SBCLASSUTILS_H

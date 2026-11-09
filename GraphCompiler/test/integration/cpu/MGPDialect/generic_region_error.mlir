@@ -5,7 +5,7 @@
 
 // CHECK-LABEL:--- Running 'mgp_assert_false':
 // expected-error @+1 {{'mgp_assert_false' returned <error: ASSERT>}}
-mgp.model @mgp_assert_false : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @mgp_assert_false devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
     %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
   %ch2 = mgp.runtime.create %ch0, %ctx[0]

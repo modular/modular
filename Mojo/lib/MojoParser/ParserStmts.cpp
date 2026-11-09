@@ -571,6 +571,45 @@ void StmtParser::pushChildScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard,
                                                          loc, curDeclScope);
 }
 
+/// Shadow each type parameter that a `conforms_to(T, Trait)` component of
+/// `assumptions` refines with its downcasted type value in `scope`.
+static void shadowRefinedTypeParams(ArrayRef<ConstraintAttr> assumptions,
+                                    ASTDecl &scope) {
+  SmallVector<ParamDeclRefAttr, 2> paramRefs;
+  for (ConstraintAttr assumption : assumptions) {
+    LIT::forEachConformsToInProposition(
+        assumption.getProposition(), [&](TypeConformsToTraitAttr conformsTo) {
+          TypedAttr typeValue = getCanonicalAttr(conformsTo.getTypeValue());
+          if (ParamDeclRefAttr paramRef = LIT::extractParamDeclRef(typeValue);
+              paramRef && !llvm::is_contained(paramRefs, paramRef))
+            paramRefs.push_back(paramRef);
+        });
+  }
+
+  for (ParamDeclRefAttr paramRef : paramRefs) {
+    auto name = StringAttr::get(
+        scope.getContext(),
+        demangleParameterName(paramRef.getName(), /*forUser=*/true));
+    ArrayRef<ASTDecl *> found = scope.lookup(name);
+    if (found.size() != 1)
+      continue;
+    auto *irDecl = dyn_cast<IRASTDecl>(found.front());
+    if (!irDecl)
+      continue;
+    TypedAttr typeValue = irDecl->getIfIRValue().getIfPValue().get();
+    // Ensure the decl is not an unrelated declaration that shares the same
+    // name.
+    if (LIT::extractParamDeclRef(typeValue) != paramRef)
+      continue;
+    TypedAttr refined = maybeRefineTypeValueWithAssumptions(typeValue, scope);
+    if (refined == typeValue)
+      continue;
+    // Keep the parameter's own location so tooling still points at it.
+    scope.getShared().getDeclResolver().addFullyResolvedDecl(
+        PValue(refined), name, irDecl->getLoc(), &scope);
+  }
+}
+
 /// Parse a "suite" body pushed under a local scope so any vardecls inside of
 /// it are popped at the end.
 ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent) {
@@ -1174,8 +1213,10 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
   // not a checked constraint, so it carries no failure message: an assumption
   // is never the subject of a violation diagnostic. The assert's own message
   // lives on the `ParamAssertOp` above and surfaces if the assert fails.
-  curDeclScope->insertKnownAssumptions(
-      {ConstraintAttr::get(deShortCircuitCond, loc, /*message=*/StringAttr())});
+  ConstraintAttr assumption =
+      ConstraintAttr::get(deShortCircuitCond, loc, /*message=*/StringAttr());
+  curDeclScope->insertKnownAssumptions(assumption);
+  shadowRefinedTypeParams(assumption, *curDeclScope);
   return success();
 }
 
@@ -4052,6 +4093,7 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
           return failure();
       }
       curDeclScope->insertKnownAssumptions(assumptions);
+      shadowRefinedTypeParams(assumptions, *curDeclScope);
       return parseSuite(curIndent);
     };
 

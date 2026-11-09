@@ -26,27 +26,6 @@
 
 namespace M::MGP {
 
-/// Returns the first value in args of type T.
-template <typename T>
-std::optional<Value> findFirstOf(const ValueRange &args) {
-  for (const auto &arg : args) {
-    if (isa<T>(arg.getType()))
-      return arg;
-  }
-  return std::nullopt;
-}
-
-/// Returns all values in args of type T.
-template <typename T>
-llvm::SmallVector<Value> findAllOf(const ValueRange &args) {
-  llvm::SmallVector<Value> res;
-  for (const auto &arg : args) {
-    if (isa<T>(arg.getType()))
-      res.push_back(arg);
-  }
-  return res;
-}
-
 /// Inserts and returns a shallow clone of origOp using given resultTypes and
 /// operands. The result will have an empty region for each region of origOp.
 /// The location, attributes and properties of the result are taken from origOp.
@@ -112,10 +91,6 @@ OpOperand *getUniqueMutator(Value value);
 
 /// Return the OpOperands for all input chains to op.
 SmallVector<OpOperand *, 1> getInputChainOpOperands(Operation *op);
-
-/// Returns the 'earliest' operation (in block operations order) which uses
-/// one of results as an operand.
-Operation *earliestUsingOp(ArrayRef<Value> results);
 
 using ValueSetVector = llvm::SetVector<Value, SmallVector<Value>>;
 

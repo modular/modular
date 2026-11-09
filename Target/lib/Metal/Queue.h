@@ -40,6 +40,9 @@ struct M_driver_queue {
 
   M_driver_status_t synchronize();
 
+  // Frees `memory` once all work committed before this call has completed.
+  M_driver_status_t freeAsync(M_driver_memory_t memory);
+
   M_driver_status_t recordEvent(M_driver_event_t event);
   M_driver_status_t waitForEvents(M_driver_event_t *events, uint32_t numEvents);
 

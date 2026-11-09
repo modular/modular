@@ -143,7 +143,6 @@ struct MatmulFusedPartialRMSNorm:
 
     @staticmethod
     def execute[
-        target: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
         transpose_b: Bool = True,
@@ -162,7 +161,6 @@ struct MatmulFusedPartialRMSNorm:
         unnormed outputs.
 
         Parameters:
-            target: The target GPU device.
             epsilon: Small constant added to the squared mean before
                 the reciprocal square root for numerical stability.
             weight_offset: Reserved for API consistency with other RMS
@@ -240,7 +238,7 @@ def composite_matmul_fused_partial_rms_norm_shape(
     )
 
 
-@extensibility.register("mo.matmul", type="cpu")
+@extensibility.register("mo.matmul", extensibility.CPU)
 struct MatmulCPU:
     """Registers the `mo.matmul` graph op for CPU devices.
 
@@ -259,7 +257,6 @@ struct MatmulCPU:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & Fused & StoreAccess],
@@ -315,18 +312,14 @@ struct MatmulCPU:
         ].unsafe_dangling()
         var c_buf = Optional[DeviceBuffer[dtype]]()
         comptime if get_accum_type[dtype]() == dtype:
-            c_buf = ctx.enqueue_create_buffer[dtype](c_layout.product())
-            c_ptr = (
-                c_buf.value()
-                .unsafe_ptr()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-            )
+            var buf = ctx.enqueue_create_buffer[dtype](c_layout.product())
+            c_ptr = buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            c_buf = buf^
         matmul[
             transpose_a=False,
             transpose_b=transpose_b,
             b_packed=packed_b,
             _trace_description=_trace_name,
-            target=target,
         ](
             TileTensor(c_ptr, c_layout),
             a.to_tile_tensor(),
@@ -340,7 +333,6 @@ struct MatmulCPU:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & TileTensorable],
@@ -357,7 +349,6 @@ struct MatmulCPU:
             transpose_b=transpose_b,
             b_packed=packed_b,
             _trace_description=_trace_name,
-            target=target,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -366,7 +357,7 @@ struct MatmulCPU:
         )
 
 
-@extensibility.register("mo.matmul", type="gpu")
+@extensibility.register("mo.matmul", extensibility.ACCELERATOR)
 struct MatmulGPU:
     """Registers the `mo.matmul` graph op for GPU devices.
 
@@ -385,7 +376,6 @@ struct MatmulGPU:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & Fused & _LegacyComputeOutput],
@@ -436,7 +426,6 @@ struct MatmulGPU:
                 transpose_a=False,
                 transpose_b=transpose_b,
                 _trace_description=_trace_name,
-                target=target,
             ](
                 c_view.to_tile_tensor(),
                 a.to_tile_tensor(),
@@ -471,7 +460,6 @@ struct MatmulGPU:
                 transpose_a=False,
                 transpose_b=transpose_b,
                 _trace_description=_trace_name,
-                target=target,
             ](
                 TileTensor(c_ptr._unsafe_nullable(), row_major(c.shape())),
                 a.to_tile_tensor(),
@@ -484,7 +472,6 @@ struct MatmulGPU:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & TileTensorable],
@@ -497,7 +484,6 @@ struct MatmulGPU:
             transpose_a=False,
             transpose_b=transpose_b,
             _trace_description=_trace_name,
-            target=target,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -506,7 +492,7 @@ struct MatmulGPU:
         )
 
 
-@extensibility.register("mo.batch_matmul", type="cpu")
+@extensibility.register("mo.batch_matmul", extensibility.CPU)
 struct BatchMatmulCPU:
     """Registers the `mo.batch_matmul` graph op for CPU devices."""
 
@@ -515,7 +501,6 @@ struct BatchMatmulCPU:
         has_epilogue_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
-        target: StaticString,
     ](
         c: _FusedComputeOutputTensor[rank=rank, ...],
         a: InputTensor[rank=rank, ...],
@@ -542,7 +527,8 @@ struct BatchMatmulCPU:
 
         comptime if has_epilogue_fusion:
             batched_matmul[
-                transpose_a=False, transpose_b=transpose_b, target=target
+                transpose_a=False,
+                transpose_b=transpose_b,
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -552,7 +538,8 @@ struct BatchMatmulCPU:
             )
         else:
             batched_matmul[
-                transpose_a=False, transpose_b=transpose_b, target=target
+                transpose_a=False,
+                transpose_b=transpose_b,
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -561,7 +548,7 @@ struct BatchMatmulCPU:
             )
 
 
-@extensibility.register("mo.batch_matmul", type="gpu")
+@extensibility.register("mo.batch_matmul", extensibility.ACCELERATOR)
 struct BatchMatmulGPU:
     """Registers the `mo.batch_matmul` graph op for GPU devices."""
 
@@ -570,7 +557,6 @@ struct BatchMatmulGPU:
         has_epilogue_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
-        target: StaticString,
     ](
         c: _FusedComputeOutputTensor[rank=rank, ...],
         a: InputTensor[rank=rank, ...],
@@ -599,7 +585,6 @@ struct BatchMatmulGPU:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
-                target=target,
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -611,7 +596,6 @@ struct BatchMatmulGPU:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
-                target=target,
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -650,7 +634,6 @@ struct FusedMatmulAdd:
     @staticmethod
     def execute[
         transpose_b: Bool,
-        target: StaticString,
         _trace_name: StaticString,
     ](
         c: Some[Output & Tensor],
@@ -703,9 +686,7 @@ struct LinalgBandPart:
     """Registers the `mo.linalg.band_part` graph op with the graph compiler."""
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         input: Some[Input & Fused & LoadAccess],
         num_lower: Some[Input & Tensor],
@@ -743,7 +724,6 @@ struct LinalgBandPart:
         matrix_band_part[
             rank=rank,
             simd_width=simd_width_of[dtype](),
-            target=target,
         ](
             input_fn,
             input.shape().flatten(),
@@ -755,78 +735,163 @@ struct LinalgBandPart:
         )
 
 
-@extensibility.register("mo.grouped.matmul.ragged")
+@extensibility.register("matmul.grouped.ragged")
 struct Struct_grouped_matmul_ragged:
-    """Registers the `mo.grouped.matmul.ragged` graph op with the graph compiler.
+    """Registers the `matmul.grouped.ragged` graph op with the graph compiler.
 
     The output takes a fused elementwise epilogue, so a consumer such as an
     activation runs in the matmul's store instead of as its own kernel. A
     value-to-value consumer is applied before the matmul's own store, which
     keeps the SM100 kernel's TMA store.
+
+    Two `execute` overloads under one registration: the graph compiler calls
+    the fused one when the output has a fused epilogue and the plain one when
+    it has none, in which case the matmul writes the output directly. The pair
+    is grandfathered on the graph compiler's allow list; new kernels declare
+    one `execute` with a `StoreAccess` output.
     """
 
     @inline(.always)
     @staticmethod
-    def execute[
-        c_type: DType,
-        a_type: DType,
-        b_type: DType,
-        //,
-        has_epilogue_fusion: Bool,
-        target: StaticString,
-    ](
-        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=3, ...],
-        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
-        expert_usage_stats: InputTensor[dtype=.uint32, rank=1, ...],
+    def execute(
+        c: Some[Output & Fused & _LegacyComputeOutput],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        expert_usage_stats: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        comptime assert is_gpu[target](), "grouped matmul only support GPUs"
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime dtype = type_of(c).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 3
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped matmul only support GPUs"
 
-        @inline(.always)
-        def epilogue_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var c}:
+        # The epilogue runs in the kernels the matmul launches, so it
+        # copy-captures the access-enabled view rather than the host proxy.
+        comptime assert conforms_to(type_of(c), UnsafeFusedView)
+
+        # The compute form keeps the output's own buffer, while the store form
+        # has none (a fused cast or reshape, or compute lambdas disabled), so
+        # its epilogue owns every write and the kernel gets only the output's
+        # shape.
+        comptime if conforms_to(type_of(c), _LegacyComputable):
+            var c_view = unsafe_fused_view(c)
             comptime assert (
-                coords.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            c._lambda_store[width=_width, element_alignment=alignment](
-                coords,
-                rebind[SIMD[c_type, _width]](val),
+                conforms_to(type_of(c_view), Output)
+                and conforms_to(type_of(c_view), _LegacyComputable)
+                and conforms_to(type_of(c_view), TileTensorable)
             )
 
-        @inline(.always)
-        def output_compute_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var c} -> SIMD[
-            _dtype, _width
-        ]:
-            comptime assert (
-                coords.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda[element_alignment=alignment](
-                    coords, rebind[SIMD[c_type, _width]](val)
+            @inline(.always)
+            def output_compute_fn[
+                _dtype: DType, _width: SIMDLength, *, alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view} -> SIMD[
+                _dtype, _width
+            ]:
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                return rebind[SIMD[_dtype, _width]](
+                    c_view.compute[
+                        width=Int(_width), element_alignment=alignment
+                    ](
+                        coords,
+                        rebind[SIMD[type_of(c_view).dtype, Int(_width)]](val),
+                    )
                 )
+
+            grouped_matmul[has_epilogue_fn=False, has_compute_fn=True](
+                c_view.to_tile_tensor(),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
+                expert_usage_stats.to_tile_tensor[.uint32](),
+                context,
+                compute_fn=output_compute_fn,
+            )
+        else:
+            var c_view = unsafe_fused_view(c)
+            comptime assert conforms_to(type_of(c_view), Storable)
+
+            @inline(.always)
+            def epilogue_fn[
+                _dtype: DType, _width: SIMDLength, *, alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view}:
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                c_view.store[width=Int(_width), element_alignment=alignment](
+                    coords,
+                    rebind[SIMD[type_of(c_view).dtype, Int(_width)]](val),
+                )
+
+            # The grouped matmul accepts a dangling output when an epilogue
+            # owns every store, as the LoRA grouped matmuls rely on.
+            var c_ptr: Optional[
+                MutPointer[Scalar[dtype], MutUntrackedOrigin]
+            ] = None
+            grouped_matmul[has_epilogue_fn=True](
+                TileTensor(c_ptr._unsafe_nullable(), row_major(c.shape())),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
+                expert_usage_stats.to_tile_tensor[.uint32](),
+                context,
+                epilogue_fn=epilogue_fn,
             )
 
-        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+    @inline(.always)
+    @staticmethod
+    def execute(
+        c: Some[Output & TileTensorable],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        expert_usage_stats: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises where not conforms_to(type_of(c), Fused):
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 3
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped matmul only support GPUs"
 
-        grouped_matmul[
-            has_epilogue_fn=has_epilogue_fusion and not has_compute_lambda,
-            has_compute_fn=has_epilogue_fusion and has_compute_lambda,
-        ](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_usage_stats.to_tile_tensor[.int64](),
+        grouped_matmul(
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            expert_usage_stats.to_tile_tensor[.uint32](),
             context,
-            epilogue_fn=epilogue_fn,
-            compute_fn=output_compute_fn,
         )
 
 
@@ -842,7 +907,6 @@ struct Struct_grouped_matmul_block_scaled:
     @staticmethod
     def execute[
         has_a_row_scales: Bool,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -869,7 +933,6 @@ struct Struct_grouped_matmul_block_scaled:
         Parameters:
             has_a_row_scales: Whether `a_row_scales` holds per-row input
                 scales. Constraints: NVFP4 only.
-            target: The target GPU device.
 
         Args:
             c: The output tensor of shape (total_tokens, N).
@@ -917,9 +980,9 @@ struct Struct_grouped_matmul_block_scaled:
         comptime assert type_of(a_scale_offsets).rank == 1
         comptime assert type_of(expert_scales).rank == 1
         comptime assert type_of(a_row_scales).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
         comptime if has_a_row_scales:
@@ -928,7 +991,6 @@ struct Struct_grouped_matmul_block_scaled:
             ), "per-row input scales must be bfloat16"
             grouped_matmul_block_scaled_dispatch[
                 transpose_b=True,
-                target=target,
                 RowScalesT=RealRowScales,
             ](
                 c.to_tile_tensor(),
@@ -953,9 +1015,7 @@ struct Struct_grouped_matmul_block_scaled:
             )
         else:
             _ = a_row_scales
-            grouped_matmul_block_scaled_dispatch[
-                transpose_b=True, target=target
-            ](
+            grouped_matmul_block_scaled_dispatch[transpose_b=True,](
                 c.to_tile_tensor(),
                 a.to_tile_tensor(),
                 b.to_tile_tensor(),
@@ -988,7 +1048,8 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         swiglu_alpha: Float32,
         swiglu_limit: Float32,
         has_a_row_scales: Bool,
-        target: StaticString,
+        max_total_m: Int,
+        prefill_dynamic_claim: Bool,
     ](
         c_packed: Some[Output & Tensor],
         c_swiglu_scales: Some[Output & Tensor],
@@ -1021,7 +1082,11 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             swiglu_limit: The activation's clamp limit.
             has_a_row_scales: Whether `a_row_scales` holds per-row input
                 scales.
-            target: The target GPU device.
+            max_total_m: Upper bound on `a`'s row count for the MegaFFN
+                fusion's arrival buffer, or 0; unused by this kernel.
+            prefill_dynamic_claim: Whether a MegaFFN this op fuses into
+                claims its prefill tiles from a shared counter; unused by
+                this kernel.
 
         Args:
             c_packed: Packed NVFP4 output of shape (total_tokens, D // 2).
@@ -1073,9 +1138,9 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         comptime assert type_of(expert_scales).rank == 1
         comptime assert type_of(a_row_scales).rank == 1
         comptime assert type_of(c_input_scales).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
         if num_active_experts == 0:
             return
         comptime act = get_swiglu_activation[
@@ -1089,7 +1154,6 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             ), "per-row input scales must be bfloat16"
             grouped_matmul_block_scaled_swiglu_sm100_dispatch[
                 transpose_b=True,
-                target=target,
                 activation=act,
                 RowScalesT=RealRowScales,
             ](
@@ -1119,7 +1183,6 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             _ = a_row_scales
             grouped_matmul_block_scaled_swiglu_sm100_dispatch[
                 transpose_b=True,
-                target=target,
                 activation=act,
             ](
                 c_packed.to_tile_tensor(),
@@ -1139,9 +1202,9 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             )
 
 
-@extensibility.register("mo.grouped.matmul.dynamic.scaled.fp8")
+@extensibility.register("matmul.grouped.dynamic.scaled.fp8")
 struct Struct_grouped_matmul_dynamic_scaled_fp8:
-    """Registers the `mo.grouped.matmul.dynamic.scaled.fp8` graph op with the graph compiler.
+    """Registers the `matmul.grouped.dynamic.scaled.fp8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1153,7 +1216,6 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         static_grid_z: Bool,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -1183,7 +1245,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "grouped dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
@@ -1195,7 +1257,6 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             k_scale_granularity,
             transpose_b=True,
             static_grid_z=static_grid_z,
-            target=target,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -1211,7 +1272,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         )
 
 
-@extensibility.register("mo.grouped.matmul.rowwise.dynamic.scaled.fp8")
+@extensibility.register("matmul.grouped.rowwise.dynamic.scaled.fp8")
 struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
     """MOGG wrapper for grouped (ragged MoE) rowwise/per-token scaled FP8 matmul.
 
@@ -1225,9 +1286,7 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1255,15 +1314,12 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "grouped rowwise dynamic scaled matmul only supports GPUs with"
             " native FP8 support"
         )
         var cuda_ctx = context
-        grouped_matmul_rowwise_dynamic_scaled_fp8[
-            transpose_b=True,
-            target=target,
-        ](
+        grouped_matmul_rowwise_dynamic_scaled_fp8[transpose_b=True,](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
             b.to_tile_tensor(),
@@ -1277,11 +1333,11 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
         )
 
 
-@extensibility.register("mo.grouped.matmul.block.scaled.mxfp6")
+@extensibility.register("matmul.grouped.block.scaled.mxfp6")
 struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
     """MOGG wrapper for the grouped MXFP6 block-scaled matmul.
 
-    The FP6 sibling of `mo.grouped.matmul.block.scaled.mxfp4`, and a separate
+    The FP6 sibling of `matmul.grouped.block.scaled.amd`, and a separate
     op for the same reason the dense one is: both FP6 encodings put 24 bytes in
     a lane, so `lane_bytes` cannot choose between them.
 
@@ -1295,9 +1351,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1313,9 +1367,6 @@ struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
         context: DeviceContext,
     ) raises:
         """Computes C = A @ B^T over expert groups with MXFP6 operands.
-
-        Parameters:
-            target: The target GPU device.
 
         Args:
             c: The output tensor of shape (total_tokens, N).
@@ -1354,9 +1405,9 @@ struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped block-scaled matmul only supports GPUs"
         comptime assert (
             size_of[a_type]() == 1 and size_of[b_type]() == 1
         ), "MXFP6 operands are packed into uint8; four codes per three bytes"
@@ -1386,7 +1437,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
         )
 
 
-@extensibility.register("mo.grouped.matmul.block.scaled.amd")
+@extensibility.register("matmul.grouped.block.scaled.amd")
 struct Struct_grouped_matmul_block_scaled_amd[
     preshuffled_b: Bool = False, lane_bytes: Int = 16
 ]:
@@ -1412,9 +1463,7 @@ struct Struct_grouped_matmul_block_scaled_amd[
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1433,9 +1482,6 @@ struct Struct_grouped_matmul_block_scaled_amd[
 
         Computes C = A @ B^T for multiple expert groups where A and B are
         block-scaled (e.g. MXFP4: 4-bit floating point packed as uint8).
-
-        Parameters:
-            target: The target GPU device.
 
         Args:
             c: The output tensor of shape (total_tokens, N).
@@ -1479,9 +1525,9 @@ struct Struct_grouped_matmul_block_scaled_amd[
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped block-scaled matmul only supports GPUs"
         # The kernel takes raw byte operands and derives the format from
         # `lane_bytes`, so view either dtype as `uint8`: both are one byte
         # wide, leaving the layout untouched.
@@ -1547,7 +1593,7 @@ struct Struct_grouped_matmul_block_scaled_amd[
             )
 
 
-@extensibility.register("mo.grouped.matmul.block.scaled.amd.swiglu.quant")
+@extensibility.register("matmul.grouped.block.scaled.amd.swiglu.quant")
 struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
     lane_bytes: Int = 32, scales_max_padded_m: Int = 0
 ]:
@@ -1568,7 +1614,6 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
     @inline(.always)
     @staticmethod
     def execute[
-        target: StaticString,
         activation: StaticString = "silu",
         swiglu_alpha: Float32 = 0.0,
         swiglu_limit: Float32 = 0.0,
@@ -1591,7 +1636,6 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
         """Executes gemm1 with the SwiGLU and MXFP8 requantize fused in.
 
         Parameters:
-            target: The target GPU device.
             activation: The gated activation the epilogue applies, built at
                 compile time with `swiglu_alpha` and `swiglu_limit`.
             swiglu_alpha: The activation's alpha.
@@ -1634,9 +1678,9 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
         comptime assert type_of(b_scales).rank == 3
         comptime assert type_of(expert_start_indices).rank == 1
         comptime assert type_of(expert_ids).rank == 1
-        comptime assert is_gpu[
-            target
-        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped block-scaled matmul only supports GPUs"
         comptime assert Self.lane_bytes == 32, (
             "the fused SwiGLU+MXFP8 epilogue is MXFP8-only, so a lane always"
             " covers 32 bytes"
@@ -1676,9 +1720,9 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
         )
 
 
-@extensibility.register("mo.batched.matmul.dynamic.scaled.fp8")
+@extensibility.register("matmul.batched.dynamic.scaled.fp8")
 struct Struct_batched_matmul_dynamic_scaled_fp8:
-    """Registers the `mo.batched.matmul.dynamic.scaled.fp8` graph op with the graph compiler.
+    """Registers the `matmul.batched.dynamic.scaled.fp8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1689,7 +1733,6 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -1708,7 +1751,7 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         comptime assert type_of(b).rank == 3
         comptime assert type_of(a_scales).rank == 3
         comptime assert type_of(b_scales).rank == 3
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "batched dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
@@ -1722,7 +1765,6 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
             n_scale_granularity,
             k_scale_granularity,
             transpose_b=True,
-            target=target,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -1733,9 +1775,9 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         )
 
 
-@extensibility.register("mo.matmul.dynamic.block.scaled")
+@extensibility.register("matmul.dynamic.block.scaled")
 struct Struct_matmul_dynamic_block_scaled:
-    """Registers the `mo.matmul.dynamic.block.scaled` graph op with the graph compiler.
+    """Registers the `matmul.dynamic.block.scaled` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1748,7 +1790,6 @@ struct Struct_matmul_dynamic_block_scaled:
         //,
         has_epilogue_fusion: Bool,
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
@@ -1758,7 +1799,7 @@ struct Struct_matmul_dynamic_block_scaled:
         tensor_sf: Float32,
         context: DeviceContext,
     ) raises:
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "dynamic block scaled matmul only support GPUs with native"
             " block scaled support"
         )
@@ -1800,7 +1841,6 @@ struct Struct_matmul_dynamic_block_scaled:
             transpose_b=True,
             has_epilogue_fn=has_epilogue_fusion and not has_compute_lambda,
             has_compute_fn=has_epilogue_fusion and has_compute_lambda,
-            target=target,
         ](
             c.to_tile_tensor[.int64](),
             a.to_tile_tensor[.int64](),
@@ -1814,9 +1854,9 @@ struct Struct_matmul_dynamic_block_scaled:
         )
 
 
-@extensibility.register("mo.matmul.dynamic.block.scaled.block.diagonal")
+@extensibility.register("matmul.dynamic.block.scaled.block.diagonal")
 struct Struct_matmul_dynamic_block_scaled_block_diagonal:
-    """Registers the `mo.matmul.dynamic.block.scaled.block.diagonal` graph op with the graph compiler.
+    """Registers the `matmul.dynamic.block.scaled.block.diagonal` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -1824,7 +1864,6 @@ struct Struct_matmul_dynamic_block_scaled_block_diagonal:
     def execute[
         groups: Int,
         SF_VECTOR_SIZE: Int,
-        target: StaticString,
     ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -1845,7 +1884,7 @@ struct Struct_matmul_dynamic_block_scaled_block_diagonal:
         comptime assert type_of(b).rank == 2
         comptime assert type_of(a_scales).rank == 5
         comptime assert type_of(b_scales).rank == 5
-        comptime assert is_gpu[target]() and _is_sm10x_gpu(
+        comptime assert context.target.is_gpu() and _is_sm10x_gpu(
             context.default_device_info
         ), "the block-diagonal block-scaled matmul runs on SM100 only"
         block_scaled_matmul_block_diagonal[
@@ -1862,9 +1901,9 @@ struct Struct_matmul_dynamic_block_scaled_block_diagonal:
         )
 
 
-@extensibility.register("mo.matmul.dynamic.block.scaled.amd")
+@extensibility.register("matmul.dynamic.block.scaled.amd")
 struct Struct_matmul_dynamic_block_scaled_amd[lane_bytes: Int = 16]:
-    """Registers the `mo.matmul.dynamic.block.scaled.amd` graph op with the graph compiler.
+    """Registers the `matmul.dynamic.block.scaled.amd` graph op with the graph compiler.
 
     Parameters:
         lane_bytes: Operand bytes per lane per MFMA — 16 for MXFP4 (default) or
@@ -1875,9 +1914,7 @@ struct Struct_matmul_dynamic_block_scaled_amd[lane_bytes: Int = 16]:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1897,7 +1934,7 @@ struct Struct_matmul_dynamic_block_scaled_amd[lane_bytes: Int = 16]:
         comptime assert type_of(b).rank == 2
         comptime assert type_of(a_scales).rank == 2
         comptime assert type_of(b_scales).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "dynamic block scaled matmul only support GPUs with native"
             " block scaled support"
         )
@@ -1917,11 +1954,11 @@ struct Struct_matmul_dynamic_block_scaled_amd[lane_bytes: Int = 16]:
         )
 
 
-@extensibility.register("mo.matmul.dynamic.block.scaled.mxfp6")
+@extensibility.register("matmul.dynamic.block.scaled.mxfp6")
 struct Struct_matmul_dynamic_block_scaled_mxfp6[
     FP6_FORMAT: Int = 0, preshuffled_b: Bool = False
 ]:
-    """Registers the `mo.matmul.dynamic.block.scaled.mxfp6` graph op.
+    """Registers the `matmul.dynamic.block.scaled.mxfp6` graph op.
 
     Separate from the MXFP4/MXFP8 op rather than another `lane_bytes` value:
     both FP6 encodings put 24 bytes in a lane, so the byte count cannot choose
@@ -1940,9 +1977,7 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -1962,7 +1997,7 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
         comptime assert type_of(b).rank == 2
         comptime assert type_of(a_scales).rank == 2
         comptime assert type_of(b_scales).rank == 2
-        comptime assert is_gpu[target](), (
+        comptime assert context.target.is_gpu(), (
             "MXFP6 block-scaled matmul requires a GPU with native block-scaled"
             " support"
         )
@@ -1988,11 +2023,11 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
         )
 
 
-@extensibility.register("mo.matmul.weight.only.block.scaled.apple")
+@extensibility.register("matmul.weight.only.block.scaled.apple")
 struct Struct_matmul_weight_only_block_scaled_apple:
     """Apple M5 weight-only NVFP4 (W4A16) matmul: `out = a @ dequant(b)^T`.
 
-    Unlike `mo.matmul.dynamic.block.scaled` (the NVIDIA SM100 path), the
+    Unlike `matmul.dynamic.block.scaled` (the NVIDIA SM100 path), the
     activation `a` stays in bf16 (NOT dynamically quantized to FP4) and the
     weight block scales are PLAIN rank-2 `[N, K // 16]` (NOT the SM100 rank-5
     TCGEN05 interleave). The FP4 weight is dequantized to bf16 in-register at
@@ -2003,9 +2038,7 @@ struct Struct_matmul_weight_only_block_scaled_apple:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2017,11 +2050,11 @@ struct Struct_matmul_weight_only_block_scaled_apple:
         comptime assert conforms_to(type_of(b), TileTensorable)
         comptime assert conforms_to(type_of(b_scales), TileTensorable)
         comptime c_type = type_of(c).dtype
-        comptime assert is_gpu[
-            target
-        ](), "Apple weight-only block-scaled matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "Apple weight-only block-scaled matmul only supports GPUs"
         comptime assert context.target.is_apple_gpu(), (
-            "mo.matmul.weight.only.block.scaled.apple requires an Apple"
+            "matmul.weight.only.block.scaled.apple requires an Apple"
             " (Metal) GPU accelerator"
         )
 
@@ -2034,11 +2067,11 @@ struct Struct_matmul_weight_only_block_scaled_apple:
         )
 
 
-@extensibility.register("mo.matmul.weight.only.scaled.float8.apple")
+@extensibility.register("matmul.weight.only.scaled.float8.apple")
 struct Struct_matmul_weight_only_scaled_float8_apple:
     """Apple M5 weight-only FP8 (W8A16) matmul: `out = a @ dequant(b)^T`.
 
-    The FP8 sibling of `mo.matmul.weight.only.block.scaled.apple`. The activation
+    The FP8 sibling of `matmul.weight.only.block.scaled.apple`. The activation
     `a` stays in bf16 (NOT dynamically quantized to FP8), and the FP8-E4M3 weight
     `b` is widened to f32/bf16 at the point of consumption (register-resident in
     the `M == 1` GEMV, or a transient bf16 buffer for the `M > 1` interim). Unlike
@@ -2051,9 +2084,7 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2063,11 +2094,11 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
         comptime assert conforms_to(type_of(a), TileTensorable)
         comptime assert conforms_to(type_of(b), TileTensorable)
         comptime c_type = type_of(c).dtype
-        comptime assert is_gpu[
-            target
-        ](), "Apple weight-only scaled FP8 matmul only supports GPUs"
+        comptime assert (
+            context.target.is_gpu()
+        ), "Apple weight-only scaled FP8 matmul only supports GPUs"
         comptime assert context.target.is_apple_gpu(), (
-            "mo.matmul.weight.only.scaled.float8.apple requires an Apple"
+            "matmul.weight.only.scaled.float8.apple requires an Apple"
             " (Metal) GPU accelerator"
         )
 
@@ -2081,7 +2112,8 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
 
 @inline(.always)
 def _apple_int8_w8a8_dispatch[
-    c_type: DType, has_bias: Bool, target: StaticString
+    c_type: DType,
+    has_bias: Bool,
 ](
     c_tt: TileTensor[mut=True, c_type, ...],
     a_tt: TileTensor[DType.bfloat16, ...],
@@ -2101,12 +2133,12 @@ def _apple_int8_w8a8_dispatch[
     per-output-channel weight scale (+ bias iff `has_bias`). Both enqueue fns are
     tested at the Klein shapes in `test_apple_int8_matmul.mojo`.
     """
-    comptime assert is_gpu[
-        target
-    ](), "Apple int8 W8A8 matmul only supports GPUs"
+    comptime assert (
+        context.target.is_gpu()
+    ), "Apple int8 W8A8 matmul only supports GPUs"
     comptime assert (
         context.target.is_apple_gpu()
-    ), "mo.matmul.int8.w8a8.apple requires an Apple (Metal) GPU accelerator"
+    ), "matmul.int8.w8a8.apple requires an Apple (Metal) GPU accelerator"
 
     var M = Int(a_tt.dim[0]())
     var K = Int(a_tt.dim[1]())
@@ -2138,7 +2170,7 @@ def _apple_int8_w8a8_dispatch[
     _ = asc_buf^
 
 
-@extensibility.register("mo.matmul.int8.w8a8.apple")
+@extensibility.register("matmul.int8.w8a8.apple")
 struct Struct_matmul_int8_w8a8_apple:
     """Apple M5 int8 W8A8 matmul (no bias): `out = dequant(quant(a) @ b^T)`.
 
@@ -2147,16 +2179,14 @@ struct Struct_matmul_int8_w8a8_apple:
     `nn/kernels.py::_apple_int8_w8a8_matmul` with `bias=None`): `a` bf16
     `[M, K]`; `b` int8 `[N, K]` (`transpose_b`); `b_scale` fp32 per-channel `[N]`
     (the Python squeezes the rowwise `[N, 1]`). Output `c_type` `[M, N]`. The
-    bias variant is the sibling `mo.matmul.int8.w8a8.apple.bias` op (custom-op
+    bias variant is the sibling `matmul.int8.w8a8.apple.bias` op (custom-op
     input arity is fixed per registration, so the optional bias is a separate op
-    name -- the same idiom as `mo.fused_qkv_matmul.ragged.paged{,.bias}`).
+    name -- the same idiom as `kv_cache.fused_qkv_matmul.ragged.paged{,.bias}`).
     """
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2173,7 +2203,7 @@ struct Struct_matmul_int8_w8a8_apple:
         # path ignores it). Reuse `b_scale` as the dummy source (same dtype is
         # not required -- it is never read -- but a valid 1-elem view is).
         var dummy_bias = c_tt.reshape(row_major(Int64(1))).as_imm()
-        _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
+        _apple_int8_w8a8_dispatch[c_type, has_bias=False](
             c_tt,
             a.to_tile_tensor[.bfloat16](),
             b.to_tile_tensor[.int8](),
@@ -2183,11 +2213,11 @@ struct Struct_matmul_int8_w8a8_apple:
         )
 
 
-@extensibility.register("mo.matmul.int8.w8a8.apple.bias")
+@extensibility.register("matmul.int8.w8a8.apple.bias")
 struct Struct_matmul_int8_w8a8_apple_bias:
     """Apple M5 int8 W8A8 matmul WITH per-output-channel bias.
 
-    The bias sibling of `mo.matmul.int8.w8a8.apple`: identical fused body plus a
+    The bias sibling of `matmul.int8.w8a8.apple`: identical fused body plus a
     `bias` input in `c_type` `[N]` added after dequant. Selected by
     `nn/kernels.py::_apple_int8_w8a8_matmul` (which appends `.bias` to the op
     name when a bias is provided, mirroring the FP8 fused-QKV op).
@@ -2195,9 +2225,7 @@ struct Struct_matmul_int8_w8a8_apple_bias:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2211,7 +2239,7 @@ struct Struct_matmul_int8_w8a8_apple_bias:
         comptime assert conforms_to(type_of(b_scale), TileTensorable)
         comptime assert conforms_to(type_of(bias), TileTensorable)
         comptime c_type = type_of(c).dtype
-        _apple_int8_w8a8_dispatch[c_type, has_bias=True, target=target](
+        _apple_int8_w8a8_dispatch[c_type, has_bias=True](
             c.to_tile_tensor(),
             a.to_tile_tensor[.bfloat16](),
             b.to_tile_tensor[.int8](),
@@ -2306,7 +2334,7 @@ struct PackMatmulBShapeFunc:
 
     @inline(.always)
     @staticmethod
-    def execute(b_input: InputTensor) raises:
+    def execute(b_input: Some[Input & Tensor]) raises:
         raise Error("Only meant to be used for shape function!")
 
 
@@ -2352,9 +2380,9 @@ def pack_matmul_b_shape_func_shape[
     ](b_input.to_tile_tensor().as_imm(), kernel_type_m)
 
 
-@extensibility.register("mo.matmul_dynamic_scaled_fp8")
+@extensibility.register("matmul.dynamic_scaled_fp8")
 struct MatmulDynamicScaledFloat8:
-    """Registers the `mo.matmul_dynamic_scaled_fp8` graph op with the graph compiler.
+    """Registers the `matmul.dynamic_scaled_fp8` graph op with the graph compiler.
     """
 
     @inline(.always)
@@ -2365,7 +2393,6 @@ struct MatmulDynamicScaledFloat8:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
-        target: StaticString,
     ](
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -2386,7 +2413,7 @@ struct MatmulDynamicScaledFloat8:
         comptime assert type_of(b).rank == 2
         comptime assert type_of(a_scales).rank == 2
         comptime assert type_of(b_scales).rank == 2
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         matmul_dynamic_scaled_fp8[
             input_scale_granularity,
@@ -2395,7 +2422,6 @@ struct MatmulDynamicScaledFloat8:
             n_scale_granularity,
             k_scale_granularity,
             transpose_b=True,
-            target=target,
         ](
             output.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -2406,16 +2432,15 @@ struct MatmulDynamicScaledFloat8:
         )
 
 
-@extensibility.register("mo.matmul_static_scaled_float8")
+@extensibility.register("matmul.static_scaled_float8")
 struct MatmulStaticScaledFloat8:
-    """Registers the `mo.matmul_static_scaled_float8` graph op with the graph compiler.
+    """Registers the `matmul.static_scaled_float8` graph op with the graph compiler.
     """
 
     @inline(.always)
     @staticmethod
     def execute[
         scale_type: DType,
-        target: StaticString,
     ](
         output_tensor: Some[Output & Tensor],
         input_tensor: Some[Input & Tensor],
@@ -2432,7 +2457,7 @@ struct MatmulStaticScaledFloat8:
         comptime assert type_of(output_tensor).rank == 2
         comptime assert type_of(input_tensor).rank == 2
         comptime assert type_of(weight_tensor).rank == 2
-        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
 
         var output_tt = output_tensor.to_tile_tensor()
         var input_tt = input_tensor.to_tile_tensor()
@@ -2467,7 +2492,7 @@ struct MatmulStaticScaledFloat8:
                 var scaled_val = val.cast[.float32]() * scale
                 return scaled_val.cast[dtype]()
 
-            matmul[target=target, transpose_b=True](
+            matmul[transpose_b=True](
                 output_tt,
                 input_tt,
                 weight_tt,
@@ -2509,7 +2534,7 @@ struct MatmulStaticScaledFloat8:
                 row_major(Int64(M), Idx[N]),
             )
 
-            matmul[target=target, transpose_b=True](
+            matmul[transpose_b=True](
                 output_scratch,
                 input_tt,
                 weight_tt,
@@ -2518,16 +2543,14 @@ struct MatmulStaticScaledFloat8:
             )
 
 
-@extensibility.register("mo.merge_ragged_tensors")
+@extensibility.register("ragged.merge_ragged_tensors")
 struct MergeRaggedTensors:
-    """Registers the `mo.merge_ragged_tensors` graph op with the graph compiler.
+    """Registers the `ragged.merge_ragged_tensors` graph op with the graph compiler.
     """
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         output_row_offsets: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -2549,7 +2572,7 @@ struct MergeRaggedTensors:
         comptime assert type_of(a_row_offsets).rank == 1
         comptime assert type_of(b).rank == rank
         comptime assert type_of(b_row_offsets).rank == 1
-        merge_ragged_tensors[rank=rank, target=target](
+        merge_ragged_tensors[rank=rank](
             output.to_tile_tensor(),
             output_row_offsets.to_tile_tensor[.uint32](),
             a.to_tile_tensor[dtype](),
@@ -2560,15 +2583,14 @@ struct MergeRaggedTensors:
         )
 
 
-@extensibility.register("mo.lora_sgmv.ragged")
+@extensibility.register("matmul.lora_sgmv.ragged")
 struct Struct_lora_sgmv_ragged:
-    """Registers the `mo.lora_sgmv.ragged` graph op with the graph compiler."""
+    """Registers the `matmul.lora_sgmv.ragged` graph op with the graph compiler.
+    """
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2587,7 +2609,7 @@ struct Struct_lora_sgmv_ragged:
         comptime assert type_of(b).rank == 3
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(lora_ids).rank == 1
-        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+        comptime assert context.target.is_gpu(), "SGMV only supported on GPUs"
 
         if Int(a.shape()[0].value()) == 0:
             return
@@ -2604,16 +2626,14 @@ struct Struct_lora_sgmv_ragged:
         )
 
 
-@extensibility.register("mo.lora_sgmv.qkv_shrink.ragged")
+@extensibility.register("matmul.lora_sgmv.qkv_shrink.ragged")
 struct Struct_lora_sgmv_qkv_shrink_ragged:
-    """Registers the `mo.lora_sgmv.qkv_shrink.ragged` graph op with the graph compiler.
+    """Registers the `matmul.lora_sgmv.qkv_shrink.ragged` graph op with the graph compiler.
     """
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2632,7 +2652,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         comptime assert type_of(b).rank == 3
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(lora_ids).rank == 1
-        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+        comptime assert context.target.is_gpu(), "SGMV only supported on GPUs"
 
         if Int(a.shape()[0].value()) == 0:
             return
@@ -2649,7 +2669,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         )
 
 
-@extensibility.register("mo.matmul_swiglu", type="gpu")
+@extensibility.register("matmul.swiglu", extensibility.ACCELERATOR)
 struct MatmulSwiGLU:
     """Fused GEMM+SwiGLU on SM100 for BF16 inputs.
 
@@ -2664,9 +2684,7 @@ struct MatmulSwiGLU:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2689,11 +2707,11 @@ struct MatmulSwiGLU:
         )
 
 
-@extensibility.register("mo.matmul_swiglu_bias", type="gpu")
+@extensibility.register("matmul.swiglu_bias", extensibility.ACCELERATOR)
 struct MatmulSwiGLUBias:
     """Fused GEMM+SwiGLU+bias on SM100 for BF16 inputs.
 
-    Like ``mo.matmul_swiglu`` but adds a 1D bias vector before the activation.
+    Like ``matmul.swiglu`` but adds a 1D bias vector before the activation.
     The bias must be sigma-permuted to match the weight layout: even element
     ``bias[2h]`` is added to the gate column and odd element ``bias[2h+1]`` to
     the up column before ``silu(gate) * up`` is computed.
@@ -2701,9 +2719,7 @@ struct MatmulSwiGLUBias:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -2735,42 +2751,38 @@ struct MatmulSwiGLUBias:
         )
 
 
-@extensibility.register("mo.composite.matmul_swiglu", type="gpu")
+@extensibility.register("mo.composite.matmul_swiglu", extensibility.ACCELERATOR)
 struct CompositeMatmulSwiGLU:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        MatmulSwiGLU.execute[target](output, a, b, ctx)
+        MatmulSwiGLU.execute(output, a, b, ctx)
 
 
-@extensibility.register("mo.composite.matmul_swiglu_bias", type="gpu")
+@extensibility.register(
+    "mo.composite.matmul_swiglu_bias", extensibility.ACCELERATOR
+)
 struct CompositeMatmulSwiGLUBias:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
         bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        MatmulSwiGLUBias.execute[target](output, a, b, bias, ctx)
+        MatmulSwiGLUBias.execute(output, a, b, bias, ctx)
 
 
-@extensibility.register("mo.lora_sgmv.qkv_expand.ragged")
+@extensibility.register("matmul.lora_sgmv.qkv_expand.ragged")
 struct Struct_lora_sgmv_qkv_expand_ragged:
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         q_out: Some[Output & Tensor],
         kv_out: Some[Output & Tensor],
         p: Some[Input & Tensor],
@@ -2794,7 +2806,7 @@ struct Struct_lora_sgmv_qkv_expand_ragged:
         comptime assert type_of(b).rank == 3
         comptime assert type_of(lora_grouped_offsets).rank == 1
         comptime assert type_of(lora_ids).rank == 1
-        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+        comptime assert context.target.is_gpu(), "SGMV only supported on GPUs"
 
         if Int(p.shape()[1].value()) == 0:
             return
@@ -2819,31 +2831,34 @@ struct Struct_lora_sgmv_qkv_expand_ragged:
 comptime _ROUTER_GATE_TF32_MIN_M = 8704
 
 
-@extensibility.register("mo.router.gate.mixed.gemv")
+@extensibility.register("moe.router.gate.mixed.gemv")
 struct Struct_router_gate_mixed_gemv:
     """MOGG wrapper for the mixed-input router-gate GEMV.
 
-    Computes `c = a @ b^T` for a bf16 activation `a` and an fp32 router weight
-    `b`, returning fp32 `c`. `M` is runtime-dynamic (one graph serves both
-    decode and prefill), so the op branches on runtime `M`:
+    Computes `c = a @ b^T` for a bf16 activation `a` and an fp32 or bf16
+    router weight `b`, returning fp32 `c`. `M` is runtime-dynamic (one graph
+    serves both decode and prefill), so the op branches on runtime `M`:
 
     - `M == 0` (graph-capture warmup): no launch.
     - tiny `M` (`M <= 64` on MI355X, `M <= 128` on SM100; decode): the fused
-      mixed GEMV — `a` is loaded as bf16 and widened to fp32 in registers, then
-      dotted against the unchanged fp32 `b` in a SINGLE launch, fusing away the
-      standalone bf16->fp32 activation cast that otherwise precedes the fp32
-      router GEMV.
+      mixed GEMV — `a` is dotted against the weight `b` in a SINGLE launch,
+      fusing away the standalone bf16->fp32 activation cast that otherwise
+      precedes the router GEMV. With an fp32 `b` the activation widens to
+      fp32 in registers; with a bf16 `b` both operands feed the fused
+      bf16 pair-dot (`v_dot2_f32_bf16`), which accumulates in fp32.
     - large `M` (prefill): the fused GEMV is catastrophically slow. On SM100
       from `M = 8704` the op runs `router_gate_tf32_gemm`, one bf16
       tensor-core GEMM that reads `a` once; elsewhere it falls back to the
-      baseline chain — cast `a` to fp32, then an ordinary fp32 matmul against
-      the fp32 `b` (two launches, matching baseline).
+      baseline chain — with a bf16 `b`, one bf16 x bf16 -> fp32 matmul; with
+      an fp32 `b`, cast `a` to fp32 then an ordinary fp32 matmul (two
+      launches, matching baseline).
 
     Because bf16->fp32 widening is lossless, every route is fp32 arithmetic
     over exactly the widened bf16 values: at the same launch config the fused
-    GEMV is bit-identical to the fp32 `gemv_split_k` over a pre-cast
-    activation. The MI355X decode bands with `act_wide_k` reorder the K
-    summation (each lane folds 8 consecutive K through a SIMD accumulator),
+    GEMV is bit-identical to the `gemv_split_k` of the same operand dtypes
+    over a pre-cast activation. The MI355X decode bands with `act_wide_k`
+    reorder the K summation (each lane folds 8 consecutive K through a SIMD
+    accumulator),
     so those bands match the fp32 GEMV only to fp32 rounding, not
     bit-for-bit. On SM100 the baseline's fp32 matmul switches to TF32 tensor
     cores above `M = 64`, so the fused GEMV's IEEE-fp32 result there is the
@@ -2861,16 +2876,14 @@ struct Struct_router_gate_mixed_gemv:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        """Executes the mixed bf16-A × fp32-B router-gate GEMV with an M-based
-        route to the baseline cast + fp32 matmul for large (prefill) M.
+        """Executes the mixed bf16-A router-gate GEMV with an M-based route to
+        the baseline matmuls for large (prefill) M.
 
         Constraints:
             The weight `b` must have a static `[N, K]` shape (both dims known at
@@ -2879,7 +2892,7 @@ struct Struct_router_gate_mixed_gemv:
         Args:
             c: Output `[M, N]` fp32 tensor.
             a: Activation `[M, K]` bf16 tensor.
-            b: Weight `[N, K]` fp32 tensor (transpose_b layout).
+            b: Weight `[N, K]` fp32 or bf16 tensor (transpose_b layout).
             context: The device context.
         """
         comptime assert conforms_to(type_of(c), TileTensorable)
@@ -2888,7 +2901,9 @@ struct Struct_router_gate_mixed_gemv:
         comptime assert type_of(c).rank == 2
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b).rank == 2
-        comptime assert is_gpu[target](), "router-gate mixed GEMV is GPU-only"
+        comptime assert (
+            context.target.is_gpu()
+        ), "router-gate mixed GEMV is GPU-only"
 
         var M = Int(c.shape()[0].value())
         # Empty-launch guard: a graph-capture warmup can call with M == 0.
@@ -2898,8 +2913,15 @@ struct Struct_router_gate_mixed_gemv:
         # `b` carries the static `[N, K]` router-gate shape from the graph, so
         # the standard projection drives the compile-time N/K specialization the
         # kernels rely on (`N` picks the `check_bounds_n` guard). `c`/`a` stay
-        # manual because their M dimension is runtime-dynamic.
-        var b_tt = b.to_tile_tensor[.float32]()
+        # manual because their M dimension is runtime-dynamic. The weight is
+        # fp32 (MiniMax-M3; the K3 legacy gate) or bf16 (the K3 checkpoint's
+        # own gate storage); anything else fails the dtype assert below at
+        # compile time.
+        comptime b_type = type_of(b).dtype
+        comptime assert (
+            b_type == .float32 or b_type == .bfloat16
+        ), "router-gate mixed GEMV binds an fp32 or bf16 weight only"
+        var b_tt = b.to_tile_tensor[b_type]()
         comptime N = type_of(b_tt).static_shape[0]
         comptime K = type_of(b_tt).static_shape[1]
         comptime assert (
@@ -2914,11 +2936,12 @@ struct Struct_router_gate_mixed_gemv:
         # TF32 tile GEMM below wins on weight reuse.
         comptime max_m = 64 if context.target.is_amd_gpu() else 128
         if router_gate_use_mixed_gemv(M, max_m):
-            # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
+            # Tiny-M decode: fused mixed bf16-A GEMV against the fp32 or
+            # bf16 weight, one launch.
             var a_tt = a.to_tile_tensor[.bfloat16]().reshape(
                 row_major(M, Idx[K])
             )
-            router_gate_mixed_gemv[N](
+            router_gate_mixed_gemv[b_type, N](
                 c_tt,
                 a_tt.as_imm(),
                 b_tt.as_imm(),
@@ -2933,8 +2956,11 @@ struct Struct_router_gate_mixed_gemv:
         # instead of casting it to fp32 and streaming that copy.
         # The two-CTA MMA needs 2*N columns in [32, 256], in steps of 32.
         # TMA requires a 16-byte bf16 row stride.
+        # fp32 weight only: `router_gate_tf32_gemm` binds an fp32 `b`; a
+        # bf16 weight takes the plain bf16 matmul fallback below.
         comptime if (
-            _is_sm10x_gpu(context.default_device_info)
+            b_type == .float32
+            and _is_sm10x_gpu(context.default_device_info)
             and 16 <= N <= 128
             and N % 16 == 0
             and K % 8 == 0
@@ -2943,44 +2969,57 @@ struct Struct_router_gate_mixed_gemv:
                 var a_gemm_tt = a.to_tile_tensor[.bfloat16]().reshape(
                     row_major(M, Idx[K])
                 )
+                var b_f32_tt = b.to_tile_tensor[.float32]()
                 router_gate_tf32_gemm(
-                    c_tt, a_gemm_tt.as_imm(), b_tt.as_imm(), M, context
+                    c_tt, a_gemm_tt.as_imm(), b_f32_tt.as_imm(), M, context
                 )
                 return
 
-        # Large-M prefill: preserve the baseline's semantics and performance —
-        # widen the bf16 activation to fp32 (the standalone cast the fused path
-        # avoids), then run the ordinary fp32 matmul against the fp32 weight.
-        # Routing large M through the tiny-M GEMV is catastrophically slow.
-        var a_f32 = context.enqueue_create_buffer[.float32](M * K)
-        var a_bf16_tt = a.to_tile_tensor[.bfloat16]().reshape(
-            row_major(M, Idx[K])
-        )
-        var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
-
-        @inline(.always)
-        def _cast_bf16_to_fp32[
-            width: Int, alignment: Int = 1
-        ](idx: Coord) {var a_bf16_tt, var a_f32_tt}:
-            var a_vec = a_bf16_tt.load[
-                width, alignment=align_of[SIMD[.bfloat16, width]]()
-            ](idx)
-            a_f32_tt.store[alignment=align_of[SIMD[.float32, width]]()](
-                idx, a_vec.cast[.float32]()
+        # Large-M prefill. With a bf16 weight the matmul dispatch admits
+        # bf16 x bf16 -> fp32 directly, so the activation cast launch is
+        # skipped entirely (the standalone `elementwise` cast the fused
+        # path avoids; the fp32-weight arm below still pays it, matching
+        # the baseline). Routing large M through the tiny-M GEMV is
+        # catastrophically slow.
+        comptime if b_type == .bfloat16:
+            var a_bf16_tt = a.to_tile_tensor[.bfloat16]().reshape(
+                row_major(M, Idx[K])
             )
+            matmul[transpose_b=True](
+                c_tt, a_bf16_tt.as_imm(), b_tt.as_imm(), context
+            )
+        else:
+            # Preserve the fp32 baseline's semantics and performance —
+            # widen the bf16 activation to fp32, then run the ordinary
+            # fp32 matmul against the fp32 weight.
+            var a_f32 = context.enqueue_create_buffer[.float32](M * K)
+            var a_bf16_tt = a.to_tile_tensor[.bfloat16]().reshape(
+                row_major(M, Idx[K])
+            )
+            var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
 
-        elementwise[
-            simd_width_of[DType.bfloat16, target=context.target](),
-            target=target,
-        ](_cast_bf16_to_fp32, Coord(M, Idx[K]), context)
+            @inline(.always)
+            def _cast_bf16_to_fp32[
+                width: Int, alignment: Int = 1
+            ](idx: Coord) {var a_bf16_tt, var a_f32_tt}:
+                var a_vec = a_bf16_tt.load[
+                    width, alignment=align_of[SIMD[.bfloat16, width]]()
+                ](idx)
+                a_f32_tt.store[alignment=align_of[SIMD[.float32, width]]()](
+                    idx, a_vec.cast[.float32]()
+                )
 
-        matmul[transpose_b=True, target=target](
-            c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
-        )
-        _ = a_f32^
+            elementwise[
+                simd_width_of[DType.bfloat16, target=context.target](),
+            ](_cast_bf16_to_fp32, Coord(M, Idx[K]), context)
+
+            matmul[transpose_b=True](
+                c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
+            )
+            _ = a_f32^
 
 
-@extensibility.register("mo.smallm.streaming.matmul")
+@extensibility.register("matmul.smallm.streaming")
 struct Struct_smallm_streaming_matmul:
     """MOGG wrapper for the MI355X small-M streaming matmul.
 
@@ -3000,9 +3039,7 @@ struct Struct_smallm_streaming_matmul:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: Some[Output & Tensor],
         a_scratch: Some[Output & Tensor],
         a: Some[Input & Tensor],
@@ -3038,7 +3075,9 @@ struct Struct_smallm_streaming_matmul:
         comptime assert type_of(a).rank == 2
         comptime assert type_of(b_shuffled).rank == 2
         comptime assert type_of(b).rank == 2
-        comptime assert is_gpu[target](), "smallm streaming matmul is GPU-only"
+        comptime assert (
+            context.target.is_gpu()
+        ), "smallm streaming matmul is GPU-only"
 
         var M = Int(c.shape()[0].value())
         if M == 0:
@@ -3081,7 +3120,7 @@ struct Struct_smallm_streaming_matmul:
             )
             return
 
-        matmul[transpose_b=True, target=target](
+        matmul[transpose_b=True](
             c.to_tile_tensor[.bfloat16](),
             a.to_tile_tensor[.bfloat16](),
             b.to_tile_tensor[.bfloat16](),

@@ -30,9 +30,9 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn._graph_ops.state_space import short_conv_ring
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.state_space import short_conv_ring
 
 
 class ShortConvolution(Module, Shardable):
@@ -218,7 +218,7 @@ def fused_qk_rms_norm_short_conv_ragged(
         The normalized query, ``[total_tokens, q_num_heads, head_dim]``.
     """
     return ops.inplace_custom(
-        "mo.fused_qk_rms_norm_short_conv.ragged.paged",
+        "kv_cache.fused_qk_rms_norm_short_conv.ragged.paged",
         device=qkvr.device,
         values=[
             qkvr,

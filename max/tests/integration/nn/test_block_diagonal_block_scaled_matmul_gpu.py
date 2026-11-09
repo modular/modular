@@ -28,7 +28,7 @@ from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_diagonal_block_scaled_matmul,
     dynamic_block_scaled_matmul,
     quantize_dynamic_block_scaled,

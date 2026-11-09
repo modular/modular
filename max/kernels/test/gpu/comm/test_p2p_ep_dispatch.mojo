@@ -1254,7 +1254,6 @@ def test_dispatch_common[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
             use_shmem=False,
         ](
             get_atomic_counters_tensor(dev_idx, slot_idx),
@@ -1277,7 +1276,6 @@ def test_dispatch_common[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
         ](
             format_handler,
             get_row_offsets_tensor(dev_idx, slot_idx),
@@ -1298,7 +1296,6 @@ def test_dispatch_common[
             n_ranks,
             1,
             False,  # fused_shared_expert
-            "gpu",
             use_shmem=False,
         ](
             dispatch_test.get_token_handler(dev_idx, slot_idx, ctx),

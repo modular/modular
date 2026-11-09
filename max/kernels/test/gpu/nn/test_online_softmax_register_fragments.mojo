@@ -23,7 +23,7 @@ from std.testing import assert_almost_equal, assert_equal
 from max.gpu import WARP_SIZE, thread_idx, warp_id
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
-from layout import Layout, TensorLayout, TileTensor, row_major, stack_allocation
+from layout import TensorLayout, TileTensor, row_major, stack_allocation
 from layout.coord import coord
 from nn.softmax import _online_softmax_iter_for_mma_output
 

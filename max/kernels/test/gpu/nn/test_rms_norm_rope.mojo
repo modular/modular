@@ -179,7 +179,6 @@ def run_rms_norm_rope_gpu[
         output_dtype,
         cos_sin_dtype,
         rank,
-        target="gpu",
     ](
         input_fn,
         cos_fn,

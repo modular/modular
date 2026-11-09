@@ -12,15 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 """Correctness tests for the row-wise reduction ops (Row API).
 
-Covers every non-composite reduction routed through MAX's own Mojo Row API:
+Covers every reduction that runs as a Mojo Row API kernel:
 the pure reductions (``reduce_sum/max/min/mean/product``, ``argmax``,
 ``argmin``, ``reduce_min_and_max``) and the last-axis norm-type ops
 (``softmax``, ``logsoftmax``, ``layer_norm``, ``rms_norm``,
-``row_mean_of_squares``). Each op is checked against a float32 torch reference
+``row_mean_of_squares``), plus graphs that fuse elementwise ops around a
+reduction into one generated kernel (``FUSED_OPS``). Each op is checked against
+a float32 torch reference
 across a few small column counts (even + odd), on the inner axis and -- for the
 pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
 float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
 group (see :data:`WIDE_CPU_SPECS`) for what only the widest element can reach.
+``rms_norm`` also runs on edge-case shapes (:data:`RMS_NORM_SPECS`): no rows,
+odd, many and long rows, ranks 1 and 5, static row widths, and both
+``multiply_before_cast`` orders with a weight offset.
 
 Every case runs on both the CPU and the GPU -- the GPU is where the cooperative
 tiers, the cross-thread combine and the split-K path live, so it is the priority
@@ -47,13 +52,18 @@ import numpy as np
 import pytest
 import torch
 from _rowwise_reduction_specs import (
+    FUSED_OPS,
     GPU_SPLITK_SPECS,
     GPU_SUBWORD_SPECS,
     INNER_SPECS,
     NONINNER_SPECS,
+    RMS_NORM_SPECS,
+    RMS_NORM_WEIGHT_OFFSET,
     WIDE_CPU_SPECS,
+    RmsNormSpec,
     RowwiseSpec,
     build_graph,
+    build_rms_norm_graph,
 )
 from max.driver import CPU, Buffer
 from max.dtype import DType
@@ -145,7 +155,7 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         # max/min and the selected argmax/argmin value are representable
         # exactly, so both dtypes match to a tight absolute tolerance.
         return 1e-3, 0.0, 0.0
-    if op == "reduce_sum":
+    if op in ("reduce_sum", "sum_plus_bias"):
         return (0.15, 5e-2, 2e-2) if half else (1e-2, 1e-3, 0.0)
     if op in ("reduce_mean", "row_mean_of_squares"):
         return (2e-2, 3e-2, 2e-2) if half else (1e-3, 1e-3, 0.0)
@@ -153,7 +163,12 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         return (3e-3, 6e-2, 5e-3) if half else (1e-4, 1e-3, 0.0)
     if op == "logsoftmax":
         return (5e-2, 6e-2, 5e-3) if half else (1e-3, 1e-3, 0.0)
-    if op in ("layer_norm", "rms_norm"):
+    if op in (
+        "layer_norm",
+        "rms_norm",
+        "rms_norm_spelled",
+        "rms_norm_of_product",
+    ):
         return (4e-2, 6e-2, 1e-2) if half else (2e-3, 2e-3, 0.0)
     raise ValueError(f"no tolerance for {op!r}")
 
@@ -231,6 +246,9 @@ def _reference_and_check(
     got = _read_f32(outs[0])
     if op == "reduce_sum":
         ref = xf.sum(dim=axis).numpy()
+    elif op == "sum_plus_bias":
+        bias = weights[0].to(torch.float32)
+        ref = (xf.sum(dim=axis, keepdim=True) + bias).numpy()
     elif op == "reduce_max":
         ref = xf.amax(dim=axis).numpy()
     elif op == "reduce_min":
@@ -252,6 +270,13 @@ def _reference_and_check(
         weight = weights[0].to(torch.float32)
         ms = xf.pow(2).mean(dim=-1, keepdim=True)
         ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * weight).numpy()
+    elif op in ("rms_norm_spelled", "rms_norm_of_product"):
+        if op == "rms_norm_of_product":
+            # The product rounds to the input dtype before the norm.
+            xf = (x * weights[0]).to(torch.float32)
+        gamma = weights[-1].to(torch.float32)
+        ms = xf.pow(2).mean(dim=axis, keepdim=True)
+        ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * gamma).numpy()
     else:
         raise ValueError(f"no reference for {op!r}")
     _assert_close(got, ref, op, dtype, label)
@@ -270,9 +295,32 @@ def test_rowwise_inner(session: InferenceSession, spec: RowwiseSpec) -> None:
             ]
         elif spec.op == "rms_norm":
             weights = [_make_weight(1, cols, spec.dtype)]
+        elif spec.op in FUSED_OPS:
+            weights = _fused_inputs(spec.op, _INNER_ROWS, cols, -1, spec.dtype)
         _reference_and_check(
             spec.op, spec.dtype, model, x, -1, weights, f"cols={cols}"
         )
+
+
+def _fused_inputs(
+    op: str, rows: int, cols: int, axis: int, dtype: DType
+) -> list[torch.Tensor]:
+    """The inputs a fused graph takes besides the reduced one."""
+    if op == "sum_plus_bias":
+        shape = (rows, 1) if axis == -1 else (1, cols)
+        torch.manual_seed(1)
+        return [torch.randn(shape).to(_torch_dtype(dtype))]
+    if op in ("rms_norm_spelled", "rms_norm_of_product"):
+        gamma = (
+            _make_weight(1, cols, dtype)
+            if axis == -1
+            else _make_weight(1, rows, dtype).reshape(rows, 1)
+        )
+        if op == "rms_norm_spelled":
+            return [gamma]
+        torch.manual_seed(2)
+        return [torch.randn(rows, cols).to(_torch_dtype(dtype)), gamma]
+    raise ValueError(f"no inputs for {op!r}")
 
 
 @pytest.mark.parametrize("spec", NONINNER_SPECS, ids=lambda s: s.name)
@@ -280,8 +328,13 @@ def test_rowwise_noninner(session: InferenceSession, spec: RowwiseSpec) -> None:
     model = session.load(build_graph(spec))
     for rows, cols in _NONINNER_SHAPES:
         x = _make_input(spec.op, rows, cols, spec.dtype)
+        inputs = (
+            _fused_inputs(spec.op, rows, cols, 0, spec.dtype)
+            if spec.op in FUSED_OPS
+            else []
+        )
         _reference_and_check(
-            spec.op, spec.dtype, model, x, 0, [], f"shape={rows}x{cols}"
+            spec.op, spec.dtype, model, x, 0, inputs, f"shape={rows}x{cols}"
         )
 
 
@@ -336,6 +389,63 @@ def test_rowwise_inner_gpu_splitk(
 ) -> None:
     model = session.load(build_graph(spec))
     x = _make_input(spec.op, _SPLITK_ROWS, _SPLITK_COLS, spec.dtype)
-    _reference_and_check(
-        spec.op, spec.dtype, model, x, -1, [], f"cols={_SPLITK_COLS}"
+    inputs = (
+        _fused_inputs(spec.op, _SPLITK_ROWS, _SPLITK_COLS, -1, spec.dtype)
+        if spec.op in FUSED_OPS
+        else []
     )
+    _reference_and_check(
+        spec.op, spec.dtype, model, x, -1, inputs, f"cols={_SPLITK_COLS}"
+    )
+
+
+# Shapes for the rms_norm graphs, by input rank: no rows, short and odd rows,
+# widths on either side of powers of two, many rows, and few long rows, which
+# take the GPU split-K tier (rows of at least 224 KB) and the CPU split-axis
+# tier (rows of at least 262144 elements).
+_RMS_NORM_SHAPES: dict[int, list[tuple[int, ...]]] = {
+    1: [(5,), (557,), (8193,)],
+    2: [
+        (0, 128),
+        (2, 5),
+        (2, 55),
+        (7, 557),
+        (2, 8191),
+        (2, 8192),
+        (2, 8193),
+        (2, 16384),
+        (2, 16385),
+        (3001, 128),
+        (24576, 256),
+        (1, 65536),
+        (3, 100003),
+        (16, 262144),
+        (1, 262147),
+        (2, 524288),
+    ],
+    5: [(3, 4, 10, 20, 8), (1, 5, 6, 10, 128)],
+}
+# Outer dims for a static row width: several rows per block, and a row count
+# that doesn't divide the block.
+_RMS_NORM_STATIC_OUTER = [(3, 41), (1, 513)]
+
+
+def _rms_norm_shapes(spec: RmsNormSpec) -> list[tuple[int, ...]]:
+    if spec.static_cols:
+        return [(*outer, spec.static_cols) for outer in _RMS_NORM_STATIC_OUTER]
+    return _RMS_NORM_SHAPES[spec.rank]
+
+
+@pytest.mark.parametrize("spec", RMS_NORM_SPECS, ids=lambda s: s.name)
+def test_rms_norm_edges(session: InferenceSession, spec: RmsNormSpec) -> None:
+    model = session.load(build_rms_norm_graph(spec))
+    for shape in _rms_norm_shapes(spec):
+        torch.manual_seed(0)
+        x = torch.randn(shape).to(_torch_dtype(spec.dtype))
+        weight = _make_weight(1, shape[-1], spec.dtype)
+        got = _read_f32(_feed(model, [x, weight])[0])
+        xf = x.to(torch.float32)
+        ms = xf.pow(2).mean(dim=-1, keepdim=True)
+        scale = weight.to(torch.float32) + RMS_NORM_WEIGHT_OFFSET
+        ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * scale).numpy()
+        _assert_close(got, ref, "rms_norm", spec.dtype, f"shape={shape}")

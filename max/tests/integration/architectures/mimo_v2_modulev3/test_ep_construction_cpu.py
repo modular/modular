@@ -50,10 +50,14 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import SafetensorWeights, WeightData
-from max.nn.legacy import kernels
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn import _graph_ops as kernels
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.outputs import ReturnLogits
+from max.nn.quant_config import QuantConfig
+from max.pipelines.architectures.mimo_v2.weight_adapters import (
+    mimo_v2_weight_rules,
+)
 from max.pipelines.architectures.mimo_v2_modulev3.layers.moe import (
     MiMoV2ExpertParallelMoE,
 )
@@ -74,11 +78,9 @@ from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
 from max.pipelines.architectures.mimo_v2_modulev3.quant import (
     MXFP8_DISPATCH_QUANT_CONFIG,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
-    convert_safetensor_state_dict,
-)
 from max.pipelines.context import TextContext
 from max.pipelines.context.tokens import TokenBuffer
+from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
     modulev3_ragged_kv_symbolic_inputs,
@@ -498,9 +500,8 @@ def test_mimo_v2_ep2_stages_with_the_ep_tail(
     devices = [ref.to_device() for ref in config.devices]
     mesh = DeviceMesh(tuple(devices), (N_DEVICES,), ("tp",))
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-    adapted: dict[str, WeightData] = convert_safetensor_state_dict(
-        dict(weights.items()), huggingface_config=_hf(checkpoint)
-    )
+    transform = WeightTransform(mimo_v2_weight_rules(_hf(checkpoint)))
+    adapted: dict[str, WeightData] = transform(dict(weights.items()))
 
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
         model = MiMoV2(config, ep_batch_manager)
@@ -554,9 +555,8 @@ def test_mimo_v2_dp2_stages_with_the_batch_split(
     # the split placement keys on it.
     mesh = DeviceMesh(tuple(devices), (N_DEVICES,), ("dp",))
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-    adapted: dict[str, WeightData] = convert_safetensor_state_dict(
-        dict(weights.items()), huggingface_config=_hf(checkpoint)
-    )
+    transform = WeightTransform(mimo_v2_weight_rules(_hf(checkpoint)))
+    adapted: dict[str, WeightData] = transform(dict(weights.items()))
 
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
         model = MiMoV2(config, ep_batch_manager)

@@ -30,11 +30,8 @@ from typing import Any, ClassVar
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
-    KVCacheParamInterface,
-    spec_decode_cache_slack,
-)
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.glm5_next.model_config import (
     LINEAR_ATTENTION,
     MLA_KERNEL_LATENT_WIDTH,
@@ -64,8 +61,8 @@ from typing_extensions import Self, override
 
 from ..deepseekV3_2_modulev3.model_config import DeepseekV3_2Config
 from .checkpoint import (
-    _hc_fn_dtype,
     _stored_hc_fn_dtype,
+    check_raw_projections,
     checkpoint_quant_scheme,
 )
 
@@ -142,20 +139,21 @@ class Glm5NextConfig(DeepseekV3_2Config):
 
         The decoder returns only the last token's logits, whatever
         ``outputs`` asks for; the fused MTP graph sets its own outputs.
+
+        Raises:
+            ValueError: If the checkpoint's ``modules_to_not_convert``
+                disagrees with which MLA projections carry a scale.
         """
         del outputs
+        check_raw_projections(state_dict)
         self.quant_config = self.resolve_quant_scheme(state_dict)
         for name, weight in state_dict.items():
             if name.endswith("e_score_correction_bias"):
                 self.correction_bias_dtype = weight.dtype
                 break
-        self.hc_fn_dtype = _hc_fn_dtype(
-            _stored_hc_fn_dtype(state_dict),
-            self.hc_mult,
-            self.hidden_size,
-            self.compute_dtype,
-            self.devices[0].to_device(),
-        )
+        # Held as stored: the fused pre-site op reads a bfloat16 projection,
+        # and the unfused path widens it to float32, which is exact.
+        self.hc_fn_dtype = _stored_hc_fn_dtype(state_dict)
         return self
 
     def __post_init__(self) -> None:

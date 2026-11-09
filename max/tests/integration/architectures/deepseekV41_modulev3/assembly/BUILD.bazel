@@ -43,7 +43,7 @@ modular_eager_py_test(
     name = "test_runtime",
     srcs = ["test_runtime.py"],
     cpu_only = True,
-    # Needs mo.csa.window_kv_store, registered only by the closed-source kernels.
+    # Needs attention.csa.window_kv_store, registered only by the closed-source kernels.
     env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     # tokenizers is a transitive dependency of transformers but doesn't have
     # an unversioned bazel alias, so we need to ignore its unresolved imports
@@ -59,7 +59,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/context",
@@ -105,7 +105,8 @@ modular_eager_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
@@ -113,7 +114,7 @@ modular_eager_py_test(
     ],
 )
 
-# The attention index list (main's mo.csa2.index_list) against the leaf-slot
+# The attention index list (main's attention.csa2.index_list) against the leaf-slot
 # formula, at T == 128 with a padded tail.
 modular_eager_py_test(
     name = "test_index_list_gpu",

@@ -26,117 +26,89 @@ async def _chunks(*chunks: bytes) -> AsyncIterator[bytes]:
         yield chunk
 
 
+_BOM = b"\xef\xbb\xbf"
+
+
 class TestIterLines:
     """Tests for iter_lines: byte chunks -> byte lines."""
 
     @pytest.mark.asyncio
-    async def test_empty_stream_yields_nothing(self) -> None:
-        lines = [line async for line in iter_lines(_chunks())]
-        assert lines == []
-
-    @pytest.mark.asyncio
-    async def test_lf_separated_lines(self) -> None:
-        lines = [
-            line async for line in iter_lines(_chunks(b"line1\nline2\nline3\n"))
-        ]
-        assert lines == [b"line1", b"line2", b"line3"]
-
-    @pytest.mark.asyncio
-    async def test_cr_separated_lines(self) -> None:
-        lines = [
-            line async for line in iter_lines(_chunks(b"line1\rline2\rline3\r"))
-        ]
-        assert lines == [b"line1", b"line2", b"line3"]
-
-    @pytest.mark.asyncio
-    async def test_crlf_separated_lines(self) -> None:
-        lines = [
-            line
-            async for line in iter_lines(
-                _chunks(b"line1\r\nline2\r\nline3\r\n")
-            )
-        ]
-        assert lines == [b"line1", b"line2", b"line3"]
-
-    @pytest.mark.asyncio
-    async def test_mixed_line_endings(self) -> None:
-        lines = [line async for line in iter_lines(_chunks(b"a\nb\rc\r\nd"))]
-        assert lines == [b"a", b"b", b"c", b"d"]
-
-    @pytest.mark.asyncio
-    async def test_empty_lines_preserved(self) -> None:
-        lines = [line async for line in iter_lines(_chunks(b"a\n\nb\n"))]
-        assert lines == [b"a", b"", b"b"]
-
-    @pytest.mark.asyncio
-    async def test_content_split_across_chunks(self) -> None:
-        lines = [
-            line
-            async for line in iter_lines(
-                _chunks(b"hel", b"lo\n", b"wor", b"ld\n")
-            )
-        ]
-        assert lines == [b"hello", b"world"]
-
-    @pytest.mark.asyncio
-    async def test_crlf_split_across_chunks(self) -> None:
-        # CR arrives in one chunk, LF in the next: must be treated as a single
-        # CRLF line ending, not two separate line endings.
-        lines = [
-            line async for line in iter_lines(_chunks(b"line1\r", b"\nline2\n"))
-        ]
-        assert lines == [b"line1", b"line2"]
-
-    @pytest.mark.asyncio
-    async def test_no_trailing_newline_yields_final_line(self) -> None:
-        lines = [line async for line in iter_lines(_chunks(b"line1\nline2"))]
-        assert lines == [b"line1", b"line2"]
-
-    @pytest.mark.asyncio
-    async def test_trailing_cr_yields_line(self) -> None:
-        lines = [line async for line in iter_lines(_chunks(b"line1\r"))]
-        assert lines == [b"line1"]
-
-    @pytest.mark.asyncio
-    async def test_bom_stripped_from_first_chunk(self) -> None:
-        bom = b"\xef\xbb\xbf"
-        lines = [
-            line async for line in iter_lines(_chunks(bom + b"line1\nline2\n"))
-        ]
-        assert lines == [b"line1", b"line2"]
-
-    @pytest.mark.asyncio
-    async def test_bom_only_stream_yields_nothing(self) -> None:
-        bom = b"\xef\xbb\xbf"
-        lines = [line async for line in iter_lines(_chunks(bom))]
-        assert lines == []
-
-    @pytest.mark.asyncio
-    async def test_empty_chunks_are_skipped(self) -> None:
-        lines = [
-            line
-            async for line in iter_lines(
-                _chunks(b"", b"line1\n", b"", b"line2\n")
-            )
-        ]
-        assert lines == [b"line1", b"line2"]
-
-    @pytest.mark.asyncio
-    async def test_only_newlines(self) -> None:
-        lines = [line async for line in iter_lines(_chunks(b"\n\n\n"))]
-        assert lines == [b"", b"", b""]
-
-    @pytest.mark.asyncio
-    async def test_consecutive_crs(self) -> None:
-        # Each CR is an independent line ending.
-        lines = [line async for line in iter_lines(_chunks(b"a\r\rb\r"))]
-        assert lines == [b"a", b"", b"b"]
-
-    @pytest.mark.asyncio
-    async def test_binary_content_passed_through(self) -> None:
-        # Non-ASCII bytes in content are preserved unchanged.
-        lines = [line async for line in iter_lines(_chunks(b"\xc3\xa9\n"))]
-        assert lines == [b"\xc3\xa9"]
+    @pytest.mark.parametrize(
+        ("chunks", "expected"),
+        [
+            pytest.param((), [], id="empty_stream_yields_nothing"),
+            pytest.param(
+                (b"line1\nline2\nline3\n",),
+                [b"line1", b"line2", b"line3"],
+                id="lf_separated_lines",
+            ),
+            pytest.param(
+                (b"line1\rline2\rline3\r",),
+                [b"line1", b"line2", b"line3"],
+                id="cr_separated_lines",
+            ),
+            pytest.param(
+                (b"line1\r\nline2\r\nline3\r\n",),
+                [b"line1", b"line2", b"line3"],
+                id="crlf_separated_lines",
+            ),
+            pytest.param(
+                (b"a\nb\rc\r\nd",),
+                [b"a", b"b", b"c", b"d"],
+                id="mixed_line_endings",
+            ),
+            pytest.param(
+                (b"a\n\nb\n",), [b"a", b"", b"b"], id="empty_lines_preserved"
+            ),
+            pytest.param(
+                (b"hel", b"lo\n", b"wor", b"ld\n"),
+                [b"hello", b"world"],
+                id="content_split_across_chunks",
+            ),
+            # CR arrives in one chunk, LF in the next: must be treated as a
+            # single CRLF line ending, not two separate line endings.
+            pytest.param(
+                (b"line1\r", b"\nline2\n"),
+                [b"line1", b"line2"],
+                id="crlf_split_across_chunks",
+            ),
+            pytest.param(
+                (b"line1\nline2",),
+                [b"line1", b"line2"],
+                id="no_trailing_newline_yields_final_line",
+            ),
+            pytest.param(
+                (b"line1\r",), [b"line1"], id="trailing_cr_yields_line"
+            ),
+            pytest.param(
+                (_BOM + b"line1\nline2\n",),
+                [b"line1", b"line2"],
+                id="bom_stripped_from_first_chunk",
+            ),
+            pytest.param((_BOM,), [], id="bom_only_stream_yields_nothing"),
+            pytest.param(
+                (b"", b"line1\n", b"", b"line2\n"),
+                [b"line1", b"line2"],
+                id="empty_chunks_are_skipped",
+            ),
+            pytest.param((b"\n\n\n",), [b"", b"", b""], id="only_newlines"),
+            # Each CR is an independent line ending.
+            pytest.param(
+                (b"a\r\rb\r",), [b"a", b"", b"b"], id="consecutive_crs"
+            ),
+            # Non-ASCII bytes in content are preserved unchanged.
+            pytest.param(
+                (b"\xc3\xa9\n",),
+                [b"\xc3\xa9"],
+                id="binary_content_passed_through",
+            ),
+        ],
+    )
+    async def test_iter_lines(
+        self, chunks: tuple[bytes, ...], expected: list[bytes]
+    ) -> None:
+        lines = [line async for line in iter_lines(_chunks(*chunks))]
+        assert lines == expected
 
 
 class TestIterEvents:

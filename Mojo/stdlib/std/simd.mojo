@@ -285,11 +285,6 @@ def _simd_construction_checks[dtype: DType, size: SIMDLength]():
 
 
 @inline(.nodebug)
-def _has_native_bf16_support() -> Bool:
-    return is_gpu()
-
-
-@inline(.nodebug)
 def _has_native_f8_support() -> Bool:
     return CurrentPlugin.has_native_float8
 
@@ -945,10 +940,12 @@ struct SIMD[dtype: DType, length: SIMDLength](
             value._mlir_value
         )
 
+    # TODO(https://github.com/modular/modular/issues/7512):
+    # We need ensure the `len(elems) == Self.length` at compile
+    # time, however there is not yet a way to get the comptime size
+    # of a VariadicList.
     @inline(.nodebug)
-    def __init__(
-        out self, *elems: Scalar[Self.dtype], __list_literal__: NoneType = None
-    ):
+    def __init__(out self, *elems: Scalar[Self.dtype]):
         """Constructs a SIMD vector via a variadic list of elements.
 
         The input values are assigned to the corresponding elements of the SIMD
@@ -960,7 +957,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
         Args:
             elems: The variadic list of elements from which the SIMD vector is
                    constructed.
-            __list_literal__: Tell Mojo to use this method for list literals.
         """
         _simd_construction_checks[Self.dtype, Self.length]()
 
@@ -968,6 +964,44 @@ struct SIMD[dtype: DType, length: SIMDLength](
         assert Self.length == len(
             elems
         ), "mismatch in the number of elements in the SIMD variadic constructor"
+
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        comptime for i in range(Self.length):
+            self[i] = elems[i]
+
+    @inline(.nodebug)
+    def __init__[
+        *, __literal_size__: Int
+    ](out self, *elems: Scalar[Self.dtype], __list_literal__: NoneType):
+        """Constructs a SIMD vector from a list literal.
+
+        The literal must have exactly one element per lane.
+
+        Parameters:
+            __literal_size__: Infer the literal size from the list-literal.
+
+        Constraints:
+            The number of literal elements equals the SIMD vector's length.
+
+        Args:
+            elems: The elements of the list literal.
+            __list_literal__: Tell Mojo to use this method for list literals.
+
+        Examples:
+
+        ```mojo
+        var v: SIMD[DType.float32, 4] = [1.0, 2.0, 3.0, 4.0]
+        ```
+        """
+        _simd_construction_checks[Self.dtype, Self.length]()
+        # A `where` clause would reject this at parse time, but it cannot prove
+        # the sizes match in generic code guarded by `comptime if`, and it
+        # forms a declaration cycle through `SIMDLength.__eq__` and `Bool`.
+        comptime assert __literal_size__ == Int(Self.length), String(
+            t"expected {Int(Self.length)} elements in the SIMD list literal,"
+            t" found {__literal_size__}"
+        )
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 

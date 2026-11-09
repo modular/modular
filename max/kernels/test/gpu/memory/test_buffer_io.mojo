@@ -100,7 +100,7 @@ def cache_policy_kernel_volatile():
 
 
 @inline(.always)
-def _verify_cache_bits_always(asm: StringSlice) raises -> None:
+def _verify_cache_bits_always(asm: StringSpan) raises -> None:
     # aux = 0x00 - no cache control bits set
     # Should generate: buffer_load_dwordx4 v[...], v..., s[...], 0 offen
     assert_true("buffer_load_dwordx4" in asm)
@@ -112,7 +112,7 @@ def _verify_cache_bits_always(asm: StringSlice) raises -> None:
 
 
 @inline(.always)
-def _verify_cache_bits_streaming(asm: StringSlice) raises -> None:
+def _verify_cache_bits_streaming(asm: StringSpan) raises -> None:
     # aux = 0x02 - only NT bit set
     # Should generate: buffer_load_dwordx4 v[...], v..., s[...], 0 offen nt
     assert_true("buffer_load_dwordx4" in asm)
@@ -124,7 +124,7 @@ def _verify_cache_bits_streaming(asm: StringSlice) raises -> None:
 
 
 @inline(.always)
-def _verify_cache_bits_global(asm: StringSlice) raises -> None:
+def _verify_cache_bits_global(asm: StringSpan) raises -> None:
     # aux = 0x10 - only SC1 bit set
     # Should generate: buffer_load_dwordx4 v[...], v..., s[...], 0 offen sc1
     assert_true("buffer_load_dwordx4" in asm)
@@ -136,7 +136,7 @@ def _verify_cache_bits_global(asm: StringSlice) raises -> None:
 
 
 @inline(.always)
-def _verify_cache_bits_volatile(asm: StringSlice) raises -> None:
+def _verify_cache_bits_volatile(asm: StringSpan) raises -> None:
     # aux = 0x11 - SC0 and SC1 bits set
     # Should generate: buffer_load_dwordx4 v[...], v..., s[...], 0 offen sc0 sc1
     assert_true("buffer_load_dwordx4" in asm)

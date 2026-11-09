@@ -1323,7 +1323,7 @@ def main(
         if ":" not in override_pipeline_golden_location:
             raise click.BadParameter(
                 f"Expected format PIPELINE_NAME:/path, got: {override_pipeline_golden_location!r}",
-                param_hint="'try --override-pipeline-golden-location allenai/OLMo-1B-hf-float32:/path/to/golden.tar.gz'",
+                param_hint="'try --override-pipeline-golden-location PIPELINE_NAME:/path/to/golden.tar.gz'",
             )
         override_pipeline_name, golden_path_replacement = (
             override_pipeline_golden_location.split(":", 1)

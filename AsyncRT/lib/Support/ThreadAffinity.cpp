@@ -17,7 +17,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/Support/ThreadAffinity.h"
-#include "Support/MArchTarget/Host.h"
 #include "Support/Threading/ThreadAffinity.h"
 
 #include "llvm/Support/DebugLog.h"

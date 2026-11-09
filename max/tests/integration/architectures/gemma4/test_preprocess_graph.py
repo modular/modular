@@ -28,6 +28,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import numpy as np
 import numpy.typing as npt
@@ -45,6 +46,9 @@ from max.pipelines.architectures.gemma4.image_processor import (
     Gemma4ImageProcessor,
 )
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
+from max.pipelines.architectures.gemma4.model_config import (
+    Gemma4ForConditionalGenerationConfig,
+)
 from max.pipelines.architectures.gemma4.video_processor import (
     Gemma4VideoProcessor,
     VideoMetadata,
@@ -238,21 +242,22 @@ def test_a_video_frame_is_a_one_frame_image(
         )
 
 
-def _model(tmp_path: Path, vision_config: object) -> Any:
-    """A stand-in with what ``vision_preprocess_spec`` reads."""
+def _configs(tmp_path: Path, vision_config: object) -> tuple[Any, Any]:
+    """Stand-ins for the configs ``vision_preprocess_spec_for`` reads."""
     (tmp_path / "processor_config.json").write_text(
         json.dumps({"image_processor": {"patch_size": _PATCH}})
     )
-    return SimpleNamespace(
-        config=SimpleNamespace(
-            vision_config=vision_config, unquantized_dtype=DType.bfloat16
-        ),
-        pipeline_config=SimpleNamespace(
-            model=SimpleNamespace(
-                model_path=str(tmp_path), huggingface_model_revision=None
-            )
-        ),
+    pipeline_config = SimpleNamespace(
+        model=SimpleNamespace(
+            model_path=str(tmp_path), huggingface_model_revision=None
+        )
     )
+    config = Mock(
+        spec=Gemma4ForConditionalGenerationConfig,
+        vision_config=vision_config,
+        unquantized_dtype=DType.bfloat16,
+    )
+    return pipeline_config, config
 
 
 def test_vision_preprocess_returns_the_vision_inputs_by_path(
@@ -260,8 +265,9 @@ def test_vision_preprocess_returns_the_vision_inputs_by_path(
 ) -> None:
     """A serving engine feeds the preprocess graph's outputs to the tower by
     path, so they are the tower's one-device inputs for an image."""
-    model = _model(tmp_path, SimpleNamespace(patch_size=_PATCH))
-    spec = Gemma3_MultiModalModel.vision_preprocess_spec(model)
+    spec = Gemma3_MultiModalModel.vision_preprocess_spec_for(
+        *_configs(tmp_path, SimpleNamespace(patch_size=_PATCH))
+    )
     assert spec is not None
     outputs, out_tree = tree.flatten(spec.trace().output_tree)
     tower: Any = SimpleNamespace(
@@ -281,5 +287,5 @@ def test_vision_preprocess_returns_the_vision_inputs_by_path(
 def test_a_checkpoint_without_a_tower_has_no_preprocess_graph(
     tmp_path: Path,
 ) -> None:
-    model = _model(tmp_path, None)
-    assert Gemma3_MultiModalModel.vision_preprocess_spec(model) is None
+    configs = _configs(tmp_path, None)
+    assert Gemma3_MultiModalModel.vision_preprocess_spec_for(*configs) is None

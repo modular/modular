@@ -15,6 +15,7 @@
 #define KGEN_ELABORATOR_PARAMETRICELABORATOR_H
 
 #include "Cache/CachedTransform.h"
+#include "ElaboratorHelper.h"
 #include "InterpreterCache.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/BytecodeInterpreter.h"
@@ -103,7 +104,8 @@ public:
 
   /// Lookup an existing concrete function.
   InstantiatedOpInterface lookupInstantiatedOp(StringAttr name) {
-    InstantiatedOpInterface localResult = (*tlInsts)[name];
+    // This has to be a reference because it is reassigned below.
+    InstantiatedOpInterface &localResult = (*tlInsts)[name];
     if (!localResult) {
       localResult =
           concreteNodes.read([name](auto &map) { return map.at(name)->inst; });
@@ -185,7 +187,8 @@ public:
       llvm::errs() << "value: " << value << "\n";
       llvm::errs() << "operands: " << operands << "\n";
       llvm::errs() << "\n";
-      op->dump();
+      op->print(llvm::errs());
+      llvm::errs() << "\n";
     }
 
     assert(result == value && "non-deterministic interpreter results");
@@ -362,6 +365,9 @@ private:
   /// The elaborator config.
   ElaborateGeneratorsOptions config;
 
+  /// What each `comptime for` produced, when `config.printStats` is set.
+  Shared<std::vector<ComptimeForRecord>> comptimeForStats;
+
   /// This is the symbol table of the new module.
   /// Map from name to op + concrete function to implementation node.
   Shared<DenseMap<StringAttr, PImplNode *>> concreteNodes;
@@ -422,21 +428,6 @@ private:
   Shared<llvm::SetVector<CompileOffloadOp>> compileOffloadOps;
 
   friend class ParametricIREvaluator;
-
-public:
-  std::atomic<uint64_t> paramReplacerCacheTlsHits = 0;
-  std::atomic<uint64_t> paramReplacerCacheGlobalHits = 0;
-  std::atomic<uint64_t> paramReplacerCacheMisses = 0;
-
-  std::atomic<uint64_t> applyCacheMisses = 0;
-  std::atomic<uint64_t> applyCacheTlsHit = 0;
-  std::atomic<uint64_t> applyCacheGlobalHit = 0;
-  std::atomic<uint64_t> applyCacheDuplicates = 0;
-
-  Shared<llvm::DenseMap<uint64_t, uint64_t>> cacheSizes;
-
-  Shared<llvm::DenseMap<const void *, std::tuple<Attribute, Type, uint64_t>>>
-      replacerStats;
 };
 
 } // namespace M::KGEN

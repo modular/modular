@@ -29,7 +29,7 @@ from max.graph import DeviceRef
 from mimo_dflash_harness import fused_graph, tiny_model
 from tiny_mimo_dflash import Model
 
-FUSED_QKV = "mo.chunked_qkv_rope_store.ragged.paged"
+FUSED_QKV = "kv_cache.chunked_qkv_rope_store.ragged.paged"
 
 
 @pytest.fixture(scope="module")

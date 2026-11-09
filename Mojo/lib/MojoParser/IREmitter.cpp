@@ -1434,8 +1434,15 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
   }
   if (llvm::any_of(type.getParamBindings(),
                    [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
-    emitError(value.expr->getLoc())
-        << type << " is not concrete, use '[]' to bind missing parameters";
+    auto diag = emitError(value.expr->getLoc())
+                << type
+                << " is not concrete, use '[]' to bind missing parameters";
+    // The type printer hides infer-only parameters, so name the missing ones.
+    // A bound signature keeps only its unbound parameters.
+    if (TypeSignatureType sig = type.getSignature())
+      for (size_t idx = 0, e = sig.getNumParams(); idx != e; ++idx)
+        diag.attachNote(value.expr->getLoc())
+            << "missing parameter '" << sig.getParamName(idx).getValue() << "'";
     return {};
   }
 

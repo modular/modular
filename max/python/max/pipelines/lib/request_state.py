@@ -43,7 +43,7 @@ from typing import Any
 from max.driver import Buffer, Device
 from max.graph import BufferType, SymbolicDim, TensorType
 from max.nn.legacy.graph_groups import GraphGroup
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 

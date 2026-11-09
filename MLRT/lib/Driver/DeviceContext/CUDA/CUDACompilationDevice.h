@@ -22,6 +22,7 @@
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include <memory>
 #include <string>
@@ -38,7 +39,7 @@ class DriverVersion;
 /// Example usage:
 ///   auto device = CUDACompilationDevice::create("sm_80");
 ///   auto cubin = device->compileFunction(ptx, "0", 3, "sm_80");
-class CUDACompilationDevice : public CompilationDevice {
+class MODULAR_CXX_EXPORT CUDACompilationDevice : public CompilationDevice {
 public:
   /// Create a CUDA compilation device for the specified target architecture.
   ///

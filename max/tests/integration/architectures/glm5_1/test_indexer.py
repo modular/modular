@@ -24,7 +24,10 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy import (
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheQuantizationConfig, MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -32,12 +35,6 @@ from max.nn.legacy import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kv_cache import (
-    KVCacheQuantizationConfig,
-    MHAKVCacheParams,
-)
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.deepseekV3_2.layers import Indexer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -188,7 +185,7 @@ def run_max_indexer(
     qr: torch.Tensor,
     input_row_offsets: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
-    mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
+    mask_variant: MHAMaskVariant,
     rope_dim: int = qk_rope_head_dim,
 ) -> torch.Tensor:
     device = Accelerator()
@@ -369,7 +366,12 @@ def test_indexer_no_mask(
 ) -> None:
     total_seq_len = batch_size * seq_len
     max_output = run_max_indexer(
-        x, qr, input_row_offsets, state_dict, rope_dim=rope_dim
+        x,
+        qr,
+        input_row_offsets,
+        state_dict,
+        MHAMaskVariant.NULL_MASK,
+        rope_dim=rope_dim,
     )
     torch_output = run_torch_indexer(x, qr, state_dict, rope_dim=rope_dim)
 

@@ -13,7 +13,8 @@
 
 """Provides block-scaled quantization kernels for NVFP4, MXFP4, and MXFP8."""
 
-from std.math import align_up, ceildiv, rsqrt
+from std.atomic import Atomic, Ordering
+from std.math import align_up, ceildiv, iota, rsqrt
 from std.math.uutils import uceildiv, udivmod, ufloordiv
 from std.memory import unsafe_stack_allocation
 from max.gpu import (
@@ -39,10 +40,12 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
+    stack_allocation as tt_stack_allocation,
 )
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from std.collections import OptionalReg
 from std.logger import Logger
+import max.gpu.primitives.block as block
 from max.gpu.primitives import warp
 from max.gpu.primitives.warp import lane_group_max, shuffle_down, shuffle_xor
 from std.complex import ComplexSIMD
@@ -2929,7 +2932,6 @@ def block_scaled_matmul_with_epilogue[
             )
             elementwise[
                 simd_size,
-                target="gpu",
                 _trace_description="elementwise_block_scaled_matmul_epilogue",
             ](value_epilogue_wrapper, (m, n), ctx)
         else:
@@ -2971,7 +2973,6 @@ def block_scaled_matmul[
     compute_fn_col_start: Int = 0,
     pdl_level: PDLLevel = PDLLevel.ON,
     _trace_description: StaticString = "",
-    target: StaticString = "cpu",
 ](
     c_device: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_device: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -3025,8 +3026,6 @@ def block_scaled_matmul[
             its predecessor at entry and releases its dependents at exit.
         _trace_description: Extra label appended to the trace event
             for profiling (defaults to `""`).
-        target: Trace target string identifying the device in
-            profiling output (defaults to `"cpu"`).
     Args:
         c_device: Output matrix of shape `[M, N]`.
         a_device: LHS input matrix of shape `[M, K]` for FP8 or
@@ -3214,7 +3213,7 @@ def block_scaled_matmul[
         # fmt: off
         return String(
             "(",
-            target,
+            ctx.target.device_kind_label(),
             ";", trace_arg("A", (m, k), a_type),
             ";", trace_arg("B", (k, n), b_type),
             ";", trace_arg("C", (m, n), c_type),
@@ -3227,7 +3226,7 @@ def block_scaled_matmul[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         # Create a string literal so that the event label works with the
         # AsyncRT profiler, whose event labels must be `StaticString`s.
         get_static_string[
@@ -3359,7 +3358,6 @@ def quantize_dynamic_block_scaled[
     //,
     *,
     SF_VECTOR_SIZE: Int,
-    target: StaticString = "cpu",
 ](
     output_device: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
     scales_device: TileTensor[
@@ -3386,8 +3384,6 @@ def quantize_dynamic_block_scaled[
             (inferred). Must be `bfloat16`.
         SF_VECTOR_SIZE: Number of elements covered by each block scale
             factor: 16 for NVFP4 or 32 for MXFP8.
-        target: Trace target string identifying the device in
-            profiling output (defaults to `"cpu"`).
     Args:
         output_device: Output quantized tensor of packed FP4 `uint8`
             or `float8_e4m3fn` for MXFP8.
@@ -3796,7 +3792,6 @@ def block_scales_interleave[
     //,
     *,
     SF_VECTOR_SIZE: Int,
-    target: StaticString = "cpu",
 ](
     output_scales_device: TileTensor[
         mut=True, scales_dtype, address_space=.GENERIC, ...
@@ -3816,8 +3811,6 @@ def block_scales_interleave[
             (inferred).
         SF_VECTOR_SIZE: Number of elements covered by each block scale
             factor: 16 for NVFP4 or 32 for MXFP4.
-        target: Trace target string identifying the device in
-            profiling output (defaults to `"cpu"`).
     Args:
         output_scales_device: Output rank-5 scale-factor tensor in the
             5D TCGEN interleaved layout.
@@ -3862,13 +3855,15 @@ def quantize_mxfp8_lane_group[
     scales_dtype: DType,
     *,
     SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
+    stride: Int = 1,
 ](val: SIMD[in_dtype, width]) -> Tuple[
     SIMD[out_dtype, width], Scalar[scales_dtype]
 ]:
     """Quantizes one thread's slice of an MX block to MXFP8, cooperatively.
 
-    The block max spans `SF_VECTOR_SIZE // width` lanes, so the caller's
-    thread-to-column map must land each MX block on one aligned lane group.
+    The block max spans `SF_VECTOR_SIZE // width` lanes `stride` apart, so the
+    caller's thread-to-column map must land each MX block on one aligned lane
+    group.
 
     Parameters:
         in_dtype: Element type of the incoming values (bfloat16).
@@ -3876,9 +3871,10 @@ def quantize_mxfp8_lane_group[
         out_dtype: Quantized element type (`float8_e4m3fn`).
         scales_dtype: Block-scale type (`float8_e8m0fnu`).
         SF_VECTOR_SIZE: Elements covered by one block scale (32).
+        stride: Lane distance between the group's lanes.
 
     Args:
-        val: This thread's `width` contiguous elements.
+        val: This thread's `width` elements of the block.
 
     Returns:
         `(quantized, e8m0_scale)`. Every lane in the group returns the same
@@ -3901,13 +3897,23 @@ def quantize_mxfp8_lane_group[
         num_lanes.is_power_of_two() and num_lanes <= WARP_SIZE
     ), "SF_VECTOR_SIZE // width must be a power of two no larger than the warp"
 
-    var thread_max = lane_group_max[num_lanes=num_lanes](abs(val).reduce_max())
+    var group_max: Float32
+    comptime if stride == 1:
+        group_max = lane_group_max[num_lanes=num_lanes](
+            abs(val).reduce_max()
+        ).cast[.float32]()
+    else:
+        # The cross-lane permutes take 32-bit lanes. The cast is exact, so
+        # the block max is the same.
+        group_max = lane_group_max[num_lanes=num_lanes, stride=stride](
+            abs(val).reduce_max().cast[.float32]()
+        )
     var e8m0_scale: Scalar[scales_dtype]
     var out_scale: Float32
     var block_is_dead: Bool
     e8m0_scale, out_scale, block_is_dead = compute_mxfp8_block_scale[
         scales_dtype
-    ](thread_max.cast[.float32]())
+    ](group_max)
 
     var data = val.cast[.float32]()
     # A dead block's multiplier is 0; zeroing avoids storing `inf * 0.0 = NaN`.
@@ -4407,6 +4413,1137 @@ def quantize_mx_amd[
         Int32(num_cols),
         block_dim=block_dim_val,
         grid_dim=grid_dim_val,
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
+)
+@__name(t"moe_gather_quantize_mx_amd_kernel_{out_dtype}")
+def _moe_gather_quantize_mx_amd_kernel[
+    out_dtype: DType,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    order_layout: TensorLayout,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    OrderEngine: TensorEngine,
+    *,
+    ELEMENTS_PER_THREAD: Int = 8,
+    SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
+    num_max_threads: Int = 512,
+](
+    output: TileTensor[
+        out_dtype, output_layout, MutAnyOrigin, Engine=OutputEngine
+    ],
+    scales: TileTensor[
+        .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=ScalesEngine
+    ],
+    input: TileTensor[
+        .bfloat16, input_layout, ImmutAnyOrigin, Engine=InputEngine
+    ],
+    token_expert_order: TileTensor[
+        .uint32, order_layout, ImmutAnyOrigin, Engine=OrderEngine
+    ],
+    topk: Int32,
+):
+    """Fused MoE fan-out gather + MXFP8 quantization, AMD CDNA4 (MI355X).
+
+    One CTA per sorted row `p` of the expert-grouped order
+    `moe_create_indices` builds: the CTA reads `token_expert_order[p]`,
+    gathers source row `order[p] // topk` from the bf16 `input`, and
+    quantizes it exactly as `_quantize_mx_amd_kernel` does -- the same
+    `quantize_mxfp8_lane_group` scale derivation, E8M0 rounding toward
+    +infinity -- writing fp8 row `p` and its `[K // 32]` E8M0 scale row.
+    Fusing away the separate gather removes its launch and its
+    materialized bf16 fan-out copy; the up-to-`topk` repeated reads of a
+    token's row are served from cache instead.
+    """
+    comptime num_threads_per_sf = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
+    comptime assert (
+        num_threads_per_sf == 4
+    ), "MX quantization requires 4 threads per scale factor group"
+    # The column loop strides by the block size, so a block size outside the
+    # lane-group grid would hand one scale block to two iterations (see
+    # `_mx_group_aligned_block_dim`).
+    debug_assert(
+        block_dim.x % num_threads_per_sf == 0,
+        "block_dim.x must be a multiple of the 4 lanes that share a block",
+    )
+    comptime assert OutputEngine.element_size == 1
+    comptime assert ScalesEngine.element_size == 1
+    comptime assert InputEngine.element_size == 1
+    comptime assert OrderEngine.element_size == 1
+
+    var num_rows = Int(token_expert_order.dim(0))
+    var num_tokens = Int(input.dim(0))
+    var num_col_threads = Int(input.dim(1)) // ELEMENTS_PER_THREAD
+
+    var topk_u32 = UInt32(topk)
+
+    # Release right after the wait; dependents wait for this kernel to
+    # finish before they read what it writes (see `PDL`).
+    with PDL[overlap_at_beginning=True]():
+        for sorted_row in range(block_idx.x, num_rows, grid_dim.x):
+            var src_row = Int(token_expert_order[sorted_row] // topk_u32)
+            # A slot an out-of-range id was filed in holds no valid row;
+            # the order entry is u32, so reading it would index `input`
+            # past the last token.
+            if src_row >= num_tokens:
+                continue
+            for col_thread_idx in range(
+                thread_idx.x, num_col_threads, block_dim.x
+            ):
+                var global_col_idx = col_thread_idx * ELEMENTS_PER_THREAD
+
+                var input_vector = input.load[ELEMENTS_PER_THREAD](
+                    (src_row, global_col_idx)
+                )
+
+                var quantized: SIMD[out_dtype, ELEMENTS_PER_THREAD]
+                var e8m0_scale: Float8_e8m0fnu
+                quantized, e8m0_scale = quantize_mxfp8_lane_group[
+                    out_dtype,
+                    DType.float8_e8m0fnu,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                ](input_vector)
+                output.store((sorted_row, global_col_idx), quantized)
+
+                # First thread in the 4-lane group stores the scale.
+                if global_col_idx % SF_VECTOR_SIZE == 0:
+                    scales.store(
+                        (sorted_row, global_col_idx // SF_VECTOR_SIZE),
+                        e8m0_scale,
+                    )
+
+
+@inline(.always)
+def moe_gather_quantize_mx_amd[
+    out_dtype: DType = .float8_e4m3fn,
+    scales_dtype: DType = .float8_e8m0fnu,
+    in_dtype: DType = .bfloat16,
+    //,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    OrderEngine: TensorEngine,
+    *,
+    num_max_threads: Int = 512,
+](
+    ctx: DeviceContext,
+    output_tile: TileTensor[
+        mut=True, out_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
+    ],
+    scales_tile: TileTensor[
+        mut=True,
+        scales_dtype,
+        address_space=.GENERIC,
+        ...,
+        Engine=ScalesEngine,
+    ],
+    input_tile: TileTensor[
+        mut=False, in_dtype, address_space=.GENERIC, ..., Engine=InputEngine
+    ],
+    order_tile: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ..., Engine=OrderEngine
+    ],
+    topk: Int,
+) raises:
+    """Gathers each sorted MoE row and quantizes it to MXFP8 in one launch.
+
+    The wide-row fallback inside the sort-fused MoE op -- rows past the
+    source-scatter kernel's one-CTA-per-token width -- and the
+    byte-identity reference the kernel tests compare against: sorted row
+    `p` reads source token row
+    `token_expert_order[p] // topk` and quantizes it exactly as
+    `quantize_mx_amd` would the gathered copy, so the two produce
+    byte-identical payloads and scales.
+
+    Parameters:
+        out_dtype: Element type of the quantized output tensor
+            (`float8_e4m3fn`, inferred).
+        scales_dtype: Element type of the block scale-factor tensor
+            (`float8_e8m0fnu`, inferred).
+        in_dtype: Element type of the input activation tensor
+            (`bfloat16`, inferred).
+        OutputEngine: Engine policy of the `output_tile` tensor.
+        ScalesEngine: Engine policy of the `scales_tile` tensor.
+        InputEngine: Engine policy of the `input_tile` tensor.
+        OrderEngine: Engine policy of the `order_tile` tensor.
+        num_max_threads: Maximum threads per block for the launch grid
+            (defaults to 512), rounded down to whole scale-block lane
+            groups.
+
+    Args:
+        ctx: Device context.
+        output_tile: Output `[P, K]` float8_e4m3fn, one row per sorted slot.
+        scales_tile: Output `[P, K // 32]` float8_e8m0fnu block scales,
+            row-major (the `preshuffled_b=False` layout the CDNA4 grouped
+            GEMM reads).
+        input_tile: Input `[M, K]` bfloat16 activations, one row per token.
+        order_tile: `moe_create_indices`'s `token_expert_order`, `[P]`
+            uint32 with `P == M * topk`. Every entry must name a slot
+            below `P`: `moe_create_indices` files each valid pair exactly
+            once, and a slot it files nowhere keeps its unwritten value,
+            which the kernel skips rather than reading an `input` row past
+            the last.
+        topk: Experts per token; the source row is the order entry
+            divided by it.
+    """
+    comptime assert (
+        out_dtype == .float8_e4m3fn
+    ), "the fused MoE gather+quantize outputs MXFP8 (float8_e4m3fn)"
+    comptime assert (
+        scales_dtype == .float8_e8m0fnu
+    ), "scales must be float8_e8m0fnu"
+    comptime assert in_dtype == .bfloat16, "input must be bfloat16"
+    comptime assert output_tile.flat_rank >= 2, "output must be rank 2"
+    comptime assert scales_tile.flat_rank >= 2, "scales must be rank 2"
+    comptime assert input_tile.flat_rank >= 2, "input must be rank 2"
+    comptime assert (
+        order_tile.flat_rank == 1
+    ), "token_expert_order must be rank 1"
+
+    var num_tokens = Int(input_tile.dim[0]())
+    var num_cols = Int(input_tile.dim[1]())
+    var num_slots = Int(order_tile.dim[0]())
+    if num_tokens == 0 or num_cols == 0:
+        return
+    if topk < 1:
+        raise Error(
+            "moe_gather_quantize_mx_amd: topk must be positive, got "
+            + String(topk)
+        )
+    if num_slots != num_tokens * topk:
+        raise Error(
+            "moe_gather_quantize_mx_amd: token_expert_order holds "
+            + String(num_slots)
+            + " slots but input has "
+            + String(num_tokens)
+            + " tokens at topk "
+            + String(topk)
+        )
+    if num_cols % MXFP8_SF_VECTOR_SIZE != 0:
+        raise Error(
+            "moe_gather_quantize_mx_amd: input columns must be a multiple"
+            " of 32 (MXFP8_SF_VECTOR_SIZE)"
+        )
+    if not (
+        Int(output_tile.dim[0]()) == num_slots
+        and Int(output_tile.dim[1]()) == num_cols
+        and Int(scales_tile.dim[0]()) == num_slots
+        and Int(scales_tile.dim[1]()) == num_cols // MXFP8_SF_VECTOR_SIZE
+    ):
+        raise Error(
+            "moe_gather_quantize_mx_amd: an output's shape disagrees with the"
+            " gather+quantize contract"
+        )
+    # Contiguous tensors only -- the launch contract the kernel was measured
+    # under.
+    if not (
+        Int(output_tile.layout.stride[1]().value()) == 1
+        and Int(output_tile.layout.stride[0]().value()) == num_cols
+        and Int(scales_tile.layout.stride[1]().value()) == 1
+        and Int(scales_tile.layout.stride[0]().value())
+        == num_cols // MXFP8_SF_VECTOR_SIZE
+        and Int(input_tile.layout.stride[1]().value()) == 1
+        and Int(input_tile.layout.stride[0]().value()) == num_cols
+        and Int(order_tile.layout.stride[0]().value()) == 1
+    ):
+        raise Error(
+            "moe_gather_quantize_mx_amd: every tensor must be contiguous"
+        )
+
+    comptime ELEMENTS_PER_THREAD = 8
+    var num_col_threads = ceildiv(num_cols, ELEMENTS_PER_THREAD)
+    var block_dim_val = (
+        _mx_group_aligned_block_dim(num_col_threads, num_max_threads),
+        1,
+        1,
+    )
+    # One CTA per sorted row: each row is one gather+quant unit, and the
+    # fan-out's repeated source rows are served from cache.
+    var grid_dim_val = (num_slots, 1, 1)
+
+    comptime kernel = _moe_gather_quantize_mx_amd_kernel[
+        out_dtype,
+        type_of(output_tile).LayoutType,
+        type_of(scales_tile).LayoutType,
+        type_of(input_tile).LayoutType,
+        type_of(order_tile).LayoutType,
+        OutputEngine,
+        ScalesEngine,
+        InputEngine,
+        OrderEngine,
+        ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
+        num_max_threads=num_max_threads,
+    ]
+
+    ctx.enqueue_function[kernel](
+        output_tile,
+        scales_tile,
+        input_tile,
+        order_tile,
+        Int32(topk),
+        block_dim=block_dim_val,
+        grid_dim=grid_dim_val,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+# The one-launch sort+gather+quantize covers at most this many fanned slots:
+# past it the per-CTA O(P) rank scan stops paying against the two-launch
+# `moe_create_indices` + `moe_source_scatter_quantize_mx_amd` chain; the
+# fused arm measured ahead at every covered decode batch.
+comptime _MOE_SORT_FUSED_MAX_SLOTS = 1024
+
+# Fused-reduce query slots per CTA: the CTA's own pair-key rank plus the CSR
+# bounds of its expert range, whose widest span is ceil(E / P) experts. 64
+# covers P >= ceil(E / 62) -- 16 slots at K3's 896 experts.
+comptime _MOE_SORT_MAX_QUERIES = 64
+
+# The reduce folds one LDS partial per query per warp; the block is
+# num_cols // 8 threads, so 16 warps covers every supported column count.
+comptime _MOE_SORT_MAX_WARPS = 16
+
+# One CDNA4 workgroup's LDS budget. The fused kernel's static allocation is
+# the `E`-entry histogram plus the reduce's partials and results, so the
+# expert count is bounded by it, not only by the 16-bit key packing.
+comptime _MOE_SORT_LDS_BYTES = 64 * 1024
+
+# The reduce's own LDS: `_MOE_SORT_MAX_QUERIES` results under
+# `_MOE_SORT_MAX_WARPS` per-warp partials, one u32 each.
+comptime _MOE_SORT_REDUCE_LDS_BYTES = (
+    _MOE_SORT_MAX_QUERIES * (_MOE_SORT_MAX_WARPS + 1) * size_of[UInt32]()
+)
+
+
+@inline(.always)
+def moe_sort_gather_quantize_fused_compilable[
+    num_experts: Int, num_cols: Int
+]() -> Bool:
+    """Whether the one-launch sort-fused kernel can be instantiated at all.
+
+    The shape-only half of `moe_sort_gather_quantize_fused_supported`: the
+    column granularity, the reduce's warp count and the LDS histogram bound
+    are compile-time properties of the launch, so a graph op that stages the
+    kernel behind a runtime slot-count check still instantiates it. Callers
+    gate the fused branch on this at compile time and fall back to the
+    two-launch chain for shapes the kernel cannot build for.
+    """
+    return (
+        num_cols % MXFP8_SF_VECTOR_SIZE == 0
+        and num_cols // 8 <= _MOE_SORT_MAX_WARPS * WARP_SIZE
+        and num_experts * size_of[UInt32]() + _MOE_SORT_REDUCE_LDS_BYTES
+        <= _MOE_SORT_LDS_BYTES
+    )
+
+
+# The rank key that sorts a pair out of every expert's CSR range and out of
+# every histogram bucket: an id outside `[0, num_experts)`, and a thread
+# past the slot count (a padding lane). Above every valid
+# `(expert << 16 | slot)` key, so no query bound below `num_experts << 16`
+# counts it.
+comptime _MOE_SORT_INVALID_KEY = UInt32(0xFFFFFFFF)
+
+
+@inline(.always)
+def moe_sort_gather_quantize_fused_supported(
+    num_slots: Int, num_experts: Int, num_cols: Int
+) -> Bool:
+    """Whether the one-launch sort+gather+quantize covers this launch.
+
+    The kernel keeps every `(expert, slot)` key in registers -- four per
+    thread, so the block must span the slot count -- ranks each pair with
+    one fused block count over `2 + ceil(E / P)` query bounds, and packs
+    the expert id and slot index into the high and low 16 bits of a u32
+    key. Its block is `K // 8` threads, one LDS partial column per warp
+    that reduces, so the block may hold at most `_MOE_SORT_MAX_WARPS`
+    warps; and its static LDS is the `E`-entry histogram next to the
+    reduce's partials, which one workgroup must hold. Launches outside
+    this envelope run the two-launch chain instead.
+
+    Args:
+        num_slots: Fanned-out row count `P == num_tokens * topk`.
+        num_experts: Expert count `E`.
+        num_cols: Activation row width `K`.
+
+    Returns:
+        Whether `_moe_sort_gather_quantize_mx_amd_kernel` supports the
+        launch.
+    """
+    return (
+        num_slots >= 4
+        and num_slots % 4 == 0
+        and num_slots <= min(_MOE_SORT_FUSED_MAX_SLOTS, num_cols // 2)
+        and num_experts >= 1
+        and num_experts <= 65535
+        and num_cols % MXFP8_SF_VECTOR_SIZE == 0
+        and num_cols // 8 <= _MOE_SORT_MAX_WARPS * WARP_SIZE
+        and num_experts * size_of[UInt32]() + _MOE_SORT_REDUCE_LDS_BYTES
+        <= _MOE_SORT_LDS_BYTES
+        and 2 + ceildiv(num_experts, num_slots) <= _MOE_SORT_MAX_QUERIES
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_cols // 8))
+)
+@__name(t"moe_sort_gather_quantize_mx_amd_kernel")
+def _moe_sort_gather_quantize_mx_amd_kernel[
+    num_experts: Int,
+    num_cols: Int,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    order_layout: TensorLayout,
+    start_layout: TensorLayout,
+    restore_layout: TensorLayout,
+    ids_layout: TensorLayout,
+    stats_layout: TensorLayout,
+    topk_ids_layout: TensorLayout,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    OrderEngine: TensorEngine,
+    StartEngine: TensorEngine,
+    RestoreEngine: TensorEngine,
+    IdsEngine: TensorEngine,
+    StatsEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+](
+    output: TileTensor[
+        .float8_e4m3fn, output_layout, MutAnyOrigin, Engine=OutputEngine
+    ],
+    scales: TileTensor[
+        .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=ScalesEngine
+    ],
+    input: TileTensor[
+        .bfloat16, input_layout, ImmutAnyOrigin, Engine=InputEngine
+    ],
+    order: TileTensor[.uint32, order_layout, MutAnyOrigin, Engine=OrderEngine],
+    start: TileTensor[.uint32, start_layout, MutAnyOrigin, Engine=StartEngine],
+    restore: TileTensor[
+        .uint32, restore_layout, MutAnyOrigin, Engine=RestoreEngine
+    ],
+    ids: TileTensor[.int32, ids_layout, MutAnyOrigin, Engine=IdsEngine],
+    stats: TileTensor[.uint32, stats_layout, MutAnyOrigin, Engine=StatsEngine],
+    topk_ids: TileTensor[
+        .int32, topk_ids_layout, ImmutAnyOrigin, Engine=TopkIdsEngine
+    ],
+    topk: Int32,
+    num_slots: Int32,
+):
+    """Expert sort + fan-out gather + MXFP8 quantize in one launch, AMD CDNA4.
+
+    One CTA per source pair. Phase A: every thread keeps its 4-id chunk of
+    the flat expert ids in registers and counts its keys below each query
+    bound -- the CTA's own pair key (whose stable rank over all P
+    `(expert, slot)` keys is the pair's sorted position) and the CSR bounds
+    of the expert range `[i*E/n, (i+1)*E/n)` the CTA owns. One fused block
+    reduction returns every count at once. CTA 0 additionally histograms
+    the ids in LDS and writes the usage stats. Phase B gathers source row
+    `i // topk` and MX-quants it exactly like
+    `_moe_gather_quantize_mx_amd_kernel`, writing at sorted position
+    `pos_i`. The `moe_create_indices` contract holds:
+    `expert_start_indices`, `expert_ids` and `expert_usage_stats` are
+    byte-equal to its, and `token_expert_order`/`restore_token_order` are
+    a stable-order grouping whose intra-expert positions -- a
+    relaxed-atomic cursor in `moe_create_indices` -- were never
+    load-bearing. A pair whose id falls outside `[0, num_experts)` files
+    no order entry and no payload row, its restore entry holds the
+    `num_slots` sentinel, and `expert_start_indices[num_experts]` counts the
+    valid pairs only -- all exactly as `moe_create_indices`.
+    """
+    comptime assert OutputEngine.element_size == 1
+    comptime assert ScalesEngine.element_size == 1
+    comptime assert InputEngine.element_size == 1
+    comptime assert OrderEngine.element_size == 1
+    comptime assert StartEngine.element_size == 1
+    comptime assert RestoreEngine.element_size == 1
+    comptime assert IdsEngine.element_size == 1
+    comptime assert StatsEngine.element_size == 1
+    comptime assert TopkIdsEngine.element_size == 1
+
+    comptime assert (
+        num_experts * size_of[UInt32]() + _MOE_SORT_REDUCE_LDS_BYTES
+        <= _MOE_SORT_LDS_BYTES
+    ), "the histogram plus the reduce's partials exceed a workgroup's LDS"
+    comptime block_threads = num_cols // 8
+    # The warp-shuffle reduce needs whole warps; a narrower or ragged block
+    # (a small latent width) folds the same counts through LDS atomics.
+    comptime warp_aligned = (
+        block_threads >= WARP_SIZE and block_threads % WARP_SIZE == 0
+    )
+    var n = Int(num_slots)
+    var i = block_idx.x
+    var tid = thread_idx.x
+    var lane = lane_id()
+    var wid = warp_id()
+    comptime nw = block_threads // WARP_SIZE
+    comptime assert (
+        nw <= _MOE_SORT_MAX_WARPS
+    ), "the reduce holds one LDS partial column per warp"
+    debug_assert(
+        block_dim.x == block_threads,
+        "the sort-fused kernel launches num_cols // 8-thread CTAs",
+    )
+    debug_assert(n % 4 == 0, "the slot count must be a multiple of four")
+
+    var hist = tt_stack_allocation[dtype=.uint32, address_space=.SHARED](
+        row_major[num_experts]()
+    )
+    var part = tt_stack_allocation[dtype=.uint32, address_space=.SHARED](
+        row_major[_MOE_SORT_MAX_QUERIES, _MOE_SORT_MAX_WARPS]()
+    )
+    var result = tt_stack_allocation[dtype=.uint32, address_space=.SHARED](
+        row_major[_MOE_SORT_MAX_QUERIES]()
+    )
+
+    with PDL[overlap_at_beginning=True]():
+        var e_i = UInt32(topk_ids[i])
+        # Contract parity with `moe_create_indices`: an id outside
+        # `[0, num_experts)` -- negative, past the expert count, or large
+        # enough that `e << 16` would truncate it into a valid expert's key
+        # space -- lands in no expert's CSR range.
+        var valid_i = e_i < UInt32(num_experts)
+        var key_i = _MOE_SORT_INVALID_KEY
+        if valid_i:
+            key_i = (e_i << 16) | UInt32(i)
+        var lo = (i * num_experts) // n
+        var hi = ((i + 1) * num_experts) // n
+        var num_queries = 1 + (hi - lo) + 1
+        debug_assert(
+            num_queries <= _MOE_SORT_MAX_QUERIES,
+            "expert range too wide for the fused reduce at this slot count",
+        )
+
+        # The scan never needs another thread's chunk, so the ids skip the
+        # LDS round trip and stay in registers. Threads past the slot count
+        # and out-of-range ids hold `_MOE_SORT_INVALID_KEY` so they count
+        # below no query bound and land in no histogram bucket.
+        var j0 = 4 * tid
+        var keys = SIMD[.uint32, 4](_MOE_SORT_INVALID_KEY)
+        if j0 < n:
+            var e = topk_ids.load[width=4, alignment=16]((j0,)).cast[.uint32]()
+            keys = e.lt(SIMD[.uint32, 4](UInt32(num_experts))).select(
+                (e << SIMD[.uint32, 4](16)) | iota[.uint32, 4](UInt32(j0)),
+                SIMD[.uint32, 4](_MOE_SORT_INVALID_KEY),
+            )
+
+        # CTA 0 zeroes the histogram it alone reads for the usage stats.
+        if i == 0:
+            for x in range(tid, num_experts, block_threads):
+                hist[x] = UInt32(0)
+            barrier()
+
+        comptime if not warp_aligned:
+            # The atomic fold below accumulates into `result`, which one
+            # thread zeroes first.
+            if tid == 0:
+                for q in range(num_queries):
+                    result[q] = UInt32(0)
+            barrier()
+
+        # Fused scan: count the chunk's keys below every query bound, then
+        # reduce all counts in one pass (warp shuffle, one LDS partial per
+        # query per warp, warp 0 folds the per-warp partials; a ragged
+        # block folds the same counts through LDS atomics instead).
+        for q in range(num_queries):
+            var bound = key_i
+            if q > 0:
+                bound = UInt32(lo + q - 1) << 16
+            var cnt = (
+                keys.lt(SIMD[.uint32, 4](bound)).cast[.uint32]().reduce_add()
+            )
+            comptime if warp_aligned:
+                cnt = warp.sum(cnt)
+                if lane == 0:
+                    part[q, wid] = cnt
+            else:
+                _ = Atomic[UInt32, scope="workgroup"].fetch_add[
+                    ordering=Ordering.RELAXED
+                ](result.ptr.unsafe_offset(q), cnt)
+        barrier()
+        comptime if warp_aligned:
+            if wid == 0:
+                for q in range(num_queries):
+                    var v = UInt32(0)
+                    if lane < nw:
+                        v = part[q, lane]
+                    v = warp.sum(v)
+                    if lane == 0:
+                        result[q] = v
+            barrier()
+
+        var pos = result[0]
+
+        # CTA 0: histogram the valid ids, then the usage stats. The barrier
+        # publishes every wavefront's histogram increments before the max
+        # scan reads them back. `_MOE_SORT_INVALID_KEY` marks the padding
+        # lanes and the out-of-range ids; neither counts in any bucket.
+        if i == 0:
+            if j0 < n:
+                comptime for l in range(4):
+                    if keys[l] != _MOE_SORT_INVALID_KEY:
+                        _ = Atomic[UInt32, scope="workgroup"].fetch_add[
+                            ordering=Ordering.RELAXED
+                        ](hist.ptr.unsafe_offset(Int(keys[l]) >> 16), UInt32(1))
+            barrier()
+            comptime if warp_aligned:
+                var local_max = UInt32(0)
+                for x in range(tid, num_experts, block_threads):
+                    local_max = max(local_max, hist[x])
+                var global_max = block.max[
+                    block_size=block_threads, broadcast=False
+                ](local_max)
+                if tid == 0:
+                    stats[0] = global_max
+                    stats[1] = UInt32(num_experts)
+            else:
+                if tid == 0:
+                    var global_max = UInt32(0)
+                    for x in range(num_experts):
+                        global_max = max(global_max, hist[x])
+                    stats[0] = global_max
+                    stats[1] = UInt32(num_experts)
+
+        # Index writes: one thread per CTA; each CTA writes its own two
+        # order entries and its expert range's CSR starts. An out-of-range
+        # pair files no order entry, and its restore entry is pinned to the
+        # `num_slots` sentinel `moe_create_indices` uses.
+        if tid == 0:
+            if valid_i:
+                order[Int(pos)] = UInt32(i)
+                restore[i] = pos
+            else:
+                restore[i] = UInt32(n)
+            for x in range(lo, hi):
+                start[x] = result[1 + x - lo]
+                ids[x] = Int32(x)
+            if i == n - 1:
+                # The last CTA's last query bound is `num_experts << 16`:
+                # above every valid pair's key and below
+                # `_MOE_SORT_INVALID_KEY`, so its count is the valid-pair
+                # total that `moe_create_indices` writes here.
+                start[num_experts] = result[num_queries - 1]
+
+        # Phase B: gather source row i // topk and quantize it exactly like
+        # the fused gather+quantize kernel, at sorted position pos. An
+        # out-of-range pair lands no row, so it writes no payload either.
+        if valid_i:
+            var src = i // Int(topk)
+            var col = 8 * tid
+            comptime in_align = align_of[SIMD[.bfloat16, 8]]()
+            comptime out_align = align_of[SIMD[.float8_e4m3fn, 8]]()
+            var vec = input.load[width=8, alignment=in_align]((src, col))
+            var quantized: SIMD[.float8_e4m3fn, 8]
+            var e8m0_scale: Float8_e8m0fnu
+            quantized, e8m0_scale = quantize_mxfp8_lane_group[
+                width=8,
+                out_dtype=.float8_e4m3fn,
+                scales_dtype=.float8_e8m0fnu,
+                SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
+            ](vec)
+            output.store[alignment=out_align]((Int(pos), col), quantized)
+            if tid % 4 == 0:
+                scales.store((Int(pos), tid // 4), e8m0_scale)
+
+
+@inline(.always)
+def moe_sort_gather_quantize_mx_amd[
+    num_experts: Int,
+    num_cols: Int,
+    out_dtype: DType = .float8_e4m3fn,
+    scales_dtype: DType = .float8_e8m0fnu,
+    in_dtype: DType = .bfloat16,
+    //,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    OrderEngine: TensorEngine,
+    StartEngine: TensorEngine,
+    RestoreEngine: TensorEngine,
+    IdsEngine: TensorEngine,
+    StatsEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+](
+    ctx: DeviceContext,
+    output_tile: TileTensor[
+        mut=True, out_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
+    ],
+    scales_tile: TileTensor[
+        mut=True, scales_dtype, address_space=.GENERIC, ..., Engine=ScalesEngine
+    ],
+    input_tile: TileTensor[
+        mut=False, in_dtype, address_space=.GENERIC, ..., Engine=InputEngine
+    ],
+    order_tile: TileTensor[
+        mut=True, .uint32, address_space=.GENERIC, ..., Engine=OrderEngine
+    ],
+    start_tile: TileTensor[
+        mut=True, .uint32, address_space=.GENERIC, ..., Engine=StartEngine
+    ],
+    restore_tile: TileTensor[
+        mut=True, .uint32, address_space=.GENERIC, ..., Engine=RestoreEngine
+    ],
+    ids_tile: TileTensor[
+        mut=True, .int32, address_space=.GENERIC, ..., Engine=IdsEngine
+    ],
+    stats_tile: TileTensor[
+        mut=True, .uint32, address_space=.GENERIC, ..., Engine=StatsEngine
+    ],
+    topk_ids_tile: TileTensor[
+        mut=False, .int32, address_space=.GENERIC, ..., Engine=TopkIdsEngine
+    ],
+    topk: Int,
+) raises:
+    """Sorts, gathers and MX-quantizes the MoE routing glue in one launch.
+
+    The fused replacement for the `moe_create_indices` +
+    `moe_gather_quantize_mx_amd` pair the K3 `amd_tp_w4a8` path runs
+    between the router and the first grouped GEMM: one CTA per source pair
+    ranks the pair among all P `(expert, slot)` keys, writes its share of
+    the CSR index outputs, and quants its source row at the sorted
+    position. `expert_start_indices`, `expert_ids` and
+    `expert_usage_stats` come out byte-equal to `moe_create_indices`'s;
+    the order is a valid stable grouping rather than byte-equal.
+
+    Parameters:
+        num_experts: Expert count `E`; sizes the histogram and the key
+            packing (at most 65535).
+        num_cols: Activation row width `K`; one CTA is `K // 8` threads
+            covering a whole row.
+        out_dtype: Element type of the quantized output tensor
+            (`float8_e4m3fn`, inferred).
+        scales_dtype: Element type of the block scale-factor tensor
+            (`float8_e8m0fnu`, inferred).
+        in_dtype: Element type of the input activation tensor
+            (`bfloat16`, inferred).
+        OutputEngine: Engine policy of the `output_tile` tensor.
+        ScalesEngine: Engine policy of the `scales_tile` tensor.
+        InputEngine: Engine policy of the `input_tile` tensor.
+        OrderEngine: Engine policy of the `order_tile` tensor.
+        StartEngine: Engine policy of the `start_tile` tensor.
+        RestoreEngine: Engine policy of the `restore_tile` tensor.
+        IdsEngine: Engine policy of the `ids_tile` tensor.
+        StatsEngine: Engine policy of the `stats_tile` tensor.
+        TopkIdsEngine: Engine policy of the `topk_ids_tile` tensor.
+
+    Args:
+        ctx: Device context.
+        output_tile: Output `[P, K]` float8_e4m3fn, one row per sorted slot.
+        scales_tile: Output `[P, K // 32]` float8_e8m0fnu block scales,
+            row-major (the `preshuffled_b=False` layout the CDNA4 grouped
+            GEMM reads).
+        input_tile: Input `[M, K]` bfloat16 activations, one row per token.
+        order_tile: Output `[P]` uint32, the expert-sorted slot order.
+        start_tile: Output `[E + 1]` uint32 CSR starts.
+        restore_tile: Output `[P]` uint32, `order`'s inverse.
+        ids_tile: Output `[E]` int32 expert ids, `0..E-1`.
+        stats_tile: Output `[2]` uint32 usage stats.
+        topk_ids_tile: Input `[P]` int32 flat expert ids, one per
+            (token, pick) pair.
+        topk: Experts per token; the source row is the pair index
+            divided by it.
+
+    Raises:
+        Error: If the launch falls outside
+            `moe_sort_gather_quantize_fused_supported`'s envelope, or any
+            tensor's shape or stride disagrees with the contract.
+    """
+    comptime assert output_tile.flat_rank >= 2, "output must be rank 2"
+    comptime assert scales_tile.flat_rank >= 2, "scales must be rank 2"
+    comptime assert input_tile.flat_rank >= 2, "input must be rank 2"
+    comptime assert order_tile.flat_rank == 1, "order must be rank 1"
+    comptime assert start_tile.flat_rank == 1, "start must be rank 1"
+    comptime assert restore_tile.flat_rank == 1, "restore must be rank 1"
+    comptime assert ids_tile.flat_rank == 1, "ids must be rank 1"
+    comptime assert stats_tile.flat_rank == 1, "stats must be rank 1"
+    comptime assert topk_ids_tile.flat_rank == 1, "topk_ids must be rank 1"
+    comptime assert (
+        num_cols % MXFP8_SF_VECTOR_SIZE == 0
+    ), "the sort-fused MoE quantize needs columns divisible by 32"
+    comptime assert (
+        out_dtype == .float8_e4m3fn
+    ), "the sort-fused MoE quantize outputs MXFP8 (float8_e4m3fn)"
+    comptime assert (
+        scales_dtype == .float8_e8m0fnu
+    ), "scales must be float8_e8m0fnu"
+    comptime assert in_dtype == .bfloat16, "input must be bfloat16"
+
+    var num_tokens = Int(input_tile.dim[0]())
+    var num_slots = Int(topk_ids_tile.dim[0]())
+    if num_tokens == 0 or num_slots == 0:
+        return
+    if topk < 1:
+        raise Error(
+            "moe_sort_gather_quantize_mx_amd: topk must be positive, got "
+            + String(topk)
+        )
+    if num_slots != num_tokens * topk:
+        raise Error(
+            "moe_sort_gather_quantize_mx_amd: topk_ids holds "
+            + String(num_slots)
+            + " slots but input has "
+            + String(num_tokens)
+            + " tokens at topk "
+            + String(topk)
+        )
+    if not (
+        Int(ids_tile.dim[0]()) == num_experts
+        and Int(start_tile.dim[0]()) == num_experts + 1
+        and Int(stats_tile.dim[0]()) == 2
+        and Int(order_tile.dim[0]()) == num_slots
+        and Int(restore_tile.dim[0]()) == num_slots
+        and Int(input_tile.dim[1]()) == num_cols
+        and Int(output_tile.dim[0]()) == num_slots
+        and Int(output_tile.dim[1]()) == num_cols
+        and Int(scales_tile.dim[0]()) == num_slots
+        and Int(scales_tile.dim[1]()) == num_cols // MXFP8_SF_VECTOR_SIZE
+    ):
+        raise Error(
+            "moe_sort_gather_quantize_mx_amd: an output's shape disagrees"
+            " with the moe_create_indices + gather+quantize contract"
+        )
+    if not moe_sort_gather_quantize_fused_supported(
+        num_slots, num_experts, num_cols
+    ):
+        raise Error(
+            "moe_sort_gather_quantize_mx_amd: "
+            + String(num_slots)
+            + " slots over "
+            + String(num_experts)
+            + " experts at "
+            + String(num_cols)
+            + " columns is outside the one-launch kernel's envelope"
+        )
+    # Contiguous tensors only -- the launch contract the kernel was measured
+    # under.
+    if not (
+        Int(output_tile.layout.stride[1]().value()) == 1
+        and Int(output_tile.layout.stride[0]().value()) == num_cols
+        and Int(scales_tile.layout.stride[1]().value()) == 1
+        and Int(scales_tile.layout.stride[0]().value())
+        == num_cols // MXFP8_SF_VECTOR_SIZE
+        and Int(input_tile.layout.stride[1]().value()) == 1
+        and Int(input_tile.layout.stride[0]().value()) == num_cols
+        and Int(order_tile.layout.stride[0]().value()) == 1
+        and Int(start_tile.layout.stride[0]().value()) == 1
+        and Int(restore_tile.layout.stride[0]().value()) == 1
+        and Int(ids_tile.layout.stride[0]().value()) == 1
+        and Int(stats_tile.layout.stride[0]().value()) == 1
+        and Int(topk_ids_tile.layout.stride[0]().value()) == 1
+    ):
+        raise Error(
+            "moe_sort_gather_quantize_mx_amd: every tensor must be contiguous"
+        )
+
+    comptime kernel = _moe_sort_gather_quantize_mx_amd_kernel[
+        num_experts,
+        num_cols,
+        type_of(output_tile).LayoutType,
+        type_of(scales_tile).LayoutType,
+        type_of(input_tile).LayoutType,
+        type_of(order_tile).LayoutType,
+        type_of(start_tile).LayoutType,
+        type_of(restore_tile).LayoutType,
+        type_of(ids_tile).LayoutType,
+        type_of(stats_tile).LayoutType,
+        type_of(topk_ids_tile).LayoutType,
+        OutputEngine,
+        ScalesEngine,
+        InputEngine,
+        OrderEngine,
+        StartEngine,
+        RestoreEngine,
+        IdsEngine,
+        StatsEngine,
+        TopkIdsEngine,
+    ]
+
+    ctx.enqueue_function[kernel](
+        output_tile,
+        scales_tile,
+        input_tile,
+        order_tile,
+        start_tile,
+        restore_tile,
+        ids_tile,
+        stats_tile,
+        topk_ids_tile,
+        Int32(topk),
+        Int32(num_slots),
+        grid_dim=(num_slots, 1, 1),
+        block_dim=(num_cols // 8, 1, 1),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+@inline(.always)
+def moe_source_scatter_quantize_supported(num_cols: Int) -> Bool:
+    """Whether the source-major scatter+quantize kernel covers this launch.
+
+    The kernel walks contiguous rows and launches one
+    `num_cols // 8`-thread CTA per source row, so the row width must be a
+    whole number of 32-element MX blocks and the CTA must hold at least one
+    4-lane scale group and at most 1024 threads. The slot count is
+    unconstrained: the grid is one CTA per source row, so the same kernel
+    covers any fan-out.
+
+    Args:
+        num_cols: Activation row width `K`.
+
+    Returns:
+        Whether `_moe_source_scatter_quantize_mx_amd_kernel` supports the
+        launch.
+    """
+    return (
+        num_cols % MXFP8_SF_VECTOR_SIZE == 0
+        and num_cols // 8 >= 4
+        and num_cols // 8 <= 1024
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_cols // 8))
+)
+@__name(t"moe_source_scatter_quantize_mx_amd_kernel")
+def _moe_source_scatter_quantize_mx_amd_kernel[
+    num_cols: Int,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    restore_layout: TensorLayout,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    RestoreEngine: TensorEngine,
+](
+    output: TileTensor[
+        .float8_e4m3fn, output_layout, MutAnyOrigin, Engine=OutputEngine
+    ],
+    scales: TileTensor[
+        .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=ScalesEngine
+    ],
+    input: TileTensor[
+        .bfloat16, input_layout, ImmutAnyOrigin, Engine=InputEngine
+    ],
+    restore: TileTensor[
+        .uint32, restore_layout, ImmutAnyOrigin, Engine=RestoreEngine
+    ],
+    topk: Int32,
+    num_slots: Int32,
+):
+    """Source-major fan-out scatter + MXFP8 quantize, AMD CDNA4 (MI355X).
+
+    One CTA per SOURCE token row t (not per sorted row): the CTA quantizes
+    row t once through the production lane-group scale path -- the same
+    `quantize_mxfp8_lane_group` derivation, E8M0 rounding toward
+    +infinity -- and scatters the fp8 row and its scale bytes to the
+    up-to-`topk` sorted positions `restore[t * topk + k]`, the
+    destinations `moe_create_indices` gave the token's pairs. At a large
+    fan-out this reads each bf16 row once instead of `topk` times, cutting
+    the glue chain's dominant traffic. A pair whose expert id was out of
+    range never lands in the CSR; its restore entry holds the `num_slots`
+    sentinel and the write is skipped.
+    """
+    comptime assert OutputEngine.element_size == 1
+    comptime assert ScalesEngine.element_size == 1
+    comptime assert InputEngine.element_size == 1
+    comptime assert RestoreEngine.element_size == 1
+
+    var t = block_idx.x
+    var tid = thread_idx.x
+    var col = 8 * tid
+    comptime in_align = align_of[SIMD[.bfloat16, 8]]()
+    comptime out_align = align_of[SIMD[.float8_e4m3fn, 8]]()
+
+    # Release right after the wait; dependents wait for this kernel to
+    # finish before they read what it writes (see `PDL`).
+    with PDL[overlap_at_beginning=True]():
+        var vec = input.load[width=8, alignment=in_align]((t, col))
+        var quantized: SIMD[.float8_e4m3fn, 8]
+        var e8m0_scale: Float8_e8m0fnu
+        quantized, e8m0_scale = quantize_mxfp8_lane_group[
+            width=8,
+            out_dtype=.float8_e4m3fn,
+            scales_dtype=.float8_e8m0fnu,
+            SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
+        ](vec)
+        var pair0 = t * Int(topk)
+        for k in range(Int(topk)):
+            var pos = Int(restore[pair0 + k])
+            # The out-of-range sentinel (== num_slots) and anything past
+            # it: sorted rows a valid pair never touches.
+            if pos < Int(num_slots):
+                output.store[alignment=out_align]((pos, col), quantized)
+                if tid % 4 == 0:
+                    scales.store((pos, tid // 4), e8m0_scale)
+
+
+@inline(.always)
+def moe_source_scatter_quantize_mx_amd[
+    num_cols: Int,
+    out_dtype: DType = .float8_e4m3fn,
+    scales_dtype: DType = .float8_e8m0fnu,
+    in_dtype: DType = .bfloat16,
+    //,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    RestoreEngine: TensorEngine,
+](
+    ctx: DeviceContext,
+    output_tile: TileTensor[
+        mut=True, out_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
+    ],
+    scales_tile: TileTensor[
+        mut=True, scales_dtype, address_space=.GENERIC, ..., Engine=ScalesEngine
+    ],
+    input_tile: TileTensor[
+        mut=False, in_dtype, address_space=.GENERIC, ..., Engine=InputEngine
+    ],
+    restore_tile: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ..., Engine=RestoreEngine
+    ],
+    topk: Int,
+) raises:
+    """Scatters each token's MXFP8-quantized row to its sorted slots.
+
+    The source-major replacement for the `moe_gather_quantize_mx_amd` pass
+    the K3 `amd_tp_w4a8` path runs after `moe_create_indices` at large
+    fan-outs: one CTA per source token row quantizes the row once and
+    writes it at every sorted position `restore_token_order` gives its
+    pairs, so the payload and scale bytes per sorted row are identical to
+    the sorted-row kernel's -- the same source row, MX block partition and
+    E8M0 rounding -- while the bf16 source is read once per token instead
+    of once per sorted row.
+
+    Parameters:
+        num_cols: Activation row width `K`; one CTA is `K // 8` threads
+            covering a whole row.
+        out_dtype: Element type of the quantized output tensor
+            (`float8_e4m3fn`, inferred).
+        scales_dtype: Element type of the block scale-factor tensor
+            (`float8_e8m0fnu`, inferred).
+        in_dtype: Element type of the input activation tensor
+            (`bfloat16`, inferred).
+        OutputEngine: Engine policy of the `output_tile` tensor.
+        ScalesEngine: Engine policy of the `scales_tile` tensor.
+        InputEngine: Engine policy of the `input_tile` tensor.
+        RestoreEngine: Engine policy of the `restore_tile` tensor.
+
+    Args:
+        ctx: Device context.
+        output_tile: Output `[P, K]` float8_e4m3fn, one row per sorted slot.
+        scales_tile: Output `[P, K // 32]` float8_e8m0fnu block scales,
+            row-major (the `preshuffled_b=False` layout the CDNA4 grouped
+            GEMM reads).
+        input_tile: Input `[M, K]` bfloat16 activations, one row per token.
+        restore_tile: `moe_create_indices`'s `restore_token_order`, `[P]`
+            uint32 with `P == M * topk`. A pair whose expert id was out of
+            range holds the `P` sentinel and is skipped.
+        topk: Experts per token; at least 1.
+
+    Raises:
+        Error: If any tensor's shape or stride disagrees with the
+            contract, or the launch falls outside
+            `moe_source_scatter_quantize_supported`'s envelope.
+    """
+    comptime assert (
+        out_dtype == .float8_e4m3fn
+    ), "the source-major MoE scatter+quantize outputs MXFP8 (float8_e4m3fn)"
+    comptime assert (
+        scales_dtype == .float8_e8m0fnu
+    ), "scales must be float8_e8m0fnu"
+    comptime assert in_dtype == .bfloat16, "input must be bfloat16"
+    comptime assert output_tile.flat_rank >= 2, "output must be rank 2"
+    comptime assert scales_tile.flat_rank >= 2, "scales must be rank 2"
+    comptime assert input_tile.flat_rank >= 2, "input must be rank 2"
+    comptime assert (
+        restore_tile.flat_rank == 1
+    ), "restore_token_order must be rank 1"
+    comptime assert (
+        num_cols % MXFP8_SF_VECTOR_SIZE == 0
+    ), "the source-major MoE quantize needs columns divisible by 32"
+
+    var num_tokens = Int(input_tile.dim[0]())
+    var num_slots = Int(restore_tile.dim[0]())
+    if num_tokens == 0 or num_slots == 0:
+        return
+    if topk < 1:
+        raise Error(
+            "moe_source_scatter_quantize_mx_amd: topk must be at least 1, got "
+            + String(topk)
+        )
+    if num_slots != num_tokens * topk:
+        raise Error(
+            "moe_source_scatter_quantize_mx_amd: restore_token_order holds "
+            + String(num_slots)
+            + " slots but input has "
+            + String(num_tokens)
+            + " tokens at topk "
+            + String(topk)
+        )
+    if not (
+        Int(input_tile.dim[1]()) == num_cols
+        and Int(output_tile.dim[0]()) == num_slots
+        and Int(output_tile.dim[1]()) == num_cols
+        and Int(scales_tile.dim[0]()) == num_slots
+        and Int(scales_tile.dim[1]()) == num_cols // MXFP8_SF_VECTOR_SIZE
+    ):
+        raise Error(
+            "moe_source_scatter_quantize_mx_amd: an output's shape disagrees"
+            " with the moe_create_indices + gather+quantize contract"
+        )
+    if not moe_source_scatter_quantize_supported(num_cols):
+        raise Error(
+            "moe_source_scatter_quantize_mx_amd: "
+            + String(num_cols)
+            + " columns are outside the source-major kernel's envelope"
+        )
+    # Contiguous tensors only -- the launch contract the kernel was measured
+    # under.
+    if not (
+        Int(output_tile.layout.stride[1]().value()) == 1
+        and Int(output_tile.layout.stride[0]().value()) == num_cols
+        and Int(scales_tile.layout.stride[1]().value()) == 1
+        and Int(scales_tile.layout.stride[0]().value())
+        == num_cols // MXFP8_SF_VECTOR_SIZE
+        and Int(input_tile.layout.stride[1]().value()) == 1
+        and Int(input_tile.layout.stride[0]().value()) == num_cols
+        and Int(restore_tile.layout.stride[0]().value()) == 1
+    ):
+        raise Error(
+            "moe_source_scatter_quantize_mx_amd: every tensor must be"
+            " contiguous"
+        )
+
+    comptime kernel = _moe_source_scatter_quantize_mx_amd_kernel[
+        num_cols,
+        type_of(output_tile).LayoutType,
+        type_of(scales_tile).LayoutType,
+        type_of(input_tile).LayoutType,
+        type_of(restore_tile).LayoutType,
+        OutputEngine,
+        ScalesEngine,
+        InputEngine,
+        RestoreEngine,
+    ]
+
+    ctx.enqueue_function[kernel](
+        output_tile,
+        scales_tile,
+        input_tile,
+        restore_tile,
+        Int32(topk),
+        Int32(num_slots),
+        grid_dim=(num_tokens, 1, 1),
+        block_dim=(num_cols // 8, 1, 1),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

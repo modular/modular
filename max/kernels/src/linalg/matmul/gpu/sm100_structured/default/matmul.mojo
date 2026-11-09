@@ -957,7 +957,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         a_device: LHS TileTensor of shape (M, K).
         b_device: RHS TileTensor of shape (N, K) (transposed).
         epilogue_fn: Stores each output value. Signature:
-            `def[dtype, width, *, alignment](IndexList[2], SIMD)`, with
+            `def[dtype, width, *, alignment](Coord, SIMD)`, with
             coordinates in the (M, N) output.
         ctx: Device context used to create TMA descriptors and enqueue the
             kernel.
@@ -1103,8 +1103,8 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         "LINALG_SM100_SPLITK_", ctx.device().id, "_", Int(ctx._handle.value())
     )
     var cached = _get_global_or_null(key)
-    if cached:
-        return cached.unsafe_value().unsafe_bitcast[_SplitKContext]()[]
+    if case .Some(ptr) = cached:
+        return ptr.unsafe_bitcast[_SplitKContext]()[]
     var slot = -1
     var device = ctx.device().id
     if device < _SPLITK_MAX_DEVICES:
@@ -1125,7 +1125,7 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
     var state = alloc[_SplitKContext]({length = 1}).unsafe_leak()
     state.unsafe_write(_SplitKContext(workspace, slot))
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key), state.unsafe_bitcast[NoneType]()
+        StringSpan(key), state.unsafe_bitcast[NoneType]()
     )
     return state[]
 

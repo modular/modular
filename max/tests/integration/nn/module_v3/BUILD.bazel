@@ -60,7 +60,7 @@ modular_eager_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy/hooks:print_hook",
         "//max/python/max/tensor/testing",
         requirement("numpy"),
@@ -167,7 +167,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/tests/integration/test_common:hyper_connection_reference",
         requirement("torch"),
     ],
@@ -257,7 +257,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -265,34 +266,29 @@ modular_py_test(
 
 modular_py_test(
     name = "grouped_matmul_silu_nvfp4_tests",
-    size = "large",
-    # The 256-expert case takes ~6.5 minutes to compile on an idle B200, so it
-    # needs more than `large`'s 15 minutes of headroom on a contended worker.
-    timeout = "long",
+    size = "medium",
     srcs = ["test_grouped_matmul_silu_nvfp4_gpu.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "1",
     },
+    # NVFP4 grouped matmuls are validated on B200 only.
+    gpu_constraints = ["//:b200_gpu"],
     ignore_extra_deps = [
         # lazy import
         "//max/python/max/_interpreter_ops",
     ],
-    # Each case compiles its own graphs, and the 256-expert one takes
-    # minutes; shard so they compile in parallel rather than in series. One
-    # shard per case, since an empty shard fails the target.
-    shard_count = 3,
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    # NVFP4 grouped matmuls are validated on B200 only.
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         requirement("numpy"),
     ],
 )
@@ -335,7 +331,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         requirement("numpy"),
         requirement("torch"),
     ],

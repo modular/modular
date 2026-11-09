@@ -735,11 +735,10 @@ struct ConstantFoldPass
   ConstantFoldPass()
       : ConstantFoldBase(), policy(new FactorMemIncrease(2, 100)) {}
 
-  ConstantFoldPass(std::string_view label,
-                   std::optional<std::string> cacheDirArg,
+  ConstantFoldPass(std::optional<std::string> cacheDirArg,
                    llvm::ArrayRef<std::string> kernelLibraryPathsArg)
       : ConstantFoldBase(), policy(new FactorMemIncrease(2, 100)),
-        compiledFrameworkLabel(label), cacheDir(std::move(cacheDirArg)),
+        cacheDir(std::move(cacheDirArg)),
         kernelLibraryPaths(kernelLibraryPathsArg.vec()) {}
 
 private:
@@ -748,8 +747,6 @@ private:
   ErrorOr<ModelsWithBuffer> lowerSubgraphs(ModuleOp module);
 
   std::shared_ptr<const ConstantFoldPolicy> policy;
-  // Label used to load and handle buffers created by the framework.
-  std::string compiledFrameworkLabel;
   std::optional<std::string> cacheDir;
   std::optional<std::vector<std::string>> kernelLibraryPaths;
 };
@@ -776,8 +773,6 @@ ErrorOr<ModelsWithBuffer> ConstantFoldPass::lowerSubgraphs(ModuleOp module) {
   moOpts.constantFold = false;
   // Reduce Memory overhead by not fusing compiled-regions primitives.
   moOpts.enableCompiledRegionsFusion = false;
-  // Use MOF executor so we don't depend on a framework.
-  moOpts.compiledFrameworkLabel = "mof";
   // This will fold sequence of trivial kernels not on host, leading to huge
   // kernels (in terms of code size).
   moOpts.performTrivialKernelOpt = false;
@@ -914,9 +909,8 @@ void ConstantFoldPass::runOnOperation() {
 } // namespace M::MO
 
 std::unique_ptr<mlir::Pass>
-M::MO::createConstantFoldPass(std::string_view compiledFrameworkLabel,
-                              std::optional<std::string> cacheDir,
+M::MO::createConstantFoldPass(std::optional<std::string> cacheDir,
                               llvm::ArrayRef<std::string> kernelLibraryPaths) {
-  return std::make_unique<ConstantFoldPass>(
-      compiledFrameworkLabel, std::move(cacheDir), kernelLibraryPaths);
+  return std::make_unique<ConstantFoldPass>(std::move(cacheDir),
+                                            kernelLibraryPaths);
 }

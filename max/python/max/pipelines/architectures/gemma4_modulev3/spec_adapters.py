@@ -22,7 +22,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (

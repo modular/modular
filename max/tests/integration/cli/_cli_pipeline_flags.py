@@ -64,5 +64,6 @@ def pipeline_flags(flag_set: str) -> list[str]:
         "--device-memory-utilization=0.1",
         "--quantization-encoding=bfloat16",
         "--devices=gpu",
+        "--no-prefer-module-v3",
         *_EXTRA_FLAGS[flag_set],
     ]

@@ -70,9 +70,7 @@ def bench_add[
     def bench_func(mut b: Bencher, shape: IndexList[rank]) raises {imm}:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[]) raises {imm}:
-            elementwise[simd_width=unroll_by, target="gpu"](
-                add, Coord(shape), ctx
-            )
+            elementwise[simd_width=unroll_by](add, Coord(shape), ctx)
 
         bencher_iter_custom(b, kernel_launch, ctx)
 

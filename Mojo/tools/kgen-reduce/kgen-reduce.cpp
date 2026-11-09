@@ -680,6 +680,7 @@ int main(int argc, char **argv) {
   MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
   mlirCtx.allowUnregisteredDialects();
   mlirCtx.appendDialectRegistry(registry);
+  configureKGENContext(&mlirCtx);
 
   Reducer reducer(&mlirCtx);
 

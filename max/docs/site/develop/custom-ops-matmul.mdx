@@ -216,8 +216,8 @@ The custom operation itself is defined in Mojo within the
 `InputTensor`, `OutputTensor`, and `ManagedTensorSlice` are imported from the
 `extensibility` package. The `MatrixMultiplication` struct
 hosts all of the setup code for taking in the matrix tensors, branching
-execution based on whether the operation is running on CPU or GPU, and then
-selecting and running a specific algorithm. Mojo supports compile-time
+execution based on whether the device context's target is a CPU or GPU, and
+then selecting and running a specific algorithm. Mojo supports compile-time
 specialization of code based on parameters like target hardware, and that is
 also extended here to user-supplied algorithm choice. Compiling only the code
 paths used for a particular piece of hardware avoids run-time branching and
@@ -279,7 +279,7 @@ be the same.
 ### Layouts and `TileTensor`
 
 The `matrix_multiplication` custom operation uses
-[layouts](/api/mojo/layout/layout/) and
+[layouts](/api/mojo/layout/layout/Layout/) and
 [`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/) to
 represent the input and output matrices, so it's helpful to understand a little
 bit about these types before getting started.
@@ -290,14 +290,11 @@ a layout could represent a 2x6, row-major layout:
 
 ```mojo
 var my_layout = row_major[2, 6]()
-print_layout(my_layout)
+print(my_layout)
 ```
 
 ```plaintext
-       0    1    2    3    4    5
-    +----+----+----+----+----+----+
- 0  |  0 |  1 |  2 |  3 |  4 |  5 |
-    +----+----+----+----+----+----+
+((2, 6):(6, 1))
  1  |  6 |  7 |  8 |  9 | 10 | 11 |
     +----+----+----+----+----+----+
 ```

@@ -17,6 +17,7 @@ Submodules
 .. autosummary::
    :nosignatures:
 
+   max.nn.kv_cache
    max.nn.legacy
    max.nn.norm
    max.nn.rope
@@ -25,6 +26,7 @@ Submodules
    :maxdepth: 1
    :hidden:
 
+   nn.kv_cache
    nn.legacy
    nn.norm
    nn.rope

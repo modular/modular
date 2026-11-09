@@ -26,8 +26,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.outputs import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphPipelineModelWithKVCache,

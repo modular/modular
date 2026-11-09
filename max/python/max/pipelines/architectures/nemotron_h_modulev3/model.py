@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from max import functional as F
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext

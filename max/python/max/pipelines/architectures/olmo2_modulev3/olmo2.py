@@ -24,13 +24,13 @@ from max.nn import Module
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.linear import Linear
+from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs

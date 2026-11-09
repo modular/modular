@@ -16,6 +16,7 @@
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENPogUtils.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringSet.h"
 
 using namespace M;
@@ -710,17 +711,58 @@ LogicalResult declVerifyHasEntryPoint(KernelDeclOp decl,
   return success();
 }
 
+// A kernel reads its device through its `DeviceContext` argument's `target`, so
+// the graph compiler no longer infers a `target: StaticString` parameter.
+LogicalResult declVerifyNoTargetParameter(KernelDeclOp decl,
+                                          const KernelDeclAdaptor &adaptor) {
+  bool failed = false;
+  auto check =
+      [&](mlir::ArrayAttr params, mlir::Location loc, llvm::StringRef where) {
+        if (!params)
+          return;
+        for (mlir::Attribute attr : params) {
+          auto param = mlir::cast<ParamDeclAttr>(attr);
+          if (demangleParameterName(param.getName().strref()) !=
+              MOGG::kMoggTargetParameterName)
+            continue;
+          mlir::emitError(loc)
+              << where << " declares a `target` parameter, which is no longer "
+              << "supported; take a `ctx: DeviceContext` argument and use "
+                 "`ctx.target` instead";
+          failed = true;
+        }
+      };
+
+  check(adaptor.structParams, decl.getMojoStructLocation(),
+        "the kernel struct");
+  auto checkFunction =
+      [&](const std::optional<KernelDeclFunctionAdaptor> &function,
+          KernelFunctionKind kind) {
+        if (function && function->attr)
+          check(function->attr.getParams(), decl.getMojoFunctionLocation(kind),
+                stringifyKernelFunctionKind(kind));
+      };
+  checkFunction(adaptor.executeFunction, KernelFunctionKind::Execute);
+  checkFunction(adaptor.elementwiseFunction, KernelFunctionKind::Elementwise);
+  checkFunction(adaptor.tileElementwiseFunction,
+                KernelFunctionKind::TileElementwise);
+  checkFunction(adaptor.buildGraphFunction, KernelFunctionKind::BuildGraph);
+  checkFunction(adaptor.executeDeviceFunction,
+                KernelFunctionKind::ExecuteDevice);
+  checkFunction(adaptor.executeConfigurationFunction,
+                KernelFunctionKind::ExecuteConfiguration);
+  return failed ? failure() : success();
+}
+
 // Whether the generated launch can pass `operand` to a declarative entry point:
-// a trait-bound tensor crosses as its `TileTensor` projection and is rebuilt on
-// the device, and a scalar crosses as is.
+// a trait-bound tensor/buffer crosses as its `TileTensor` projection and is
+// rebuilt on the device, while a scalar crosses as-is.
 static bool isDeclarativeOperand(const KernelDeclOperandAdaptor &operand) {
   if (std::holds_alternative<KernelDeclScalarAdaptor>(operand.underlyingType))
     return true;
   const auto *tensor =
       std::get_if<KernelDeclTensorAdaptor>(&operand.underlyingType);
-  // TODO(GEX-4429): Accept mutable inputs, which reach the launch as buffers.
-  return tensor && tensor->traitContract && !tensor->traitContract->fused &&
-         tensor->traitContract->role != TensorArgRole::mutableInput;
+  return tensor && tensor->traitContract && !tensor->traitContract->fused;
 }
 
 // `execute_device` and `execute_configuration` come as a pair over the same
@@ -777,8 +819,8 @@ LogicalResult declVerifyDeclarative(KernelDeclOp decl,
     for (auto [i, operand] : llvm::enumerate(operands)) {
       if (!isDeclarativeOperand(*operand)) {
         return error() << "'" << function << "' operand " << i
-                       << " must be a trait-bound tensor (not fused or a "
-                          "mutable input) or a scalar";
+                       << " must be a trait-bound tensor (not fused) or a "
+                          "scalar";
       }
     }
     return success();
@@ -873,11 +915,8 @@ LogicalResult declVerifyElementwiseFunction(KernelDeclOp decl,
        i < inputsCount; ++i) {
     // The last argument might be an IndexList. Skip it — it is an
     // elementwise-only concept.
-    if (i + 1 == inputsCount &&
-        elemwiseFn.inputArguments[i].isOpaqueWithTypeName(
-            MOGG::kMojoInternalDpsIndexListTypeQualifiedName)) {
+    if (i + 1 == inputsCount && elemwiseFn.takesIndexList())
       continue;
-    }
     ++operandsCount;
     if (!elemwiseFn.inputArguments[i].isScalarType())
       return decl->emitError() << "Elementwise kernels must have SIMD operands";
@@ -973,10 +1012,14 @@ getSemanticResult(const KernelDeclFunctionAdaptor &fn) {
   return fn.outputResult;
 }
 
-/// Verify cross-kernel consistency for every registration identity — the
-/// {op name, device_info} pair ImportPackages deduplicates on — with multiple
-/// declarations. For each group, decls[0] is the reference (ImportPackages
-/// inserts built-ins first, so it is the built-in when one exists).
+/// Verify cross-kernel consistency for every registration identity — an op
+/// name and a set of devices — with multiple declarations. Two registrations
+/// have the same identity if their platforms apply to exactly the
+/// same devices, however the platforms are written. ImportPackages rejects
+/// such a pair within one provenance group, so a group here is a user
+/// registration that replaces a built-in on the same devices. For each group,
+/// decls[0] is the reference (ImportPackages inserts built-ins first, so it is
+/// the built-in when one exists).
 ///
 /// Decls differing in device scope are grouped apart: `getResolvedKernel`
 /// picks among them by device, so they need not agree (e.g. an accelerator
@@ -987,17 +1030,43 @@ getSemanticResult(const KernelDeclFunctionAdaptor &fn) {
 ///   2. If execute: output count, non-launch input count, and per-operand
 ///      types must all match (fusion variants are treated as equivalent).
 LogicalResult crossVerifyKernels(ModuleOp moduleOp) {
-  using RegistrationKey = std::pair<mlir::StringAttr, DeviceInfoAttr>;
-  llvm::DenseMap<RegistrationKey, llvm::SmallVector<KernelDeclOp>> byReg;
-  for (KernelDeclOp decl : moduleOp.getOps<KernelDeclOp>())
-    byReg[{decl.getRegistrationAttr(), decl.getRegistrationDeviceInfo()}]
-        .push_back(decl);
-
   bool failed = false;
-  for (auto &[regKey, decls] : byReg) {
+  llvm::MapVector<mlir::StringAttr, llvm::SmallVector<KernelDeclOp>> byName;
+  for (KernelDeclOp decl : moduleOp.getOps<KernelDeclOp>())
+    byName[decl.getRegistrationAttr()].push_back(decl);
+
+  llvm::SmallVector<llvm::SmallVector<KernelDeclOp>> groups;
+  for (auto &[name, decls] : byName) {
     if (decls.size() < 2)
       continue;
-    mlir::StringAttr regName = regKey.first;
+    llvm::SmallVector<
+        std::pair<PlatformPredicate, llvm::SmallVector<KernelDeclOp>>>
+        classes;
+    for (KernelDeclOp decl : decls) {
+      ErrorOr<PlatformPredicate> platform =
+          getRegistrationPlatformPredicate(decl);
+      if (platform.isError()) {
+        decl->emitError() << "invalid platform: " << platform.getError();
+        failed = true;
+        continue;
+      }
+      auto *it = classes.begin();
+      for (; it != classes.end(); ++it)
+        if (comparePlatformPredicates(it->first, *platform).order ==
+            PlatformPredicateOrder::Equivalent)
+          break;
+      if (it == classes.end())
+        classes.push_back({platform.takeValue(), {decl}});
+      else
+        it->second.push_back(decl);
+    }
+    for (auto &[platform, members] : classes)
+      if (members.size() >= 2)
+        groups.push_back(std::move(members));
+  }
+
+  for (llvm::SmallVector<KernelDeclOp> &decls : groups) {
+    mlir::StringAttr regName = decls.front().getRegistrationAttr();
 
     KernelDeclAdaptor refAdaptor(decls[0]);
     KernelTypeTag refTag = getKernelType(refAdaptor);
@@ -1158,6 +1227,10 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
         continue;
 
       if (setFlagIfFailed(failed, declVerifyHasEntryPoint, decl, adaptor)
+              .failed())
+        continue;
+
+      if (setFlagIfFailed(failed, declVerifyNoTargetParameter, decl, adaptor)
               .failed())
         continue;
 

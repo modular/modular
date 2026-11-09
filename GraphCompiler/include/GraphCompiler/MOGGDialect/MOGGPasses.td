@@ -86,14 +86,6 @@ def PatternFusion: Pass<"mo-pattern-fusion", "MO::GraphOp"> {
   }];
   let dependentDialects = ["M::MOGG::MOGGDialect"];
   let options = [
-    Option<"enableMHAPattern", "mha-enable", "bool", /*default=*/"true",
-            "Enable multi-head attention pattern.">,
-    Option<"debugMHAPattern", "mha-debug", "bool", /*default=*/"false",
-            "Enable multi-head attention pattern matching logs. Useful for debugging pattern matching failures.">,
-    Option<"mhaAllowUnsafeBCast", "mha-allow-unsafe-bcast", "bool", /*default=*/"true",
-            "Allow potentially unsafe broadcasts to be pattern matched for MHA patterns.">,
-    Option<"mhaAllowInternalReshape", "mha-allow-internal-reshape", "bool", /*default=*/"true",
-            "Allow potentially unsafe broadcasts to be pattern matched for MHA patterns.">,
     Option<"enableMegaFFNPattern", "mega-ffn-enable", "bool", /*default=*/"true",
             "Enable the NVFP4 MegaFFN fusion (grouped_matmul_swiglu_nvfp4 + "
             "grouped_matmul_block_scaled -> mega_ffn_nvfp4). Only fires on SM100 "
@@ -209,14 +201,19 @@ def OutlineAsyncRoutines: Pass<"mogg-outline-async-routines", "ModuleOp"> {
 
 def FormGraphBlobs
     : Pass<"mogg-form-graph-blobs", "mlir::ModuleOp"> {
-  let summary = "Fuse sequences of declarative routines into graph blobs.";
+  let summary = "Fuse groups of declarative routines into graph blobs.";
   let description = [{
-    Replaces each sequence of declarative `mogg.routine`s with one routine
-    whose body is a `mogg.graph_blob` holding theirs, so the sequence launches
-    as one device kernel. A routine joins the sequence before it when it reads
-    the sequence's last routine, nothing else reads that routine's results,
-    and both run on one device. The fused routine has every member's operands
-    from outside the sequence and every member's results. Device graphs are
+    Replaces each group of declarative `mogg.routine`s with one routine that
+    runs the members' bodies in order inside a `mogg.graph_blob`, so the group
+    launches as one device kernel. A group holds sequences, where one member
+    reads another's results, and siblings that don't depend on each other. The
+    fused routine reads what the members read from outside the group and
+    returns every member's results.
+
+    Each group runs on one device. It ends at the first member with a result
+    that something outside the group reads, other than another declarative
+    routine on that device or the block's terminator, such as the graph's
+    output, so no path leaves the group and comes back in. Device graphs are
     left alone. Runs before `OutlineRoutines`, which outlines the fused
     routine.
   }];
@@ -247,7 +244,7 @@ def LegalizeRowwiseKernels
     : Pass<"mogg-legalize-rowwise-kernels", "ModuleOp"> {
   let summary = "Fill in what each rowwise kernel needs to print as Mojo.";
   let description = [{
-    Runs `mogg-rowwise-select-primary-input`, `mogg-rowwise-bind-monoids`,
+    Runs `mogg-rowwise-create-cache`, `mogg-rowwise-bind-monoids`,
     `mogg-rowwise-group-row-stores` and `mogg-rowwise-set-launch-params`, in
     that order, on every `mogg.call.rowwise`.
   }];
@@ -263,15 +260,16 @@ def LegalizeRowwiseKernels
   let dependentDialects = ["MOGG::MOGGDialect", "M::MO::MODialect"];
 }
 
-def RowwiseSelectPrimaryInput
-    : Pass<"mogg-rowwise-select-primary-input", "ModuleOp"> {
-  let summary = "Pick the input each rowwise kernel reads element by element. "
-                "For testing only.";
+def RowwiseCreateCache
+    : Pass<"mogg-rowwise-create-cache", "ModuleOp"> {
+  let summary = "Give each rowwise kernel the cache its phases read. For "
+                "testing only.";
   let description = [{
-    Sets `primary` on each `mogg.call.rowwise` to the capture its first fold
-    loads at the element index, and turns those loads, in every fold, into
-    `mogg.rowwise.primary`. Also sets `dtype` (the primary input's element
-    type) and `is_cached` (whether more than one fold reads it).
+    Gives each `mogg.call.rowwise` without a `mogg.rowwise.cache` (one that
+    skipped `map-rcse`) a cache that loads the capture its first fold reads
+    at the element index, and turns those loads, in every phase, into
+    `mogg.rowwise.cache.load`. Sets `is_cached` when more than one phase
+    reads the cache.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];
@@ -291,8 +289,11 @@ def RowwiseBindMonoids: Pass<"mogg-rowwise-bind-monoids", "ModuleOp"> {
 def RowwiseGroupRowStores: Pass<"mogg-rowwise-group-row-stores", "ModuleOp"> {
   let summary = "Move per-row stores into one emit. For testing only.";
   let description = [{
-    Moves the stores at the row index of each `mogg.call.rowwise` into one
-    `mogg.rowwise.emit` at the end of its body.
+    Moves the stores at the row index of each `mogg.call.rowwise`, and the
+    row-level ops only they read, into one `mogg.rowwise.emit` at the end of
+    its body. A load at the row index left in the body, which feeds a value a
+    phase reads, becomes a `mogg.rowwise.load_lane` spread by a
+    `mogg.rowwise.splat_lane`.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];
@@ -303,10 +304,20 @@ def RowwiseSetLaunchParams
   let summary = "Set each rowwise kernel's launch parameters. For testing "
                 "only.";
   let description = [{
-    Sets the launch parameters of each `mogg.call.rowwise`, and `cols` when
-    the reduced axis is static. Runs after `mogg-rowwise-group-row-stores`: a
-    body is reduce-shaped when all its stores are in the emit. Only
-    reduce-shaped bodies are supported.
+    Sets the launch parameters of each `mogg.call.rowwise` as the
+    hand-written kernels set them, and `cols` when the reduced axis is
+    static:
+
+    - A body that writes one value per row has `num_phases` 1 and
+      `dtype_size` 0, and is expensive when its per-element cost reaches
+      the threshold.
+    - A body that writes every element has `num_phases` folds + 1, and is
+      expensive. `dtype_size` is the row's element size, which lets a long
+      row split, when every fold keeps one field (as in rms_norm and
+      softmax), else 0 (as in layer_norm).
+
+    Runs after `mogg-rowwise-group-row-stores`, which leaves no store
+    directly in the body.
   }];
 
   let options = [
@@ -535,6 +546,46 @@ def VerifyKernels: Pass<"mogg-verify-kernels", "ModuleOp"> {
     (missing `execute`, mismatched shape/execute inputs, ...), located at the
     offending Mojo argument or entry point when the decl records it.
   }];
+}
+
+def TestKernelRegistrations
+    : Pass<"mogg-test-kernel-registrations", "ModuleOp"> {
+  let summary = "Test-only: evaluates, compares, and resolves registrations";
+  let description = [{
+    For each registration that has at least one `mogg.kernel.decl` with a
+    `platform_predicate`, prints each decl's platform (`true` for a decl
+    without one) and its value for each device in the `mogg.test_device_infos`
+    module attribute. Then it prints how the platforms of each pair of decls
+    of the registration compare, and the decl that `MojoRegistry` resolves for
+    each device in `mo.device_info_mapping`. The output goes to stderr:
+
+    ```
+    platform @Kernel = type("gpu") & api("cuda")
+    platform @Kernel on #M.device_info<"gpu", "cuda", "sm_100a", ""> = true
+    compare @Kernel @Other = first narrower
+    resolve "my.op" on "gpu" -> @Kernel
+    ```
+  }];
+}
+
+def ValidateKernelRegistry
+    : Pass<"mogg-validate-kernel-registry", "ModuleOp"> {
+  let summary = "Checks that no kernel selection is ambiguous";
+  let description = [{
+    For each op with more than one `mogg.kernel.decl`, applies kernel
+    selection on every representative device of the registrations'
+    platforms, and reports an error for each op and set of kernels that tie.
+    A device that no registration matches is not an error.
+
+    With `builtins-only`, only built-in registrations take part, as in a
+    registry without user packages. User registrations only shadow built-ins,
+    so they can hide an ambiguity among built-ins but never cause or resolve
+    one within the built-in group.
+  }];
+  let options = [
+    Option<"builtinsOnly", "builtins-only", "bool", /*default=*/"false",
+           "Consider only built-in registrations">,
+  ];
 }
 
 def DumpKernels: Pass<"mogg-dump-kernels", "ModuleOp"> {

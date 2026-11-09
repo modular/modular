@@ -18,12 +18,12 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.nn import Linear
-from max.nn.common_layers.functional_kernels import (
+from max.nn.common_layers.moe import MoEGate
+from max.nn.kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
 )
-from max.nn.common_layers.moe import MoEGate
 from max.nn.module import Module
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor

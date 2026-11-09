@@ -75,7 +75,7 @@ from std.math import ceildiv
 import max.gpu.primitives.warp as warp
 
 from layout import Coord, TensorEngine, TileTensor, TensorLayout
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.matmul.gpu.apple.matmul_8x8 import gemm_kernel_apple_8x8
 from linalg.matmul.gpu.apple.matmul_kernel import enqueue_apple_matmul

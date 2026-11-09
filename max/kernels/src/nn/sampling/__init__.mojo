@@ -28,7 +28,7 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 from .sampling import (
     apply_masked_penalties_to_logits,

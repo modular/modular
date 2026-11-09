@@ -62,4 +62,11 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
     memory_planner=KimiK3ModuleV3MemoryPlanner,
     multi_gpu_supported=True,
     requires_max_batch_context_length=True,
+    # The fused graph the `Inferact/Kimi-K3-DSpark` drafter builds with this
+    # target. Named apart from the graph API path's `unified_dspark_kimi_k3`
+    # because the two ABIs share nothing but arity: the ModuleV3 graph ends
+    # its declared inputs with the PR7 extent pair and takes its traced signal
+    # buffers after it (mach/docs/models/kimi-k3-inferact-dspark.md). The
+    # exporter selects the fused submodel by this name.
+    spec_decode_graph_names={"dspark": "unified_dspark_kimi_k3_modulev3"},
 )

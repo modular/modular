@@ -125,7 +125,6 @@ def indexer_score_ragged_paged[
     cache_t: KVCacheT,
     q_type: DType,
     //,
-    target: StaticString,
     num_heads: Int,
 ](
     output: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
@@ -145,7 +144,6 @@ def indexer_score_ragged_paged[
         cache_t: The compressed leaf's key cache type (inferred); one head,
             paged by entry through ``slots_per_page``.
         q_type: Query element type (inferred).
-        target: Compilation target string, selects the CPU or GPU path.
         num_heads: Query heads summed into each score.
 
     Args:
@@ -187,7 +185,7 @@ def indexer_score_ragged_paged[
     if num_rows == 0 or num_cand == 0:
         return
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         _indexer_score_cpu[head_dim=head_dim, chunk=chunk](
             output,
             q,

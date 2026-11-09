@@ -45,7 +45,6 @@ from max.gpu.sync import (
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
-    Layout,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -63,7 +62,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -82,7 +81,7 @@ from structured_kernels.tile_types import (
 @inline(.always)
 def _get_accumulator_size[
     *,
-    c_smem_layout: Layout,
+    c_smem_layout: TensorLayout,
     block_tile_shape: Tuple[Int, Int, Int],
     mma_shape: Tuple[Int, Int, Int],
     cta_group: Int,
@@ -99,7 +98,7 @@ def _get_accumulator_size[
 
     comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
-    comptime stageN = c_smem_layout.shape[1].value()
+    comptime stageN = c_smem_layout.static_shape[1]
     comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
     comptime cg1_num_stages = MMA_N // stageN
     comptime num_stages = cg2_num_stages if cta_group == 2 else cg1_num_stages
@@ -1009,9 +1008,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime b_tma_load_size = _idx_product[b_desc_shape]()
     comptime a_tma_rows = a_desc_shape.element_types[0].static_value
     comptime b_tma_rows = b_desc_shape.element_types[0].static_value
-    comptime c_smem_layout = Layout.row_major(BM, MMA_N)
-
-    comptime a_scales_smem_layout = Layout.row_major(1, BM)
+    comptime a_scales_smem_tile_size = BM
 
     var base_ptr_smem = external_memory[
         Scalar[a_type],
@@ -1029,7 +1026,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         0
     ] * config.output_tile_shape[1] * config.num_output_stages
 
-    comptime a_scales_smem_size = a_scales_smem_layout.size() * num_pipeline_stages
+    comptime a_scales_smem_size = a_scales_smem_tile_size * num_pipeline_stages
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = a_smem_base.unsafe_offset(a_smem_size).unsafe_bitcast[
@@ -1398,8 +1395,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
         while work_info.is_valid():
             comptime reg_info = _get_accumulator_size[
-                c_smem_layout=Layout.row_major(
-                    config.output_tile_shape[0], config.output_tile_shape[1]
+                c_smem_layout=type_of(
+                    row_major[
+                        config.output_tile_shape[0],
+                        config.output_tile_shape[1],
+                    ]()
                 ),
                 block_tile_shape=config.block_tile_shape,
                 mma_shape=(

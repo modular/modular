@@ -36,7 +36,12 @@ from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
     interleave_for_tp,
 )
 from max.tensor import Tensor, default_device
-from max.tensor.sharding import DeviceMesh, TensorLayout
+from max.tensor.sharding import (
+    DeviceMesh,
+    Replicated,
+    Sharded,
+    TensorLayout,
+)
 
 
 def _rel_error(a: np.ndarray, b: np.ndarray) -> float:
@@ -185,7 +190,7 @@ def test_dense_mlp_rejects_width_not_divisible_by_tp() -> None:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
+    "moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 @pytest.mark.parametrize(
     ("dtype", "hidden"),
@@ -209,7 +214,11 @@ def test_latent_moe_tp2_matches_tp1(dtype: DType, hidden: int) -> None:
         layer2 = tensor_parallel_latent_moe(layer2, mesh)
         x2 = Tensor(x_np, dtype=DType.float32).cast(dtype)
         # This layer reduces internally, so the caller does not allreduce.
-        out2 = layer2(x2).to_numpy()
+        # `to_numpy` would also sum a Partial output, so check the placement
+        # itself.
+        y2 = layer2(x2)
+        assert y2.placements == (Replicated(),)
+        out2 = y2.to_numpy()
 
     err = _rel_error(out2, out1)
     assert err < 1e-4, f"latent MoE TP=2 vs TP=1 diverges: rel_error={err}"
@@ -224,8 +233,8 @@ def test_tp_latent_moe_graph_fuses_allreduce_with_routed_expert_norm() -> None:
     ``Module.stage``, the tracing half of production's ``Module.compile``,
     which threads the mesh's signal buffers in as graph inputs: the routed
     branch must be one ``mo.composite.distributed.allreduce_rms_norm`` with
-    no standalone ``mo.reduce.rms_norm`` left on the latent. The shared
-    branch keeps its plain allreduce.
+    no standalone ``mo.composite.reduce.rms_norm`` left on the latent. The
+    row-parallel exit and the shared branch share one plain allreduce.
     """
     mesh = _tp2_mesh()
     # Weights live on the mesh, replicated or sharded, the way production
@@ -242,8 +251,10 @@ def test_tp_latent_moe_graph_fuses_allreduce_with_routed_expert_norm() -> None:
 
     ir = str(staged)
     assert "mo.composite.distributed.allreduce_rms_norm" in ir
-    assert "mo.reduce.rms_norm" not in ir, (
+    assert "mo.composite.reduce.rms_norm" not in ir, (
         "the routed-expert norm must ride the allreduce, not run standalone"
     )
-    # Only the shared branch keeps a plain allreduce.
+    # The latent exit is row-parallel, so the routed and shared partial sums
+    # share the block's one plain allreduce.
+    assert layer.routed_expert_up_proj.weight.placements == (Sharded(1),)
     assert ir.count("mo.distributed.allreduce.sum") == 1

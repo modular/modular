@@ -147,6 +147,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:muse_glimmer"],
         description="Muse Glimmer model-specific tests",
     ),
+    "muse_spark": ModelProfile(
+        name="muse_spark",
+        default_port=8650,
+        tags=["model:muse_spark"],
+        description="Muse Spark model-specific tests",
+    ),
     "nemotron": ModelProfile(
         name="nemotron",
         default_port=8700,

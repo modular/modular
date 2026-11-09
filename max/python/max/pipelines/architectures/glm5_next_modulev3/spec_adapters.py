@@ -32,9 +32,9 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import BufferType, BufferValue, DimLike, TensorType, TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommBuffers
-from max.nn.legacy.kv_cache import RecurrentStateInputsPerDevice
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.glm5_next.state_cache import (
     INDEXER_CACHE_KEY,
     MLA_CACHE_KEY,

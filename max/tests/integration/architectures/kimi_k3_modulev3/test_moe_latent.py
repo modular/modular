@@ -158,7 +158,7 @@ def _random_weights(seed: int) -> dict[str, np.ndarray]:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
+    "moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_matches_independent_reference() -> None:
     rng = np.random.default_rng(42)

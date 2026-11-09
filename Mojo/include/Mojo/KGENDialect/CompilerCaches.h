@@ -120,6 +120,8 @@ public:
   /// `IndexDepthAdjuster` results, keyed by the value, `adjustDepth` and
   /// `onlyAdjustIndexRef`.
   ShardedCache<std::tuple<const void *, int64_t, unsigned>> depthAdjust;
+  /// `KGEN::isParameterizedType` results, keyed by the type's opaque pointer.
+  ShardedCache<const void *, bool> parameterized;
 
 private:
   CompilerCaches() = default;

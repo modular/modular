@@ -18,7 +18,6 @@ making them safe to import without pulling in higher-level kernel packages.
 
 Types:
 - SMemBarrier: Pointer to shared memory barrier
-- PipelineBarrier: Array of pipeline barriers
 - SMemArray: Generic shared memory array
 - SMemPtr: Typed pointer into shared memory
 - eval: Compile-time expression evaluator
@@ -35,11 +34,6 @@ from std.memory import unsafe_stack_allocation
 
 comptime SMemBarrier = MutPointer[SharedMemBarrier, _, address_space=.SHARED]
 """Type alias for shared memory barrier pointer."""
-
-comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArray[
-    SharedMemBarrier, num_pipeline_stages
-]
-"""Type alias for shared memory pipeline barrier array."""
 
 
 struct SMemArray[type: TrivialRegisterPassable, size: Int](

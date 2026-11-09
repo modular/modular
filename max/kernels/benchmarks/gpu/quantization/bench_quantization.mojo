@@ -32,7 +32,7 @@ from std.memory.alloc import unsafe_alloc
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from layout._fillers import random
 from max.gpu.host.info import MI355X, _is_sm10x_gpu
 

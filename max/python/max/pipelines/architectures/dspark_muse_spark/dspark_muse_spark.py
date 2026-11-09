@@ -39,15 +39,15 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module
-from max.nn.common_layers.functional_kernels import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.kernels import (
     rope_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.common_layers.mlp import MLP
-from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated

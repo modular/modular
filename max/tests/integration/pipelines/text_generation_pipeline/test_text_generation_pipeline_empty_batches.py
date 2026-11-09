@@ -38,7 +38,9 @@ def pipeline() -> TextGenerationPipeline[TextContext]:
                 model_path="kathywu95/deepseek-v3-small-random",
                 kv_cache=KVCacheConfig(enable_prefix_caching=False),
                 max_length=100,
-                runtime=PipelineRuntimeConfig(max_batch_size=2),
+                runtime=PipelineRuntimeConfig(
+                    max_batch_size=2, prefer_module_v3=False
+                ),
             )
         ),
         task=PipelineTask.TEXT_GENERATION,

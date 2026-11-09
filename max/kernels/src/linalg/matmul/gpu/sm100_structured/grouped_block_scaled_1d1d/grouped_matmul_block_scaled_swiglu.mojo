@@ -26,7 +26,6 @@ from ..structured_kernels.row_scales import NullRowScales, RowScales
 
 def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     activation: swiglu_activation_type = swiglu[0.0],
     RowScalesT: RowScales = NullRowScales,
@@ -56,7 +55,6 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
-        target: Target device (unused, for MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
         activation: Gated activation applied in the fused epilogue, selected
             at compile time (defaults to `swiglu`).
@@ -112,7 +110,6 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
         grouped_matmul_swiglu_nvfp4_dispatch[
             transpose_b=transpose_b,
-            target=target,
             pdl_level=pdl_level,
             activation=activation,
             RowScalesT=RowScalesT,
@@ -136,7 +133,6 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     elif scaling_kind == UMMAKind.KIND_MXF8F6F4:
         grouped_matmul_swiglu_mxfp8_dispatch[
             transpose_b=transpose_b,
-            target=target,
             pdl_level=pdl_level,
             activation=activation,
         ](

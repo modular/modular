@@ -70,7 +70,7 @@ def modular_py_library(
             data = kwargs.get("data", []),
             ignore_extra_deps = ignore_extra_deps,
             ignore_unresolved_imports = ignore_unresolved_imports,
-            target_compatible_with = select({
+            target_compatible_with = kwargs.get("target_compatible_with", []) + select({
                 # No point in running these, causes "error replanting symlinks" failures
                 "//:asan": ["@platforms//:incompatible"],
                 "//:ubsan": ["@platforms//:incompatible"],

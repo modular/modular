@@ -948,6 +948,11 @@ bool isFusableIOSpec(IOSpec spec) {
          spec == IOSpec::FusedOutputTileTensor;
 }
 
+bool isTileFusedOutputIOSpec(IOSpec spec) {
+  return spec == IOSpec::FusedComputeOutputTileTensor ||
+         spec == IOSpec::FusedOutputTileTensor;
+}
+
 bool isMutableIOSpec(IOSpec spec) { return spec == IOSpec::MutableInputTensor; }
 
 mlir::FailureOr<TensorArgContract> distillTensorArgContract(

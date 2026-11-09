@@ -46,7 +46,7 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 
 MIXED_STEP_SPLIT_DECODE_CAP = 8
 """Widest query the split-route ops run on their decode routes

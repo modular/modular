@@ -7,7 +7,7 @@
 
 // A runtime start has nowhere to come from: the select takes no bounds
 // operands.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[8, 16], f32>, %slice : !mo.tensor<[4, 16], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%capf = %full : !mo.tensor<[8, 16], f32>, %caps = %slice : !mo.tensor<[4, 16], f32>} {
@@ -26,7 +26,7 @@ func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.ten
 // -----
 
 // A reversed slice is not supported, as by the fused concat kernel before it.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[8, 16], f32>, %slice : !mo.tensor<[4, 16], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%capf = %full : !mo.tensor<[8, 16], f32>, %caps = %slice : !mo.tensor<[4, 16], f32>} {
@@ -46,7 +46,7 @@ func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.ten
 
 // The body runs once per stored vector, which spans the innermost dim, so that
 // dim cannot be sliced.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[8, 8], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[8, 16], f32>, %slice : !mo.tensor<[8, 8], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%capf = %full : !mo.tensor<[8, 16], f32>, %caps = %slice : !mo.tensor<[8, 8], f32>} {
@@ -66,7 +66,7 @@ func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.ten
 
 // At the epilogue's own index, the spec must slice the shape the kernel hands
 // the epilogue.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[8, 16], f32>, %slice : !mo.tensor<[4, 16], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%capf = %full : !mo.tensor<[8, 16], f32>, %caps = %slice : !mo.tensor<[4, 16], f32>} {
@@ -87,7 +87,7 @@ func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.ten
 // The body runs at each stored vector's first index, and the kernel's vectors
 // run along its own inner dim, so a reshaped index can carry one vector across
 // rows the slice tells apart.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[32, 4], f32>, !mo.tensor<[16, 4], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[32, 4], f32>, %slice : !mo.tensor<[16, 4], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%capf = %full : !mo.tensor<[32, 4], f32>, %caps = %slice : !mo.tensor<[16, 4], f32>} {
@@ -107,7 +107,7 @@ func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[32, 4], f32>, !mo.ten
 // -----
 
 // Nested, the inner spec must slice the outer one's output.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[2, 16], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[8, 16], f32>, %slice : !mo.tensor<[2, 16], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%capf = %full : !mo.tensor<[8, 16], f32>, %caps = %slice : !mo.tensor<[2, 16], f32>} {
@@ -128,7 +128,7 @@ func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.ten
 // -----
 
 // A store at the body's index must have the shape the spec slices to.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[8, 16], f32>, %slice : !mo.tensor<[4, 16], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%capf = %full : !mo.tensor<[8, 16], f32>, %caps = %slice : !mo.tensor<[4, 16], f32>} {
@@ -147,7 +147,7 @@ func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.ten
 // -----
 
 // The index must have the spec's rank.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[2, 8, 16], f32>) -> !mo.tensor<[2, 8, 16], f32> {
   %y = map.iter.opaque inputs (%X : !mo.tensor<[2, 8, 16], f32>) outputs (%full : !mo.tensor<[2, 8, 16], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<3>) capturing {%capf = %full : !mo.tensor<[2, 8, 16], f32>} {
@@ -165,7 +165,7 @@ func.func @f(%X: !mo.tensor<[2, 8, 16], f32>) -> !mo.tensor<[2, 8, 16], f32> {
 // -----
 
 // A rank-0 tensor has no dims to slice.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[], f32>) -> (!mo.tensor<[], f32>, !mo.tensor<[], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[], f32>) outputs (%full : !mo.tensor<[], f32>, %slice : !mo.tensor<[], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<0>) capturing {%capf = %full : !mo.tensor<[], f32>, %caps = %slice : !mo.tensor<[], f32>} {
@@ -185,7 +185,7 @@ func.func @f(%X: !mo.tensor<[], f32>) -> (!mo.tensor<[], f32>, !mo.tensor<[], f3
 
 // The body takes the one output-space index, of the spec's rank. The custom
 // syntax can't spell another argument, so this uses the generic form.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
   %y:2 = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[8, 16], f32>, %slice : !mo.tensor<[4, 16], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%capf = %full : !mo.tensor<[8, 16], f32>, %caps = %slice : !mo.tensor<[4, 16], f32>} {
@@ -220,7 +220,7 @@ func.func @f(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.ten
 // -----
 
 // A prologue's loads may be recomputed anywhere, so it holds no select.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 func.func @f(%X: !mo.tensor<[8, 16], f32>) -> !mo.tensor<[8, 16], f32> {
   %y = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%full : !mo.tensor<[8, 16], f32>) {
     %pro = map.iter.prologue (%idx : !map.index<2>) capturing {%cap = %X : !mo.tensor<[8, 16], f32>} {

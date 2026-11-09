@@ -53,9 +53,7 @@ def check_bf16_matmul[
         _ = a.fill(1)
         _ = b.fill(1)
     _ = c.fill(-1)
-    batched_matmul[transpose_b=transpose_b, target="cpu"](
-        c, a.as_imm(), b.as_imm()
-    )
+    batched_matmul[transpose_b=transpose_b](c, a.as_imm(), b.as_imm())
 
     for i in range(batch * m * n):
         var reference = Float32(k)
@@ -149,11 +147,11 @@ def check_callbacks[
         return callback_values(idx, val)
 
     comptime if use_compute:
-        batched_matmul[transpose_b=transpose_b, target="cpu"](
+        batched_matmul[transpose_b=transpose_b](
             c, a.as_imm(), b.as_imm(), compute
         )
     else:
-        batched_matmul[transpose_b=transpose_b, target="cpu"](
+        batched_matmul[transpose_b=transpose_b](
             c, a.as_imm(), b.as_imm(), epilogue
         )
 

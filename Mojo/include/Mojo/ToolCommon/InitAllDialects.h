@@ -18,6 +18,8 @@
 #ifndef KGEN_TOOLCOMMON_INITALLDIALECTS_H
 #define KGEN_TOOLCOMMON_INITALLDIALECTS_H
 
+#include "Support/SymbolExport.h"
+
 namespace mlir {
 class DialectRegistry;
 class MLIRContext;
@@ -25,11 +27,17 @@ class MLIRContext;
 
 namespace M {
 /// Add all the KGEN dialects and extensions to the provided registry.
-void registerAllKGENDialects(mlir::DialectRegistry &registry);
+MODULAR_CXX_EXPORT void
+registerAllKGENDialects(mlir::DialectRegistry &registry);
 /// Register all required LLVMIR translation interfaces.
-void registerKGENToLLVMTranslation(mlir::DialectRegistry &registry);
+MODULAR_CXX_EXPORT void
+registerKGENToLLVMTranslation(mlir::DialectRegistry &registry);
 /// Preload all KGEN dialects in the MLIR context.
 void preloadAllKGENDialects(mlir::MLIRContext *ctx);
+
+/// Applies every linked backend's context settings. Call it right after
+/// creating a context that compiles Mojo code, before any pass runs on it.
+void configureKGENContext(mlir::MLIRContext *ctx);
 } // namespace M
 
 #endif // KGEN_TOOLCOMMON_INITALLDIALECTS_H

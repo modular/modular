@@ -13,7 +13,7 @@
 """Dispatch coverage test for the high-level MXFP8 `block_scaled_matmul`.
 
 `block_scaled_matmul` (the entry point behind the
-`mo.matmul.dynamic.block.scaled` op) routes every MXFP8 shape through the Mojo
+`matmul.dynamic.block.scaled` op) routes every MXFP8 shape through the Mojo
 `heuristic_and_outliers_dispatch`. That heuristic only enumerates configs for
 M up to 8192, so a large-M shape such as the 30k-token prefill in KERN-3024
 (M=30000, N=128, K=6144) produced a config the dispatcher never built and used
@@ -220,7 +220,6 @@ def test_mxfp8_dispatch[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
         pdl_level=pdl_level,
-        target="gpu",
     ](c, a, b, a_scales, b_scales, Float32(1.0), ctx)
 
     naive_block_scaled_matmul[
@@ -405,7 +404,6 @@ def test_mxfp8_dispatch[
             compute_fn_col_period=col_period,
             compute_fn_col_start=pass_col_start,
             pdl_level=pdl_level,
-            target="gpu",
         ](
             c,
             a,

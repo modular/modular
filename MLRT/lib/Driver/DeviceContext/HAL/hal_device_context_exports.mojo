@@ -128,6 +128,29 @@ def MojoHAL_DeviceContext_enableAllPeerAccess() abi("C") -> _CString[]:
 
 
 @export
+def MojoHAL_DeviceContext_allPeerAccessEnabled(
+    out_enabled: _OutPtr[Bool],
+) abi("C") -> _CString[]:
+    try:
+        out_enabled[] = DeviceContext.all_peer_access_enabled()
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
+def MojoHAL_DeviceContext_enablePeerAccess(
+    ctx: _DeviceContextBoxPtr,
+    peer: _DeviceContextBoxPtr,
+) abi("C") -> _CString[]:
+    try:
+        ctx[].enable_peer_access(peer[])
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
 def MojoHAL_Device_getApiAndArch(
     out_api: _OutPtr[Pointer[c_char, MutUntrackedOrigin]],
     out_arch: _OutPtr[Pointer[c_char, MutUntrackedOrigin]],
@@ -579,6 +602,7 @@ def MojoHAL_HostBuffer_createSubBuffer(
 @export
 def MojoHAL_DeviceBuffer_createSubBuffer(
     out_buf: _OutPtr[_DeviceBufferBoxPtr],
+    out_ptr: _OutPtr[_RawMemoryPtr],
     parent: _DeviceBufferBoxPtr,
     byte_offset: UInt64,
     byte_size: UInt64,
@@ -595,6 +619,8 @@ def MojoHAL_DeviceBuffer_createSubBuffer(
         Int(byte_size),
         owning=False,
     )
+    # The plugin may have given the view an address of its own.
+    out_ptr[] = view.unsafe_ptr()
     var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
     boxed.unsafe_ptr().unsafe_write(view^)
     out_buf[] = boxed^.unsafe_leak()

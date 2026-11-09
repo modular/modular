@@ -47,7 +47,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
     Gemma4Attention,
 )

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from extensibility import *
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor
 import extensibility
 
 
@@ -26,5 +26,5 @@ struct ParameterNameOverload:
     @staticmethod
     def execute[
         top_k: Int
-    ](result: OutputTensor, input: InputTensor,) -> None:
+    ](result: Some[Output & Tensor], input: Some[Input & Tensor]) -> None:
         print("Success!")

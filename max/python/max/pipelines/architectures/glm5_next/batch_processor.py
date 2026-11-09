@@ -22,7 +22,7 @@ from max import tree
 from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessorBase,
 )

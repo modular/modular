@@ -59,7 +59,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             + 42,
         )
 
-    elementwise[pack_size, target="gpu"](
+    elementwise[pack_size](
         func,
         (2, 8),
         ctx,

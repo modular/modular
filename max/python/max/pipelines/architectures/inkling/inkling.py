@@ -36,9 +36,7 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.embedding import Embedding, VocabParallelEmbedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafKind,
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
@@ -46,14 +44,13 @@ from max.nn.legacy.kv_cache import (
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.embedding import Embedding, VocabParallelEmbedding
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.transformer import (
     DecoderOutputs,
-    ReturnHiddenStates,
-    ReturnLogits,
     forward_sequential_layers,
     logits_postprocess,
 )
@@ -61,6 +58,8 @@ from max.nn.legacy.transformer.distributed_transformer import (
     distributed_logits_postprocess,
     forward_sharded_layers,
 )
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.tree import Tree
 

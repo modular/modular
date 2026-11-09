@@ -26,6 +26,7 @@ def test_join() raises:
     assert_equal("path/to/file", join("path/to", "file"))
     # assert_equal("path/to/file", join(Path("path/to"), Path("file")))
     assert_equal("path/to/file", join("path/", "to/", "file"))
+    assert_equal("path/to/file", join("path/", "to", "file"))
 
     assert_equal("/a/b", join("/", "a", "b"))
     assert_equal("a/b/c", join("a", "b/", "c"))

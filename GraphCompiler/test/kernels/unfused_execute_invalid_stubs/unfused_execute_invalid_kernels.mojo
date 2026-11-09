@@ -32,42 +32,38 @@ from extensibility import (
 from extensibility import InputTensor, OutputTensor
 from extensibility import _FusedOutputTensor as FusedOutputTensor
 
+comptime SM100 = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & extensibility.arch("sm_100a")
+)
+
 
 # Not on the grandfather list.
 @extensibility.register("unfused_not_allowed")
 struct UnfusedNotAllowed:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
+    def execute(z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
         pass
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Tensor], x: Some[Input & Tensor]) where not conforms_to(
-        type_of(z), Fused
-    ):
+    def execute(
+        z: Some[Output & Tensor], x: Some[Input & Tensor]
+    ) where not conforms_to(type_of(z), Fused):
         pass
 
 
 # A listed registration name, but on a device the entry does not name.
-@extensibility.register(
-    "trait_unfused_execute", type="gpu", api="cuda", arch="sm_100a"
-)
+@extensibility.register("trait_unfused_execute", SM100)
 struct UnfusedNotAllowedDevice:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
+    def execute(z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
         pass
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Tensor], x: Some[Input & Tensor]) where not conforms_to(
-        type_of(z), Fused
-    ):
+    def execute(
+        z: Some[Output & Tensor], x: Some[Input & Tensor]
+    ) where not conforms_to(type_of(z), Fused):
         pass
 
 
@@ -75,15 +71,13 @@ struct UnfusedNotAllowedDevice:
 @extensibility.register("unfused_invalid_both_fused")
 struct UnfusedInvalidBothFused:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
+    def execute(z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
         pass
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Fused & _LegacyComputeOutput], x: Some[Input & Tensor]):
+    def execute(
+        z: Some[Output & Fused & _LegacyComputeOutput], x: Some[Input & Tensor]
+    ):
         pass
 
 
@@ -91,23 +85,17 @@ struct UnfusedInvalidBothFused:
 @extensibility.register("unfused_invalid_three")
 struct UnfusedInvalidThree:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
+    def execute(z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
         pass
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Tensor], x: Some[Input & Tensor]) where not conforms_to(
-        type_of(z), Fused
-    ):
+    def execute(
+        z: Some[Output & Tensor], x: Some[Input & Tensor]
+    ) where not conforms_to(type_of(z), Fused):
         pass
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         z: Some[Output & TileTensorable], x: Some[Input & Tensor]
     ) where not conforms_to(type_of(z), Fused):
         pass
@@ -117,15 +105,11 @@ struct UnfusedInvalidThree:
 @extensibility.register("unfused_invalid_input")
 struct UnfusedInvalidInput:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
+    def execute(z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
         pass
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         z: Some[Output & Tensor], x: Some[Input & Fused & LoadAccess]
     ) where not conforms_to(type_of(z), Fused):
         pass
@@ -135,9 +119,7 @@ struct UnfusedInvalidInput:
 @extensibility.register("unfused_invalid_output_count")
 struct UnfusedInvalidOutputCount:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         w: Some[Output & Tensor],
         x: Some[Input & Tensor],
@@ -145,11 +127,9 @@ struct UnfusedInvalidOutputCount:
         pass
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Tensor], x: Some[Input & Tensor]) where not conforms_to(
-        type_of(z), Fused
-    ):
+    def execute(
+        z: Some[Output & Tensor], x: Some[Input & Tensor]
+    ) where not conforms_to(type_of(z), Fused):
         pass
 
 
@@ -157,15 +137,11 @@ struct UnfusedInvalidOutputCount:
 @extensibility.register("unfused_invalid_raises")
 struct UnfusedInvalidRaises:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
+    def execute(z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
         pass
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         z: Some[Output & Tensor], x: Some[Input & Tensor]
     ) raises where not conforms_to(type_of(z), Fused):
         pass
@@ -175,14 +151,12 @@ struct UnfusedInvalidRaises:
 @extensibility.register("unfused_invalid_params")
 struct UnfusedInvalidParams:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
+    def execute(z: Some[Output & Fused & StoreAccess], x: Some[Input & Tensor]):
         pass
 
     @staticmethod
     def execute[
-        target: StaticString, extra: Int
+        extra: Int
     ](z: Some[Output & Tensor], x: Some[Input & Tensor]) where not conforms_to(
         type_of(z), Fused
     ):
@@ -193,9 +167,9 @@ struct UnfusedInvalidParams:
 @extensibility.register("unfused_invalid_legacy")
 struct UnfusedInvalidLegacy:
     @staticmethod
-    def execute[target: StaticString](z: FusedOutputTensor, x: InputTensor):
+    def execute(z: FusedOutputTensor, x: InputTensor):
         pass
 
     @staticmethod
-    def execute[target: StaticString](z: OutputTensor, x: InputTensor):
+    def execute(z: OutputTensor, x: InputTensor):
         pass

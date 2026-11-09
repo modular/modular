@@ -18,7 +18,7 @@ from std.math import ceildiv
 from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index
 from layout import ImmTileTensor, TensorLayout
 

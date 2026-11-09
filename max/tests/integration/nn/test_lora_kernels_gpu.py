@@ -20,10 +20,7 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
-    sgmv_lora_kernel,
-    sgmv_lora_qkv_shrink,
-)
+from max.nn._graph_ops import sgmv_lora_kernel, sgmv_lora_qkv_shrink
 from torch.utils.dlpack import from_dlpack
 
 DTYPE = DType.bfloat16

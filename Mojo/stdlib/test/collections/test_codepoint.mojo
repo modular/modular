@@ -16,6 +16,7 @@ from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
+    assert_raises,
     assert_true,
 )
 from std.testing import TestSuite
@@ -345,6 +346,20 @@ def test_char_from_stringliteral() raises:
     # Verify it works in compile-time contexts
     comptime c_comptime = Codepoint("X")
     assert_equal(c_comptime.to_u32(), 88)
+
+
+def test_ord() raises:
+    assert_equal(Codepoint.ord(StringSpan("🔥")).to_u32(), 0x1F525)
+    assert_equal(Codepoint.ord(String("a")).to_u32(), 97)
+
+    with assert_raises(contains="but got an empty string"):
+        _ = Codepoint.ord(String())
+
+    with assert_raises(contains="got a string of 2 codepoints: 'ab'"):
+        _ = Codepoint.ord(String("ab"))
+
+    # `Codepoint.ord` and `ord` share one implementation.
+    assert_equal(Int(Codepoint.ord(String("➿"))), ord(String("➿")))
 
 
 def main() raises:

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from layout import Coord, TileTensor, coord, row_major, stack_allocation
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout.math import max, sum
 from std.testing import assert_equal
 from std.math import inf, nan

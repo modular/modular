@@ -486,13 +486,6 @@ ErrorOr<SmallVector<ShapeAttr>> propagateShape(ArrayRef<ParamBinding> bindings,
                                                ArrayRef<ShapeAttr> targetShapes,
                                                bool validateAsserts = true);
 
-// TODO move the following into a new interface, which drops `kgenParams`
-// (backward compatibility for the fallback shape function) and `loc` (the op's
-// own location).
-using MaterializeShapeFuncTy = std::function<ShapeMaterializeResult(
-    ArrayRef<TypedAttr> inputs, DictionaryAttr kgenParams, GraphOp graphOp,
-    Location loc)>;
-
 } // namespace M::MO
 
 #endif // GENERICML_GRAPHCOMPILER_MODIALECT_SHAPE_FUNCTIONS_H

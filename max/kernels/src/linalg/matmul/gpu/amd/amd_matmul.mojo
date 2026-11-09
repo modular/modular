@@ -44,7 +44,7 @@ from max.gpu.sync import (
 )
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 
 from std.utils import StaticTuple
@@ -543,6 +543,8 @@ struct AMDMatmul[
                             schedule_group_barrier(
                                 AMDScheduleBarrierMask.MFMA, Int32(wait), 0
                             )
+                        case _:
+                            pass
 
         # The pipeline always consumes at least two K tiles. When K is shorter
         # than that, or ends in a partial tile, the loads of those tiles zero

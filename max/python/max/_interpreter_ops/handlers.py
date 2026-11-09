@@ -1337,9 +1337,9 @@ def _handle_layer_norm(
 # RMS norm operations
 
 
-@register_op_handler(mo.ReduceRmsNormOp)
+@register_op_handler(mo.CompositeReduceRmsNormOp)
 def _handle_rms_norm(
-    op: mo.ReduceRmsNormOp, inputs: Sequence[Buffer | None]
+    op: mo.CompositeReduceRmsNormOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Routes eager rms_norm through a GC model.
 

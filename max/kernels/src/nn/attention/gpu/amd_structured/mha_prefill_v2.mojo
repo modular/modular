@@ -112,10 +112,10 @@ from layout import TensorEngine, TensorLayout, TileTensor
 from layout._utils import make_amd_buffer_resource
 from layout.coord import Coord
 from layout.swizzle import Swizzle
-from layout.tile_layout import (
+from layout.layout import (
     ComptimeInt,
     Idx,
-    Layout as TileLayout,
+    Layout,
     col_major,
     row_major,
 )
@@ -414,11 +414,11 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     # slicing the input 4D / 3D tensors down to a per-(batch, head)
     # plane. Layout VALUES are constructed at the call site because the
     # `seq_len` / `num_keys` dim is runtime.
-    comptime _QPerHeadLayoutT = TileLayout[
+    comptime _QPerHeadLayoutT = Layout[
         Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._Q_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
-    comptime _KVPerHeadLayoutT = TileLayout[
+    comptime _KVPerHeadLayoutT = Layout[
         Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
@@ -431,7 +431,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     # into adjacent device memory (the FLUX i2i NullMask corruption). The
     # stride matches `_KV_ROW_STRIDE` (NUM_KV_HEADS * DEPTH); strides and
     # DEPTH stay comptime so only the per-tile row count costs a register.
-    comptime _KvPerTileLayoutT = TileLayout[
+    comptime _KvPerTileLayoutT = Layout[
         Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]

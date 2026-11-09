@@ -47,7 +47,7 @@ from layout.tma_async import (
     TMATensorTileIm2col,
     create_tensor_tile,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.memory import unsafe_stack_allocation
 
 # Core matrix constant from tensor_core_async.mojo
@@ -100,7 +100,7 @@ Returns:
 #
 # The key insight: new Layout (from _layout.mojo) has compile-time type
 # parameters (shape_types, stride_types) that are preserved through struct
-# chains, unlike LegacyLayout (from layout.mojo) which uses runtime IntTuple.
+# chains.
 
 # Internal swizzled layout for K-major access with configurable swizzle.
 # This layout is coalesce-equivalent to tile_layout_k_major_typed for the
@@ -132,14 +132,6 @@ comptime internal_k_major[
 comptime internal_k_major_128B[
     dtype: DType, BM: Int, BK: Int
 ] = internal_k_major[dtype, BM, BK, 128]
-
-comptime internal_k_major_64B[
-    dtype: DType, BM: Int, BK: Int
-] = internal_k_major[dtype, BM, BK, 64]
-
-comptime internal_k_major_32B[
-    dtype: DType, BM: Int, BK: Int
-] = internal_k_major[dtype, BM, BK, 32]
 
 # Internal row-major layout (no swizzle) - just delegates to row_major
 comptime internal_k_major_none[
@@ -280,8 +272,7 @@ comptime static_row_major[dim0: Int, dim1: Int] = Layout[
 ]
 """2D row-major layout with fully static dimensions.
 
-Equivalent to `LegacyLayout.row_major(dim0, dim1)` but using new Layout
-types with rank=2 provable at compile time.
+Equivalent to `row_major[dim0, dim1]()`, with rank=2 provable at compile time.
 """
 
 comptime _StridedLayout[dim0: Int, dim1: Int, stride0: Int] = Layout[
@@ -338,18 +329,6 @@ def _to_coord[
 # TMA descriptor layouts have the same shape as tile layouts except the
 # last dimension is replaced with swizzle_bytes // element_size. All
 # strides are 1 (flat layout for the TMA descriptor).
-comptime tma_desc_layout_2d[
-    dtype: DType,
-    tile_dim0: Int,
-    swizzle: TensorMapSwizzle,
-] = Layout[
-    Coord[
-        ComptimeInt[tile_dim0], ComptimeInt[swizzle.bytes() // size_of[dtype]()]
-    ].element_types,
-    Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
-]
-"""2D TMA descriptor layout: [dim0, swizzle_elems], strides [1, 1]."""
-
 comptime tma_desc_layout_3d[
     dtype: DType,
     tile_dim0: Int,
@@ -747,12 +726,6 @@ struct SMemTileArray[
         address_space=.SHARED,
     ]
 
-    # Layout type for constructing tiles
-    comptime TileLayout = Layout[
-        shape_types=Self.shape_types,
-        stride_types=Self.stride_types,
-    ]
-
     # Flattened shape types (leaf scalars only, handles nested Coords).
     comptime _flat_shape_types = _Flattened[*Self.shape_types]
 
@@ -807,7 +780,9 @@ struct SMemTileArray[
         """
         var tile_ptr = self.ptr.unsafe_offset(Self.tile_size * Int(index))
         # Construct layout from shape/stride types (all compile-time known)
-        var layout = Self.TileLayout(
+        var layout = Layout[
+            shape_types=Self.shape_types, stride_types=Self.stride_types
+        ](
             Coord[*Self.shape_types](),
             Coord[*Self.stride_types](),
         )

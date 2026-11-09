@@ -44,7 +44,7 @@ def test_scatter_set_constant() raises:
 
     var ctx = DeviceContext.cpu()
 
-    scatter_set_constant[target="cpu",](data, indices, fill_value, ctx)
+    scatter_set_constant(data, indices, fill_value, ctx)
 
     for i in range(3):
         for j in range(3):

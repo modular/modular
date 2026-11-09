@@ -18,10 +18,8 @@ from functools import partial
 
 import pytest
 from max.graph import ops
-from max.nn.legacy.activation import (
-    GatedActivation,
-    activation_function_from_name,
-)
+from max.nn.activation import GatedActivation
+from max.nn.legacy.activation import activation_function_from_name
 
 
 @pytest.mark.parametrize(
@@ -69,6 +67,23 @@ def test_gated_activation_encodes_constants_exactly() -> None:
     assert params["activation"] == "swigluoai"
     assert params["swiglu_alpha"] == 1.702
     assert params["swiglu_limit"] == 7.0
+
+
+def test_gated_activation_round_to_bf16_renames_the_kernel_activation() -> None:
+    params = GatedActivation(
+        "swigluoai", alpha=1.702, limit=7.0, round_to_bf16=True
+    ).kernel_parameters()
+    assert params["activation"] == "swigluoai_bf16"
+    assert params["swiglu_alpha"] == 1.702
+    assert (
+        GatedActivation(round_to_bf16=True).kernel_parameters()["activation"]
+        == "silu_bf16"
+    )
+
+
+def test_gated_activation_round_to_bf16_only_for_silu_and_swigluoai() -> None:
+    with pytest.raises(ValueError, match="does not take round_to_bf16"):
+        GatedActivation("gelu_tanh", round_to_bf16=True)
 
 
 def test_gated_activation_rejects_unknown_name() -> None:

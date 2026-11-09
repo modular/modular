@@ -21,6 +21,7 @@ tasks=mathvista,chartqa,docvqa
 # NOTE: Change `max_dynamic_patch` here to sweep the number of patches.
 # This affects the number of input vision tokens.
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --trust-remote-code
   --device-memory-utilization 0.8
   --no-enable-prefix-caching

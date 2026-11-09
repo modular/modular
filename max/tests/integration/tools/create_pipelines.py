@@ -1539,17 +1539,20 @@ class NemotronHOracle(GenericOracle):
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
-    "allenai/OLMo-1B-hf": GenericOracle(
-        model_path="allenai/OLMo-1B-hf",
-        config_params={"max_length": 1024},
-        device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
-    ),
     "google/gemma-4-26B-A4B-it": GenericOracle(
         model_path="google/gemma-4-26B-A4B-it",
         config_params={
             "max_batch_size": 128,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "nvidia/Gemma-4-26B-A4B-NVFP4": GenericOracle(
+        model_path="nvidia/Gemma-4-26B-A4B-NVFP4",
+        torch_model_path="google/gemma-4-26B-A4B-it",
+        config_params={
+            "max_batch_size": 128,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "google/gemma-4-31B-it": GenericOracle(
         model_path="google/gemma-4-31B-it",
@@ -1575,15 +1578,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32"],
             "gpu": ["float32", "bfloat16"],
         },
-    ),
-    "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct": GenericOracle(
-        model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
-        config_params={
-            "max_length": 1024,
-            "max_batch_size": 128,  # TODO(E2EOPT-48): Remove batch size override.
-            "trust_remote_code": True,
-        },
-        device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
     ),
     "LiquidAI/LFM2.5-1.2B-Instruct": GenericOracle(
         model_path="LiquidAI/LFM2.5-1.2B-Instruct",
@@ -1714,16 +1708,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "allenai/OLMo-2-0425-1B-RLVR1": GenericOracle(
-        model_path="allenai/OLMo-2-0425-1B-RLVR1",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
     "allenai/OLMo-2-1124-7B": GenericOracle(
         model_path="allenai/OLMo-2-1124-7B",
         config_params={
@@ -1796,9 +1780,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "OpenGVLab/InternVL3-38B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-38B-Instruct"
-    ),
-    "OpenGVLab/InternVL3-78B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-78B-Instruct"
     ),
     "OpenGVLab/InternVL3_5-8B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3_5-8B-Instruct"

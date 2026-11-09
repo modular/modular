@@ -171,6 +171,19 @@ generateInstantiateStub(GeneratorOp func, FuncSymbolAttr symbol,
   ReturnOp::create(b, call.getResults());
 }
 
+// Appends the target's post-elaboration pipeline, or the default one when the
+// target has none.
+static void buildPostElaborationPipeline(mlir::PassManager &pm,
+                                         TargetInfoAttr target,
+                                         const CompilationOptions &options) {
+  ErrorOr<const TargetBackend *> backendOr =
+      TargetBackendRegistry::get().lookup(target.getTriple());
+  if (!backendOr.isError() &&
+      (*backendOr)->buildPostElaborationPipeline(pm, options))
+    return;
+  buildPostElaborationPipeline(pm, options);
+}
+
 /// Find a FuncOp in the module by its kgen.offload.kernelid LLVM metadata.
 /// Returns nullptr if no function with the given kernel ID is found.
 static FuncOp findFuncByKernelId(ModuleOp module, uint64_t kernelId) {
@@ -285,13 +298,18 @@ static ErrorOr<StringAttr> compileStandaloneKernel(
   exportedSymbols.insert({func.getSymNameAttr(), ExportKind::Exported});
   // Make sure to slice out anything referenced in the input parameters. When
   // generator references are instantiated in the standalone module, they are
-  // instantiated with the new target. Mirrors `bundleCompileOffloadOp` so a
-  // per-kernel offload slice exports the same dependency set.
+  // instantiated with the new target. Mirrors the per-kind handlers in
+  // `Elaborator::bundleCompileOffloadOp` so a per-kernel offload slice
+  // exports the same dependency set as the bundled-offload slice.
   mlir::AttrTypeWalker walker;
   walker.addWalk([&](FuncSymbolAttr ref) {
     exportedSymbols.insert(
         {ref.getSymbol().getRootReference(), ExportKind::NotExported});
   });
+  // Only generator references are exported: `bundleCompileOffloadOp` upgrades
+  // every type instance reference to the generator that defines it before it
+  // records the symbol, because the slicer cannot slice a
+  // `kgen.struct.instance` (it does not implement `ExportInterface`).
   walker.addWalk([&](TypeGeneratorRefAttr ref) {
     exportedSymbols.insert(
         {ref.getSymbol().getRootReference(), ExportKind::NotExported});
@@ -346,7 +364,7 @@ static ErrorOr<StringAttr> compileStandaloneKernel(
   pm.addPass(createElaborateGenerators(target, elaboratorOptions,
                                        compilationOptions, compileElaboratorAsm,
                                        compileOffloads));
-  buildPostElaborationPipeline(pm, compilationOptions);
+  ::buildPostElaborationPipeline(pm, target, compilationOptions);
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
@@ -756,7 +774,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           createElaborateGenerators(target, elabOptions, compilationOptions,
                                     compileElaboratorAsm, compileOffloads));
 
-      buildPostElaborationPipeline(pm, compilationOptions);
+      ::buildPostElaborationPipeline(pm, target, compilationOptions);
 
       if (failed(pm.run(*module)))
         return Error("failed to run the pass manager for offload functions");
@@ -966,7 +984,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          const CompilationOptions &options) {
   buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm,
                                compileOffloads);
-  buildPostElaborationPipeline(pm, options);
+  ::buildPostElaborationPipeline(pm, target, options);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1044,10 +1062,12 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
         mlir::StringAttr::get(&context,
                               stringifyEmitAs(options.offloadOutputKind)));
 
+  // Declared before `pm` so it outlives the pass manager reporting into it.
+  mlir::TimingScope timing = pmConfigOptions.nestTimingScope("KGEN pipeline");
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
-  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
+  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm, timing);
   if (configPM)
     return configPM.takeError();
 

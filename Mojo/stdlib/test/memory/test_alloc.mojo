@@ -325,7 +325,9 @@ def test_allocation_niche() raises:
     # each one and destroy it before asserting.
     var some = Optional(alloc(Layout[Int64](length=4)))
     var some_engaged = Bool(some)
-    var some_length = len(some.value())
+    var some_length = 0
+    if case .Some(allocation) = some:
+        some_length = len(allocation)
     some^.deinit_with(_dealloc)
     assert_true(some_engaged)
     assert_equal(some_length, 4)

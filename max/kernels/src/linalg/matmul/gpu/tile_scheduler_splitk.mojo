@@ -34,7 +34,7 @@ from layout import (
     TensorLayout,
     TileTensor,
 )
-from layout.tile_layout import Layout as _StaticLayout, _RowMajor
+from layout.layout import Layout as _StaticLayout, _RowMajor
 from std.utils.coord import Coord, _IntToComptimeInt
 from std.bit import log2_floor
 

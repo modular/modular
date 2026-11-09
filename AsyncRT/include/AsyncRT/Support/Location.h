@@ -15,6 +15,7 @@
 #define ASYNCRT_SUPPORT_LOCATION_H
 
 #include "Support/RCRef.h"
+#include "Support/SymbolExport.h"
 
 #include <cstdint>
 #include <string>
@@ -41,7 +42,7 @@ public:
 
 /// This virtual base class is implemented by things that produce
 /// `EncodedLocation`s, showing how to decode them.
-class LocationDecoder {
+class MODULAR_CXX_EXPORT LocationDecoder {
 public:
   virtual DecodedLocation decode(const EncodedLocation &loc) const = 0;
 
@@ -59,7 +60,7 @@ private:
 
 /// This class is an opaque location token that is efficiently constructible,
 /// but needs conversion into a Location before it can be used for reporting.
-class EncodedLocation {
+class MODULAR_CXX_EXPORT EncodedLocation {
 public:
   EncodedLocation(intptr_t data, RCRef<LocationDecoder> decoder)
       : data(data), decoder(std::move(decoder)) {}

@@ -11,7 +11,7 @@ locations. This section describes how to create and work with layouts
 for `TileTensor`. In particular, it discusses the following types:
 
 - The
-  [`tile_layout.Layout`](/api/mojo/layout/tile_layout/Layout/)
+  [`layout.Layout`](/api/mojo/layout/layout/Layout/)
   struct describes an arrangement of data in memory. A *layout* is a function
   that maps a set of logical coordinates (like (*x*, *y*) in a two-dimensional
   array) to a linear index value. Layouts can also describe more complex
@@ -37,8 +37,8 @@ The following imports include all of the types and functions used
 on this page.
 
 ```mojo title=Imports
-from layout import Coord, coord, Idx, print_layout
-from layout.tile_layout import (
+from layout import Coord, coord, Idx
+from layout.layout import (
     Layout,
     blocked_product,
     col_major,
@@ -89,34 +89,23 @@ sub-layouts or *modes*: a row mode and a column mode: 3 rows with a stride of 4
 (3:4, the first numbers from each tuple) and 4 columns with a stride of 1 (4:1,
 the second numbers from each tuple).
 
-The
-[`print_layout()`](/api/mojo/layout/layout/print_layout/)
-function generates an ASCII diagram of any 2D layout, showing the coordinates on
-the outside and the corresponding index values in the grid.
+Printing a layout shows its shape and stride as a pair.
 
 ```mojo
 var row_major3x4 = row_major[3, 4]()
-print_layout(row_major3x4.to_layout())
+print(row_major3x4)
 ```
 
 Output:
 
 ```plaintext
 ((3, 4):(4, 1))
-       0    1    2    3
-    +----+----+----+----+
- 0  |  0 |  1 |  2 |  3 |
-    +----+----+----+----+
- 1  |  4 |  5 |  6 |  7 |
-    +----+----+----+----+
- 2  |  8 |  9 | 10 | 11 |
-    +----+----+----+----+
 ```
 
 The coordinate to index mapping is performed by calculating the dot product of
 the logical coordinates and the corresponding strides. For example, given the
-coordinates (*i, j*) and the layout shown above, the index value is $i*4 + j*1$.
-So coordinate (1, 1) maps to 5, as shown in the diagram.
+coordinates (*i, j*) and the layout above, the index value is $i*4 + j*1$, so
+coordinate (1, 1) maps to 5.
 
 The following example shows how to use a `Layout` to convert between coordinates
 and index values.
@@ -138,7 +127,7 @@ coordinates at index 7: (1, 3)
 As this example shows, the layout is a function that takes a set of integer
 coordinates and returns a single integer (the linear index). The `Layout` struct
 also provides an
-[`idx2crd()`](/api/mojo/layout/tile_layout/Layout/#idx2crd)
+[`idx2crd()`](/api/mojo/layout/layout/Layout/#idx2crd)
 method that transforms a linear index into a set of logical coordinates.
 
 When you use a `TileTensor`, you'll use the layout to define how the data is
@@ -148,16 +137,8 @@ helpful to understand how it works.
 
 :::note Printing layouts
 
-You can use `print_layout()` to print a diagram of any 2D layout. This function
-currently only supports the legacy `Layout` type, so you'll need to call
-`.to_layout()` to convert a `TileTensor`-style layout to a legacy layout:
-
-```mojo
-print_layout(my_layout.to_layout())
-```
-
-You can pass *any* layout to the built-in `print()` function to print a string
-representation of the layout in the form of a (*shape*:*stride*) pair.
+The built-in `print()` function prints a string representation of any layout in
+the form of a (*shape*:*stride*) pair.
 
 :::
 
@@ -321,9 +302,9 @@ columns:
 ## Making layouts
 
 There are multiple ways to create layouts. The
-[`row_major()`](/api/mojo/layout/tile_layout/row_major/)
+[`row_major()`](/api/mojo/layout/layout/row_major/)
 and
-[`col_major()`](/api/mojo/layout/tile_layout/col_major/)
+[`col_major()`](/api/mojo/layout/layout/col_major/)
 functions are probably the simplest ways to create a layout. The `row_major()`
 function creates a generalized row-major layout: that is, the rightmost
 coordinate varies the fastest. The `col_major()` function creates a generalized
@@ -382,20 +363,6 @@ The following is an example of a tile-major layout:
 ```plaintext
 
 (((3, 2), (2, 5)):((1, 6), (3, 12)))
-       0    1    2    3    4    5    6    7    8    9
-    +----+----+----+----+----+----+----+----+----+----+
- 0  |  0 |  3 | 12 | 15 | 24 | 27 | 36 | 39 | 48 | 51 |
-    +----+----+----+----+----+----+----+----+----+----+
- 1  |  1 |  4 | 13 | 16 | 25 | 28 | 37 | 40 | 49 | 52 |
-    +----+----+----+----+----+----+----+----+----+----+
- 2  |  2 |  5 | 14 | 17 | 26 | 29 | 38 | 41 | 50 | 53 |
-    +----+----+----+----+----+----+----+----+----+----+
- 3  |  6 |  9 | 18 | 21 | 30 | 33 | 42 | 45 | 54 | 57 |
-    +----+----+----+----+----+----+----+----+----+----+
- 4  |  7 | 10 | 19 | 22 | 31 | 34 | 43 | 46 | 55 | 58 |
-    +----+----+----+----+----+----+----+----+----+----+
- 5  |  8 | 11 | 20 | 23 | 32 | 35 | 44 | 47 | 56 | 59 |
-    +----+----+----+----+----+----+----+----+----+----+
 ```
 
 This 6x10 tile-major is indexed vertically in 2
@@ -407,7 +374,7 @@ using the `Layout` constructor. But calculating the strides for a complicated
 layout is far from intuitive.
 
 An easier way to generate this type of tiled layout is the
-[`blocked_product()`](/api/mojo/layout/tile_layout/blocked_product/)
+[`blocked_product()`](/api/mojo/layout/layout/blocked_product/)
 function. `blocked_product()` takes two layouts: a *tile* layout and a *tiler*
 layout: essentially, every element in the tiler layout is replaced by a tile.
 The following example generates the same tiled layout using `blocked_product()`.
@@ -423,11 +390,11 @@ def use_blocked_product():
     var blocked = blocked_product(tile, tiler)
 
     print("Tile:")
-    print_layout(tile.to_layout())
+    print(tile)
     print("\nTiler:")
-    print_layout(tiler.to_layout())
+    print(tiler)
     print("\nTiled layout:")
-    print_layout(blocked.to_layout())
+    print(blocked)
     print()
 ```
 
@@ -436,40 +403,12 @@ Output:
 ```plaintext
 Tile:
 ((3, 2):(1, 3))
-      0   1
-    +---+---+
- 0  | 0 | 3 |
-    +---+---+
- 1  | 1 | 4 |
-    +---+---+
- 2  | 2 | 5 |
-    +---+---+
 
 Tiler:
 ((2, 5):(1, 2))
-       0    1    2    3    4
-    +----+----+----+----+----+
- 0  |  0 |  2 |  4 |  6 |  8 |
-    +----+----+----+----+----+
- 1  |  1 |  3 |  5 |  7 |  9 |
-    +----+----+----+----+----+
 
 Tiled layout:
 (((3, 2), (2, 5)):((1, 6), (3, 12)))
-       0    1    2    3    4    5    6    7    8    9
-    +----+----+----+----+----+----+----+----+----+----+
- 0  |  0 |  3 | 12 | 15 | 24 | 27 | 36 | 39 | 48 | 51 |
-    +----+----+----+----+----+----+----+----+----+----+
- 1  |  1 |  4 | 13 | 16 | 25 | 28 | 37 | 40 | 49 | 52 |
-    +----+----+----+----+----+----+----+----+----+----+
- 2  |  2 |  5 | 14 | 17 | 26 | 29 | 38 | 41 | 50 | 53 |
-    +----+----+----+----+----+----+----+----+----+----+
- 3  |  6 |  9 | 18 | 21 | 30 | 33 | 42 | 45 | 54 | 57 |
-    +----+----+----+----+----+----+----+----+----+----+
- 4  |  7 | 10 | 19 | 22 | 31 | 34 | 43 | 46 | 55 | 58 |
-    +----+----+----+----+----+----+----+----+----+----+
- 5  |  8 | 11 | 20 | 23 | 32 | 35 | 44 | 47 | 56 | 59 |
-    +----+----+----+----+----+----+----+----+----+----+
 ```
 
 As you can see, `blocked_product()` combines two simple layouts to generate a
@@ -477,15 +416,15 @@ more complex one.
 
 The layout produced by `blocked_product()` places items in the same tile
 consecutively in memory. But addressing individual tiles is inconvenient. The
-[`zipped_divide()`](/api/mojo/layout/tile_layout/zipped_divide/)
+[`zipped_divide()`](/api/mojo/layout/layout/zipped_divide/)
 function, by contrast, tiles a 2D tensor such that each column represents a tile
 worth of data.
 
 ```mojo
 var base = row_major[6, 4]()
 var result = zipped_divide[coord[2, 2]](base)
-print_layout(base.to_layout())
-print_layout(result.to_layout())
+print(base)
+print(result)
 ```
 
 ```output
@@ -528,9 +467,9 @@ data.
 The tiled layouts shown above derive a nested layout from simpler ones using
 `blocked_product()` and `zipped_divide()`. You can also construct a nested
 layout directly from a nested shape using
-[`row_major_nested()`](/api/mojo/layout/tile_layout/row_major_nested/)
+[`row_major_nested()`](/api/mojo/layout/layout/row_major_nested/)
 and
-[`col_major_nested()`](/api/mojo/layout/tile_layout/col_major_nested/).
+[`col_major_nested()`](/api/mojo/layout/layout/col_major_nested/).
 These constructors compute row-major (or column-major) strides over the
 *flattened* shape, then re-nest the strides to match the input shape.
 
@@ -557,58 +496,30 @@ orderings:
 var nested = row_major_nested(
     Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
 )
-print_layout(nested.to_layout())
+print(nested)
 
 # The column-major variant re-nests col-major strides over the same
 # flattened shape: (1, 2, 6, 12), re-nested as ((1, 2), (6, 12)).
 var nested_col = col_major_nested(
     Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
 )
-print_layout(nested_col.to_layout())
+print(nested_col)
 ```
 
 Output:
 
 ```plaintext
 (((2, 3), (2, 4)):((24, 8), (4, 1)))
-       0    1    2    3    4    5    6    7
-    +----+----+----+----+----+----+----+----+
- 0  |  0 |  4 |  1 |  5 |  2 |  6 |  3 |  7 |
-    +----+----+----+----+----+----+----+----+
- 1  | 24 | 28 | 25 | 29 | 26 | 30 | 27 | 31 |
-    +----+----+----+----+----+----+----+----+
- 2  |  8 | 12 |  9 | 13 | 10 | 14 | 11 | 15 |
-    +----+----+----+----+----+----+----+----+
- 3  | 32 | 36 | 33 | 37 | 34 | 38 | 35 | 39 |
-    +----+----+----+----+----+----+----+----+
- 4  | 16 | 20 | 17 | 21 | 18 | 22 | 19 | 23 |
-    +----+----+----+----+----+----+----+----+
- 5  | 40 | 44 | 41 | 45 | 42 | 46 | 43 | 47 |
-    +----+----+----+----+----+----+----+----+
 (((2, 3), (2, 4)):((1, 2), (6, 12)))
-       0    1    2    3    4    5    6    7
-    +----+----+----+----+----+----+----+----+
- 0  |  0 |  6 | 12 | 18 | 24 | 30 | 36 | 42 |
-    +----+----+----+----+----+----+----+----+
- 1  |  1 |  7 | 13 | 19 | 25 | 31 | 37 | 43 |
-    +----+----+----+----+----+----+----+----+
- 2  |  2 |  8 | 14 | 20 | 26 | 32 | 38 | 44 |
-    +----+----+----+----+----+----+----+----+
- 3  |  3 |  9 | 15 | 21 | 27 | 33 | 39 | 45 |
-    +----+----+----+----+----+----+----+----+
- 4  |  4 | 10 | 16 | 22 | 28 | 34 | 40 | 46 |
-    +----+----+----+----+----+----+----+----+
- 5  |  5 | 11 | 17 | 23 | 29 | 35 | 41 | 47 |
-    +----+----+----+----+----+----+----+----+
 ```
 
 The result types are the `RowMajorNestedLayout` and `ColMajorNestedLayout`
 aliases. These constructors are currently restricted to all-static
 (compile-time) leaf dimensions and a single level of nesting. For flat shapes,
 use
-[`row_major()`](/api/mojo/layout/tile_layout/row_major/)
+[`row_major()`](/api/mojo/layout/layout/row_major/)
 or
-[`col_major()`](/api/mojo/layout/tile_layout/col_major/)
+[`col_major()`](/api/mojo/layout/layout/col_major/)
 instead.
 
 Once you have a nested layout whose first leaf in each mode is the fragment,

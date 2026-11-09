@@ -26,6 +26,7 @@ call site.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import weakref
 from collections.abc import Mapping
@@ -33,13 +34,14 @@ from typing import Any, NoReturn
 
 import numpy.typing as npt
 from max import tree
-from max.driver import CPU, Device, DLPackArray
+from max.driver import CPU, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import Graph, Shape, ShapeLike
 from max.tensor.realization_context import (
     EagerRealizationContext,
     GraphRealizationContext,
     LazyRealizationContext,
+    lazy,
 )
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 from max.tensor.sharding.mappings import as_device_mapping
@@ -404,21 +406,30 @@ def shard_checkpoint(
     """
     casts: dict[CastRecord, int] = {}
     cpu = CPU()
+    # A virtual device cannot run the graph an eager cast realizes. Staged
+    # lazily, the registry still carries the cast dtypes that export records.
+    deferred = (
+        lazy()
+        if is_virtual_device_mode()
+        and current_realization_context(None) is None
+        else contextlib.nullcontext()
+    )
     registry: dict[str, Tensor] = {}
-    for path, declaration in tree.paths(root, leaf=Tensor).items():
-        array = _entry(arrays, path)
-        if cast := check_fits(path, array, declaration, auto_cast):
-            casts[cast] = casts.get(cast, 0) + 1
-            array = array.cast(declaration.dtype)
-        shards = array.local_shards
-        names = external_shard_names(path, len(shards))
-        for name, shard in zip(names, shards, strict=True):
-            if shard.real and shard.device != cpu:
-                shard = shard.to(cpu)
-            registry[name] = shard
-        if isinstance(declaration, _ExternalWeight):
-            declaration.source = _ExternalWeight(
-                array.shape, declaration.dtype, array._mapping, name=path
-            )
+    with deferred:
+        for path, declaration in tree.paths(root, leaf=Tensor).items():
+            array = _entry(arrays, path)
+            if cast := check_fits(path, array, declaration, auto_cast):
+                casts[cast] = casts.get(cast, 0) + 1
+                array = array.cast(declaration.dtype)
+            shards = array.local_shards
+            names = external_shard_names(path, len(shards))
+            for name, shard in zip(names, shards, strict=True):
+                if shard.real and shard.device != cpu:
+                    shard = shard.to(cpu)
+                registry[name] = shard
+            if isinstance(declaration, _ExternalWeight):
+                declaration.source = _ExternalWeight(
+                    array.shape, declaration.dtype, array._mapping, name=path
+                )
     log_casts(casts)
     return registry

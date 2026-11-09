@@ -1354,10 +1354,11 @@ struct List[T: AnyType, /](
         print(my_list.index(2)) # prints `1`
         ```
         """
-        var result = self.try_index(value, start=start, stop=stop)
-        if result is None:
-            raise "ValueError: Given element is not in list"
-        return result.value()
+        match self.try_index(value, start=start, stop=stop):
+            case .Some(index):
+                return index
+            case .None:
+                raise "ValueError: Given element is not in list"
 
     @stable(since="1.2")
     def clear(

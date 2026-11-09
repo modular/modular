@@ -21,7 +21,7 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import Dim
 from max.nn import Module
-from max.nn.legacy.rotary_embedding import YarnScalingParams
+from max.nn.rope_scaling import YarnScalingParams
 from max.tensor import Tensor
 
 

@@ -53,9 +53,7 @@ def bench_argsort[
     )
 
     # Warm up and verify.
-    argsort[ascending=True, target="gpu"](
-        device_indices_tensor, device_input_tensor, ctx
-    )
+    argsort[ascending=True](device_indices_tensor, device_input_tensor, ctx)
     # Re-copy input since argsort modifies it in-place.
     ctx.enqueue_copy(device_input, input_host_ptr)
     ctx.synchronize()
@@ -66,7 +64,7 @@ def bench_argsort[
     ) raises {var device_input_tensor, var device_indices_tensor, imm}:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[]) raises {imm}:
-            argsort[ascending=True, target="gpu"](
+            argsort[ascending=True](
                 device_indices_tensor, device_input_tensor, ctx
             )
 

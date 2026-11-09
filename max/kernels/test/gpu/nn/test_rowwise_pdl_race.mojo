@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""PDL race test for the row-wise kernels behind `mo.reduce.rms_norm`,
-layer norm, softmax and the reduce-shaped argmax.
+"""PDL race test for the row-wise kernels behind layer norm, softmax and the
+reduce-shaped argmax.
 
 A real PDL chain with no host sync between the launches:
 
@@ -56,7 +56,7 @@ from std.sys import align_of, get_defined_int
 from std.sys.intrinsics import llvm_intrinsic
 from std.time import global_perf_counter_ns
 
-from builtin_kernels.rowwise_normalization import layer_norm, rms_norm
+from builtin_kernels.rowwise_normalization import layer_norm
 from builtin_kernels.rowwise_reductions import reduce_argmax
 from builtin_kernels.rowwise_softmax import softmax
 from layout import Coord, TileTensor, row_major
@@ -154,7 +154,6 @@ def _close(got: Float64, want: Float64, atol: Float64) -> Bool:
 
 
 struct Kind:
-    comptime RMS = 0
     comptime LAYER = 1
     comptime SOFTMAX = 2
 
@@ -230,23 +229,8 @@ def run_case[
             attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_END),
         )
 
-        comptime if kind == Kind.RMS:
-            rms_norm[
-                dtype,
-                2,
-                target="gpu",
-                epsilon=EPS,
-                weight_offset=Float32(0),
-            ](
-                input_fn,
-                output_fn,
-                Coord(shape),
-                Scalar[DType.int](cols),
-                gamma,
-                ctx,
-            )
-        elif kind == Kind.LAYER:
-            layer_norm[dtype, 2, target="gpu"](
+        comptime if kind == Kind.LAYER:
+            layer_norm[dtype, 2](
                 input_fn,
                 output_fn,
                 Coord(shape),
@@ -257,9 +241,7 @@ def run_case[
                 ctx,
             )
         else:
-            softmax[dtype, 2, target="gpu"](
-                input_fn, Coord(shape), cols, out_t, 1, ctx
-            )
+            softmax[dtype, 2](input_fn, Coord(shape), cols, out_t, 1, ctx)
 
         ctx.enqueue_function[consumer[dtype]](
             out_d,
@@ -292,9 +274,7 @@ def run_case[
             for c in range(cols):
                 var v = Float64(_x(r, c).cast[dtype]())
                 var want: Float64
-                comptime if kind == Kind.RMS:
-                    want = v * rsqrt(ms + Float64(EPS)) * _gamma(c)
-                elif kind == Kind.LAYER:
+                comptime if kind == Kind.LAYER:
                     var var_ = ms - mean * mean
                     want = (v - mean) * rsqrt(var_ + Float64(EPS)) * _gamma(
                         c
@@ -411,7 +391,7 @@ def run_argmax_case[
             block_dim=64,
             attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_END),
         )
-        reduce_argmax[adt, target="gpu", reduce_dim=reduce_dim](
+        reduce_argmax[adt, reduce_dim=reduce_dim](
             input_fn, output_fn, Coord(Index(rows, cols)), ctx
         )
         ctx.enqueue_function[consumer[DType.int64]](
@@ -559,23 +539,8 @@ def run_release_case[
 
     ctx.enqueue_memset[DType.int32](flags_d, 0)
     ctx.synchronize()
-    comptime if kind == Kind.RMS:
-        rms_norm[
-            dtype,
-            2,
-            target="gpu",
-            epsilon=EPS,
-            weight_offset=Float32(0),
-        ](
-            input_fn,
-            output_fn,
-            Coord(shape),
-            Scalar[DType.int](cols),
-            gamma,
-            ctx,
-        )
-    elif kind == Kind.LAYER:
-        layer_norm[dtype, 2, target="gpu"](
+    comptime if kind == Kind.LAYER:
+        layer_norm[dtype, 2](
             input_fn,
             output_fn,
             Coord(shape),
@@ -586,9 +551,7 @@ def run_release_case[
             ctx,
         )
     else:
-        softmax[dtype, 2, target="gpu"](
-            input_fn, Coord(shape), cols, out_t, 1, ctx
-        )
+        softmax[dtype, 2](input_fn, Coord(shape), cols, out_t, 1, ctx)
     ctx.enqueue_function[release_probe](
         flags,
         grid_dim=1,
@@ -651,7 +614,7 @@ def run_release_argmax_case[
 
     ctx.enqueue_memset[DType.int32](flags_d, 0)
     ctx.synchronize()
-    reduce_argmax[adt, target="gpu", reduce_dim=reduce_dim](
+    reduce_argmax[adt, reduce_dim=reduce_dim](
         input_fn, output_fn, Coord(Index(rows, cols)), ctx
     )
     ctx.enqueue_function[release_probe](
@@ -704,23 +667,6 @@ def main() raises:
     var delay_us = get_defined_int["DELAY_US", 3000]()
     var failures = 0
     with DeviceContext() as ctx:
-        # Warp tier (row <= 2048 bf16), single row and several blocks.
-        run_levels[Kind.RMS](
-            ctx, "rms warp 4x1024", 4, 1024, iters, delay_us, failures
-        )
-        run_levels[Kind.RMS](
-            ctx, "rms warp 300x1536", 300, 1536, iters, delay_us, failures
-        )
-        # Block tier, cached row (Llama-3-8B hidden) and a ragged width.
-        run_levels[Kind.RMS](
-            ctx, "rms block 3x4096", 3, 4096, iters, delay_us, failures
-        )
-        run_levels[Kind.RMS](
-            ctx, "rms block 200x8192", 200, 8192, iters, delay_us, failures
-        )
-        run_levels[Kind.RMS](
-            ctx, "rms ragged 5x3000", 5, 3000, iters, delay_us, failures
-        )
         run_levels[Kind.LAYER](
             ctx, "layer warp 4x1024", 4, 1024, iters, delay_us, failures
         )
@@ -762,7 +708,7 @@ def main() raises:
             ctx, "argmax coop 4096x8", 4096, 8, iters, delay_us, failures
         )
         # When the grid releases its dependent: early, at the default level.
-        # The warp and block tiers of the norms and softmax, and the split-K and tiled
+        # The block tiers of layer norm and softmax, and the split-K and tiled
         # argmax tiers; the split-K softmax phases always release at exit.
         # The probe's module is loaded first: a cold first launch takes
         # longer than a gated load waits for it.
@@ -775,17 +721,6 @@ def main() raises:
             attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_END),
         )
         ctx.synchronize()
-        run_release_case[Kind.RMS](
-            ctx,
-            "release rms warp 1024x1024",
-            1024,
-            1024,
-            True,
-            failures,
-        )
-        run_release_case[Kind.RMS](
-            ctx, "release rms block 3x4096", 3, 4096, True, failures
-        )
         run_release_case[Kind.LAYER](
             ctx, "release layer block 3x4096", 3, 4096, True, failures
         )

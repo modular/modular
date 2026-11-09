@@ -3,7 +3,7 @@
 
 // CHECK-LABEL: --- Running 'int_cache'
 // CHECK-NEXT: [val] 42
-mgp.model @int_cache : mof devices [#M.device_ref<"cpu", 0>]
+mgp.model @int_cache devices [#M.device_ref<"cpu", 0>]
     init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 3

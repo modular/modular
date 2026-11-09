@@ -26,12 +26,13 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 from max import tree
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, TensorType
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.kv_cache import KVCacheInputs, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
@@ -417,7 +418,9 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
         )
         return ConstantInputs(
             input_types=declarations,
-            buffers=OrderedDict(
+            buffers=OrderedDict()
+            if is_virtual_device_mode()
+            else OrderedDict(
                 (name, config.engram_static_inputs[name])
                 for name in declarations
             ),

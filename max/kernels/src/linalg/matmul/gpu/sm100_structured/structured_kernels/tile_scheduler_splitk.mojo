@@ -22,13 +22,12 @@ from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout import (
     Coord,
-    Idx,
     TensorEngine,
     TensorLayout,
     TileTensor,
     row_major,
 )
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from std.atomic import Atomic, Ordering
 from std.collections.string.string_span import _get_kgen_string
 from std.math import align_up, ceildiv
@@ -45,7 +44,7 @@ from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 
 from linalg.structuring import SMemPtr

@@ -24,8 +24,15 @@ from dataclasses import dataclass
 from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.nn.kv_cache import MultiKVCacheParams
+from max.pipelines.lib import (
+    CheckpointRole,
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+    WeightEntry,
+    WeightTransform,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,
 )
@@ -36,28 +43,9 @@ from transformers import AutoConfig
 from ..glm5_next.model import Glm5NextModel
 from ..glm5_next.model_config import Glm5NextConfig
 from ..glm5_next.mtp import Glm5NextMTP
+from ..glm5_next.weight_adapters import glm5_next_with_mtp_weight_rules
 
-__all__ = ["MTPGlm5NextDraftArchConfig", "draft_weight_name"]
-
-_DRAFT_OWN_MODULES = {
-    "enorm.": "enorm.",
-    "hnorm.": "hnorm.",
-    "eh_proj.": "eh_proj.",
-    "shared_head.norm.": "shared_head_norm.",
-}
-"""Checkpoint suffixes of the MTP layer that live outside its decoder layer."""
-
-
-def draft_weight_name(suffix: str) -> str:
-    """Maps a name under the checkpoint's MTP layer to the draft module's.
-
-    Args:
-        suffix: The name with ``layers.{num_hidden_layers}.`` removed.
-    """
-    for before, after in _DRAFT_OWN_MODULES.items():
-        if suffix.startswith(before):
-            return after + suffix[len(before) :]
-    return f"decoder_layer.{suffix}"
+__all__ = ["MTPGlm5NextDraftArchConfig"]
 
 
 @dataclass
@@ -126,7 +114,11 @@ class MTPGlm5NextDraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
             ValueError: If the checkpoint ships no MTP layer.
         """
         state_dict = parse_state_dict_from_weights(
-            context.pipeline_config, context.weights, context.adapter
+            context.pipeline_config,
+            context.weights,
+            WeightTransform(
+                glm5_next_with_mtp_weight_rules(context.huggingface_config)
+            ),
         )
         config = Glm5NextModel.finalized_config(
             context.pipeline_config,
@@ -139,18 +131,28 @@ class MTPGlm5NextDraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         if context.kv_params is not None:
             assert isinstance(context.kv_params, MultiKVCacheParams)
             config.kv_params = context.kv_params
-        prefix = f"layers.{config.num_hidden_layers}."
-        mtp_state_dict = {
-            draft_weight_name(name[len(prefix) :]): value
-            for name, value in state_dict.items()
-            if name.startswith(prefix)
-        }
+        mtp_state_dict = parse_state_dict_from_weights(
+            context.pipeline_config, context.weights, context.adapter
+        )
         if not mtp_state_dict:
             raise ValueError(
-                f"no {prefix}* tensors in the checkpoint; GLM-5.3-Flash MTP"
-                " needs the MTP layer the checkpoint ships"
+                "no MTP layer in the checkpoint; GLM-5.3-Flash MTP needs the"
+                " layer the checkpoint ships past its last decoder layer"
             )
         context.start_ep(config.ep_config)
         draft = Glm5NextMTP(config)
         draft.load_state_dict(mtp_state_dict, weight_alignment=1, strict=True)
         return draft, config
+
+    @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: Glm5NextConfig
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the MTP layer's weights.
+
+        The layer ships in the target's checkpoint, which the draft loads as
+        its own; its rules leave out the target's weights.
+        """
+        del config
+        assert isinstance(context.adapter, WeightTransform)
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

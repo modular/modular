@@ -35,17 +35,6 @@ from .shmem_api import SHMEMUniqueID
 # ===-----------------------------------------------------------------------===#
 
 
-struct ROCSHEMIVersion(RegisterPassable):
-    var major: c_int
-    var minor: c_int
-    var patch: c_int
-
-    def __init__(out self):
-        self.major = 3
-        self.minor = 4
-        self.patch = 5
-
-
 comptime ROCSHMEM_LIBRARY = _Global["ROCSHMEM_LIBRARY", _init_rocshmem_dylib]
 
 
@@ -262,13 +251,6 @@ def _dtype_to_rocshmem_type[
 # ===-----------------------------------------------------------------------===#
 # 1: Library Setup, Exit, and Query
 # ===-----------------------------------------------------------------------===#
-
-
-def _rocshmem_init() raises:
-    _get_rocshmem_function[
-        "rocshmem_init",
-        def() thin -> NoneType,
-    ]()()
 
 
 def rocshmem_init_thread_tcp(
@@ -496,19 +478,21 @@ def _check_rocshmem_allocation[
     func_name: StaticString,
     requested_bytes: c_size_t,
 ) raises -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
-    if not ptr:
-        raise Error(
-            func_name,
-            " failed to allocate ",
-            requested_bytes,
-            " bytes of ",
-            dtype,
-            (
-                ". Increase allocatable bytes by setting the ROCSHMEM_HEAP_SIZE"
-                " env var"
-            ),
-        )
-    return ptr.unsafe_value()
+    match ptr:
+        case .Some(allocated):
+            return allocated
+        case .None:
+            raise Error(
+                func_name,
+                " failed to allocate ",
+                requested_bytes,
+                " bytes of ",
+                dtype,
+                (
+                    ". Increase allocatable bytes by setting the"
+                    " ROCSHMEM_HEAP_SIZE env var"
+                ),
+            )
 
 
 def rocshmem_free[

@@ -209,8 +209,7 @@ def test_optionals() raises:
     assert_equal(foo.or_else(0), 0)  # default fallback
     assert_equal(bar.or_else(0), 42)
     assert_false(Bool(foo))  # check then access
-    assert_true(Bool(bar))
-    assert_equal(bar.value(), 42)
+    assert_equal(bar, 42)
 
 
 def test_empty_collections() raises:

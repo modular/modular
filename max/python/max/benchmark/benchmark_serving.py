@@ -55,6 +55,8 @@ from max.benchmark.benchmark_shared.config import (
     BenchmarkTask,
     Endpoint,
     ServingBenchmarkConfig,
+    current_option_name,
+    deprecated_env_vars_renamed,
     get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.all import sample_requests
@@ -311,7 +313,7 @@ async def benchmark(
         request_rate=request_rate,
         max_concurrency=max_concurrency,
         ignore_first_turn_stats=args.ignore_first_turn_stats,
-        warmup_to_steady_state=args.warmup_to_steady_state,
+        warmup_multiturn=args.warmup_multiturn,
     )
 
     if args.warm_shared_prefix:
@@ -334,10 +336,9 @@ async def benchmark(
             )
 
     if isinstance(session.samples, ChatJudgeChatSamples):
-        if args.warmup_to_steady_state:
+        if args.warmup_multiturn:
             raise NotImplementedError(
-                "--warmup-to-steady-state is not yet implemented for"
-                " chat-judge."
+                "--warmup-multiturn is not yet implemented for chat-judge."
             )
 
     logger.info("Starting benchmark run")
@@ -454,11 +455,11 @@ async def benchmark(
             if args.max_concurrent_conversations is not None
             else max_concurrency
         )
-        if args.warmup_to_steady_state and warmup_count:
+        if args.warmup_multiturn and warmup_count:
             chat_sessions, report = pick_warmup_population(
                 chat_sessions,
                 warmup_count,
-                warmup_to_steady_state=True,
+                warmup_multiturn=True,
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or len(chat_sessions),
                 rng=np.random.default_rng(args.seed),
@@ -472,7 +473,7 @@ async def benchmark(
                 1 for s in chat_sessions[:warmup_count] if s.prefix_turns == 0
             )
             logger.info(
-                "Warming up to steady state: %d sessions (%d will"
+                "Warming up multi-turn sessions: %d sessions (%d will"
                 " pre-run, %d drew prefix_turns=0 and start cold).",
                 warmup_count,
                 warmup_count - cold_count,
@@ -1321,7 +1322,7 @@ def _run_dry_run_sweep(
 ) -> Iterator[BenchmarkRunResult]:
     if not args.print_workload_stats:
         print_workload_stats(session.samples, stats)
-    if isinstance(session.samples, ChatSamples) and args.warmup_to_steady_state:
+    if isinstance(session.samples, ChatSamples) and args.warmup_multiturn:
         rng = np.random.default_rng(args.seed or 0)
         for mc in concurrency_range:
             warmup_count = (
@@ -1336,7 +1337,7 @@ def _run_dry_run_sweep(
             _, report = pick_warmup_population(
                 session.samples.chat_sessions,
                 warmup_count,
-                warmup_to_steady_state=True,
+                warmup_multiturn=True,
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or 0,
                 rng=rng,
@@ -1596,6 +1597,26 @@ def _extract_metadata_args(
     return clean_args, metadata_values
 
 
+_ENV_PREFIX = "MODULAR_"
+
+
+def _rename_deprecated_flags(args: list[str]) -> list[str]:
+    """Rewrites renamed flags, including their negated forms, to their new names."""
+    renamed: list[str] = []
+    for arg in args:
+        flag, sep, value = arg.partition("=")
+        # cyclopts accepts ``_`` in place of ``-`` anywhere in a flag, so the
+        # negation prefix may be spelled either way.
+        prefix = next(
+            (p for p in ("--no-", "--no_") if flag.startswith(p)), "--"
+        )
+        if flag.startswith("--"):
+            name = flag.removeprefix(prefix)
+            arg = f"{prefix}{current_option_name(name)}{sep}{value}"
+        renamed.append(arg)
+    return renamed
+
+
 def parse_args(
     args: Sequence[str] | None = None,
     *,
@@ -1612,6 +1633,7 @@ def parse_args(
     raw_args = list(sys.argv[1:] if args is None else args)
 
     clean_args, metadata_values = _extract_metadata_args(raw_args)
+    clean_args = _rename_deprecated_flags(clean_args)
 
     parsed_configs: list[ServingBenchmarkConfig] = []
 
@@ -1619,7 +1641,7 @@ def parse_args(
         name=app_name,
         help=description,
         help_formatter="plain",
-        config=[Env(prefix="MODULAR_")],
+        config=[Env(prefix=_ENV_PREFIX)],
         result_action="return_value",
     )
 
@@ -1631,7 +1653,8 @@ def parse_args(
     ) -> None:
         parsed_configs.append(config)
 
-    app(clean_args)
+    with deprecated_env_vars_renamed(_ENV_PREFIX):
+        app(clean_args)
     if not parsed_configs:
         raise SystemExit(0)
     config = parsed_configs[0]

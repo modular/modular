@@ -19,10 +19,11 @@ from std.python.bindings import PythonModuleBuilder
 
 
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    amd_mla_decode_dispatch_scalars,
     mha_decoding_num_partitions,
 )
-from nn.attention.gpu.mla_decode_dispatch_scalars import (
-    mla_decode_dispatch_key,
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    compute_mla_dispatch_key_runtime,
 )
 from nn.attention.gpu.nvidia.sm100.dispatch import (
     mha_split_kv_decode_num_partitions as _split_kv_decode_num_partitions,
@@ -73,10 +74,10 @@ def _make_int_list[n: Int](values: Array[Int, n]) -> PythonObject:
 
 def _get_ctx(
     device_context_ptr: PythonObject,
-) raises -> Optional[OpaquePointer[MutUntrackedOrigin]]:
+) raises -> OpaquePointer[MutUntrackedOrigin]:
     var addr = Int(py=device_context_ptr)
     if addr == 0:
-        return None
+        raise Error("Expected a non-null device context pointer.")
     return OpaquePointer[MutUntrackedOrigin](unsafe_from_address=addr)
 
 
@@ -91,8 +92,6 @@ def mha_decode_num_partitions(
     var n_kv_heads = Int(py=n_kv_heads_obj)
     var ctx = _get_ctx(device_context_ptr)
 
-    if not ctx:
-        raise Error("Expected a non-null device context pointer.")
     if batch_size < 1:
         raise Error("batch_size must be positive.")
     if max_cache_valid_length < 0:
@@ -100,7 +99,7 @@ def mha_decode_num_partitions(
     if n_kv_heads < 1:
         raise Error("n_kv_heads must be positive.")
 
-    var device_ctx = DeviceContext(ctx.unsafe_value())
+    var device_ctx = DeviceContext(ctx)
     var num_partitions = mha_decoding_num_partitions(
         batch_size,
         max_cache_valid_length,
@@ -158,10 +157,7 @@ def mha_split_kv_decode_num_partitions(
 def multiprocessor_count(
     device_context_ptr: PythonObject,
 ) raises -> PythonObject:
-    var ctx = _get_ctx(device_context_ptr)
-    if not ctx:
-        raise Error("Expected a non-null device context pointer.")
-    var device_ctx = DeviceContext(ctx.unsafe_value())
+    var device_ctx = DeviceContext(_get_ctx(device_context_ptr))
     var sm_count = device_ctx.device().get_attribute(
         DeviceAttribute.MULTIPROCESSOR_COUNT
     )
@@ -196,8 +192,6 @@ def mla_dispatch_args_scalar(
     var depth = Int(py=depth_obj)
     var ctx = _get_ctx(device_context_ptr)
 
-    if not ctx:
-        raise Error("Expected a non-null device context pointer.")
     if batch_size < 1:
         raise Error("batch_size must be positive.")
     if max_cache_valid_length < 0:
@@ -211,22 +205,44 @@ def mla_dispatch_args_scalar(
     if page_size < 0:
         raise Error("page_size must be non-negative.")
 
-    var device_ctx = DeviceContext(ctx.unsafe_value())
+    var device_ctx = DeviceContext(ctx)
 
-    var scalars = mla_decode_dispatch_key(
-        batch_size,
-        max_cache_valid_length,
-        q_max_seq_len,
-        num_heads,
-        is_fp8_kv,
-        device_ctx,
-        sparse_indices_stride=sparse_indices_stride,
-        kv_form=kv_form,
-        page_size=page_size,
-        fixed_topk=fixed_topk,
-        physical_indices=physical_indices,
-        depth=depth,
-    )
+    # The variant separates capture keys whose launches share a split count;
+    # only the SM100 sparse decode has more than one.
+    var scalars: Tuple[Int, Int, Int, Int]
+    if device_ctx.api() == "hip":
+        var amd = amd_mla_decode_dispatch_scalars(
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            num_heads,
+            is_fp8_kv,
+            device_ctx,
+            sparse_indices_stride=sparse_indices_stride,
+        )
+        scalars = (amd[0], amd[1], amd[2], 0)
+    elif device_ctx.api() == "cuda":
+        scalars = compute_mla_dispatch_key_runtime(
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            num_heads,
+            is_fp8_kv,
+            sparse_indices_stride,
+            device_ctx.device().get_attribute(
+                DeviceAttribute.MULTIPROCESSOR_COUNT
+            ),
+            kv_form=kv_form,
+            page_size=page_size,
+            fixed_topk=fixed_topk,
+            physical_indices=physical_indices,
+            depth=depth,
+        )
+    else:
+        raise Error(
+            "MLA decode dispatch metadata supports only HIP (AMD) and CUDA"
+            " (NVIDIA) devices."
+        )
     var result: Array[Int, 4] = [
         scalars[0],
         scalars[1],

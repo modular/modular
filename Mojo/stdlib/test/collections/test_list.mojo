@@ -268,7 +268,7 @@ def test_list_reverse_property_test() raises:
         for a, b in zip(forward, reversed(rev)):
             assert_equal(a, b)
 
-    PropTest().test[properties](List[Int].strategy(Int.strategy()))
+    PropTest().test(List[Int].strategy(Int.strategy()), properties)
 
 
 def test_list_reverse() raises:

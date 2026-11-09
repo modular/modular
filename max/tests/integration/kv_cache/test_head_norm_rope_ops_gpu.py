@@ -23,8 +23,8 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import rope_split_store_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn._graph_ops import rope_split_store_ragged
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 HEAD_DIM = 64
@@ -100,7 +100,7 @@ def _prologue_graph(fused: bool) -> Graph:
         layer = ops.constant(0, DType.uint32, device=cpu)
         if fused:
             q = ops.inplace_custom(
-                "mo.qk_rms_norm_rope_split_store.ragged.paged",
+                "kv_cache.qk_rms_norm_rope_split_store.ragged.paged",
                 device=gpu,
                 values=[
                     qkv,
@@ -179,7 +179,7 @@ def _epilogue_graph(fused: bool) -> Graph:
         x, qkvg = (v.tensor for v in graph.inputs)
         if fused:
             out = ops.custom(
-                "mo.head_rms_norm_sigmoid_gate",
+                "norm.head_rms_norm_sigmoid_gate",
                 device=gpu,
                 values=[
                     x,

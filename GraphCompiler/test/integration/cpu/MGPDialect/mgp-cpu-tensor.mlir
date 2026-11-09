@@ -15,7 +15,7 @@
 
 // CHECK-LABEL: --- Running 'tensor_create_extract'
 // CHECK-NEXT: tensor<1x4xui8> [255, 254, 253, 252]
-mgp.model @tensor_create_extract : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @tensor_create_extract devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -37,7 +37,7 @@ mgp.model @tensor_create_extract : mof devices [#M.device_ref<"cpu", 0>] init (%
 
 // CHECK-LABEL: --- Running 'debug_print'
 // CHECK-NEXT: [label] This is a debug string
-mgp.model @debug_print : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @debug_print devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
   %ch2 = mgp.runtime.create %ch0, %ctx[0]
@@ -54,7 +54,7 @@ mgp.model @debug_print : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
 
 // CHECK-LABEL: --- Running 'debug_tensor_print'
 // CHECK-NEXT: test = tensor<2x2xui8> [255, 254, 253, 252]
-mgp.model @debug_tensor_print : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @debug_tensor_print devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

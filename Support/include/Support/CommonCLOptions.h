@@ -20,6 +20,7 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/Alignment.h"
@@ -46,7 +47,7 @@ namespace M {
 /// numerical suffix added if the file already exists to avoid overwriting.
 /// Returns nullptr if max.temps_dir is not set or on error.
 /// Caller is responsible for calling keep() on the returned file after writing.
-std::unique_ptr<llvm::ToolOutputFile>
+MODULAR_CXX_EXPORT std::unique_ptr<llvm::ToolOutputFile>
 openIntermediateTextFile(StringRef baseName, StringRef extension);
 
 class OptionsBase {
@@ -89,7 +90,7 @@ public:
   }
 };
 
-class CommonOptions : public OptionsBase {
+class MODULAR_CXX_EXPORT CommonOptions : public OptionsBase {
 
 public:
   bool verifyDiagnostics{false};

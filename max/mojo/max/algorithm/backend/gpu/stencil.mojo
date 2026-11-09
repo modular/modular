@@ -16,6 +16,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.math.uutils import udivmod
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -44,24 +45,18 @@ def _stencil_impl_gpu[
     & def(dim: Int) -> Int,
     LoadFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[simd_width: Int, dtype: DType](
-        IndexList[rank, element_type=_]
-    ) -> SIMD[dtype, simd_width],
+    & def[simd_width: Int, dtype: DType](Coord) -> SIMD[dtype, simd_width],
     ComputeInitFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[simd_width: Int]() -> SIMD[dtype, simd_width],
     ComputeFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[simd_width: SIMDLength](
-        IndexList[rank, element_type=_],
-        SIMD[dtype, simd_width],
-        SIMD[dtype, simd_width],
+        Coord, SIMD[dtype, simd_width], SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width],
     ComputeFinalizeFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[simd_width: SIMDLength](
-        IndexList[rank, element_type=_], SIMD[dtype, simd_width]
-    ) -> None,
+    & def[simd_width: SIMDLength](Coord, SIMD[dtype, simd_width]) -> None,
 ](
     ctx: DeviceContext,
     shape: IndexList[rank, element_type=shape_element_type],
@@ -200,13 +195,13 @@ def _stencil_impl_gpu[
                 min(input_width, upper_bound[1]),
                 step_j,
             ):
-                var point_idx = IndexList[
-                    rank, element_type=shape_element_type
-                ](indices[0], i, j, indices[3])
+                var point_idx = Coord(indices[0], i, j, indices[3])
                 var val = load_func[simd_width, dtype](point_idx)
                 result = compute_func[simd_width](point_idx, result, val)
 
-        compute_finalize_func[simd_width](indices, result)
+        compute_finalize_func[simd_width](
+            Coord(batch_idx, y, x, channel), result
+        )
 
     # Compile and launch kernel
     ctx.enqueue_function(

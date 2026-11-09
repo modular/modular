@@ -14,7 +14,7 @@
 // CHECK-NEXT:  map.store %{{.*}}[%[[J]]] = %val
 // CHECK-NOT:   map.iter.elementwise
 // CHECK:       mo.output %[[O]]#0, %[[O]]#1, %[[O]]#2
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 mo.graph @opaque_feeds_select_kernel(%X: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
   %r = map.iter.opaque inputs (%X : !mo.tensor<[8, 16], f32>) outputs (%out : !mo.tensor<[8, 16], f32>) {
     %epi = map.iter.epilogue (%val : f32, %idx : !map.index<2>) capturing {%cap = %out : !mo.tensor<[8, 16], f32>} {

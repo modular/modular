@@ -69,7 +69,6 @@ def reduce_product[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
-    target: StaticString,
     *,
     reduce_dim: Int,
     name: StaticString = "reduce_product",
@@ -80,7 +79,7 @@ def reduce_product[
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceProduct[dtype, 1], target, 64, dtype
+        ReduceProduct[dtype, 1], context.T.target, 64, dtype
     ]()
     comptime assert (
         0 <= reduce_dim < input_shape.rank
@@ -139,7 +138,6 @@ def reduce_product[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=1,
         name=op_name,
     ](body, input_shape, context)
@@ -160,7 +158,6 @@ def reduce_argmin[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[.int64, width]) -> None),
     /,
-    target: StaticString,
     *,
     reduce_dim: Int,
     name: StaticString = "reduce_argmin",
@@ -174,7 +171,7 @@ def reduce_argmin[
     `ArgMin` phase (native dtype, lower index wins ties) plus a per-row
     `emit` of the int64 index."""
     comptime simd_width = rowwise.pick_simd_width[
-        ArgMin[dtype, 1], target, 64, dtype
+        ArgMin[dtype, 1], context.T.target, 64, dtype
     ]()
     comptime assert (
         0 <= reduce_dim < input_shape.rank
@@ -235,7 +232,6 @@ def reduce_argmin[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=1,
         name=op_name,
     ](body, input_shape, context)
@@ -250,7 +246,6 @@ def reduce_argmax[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[.int64, width]) -> None),
     /,
-    target: StaticString,
     *,
     reduce_dim: Int,
     name: StaticString = "reduce_argmax",
@@ -261,7 +256,7 @@ def reduce_argmax[
     context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime simd_width = rowwise.pick_simd_width[
-        ArgMax[dtype, 1], target, 64, dtype
+        ArgMax[dtype, 1], context.T.target, 64, dtype
     ]()
     comptime assert (
         0 <= reduce_dim < input_shape.rank
@@ -322,7 +317,6 @@ def reduce_argmax[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=1,
         name=op_name,
     ](body, input_shape, context)
@@ -346,7 +340,6 @@ def reduce_min_and_max[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
-    target: StaticString,
     *,
     reduce_dim: Int,
     name: StaticString = "reduce_min_and_max",
@@ -360,7 +353,7 @@ def reduce_min_and_max[
     """Computes min and max in one axis walk (`MinMax` monoid), two
     outputs."""
     comptime simd_width = rowwise.pick_simd_width[
-        MinMax[dtype, 1], target, 64, dtype
+        MinMax[dtype, 1], context.T.target, 64, dtype
     ]()
     comptime assert (
         0 <= reduce_dim < input_shape.rank
@@ -425,7 +418,6 @@ def reduce_min_and_max[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=1,
         name=op_name,
     ](body, input_shape, context)

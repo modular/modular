@@ -32,7 +32,7 @@ from layout import (
     stack_allocation,
 )
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from max.gpu.primitives import warp
 from max.gpu.primitives.grid_controls import (
@@ -51,6 +51,7 @@ from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
     _INDEX_SWIZZLE,
+    KTMATileT,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
@@ -1029,9 +1030,11 @@ def fp8_index[
     ):
         # One-block form of the same descriptor: a ragged buffer has no
         # blocks, so it declares one and is addressed at block 0.
-        var k_tma_tile = create_flat_kv_tma_tile[
-            BN=_BM_KEY, BK=depth, swizzle_mode=_INDEX_SWIZZLE
-        ](ctx, k.unsafe_ptr().as_unsafe_any_origin(), total_keys, 1, depth)
+        var k_tma_tile = rebind[KTMATileT[dtype, _BM_KEY, depth]](
+            create_flat_kv_tma_tile[
+                BN=_BM_KEY, BK=depth, swizzle_mode=_INDEX_SWIZZLE
+            ](ctx, k.unsafe_ptr().as_unsafe_any_origin(), total_keys, 1, depth)
+        )
         fp8_index_score_sm100[
             dtype,
             type_of(k_operand),

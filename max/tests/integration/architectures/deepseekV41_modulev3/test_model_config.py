@@ -21,7 +21,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     PAGE_SIZE,
     V41Config,

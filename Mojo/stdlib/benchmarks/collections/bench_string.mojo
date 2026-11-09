@@ -94,7 +94,7 @@ def bench_string_count(mut b: Bencher, input: BenchInput) raises:
 # Benchmark string split
 # ===-----------------------------------------------------------------------===#
 def bench_string_split(mut b: Bencher, input: BenchInput) raises:
-    var items = StringSlice(
+    var items = StringSpan(
         make_string(input.length, input.filename + ".txt")
     ).as_imm()
 
@@ -109,7 +109,7 @@ def bench_string_split(mut b: Bencher, input: BenchInput) raises:
 
 
 def bench_string_split_none(mut b: Bencher, input: BenchInput) raises:
-    var items = StringSlice(
+    var items = StringSpan(
         make_string(input.length, input.filename + ".txt")
     ).as_imm()
 
@@ -152,7 +152,7 @@ def bench_string_join[short: Bool](mut b: Bencher) raises:
 # Benchmark string splitlines
 # ===-----------------------------------------------------------------------===#
 def bench_string_splitlines(mut b: Bencher, input: BenchInput) raises:
-    var items = StringSlice(make_string(input.length, input.filename + ".txt"))
+    var items = StringSpan(make_string(input.length, input.filename + ".txt"))
 
     @inline(.always)
     def call_fn() {imm}:
@@ -312,7 +312,7 @@ def bench_string_mul(mut b: Bencher, input: BenchInput) raises:
 
     @inline(.always)
     def call_fn() {imm}:
-        var res = StringSlice(black_box(items)) * black_box(4)
+        var res = StringSpan(black_box(items)) * black_box(4)
         keep(res)
 
     b.iter(call_fn)
@@ -363,7 +363,7 @@ def bench_write_utf8(mut b: Bencher, input: BenchInput) raises:
 def bench_string_write[short: Bool](mut b: Bencher) raises:
     var items = make_string(1000, "UN_charter_EN.txt")
     # workaround for "allows writing to mem location ..."
-    # even though I tried using an immutable StringSlice
+    # even though I tried using an immutable StringSpan
     var items_2 = items.copy()
     var items_3 = items.copy()
     var items_4 = items.copy()
@@ -402,7 +402,7 @@ def bench_string_write[short: Bool](mut b: Bencher) raises:
 
 @fieldwise_init
 struct NullWriter(ImplicitlyCopyable, Writer):
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         keep(string)
 
 

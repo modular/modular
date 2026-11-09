@@ -56,7 +56,7 @@ mogg.func @func_7()
 // CHECK-LABEL: @top_level
 // CHECK: mogg.compiled.call @func_6
 // CHECK: mogg.compiled.call @func_6
-mgp.model @top_level subgraph : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>, %arg2: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @top_level subgraph devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>, %arg2: !mgp.device_context<<"gpu", 0>>) {
     %0 = grt.chain.create ()
     %1 = mgp.context.create 2
     %2 = mgp.runtime.create %0, %1[1]

@@ -88,7 +88,7 @@ comptime _FLUSH_PROBE_ITERS = 3
 comptime _HEX_DIGITS: StaticString = "0123456789abcdef"
 
 
-def _json_string(s: StringSlice, mut writer: Some[Writer]):
+def _json_string(s: StringSpan, mut writer: Some[Writer]):
     writer.write('"')
     for cp in s.codepoint_slices():
         if cp == '"':

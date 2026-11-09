@@ -13,7 +13,7 @@
 """Mixed-step split of ragged MHA (B200).
 
 A mixed step batches decode rows (``1 + K`` tokens each) with prefill rows.
-With a split record on the KV leaf, ``mo.mha.ragged.paged`` cuts the batch
+With a split record on the KV leaf, ``attention.mha.ragged.paged`` cuts the batch
 into a head and a tail view and runs each on its own route, into one output.
 The oracle: the split output equals each view's rows run alone, bit for bit.
 A zeros record or a malformed one keeps the single launch, so it equals the
@@ -45,9 +45,9 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops import flash_attention_ragged
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,

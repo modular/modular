@@ -35,6 +35,7 @@ from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
 )
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_router import (
     KimiK3TopKRouter,
+    _gate_weight_tiles_k,
     make_kimi_k3_moe_router,
 )
 from max.tensor import Tensor, default_device, default_dtype
@@ -51,7 +52,7 @@ _PROD_HIDDEN = 7168
 _PROD_EXPERTS = 896
 _PROD_TOP_K = 16
 
-_MIXED_GEMV_OP = "mo.router.gate.mixed.gemv"
+_MIXED_GEMV_OP = "moe.router.gate.mixed.gemv"
 _ROUTER_MODULE = (
     "max.pipelines.architectures.kimi_k3_modulev3.layers.moe_router"
 )
@@ -182,7 +183,7 @@ def _production_router() -> KimiK3TopKRouter:
 
 
 @pytest.mark.compile_on_gpu(
-    "the mo.moe router kernels are staged as an undeclared custom op the interpreter can't bind"
+    "the moe router kernels are staged as an undeclared custom op the interpreter can't bind"
 )
 @pytest.mark.parametrize(
     ("num_expert_group", "topk_group"),
@@ -238,7 +239,7 @@ def test_matches_independent_reference(
 
 
 @pytest.mark.compile_on_gpu(
-    "the mo.moe router kernels are staged as an undeclared custom op the interpreter can't bind"
+    "the moe router kernels are staged as an undeclared custom op the interpreter can't bind"
 )
 @pytest.mark.parametrize("tokens", [1, 12], ids=["decode_row", "rows"])
 @pytest.mark.parametrize(
@@ -309,7 +310,7 @@ def test_bf16_activations_match_independent_reference(
 
 
 @pytest.mark.compile_on_gpu(
-    "the mo.moe router kernels are staged as an undeclared custom op the interpreter can't bind"
+    "the moe router kernels are staged as an undeclared custom op the interpreter can't bind"
 )
 @pytest.mark.parametrize(
     "tokens",
@@ -381,12 +382,96 @@ def test_bf16_activations_match_independent_reference_at_896_experts(
     assert rel_error < 1e-3, f"router weights diverge: rel_error={rel_error}"
 
 
-def test_gate_weight_is_forced_to_fp32_under_a_different_ambient_dtype() -> (
-    None
-):
-    """The gate matmul must run in fp32 even when constructed under a
-    non-fp32 ambient default dtype -- the whole reason this file wraps
-    ``DeepseekV3TopKRouter`` in a ``default_dtype(DType.float32)`` context."""
+@pytest.mark.compile_on_gpu(
+    "the non-fused path widens both operands on the device"
+)
+def test_bf16_gate_non_fused_path_matches_reference() -> None:
+    """A bf16 gate weight on the non-fused path widens both operands to
+    fp32 before the matmul, so the logits match the fp32 reference.
+
+    The fused GEMV requires bf16 activations, so fp32 activations route a
+    bf16 gate to the non-fused widening path -- the fallback every
+    non-gfx950 device, CPU-device graph, and K-misaligned shape takes.
+    On the production serve path (gfx950, bf16 activations, K=7168) this
+    route is not reached; it is exercised here and by
+    ``scripts/verify_full_depth.py``.
+    """
+    rng = np.random.default_rng(41)
+    tokens = 12
+    scales = 10.0 ** rng.integers(-2, 1, size=(tokens, 1))
+    hidden_np = (rng.standard_normal((tokens, _PROD_HIDDEN)) * scales).astype(
+        np.float32
+    )
+    weight_np = rng.standard_normal((_PROD_EXPERTS, _PROD_HIDDEN)).astype(
+        np.float32
+    )
+    bias_np = rng.standard_normal(_PROD_EXPERTS).astype(np.float32)
+    # The gate weight the checkpoint stores: bf16-rounded.
+    weight_bf16 = _round_to_bfloat16(weight_np)
+
+    expected_idx, expected_weight, boundary_gap = _reference(
+        hidden_np,
+        weight_bf16,
+        bias_np,
+        1,
+        1,
+        tokens,
+        num_experts=_PROD_EXPERTS,
+        top_k=_PROD_TOP_K,
+    )
+    assert boundary_gap > _PROD_SELECTION_MARGIN, (
+        "fixture's selection boundary is too close to a tie for exact "
+        f"index equality: gap={boundary_gap}"
+    )
+
+    with default_device(Accelerator()):
+        router = make_kimi_k3_moe_router(
+            hidden_dim=_PROD_HIDDEN,
+            num_experts=_PROD_EXPERTS,
+            num_experts_per_token=_PROD_TOP_K,
+            routed_scaling_factor=_SCALE,
+            num_expert_group=1,
+            topk_group=1,
+            moe_renormalize=True,
+        )
+        # _round_to_bfloat16 returns fp32 values rounded to the bf16 grid;
+        # the cast stores them as bf16 without a further rounding step.
+        router.gate_score.weight = Tensor(
+            weight_bf16, dtype=DType.float32
+        ).cast(DType.bfloat16)
+        router.e_score_correction_bias = Tensor(bias_np, dtype=DType.float32)
+
+        # fp32 activations: the fused GEMV's bf16-activation gate is off,
+        # so the router takes the non-fused widening path. The assert pins
+        # that: a future dispatch change that admits fp32 activations to
+        # the fused op would silently reroute this test.
+        hidden = Tensor(hidden_np, dtype=DType.float32)
+        assert not (
+            hidden.dtype == DType.bfloat16
+            and _gate_weight_tiles_k(router.gate_score.weight)
+        ), "fp32 activations must not reach the fused GEMV"
+        idx, weight = router(hidden)
+        idx_np = idx.cast(DType.int64).to_numpy()
+        weight_np_out = weight.to_numpy().astype(np.float64)
+
+    np.testing.assert_array_equal(
+        np.sort(idx_np, axis=-1), np.sort(expected_idx, axis=-1)
+    )
+    rel_error = np.max(np.abs(weight_np_out - expected_weight)) / max(
+        np.max(np.abs(expected_weight)), 1e-12
+    )
+    # The widening path's fp32 matmul is IEEE on MI355 but TF32 on
+    # SM100-class GPUs (the dispatch allows tensor-core truncation), so
+    # the fp64-reference bar accommodates TF32's ~1e-3 per-element error
+    # there. A missing widening cast fails either bar by ~40x.
+    rel_bar = 2e-3 if accelerator_architecture_name() != "gfx950" else 1e-3
+    assert rel_error < rel_bar, f"router weights diverge: rel_error={rel_error}"
+
+
+def test_gate_weight_follows_the_ambient_dtype() -> None:
+    """The gate weight takes the ambient default dtype (bf16 in production),
+    while the correction bias stays fp32 whatever the ambient dtype is --
+    the bias comes from the explicit ``correction_bias_dtype``."""
     with default_device(Accelerator()), default_dtype(DType.bfloat16):
         router = make_kimi_k3_moe_router(
             hidden_dim=_HIDDEN,
@@ -397,7 +482,26 @@ def test_gate_weight_is_forced_to_fp32_under_a_different_ambient_dtype() -> (
             topk_group=1,
             moe_renormalize=True,
         )
+        assert router.gate_score.weight.dtype == DType.bfloat16
+        assert router.e_score_correction_bias.dtype == DType.float32
+
+
+def test_gate_weight_is_fp32_under_an_fp32_ambient_dtype() -> None:
+    """Under an fp32 ambient dtype the gate weight is fp32: the router
+    follows the ambient dtype rather than forcing bf16, so a non-quantized
+    fp32 build keeps its fp32 gate."""
+    with default_device(Accelerator()), default_dtype(DType.float32):
+        router = make_kimi_k3_moe_router(
+            hidden_dim=_HIDDEN,
+            num_experts=_EXPERTS,
+            num_experts_per_token=_TOP_K,
+            routed_scaling_factor=_SCALE,
+            num_expert_group=1,
+            topk_group=1,
+            moe_renormalize=True,
+        )
         assert router.gate_score.weight.dtype == DType.float32
+        assert router.e_score_correction_bias.dtype == DType.float32
 
 
 def test_router_graph_takes_the_fused_gemv_on_gfx950() -> None:
@@ -510,9 +614,10 @@ def test_router_graph_takes_the_fused_gemv_on_this_gfx950_host() -> None:
 
 
 def test_router_raises_on_a_gate_weight_the_fused_gemv_cannot_bind() -> None:
-    """On the gfx950 bf16 path, a gate weight that is not fp32 raises at
-    call time instead of silently taking the inherited path."""
-    # On the GPU device: the bf16 gate weight this feeds the wrapper is
+    """On the gfx950 bf16 path, a gate weight of a dtype the fused op
+    cannot bind (fp16) raises at call time instead of silently taking the
+    inherited path. bf16 and fp32 both bind; anything else fails fast."""
+    # On the GPU device: the fp16 gate weight this feeds the wrapper is
     # built by an eager cast, which the CPU interpreter refuses.
     hidden_np, weight_np, bias_np = _random_inputs(1, hidden=_PROD_HIDDEN)
     with _arch("gfx950"), default_device(Accelerator()):
@@ -526,11 +631,9 @@ def test_router_raises_on_a_gate_weight_the_fused_gemv_cannot_bind() -> None:
             moe_renormalize=True,
         )
         router.gate_score.weight = Tensor(weight_np, dtype=DType.float32).cast(
-            DType.bfloat16
+            DType.float16
         )
         router.e_score_correction_bias = Tensor(bias_np, dtype=DType.float32)
         hidden = Tensor(hidden_np, dtype=DType.float32).cast(DType.bfloat16)
-        with pytest.raises(
-            ValueError, match="gate_weight to have dtype float32"
-        ):
+        with pytest.raises(ValueError, match="gate_weight to have dtype"):
             router(hidden)

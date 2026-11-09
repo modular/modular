@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Which split record ``flash_attention_ragged`` hands to ragged MHA.
 
-The graphs are only built, never run. ``mo.mha.ragged.paged`` takes the KV
-leaf's declared record as its last operand, or a zeros constant when the
-leaf has none (a draft forward drops it). Sink and relative-logit calls go to ops that do not
-split, so they take no record.
+The graphs are only built, never run. ``attention.mha.ragged.paged`` takes the KV
+leaf's declared record after its own operands, or a zeros constant when the
+leaf has none (a draft forward drops it). Relative-logit calls take it too,
+though the kernel doesn't split a mask that reads operands. Sink calls go to
+an op that does not split, so they take no record.
 """
 
 from __future__ import annotations
@@ -26,19 +27,19 @@ import pytest
 from max import mlir, tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn._graph_ops import flash_attention_ragged
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.mixed_step_split_ops import record_source
 
-MHA_OP = "mo.mha.ragged.paged"
+MHA_OP = "attention.mha.ragged.paged"
 NUM_HEADS = 8
 HEAD_DIM = 128
 OP_NAMES = {
     "plain": MHA_OP,
     "split_head_dim": MHA_OP,
-    "sink": "mo.mha.ragged.paged.sink_weights",
-    "rel_logits": "mo.mha.ragged.paged.rel_logits",
+    "sink": "attention.mha.ragged.paged.sink_weights",
+    "rel_logits": MHA_OP,
 }
 
 
@@ -115,16 +116,18 @@ def test_the_leaf_record_is_the_last_mha_operand(
     assert "[7], ui32" in str(last.type)
 
 
-@pytest.mark.parametrize("call", ["plain", "split_head_dim"])
+@pytest.mark.parametrize("call", ["plain", "split_head_dim", "rel_logits"])
 def test_a_leaf_without_a_record_sends_zeros(call: str) -> None:
     op = _attention_op(call, with_record=False)
     assert record_source(op) == "mo.constant"
 
 
-@pytest.mark.parametrize("call", ["sink", "rel_logits"])
+def test_relative_logits_take_the_leaf_record() -> None:
+    op = _attention_op("rel_logits", with_record=True)
+    assert record_source(op) == "argument"
+
+
 @pytest.mark.parametrize("with_record", [False, True])
-def test_a_call_that_cannot_split_takes_no_record(
-    call: str, with_record: bool
-) -> None:
-    op = _attention_op(call, with_record=with_record)
+def test_a_call_that_cannot_split_takes_no_record(with_record: bool) -> None:
+    op = _attention_op("sink", with_record=with_record)
     assert record_source(op) is None

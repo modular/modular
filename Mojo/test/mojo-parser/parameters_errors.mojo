@@ -696,7 +696,17 @@ struct UnboundFieldContainer[T: AnyType, size: Int](Movable where False):
 
 struct UnboundFieldHolder(Movable where False):
     # expected-error @below {{'UnboundFieldContainer[Int, _]' is not concrete, use '[]' to bind missing parameters}}
+    # expected-note @below {{missing parameter 'size'}}
     var data: UnboundFieldContainer[Int, _]
+
+struct ThreeParams[a: Int, b: Int, c: Int](Movable where False):
+    def __init__(out self): pass
+
+struct InterleavedHoleHolder(Movable where False):
+    # expected-error @below {{'ThreeParams[_, Int(1), _]' is not concrete, use '[]' to bind missing parameters}}
+    # expected-note @below {{missing parameter 'a'}}
+    # expected-note @below {{missing parameter 'c'}}
+    var data: ThreeParams[_, 1, _]
 
 def use_unbound_field_holder():
     var x: UnboundFieldHolder

@@ -39,7 +39,7 @@ def _rel_error(a: np.ndarray, b: np.ndarray) -> float:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
+    "moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_latent_moe_ep2_matches_single_device() -> None:
     hidden = 32

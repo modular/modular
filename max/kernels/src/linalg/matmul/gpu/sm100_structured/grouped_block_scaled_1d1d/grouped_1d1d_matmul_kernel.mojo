@@ -81,7 +81,6 @@ from layout.tma_async import PipelineState
 from layout import (
     Coord,
     Idx,
-    Layout,
     DefaultEngine,
     RowMajorLayout,
     TensorLayout,
@@ -94,8 +93,8 @@ from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
 )
-from layout.tile_layout import Layout as TileLayout, _IntToComptimeInt
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import Layout, _IntToComptimeInt
+from layout.layout import row_major as tt_row_major
 
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -1047,10 +1046,10 @@ struct Grouped1D1DMatmulKernel[
     comptime b_expected_bytes = Self.BN * Self.BK * size_of[
         Self.b_type
     ]() // Self.b_gmem_bytes_per_elem_recip
-    comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.size() * size_of[
+    comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.static_product * size_of[
         Self.sfa_dtype
     ]()
-    comptime sfb_expected_bytes = Self.SmemType.Core.sfb_smem_layout.size() * size_of[
+    comptime sfb_expected_bytes = Self.SmemType.Core.sfb_smem_layout.static_product * size_of[
         Self.sfb_dtype
     ]()
 

@@ -3903,7 +3903,7 @@ class TestLayerNormOps:
 class TestRmsNormOp:
     """Tests for rms_norm interpreter op via F.rms_norm.
 
-    Routes through F.rms_norm -> ops.rms_norm -> mo.ReduceRmsNormOp ->
+    Routes through F.rms_norm -> ops.rms_norm -> mo.CompositeReduceRmsNormOp ->
     _handle_rms_norm -> rms_norm_gc.rms_norm_model.
     """
 

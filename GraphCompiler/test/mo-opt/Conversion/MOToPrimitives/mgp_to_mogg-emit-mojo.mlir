@@ -4,7 +4,7 @@
 // In emit-mojo mode, constants are lowered to buffer constants and ops like
 // index.add and mgp.buffer.slice are kept inline (not converted to mogg.call).
 
-mgp.model @basic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @basic devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %chain = grt.chain.create ()
   %context = mgp.context.create 2
   %out_chain = mgp.runtime.create %chain, %context[1]
@@ -45,7 +45,7 @@ mgp.model @basic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.op
 
 // -----
 
-mgp.model @buffer_borrow : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_borrow devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

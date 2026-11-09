@@ -50,13 +50,14 @@ from std.sys import size_of
 from std.sys.defines import get_defined_int
 
 from layout import Idx, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from shmem.ep_comm import (
     EP_NO_INPUT_SCALES,
     BF16TokenFormat,
     EPLocalSyncCounters,
     combine_async_kernel,
     dispatch_async_kernel,
+    NullExpertLoad,
     dispatch_wait_kernel,
 )
 
@@ -352,6 +353,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         dispatch_recv_count.unsafe_ptr(),
         counters,
         Int32(0),
+        NullExpertLoad(),
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )

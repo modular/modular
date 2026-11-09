@@ -371,7 +371,6 @@ def execute_dual_cache_fused[
 
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        target="gpu",
     ](
         hs_dev.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
@@ -398,7 +397,6 @@ def execute_dual_cache_fused[
 
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        target="gpu",
     ](
         hs_dev.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
@@ -423,7 +421,6 @@ def execute_dual_cache_fused[
 
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        target="gpu",
     ](
         hs_dev.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
@@ -633,7 +630,6 @@ def test_single_cache_band_boundaries[q_heads: Int](ctx: DeviceContext) raises:
     var q_output = output.device_tensor().tile((m, Idx[q_dim]), (0, 0))
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        target="gpu",
     ](
         hs.device_tensor().as_imm().as_unsafe_any_origin(),
         offsets.device_tensor(),

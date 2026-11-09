@@ -433,13 +433,14 @@ struct AbiConstant(TrivialRegisterPassable):
             name: The constant's name as spelled in C.
             value: The mirror's value, at the mirror's declared type.
         """
-        comptime c_type = _c_scalar_name[Scalar[dtype]]()
-        comptime assert (
-            c_type is not None
-        ), "a constant's mirror must be a fixed-width integer"
         self.name = name
         self.value = value.cast[.int64]()
-        self.c_type = c_type.value()
+        comptime if case .Some(c_type) = _c_scalar_name[Scalar[dtype]]():
+            self.c_type = c_type
+        else:
+            comptime assert (
+                False
+            ), "a constant's mirror must be a fixed-width integer"
 
 
 def assert_cabi_constant[entry: AbiConstant]() raises:

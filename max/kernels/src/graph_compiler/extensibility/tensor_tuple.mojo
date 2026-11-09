@@ -56,7 +56,6 @@ struct TensorTuple[*Ts: AnyType](
         Outs: TypeList[Trait=Output & TileTensorable, ...],
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](outputs: TensorTuple[*Outs], inputs: TensorTuple[*Ins], ctx: DeviceContext):
         comptime for i in range(len(Ins)):
             var x = inputs[i]

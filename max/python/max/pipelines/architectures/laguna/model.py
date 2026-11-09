@@ -24,11 +24,12 @@ from max._core.engine import Model
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep.ep_config import (
+from max.nn.ep_config import (
+    EPConfig,
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )
+from max.nn.legacy.comm.ep import EPCommInitializer
 from max.pipelines.architectures.llama3.model import LlamaModelBase
 from max.pipelines.lib import (
     PipelineConfig,

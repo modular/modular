@@ -23,14 +23,14 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheParamInterface,
     MHAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -204,7 +204,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
         Both groups cache each head's 192-wide key and 128-wide value
         unpadded, packed into one row
-        (:attr:`~max.nn.legacy.kv_cache.KVCacheParams.v_head_dim`). The sliding
+        (:attr:`~max.nn.kv_cache.KVCacheParams.v_head_dim`). The sliding
         group's window also bounds its split-K partition count.
         """
         return hybrid_swa_full_kv_params(

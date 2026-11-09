@@ -28,5 +28,6 @@ speculative:
   num_speculative_tokens: 9
 
 runtime:
+  prefer_module_v3: false
   max_batch_input_tokens: 4096
   device_graph_capture: true

@@ -205,9 +205,7 @@ number of modules.
 
 For example, Hugging Face safetensors checkpoints for OLMo 3 store the decoder
 weights under a top-level `model.` prefix. The MAX `Olmo3` module nests the same
-layers under `language_model.`. The OLMo 3 adapter
-([`convert_safetensor_state_dict`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo3/weight_adapters.py))
-rewrites each prefix:
+layers under `language_model.`. The following adapter rewrites each prefix:
 
 <!-- invisible-code-block: python
 from max.graph.weights import WeightData, Weights, load_weights
@@ -479,7 +477,7 @@ Compare the keys produced by the weight adapter with the parameter names your
 and prints both differences:
 
 <!-- invisible-code-block: python
-from max.pipelines.architectures.olmo3 import weight_adapters
+from max.pipelines.architectures.llama3_modulev3 import weight_adapters
 fake_module("my_arch")
 fake_module("my_arch.weight_adapters", **vars(weight_adapters))
 config, kv_params = smol_llama3()
@@ -531,13 +529,13 @@ To wire the weight adapter function into the pipeline, add it to the
 [`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
 definition in `arch.py`, keyed by the corresponding
 [`WeightsFormat`](/api/python/generated/max.graph.weights.WeightsFormat/). The
-OLMo 3 architecture
-([`olmo3_arch`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo3/arch.py))
+Qwen2 ModuleV3 architecture
+([`qwen2_modulev3_arch`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/qwen2_modulev3/arch.py))
 registers its safetensors adapter:
 
 <!-- invisible-code-block: python
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.olmo3 import weight_adapters
+from max.pipelines.architectures.qwen2_modulev3 import weight_adapters
 -->
 
 ```python title="arch.py"

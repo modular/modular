@@ -20,7 +20,7 @@ import torch
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.nn import Linear
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

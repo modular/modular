@@ -31,9 +31,9 @@ from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV41_modulev3.batch_processor import (
     DeepseekV41BatchProcessor,
 )

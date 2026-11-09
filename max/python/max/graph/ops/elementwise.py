@@ -1794,7 +1794,7 @@ def acos(x: TensorValue) -> TensorValue:
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     device = x.device
     return custom(
-        "mo.acos",
+        "elementwise.acos",
         x.device,
         [x],
         out_types=[

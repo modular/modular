@@ -1403,7 +1403,7 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
     // This seems unfortunate, there should be a better way to do this.
     auto paramDecl = dyn_cast<ParamDeclRefAttr>(origin);
     if (!paramDecl)
-      origin.dump();
+      llvm::errs() << origin << "\n";
     assert(paramDecl && "Unknown origin in mayAccessCallerStack");
     if (!isParamDeclOutsideFunction(paramDecl))
       return true;

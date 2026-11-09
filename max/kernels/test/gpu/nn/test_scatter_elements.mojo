@@ -171,7 +171,7 @@ def run_case[
     ),
 ](
     gpu: DeviceContext,
-    cpu: DeviceContext,
+    cpu: DeviceContext.CPU,
     in_shape: IndexList[rank],
     upd_shape: IndexList[rank],
     axis: Int,
@@ -240,7 +240,7 @@ def run_case[
             expected[o] = updates[k]
 
     var cpu_out = _poisoned_output[dt](n_in)
-    scatter_elements[target="cpu", atomic_update_fn=atomic_update_fn](
+    scatter_elements[atomic_update_fn=atomic_update_fn](
         TileTensor(input.unsafe_ptr(), row_major(Coord(in_shape))),
         TileTensor(indices.unsafe_ptr(), row_major(Coord(upd_shape))),
         TileTensor(updates.unsafe_ptr(), row_major(Coord(upd_shape))),
@@ -260,7 +260,7 @@ def run_case[
     gpu.enqueue_copy(idx_dev, indices.unsafe_ptr())
     gpu.enqueue_copy(out_dev, gpu_out.unsafe_ptr())
 
-    scatter_elements[target="gpu", atomic_update_fn=atomic_update_fn](
+    scatter_elements[atomic_update_fn=atomic_update_fn](
         TileTensor(in_dev.unsafe_ptr(), row_major(Coord(in_shape))),
         TileTensor(idx_dev.unsafe_ptr(), row_major(Coord(upd_shape))),
         TileTensor(upd_dev.unsafe_ptr(), row_major(Coord(upd_shape))),
@@ -278,7 +278,7 @@ def run_case[
     _ = out_dev^
 
 
-def test_overwrite(gpu: DeviceContext, cpu: DeviceContext) raises:
+def test_overwrite(gpu: DeviceContext, cpu: DeviceContext.CPU) raises:
     comptime f32 = DType.float32
     comptime upd = _upd_distinct[f32]
     run_case[f32, DType.int64, upd](gpu, cpu, IndexList[1](13), (11,), 0)
@@ -320,7 +320,9 @@ def test_overwrite(gpu: DeviceContext, cpu: DeviceContext) raises:
     )
 
 
-def test_reductions[dt: DType](gpu: DeviceContext, cpu: DeviceContext) raises:
+def test_reductions[
+    dt: DType
+](gpu: DeviceContext, cpu: DeviceContext.CPU) raises:
     # Each case sends 5 * 4099 updates to 4 positions per row, so thousands
     # of threads reduce into the same elements concurrently.
     comptime heavy_in = IndexList[2](5, 4099)
@@ -351,7 +353,7 @@ def test_reductions[dt: DType](gpu: DeviceContext, cpu: DeviceContext) raises:
     )
 
 
-def test_native_add_dtypes(gpu: DeviceContext, cpu: DeviceContext) raises:
+def test_native_add_dtypes(gpu: DeviceContext, cpu: DeviceContext.CPU) raises:
     """64-bit adds, and inf and NaN, which an atomic add carries through."""
     comptime heavy = IndexList[2](5, 4099)
     comptime f64 = DType.float64
@@ -372,7 +374,7 @@ def test_native_add_dtypes(gpu: DeviceContext, cpu: DeviceContext) raises:
     )
 
 
-def test_narrow_reductions(gpu: DeviceContext, cpu: DeviceContext) raises:
+def test_narrow_reductions(gpu: DeviceContext, cpu: DeviceContext.CPU) raises:
     """16- and 8-bit dtypes go through sub-word compare-exchange atomics.
     Few enough collisions that bf16 sums stay exact."""
     comptime bf16 = DType.bfloat16
@@ -398,7 +400,9 @@ def test_narrow_reductions(gpu: DeviceContext, cpu: DeviceContext) raises:
     )
 
 
-def test_slice_widths[dt: DType](gpu: DeviceContext, cpu: DeviceContext) raises:
+def test_slice_widths[
+    dt: DType
+](gpu: DeviceContext, cpu: DeviceContext.CPU) raises:
     """Rank and axis coverage for the accumulating path.
 
     `scatter_elements` launches with `simd_width=1`, so every element is one
@@ -425,7 +429,7 @@ def test_slice_widths[dt: DType](gpu: DeviceContext, cpu: DeviceContext) raises:
     )
 
 
-def test_empty_updates(gpu: DeviceContext, cpu: DeviceContext) raises:
+def test_empty_updates(gpu: DeviceContext, cpu: DeviceContext.CPU) raises:
     """No updates: the output is a plain copy of the input."""
     run_case[
         DType.float32, DType.int64, _upd_small[DType.float32], _add, _atomic_add

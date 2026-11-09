@@ -46,17 +46,15 @@ from max.graph import (
     ops,
 )
 from max.nn import Module as ModuleV3
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _dspark_draft_sample,
+    _is_amd_gpu,
     _is_sm10x_gpu,
     gumbel_argmax_from_probs,
 )
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn._graph_ops.sampling import AcceptanceSampler, _draft_step_seed
+from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.layer import Module
-from max.nn.legacy.sampling.rejection_sampler import (
-    AcceptanceSampler,
-    _draft_step_seed,
-)
 from max.tensor import Tensor
 from max.tensor.realization_context import current_realization_context
 from typing_extensions import override
@@ -1470,13 +1468,21 @@ class BlockDriver(
         # The committed token is ``recovered`` at the accepted count, or
         # ``bonus`` when every proposal was accepted. A prefill row reads 0.
         target_tokens = ops.concat([recovered, bonus], axis=1)
-        gather_idx = ops.where(
-            is_prefill,
-            ops.constant(0, DType.int64, device=device).broadcast_to(
-                ["batch_size"]
-            ),
-            num_accepted.cast(DType.int64),
-        )
+        if _is_amd_gpu():
+            # A prefill row already has zero accepted, so the select is
+            # redundant. AMD drops it to avoid llvm/llvm-project#231154, a dead
+            # SCC def on a cloned S_CMP.
+            # TODO(CLIN-1968): restore the select on AMD once the LLVM pin
+            # carries the fix.
+            gather_idx = num_accepted.cast(DType.int64)
+        else:
+            gather_idx = ops.where(
+                is_prefill,
+                ops.constant(0, DType.int64, device=device).broadcast_to(
+                    ["batch_size"]
+                ),
+                num_accepted.cast(DType.int64),
+            )
         next_tokens = ops.gather_nd(
             target_tokens, ops.unsqueeze(gather_idx, axis=-1), batch_dims=1
         )

@@ -36,7 +36,7 @@ from layout import (
     MixedLayout,
     TileTensor,
 )
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tensor_core import TiledTensorCore
 
 from nn.attention.mha_mask import MHAMask, TileMaskStatus

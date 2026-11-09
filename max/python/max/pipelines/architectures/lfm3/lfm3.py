@@ -27,13 +27,13 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module, ModuleList, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor

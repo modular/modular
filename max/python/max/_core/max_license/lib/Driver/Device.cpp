@@ -508,8 +508,7 @@ void Python::DeviceStream::waitForHostValue(const CompletionFlag &flag,
   if (mlrtStream.isError())
     throw std::runtime_error(mlrtStream.getError());
 
-  ErrorOrSuccess err =
-      (*mlrtStream)->enqueueWaitOnHostValue(*flag.ref(), value);
+  ErrorOrSuccess err = (*mlrtStream)->enqueueWaitOnFlag(*flag.ref(), value);
   if (err.isError())
     throw std::runtime_error(err.getError());
 }

@@ -67,7 +67,7 @@ def test_gather(ctx: DeviceContext) raises:
             output_device, row_major[num_indices, row_size]()
         )
 
-        gather[axis=0, target="gpu"](
+        gather[axis=0](
             output_tensor.make_dynamic[.int64](),
             input_tensor.make_dynamic[.int64](),
             indices_tensor.make_dynamic[.int64](),

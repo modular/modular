@@ -42,7 +42,7 @@ def is_negative(x: Int) -> Bool:
 def test_drop_while_basic() raises:
     """Tests basic drop_while behavior."""
     var nums = [1, 2, 3, 4, 5, 6, 1, 2]
-    var it = drop_while[less_than_5](nums)
+    var it = drop_while(nums, less_than_5)
 
     # Should drop 1, 2, 3, 4 and yield starting from 5
     assert_equal(next(it), 5)
@@ -57,7 +57,7 @@ def test_drop_while_yields_after_first_failure() raises:
     """Tests that drop_while yields all elements after first predicate failure.
     """
     var nums = [2, 4, 6, 7, 8, 10, 3]
-    var it = drop_while[is_even](nums)
+    var it = drop_while(nums, is_even)
 
     # Drops 2, 4, 6 (even), yields starting from 7 (odd)
     assert_equal(next(it), 7)
@@ -71,7 +71,7 @@ def test_drop_while_yields_after_first_failure() raises:
 def test_drop_while_none_dropped() raises:
     """Tests drop_while when no elements are dropped (first fails predicate)."""
     var nums = [5, 1, 2, 3, 4]
-    var it = drop_while[less_than_5](nums)
+    var it = drop_while(nums, less_than_5)
 
     # 5 fails predicate immediately, so nothing dropped
     assert_equal(next(it), 5)
@@ -86,7 +86,7 @@ def test_drop_while_none_dropped() raises:
 def test_drop_while_all_dropped() raises:
     """Tests drop_while when all elements are dropped."""
     var nums = [1, 2, 3, 4]
-    var it = drop_while[less_than_5](nums)
+    var it = drop_while(nums, less_than_5)
 
     # All elements satisfy less_than_5
     with assert_raises(contains="StopIteration"):
@@ -96,7 +96,7 @@ def test_drop_while_all_dropped() raises:
 def test_drop_while_empty() raises:
     """Tests drop_while on an empty list."""
     var empty = List[Int]()
-    var it = drop_while[less_than_5](empty)
+    var it = drop_while(empty, less_than_5)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)
@@ -105,7 +105,7 @@ def test_drop_while_empty() raises:
 def test_drop_while_single_dropped() raises:
     """Tests drop_while with single element that is dropped."""
     var nums = [3]
-    var it = drop_while[less_than_5](nums)
+    var it = drop_while(nums, less_than_5)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)
@@ -114,7 +114,7 @@ def test_drop_while_single_dropped() raises:
 def test_drop_while_single_kept() raises:
     """Tests drop_while with single element that is kept."""
     var nums = [10]
-    var it = drop_while[less_than_5](nums)
+    var it = drop_while(nums, less_than_5)
 
     assert_equal(next(it), 10)
     with assert_raises(contains="StopIteration"):
@@ -126,7 +126,7 @@ def test_drop_while_in_for_loop() raises:
     var nums = [1, 2, 3, 4, 5, 6, 7]
     var results = List[Int]()
 
-    for num in drop_while[less_than_5](nums):
+    for num in drop_while(nums, less_than_5):
         results.append(num)
 
     assert_equal(len(results), 3)
@@ -138,7 +138,7 @@ def test_drop_while_in_for_loop() raises:
 def test_drop_while_always_true() raises:
     """Tests drop_while with a predicate that always returns True."""
     var nums = [1, 2, 3]
-    var it = drop_while[always_true](nums)
+    var it = drop_while(nums, always_true)
 
     # All elements dropped
     with assert_raises(contains="StopIteration"):
@@ -148,7 +148,7 @@ def test_drop_while_always_true() raises:
 def test_drop_while_always_false() raises:
     """Tests drop_while with a predicate that always returns False."""
     var nums = [1, 2, 3]
-    var it = drop_while[always_false](nums)
+    var it = drop_while(nums, always_false)
 
     # No elements dropped
     assert_equal(next(it), 1)
@@ -160,7 +160,7 @@ def test_drop_while_always_false() raises:
 
 def test_drop_while_from_range() raises:
     """Tests drop_while on a range."""
-    var it = drop_while[less_than_5](range(10))
+    var it = drop_while(range(10), less_than_5)
 
     # Drops 0, 1, 2, 3, 4
     assert_equal(next(it), 5)
@@ -175,7 +175,7 @@ def test_drop_while_from_range() raises:
 def test_drop_while_negative_numbers() raises:
     """Tests drop_while with negative numbers."""
     var nums = [-3, -2, -1, 0, 1, 2, -5]
-    var it = drop_while[is_negative](nums)
+    var it = drop_while(nums, is_negative)
 
     # Drops -3, -2, -1, yields from 0
     assert_equal(next(it), 0)
@@ -193,7 +193,7 @@ def test_drop_while_only_yields_once_triggered() raises:
     def is_zero(x: Int) -> Bool:
         return x == 0
 
-    var it = drop_while[is_zero](nums)
+    var it = drop_while(nums, is_zero)
 
     # Drops the first three 0s, yields from 1 onwards
     assert_equal(next(it), 1)
@@ -206,13 +206,27 @@ def test_drop_while_only_yields_once_triggered() raises:
 
 def test_drop_while_owned() raises:
     var l: List[Int] = [1, 2, 3, 4, 5, 6, 1, 2]
-    var it = drop_while[less_than_5](l^)
+    var it = drop_while(l^, less_than_5)
     assert_equal(next(it), 5)
     assert_equal(next(it), 6)
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
     with assert_raises(contains="StopIteration"):
         _ = next(it)
+
+
+def test_drop_while_capturing() raises:
+    var nums = [1, 2, 3, 4, 1]
+    var limit = 3
+    var it = drop_while(nums, lambda (x: Int) {limit} -> Bool: x < limit)
+
+    var copied = it.copy()
+    assert_equal(next(it), 3)
+    assert_equal(next(it), 4)
+    assert_equal(next(it), 1)
+    with assert_raises(contains="StopIteration"):
+        _ = next(it)
+    assert_equal(next(copied), 3)
 
 
 def main() raises:

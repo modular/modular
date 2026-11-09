@@ -108,7 +108,6 @@ from max.gpu.host import DeviceAttribute
 from max.gpu.host.info import (
     GPUInfo,
     get_gpu_info,
-    is_cpu,
     _device_type_encoder_target,
 )
 from max.gpu.host import Attribute, FuncAttribute
@@ -289,18 +288,18 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
         API name, or the plugin has no arch for the device.
     """
     var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-    if not maybe_driver[]:
-        raise Error("no accelerator driver plugin is loaded")
-    var driver = maybe_driver[].value()
-    var api = String(driver[].name()).lower()
-    # A plugin listed as a bare path, without a `name@`, is named after its
-    # file, which is no API and so no `--target-accelerator` vendor either.
-    if "/" in api or api.endswith(".so"):
-        raise Error("the accelerator plugin has no API name: ", api)
-    var device = driver[].get_device_dynamic[Optional[Int64](0)](
-        Int64(device_id)
-    )
-    return (api, device[].arch())
+    if case .Some(driver) = maybe_driver[]:
+        var api = String(driver[].name()).lower()
+        # A plugin listed as a bare path, without a `name@`, is named after
+        # its file, which is no API and so no `--target-accelerator` vendor
+        # either.
+        if "/" in api or api.endswith(".so"):
+            raise Error("the accelerator plugin has no API name: ", api)
+        var device = driver[].get_device_dynamic[Optional[Int64](0)](
+            Int64(device_id)
+        )
+        return (api, device[].arch())
+    raise Error("no accelerator driver plugin is loaded")
 
 
 struct _PeerState(Movable):
@@ -365,9 +364,9 @@ def _init_peer_state() -> _PeerState:
     # `_Global` initializers must not raise; no plugin means zero devices.
     try:
         var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-        if not maybe_driver[]:
-            return _PeerState(0)
-        return _PeerState(Int(maybe_driver[].value()[].device_count()))
+        if case .Some(driver) = maybe_driver[]:
+            return _PeerState(Int(driver[].device_count()))
+        return _PeerState(0)
     except:
         return _PeerState(0)
 
@@ -496,10 +495,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     This alias may be removed once Mojo supports nested auto-parameterization.
     """
 
-    comptime NoneValue = Optional[DeviceContext[]]()
+    comptime NoneValue = Optional[DeviceContext.CPU]()
     """Convenience helper for constructing a default value for
-    `DeviceContext.Optional` parameters. This guides type inference to a default
-    value for the `target` parameter when the default argument value is used.
+    `DeviceContext.Optional` parameters. This guides type inference to the CPU
+    `target` when the default argument value is used, so omitting the context
+    means "run on the CPU".
 
     Intended to be used like:
 
@@ -680,14 +680,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             # Shared so peer calls get both contexts from one driver.
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            if not maybe_driver[]:
+            if case .Some(driver) = maybe_driver[]:
+                self._driver = driver
+            else:
                 # `_Global` init drops the load error; reload to raise it.
                 _ = Driver.create(chosen)
                 raise Error(
                     String(t"failed to load accelerator plugin '{chosen}'")
                 )
-            var driver = maybe_driver[].value()
-            var driver_name = driver[].name()
+            var driver_name = self._driver[].name()
             if not _driver_satisfies_api(String(driver_name), api):
                 raise Error(
                     String(
@@ -695,12 +696,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                         t" {driver_name}"
                     )
                 )
-            var count = Int(driver[].device_count())
+            var count = Int(self._driver[].device_count())
             if device_id < 0 or device_id >= count:
                 raise Error(
                     String(t"device_id {device_id} out of range [0, {count})")
                 )
-            self._driver = driver
             # The spec stays id 0 for typing; the runtime id picks the device.
             self._device = rebind[ArcPointer[_HALDevice[Self.device_spec]]](
                 self._driver[].get_device_dynamic[Optional[Int64](0)](
@@ -752,67 +752,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         except e:
             abort(t"unable to create CPU DeviceContext: {e}")
 
-    # ===-------------------------------------------------------------------===#
-    # TODO(MSTDL-3208): Temporary target parameterization helpers
-    # ===-------------------------------------------------------------------===#
-
-    # TODO(MSTDL-3265): Remove `target: StaticString` parameters from all
-    #   callers of this method after verifying all callers instead indicate
-    #   target device via `DeviceContext.target`.
-    @inline(.always)
-    def _comptime_assert_matches_target_is_cpu[
-        target_name: StaticString
-    ](self,):
-        comptime assert Self.target.is_cpu() == is_cpu[target_name](), String(
-            "`target` parameter '",
-            target_name,
-            "' does not match the DeviceContext target, which is ",
-            "a CPU" if Self.target.is_cpu() else "not a CPU",
-            " (triple: ",
-            StaticString(Self.target.__triple()),
-            ", arch: ",
-            Self.target._arch(),
-            ")",
-        )
-
-    @inline(.always)
-    def cast_if_cpu[
-        target_str: StaticString
-    ](
-        var self,
-        out result: DeviceContext[
-            CompilationTarget[
-                _mlir_value=(
-                    CompilationTarget.current()._mlir_value if target_str
-                    == "cpu" else Self.target._mlir_value
-                )
-            ]()
-        ],
-    ):
-        """Temporary function to cast this DeviceContext to the CPU target if
-        the device label is "cpu".
-
-        Parameters:
-            target_str: The device label to cast to. Typically "cpu" or "gpu".
-
-        Returns:
-            A DeviceContext with a target parameter matching the provided device
-            label.
-        """
-        comptime if target_str == "cpu":
-            # Defensive sanity check, since we make this assumption in the
-            # result type. `assert_cpu_target` checks at runtime, so this also
-            # accepts a context that already has the CPU target.
-            comptime assert CompilationTarget.current().is_cpu()
-
-            var self_cpu = self.assert_cpu_target()
-            return rebind_var[type_of(result)](self_cpu^)
-        else:
-            # Assert that this is only called on `ctx: DeviceContext` concrete
-            # / default accelerator instances for the time being.
-            var _ = self.assert_default_target()
-            return rebind_var[type_of(result)](self^)
-
     @inline(.always)
     def assert_cpu_target(var self) -> DeviceContext.CPU:
         """Temporary function to assert and cast this DeviceContext to the CPU
@@ -844,8 +783,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ctx: DeviceContext.Optional,
     ) -> Optional[DeviceContext.CPU]:
         var cpu_ctx = Optional[DeviceContext.CPU]()
-        if ctx:
-            cpu_ctx = ctx.value().assert_cpu_target()
+        if case .Some(gpu_ctx) = ctx:
+            cpu_ctx = gpu_ctx.assert_cpu_target()
         return cpu_ctx^
 
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
@@ -1059,11 +998,32 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # Previous context is automatically restored
         ```
         """
-        return _DeviceContextScopeHAL(self.assert_default_target())
+        return _DeviceContextScopeHAL(self)
 
     @doc_hidden
     def stream(self) -> DeviceStreamBase[Self.target]:
         return DeviceStreamBase[Self.target](self)
+
+    def allocate_completion_flag(self) raises -> CompletionFlag:
+        """Allocates a `CompletionFlag`, initialized to 0, on this device.
+
+        Returns:
+            The new flag.
+
+        Raises:
+            Always, until the HAL supports completion flags.
+        """
+        # TODO(DRIV-688): allocate through the completion-flag extension.
+        raise Error("completion flags are not supported by the HAL yet")
+
+    def supports_flag_wait(self) -> Bool:
+        """Returns whether this device supports completion flags.
+
+        Returns:
+            False until the HAL supports completion flags.
+        """
+        # TODO(DRIV-688): true once Mojo can allocate flags under the HAL.
+        return False
 
     @doc_hidden
     def _hal_stream(
@@ -1795,7 +1755,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         # NOTE: The HAL supports doing this asynchronously, but to match
         # existing DeviceContext semantics we create a buffer immediately.
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def create_buffer_sync[
         dtype: DType
@@ -1814,7 +1774,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def enqueue_create_host_buffer[
         dtype: DType
@@ -1862,7 +1822,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        return HostBuffer[dtype](self.assert_default_target(), size)
+        return HostBuffer[dtype](self, size)
 
     def enqueue_copy[
         dtype: DType
@@ -1887,12 +1847,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         self.enqueue_copy(
-            DeviceBuffer[dtype](
-                self.assert_default_target(), dst_ptr, size, owning=False
-            ),
-            DeviceBuffer[dtype](
-                self.assert_default_target(), src_ptr, size, owning=False
-            ),
+            DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
+            DeviceBuffer[dtype](self, src_ptr, size, owning=False),
         )
 
     def enqueue_copy[
@@ -1973,7 +1929,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             self.enqueue_wait_for(src_ctx)
         self._enqueue_copy_device_to_device(dst_buf, src_buf)
         if sync:
-            src_ctx.enqueue_wait_for(self.assert_default_target())
+            src_ctx.enqueue_wait_for(self)
 
     def _check_device_to_device_copy[
         dtype: DType
@@ -2615,12 +2571,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 return 0
             # Reuse the process-global accelerator driver (loaded once).
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            if not maybe_driver[]:
-                return 0
-            var driver = maybe_driver[].value()
-            if not _driver_satisfies_api(driver[].name(), api):
-                return 0
-            return Int(driver[].device_count())
+            if case .Some(driver) = maybe_driver[]:
+                if _driver_satisfies_api(driver[].name(), api):
+                    return Int(driver[].device_count())
+            return 0
         except:
             return 0
 
@@ -2727,6 +2681,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         return self.device().is_host_unified()
 
+    def is_graph_capturing(self) raises -> Bool:
+        """Returns whether work enqueued on this context is only recorded.
+
+        Returns:
+            False: the HAL has no stream capture.
+
+        Raises:
+            Never; raises to match the legacy signature.
+        """
+        # TODO(DRIV-687): answer from the queue once the HAL has stream capture.
+        return False
+
 
 struct Device[target: CompilationTarget, origin: ImmOrigin](
     TrivialRegisterPassable
@@ -2777,6 +2743,111 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
             If the attribute cannot be queried.
         """
         return Int(self._ctx[]._device[].get_attribute(attr._value))
+
+    def multiprocessor_count(self) raises -> Int:
+        """Returns the number of multiprocessors on this device.
+
+        On a GPU, this is the number of streaming multiprocessors (NVIDIA) or
+        compute units (AMD) that run thread blocks concurrently. A device that
+        isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The number of multiprocessors.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+
+    def max_threads_per_block(self) raises -> Int:
+        """Returns the maximum number of threads in one thread block.
+
+        On a GPU, a kernel launch whose block has more threads than this
+        fails. A device that isn't a GPU reports whatever its driver
+        provides.
+
+        Returns:
+            The maximum number of threads per block.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK)
+
+    def max_shared_memory_per_block(self) raises -> Int:
+        """Returns the shared memory one thread block can use by default.
+
+        On a GPU, this is the per-block limit without opting in to a larger
+        dynamic allocation. A device that isn't a GPU reports whatever its
+        driver provides.
+
+        Returns:
+            The maximum shared memory per block in bytes.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
+
+    def max_grid_dim_x(self) raises -> Int:
+        """Returns the maximum number of blocks along x in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along x fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along x.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_X)
+
+    def max_grid_dim_y(self) raises -> Int:
+        """Returns the maximum number of blocks along y in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along y fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along y.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Y)
+
+    def max_grid_dim_z(self) raises -> Int:
+        """Returns the maximum number of blocks along z in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along z fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along z.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Z)
+
+    def max_grid_dim(self) raises -> Dim:
+        """Returns the maximum grid dimensions for a kernel launch.
+
+        On a GPU, a launch whose grid exceeds this in any dimension fails.
+        Makes one driver query per dimension; to read a single limit, use
+        `max_grid_dim_x()`, `max_grid_dim_y()`, or `max_grid_dim_z()`. A
+        device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum number of blocks along x, y, and z.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return Dim(
+            self.max_grid_dim_x(), self.max_grid_dim_y(), self.max_grid_dim_z()
+        )
 
     def is_host_unified(self) raises -> Bool:
         """Returns True if this device and the host share one physical memory
@@ -2843,14 +2914,14 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
 
 struct _DeviceContextScopeHAL(Movable):
-    var _device_context: DeviceContext[]
+    var _device_context: DeviceContext.Unknown
     # Driver-context handle to restore on exit; only meaningful when `_active`
     # (any value, including zero, can be a live handle).
     var _prev_driver_ctx: Int
     var _active: Bool
 
-    def __init__(out self, device_context: DeviceContext[]):
-        self._device_context = device_context
+    def __init__(out self, device_context: DeviceContext):
+        self._device_context = device_context.into_unknown_target()
         self._prev_driver_ctx = 0
         self._active = False
 
@@ -2870,7 +2941,7 @@ struct _DeviceContextScopeHAL(Movable):
         )
         self._device_context._context[].set_current()
         self._active = True
-        return self._device_context
+        return rebind[DeviceContext[]](self._device_context)
 
     def __exit__(mut self) raises:
         if self._active:
@@ -3572,7 +3643,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         out self,
         ctx: DeviceContext,
         var function_name: String,
-        asm: StringSlice,
+        asm: StringSpan,
     ) raises:
         """Loads a function from raw PTX/SASS bytes.
 
@@ -3866,9 +3937,8 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the wait operation fails.
         """
         # If an event hasn't been recorded yet, there's nothing to wait on
-        if not event._event[]:
-            return
-        self._stream[].wait_for_events(event._event[].value())
+        if case .Some(recorded) = event._event[]:
+            self._stream[].wait_for_events(recorded)
 
     def record_event(self, event: DeviceEvent) raises:
         """Records an event in this stream.
@@ -3910,19 +3980,20 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         event._event[] = Optional(hal_event^)
 
     @doc_hidden
-    def wait_for_host_value(
+    def wait_for_flag(
         self,
         flag: CompletionFlag,
         value: UInt64,
     ) raises:
-        """Stalls the stream until a host-visible flag reaches a given value.
+        """Stalls the stream until `flag` holds at least `value`.
 
-        Corresponds to CUDA's `cuStreamWaitValue64` on the slot owned by
-        `flag`.
+        While the wait is pending, the thread that signals `flag` must not
+        block on this stream first: no `synchronize`, no copy into or out of
+        pageable host memory, and don't drop the flag.
 
         Args:
-            flag: A non-owning handle to a ``M::Driver::CompletionFlag``.
-            value: The 64-bit value to wait for.
+            flag: A ``M::Driver::CompletionFlag``.
+            value: The 64-bit value to wait for. Keep values below 2^63.
 
         Raises:
             If the underlying device does not support stream memory ops,
@@ -3933,16 +4004,33 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         ](flag._handle)
         self._stream[].wait_value64(device_addr, value)
 
+    @deprecated("Use `wait_for_flag` instead.")
+    @doc_hidden
+    def wait_for_host_value(
+        self,
+        flag: CompletionFlag,
+        value: UInt64,
+    ) raises:
+        """Stalls this stream until ``flag`` reaches ``value``.
+
+        Args:
+            flag: The flag to wait on.
+            value: The value to wait for.
+
+        Raises:
+            If the wait cannot be enqueued.
+        """
+        self.wait_for_flag(flag, value)
+
     def _native_stream[
         origin: Origin, //
     ](ref[origin] self) raises -> OpaquePointer[origin]:
         """Returns this stream's native driver-level handle (for example a
         `CUstream`), tied to this borrow of `self` so the owning queue stays
         alive while the handle is in use."""
-        var handle = self._stream[].native_handle()
-        if not handle:
-            raise Error("this device's stream has no native driver handle")
-        return OpaquePointer[origin](unsafe_from_address=Int(handle.value()))
+        if case .Some(handle) = self._stream[].native_handle():
+            return OpaquePointer[origin](unsafe_from_address=Int(handle))
+        raise Error("this device's stream has no native driver handle")
 
     def _hal_stream(
         self,
@@ -4514,9 +4602,8 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
             If synchronization fails.
         """
         # If an event hasn't been recorded yet, there's nothing to wait on
-        if not self._event[]:
-            return
-        self._event[].value().synchronize()
+        if case .Some(recorded) = self._event[]:
+            recorded.synchronize()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4583,7 +4670,7 @@ struct DeviceBuffer[dtype: DType](
     var _device_ptr: Self._DevicePtr
     # Wrap the inner buffer in an ArcPointer so copies of this DeviceBuffer hold
     # a reference to the same underlying buffer.
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_HALBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -4602,7 +4689,7 @@ struct DeviceBuffer[dtype: DType](
         if byte_size > 0:
             addr = ctx._context[].memory_get_address(buffer)
         self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
-        self._ctx = ctx.assert_default_target()
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(
             _HALBufferInner(buffer^, ctx._context, addr, [], [])
         )
@@ -4643,8 +4730,15 @@ struct DeviceBuffer[dtype: DType](
             ) if addr == 0 else ctx._context[].wrap_memory(
                 addr, byte_size, owning=owning
             )
+            # The plugin may give the wrapped region an address of its own.
+            # If it can't report one, keep the address we were given.
+            if addr != 0:
+                try:
+                    addr = ctx._context[].memory_get_address(buffer)
+                except:
+                    pass
             self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
-            self._ctx = ctx.assert_default_target()
+            self._ctx = ctx.into_unknown_target()
             self._inner = ArcPointer(
                 _HALBufferInner(buffer^, ctx._context, addr, [], [])
             )
@@ -4743,7 +4837,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The device context associated with this buffer.
         """
-        return self._ctx
+        return rebind[DeviceContext[]](self._ctx)
 
     @doc_hidden
     @inline(.always)
@@ -5120,7 +5214,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_HostBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -5128,7 +5222,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext[], size: Int) raises:
+    def __init__(out self, ctx: DeviceContext, size: Int) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
@@ -5144,16 +5238,16 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
             host_ptr = Pointer[UInt8, MutUntrackedOrigin](
                 unsafe_from_address=Int(addr)
             )
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(
             _HostBufferInner(buffer^, ctx._context, host_ptr, [])
         )
 
     @doc_hidden
     def __init__(
-        out self, ctx: DeviceContext[], var inner: ArcPointer[_HostBufferInner]
+        out self, ctx: DeviceContext, var inner: ArcPointer[_HostBufferInner]
     ):
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = inner^
 
     # ===-------------------------------------------------------------------===#
@@ -5214,7 +5308,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         Returns:
             The device context associated with this buffer.
         """
-        return self._ctx
+        return rebind[DeviceContext[]](self._ctx)
 
     def unsafe_ptr(
         self,
@@ -6110,8 +6204,7 @@ struct DevicePointer[
 struct CompletionFlag(ImplicitlyCopyable):
     """Host-visible completion flag.
 
-    This struct is intentionally non-owning: it wraps the raw address of a
-    ``M::Driver::CompletionFlag`` created by the C++ driver layer.
+    Holds a reference to a C++ ``M::Driver::CompletionFlag``.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -6124,13 +6217,27 @@ struct CompletionFlag(ImplicitlyCopyable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @doc_hidden
+    def __init__(out self, *, copy: Self):
+        """Copies a flag by incrementing its reference count.
+
+        Args:
+            copy: The flag to copy.
+        """
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](copy._handle)
+        self._handle = copy._handle
+
+    def __deinit__(deinit self):
+        """Releases this flag's reference."""
+        external_call["AsyncRT_CompletionFlag_release", NoneType](self._handle)
+
     @inline(.always)
     def __init__(out self, *, unsafe_from_address: Int):
-        """Constructs a non-owning handle from an integer address.
+        """Wraps the C++ flag at an integer address, taking a reference.
 
         Intended for graph-op execute methods that extract a packed
         pointer from a payload buffer (mirroring how
-        `mo.launch_host_func` rebuilds its trampoline/user-data
+        `runtime.launch_host_func` rebuilds its trampoline/user-data
         pointers). The caller asserts that ``unsafe_from_address``
         points to a valid ``M::Driver::CompletionFlag`` and that the
         underlying object outlives any in-flight use.
@@ -6143,6 +6250,42 @@ struct CompletionFlag(ImplicitlyCopyable):
         self._handle = OpaquePointer[MutUntrackedOrigin](
             unsafe_from_address=unsafe_from_address
         )
+        external_call["AsyncRT_CompletionFlag_retain", NoneType](self._handle)
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    @inline(.always)
+    def signal(self, value: UInt64):
+        """Stores ``value`` in the flag with release ordering.
+
+        Args:
+            value: The value to store.
+        """
+        external_call["AsyncRT_CompletionFlag_signal", NoneType](
+            self._handle, value
+        )
+
+    @inline(.always)
+    def load(self) -> UInt64:
+        """Loads the flag's value with acquire ordering.
+
+        Returns:
+            The value the flag holds.
+        """
+        return external_call["AsyncRT_CompletionFlag_load", UInt64](
+            self._handle
+        )
+
+    @inline(.always)
+    def reset(self):
+        """Stores 0 in the flag.
+
+        Don't reset while a stream is still waiting on the flag, and don't
+        signal a lower value without a reset.
+        """
+        external_call["AsyncRT_CompletionFlag_reset", NoneType](self._handle)
 
 
 struct DeviceContextArray[

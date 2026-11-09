@@ -22,10 +22,10 @@ from __future__ import annotations
 
 from max import functional as F
 from max.nn import HyperConnection, Module, RMSNorm
-from max.nn.common_layers.functional_kernels import mhc_post
+from max.nn._graph_ops import mhc_post_supports
 from max.nn.common_layers.quant_moe import ExpertParallelMoE
+from max.nn.kernels import mhc_post
 from max.nn.legacy.comm.ep import EPCommBuffers
-from max.nn.legacy.kernels import mhc_post_preferred
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Sharded, auto_reshard
 
@@ -42,13 +42,17 @@ def write_back(
 
     ``streams' = post * y + comb^T @ streams``. ``comb``'s columns sum to one,
     so contracting over its first stream axis makes the mix a convex
-    combination of the incoming streams. On AMD GPUs, for shapes it supports,
+    combination of the incoming streams. On a GPU, for shapes it supports,
     the ``mhc_post`` kernel evaluates it in float32 and rounds once to the
     streams' dtype; elsewhere it is an outer product plus a small batched
     matmul in the streams' dtype.
     """
     hc_mult, hidden_size = streams.shape[1], streams.shape[2]
-    if mhc_post_preferred(int(hc_mult), int(hidden_size), streams.dtype):
+    # Under tensor parallelism the streams span a mesh, where Tensor.device
+    # raises; every device in it shares one kind.
+    if not streams.mesh.devices[0].is_host and mhc_post_supports(
+        int(hc_mult), int(hidden_size), streams.dtype
+    ):
         return mhc_post(streams, y, post, comb)
     dtype = streams.dtype
     placed = post.cast(dtype).unsqueeze(-1) * y.unsqueeze(1)

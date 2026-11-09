@@ -31,6 +31,7 @@
 #include <cstdint>
 
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 namespace M::Profiling::Detail {
 
@@ -63,7 +64,8 @@ struct ExternalProfilerAnnotationSink {
 /// integration overrides it with a strong definition. Only called once per
 /// copy (callers cache the result); a non-null result must stay valid for
 /// the life of the process.
-const ExternalProfilerAnnotationSink *acquireExternalProfilerAnnotationSink();
+MODULAR_CXX_EXPORT const ExternalProfilerAnnotationSink *
+acquireExternalProfilerAnnotationSink();
 
 } // namespace M::Profiling::Detail
 

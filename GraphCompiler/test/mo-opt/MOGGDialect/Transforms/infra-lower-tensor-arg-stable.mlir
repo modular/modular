@@ -30,7 +30,7 @@
 // captures, then calls the trait kernel.
 // EMIT-DAG: _MoggStableTensorArg[type_of(var___{{[0-9]+}}).dtype, type_of(var___{{[0-9]+}}), {{[0-9]+}}, _MoggTensorIO.INPUT]
 // EMIT-DAG: _MoggDenseTensorArg[type_of(var___{{[0-9]+}}).dtype, type_of(var___{{[0-9]+}}), {{[0-9]+}}, _MoggTensorIO.OUTPUT
-// EMIT-DAG: TraitStableNegate.execute[target = "gpu"]
+// EMIT-DAG: TraitStableNegate.execute
 
 mo.graph @trait_stable_negate_graph(%x: !mo.tensor<[4], f32, gpu:0>) -> !mo.tensor<[4], f32, gpu:0> {
   %z = mo.custom [symbol = "trait_stable_negate", device = #M.device_ref<"gpu", 0>] (%x) : (!mo.tensor<[4], f32, gpu:0>) -> !mo.tensor<[4], f32, gpu:0>

@@ -34,8 +34,8 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheInputs,
     KVCacheInputsPerDevice,
@@ -43,8 +43,8 @@ from max.nn.legacy.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.legacy.layer import Module as LayerModule
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.module import Module as _ModuleV3
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContextType, LogProbabilities
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,
@@ -71,6 +71,12 @@ from max.pipelines.lora import (
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
+)
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphInputs,
+    SpecDecodeInputTypeSpec,
+    spec_decode_input_tree,
+    spec_decode_tail_groups,
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 from max.profiler import traced
@@ -408,12 +414,17 @@ class UnifiedEagleOutputs(ModelOutputs):
 
 @dataclass(kw_only=True)
 class UnifiedSpecDecodeInputs(ModelInputs):
-    """Shared spec-decode fields + buffer-tail packing for unified ``*Inputs``.
+    """Shared spec-decode fields, packed in the order the graph takes them.
 
-    Each arch composes the tail via :meth:`_spec_decode_tail_buffers`, which
-    mirrors ``build_spec_decode_input_types`` and must stay in lockstep with it.
+    :meth:`_spec_decode_buffers` packs a step as the leaves of
+    :func:`~max.pipelines.speculative.spec_input_types.spec_decode_input_tree`,
+    the tree whose leaves are the graph's signature. A model that packs the
+    inputs ahead of the tail itself appends :meth:`_spec_decode_tail_buffers`.
     """
 
+    spec: SpecDecodeInputTypeSpec | None = None
+    """The signature the graph was built from, which
+    :meth:`_spec_decode_buffers` packs by."""
     draft_tokens: Buffer | None = None
     draft_probs_full: Buffer | None = None
     """The distribution each ``draft_tokens`` entry was sampled from,
@@ -443,10 +454,68 @@ class UnifiedSpecDecodeInputs(ModelInputs):
 
     structured_output: bool = False
     """Whether this graph was compiled with constrained-decoding bitmask
-    inputs. Mirrors ``pipeline_config.needs_bitmask_constraints`` -- the same
-    value that gates the bitmask triple in ``build_spec_decode_input_types`` --
-    so the buffer tail and the graph signature derive the decision from one
-    place. Set by each capable module's ``prepare_initial_token_inputs``."""
+    inputs, for :meth:`_spec_decode_tail_buffers`. Mirrors
+    ``pipeline_config.needs_bitmask_constraints``, which sets the signature's
+    ``enable_structured_output``. Set by each capable module's
+    ``prepare_initial_token_inputs``."""
+
+    def _spec_decode_buffers(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        host_input_row_offsets: Buffer | None = None,
+        data_parallel_splits: Buffer | None = None,
+        signal_buffers: Sequence[Buffer] = (),
+        batch_context_lengths: Sequence[Buffer] = (),
+        ep_inputs: Sequence[Buffer] = (),
+        trailing: Sequence[Buffer] = (),
+    ) -> tuple[Buffer, ...]:
+        """Packs a step's buffers in the order :attr:`spec` declares them.
+
+        Takes the inputs ahead of the tail from the caller, which holds them,
+        and passes over any group :attr:`spec` leaves out.
+        """
+        spec = self.spec
+        assert spec is not None, "the batch processor sets the graph's spec"
+        assert self.draft_tokens is not None
+        assert self.seed is not None
+        assert self.temperature is not None
+        assert self.top_k is not None
+        assert self.max_k is not None
+        assert self.top_p is not None
+        assert self.min_top_p is not None
+        inputs = SpecDecodeGraphInputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            return_n_logits=return_n_logits,
+            kv_tree=self.kv_cache_inputs or (),
+            draft_tokens=self.draft_tokens,
+            seed=self.seed,
+            temperature=self.temperature,
+            top_k=self.top_k,
+            max_k=self.max_k,
+            top_p=self.top_p,
+            min_top_p=self.min_top_p,
+            host_input_row_offsets=host_input_row_offsets,
+            data_parallel_splits=data_parallel_splits,
+            draft_probs_full=self.draft_probs_full,
+            draft_probs_replicas=self.draft_probs_replicas,
+            in_thinking_phase=self.in_thinking_phase,
+            draft_slot_ids=self.draft_slot_ids,
+            draft_block_offsets=self.draft_block_offsets,
+            pinned_bitmask=self.pinned_bitmask,
+            wait_payload=self.wait_payload,
+            device_bitmask_scratch=self.device_bitmask_scratch,
+            vision_embeddings=self.vision_embeddings,
+            vision_scatter_indices=self.vision_scatter_indices,
+            signal_buffers=list(signal_buffers),
+            batch_context_lengths=list(batch_context_lengths),
+            ep_inputs=list(ep_inputs),
+            trailing=list(trailing),
+        )
+        return tuple(tree.leaves(spec_decode_input_tree(spec, inputs)))
 
     def _spec_decode_tail_buffers(
         self,
@@ -454,57 +523,24 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         include_in_thinking_phase: bool,
         supports_structured_output: bool = True,
     ) -> tuple[Buffer, ...]:
-        # draft_tokens, seed, and the five sampling params are unconditional in
-        # build_spec_decode_input_types; assert them so a missing one is a loud
-        # error, not a silently shortened ABI tuple. (Draft KV lives in the
-        # {"target", "draft"} tree, packed by super().buffers.)
-        assert self.draft_tokens is not None
-        tail: tuple[Buffer, ...] = (self.draft_tokens,)
-        # Keyed on presence rather than a per-architecture flag: the pipeline
-        # allocates it only after checking the compiled graph declares it.
-        if self.draft_probs_full is not None:
-            tail += (self.draft_probs_full,)
-        if self.draft_probs_replicas is not None:
-            tail += tuple(self.draft_probs_replicas)
-        assert self.seed is not None
-        tail += (self.seed,)
-        assert self.temperature is not None
-        assert self.top_k is not None
-        assert self.max_k is not None
-        assert self.top_p is not None
-        assert self.min_top_p is not None
-        tail += (
-            self.temperature,
-            self.top_k,
-            self.max_k,
-            self.top_p,
-            self.min_top_p,
-        )
-        if include_in_thinking_phase:
-            assert self.in_thinking_phase is not None
-            tail += (self.in_thinking_phase,)
-        # The pipeline sets these exactly when the driver declared them (both
-        # decide by ``declares_skippable_draft``), so their presence is the
-        # compile-time flag.
-        if self.draft_slot_ids is not None:
-            assert self.draft_block_offsets is not None
-            tail += (self.draft_slot_ids, self.draft_block_offsets)
-        # Gate the bitmask triple on two compile-time flags, not a runtime
-        # pinned_bitmask is not None check: supports_structured_output is False
-        # for the dflash Llama3 graph, which still declares no bitmask graph
-        # inputs even though the pipeline may set pinned_bitmask;
-        # structured_output mirrors needs_bitmask_constraints, the same value
-        # that gates the triple in build_spec_decode_input_types.
-        if supports_structured_output and self.structured_output:
-            assert self.pinned_bitmask is not None
-            assert self.wait_payload is not None
-            assert self.device_bitmask_scratch is not None
-            tail += (
-                self.pinned_bitmask,
-                self.wait_payload,
-                self.device_bitmask_scratch,
+        """Packs the canonical tail for a model that packs its head itself.
+
+        Groups the tail as
+        :func:`~max.pipelines.speculative.spec_input_types.spec_decode_tail_groups`
+        does for the signature. ``supports_structured_output`` is ``False``
+        for a graph that declares no bitmask inputs although the pipeline may
+        set the bitmask.
+        """
+        return tuple(
+            tree.leaves(
+                spec_decode_tail_groups(
+                    self,
+                    thinking=include_in_thinking_phase,
+                    bitmask=supports_structured_output
+                    and self.structured_output,
+                )
             )
-        return tail
+        )
 
 
 @dataclass(frozen=True)
@@ -934,6 +970,16 @@ class PipelineModel(
         )
 
     @classmethod
+    def build_vision_spec(cls, context: ModelLoadContext) -> GraphSpec | None:
+        """Returns the vision encoder's graph spec, whose inputs it names.
+
+        ``None`` for an architecture whose vision graph
+        :meth:`build_vision_graph` builds without one.
+        """
+        del context
+        return None
+
+    @classmethod
     def build_vision_graph(
         cls, context: ModelLoadContext
     ) -> tuple[Graph, dict[str, Any]]:
@@ -1064,7 +1110,7 @@ class PipelineModel(
         embeddings into the prompt by them. ``None`` for a model whose
         artifact serves no media.
         """
-        return None
+        return self.vision_metadata_for(self.pipeline_config, self.arch_config)
 
     def vision_preprocess_spec(self) -> GraphSpec | None:
         """Returns the graph that preprocesses one image for the vision encoder.
@@ -1074,7 +1120,9 @@ class PipelineModel(
         serving engine to run per image. Its outputs are the vision graph's
         named inputs for that image, path for path.
         """
-        return None
+        return self.vision_preprocess_spec_for(
+            self.pipeline_config, self.arch_config
+        )
 
     def vision_preprocess_video_spec(self) -> GraphSpec | None:
         """Returns the graph that preprocesses one segment of a video clip.
@@ -1086,6 +1134,51 @@ class PipelineModel(
         ``vision_preprocess_video`` role. Its outputs are the vision graph's
         named inputs for that segment, path for path.
         """
+        return self.vision_preprocess_video_spec_for(
+            self.pipeline_config, self.arch_config
+        )
+
+    @classmethod
+    def vision_metadata_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> VisionMetadata | None:
+        """Returns the :meth:`vision_metadata` for ``config``.
+
+        A pipeline that serves this model's media without building the
+        model, as a fused speculative-decoding one does its target's, reads
+        it here.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The model config the model is built with.
+        """
+        del pipeline_config, config
+        return None
+
+    @classmethod
+    def vision_preprocess_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
+        """Returns the :meth:`vision_preprocess_spec` for ``config``.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The model config the model is built with.
+        """
+        del pipeline_config, config
+        return None
+
+    @classmethod
+    def vision_preprocess_video_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
+        """Returns the :meth:`vision_preprocess_video_spec` for ``config``.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The model config the model is built with.
+        """
+        del pipeline_config, config
         return None
 
     @traced
@@ -1304,11 +1397,20 @@ class GraphPipelineModelWithKVCache(
             )
             timer.mark_build_complete()
             self.state_dict = weights_registry
-            model = session.load(graph, weights_registry=weights_registry)
+            model = self._compile_and_load(session, graph, weights_registry)
 
         self._maybe_release_host_weights(model)
         self._wire_batch_processor(model, model_config)
         return model
+
+    def _compile_and_load(
+        self,
+        session: InferenceSession,
+        graph: Graph,
+        weights_registry: dict[str, Any],
+    ) -> Model:
+        """Compiles ``graph`` and initializes it with ``weights_registry``."""
+        return session.load(graph, weights_registry=weights_registry)
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``.

@@ -175,7 +175,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             return PythonObject(from_owned=res_ptr)
 
     @staticmethod
-    def add_to_path(dir_path: StringSlice) raises:
+    def add_to_path(dir_path: StringSpan) raises:
         """Adds a directory to the Python path.
 
         This might be necessary to import a Python module via `import_module()`.
@@ -369,7 +369,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var dict_ptr = cpy.PyDict_New()
         for entry in kwargs.items():
-            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSlice(entry.key))
+            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSpan(entry.key))
             if not key_ptr:
                 raise cpy.unsafe_get_error()
             # PyDict_SetItem doesn't steal the value.
@@ -471,7 +471,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=tup_ptr)
 
     @inline(.never)
-    def as_string_slice(self, obj: PythonObject) -> StringSlice[ImmutAnyOrigin]:
+    def as_string_slice(self, obj: PythonObject) -> StringSpan[ImmutAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:

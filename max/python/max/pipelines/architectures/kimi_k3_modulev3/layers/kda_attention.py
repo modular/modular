@@ -18,14 +18,25 @@ custom op via :func:`max.functional.inplace_custom`.
 
 Every batch takes ``kda_decode``, and the op itself picks the recurrence,
 so this layer carries no device knowledge: no accelerator query, no
-servability check, no per-batch conditional, no operand casts. On gfx950,
-under the bounded "safe" gate with bf16 q/k/v and a float32 state pool,
-a prefill batch runs the chunk-parallel pipeline inside the op while every
-other batch -- decode included -- runs the token-sequential kernel; on any
-other target, and under the "original" gate, every batch runs the
-token-sequential kernel. The K3 memory planner still reserves the chunk
-workspaces host-side (see ``memory_planner.py``); KERN-3869 tracks moving
-them into graph-planned buffers.
+servability check, no operand casts, and no per-batch conditional. Under
+the safe gate every batch outside a verify passes the conv's raw fp32
+q/k/v and the raw gate under ``input_mode="conv_raw"``: the op routes
+at run time on the shapes it already holds, so a decode-shaped batch runs
+the fused prologue -- the SiLU, the model-dtype rounding and the gate's
+pre-activation that the graph otherwise runs as its own small elementwise
+launches over ``[1, tokens, 12, 128]`` -- while any other batch
+activates first inside the op and continues on the chunk pipeline or the
+token-serial kernel exactly as before. The routing cannot live at trace
+time: a staged graph's symbolic extents never prove a batch shape, so a
+static-shape gate left every served decode batch unfused.
+
+On gfx950, under the bounded "safe" gate with bf16 q/k/v and a float32
+state pool, a prefill batch runs the chunk-parallel pipeline inside the op
+while every other batch -- decode included -- runs the token-sequential
+kernel; on any other target, and under the "original" gate, every batch
+runs the token-sequential kernel. The K3 memory planner still reserves the
+chunk workspaces host-side (see ``memory_planner.py``); KERN-3869 tracks
+moving them into graph-planned buffers.
 
 The speculative-decoding VERIFY arm: when a binding is set on the layer
 (see :class:`KdaVerifyBinding`), the conv runs
@@ -38,11 +49,18 @@ so one graph serves every step. Outside a verify the layer is unchanged.
 
 Both gate-lower-bound arms V2 supports are kept (not scoped out): the
 "original" arm (``gate_lower_bound is None``, the kernel's own per-head
-``-exp(A_log) * softplus(pre)``) and the "safe" arm (pre-activated here,
-``log_alpha = bound * sigmoid(exp(A_log) * (raw_gate + dt_bias))`` folded
-into the kernel's ``A=1`` path). Published K3 sets the bound to -5.0, and
-both kernels hardcode -5.0 in their "safe" arm, so any other bound raises
-rather than silently running the wrong gate.
+``-exp(A_log) * softplus(pre)``) and the "safe" arm
+(``log_alpha = bound * sigmoid(exp(A_log) * (raw_gate + dt_bias))``).
+Under ``conv_raw`` the raw operands pass through and the op applies the
+pre-activation itself: in the fused kernel's prologue for a decode-shaped
+batch, in one activation launch for every other batch. Every activated
+safe-gate call -- the verify ring's -- instead takes the pre-activated
+gate with zeroed gate parameters: the activated kernels read ``a_log``
+per head, so the per-channel packing would both point every head at head
+0's coefficient and fail the chunk contract's ``a_log`` extent.
+Published K3 sets the bound to -5.0, and both kernels hardcode -5.0 in
+their "safe" arm, so any other bound raises rather than silently running
+the wrong gate.
 """
 
 from __future__ import annotations
@@ -53,12 +71,9 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue, ops
 from max.nn import Linear, Module
+from max.nn._graph_ops.state_space import gated_delta_conv1d_verify_fwd
+from max.nn._graph_ops.state_space.kimi_delta import STATE_LAYOUT, KdaGateMode
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import gated_delta_conv1d_verify_fwd
-from max.nn.legacy.state_space.kimi_delta import (
-    STATE_LAYOUT,
-    KdaGateMode,
-)
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 from max.tensor.sharding.action import PerShard
@@ -87,6 +102,8 @@ def _kda_decode(
     gate_mode: KdaGateMode,
     out_type: TensorType,
     pin_fma: bool,
+    input_mode: str = "activated",
+    activation_dtype: DType | None = None,
 ) -> TensorValue:
     values: list[TensorValue | BufferValue] = [
         TensorValue(q),
@@ -104,7 +121,7 @@ def _kda_decode(
     local_out_type = TensorType(
         out_type.dtype, out_type.shape, device=TensorValue(q).device
     )
-    parameters: dict[str, bool | int | str] = {
+    parameters: dict[str, bool | int | str | DType] = {
         "gate_mode": gate_mode,
         "beta_mode": "logits",
         "state_layout": STATE_LAYOUT,
@@ -115,6 +132,14 @@ def _kda_decode(
         # decode land on the same state bit for bit, so a rolled-back verify
         # equals the decode it interrupted.
         parameters["pin_fma"] = True
+    if input_mode != "activated":
+        if activation_dtype is None:
+            raise ValueError(
+                "kda_decode: input_mode 'conv_raw' needs activation_dtype,"
+                " the model dtype the fused SiLU result rounds to"
+            )
+        parameters["input_mode"] = input_mode
+        parameters["activation_dtype"] = activation_dtype
     out = ops.inplace_custom(
         "kda_decode",
         device=TensorValue(q).device,
@@ -335,13 +360,18 @@ class KimiK3KDAAttention(
         self.pin_fma = pin_fma
         inner = num_heads * head_dim
 
-        # One merged q/k/v projection: three separate GEMMs followed by an
-        # axis-1 concat cannot fuse, one GEMM can. Under TP the merged
-        # weight is interleaved per rank exactly like `conv_weight` (see
-        # `_fuse_qkv_proj` in the weight adapter), so the `split` below
-        # still hands each rank its own q, k and v.
-        self.qkv_proj = Linear(
-            in_dim=hidden_size, out_dim=3 * inner, bias=False
+        # One merged q/k/v/g/beta projection: separate GEMMs reading the
+        # same input cannot share a launch, one wide GEMM can. Under TP the
+        # merged weight is interleaved per rank exactly like `conv_weight`
+        # (see `_fuse_qkvgb_proj` in the weight adapter), so the `split`
+        # below still hands each rank its own q, k, v, g and beta, and the
+        # qkv prefix keeps the per-rank [q_r | k_r | v_r] order the packed
+        # conv weight expects. Beta leaves the GEMM rounded once to the
+        # model dtype and widens back to fp32 for the kda op.
+        self.qkvg_proj = Linear(
+            in_dim=hidden_size,
+            out_dim=4 * inner + num_heads,
+            bias=False,
         )
         # Fused q/k/v depthwise conv weight: see `_fuse_qkv_conv_weight`
         # in the weight adapter, which concatenates the checkpoint's
@@ -352,10 +382,6 @@ class KimiK3KDAAttention(
         self.f_b_proj = Linear(in_dim=head_dim, out_dim=inner, bias=False)
         self.a_log = Tensor.zeros([num_heads, head_dim], dtype=DType.float32)
         self.dt_bias = Tensor.zeros([num_heads, head_dim], dtype=DType.float32)
-        # fp32: the beta GEMM runs in fp32 and feeds the op without a
-        # further cast (see `kimi_k3.KimiK3DecoderLayer`'s weight dtype).
-        self.b_proj = Linear(in_dim=hidden_size, out_dim=num_heads, bias=False)
-        self.g_proj = Linear(in_dim=hidden_size, out_dim=inner, bias=False)
 
         self.o_norm = KimiRMSNormGated(head_dim, eps=_KIMI_O_NORM_EPS)
         self.o_proj = Linear(in_dim=inner, out_dim=hidden_size, bias=False)
@@ -403,7 +429,13 @@ class KimiK3KDAAttention(
         tp_active = TP in mesh.axis_names and mesh.axis_size(TP) > 1
         tp_size = mesh.axis_size(TP) if tp_active else 1
 
-        qkv = self.qkv_proj(x)
+        # One fused GEMM for the q/k/v/g/beta projections; the split sizes
+        # are GLOBAL (a distributed `split` sections each rank's own piece),
+        # so each rank lands its own q/k/v block, its own g and its own
+        # beta heads.
+        qkv, gate_pre, beta_pre = self.qkvg_proj(x).split(
+            [3 * inner, inner, self.num_heads], axis=1
+        )
         if binding is None:
             qkv = kimi_short_conv_qkv(
                 qkv, self.conv_weight, conv_pool, conv_row_id, input_row_offsets
@@ -430,15 +462,34 @@ class KimiK3KDAAttention(
             qkv = qkv.rebind_mapping(NamedMapping(qkv.mesh, (None, TP)))
         elif mesh.num_devices > 1:
             # Same restatement, for a mesh with no `tp` axis (pure EP).
-            # Here `qkv_proj` is replicated rather than sharded, but the
+            # Here `qkvg_proj` is replicated rather than sharded, but the
             # custom op's output still needs the mapping restated.
             qkv = qkv.rebind_mapping(NamedMapping(qkv.mesh, (None, None)))
         q_flat, k_flat, v_flat = qkv.split([inner, inner, inner], axis=1)
+
+        # Every safe-gate batch outside a verify passes the conv's raw fp32
+        # operands: the op routes at run time on the shapes it holds, so a
+        # decode-shaped batch runs the fused prologue while any other batch
+        # activates first inside the op (SiLU, model-dtype rounding, gate
+        # pre-activation). A trace-time shape gate cannot see a staged
+        # batch's symbolic extents. The verify ring takes activated q/k/v and
+        # the pre-activated gate, so only a plain decode fuses, and only in a
+        # build without speculation (`pin_fma` off): the fused prologue is
+        # not byte-identical to the graph's elementwise activation, and a
+        # speculative build's rollback must land exactly on what its plain
+        # decode would have computed.
+        fused_decode = (
+            self.gate_lower_bound is not None
+            and binding is None
+            and not self.pin_fma
+        )
 
         def as_heads(flat: Tensor) -> Tensor:
             heads = flat.reshape(
                 [1, total_seq_len, self.num_heads, self.head_dim]
             )
+            if fused_decode:
+                return heads
             # silu and the cast back to the model dtype run per q/k/v slice
             # (the conv returns fp32 without them, `short_conv.py`), so each
             # fuses with the split that feeds it instead of forming a
@@ -453,10 +504,10 @@ class KimiK3KDAAttention(
             self.f_b_proj(self.f_a_proj(x)),
             [1, total_seq_len, self.num_heads, self.head_dim],
         )
-        # `kda_decode` takes float32 beta logits.
-        b_proj = F.cast(self.b_proj.weight, DType.float32)
+        # `kda_decode` takes float32 beta logits; the fused GEMM's
+        # model-dtype beta block widens here.
         beta_logits = F.reshape(
-            F.cast(x, DType.float32) @ b_proj.T,
+            F.cast(beta_pre, DType.float32),
             [1, total_seq_len, self.num_heads],
         )
 
@@ -468,7 +519,23 @@ class KimiK3KDAAttention(
             kernel_dt_bias = dt_bias_f32
             kernel_raw_gate = raw_gate_f32
             gate_mode: KdaGateMode = "original"
+        elif fused_decode:
+            # Only the conv_raw call folds the safe gate's per-channel
+            # pre-activation, so only it passes the raw gate, `dt_bias` and
+            # the per-channel `a_log` through unpacked, `a_log` flat for the
+            # op's rank-1 slot.
+            kernel_a_log = F.reshape(
+                a_log_f32, [self.num_heads * self.head_dim]
+            )
+            kernel_dt_bias = dt_bias_f32
+            kernel_raw_gate = raw_gate_f32
+            gate_mode = "safe"
         else:
+            # Every other safe-gate call runs activated -- the verify ring,
+            # or a plain decode that does not fuse -- and the activated
+            # kernels read `a_log` per head and apply the pre-activation
+            # themselves, so the gate arrives pre-activated and the gate
+            # parameters arrive as the identity.
             kernel_raw_gate = (raw_gate_f32 + dt_bias_f32) * F.exp(a_log_f32)
             kernel_a_log = F.zeros_like(a_log_f32[:, 0])
             kernel_dt_bias = F.zeros_like(dt_bias_f32)
@@ -501,6 +568,8 @@ class KimiK3KDAAttention(
                 gate_mode=gate_mode,
                 out_type=out_type,
                 pin_fma=self.pin_fma,
+                input_mode="conv_raw" if fused_decode else "activated",
+                activation_dtype=x.dtype if fused_decode else None,
             )
         else:
             o = kda_verify_ring(
@@ -527,7 +596,7 @@ class KimiK3KDAAttention(
         o = F.reshape(o, [total_seq_len, self.num_heads, self.head_dim])
 
         gate = F.reshape(
-            self.g_proj(x), [total_seq_len, self.num_heads, self.head_dim]
+            gate_pre, [total_seq_len, self.num_heads, self.head_dim]
         )
         # `o_norm` consumes the fp32 recurrence output and rounds once to
         # the model dtype inside the fused norm (via `out_dtype`), so
@@ -555,14 +624,13 @@ def tensor_parallel_kda_attention(
     check_divisible("KDA head count", layer.num_heads, tp_size)
 
     row_mapping = NamedMapping(mesh, (TP, None))
-    layer.qkv_proj.weight = shard_interleaved_blocks(
-        layer.qkv_proj.weight, mesh, num_blocks=3, axis=0
-    )
+    # The adapter already interleaved the fused qkvg weight per rank, so a
+    # plain row mapping shards it; `shard_interleaved_blocks` cannot
+    # express its unequal [q_r | k_r | v_r | g_r | b_r] blocks.
+    layer.qkvg_proj.weight = layer.qkvg_proj.weight.to(row_mapping)
     layer.f_b_proj.weight = layer.f_b_proj.weight.to(row_mapping)
-    layer.b_proj.weight = layer.b_proj.weight.to(row_mapping)
     layer.a_log = layer.a_log.to(row_mapping)
     layer.dt_bias = layer.dt_bias.to(row_mapping)
-    layer.g_proj.weight = layer.g_proj.weight.to(row_mapping)
     layer.o_proj.weight = layer.o_proj.weight.to(NamedMapping(mesh, (None, TP)))
     layer.conv_weight = shard_interleaved_blocks(
         layer.conv_weight, mesh, num_blocks=3, axis=0

@@ -20,7 +20,7 @@ from typing import Any
 from max import functional as F
 from max.nn import Module
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor, defaults
 from max.tensor.sharding import DeviceMapping, Sharded
 

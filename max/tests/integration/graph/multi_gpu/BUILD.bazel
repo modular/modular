@@ -25,6 +25,8 @@ modular_py_test(
         # Needs mo.composite.distributed.matmul_reduce_scatter.sum, registered only by the closed-source kernels.
         "test_matmul_reducescatter.py": REQUIRES_INTERNAL_KERNELS,
     },
+    precompile_device_count = 2,
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max:_core",
@@ -34,6 +36,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
         "//max/python/max/support",
         requirement("ml-dtypes"),

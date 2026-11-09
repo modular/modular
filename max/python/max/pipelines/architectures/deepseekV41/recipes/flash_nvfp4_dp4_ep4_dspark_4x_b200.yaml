@@ -28,6 +28,7 @@ speculative:
   draft_proposal: sampled
 
 runtime:
+  prefer_module_v3: false
   ep_size: 4
   # Per data-parallel replica. The memory planner needs it when device graph
   # capture is on.

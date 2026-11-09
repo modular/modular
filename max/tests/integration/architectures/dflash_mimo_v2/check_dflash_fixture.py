@@ -54,15 +54,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import load_weights
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     padded_lut_cols,
 )
-from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm

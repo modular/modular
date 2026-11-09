@@ -19,7 +19,7 @@ from typing import Any, ClassVar
 from max import functional as F
 from max.dtype import DType
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext

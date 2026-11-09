@@ -33,18 +33,18 @@ from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache.cache_params import (
+    KVCacheParamInterface,
+    max_pages_per_request,
+)
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.graph_groups import (
     RaggedBatch,
     TPSignals,
     VisionMerge,
 )
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.kv_cache.cache_params import (
-    KVCacheParamInterface,
-    max_pages_per_request,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext, TextContext
 from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.graph_input_stager import (
@@ -59,6 +59,8 @@ from max.pipelines.lib.interfaces.pipeline_model import (
 )
 from max.pipelines.lora import LoRAManagerV3
 from max.pipelines.modeling.dataprocessing import collate_batch
+from max.pipelines.speculative.spec_input_types import draft_probs_rows_name
+from max.support.math import ceildiv
 from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
@@ -180,6 +182,44 @@ class BatchProcessorRuntime:
             else:
                 raise ValueError(f"no maximum is known for input dim {dim!r}")
         return bounds
+
+    def spec_decode_max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Bounds the dims of a decoder's inputs and of the spec-decode tail.
+
+        As :meth:`max_dims` does, for a fused speculative-decoding graph. A
+        step verifies at most ``num_speculative_tokens`` drafts per row,
+        which the merged window adds to the row's tokens, masks one more
+        position than it verifies, over the packed vocabulary, and drafts a
+        row per sequence, or a block draft its whole block.
+        """
+        speculative = self.pipeline_config.speculative
+        assert speculative is not None
+        k = speculative.draft_width
+        vocab_size = self.pipeline_config.model.huggingface_config.get_text_config().vocab_size
+        batch_size = self.max_global_batch_size
+        draft_rows = (
+            1 if speculative.is_eagle() or speculative.is_mtp() else k + 1
+        )
+        tail = {
+            "batch_size": batch_size,
+            "merged_total_seq_len": self.max_batch_active_tokens
+            + batch_size * k,
+            "num_steps": k,
+            "num_bitmask_positions": k + 1,
+            "packed_vocab_size": ceildiv(vocab_size, 32),
+            "num_draft_slots": batch_size * draft_rows,
+            "num_draft_offsets": batch_size + 1,
+        }
+        # A replica keeps a draft distribution per sequence it holds.
+        for replica in range(self.pipeline_config.model.data_parallel_degree):
+            tail[draft_probs_rows_name(replica)] = self.max_batch_size
+        dims = list(dims)
+        bounds = self.max_dims(
+            [dim for dim in dims if dim not in tail], kv_params
+        )
+        return {dim: tail[dim] if dim in tail else bounds[dim] for dim in dims}
 
     @property
     def max_batch_active_tokens(self) -> int:
@@ -779,6 +819,12 @@ class UnifiedSpecDecodeBatchProcessor(
         return Buffer.from_numpy(
             np.array([self._seed_counter], dtype=np.uint64)
         ).to(device0)
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Bounds the dims of a decoder's inputs and of the spec-decode tail."""
+        return self.runtime.spec_decode_max_dims(dims, kv_params)
 
     def get_symbolic_inputs(
         self,

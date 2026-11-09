@@ -33,7 +33,7 @@ from std.utils import StaticTuple
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from layout import TensorEngine, TileTensor
 from layout.coord import Coord
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
 from max.algorithm.functional import elementwise
 from std.sys.info import simd_width_of
@@ -267,7 +267,6 @@ def _cast_bf16_to_fp8(
 
     elementwise[
         simd_width_of[input.dtype](),
-        target="gpu",
         _trace_description="mxfp4_dequant_cast",
     ](cast_fn, (num_rows, num_cols), ctx)
 

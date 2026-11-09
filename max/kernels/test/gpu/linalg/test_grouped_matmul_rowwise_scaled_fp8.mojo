@@ -250,7 +250,6 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     # Kernel under test (TileTensor).
     grouped_matmul_rowwise_dynamic_scaled_fp8[
         transpose_b=transpose_b,
-        target="gpu",
         pdl_level=pdl_level,
     ](
         c_device_tt,
@@ -427,7 +426,7 @@ def test_pdl_chain[
     var ref_tt = TileTensor(ref_dev, row_major(total, Idx[N]))
 
     # Reference: the same op without PDL on the published operands.
-    grouped_matmul_rowwise_dynamic_scaled_fp8[transpose_b=True, target="gpu"](
+    grouped_matmul_rowwise_dynamic_scaled_fp8[transpose_b=True](
         ref_tt,
         a_src_tt,
         b_tt,
@@ -485,7 +484,8 @@ def test_pdl_chain[
                 block_dim=256,
             )
             grouped_matmul_rowwise_dynamic_scaled_fp8[
-                transpose_b=True, target="gpu", pdl_level=pdl_level
+                transpose_b=True,
+                pdl_level=pdl_level,
             ](
                 c_tt,
                 a_tt,

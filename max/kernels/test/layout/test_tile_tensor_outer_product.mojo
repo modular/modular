@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from layout import Coord, Idx, TileTensor, col_major, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.math import outer_product_acc
 from std.testing import assert_equal
 
@@ -20,8 +20,8 @@ def test_strided_mixed_dtype() raises:
     var lhs_storage = Array[Float16, 3](fill=-100)
     var rhs_storage = Array[Float32, 7](fill=-200)
     var result_storage = Array[Float32, 6](fill=0)
-    var lhs = TileTensor(lhs_storage, TileLayout(Coord(Idx[2]), Coord(Idx[2])))
-    var rhs = TileTensor(rhs_storage, TileLayout(Coord(Idx[3]), Coord(Idx[3])))
+    var lhs = TileTensor(lhs_storage, Layout(Coord(Idx[2]), Coord(Idx[2])))
+    var rhs = TileTensor(rhs_storage, Layout(Coord(Idx[3]), Coord(Idx[3])))
     var result = TileTensor(result_storage, col_major[2, 3]())
     for i in range(2):
         lhs[i] = Float16(i + 2)

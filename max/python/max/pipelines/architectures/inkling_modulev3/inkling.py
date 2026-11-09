@@ -28,15 +28,15 @@ from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafKind,
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings

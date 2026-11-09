@@ -30,9 +30,9 @@ import pytest
 from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import DeviceRef, Graph
+from max.nn._graph_ops import ep as ep_kernels
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.quant_kernels import stack_blockwise_mega_ffn_b
 from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
@@ -46,8 +46,9 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4TensorQuantizer,
     QuantAwareTensor,
 )
-from max.nn.legacy.comm.ep import EPConfig, ep_kernels
-from max.nn.legacy.quant_config import QuantConfig, QuantFormat
+from max.nn.ep_config import EPConfig
+from max.nn.kernels.quant import stack_blockwise_mega_ffn_b
+from max.nn.quant_config import QuantConfig, QuantFormat
 from max.tensor import Tensor, default_dtype
 
 _HIDDEN_DIM = 256
@@ -865,8 +866,12 @@ def _swiglu_route(
     swiglu_limit: float,
     device: Device,
     quant_config: QuantConfig,
+    down_matmul: bool = False,
 ) -> str:
-    """Traces ``grouped_matmul_silu`` and names the activation it returns."""
+    """Traces ``grouped_matmul_silu`` and names the activation it returns.
+
+    ``down_matmul`` also traces the down projection reading that activation.
+    """
     nvfp4 = encoding == "nvfp4"
     mxfp4 = encoding == "mxfp4"
     gate_up: QuantAwareTensor
@@ -927,18 +932,26 @@ def _swiglu_route(
                 device=device,
             ),
         )
+    starts = Tensor.zeros(
+        (_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device
+    )
+    ids = Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device)
     out = quant_ops.grouped_matmul_silu(
         tokens,
         gate_up,
         down,
-        Tensor.zeros((_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device),
-        Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
+        starts,
+        ids,
         Tensor.zeros((2,), dtype=DType.uint32, device=device),
         quant_config,
         scales_offset=offsets if nvfp4 or mxfp4 else None,
         accum_dtype=accum_dtype,
         swiglu_limit=swiglu_limit,
     )
+    if down_matmul:
+        quant_ops.grouped_matmul(
+            out, down, starts, ids, None, scales_offset=offsets
+        )
     return type(out).__name__
 
 
@@ -1017,8 +1030,8 @@ def test_swiglu_route_per_architecture(
     """Pins the SwiGLU each shipped MoE configuration asks for.
 
     Off the EP dispatch a bf16 SwiGLU output is left for the down matmul to
-    quantize, because the fused quantized SiLU cannot be built for a device
-    holding more experts than the GPU has SMs.
+    quantize, which it does with the same static per-expert input scale the
+    fused quantized SiLU would use.
     """
     device = mock_accelerator()
     config = {
@@ -1034,6 +1047,45 @@ def test_swiglu_route_per_architecture(
             encoding, prequantized, accum_dtype, limit, device, config
         )
     assert got == expected, arch
+
+
+@pytest.mark.parametrize(
+    ("accum_dtype", "fused"), [(None, False), (DType.float32, True)]
+)
+def test_nvfp4_swiglu_kernel_per_output_dtype(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+    accum_dtype: DType | None,
+    fused: bool,
+) -> None:
+    """Off the EP dispatch only a float32 SwiGLU emits the fused NVFP4 SiLU.
+
+    The down matmul quantizes from bf16 only, so a float32 SwiGLU output has
+    to be packed by ``ep.fused_silu.nvfp4``; a bf16 one takes the plain
+    ``ep.fused_silu`` and the down matmul quantizes it. Checked on the traced
+    graph rather than the returned activation's type.
+    """
+    with F.lazy():
+        _swiglu_route(
+            "nvfp4",
+            False,
+            accum_dtype,
+            0.0,
+            mock_accelerator(),
+            nvfp4_quant_config,
+            down_matmul=True,
+        )
+        ir = str(Graph.current._mlir_op)
+
+    assert ('symbol = "ep.fused_silu.nvfp4"' in ir) == fused
+    assert ('symbol = "ep.fused_silu"' in ir) != fused
+    # The gate/up matmul quantizes the bf16 tokens on both routes; the down
+    # matmul adds a second quantize only for the plain SiLU's bf16 output.
+    quantizes = ir.count(
+        'symbol = "quantization.grouped.quantize.dynamic.block.scaled"'
+    )
+    assert quantizes == (1 if fused else 2)
 
 
 # --------------------------------------------------------------------------- #

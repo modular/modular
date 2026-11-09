@@ -19,7 +19,7 @@ rows [valid, BM) == 0 (the partial-tile zero-fill the LT path produces).
 """
 
 from layout import TensorLayout, TileTensor
-from layout.tile_layout import (
+from layout.layout import (
     Layout as InternalLayout,
     row_major as tt_row_major,
 )

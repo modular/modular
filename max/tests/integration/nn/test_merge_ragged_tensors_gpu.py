@@ -16,10 +16,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
-    eagle_prefill_shift_tokens,
-    merge_ragged_tensors,
-)
+from max.nn._graph_ops import eagle_prefill_shift_tokens, merge_ragged_tensors
 
 BATCH_SIZE = 5
 HIDDEN_DIM = 64

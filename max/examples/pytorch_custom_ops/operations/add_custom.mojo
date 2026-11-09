@@ -11,10 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.sys import align_of
+
 import extensibility
 
+from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
-from extensibility import InputTensor, OutputTensor, foreach
+from extensibility import (
+    Input,
+    Output,
+    Tensor,
+    TileTensorable,
+    get_kernel_simd_width,
+)
 
 from std.utils.coord import Coord
 
@@ -22,15 +31,35 @@ from std.utils.coord import Coord
 @extensibility.register("add_constant_custom")
 struct AddConstantCustom[value: Int]:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        outp: OutputTensor,
-        x: InputTensor[dtype=outp.dtype, rank=outp.rank, ...],
+    def execute(
+        outp: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        @inline(.always)
-        def add_constant[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
-            return x.load[width](idx) + Scalar[outp.dtype](Self.value)
+        comptime assert conforms_to(type_of(outp), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(outp).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(x).rank == type_of(outp).rank
+        var out_tile = outp.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
 
-        foreach[target=target](add_constant, outp, ctx)
+        @inline(.always)
+        def add_constant[
+            width: Int, element_alignment: Int = 1
+        ](idx: Coord) {var out_tile, var x_tile}:
+            out_tile.store[
+                width=width,
+                alignment=min(
+                    type_of(outp).alignment,
+                    element_alignment * align_of[dtype](),
+                ),
+            ](
+                idx,
+                x_tile.load[width=width, alignment=align_of[dtype]()](idx)
+                + Scalar[dtype](Self.value),
+            )
+
+        elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
+            add_constant, outp.shape(), ctx
+        )

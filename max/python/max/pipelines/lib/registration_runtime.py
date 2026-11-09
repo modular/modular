@@ -39,7 +39,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.pipelines.context import TextContext
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
@@ -77,6 +78,10 @@ class ConstantInputs:
     buffers: tree.Tree[Buffer]
 
     def __post_init__(self) -> None:
+        if is_virtual_device_mode() and not self.buffers:
+            # Compile-only: a virtual device cannot allocate, and only
+            # execution reads the buffers. The declarations still stand.
+            return
         _, structure = tree.flatten(self.input_types)
         structure.flatten_up_to(self.buffers)
 

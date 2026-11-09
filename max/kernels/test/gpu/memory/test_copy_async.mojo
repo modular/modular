@@ -34,7 +34,7 @@ def test_mbarrier[
     async_copy_arrive(addr3)
 
 
-def _verify_mbarrier(asm: StringSlice) raises -> None:
+def _verify_mbarrier(asm: StringSpan) raises -> None:
     # Mbarrier objects must live in shared memory. NVPTX rewrites generic
     # mbarrier operands to the `.shared` form (llvm 64eb69b652ea), so valid
     # addresses lower to the shared arrive instruction.
@@ -47,7 +47,7 @@ def test_mbarrier_global_rejected[
     async_copy_arrive(addr)
 
 
-def _verify_mbarrier_global_rejected(asm: StringSlice) raises -> None:
+def _verify_mbarrier_global_rejected(asm: StringSpan) raises -> None:
     # A global address can never hold an mbarrier, so the new NVPTX lowers
     # the provably-invalid arrive to `trap` instead of emitting the
     # address-space-generic form (llvm 64eb69b652ea).
@@ -95,7 +95,7 @@ def test_mbarrier_init[
     mbarrier_init(shared_mem, 4)
 
 
-def _verify_mbarrier_init(asm: StringSlice) raises -> None:
+def _verify_mbarrier_init(asm: StringSpan) raises -> None:
     assert_true("ld.param::entry.b32" in asm)
     assert_true("mov.b32" in asm)
     assert_true("mbarrier.init.shared.b64" in asm)
@@ -126,7 +126,7 @@ def test_mbarrier_test_wait[
         done = mbarrier_test_wait(shared_mem, state)
 
 
-def _verify_mbarrier_test_wait(asm: StringSlice) raises -> None:
+def _verify_mbarrier_test_wait(asm: StringSpan) raises -> None:
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
 
@@ -157,7 +157,7 @@ def test_async_copy[
     async_copy[16](src, shared_mem)
 
 
-def _verify_async_copy(asm: StringSlice) raises -> None:
+def _verify_async_copy(asm: StringSpan) raises -> None:
     assert_true("cp.async.ca.shared.global" in asm)
     assert_true("cp.async.cg.shared.global" in asm)
 
@@ -188,7 +188,7 @@ def test_async_copy_l2_prefetch[
     async_copy[16, bypass_L1_16B=False, l2_prefetch=64](src, shared_mem)
 
 
-def _verify_async_copy_l2_prefetch(asm: StringSlice) raises -> None:
+def _verify_async_copy_l2_prefetch(asm: StringSpan) raises -> None:
     assert_true("cp.async.ca.shared.global.L2::128B" in asm)
     assert_true("cp.async.ca.shared.global.L2::64B" in asm)
 
@@ -224,7 +224,7 @@ def test_async_copy_with_zero_fill_kernel[
     )
 
 
-def _verify_test_async_copy_with_zero_fill(asm: StringSlice) raises -> None:
+def _verify_test_async_copy_with_zero_fill(asm: StringSpan) raises -> None:
     # Should contain something like:
     #     cp.async.ca.shared.global.L2::128B [%r1], [%rd2], 4, %r2;
     # Regex would be nice here, but alas...
@@ -305,7 +305,7 @@ def async_copy_with_non_zero_fill_kernel[
     )
 
 
-def _verify_async_copy_with_non_zero_fill(asm: StringSlice) raises -> None:
+def _verify_async_copy_with_non_zero_fill(asm: StringSpan) raises -> None:
     assert_true("mov.b32 	%r3, 32;" in asm)
     assert_true("@p cp.async.ca.shared.global.L2::128B" in asm and "16" in asm)
     assert_true("@p cp.async.ca.shared.global.L2::64B" in asm and "16" in asm)
@@ -321,7 +321,7 @@ def test_async_copy_with_non_zero_fill() raises:
     _verify_async_copy_with_non_zero_fill(asm)
 
 
-def _verify_async_copy_with_eviction(asm: StringSlice) raises -> None:
+def _verify_async_copy_with_eviction(asm: StringSpan) raises -> None:
     assert_true("createpolicy.fractional.L2::evict_first.b64" in asm)
     assert_true("createpolicy.fractional.L2::evict_last.b64" in asm)
     assert_true("cp.async.ca.shared.global" in asm)

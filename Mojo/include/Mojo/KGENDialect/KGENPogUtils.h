@@ -28,6 +28,7 @@
 #include "Mojo/KGENDialect/KGENEnums.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/OpImplementation.h"
 
@@ -42,7 +43,8 @@ namespace M::KGEN {
 /// autoparameters are removed.  If not, only the `42 suffix is removed.  The
 /// later is important when calculating the ASTDecl name for a parameter.  The
 /// former is useful when printing the name.
-StringRef demangleParameterName(StringRef name, bool forUser = false);
+MODULAR_CXX_EXPORT StringRef demangleParameterName(StringRef name,
+                                                   bool forUser = false);
 
 /// Return true if the parameter is not exposed to the user.
 inline bool isHiddenGeneratorParam(PassingKind passingKind, StringRef name) {

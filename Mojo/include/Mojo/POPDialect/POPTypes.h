@@ -21,19 +21,6 @@
 #include "mlir/IR/Types.h"
 
 //===----------------------------------------------------------------------===//
-// Pretty Type Parsing and Printing
-//===----------------------------------------------------------------------===//
-
-namespace M::KGEN::POP {
-/// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
-/// type without the dialect prefix.
-ParseResult parsePrettyType(AsmParser &p, TypedAttr &typeExpr);
-/// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
-/// type without the dialect prefix.
-void printPrettyType(AsmPrinter &p, TypedAttr typeExpr);
-} // namespace M::KGEN::POP
-
-//===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 

@@ -16,7 +16,7 @@ A block-sparse (MSA) attention layer can use an FP8 e4m3 KV cache with *no*
 per-block dequant scales (``quantized_kv_cache == False``,
 ``is_fp8_kv_dtype == True``). The MSA attention kernel reads that cache; the
 K/V *write* is a BF16 QKV projection stored into FP8 paged blocks via
-``rope_split_store_ragged`` (the ``mo.rope_split_store.ragged.paged`` op reached
+``rope_split_store_ragged`` (the ``kv_cache.rope_split_store.ragged.paged`` op reached
 through ``fused_qk_rms_norm_rope_ragged``), whose ``qkv_dtype`` and
 ``cache_dtype`` are independent -- the store casts to e4m3. The single-dtype
 matmul-store ops (``matmul_kv_cache_ragged``, ``fused_qkv_ragged_matmul``)
@@ -39,10 +39,8 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import rope_split_store_ragged
-from max.nn.legacy.kv_cache import (
-    MHAKVCacheParams,
-)
+from max.nn._graph_ops import rope_split_store_ragged
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 

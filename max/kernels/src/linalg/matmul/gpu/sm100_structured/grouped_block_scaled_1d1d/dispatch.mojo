@@ -281,7 +281,6 @@ def _launch_grouped_block_scaled[
 
 def grouped_matmul_nvfp4_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     override: Bool = False,
     AB_swapped: Bool = True,
     mma_bn: Int = 8,
@@ -324,7 +323,6 @@ def grouped_matmul_nvfp4_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
-        target: Target device (unused, for MOGG interface compatibility).
         override: If True, use caller's config params directly.
             If False, use tuning table.
         AB_swapped: A/B swap (only used when override=True).
@@ -534,7 +532,6 @@ def grouped_matmul_nvfp4_dispatch[
 
 def grouped_matmul_mxfp8_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     fuse_swiglu: Bool = False,
     SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[
@@ -588,7 +585,6 @@ def grouped_matmul_mxfp8_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
-        target: Target device (unused, MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
         fuse_swiglu: When True, the kernel fuses SwiGLU + MXFP8 quant
             into the epilogue.
@@ -639,21 +635,54 @@ def grouped_matmul_mxfp8_dispatch[
         and _decode_N == 6144
         and (_decode_K == 6144 or _decode_K == 3072)
     ) else -1
+    # W4A8 decode at these shapes is bound by per-CTA issue rate, not DRAM.
+    # Four k-tiles per stage at the same SMEM depth amortize each stage's
+    # barrier and SFB handoff over four times the weight bytes. Groups of 6
+    # and 12 do not compile.
+    comptime _decode_k_group = 4 if (
+        not fuse_swiglu
+        and is_w4a8_operand_pair[a.dtype, b.dtype]()
+        and _decode_N == 4096
+        and (_decode_K == 4096 or _decode_K == 2048)
+    ) else 1
+
+    # Large-prefill k-tiles per pipeline stage for DeepSeek-V4.1's W4A8
+    # experts (E2M1 weights, MXFP8 tokens). Two k-tiles a stage halve the
+    # stage barriers and scale handoffs of the auto-staged loop; the output
+    # is bit-identical. B200, 96 experts, mma_bn 128, cta_group 2, two
+    # remote runs, lognormal routing around 457 rows an expert:
+    #   gate_up N=4608 K=5120: 1.064 -> 0.895 ms, 1.004 -> 0.946 ms
+    #   down    N=5120 K=2304: 0.570 -> 0.454 ms, 0.507 -> 0.483 ms
+    # and 5-16% at 500 and 1,000 uniform rows an expert. A 256-token tile
+    # is faster still on the plain GEMM but the fused SwiGLU epilogue does
+    # not build at mma_bn 256.
+    comptime _b_N = type_of(b).static_shape[1]
+    comptime _prefill_k_group = 2 if (
+        is_w4a8_operand_pair[a.dtype, b.dtype]()
+        and (
+            (_b_N == 4608 and _decode_K == 5120)
+            or (_b_N == 5120 and _decode_K == 2304)
+        )
+    ) else 1
 
     # Nested forwarder: the MXFP8 regimes differ in (mma_bn, cta_group) and
-    # -- decode only -- pipeline stages; AB_swapped, scaling_kind, and all the
-    # other forwarding comptime params + the 13 runtime args are identical.
+    # -- decode only -- pipeline stages, plus per-shape k-group; AB_swapped,
+    # scaling_kind, and all the other forwarding comptime params + the 13
+    # runtime args are identical.
     # Factor the call here and select via the same ordered (upper-bound,
     # config) table as the NVFP4 path. Stages travel per-row as an Int with
     # -1 = auto (the classifier's pick), mirroring the NVFP4 table sentinel.
     @inline(.always)
-    def _go[mma_bn: Int, cta_group: Int, stages: Optional[Int]]() raises {imm}:
+    def _go[
+        mma_bn: Int, cta_group: Int, stages: Optional[Int], k_group: Int
+    ]() raises {imm}:
         _launch_grouped_block_scaled[
             transpose_b,
             AB_swapped=True,
             mma_bn=mma_bn,
             cta_group=cta_group,
             num_pipeline_stages=stages,
+            k_group_size=k_group,
             scaling_kind=UMMAKind.KIND_MXF8F6F4,
             pdl_level=pdl_level,
             fuse_swiglu=fuse_swiglu,
@@ -679,25 +708,26 @@ def grouped_matmul_mxfp8_dispatch[
             trace_buf,
         )
 
-    # (upper_avg_m, mma_bn, cta_group, stages_int). upper_avg_m < 0 =
-    # unbounded (large prefill). Only the decode row carries a stage override;
-    # prefill rows use -1 (= auto). First-match-and-return reproduces the
-    # original decode / small-prefill / large-prefill cascade exactly.
+    # (upper_avg_m, mma_bn, cta_group, stages_int, k_group). upper_avg_m < 0
+    # = unbounded (large prefill). Only the decode row carries a stage
+    # override; prefill rows use -1 (= auto). The decode and large-prefill
+    # rows carry shape-scoped k-group overrides; all others use 1.
+    # First-match-and-return reproduces the original decode / small-prefill /
+    # large-prefill cascade exactly.
     comptime regimes = [
-        (DECODE_AVG_M, 8, 1, _decode_stages),
-        (SMALL_PREFILL_AVG_M, 64, 2, -1),
-        (-1, 128, 2, -1),
+        (DECODE_AVG_M, 8, 1, _decode_stages, _decode_k_group),
+        (SMALL_PREFILL_AVG_M, 64, 2, -1, 1),
+        (-1, 128, 2, -1, _prefill_k_group),
     ]
     comptime for r in regimes:
         comptime _s = Optional[Int](r[3]) if r[3] >= 0 else Optional[Int](None)
         if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
-            _go[r[1], r[2], _s]()
+            _go[r[1], r[2], _s, r[4]]()
             return
 
 
 def grouped_matmul_block_scaled_sm100_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     RowScalesT: RowScales = NullRowScales,
 ](
@@ -722,7 +752,6 @@ def grouped_matmul_block_scaled_sm100_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
-        target: Target device (unused, for MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`; only NVFP4 supports others.
@@ -754,7 +783,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
     # FP4 TMA copy pads the weights on the way in -- so it takes the same
     # regime-tuned launcher.
     comptime if is_w4a8_operand_pair[a.dtype, b.dtype]():
-        grouped_matmul_mxfp8_dispatch[transpose_b, target, pdl_level=pdl_level](
+        grouped_matmul_mxfp8_dispatch[transpose_b, pdl_level=pdl_level](
             c,
             a,
             b,
@@ -770,7 +799,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
         )
     elif scaling_kind == UMMAKind.KIND_MXF4NVF4:
         grouped_matmul_nvfp4_dispatch[
-            transpose_b, target, pdl_level=pdl_level, RowScalesT=RowScalesT
+            transpose_b, pdl_level=pdl_level, RowScalesT=RowScalesT
         ](
             c,
             a,

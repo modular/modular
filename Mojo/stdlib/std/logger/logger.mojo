@@ -140,7 +140,7 @@ struct Level(
         return Color("")
 
     @staticmethod
-    def _from_str(name: StringSlice) -> Self:
+    def _from_str(name: StringSpan) -> Self:
         """Converts a string level name to a Level value.
 
         Args:
@@ -187,6 +187,8 @@ struct Level(
                 writer.write("ERROR")
             case .CRITICAL:
                 writer.write("CRITICAL")
+            case _:
+                pass
 
 
 # ===-----------------------------------------------------------------------===#

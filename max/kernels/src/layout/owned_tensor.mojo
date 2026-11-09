@@ -360,15 +360,19 @@ struct OwnedGPUStorage[
             compact layouts, whose offsets cover exactly one slot per element.
         alignment: The alignment of the underlying memory.
 
-    The memory comes from `stack_allocation`. Only a shared-memory allocation
-    outlives the constructor, so use this with `AddressSpace.SHARED` inside a
-    kernel. Every instance in a block refers to the same shared allocation.
+    The memory comes from `stack_allocation` in a constructor that is always
+    inlined, so a `LOCAL` or host allocation lives in the frame of the
+    function that builds the tensor, and is valid until that function
+    returns. A `SHARED` allocation is shared by every instance in a block.
     """
 
     var _ptr: Pointer[
         Scalar[Self.dtype], MutUntrackedOrigin, address_space=Self.address_space
     ]
 
+    # Inlined so the allocation lands in the caller's frame rather than this
+    # constructor's, which ends when it returns.
+    @inline(.always)
     def __init__(out self):
         """Allocates one uninitialized slot per element of `LayoutType`.
 
@@ -401,17 +405,24 @@ struct OwnedGPUStorage[
         ]().unsafe_origin_cast[origin_of(self)]()
 
 
-struct OwnedGPUEngine(OwnedTensorEngine):
+struct OwnedGPUEngine[alignment: Int = 1](OwnedTensorEngine):
     """Backs an `OwnedTensor` with GPU shared memory.
 
     Storage is a `OwnedGPUStorage`, so the layout must be compact, and views use
     `DefaultEngine`, whose storage handle is a plain `Pointer`.
+
+    Parameters:
+        alignment: The least alignment of the storage, in bytes. Storage is
+            never aligned below its element type.
     """
 
     comptime StorageType[
         dtype: DType, address_space: AddressSpace, LayoutType: TensorLayout
     ]: Deinitable & Defaultable = OwnedGPUStorage[
-        dtype, address_space, LayoutType
+        dtype,
+        address_space,
+        LayoutType,
+        max(Self.alignment, align_of[dtype]()),
     ]
     """A `OwnedGPUStorage` for a tensor with layout `LayoutType`.
 
@@ -457,13 +468,20 @@ struct OwnedGPUEngine(OwnedTensorEngine):
 
 
 comptime OwnedGPUTensor[
-    dtype: DType, address_space: AddressSpace, LayoutType: TensorLayout
-] = OwnedTensor[dtype, address_space, LayoutType, Engine=OwnedGPUEngine]
+    dtype: DType,
+    address_space: AddressSpace,
+    LayoutType: TensorLayout,
+    alignment: Int = align_of[dtype](),
+] = OwnedTensor[
+    dtype, address_space, LayoutType, Engine=OwnedGPUEngine[alignment]
+]
 """Names an `OwnedTensor` whose storage comes from `OwnedGPUEngine`.
 
 Parameters:
     dtype: The element data type of the tensor.
-    address_space: The address space the storage resides in, normally
-        `AddressSpace.SHARED`.
+    address_space: The address space the storage resides in, such as
+        `AddressSpace.SHARED` or `AddressSpace.LOCAL`.
     LayoutType: The layout of the tensor.
+    alignment: The alignment of the storage, in bytes, such as the width of
+        the vector accesses that read it.
 """

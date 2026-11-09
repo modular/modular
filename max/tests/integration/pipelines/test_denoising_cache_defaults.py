@@ -161,6 +161,7 @@ def test_from_args_merges_arch_denoising_cache_defaults(
         args = PipelineArgs(
             models=_component_manifest(tmpdir, class_name),
             denoising_cache=DenoisingCacheSettings(taylorseer=True),
+            runtime=PipelineRuntimeConfig(prefer_module_v3=False),
         )
         config = PipelineConfig.from_args(args)
 
@@ -180,6 +181,7 @@ def test_from_args_user_explicit_values_win() -> None:
             denoising_cache=DenoisingCacheSettings(
                 taylorseer=True, taylorseer_cache_interval=7
             ),
+            runtime=PipelineRuntimeConfig(prefer_module_v3=False),
         )
         config = PipelineConfig.from_args(args)
 

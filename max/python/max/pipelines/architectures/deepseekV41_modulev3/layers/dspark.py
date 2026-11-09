@@ -299,7 +299,7 @@ class DSparkAttention(Module[..., Tensor]):
         """Stores this stage's context KV for every token of a target forward.
 
         The trunk's own window store writes the rows: the normed,
-        unrotated latent goes to ``mo.csa.window_kv_store``, which owns
+        unrotated latent goes to ``attention.csa.window_kv_store``, which owns
         the tail rotation, the MXFP8 quantize and the paged insert into
         the sliding-window leaf's 528-byte records -- the same store, the
         same record bytes and the same slots the trunk layers use, so

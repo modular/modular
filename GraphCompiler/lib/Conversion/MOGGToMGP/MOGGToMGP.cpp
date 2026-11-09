@@ -117,11 +117,9 @@ struct IndexLowering {
 /// phase, and a model descriptor.
 class MOGraphLowering {
 public:
-  MOGraphLowering(MO::GraphOp graph, llvm::StringRef compiledFrameworkLabel,
-                  size_t minimumCpuAlignment,
+  MOGraphLowering(MO::GraphOp graph, size_t minimumCpuAlignment,
                   mlir::SymbolTable &moduleSymbolTable)
-      : loweringState(graph, compiledFrameworkLabel, minimumCpuAlignment,
-                      moduleSymbolTable) {}
+      : loweringState(graph, minimumCpuAlignment, moduleSymbolTable) {}
 
   /// Lower the mo.graph to mgp.model.
   LogicalResult run();
@@ -376,17 +374,16 @@ LogicalResult MOGraphLowering::createModelOp() {
   populateDeviceIndicesExtraAttr(kMgpModelResultDeviceIndices, outputTypes);
 
   b.setInsertionPoint(graph);
-  auto modelOp = MGP::ModelOp::create(
-      b, graph.getLoc(),
-      /*name=*/graph.getNameAttr(),
-      /*frameworkName=*/loweringState.getCompiledFrameworkLabel(),
-      /*devices=*/devices,
-      /*inputTypes=*/inputTypes,
-      /*outputTypes=*/outputTypes,
-      /*inputArgLocs=*/inputLocs,
-      /*isSubgraph=*/graph.getIsSubgraph(),
-      /*isDeviceGraph=*/graph.getIsDeviceGraph(),
-      /*extraAttrs=*/extraAttrs);
+  auto modelOp =
+      MGP::ModelOp::create(b, graph.getLoc(),
+                           /*name=*/graph.getNameAttr(),
+                           /*devices=*/devices,
+                           /*inputTypes=*/inputTypes,
+                           /*outputTypes=*/outputTypes,
+                           /*inputArgLocs=*/inputLocs,
+                           /*isSubgraph=*/graph.getIsSubgraph(),
+                           /*isDeviceGraph=*/graph.getIsDeviceGraph(),
+                           /*extraAttrs=*/extraAttrs);
 
   loweringState.setModelOp(modelOp);
 
@@ -2485,8 +2482,7 @@ void MOGGToMGPPass::runOnOperation() {
     }
 
     completedGraphs.insert(graph.getNameAttr());
-    if (failed(MOGraphLowering(graph, compiledFrameworkLabel.getValue(),
-                               minimumCpuAlignment.getValue(),
+    if (failed(MOGraphLowering(graph, minimumCpuAlignment.getValue(),
                                moduleSymbolTable)
                    .run()))
       return signalPassFailure();

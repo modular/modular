@@ -23,8 +23,9 @@ from max.pipelines.architectures.muse_glimmer.modules import (
     MuseGlimmerVision,
 )
 from max.pipelines.architectures.muse_glimmer.weight_adapters import (
-    convert_registered_state_dict,
+    muse_glimmer_weight_rules,
 )
+from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.role_contracts import DecoderInputs, VisionInputs
 
 
@@ -70,7 +71,8 @@ def test_registered_weights_adapt_both_roles_without_cross_contamination() -> (
         "model.language_model.embed_tokens.weight": language,
         "model.vision_tower.patch_embedder.position_embedding_table.weight": vision,
     }
-    assert convert_registered_state_dict(weights) == {
+    rules = muse_glimmer_weight_rules(NonCallableMock())
+    assert WeightTransform(rules)(weights) == {
         "decoder.language_model.embed_tokens.weight": "language",
         "vision.vision_tower.patch_embedder.position_embedding_table": "vision",
     }

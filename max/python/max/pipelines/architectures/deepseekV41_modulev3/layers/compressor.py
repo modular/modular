@@ -15,8 +15,8 @@
 The pooling itself runs on main's registered V4.1 ops, exactly as the V2
 pipeline runs them (``...deepseekV41.layers.compressor``):
 
-* ratio 1 -- ``mo.csa.compress``: one RMS-normalized latent per row;
-* ratio 2 -- ``mo.csa.compress.paged``: adjacent token pairs pool as
+* ratio 1 -- ``attention.csa.compress``: one RMS-normalized latent per row;
+* ratio 2 -- ``attention.csa.compress.paged``: adjacent token pairs pool as
   ``sum_i kv_i * softmax_i(score_i)`` in float32, RMS-normalize without a
   bf16 rounding in between, then cast to bf16. A request's last raw rows
   save into its per-request ``c2a_state`` scratch ring (one float32
@@ -40,7 +40,7 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
 from max.nn import Module
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 
@@ -164,7 +164,7 @@ def _compress_pool(
     state: PagedCacheValues | None = None,
     layer_idx: TensorValue | None = None,
 ) -> TensorValue:
-    """The ``mo.csa.compress`` / ``mo.csa.compress.paged`` invocation.
+    """The ``attention.csa.compress`` / ``attention.csa.compress.paged`` invocation.
 
     A free function wrapped in :data:`compress_pool_op` so the
     experimental-tensor call traces it per device. ``state``, ``layer_idx``
@@ -188,7 +188,7 @@ def _compress_pool(
         if state is not None or layer_idx is not None:
             raise ValueError("ratio 1 takes no state ring")
         return ops.custom(
-            "mo.csa.compress",
+            "attention.csa.compress",
             device=device,
             values=[*values, norm_weight],
             out_types=out_types,
@@ -200,7 +200,7 @@ def _compress_pool(
     slots = _ring_slots(state, bid, positions)
     save_slots = _ring_save_slots(ring_rows, bid, local, lengths, slots)
     return ops.inplace_custom(
-        "mo.csa.compress.paged",
+        "attention.csa.compress.paged",
         device=device,
         values=[
             *values,

@@ -43,7 +43,7 @@ from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_true
 
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_mask import (
     _apply_causal_mask_fast,

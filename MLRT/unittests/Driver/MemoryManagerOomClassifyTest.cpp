@@ -182,6 +182,224 @@ TEST(MemoryManagerOomClassify, SmallSyncBesideLargeTrappedReportsBoth) {
   EXPECT_NE(msg.find("Not an exhaustion"), std::string::npos);
 }
 
+// DRIV-690's shape, scaled to this fixture: every pending granule is held by a
+// graph-capture free list, which never migrates to its parent. Those bytes
+// used to count as sync-recoverable, so the verdict read `avoidable` and the
+// message offered a synchronize -- against ~50 GB no wait could ever free.
+TEST(MemoryManagerOomClassify, RetainedIsNotSyncRecoverable) {
+  VmmOomSnapshot s = base(20 * kMiB);
+  s.reclaimableGranules = 2; // available = 4 MiB
+  s.pendingGranules = 20;
+  s.retainedGranules = 20; // all of it, so nothing is sync-recoverable
+  s.inUseGranules = 78;
+  s.usedBytes = 78 * kPage; // fully occupied, so nothing is trapped
+  s.pendingTotalBytes = 40 * kMiB;
+  s.retainedBytes = 40 * kMiB;
+  s.pendingOwners = {{"graphFreeList", 40 * kMiB, 46, /*neverFlushes=*/true}};
+  ASSERT_EQ(s.recoverableBySync(), 0u);
+  ASSERT_EQ(s.retained(), 40 * kMiB);
+  ASSERT_EQ(s.trapped(), 0u);
+
+  VmmOomCategory c = classifyVmmOom(s, VmmBackingFailure::None);
+  EXPECT_EQ(c, VmmOomCategory::Retained);
+  std::string msg = describeVmmOom(s, c);
+  // The holder is the whole point: the free list the error names is the one
+  // the allocation missed on, which is routinely not the one holding the
+  // budget.
+  EXPECT_NE(msg.find("graphFreeList"), std::string::npos);
+  EXPECT_NE(msg.find("No synchronize recovers"), std::string::npos);
+  // The offer, specifically. "No synchronize recovers that memory" above also
+  // matches a bare search for the word.
+  EXPECT_EQ(msg.find("that synchronizing would free"), std::string::npos);
+}
+
+// A retained block can share a page with a live allocation, which keeps the
+// page pinned and so keeps the block out of `retainedGranules`. Those bytes
+// used to fall into `trapped()`, which carries the page-size lever -- and a
+// smaller page hands them back to their holder, not to the allocator. Neither
+// lever frees them alone, so neither may claim them.
+TEST(MemoryManagerOomClassify, RetainedOnLiveGranulesIsNotTrapped) {
+  VmmOomSnapshot s = base(20 * kMiB);
+  s.reclaimableGranules = 2; // available = 4 MiB
+  s.inUseGranules = 98;
+  s.usedBytes = 100 * kMiB; // 96 MiB of the live pages holds no live desc
+  s.pendingTotalBytes = 90 * kMiB;
+  s.retainedBytes = 90 * kMiB;
+  s.retainedTrappedBytes = 90 * kMiB; // all of it beside a live allocation
+  s.pendingOwners = {{"graphFreeList", 90 * kMiB, 30, /*neverFlushes=*/true}};
+  // Nothing is wholly pending, so releasing the graphs frees no whole page.
+  ASSERT_EQ(s.retained(), 0u);
+  EXPECT_EQ(s.trapped(), 6 * kMiB); // 96 - 90, not 96
+
+  // 4 + 0 + 6 = 10 MiB against a 20 MiB request, and the retained granule
+  // figure adds nothing, so no lever closes this.
+  VmmOomCategory c = classifyVmmOom(s, VmmBackingFailure::None);
+  EXPECT_EQ(c, VmmOomCategory::Genuine);
+  // Genuine still names the pool, since 90 MiB of the budget sits there.
+  EXPECT_NE(describeVmmOom(s, c).find("graphFreeList"), std::string::npos);
+}
+
+// Retained bytes do not erase the ordinary ones beside them. When a wait does
+// close the gap, the wait stays the headline and the retained pool is a note.
+TEST(MemoryManagerOomClassify, RetainedBesideSyncRecoverableKeepsWaitAdvice) {
+  VmmOomSnapshot s = base(20 * kMiB);
+  s.reclaimableGranules = 2; // available = 4 MiB
+  s.pendingGranules = 20;
+  s.retainedGranules = 10; // half held, half waiting on stream frees
+  s.inUseGranules = 78;
+  s.usedBytes = 78 * kPage;
+  s.pendingTotalBytes = 40 * kMiB;
+  s.retainedBytes = 20 * kMiB;
+  s.pendingOwners = {{"graphFreeList", 20 * kMiB, 8, /*neverFlushes=*/true},
+                     {"freeList", 20 * kMiB, 4, /*neverFlushes=*/false}};
+  ASSERT_EQ(s.recoverableBySync(), 20 * kMiB);
+  // available + sync = 24 MiB >= the 20 MiB request, so a wait suffices.
+  VmmOomCategory c = classifyVmmOom(s, VmmBackingFailure::None);
+  EXPECT_EQ(c, VmmOomCategory::Avoidable);
+  std::string msg = describeVmmOom(s, c);
+  EXPECT_NE(msg.find("that synchronizing would free"), std::string::npos);
+  EXPECT_NE(msg.find("graphFreeList"), std::string::npos);
+  // The waiting-in-total figure excludes the retained half, which no wait
+  // reaches; reporting the raw pending total would overstate what to expect.
+  EXPECT_NE(msg.find("20MB waiting on stream frees in total"),
+            std::string::npos);
+}
+
+// Retained memory too small to cover the request leaves the verdict a genuine
+// exhaustion, but it is still the reason the budget ran out. Silence here
+// reads as "the model needs this much memory", which sends the reader to the
+// batch size rather than to the capture count.
+TEST(MemoryManagerOomClassify, GenuineStillNamesTheRetainedPool) {
+  VmmOomSnapshot s = base(100 * kMiB);
+  s.reclaimableGranules = 2; // available = 4 MiB
+  s.pendingGranules = 20;
+  s.retainedGranules = 20;
+  s.inUseGranules = 78;
+  s.usedBytes = 78 * kPage;
+  s.pendingTotalBytes = 40 * kMiB;
+  s.retainedBytes = 40 * kMiB;
+  s.pendingOwners = {{"graphFreeList", 40 * kMiB, 46, /*neverFlushes=*/true}};
+  // 4 + 0 sync + 0 trapped + 40 retained = 44 MiB, short of the 100 MiB need.
+  VmmOomCategory c = classifyVmmOom(s, VmmBackingFailure::None);
+  EXPECT_EQ(c, VmmOomCategory::Genuine);
+  std::string msg = describeVmmOom(s, c);
+  EXPECT_NE(msg.find("out of memory"), std::string::npos);
+  EXPECT_NE(msg.find("graphFreeList"), std::string::npos);
+}
+
+// DRIV-690's own numbers, from the engine log of Mammoth run 41927518031: a
+// MiniMax-M3.1 DSpark EP8/DP2 engine on 8x B200. The whole 54.03 GB pending
+// total was 46 free blocks in one `graphFreeList`, left there by 222 decode
+// shape captures. The engine missed twice, four minutes apart, and the fix
+// has to hold for both.
+class MemoryManagerDriv690 : public ::testing::Test {
+protected:
+  static constexpr size_t kGranule = 32 * kMiB;
+
+  // 32 MiB pages over a 169.44 GiB budget, carrying the incident's granule
+  // counts verbatim. Request sizes are rounded to whole MiB; nothing here
+  // turns on the fraction.
+  static VmmOomSnapshot incident(size_t needed, size_t reclaimableGranules) {
+    VmmOomSnapshot s;
+    s.pageSize = kGranule;
+    s.needed = needed;
+    s.arenaReserved = true;
+    s.inUseGranules = 3723;
+    s.pendingGranules = 1691;
+    s.retainedGranules = 1691; // every one of them, held by graphFreeList
+    s.reclaimableGranules = reclaimableGranules;
+    s.budget =
+        (s.inUseGranules + s.pendingGranules + reclaimableGranules) * kGranule;
+    // 1250 MiB of the live granules holds no live desc, which the log reports
+    // as 1.22GB trapped.
+    s.usedBytes = s.inUseGranules * kGranule - 1250 * kMiB;
+    s.pendingTotalBytes = 55327 * kMiB;
+    s.retainedBytes = s.pendingTotalBytes;
+    // Every pending desc sat in graphFreeList, so retained bytes that are not
+    // on a wholly-pending granule must be on a live one. That is 1215 MiB of
+    // the 1250 MiB above: nearly all of what the log called trapped was
+    // really held by the capture pool.
+    s.retainedTrappedBytes = s.retainedBytes - s.retainedGranules * kGranule;
+    s.largestRootFreeVA = 508 * 1024 * kMiB;
+    s.vaSize = 4 * s.budget;
+    s.freeBlocks = 106;
+    s.pendingOwners = {
+        {"graphFreeList", s.retainedBytes, 46, /*neverFlushes=*/true}};
+    return s;
+  }
+};
+
+// The first miss: a 2.73 GB capture allocation during startup. No lever that
+// works reaches it, so the pool that does hold the memory is the verdict.
+TEST_F(MemoryManagerDriv690, CaptureMissIsRetained) {
+  VmmOomSnapshot s = incident(2796 * kMiB, /*reclaimableGranules=*/17);
+  ASSERT_EQ(s.available(), 544 * kMiB);
+  ASSERT_EQ(s.recoverableBySync(), 0u);
+  ASSERT_LT(s.available() + s.trapped(), s.needed);
+
+  VmmOomCategory c = classifyVmmOom(s, VmmBackingFailure::None);
+  EXPECT_EQ(c, VmmOomCategory::Retained);
+  std::string msg = describeVmmOom(s, c);
+  EXPECT_NE(msg.find("graphFreeList"), std::string::npos);
+  EXPECT_NE(msg.find("Capture fewer shapes"), std::string::npos);
+  EXPECT_EQ(msg.find("that synchronizing would free"), std::string::npos);
+}
+
+// The trapped figure the log reported was almost entirely capture-pool memory
+// sharing a page with a live allocation. Offering the page-size lever for it
+// is the same error as offering a synchronize, so `trapped()` has to shed it.
+TEST_F(MemoryManagerDriv690, TrappedShedsTheCapturePoolShare) {
+  VmmOomSnapshot s = incident(266 * kMiB, /*reclaimableGranules=*/8);
+  // What the raw difference says, and what the log printed.
+  ASSERT_EQ(s.inUseGranules * kGranule - s.usedBytes, 1250 * kMiB);
+  ASSERT_EQ(s.retainedTrappedBytes, 1215 * kMiB);
+  // What a smaller page would really hand back.
+  EXPECT_EQ(s.trapped(), 35 * kMiB);
+}
+
+// The first of the two fatal forward-pass misses: 265.50 MB. The corrected
+// trapped figure still covers it next to the 256MB allocatable, so
+// `avoidable` stands. It stands on 35MB rather than on 1.22GB, and the
+// message has to name where the 52.84 GB it competed with sits.
+TEST_F(MemoryManagerDriv690, SmallForwardPassMissStaysAvoidable) {
+  VmmOomSnapshot s = incident(266 * kMiB, /*reclaimableGranules=*/8);
+  ASSERT_EQ(s.available(), 256 * kMiB);
+  ASSERT_EQ(s.recoverableBySync(), 0u);
+  ASSERT_GE(s.available() + s.trapped(), s.needed);
+
+  VmmOomCategory c = classifyVmmOom(s, VmmBackingFailure::None);
+  EXPECT_EQ(c, VmmOomCategory::Avoidable);
+  std::string msg = describeVmmOom(s, c);
+  // The page-size lever is the one that serves this request.
+  EXPECT_NE(msg.find("memory_manager_vmm_page_mb"), std::string::npos);
+  // Before the fix this read "up to 52.84GB that synchronizing would free",
+  // which is what sent the ticket after the deferred-free drain.
+  EXPECT_EQ(msg.find("synchronizing would free"), std::string::npos);
+  EXPECT_NE(msg.find("graphFreeList"), std::string::npos);
+  // And the dump carries the holder for whoever reads the log rather than the
+  // message.
+  EXPECT_NE(dumpVmmOom(s).find("graphFreeList=54.03GB/46(retained)"),
+            std::string::npos);
+}
+
+// The second one, 480 MB with 160MB allocatable, logged in the same
+// millisecond. This is where shedding the capture-pool share changes the
+// verdict: on the old trapped figure it read `avoidable` and sent the reader
+// to the page size, which would not have served it.
+TEST_F(MemoryManagerDriv690, LargeForwardPassMissTurnsRetained) {
+  VmmOomSnapshot s = incident(480 * kMiB, /*reclaimableGranules=*/5);
+  ASSERT_EQ(s.available(), 160 * kMiB);
+  // The uncorrected figure would have closed the gap on its own.
+  ASSERT_GE(s.available() + 1250 * kMiB, s.needed);
+  ASSERT_LT(s.available() + s.trapped(), s.needed);
+
+  VmmOomCategory c = classifyVmmOom(s, VmmBackingFailure::None);
+  EXPECT_EQ(c, VmmOomCategory::Retained);
+  std::string msg = describeVmmOom(s, c);
+  EXPECT_EQ(msg.find("memory_manager_vmm_page_mb"), std::string::npos);
+  EXPECT_NE(msg.find("graphFreeList"), std::string::npos);
+}
+
 TEST(MemoryManagerOomClassify, Unaccounted) {
   VmmOomSnapshot s = base(20 * kMiB);
   s.uncommittedGranules = 50; // available = 100 MiB: budget had headroom
@@ -332,13 +550,68 @@ TEST(MemoryManagerOomClassify, DumpContainsAllTerms) {
   s.pendingTotalBytes = 18 * kMiB;
   s.largestRootFreeVA = 30 * kMiB;
   std::string d = dumpVmmOom(s);
-  for (const char *term :
-       {"vmm_oom", "requested", "page_size", "budget", "used", "available",
-        "recoverable_by_sync", "trapped", "pending_total",
-        "largest_root_free_va", "va_size", "free_blocks", "arena_reserved",
-        "page_counts", "in_use", "pending", "reclaimable", "pooled",
-        "uncommitted"})
+  for (const char *term : {"vmm_oom",
+                           "requested",
+                           "page_size",
+                           "budget",
+                           "used",
+                           "available",
+                           "recoverable_by_sync",
+                           "retained",
+                           "retained_bytes",
+                           "retained_trapped",
+                           "trapped",
+                           "pending_total",
+                           "largest_root_free_va",
+                           "va_size",
+                           "free_blocks",
+                           "arena_reserved",
+                           "page_counts",
+                           "in_use",
+                           "pending",
+                           "reclaimable",
+                           "pooled",
+                           "uncommitted"})
     EXPECT_NE(d.find(term), std::string::npos) << "missing term: " << term;
+}
+
+// Nothing pending: the breakdown is omitted rather than printed empty, so the
+// common line stays as short as it was.
+TEST(MemoryManagerOomClassify, DumpOmitsOwnerBreakdownWhenNothingIsPending) {
+  VmmOomSnapshot s = base(20 * kMiB);
+  s.inUseGranules = 100;
+  s.usedBytes = s.budget;
+  EXPECT_EQ(dumpVmmOom(s).find("pending_by_owner"), std::string::npos);
+}
+
+// The breakdown is what turns "50GB is pending" into a name to act on, so the
+// largest holder must come first and be tagged when it never releases. The
+// list is capped: a long tail of small holders would push the accounting
+// fields off the end of a log line, and the tail is never the answer.
+TEST(MemoryManagerOomClassify, DumpNamesPendingOwnersLargestFirst) {
+  VmmOomSnapshot s = base(20 * kMiB);
+  s.inUseGranules = 60;
+  s.pendingGranules = 40;
+  s.retainedGranules = 40;
+  s.usedBytes = 60 * kPage;
+  s.pendingTotalBytes = 80 * kMiB;
+  s.retainedBytes = 50 * kMiB;
+  s.pendingOwners = {{"graphFreeList", 50 * kMiB, 46, /*neverFlushes=*/true},
+                     {"freeList", 20 * kMiB, 4, /*neverFlushes=*/false},
+                     {"side", 8 * kMiB, 2, /*neverFlushes=*/false},
+                     {"hostFreeList", 2 * kMiB, 1, /*neverFlushes=*/false}};
+  std::string d = dumpVmmOom(s);
+  const size_t graph = d.find("graphFreeList=50MB/46(retained)");
+  const size_t ordinary = d.find("freeList=20MB/4");
+  const size_t side = d.find("side=8MB/2");
+  ASSERT_NE(graph, std::string::npos);
+  ASSERT_NE(ordinary, std::string::npos);
+  ASSERT_NE(side, std::string::npos);
+  EXPECT_LT(graph, ordinary);
+  EXPECT_LT(ordinary, side);
+  // The fourth holder is rolled up rather than printed.
+  EXPECT_EQ(d.find("hostFreeList"), std::string::npos);
+  EXPECT_NE(d.find("+1 more"), std::string::npos);
 }
 
 // pendingRetryWorthwhile decides whether the allocation path stalls to wait for
@@ -411,6 +684,25 @@ TEST(MemoryManagerPendingRetry, VaShortfallRetriesDespitePhysicalShortfall) {
   // onto the largest region is the best a drain could do, and it still falls
   // short, so waiting is time spent on an answer that cannot change.
   EXPECT_FALSE(withDrainable(s, /*bytes=*/2 * kMiB, /*granules=*/0));
+}
+
+// A graph-capture list queues no gating event, so a drain finds nothing to
+// migrate however long it waits. The snapshot already said so through
+// `drainable`, which is why the retry never fired in DRIV-690; this pins that
+// the new retained accounting does not change the decision.
+TEST(MemoryManagerPendingRetry, RetainedMemoryDoesNotBuyAStall) {
+  VmmOomSnapshot s = base(20 * kMiB);
+  s.reclaimableGranules = 2; // available = 4 MiB
+  s.pendingGranules = 20;
+  s.retainedGranules = 20;
+  s.inUseGranules = 78;
+  s.usedBytes = 78 * kPage;
+  s.pendingTotalBytes = 40 * kMiB;
+  s.retainedBytes = 40 * kMiB;
+  s.largestRootFreeVA = 100 * kMiB; // VA is fine; physical is the problem
+  ASSERT_EQ(classifyVmmOom(s, VmmBackingFailure::None),
+            VmmOomCategory::Retained);
+  EXPECT_FALSE(withDrainable(s, /*bytes=*/0, /*granules=*/0));
 }
 
 // Neither axis short: the physical is held somewhere this manager cannot see,

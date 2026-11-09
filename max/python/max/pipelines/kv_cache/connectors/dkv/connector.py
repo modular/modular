@@ -31,15 +31,15 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from max.driver import Buffer, Device
-from max.nn.legacy.kv_cache import KVCacheGroupId
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache import KVCacheGroupId
+from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
     SUPPORTED_NIXL_BACKENDS,
@@ -2733,6 +2733,10 @@ class DKVConnector(KVConnector):
                     dkv_hints_unused_by_reason=dict(
                         m.get("hints_unused_by_reason", {})
                     ),
+                    dkv_hints_received=m.get("hints_received", 0),
+                    dkv_hint_blocks_forgone_by_reason=dict(
+                        m.get("hint_blocks_forgone_by_reason", {})
+                    ),
                     # A per-window delta like its neighbours. An extension
                     # predating it reports none, which folds as nothing
                     # dropped rather than as a missing key.
@@ -2754,6 +2758,13 @@ class DKVConnector(KVConnector):
                     dkv_own_runs_short_of_hint=m.get(
                         "own_runs_short_of_hint", 0
                     ),
+                    dkv_own_run_blocks_short_of_hint=m.get(
+                        "own_run_blocks_short_of_hint", 0
+                    ),
+                    dkv_peer_blocks_short_of_hint=m.get(
+                        "peer_blocks_short_of_hint", 0
+                    ),
+                    dkv_hint_blocks_unserved=m.get("hint_blocks_unserved", 0),
                     dkv_split_loads=m.get("split_loads", 0),
                     dkv_overlapped_peer_lookups=m.get(
                         "overlapped_peer_lookups", 0

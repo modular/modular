@@ -242,7 +242,7 @@ struct Format(ImplicitlyCopyable, Writable):
     var value: StaticString
     """The format to print results."""
 
-    def __init__(out self, value: StringSlice):
+    def __init__(out self, value: StringSpan):
         """Constructs a Format object from a string.
 
         Args:
@@ -636,7 +636,10 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        self.config = config.value().copy() if config else BenchConfig()
+        if case .Some(config) = config:
+            self.config = config.copy()
+        else:
+            self.config = BenchConfig()
         self.mode = mode
         self.info_vec = List[BenchmarkInfo]()
 

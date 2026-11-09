@@ -254,9 +254,7 @@ def bench_qgemm[
             cb_b.offset_ptr(window), row_major[N, packed_row_bytes]()
         )
         var c_tt = TileTensor(cb_c.offset_ptr(window), row_major(M, Idx[N]))
-        matmul_gpu_qint4[group_size=group_size, target="gpu"](
-            c_tt, a_tt, b_tt, ctx
-        )
+        matmul_gpu_qint4[group_size=group_size](c_tt, a_tt, b_tt, ctx)
 
     @inline(.always)
     def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:

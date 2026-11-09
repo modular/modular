@@ -41,26 +41,22 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
-from max.nn.legacy.comm.allreduce import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.graph_groups import MRoPEPositions
-from max.nn.legacy.kernels import (
-    MHAMaskVariant,
-    flash_attention_ragged,
-    rope_split_store_ragged,
-)
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops import flash_attention_ragged, rope_split_store_ragged
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import MRoPEPositions
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.distributed_transformer import (
@@ -68,6 +64,7 @@ from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_batch_inputs,

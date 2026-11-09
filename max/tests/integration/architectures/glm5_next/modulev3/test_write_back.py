@@ -14,15 +14,15 @@
 """The ModuleV3 GLM-5.3-Flash mHC write-back, against float64.
 
 The real model's dimensions, ``hidden_size`` 4096 and ``hc_mult`` 4, run on
-``mhc_post`` on AMD. A ``hidden_size`` of 1536 is not a whole number of the
-kernel's bfloat16 blocks, so it covers the batched-matmul fallback there.
+``mhc_post``. A ``hidden_size`` of 1536 is not a whole number of the kernel's
+bfloat16 blocks, so it covers the batched-matmul fallback.
 """
 
 from __future__ import annotations
 
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Device, accelerator_api
+from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.pipelines.architectures.glm5_next_modulev3.layers.decoder import (
     write_back,
@@ -87,9 +87,8 @@ def test_write_back_falls_back_outside_the_kernel_limits(
             *_layouts(Accelerator(), hc_mult, hidden_size)
         )
     )
-    uses_kernel = supported and accelerator_api() == "hip"
-    assert ("mo.mhc.post" in graph) == uses_kernel
-    assert ("matmul" in graph) != uses_kernel
+    assert ("hyper_connection.mhc.post" in graph) == supported
+    assert ("matmul" in graph) != supported
 
 
 @pytest.mark.parametrize("hidden_size", [HIDDEN_SIZE, FALLBACK_HIDDEN_SIZE])

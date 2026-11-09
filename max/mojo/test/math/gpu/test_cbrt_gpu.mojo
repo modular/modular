@@ -120,7 +120,7 @@ def _check_cbrt[
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, cbrt(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var worst: UInt64 = 0
     var worst_x = Scalar[dtype](0)

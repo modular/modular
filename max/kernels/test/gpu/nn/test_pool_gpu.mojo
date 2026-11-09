@@ -15,7 +15,7 @@ from max.gpu.host import DeviceContext
 from layout._fillers import arange
 from layout import TileTensor, row_major
 from layout.coord import ComptimeInt, Coord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from nn.pool import (
     PoolMethod,
     avg_pool,

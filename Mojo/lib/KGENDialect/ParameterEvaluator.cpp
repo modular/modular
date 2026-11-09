@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
+#include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
@@ -123,18 +124,24 @@ void KGEN::collectParameterReferences(
   c.collectUsesFromType(type, results, hasCtxEvalExpr, requiredSignatureDepth);
 }
 
-/// Return true if the specified type contains parameter references, e.g.
-/// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
-///
-/// TODO: This isn't an efficient method, it walks the entire type graph without
-/// caching.
-bool KGEN::isParameterizedType(Type type) {
+static bool isParameterizedTypeUncached(Type type) {
   SmallVector<ParamDeclRefAttr> paramDecls;
   bool hasCtxEvalExpr = false;
   size_t requiredSignatureDepth = 0;
   collectParameterReferences(type, paramDecls, hasCtxEvalExpr,
                              requiredSignatureDepth);
   return !paramDecls.empty() || hasCtxEvalExpr || requiredSignatureDepth != 0;
+}
+
+/// Return true if the specified type contains parameter references, e.g.
+/// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
+bool KGEN::isParameterizedType(Type type) {
+  // The walk visits the whole type graph, and constant checks in parameter
+  // comparators repeat it for the same type many times.
+  return CompilerCaches::getOrCompute(
+      type.getContext(), &CompilerCaches::parameterized,
+      type.getAsOpaquePointer(),
+      [&] { return isParameterizedTypeUncached(type); });
 }
 
 //===----------------------------------------------------------------------===//

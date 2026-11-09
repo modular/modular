@@ -290,21 +290,24 @@ void printMatmulReduceScatterSumAttrs(OpAsmPrinter &p, Operation *,
 
 ParseResult parseReduceScatterRMSNormAttrs(OpAsmParser &p,
                                            IntegerAttr &groupSize,
-                                           BoolAttr &hasResidual) {
+                                           BoolAttr &hasResidual,
+                                           IntegerAttr &quantBits) {
   Builder &b = p.getBuilder();
   return parseAttrGroup(
       p, {{"group_size",
            [&] { return p.parseAttribute(groupSize, b.getIntegerType(64)); }},
-          {"has_residual", [&] {
-             return p.parseAttribute(hasResidual, b.getIntegerType(1));
-           }}});
+          {"has_residual",
+           [&] { return p.parseAttribute(hasResidual, b.getIntegerType(1)); }},
+          {"quant_bits",
+           [&] { return p.parseAttribute(quantBits, b.getIntegerType(64)); }}});
 }
 
 void printReduceScatterRMSNormAttrs(OpAsmPrinter &p, Operation *,
-                                    IntegerAttr groupSize,
-                                    BoolAttr hasResidual) {
+                                    IntegerAttr groupSize, BoolAttr hasResidual,
+                                    IntegerAttr quantBits) {
   printAttrGroup(p, {nonDefault("group_size", groupSize, 0),
-                     nonDefault("has_residual", hasResidual, false)});
+                     nonDefault("has_residual", hasResidual, false),
+                     nonDefault("quant_bits", quantBits, 0)});
 }
 
 ParseResult parseAllGatherRMSNormQuantMXFP6Attrs(OpAsmParser &p,
@@ -323,29 +326,34 @@ void printAllGatherRMSNormQuantMXFP6Attrs(OpAsmPrinter &p, Operation *,
                      nonDefault("fp6_format", fp6Format, 0)});
 }
 
-ParseResult parseGroupedMatmulSwigluNvfp4Attrs(OpAsmParser &p,
-                                               StringAttr &activation,
-                                               ElementsAttr &swigluAlpha,
-                                               ElementsAttr &swigluLimit,
-                                               BoolAttr &hasARowScales) {
+ParseResult parseGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmParser &p, StringAttr &activation, ElementsAttr &swigluAlpha,
+    ElementsAttr &swigluLimit, BoolAttr &hasARowScales, IntegerAttr &maxTotalM,
+    BoolAttr &prefillDynamicClaim) {
   Type i1 = p.getBuilder().getIntegerType(1);
+  Type i64 = p.getBuilder().getIntegerType(64);
   return parseAttrGroup(
       p, {{"activation", [&] { return p.parseAttribute(activation); }},
           {"swiglu_alpha", [&] { return p.parseAttribute(swigluAlpha); }},
           {"swiglu_limit", [&] { return p.parseAttribute(swigluLimit); }},
           {"has_a_row_scales",
-           [&] { return p.parseAttribute(hasARowScales, i1); }}});
+           [&] { return p.parseAttribute(hasARowScales, i1); }},
+          {"max_total_m", [&] { return p.parseAttribute(maxTotalM, i64); }},
+          {"prefill_dynamic_claim",
+           [&] { return p.parseAttribute(prefillDynamicClaim, i1); }}});
 }
 
-void printGroupedMatmulSwigluNvfp4Attrs(OpAsmPrinter &p, Operation *,
-                                        StringAttr activation,
-                                        ElementsAttr swigluAlpha,
-                                        ElementsAttr swigluLimit,
-                                        BoolAttr hasARowScales) {
-  printAttrGroup(p, {nonDefault("activation", activation, "silu"),
-                     {"swiglu_alpha", swigluAlpha},
-                     {"swiglu_limit", swigluLimit},
-                     nonDefault("has_a_row_scales", hasARowScales, false)});
+void printGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmPrinter &p, Operation *, StringAttr activation,
+    ElementsAttr swigluAlpha, ElementsAttr swigluLimit, BoolAttr hasARowScales,
+    IntegerAttr maxTotalM, BoolAttr prefillDynamicClaim) {
+  printAttrGroup(
+      p, {nonDefault("activation", activation, "silu"),
+          {"swiglu_alpha", swigluAlpha},
+          {"swiglu_limit", swigluLimit},
+          nonDefault("has_a_row_scales", hasARowScales, false),
+          nonDefault("max_total_m", maxTotalM, 0),
+          nonDefault("prefill_dynamic_claim", prefillDynamicClaim, false)});
 }
 
 ParseResult parseCustomAttrs(OpAsmParser &p, StringAttr &symbol,
@@ -4191,6 +4199,101 @@ void ReduceScatterSumOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// AllToAllOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult AllToAllOp::verify() {
+  auto inputs = getInputs();
+  if (inputs.empty())
+    return emitError("all_to_all requires at least one input");
+
+  auto outputs = getOutputs();
+  if (outputs.size() != inputs.size())
+    return emitError("number of outputs must match number of inputs");
+  if (getSignalBuffers().size() != inputs.size())
+    return emitError("number of signal buffers must match number of inputs");
+
+  auto firstInputType = getInputTensor(0).getType();
+  int64_t rank = firstInputType.getRank();
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    auto inputType = getInputTensor(i).getType();
+    if (inputType.getElementType() != firstInputType.getElementType())
+      return emitError("all inputs must have the same element type");
+    if (static_cast<int64_t>(inputType.getRank()) != rank)
+      return emitError("all inputs must have the same rank");
+  }
+
+  int64_t ngpus = inputs.size();
+  int64_t groupSize = getGroupSize();
+  if (groupSize < 1)
+    return emitError("group_size must be at least 1");
+  if (ngpus % groupSize != 0)
+    return emitError(llvm::formatv(
+        "group_size must evenly divide the number of inputs ({0}), but got {1}",
+        ngpus, groupSize));
+
+  int64_t splitAxis = getSplitAxis();
+  int64_t concatAxis = getConcatAxis();
+  if (splitAxis < 0 || splitAxis >= rank)
+    return emitError(llvm::formatv("invalid split_axis {0}", splitAxis));
+  if (concatAxis < 0 || concatAxis >= rank)
+    return emitError(llvm::formatv("invalid concat_axis {0}", concatAxis));
+
+  // Inputs in a group exchange chunks and therefore must match in shape.
+  for (int64_t groupStart = 0; groupStart < ngpus; groupStart += groupSize) {
+    auto groupInputType = getInputTensor(groupStart).getType();
+    for (int64_t i = groupStart + 1, e = groupStart + groupSize; i < e; ++i) {
+      if (getInputTensor(i).getType().getShape() != groupInputType.getShape())
+        return emitError(
+            "all inputs in each all_to_all group must have the same shape");
+    }
+  }
+
+  for (int64_t devIdx = 0; devIdx < ngpus; ++devIdx) {
+    auto inputType = getInputTensor(devIdx).getType();
+    auto outputType = getOutputTensor(devIdx).getType();
+    if (outputType.getElementType() != firstInputType.getElementType())
+      return emitError("output element type must match input element type");
+    if (static_cast<int64_t>(outputType.getRank()) != rank)
+      return emitError("output rank must match input rank");
+
+    // The input's shape with the split axis divided by the group size and
+    // the concat axis multiplied by it; dynamic dims stay unchecked.
+    SmallVector<int64_t> expected;
+    for (int64_t i = 0; i < rank; ++i)
+      expected.push_back(inputType.getIntDim(i));
+    if (!mlir::ShapedType::isDynamic(expected[splitAxis])) {
+      if (expected[splitAxis] % groupSize != 0)
+        return emitError(llvm::formatv(
+            "split axis of size {0} does not divide into {1} chunks",
+            expected[splitAxis], groupSize));
+      expected[splitAxis] /= groupSize;
+    }
+    if (!mlir::ShapedType::isDynamic(expected[concatAxis]))
+      expected[concatAxis] *= groupSize;
+    for (int64_t i = 0; i < rank; ++i) {
+      int64_t outputDim = outputType.getIntDim(i);
+      if (mlir::ShapedType::isDynamic(expected[i]) ||
+          mlir::ShapedType::isDynamic(outputDim))
+        continue;
+      if (outputDim != expected[i])
+        return emitError(llvm::formatv("output {0} dim {1} should be {2}",
+                                       devIdx, i, expected[i]));
+    }
+  }
+
+  return success();
+}
+
+void AllToAllOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
 // EPDispatchOp (BF16)
 //===----------------------------------------------------------------------===//
 
@@ -4852,6 +4955,18 @@ void Composite::DistributedAllGatherRMSNormOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// DistributedAllGatherGatedResidualRMSNormOp
+//===----------------------------------------------------------------------===//
+
+void Composite::DistributedAllGatherGatedResidualRMSNormOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
 // DistributedAllGatherRMSNormQuantMXFP8Op
 //===----------------------------------------------------------------------===//
 
@@ -4888,6 +5003,16 @@ void Composite::DistributedAllReduceRMSNormOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// ReduceRMSNormOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult Composite::ReduceRMSNormOp::verify() {
+  if (cast<TensorType>(getWeight().getType()).getRank() != 1)
+    return emitOpError("weight must be rank 1");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ReduceRMSNormRoPEOp
 //===----------------------------------------------------------------------===//
 
@@ -4897,6 +5022,32 @@ LogicalResult Composite::ReduceRMSNormRoPEOp::verify() {
     return emitOpError("input must be on a device");
   if (inputTy.getDeviceRef().getLabel() != M::kGPULabel)
     return emitOpError("mo.composite.rms_norm_rope is only supported on GPU");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// QuantizeDynamicScaledFP8Op
+//===----------------------------------------------------------------------===//
+
+LogicalResult Composite::QuantizeDynamicScaledFP8Op::verify() {
+  auto inputTy = cast<TensorType>(getInput().getType());
+  if (inputTy.getRank() != 2)
+    return emitOpError("the input must be [rows, cols]");
+  if (cast<TensorType>(getOutput().getType()).getShape() != inputTy.getShape())
+    return emitOpError("the output must have the same shape as the input");
+  if (cast<TensorType>(getScales().getType()).getRank() != 2)
+    return emitOpError("the scales must be rank 2");
+
+  int64_t groupSize = getGroupSizeOrPerToken().getSExtValue();
+  if (groupSize != -1 && groupSize <= 0)
+    return emitOpError("group_size_or_per_token must be -1 or positive");
+
+  if (std::optional<ElementsAttr> floor = getAmaxFloor()) {
+    auto values = floor->tryGetValues<Attribute>();
+    auto value = values ? dyn_cast<FloatAttr>(*values->begin()) : nullptr;
+    if (!value || !value.getValue().isFinite() || value.getValue().isNegative())
+      return emitOpError("amax_floor must be finite and non-negative");
+  }
   return success();
 }
 

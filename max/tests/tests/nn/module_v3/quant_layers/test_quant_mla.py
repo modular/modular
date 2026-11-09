@@ -43,11 +43,8 @@ from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     NVFP4Tensor,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MLAKVCacheParams,
-)
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3.model_config import (
     mla_kv_cache_quant_config,
 )
@@ -505,7 +502,7 @@ _SPARSE_QK_NOPE_HEAD_DIM = 192
 _SPARSE_V_HEAD_DIM = 256
 _SPARSE_CACHE_HEAD_DIM = _SPARSE_KV_LORA_RANK + _QK_ROPE_HEAD_DIM
 _SPARSE_SCALE_WEIGHTS = ("w_uk", "w_uv", "w_k")
-_DENSE_PLANNER = "mo.mla.prefill.ragged.plan"
+_DENSE_PLANNER = "attention.mla.prefill.ragged.plan"
 _SPARSE_TOPK = 64
 
 

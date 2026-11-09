@@ -77,6 +77,8 @@ def test[
             pad_d = Index(pad[0], pad[1])
             pad_h = Index(pad[2], pad[3])
             pad_w = Index(pad[4], pad[5])
+        case _:
+            pass
 
     var conv_shape = ConvShape[rank](
         n=N,

@@ -45,6 +45,30 @@ abstractions directly on :class:`~max.tensor.Tensor` values,
 executing each operation immediately, PyTorch-style.
 """
 
+from max.nn._graph_ops.data_parallel import split_batch, split_batch_replicated
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheMetrics,
+    KVCacheParams,
+    build_max_lengths_tensors,
+)
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+    WeightSource,
+)
+from max.nn.rope_scaling import (
+    LinearScalingParams,
+    Llama3RopeScalingParams,
+    LongRoPEScalingParams,
+    YarnScalingParams,
+)
+
 from . import _deprecation
 from .attention import (
     AttentionWithRope,
@@ -61,39 +85,19 @@ from .clamp import clamp
 from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv2d, Conv3D
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
-from .data_parallelism import split_batch, split_batch_replicated
 from .embedding import Embedding, VocabParallelEmbedding
 from .hyper_connection import HyperConnection
 from .identity import Identity
-from .kv_cache import (
-    KVCacheInputs,
-    KVCacheMetrics,
-    KVCacheParams,
-    build_max_lengths_tensors,
-)
 from .layer import Layer, LayerList, MissingLayer, Module, Shardable
 from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
 from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
-from .quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-    WeightSource,
-)
 from .rotary_embedding import (
     DynamicRotaryEmbedding,
-    LinearScalingParams,
-    Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
     LongRoPERotaryEmbedding,
-    LongRoPEScalingParams,
     RotaryEmbedding,
     YarnRotaryEmbedding,
-    YarnScalingParams,
 )
 from .sampling import (
     MinPSampler,
@@ -105,8 +109,6 @@ from .stacked_linear import StackedLinear
 from .transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
-    ReturnHiddenStates,
-    ReturnLogits,
     Transformer,
     TransformerBlock,
 )

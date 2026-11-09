@@ -555,7 +555,8 @@ def run_nvfp4_dual[
     var index_epsilon = Float32(1e-5)
 
     fused_dual_qk_rms_norm_rope_ragged_paged[
-        target="gpu", multiply_before_cast=True, interleaved=False
+        multiply_before_cast=True,
+        interleaved=False,
     ](
         main_ref_coll,
         index_ref_coll,
@@ -576,7 +577,6 @@ def run_nvfp4_dual[
         ctx,
     )
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=False,
         launch=launch,
@@ -654,7 +654,6 @@ def run_nvfp4_dual[
         row_major((total_length, Idx[index_q_heads], Idx[head_dim])),
     )
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=False,
         launch=launch,
@@ -1029,7 +1028,8 @@ def run_nvfp4_dual_empty(ctx: DeviceContext) raises:
         return s4.load[width=width]((token, head, col))
 
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
-        target="gpu", multiply_before_cast=True, interleaved=False
+        multiply_before_cast=True,
+        interleaved=False,
     ](
         main4_coll,
         index_coll,

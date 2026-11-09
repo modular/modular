@@ -126,7 +126,6 @@ def bench_mhc_pre[
             hidden_size=hidden,
             hc_sinkhorn_iters=sinkhorn_iters,
             has_norm=has_norm,
-            target="gpu",
         ](
             TileTensor(
                 cb_post.offset_ptr(iteration), row_major((num_rows, Idx[hc]))

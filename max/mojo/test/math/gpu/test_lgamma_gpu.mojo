@@ -161,7 +161,7 @@ def _run_refs[
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, lgamma(val))
 
-    elementwise[1, target="gpu"](func, Coord(n), ctx)
+    elementwise[1](func, Coord(n), ctx)
 
     comptime mbits = DType.mantissa_width[dtype]()
     with out_device.map_to_host() as out_host:
@@ -267,7 +267,7 @@ def _run[
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, lgamma(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var gpu_stats = _ErrStats(0, 0, 0)
     var host_stats = _ErrStats(0, 0, 0)

@@ -34,11 +34,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn import Module
-from max.nn.common_layers.quant_tensor import (
-    FP8BlockTensor,
-)
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _is_apple_gpu,
     _is_sm10x_gpu,
     block_scales_interleave,
@@ -46,6 +42,10 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_block_scaled,
     rope_quantize_dynamic_block_scaled,
     swiglu_quantize_dynamic_block_scaled,
+)
+from max.nn.activation import GatedActivation
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
@@ -125,7 +125,7 @@ def _matmul(
     b_scales = block_scales_interleave(expanded, sf_vector_size=32)
     if mxfp8_splitk_enabled() and _is_sm10x_gpu():
         out = ops.custom(
-            "mo.matmul.mxfp8.cluster_splitk",
+            "matmul.mxfp8.cluster_splitk",
             device=codes.device,
             values=[codes, weight, a_scales, b_scales],
             out_types=[
@@ -271,7 +271,7 @@ def _rope_tail_matmul(
         ops.repeat_interleave(scale, 32, axis=0), sf_vector_size=32
     )
     return ops.custom(
-        "mo.matmul.mxfp8.rope_tail",
+        "matmul.mxfp8.rope_tail",
         device=codes.device,
         values=[
             codes,

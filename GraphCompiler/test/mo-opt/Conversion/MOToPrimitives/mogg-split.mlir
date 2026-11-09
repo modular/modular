@@ -1,6 +1,6 @@
 // RUN: mo-opt %s --mogg-import-packages --mo-to-map --map-outline-structured-kernel-bodies --map-to-mogg --mogg-to-mgp --canonicalize --cse | FileCheck %s
 
-// CHECK-LABEL: mgp.model @mogg_split : mof
+// CHECK-LABEL: mgp.model @mogg_split
 // CHECK: } execute (
 // CHECK-SAME:   %[[CH:.*]]: !mef.chain,
 // CHECK-SAME:   %[[CTX:.*]]: !mgp.context,
@@ -45,7 +45,7 @@ mo.graph @mogg_split<D0, D1, D2>(
 }
 
 
-// CHECK-LABEL: mgp.model @mogg_split_chain_prop : mof
+// CHECK-LABEL: mgp.model @mogg_split_chain_prop
 
 // CHECK: } execute (%[[CH0:.*]]: !mef.chain,
 // CHECK: %[[CH1:.*]] = mogg.routine.async {{(dispatch\([a-z]+\) )?}}(%[[CH0]]

@@ -21,10 +21,8 @@ from max.gpu.host import (
     default_accelerator,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    amd_mla_decode_dispatch_scalars,
     amd_sparse_mla_bf16_num_partitions,
-)
-from nn.attention.gpu.mla_decode_dispatch_scalars import (
-    mla_decode_dispatch_scalars,
 )
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS,
@@ -56,10 +54,10 @@ def _check_key(
         DeviceAttribute.MULTIPROCESSOR_COUNT
     )
     comptime context_length = 80000
-    var _, _, bf16_key = mla_decode_dispatch_scalars(
+    var _, _, bf16_key = amd_mla_decode_dispatch_scalars(
         batch, context_length, q_len, heads, False, ctx, stride
     )
-    var _, _, fp8_key = mla_decode_dispatch_scalars(
+    var _, _, fp8_key = amd_mla_decode_dispatch_scalars(
         batch, context_length, q_len, heads, True, ctx, stride
     )
     var bf16_launch = amd_sparse_mla_bf16_num_partitions(

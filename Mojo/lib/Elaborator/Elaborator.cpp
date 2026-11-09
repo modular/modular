@@ -857,7 +857,9 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
   // Attempt to lookup a cached value. This returns a thread local cached value.
   auto operandsAttr = cast<ParameterExprArrayAttr>(value);
   TypedAttr &cached = lookupCachedInterpretation(func, operandsAttr);
-  if (!cached) {
+  if (cached) {
+    recordInterpreterCall(op.getLoc(), func, /*cpuNanos=*/std::nullopt);
+  } else {
     ErrorTreeOr<Attribute> operandsOr =
         concretizeSymbolsWithin(operandsAttr, inode, op.getLoc());
     if (operandsOr.isError()) {
@@ -1325,6 +1327,16 @@ ElaborationState Elaborator::processComptimeForOp(ImplNode *parent,
                           "threshold or set to `0` to disable this warning)");
   }
 
+  // Measured here because unrolling clones the body before the completion
+  // runs.
+  std::optional<ComptimeForRecord> record;
+  if (config.printStats) {
+    record = ComptimeForRecord{
+        op.getLoc(),
+        StringAttr::get(op.getContext(), parent->parent->gen.getName()),
+        loopUnrollCount, countOps(op.getBody()), /*resultOps=*/0};
+  }
+
   // The else body should be unreachable after LowerSemanticCF.
   assert(isa<HLCF::UnreachableOp>(op.getElseRegion().front().front()) &&
          "LowerSemanticCF didn't lower the else block of comptime.for?");
@@ -1347,8 +1359,8 @@ ElaborationState Elaborator::processComptimeForOp(ImplNode *parent,
   // Add a worklist item to delete the comptime.for op when all the iterations
   // are processed and done and cleanup the result IR.
   ImplNode::WorkItem finalItem{{}, nullptr, parent->getEvaluator()};
-  finalItem.onComplete = [op, parent,
-                          outerLoop](ImplNode *node) mutable -> LogicalResult {
+  finalItem.onComplete = [this, op, parent, outerLoop,
+                          record](ImplNode *node) mutable -> LogicalResult {
     // Remove the original hlcf.comptime.for now that it has been lowered.
     recursivelyEraseFromNestedScopes(parent, op);
     op.erase();
@@ -1358,6 +1370,14 @@ ElaborationState Elaborator::processComptimeForOp(ImplNode *parent,
              outerLoop.getBody().getOps<HLCF::LoopOp>())) {
       if (simplifyParamForLoop(loop, outerLoop))
         break;
+    }
+
+    // Count before the outer loop is simplified, which may splice its body
+    // into the parent and erase it.
+    if (record) {
+      record->resultOps = countOps(outerLoop.getBody());
+      comptimeForStats.modify(
+          [&](auto &records) { records.push_back(*record); });
     }
 
     // Check to see if we can simplify the final outer loop.
@@ -1559,6 +1579,7 @@ void Elaborator::processImplNodeTask(ImplNode *inode) {
     if (!inode->parent->getIsError())
       g.numWorkItems.fetch_add(1);
     completeImplNodeProcessing(inode);
+    flushInterpreterCalls();
   }
   // Signal the worklist that the work is complete.
   if (!inode->parent->getIsError())
@@ -3012,6 +3033,12 @@ LogicalResult Elaborator::run(
   failed |=
       !checkCodeGenUnreachable(theModule, usedSymbols, errorLimit, oldSymTab);
 
+  if (config.printStats) {
+    reportElaborationStats(target.isGPU(), options,
+                           std::move(comptimeForStats.get()),
+                           std::move(interpreterCalls.get()));
+  }
+
   return success(!failed);
 }
 
@@ -3104,7 +3131,8 @@ public:
                                       useParametricInterpreter,
                                       errorIncludePrelude,
                                       errorVerbose,
-                                      loopUnrollingWarnThreshold};
+                                      loopUnrollingWarnThreshold,
+                                      printStats};
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
     options.elaborationErrorIncludePrelude = errorIncludePrelude;

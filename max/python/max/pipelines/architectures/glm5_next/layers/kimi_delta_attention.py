@@ -18,7 +18,7 @@ that state already predicts for ``k`` rather than adding to it. KDA's one
 change from Gated DeltaNet is that the forget gate decays the state **per
 channel** -- ``alpha_t`` is a ``head_dim``-wide vector per head, so
 ``S_t = diag(alpha_t) S_{t-1} + k_t delta_t^T``. MAX's
-:mod:`~max.nn.legacy.state_space.gated_delta` recurrence takes one decay per head per
+:mod:`~max.nn._graph_ops.state_space.gated_delta` recurrence takes one decay per head per
 token and cannot express that, which is why this is a sibling of Qwen3.5's
 ``GatedDeltaNet`` rather than a branch inside it.
 
@@ -33,15 +33,15 @@ Three things here are silently wrong if reordered, and each is pinned by a test
 under ``max/tests/integration/architectures/glm5_next/kda/`` rather than by a
 comment:
 
-* **The conv channel order is q, k, v.** The weight adapter concatenates the
-  three ``[8192, 1, 4]`` checkpoint tensors in that order and this layer
-  concatenates its three projections the same way. Permuting either scrambles
-  channels without changing a shape.
+* **The conv channel order is q, k, v.** This layer concatenates the three
+  ``[8192, 1, 4]`` checkpoint tensors in that order, and its three projections
+  the same way. Permuting either scrambles channels without changing a shape.
 * **The gated norm normalizes first.** ``o_norm`` is
   ``rms_norm(y) * weight * sigmoid(gate)`` in float32, not
   ``rms_norm(gate_activation(gate) * y)``, which is what MAX's fused
   ``gated_group_rmsnorm`` computes.
-* **Tensor parallelism splits heads inside each of q, k and v.** A contiguous
+* **Tensor parallelism splits heads inside each of q, k and v.** Each conv
+  weight is split by head on its own and concatenated per device. A contiguous
   slice of the 24576-wide concatenated conv would cut across the projection
   boundary: at TP8 the per-rank width is 3072 either way, but ``8192 / 3072``
   is not integral, so ranks 2 and 5 would get a mix of two projections.
@@ -64,24 +64,23 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.graph.weight import Segment
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     kda_chunk,
     kda_decode,
-    kda_verify_ring,
 )
-from max.nn.legacy.state_space.kimi_delta import (
+from max.nn._graph_ops.state_space.kimi_delta import (
     STATE_LAYOUT,
     kda_chunk_predicate,
     kda_chunk_servable,
     kda_gate_mode,
+    kda_verify_ring,
 )
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from ..model_config import Glm5NextConfig
 from .kda import KdaReplayInputs, KdaRing, KdaSublayerInputs
@@ -133,9 +132,9 @@ class KimiDeltaAttention(Module, Shardable):
         self.qkv_dim = num_heads * head_dim
         self.conv_dim = 3 * self.qkv_dim
 
-        # Three separate projections, matching the checkpoint. They are
-        # concatenated into one conv input at call time; fusing them into a
-        # stacked weight would have to undo the adapter's per-tensor layout.
+        # Three separate projections and conv weights, matching the
+        # checkpoint. They are concatenated into one conv input and one conv
+        # weight at call time.
         def head_major_projection() -> Linear:
             return Linear(
                 in_dim=hidden_size,
@@ -149,12 +148,17 @@ class KimiDeltaAttention(Module, Shardable):
         self.k_proj = head_major_projection()
         self.v_proj = head_major_projection()
 
-        self.conv1d = Weight(
-            "conv1d.weight",
-            dtype,
-            [self.conv_dim, 1, conv_kernel_size],
-            device=DeviceRef.CPU(),
-        )
+        def depthwise_conv(name: str) -> Weight:
+            return Weight(
+                f"{name}.weight",
+                dtype,
+                [self.qkv_dim, 1, conv_kernel_size],
+                device=DeviceRef.CPU(),
+            )
+
+        self.q_conv1d = depthwise_conv("q_conv1d")
+        self.k_conv1d = depthwise_conv("k_conv1d")
+        self.v_conv1d = depthwise_conv("v_conv1d")
 
         self.f_a_proj = Linear(
             in_dim=hidden_size,
@@ -202,10 +206,11 @@ class KimiDeltaAttention(Module, Shardable):
         )
 
         # The reference's RMSNormGated multiplies by the weight directly rather
-        # than by `1 + weight`, and holds the whole computation in float32.
+        # than by `1 + weight`, and holds the whole computation in float32:
+        # the norm widens its checkpoint-dtype weight to its float32 input.
         self.o_norm = RMSNorm(
             head_dim,
-            dtype=DType.float32,
+            dtype=dtype,
             eps=rms_norm_eps,
             weight_offset=0.0,
             multiply_before_cast=False,
@@ -272,21 +277,15 @@ class KimiDeltaAttention(Module, Shardable):
             )
         self._sharding_strategy = strategy
 
-        # `conv1d` is the only weight whose rows span all three projections:
-        # the adapter concatenated q, k and v along the channel axis. Splitting
-        # each block at its own head boundary keeps the three aligned with the
-        # three per-device projections that feed them. A flat split of
-        # `conv_dim` has the same per-device width and the wrong channels.
-        head_rows = ShardingStrategy.rowwise(num_devices)
-        segment = Segment.head_aware(self.num_heads, self.head_dim)
-        self.conv1d.sharding_strategy = ShardingStrategy.segmented(
-            num_devices, axis=0, segments=(segment, segment, segment)
-        )
-
         # Head-major along their output axis, so a row split is a head split.
+        # Each conv weight splits with the projection that feeds it.
+        head_rows = ShardingStrategy.rowwise(num_devices)
         self.q_proj.sharding_strategy = head_rows
         self.k_proj.sharding_strategy = head_rows
         self.v_proj.sharding_strategy = head_rows
+        self.q_conv1d.sharding_strategy = head_rows
+        self.k_conv1d.sharding_strategy = head_rows
+        self.v_conv1d.sharding_strategy = head_rows
         self.f_b_proj.sharding_strategy = head_rows
         self.g_b_proj.sharding_strategy = head_rows
         self.b_proj.sharding_strategy = head_rows
@@ -330,7 +329,9 @@ class KimiDeltaAttention(Module, Shardable):
         q_proj = self.q_proj.shard(devices)
         k_proj = self.k_proj.shard(devices)
         v_proj = self.v_proj.shard(devices)
-        conv1d = self.conv1d.shard(devices)
+        q_conv1d = self.q_conv1d.shard(devices)
+        k_conv1d = self.k_conv1d.shard(devices)
+        v_conv1d = self.v_conv1d.shard(devices)
         f_a_proj = self.f_a_proj.shard(devices)
         f_b_proj = self.f_b_proj.shard(devices)
         dt_bias = self.dt_bias.shard(devices)
@@ -356,7 +357,9 @@ class KimiDeltaAttention(Module, Shardable):
             shard.q_proj = q_proj[i]
             shard.k_proj = k_proj[i]
             shard.v_proj = v_proj[i]
-            shard.conv1d = conv1d[i]
+            shard.q_conv1d = q_conv1d[i]
+            shard.k_conv1d = k_conv1d[i]
+            shard.v_conv1d = v_conv1d[i]
             shard.f_a_proj = f_a_proj[i]
             shard.f_b_proj = f_b_proj[i]
             shard.dt_bias = dt_bias[i]
@@ -406,7 +409,7 @@ class KimiDeltaAttention(Module, Shardable):
                 writing ``recurrent_pool``, and the caller folds the accepted
                 records in before the pool is read again.
             verify_width: The speculative graph's
-                :func:`~max.nn.legacy.state_space.verify_width_operand`. A launch at
+                :func:`~max.nn._graph_ops.state_space.verify_width_operand`. A launch at
                 width zero lands both pools on the forward, and a wider one
                 leaves them for the rollback.
 
@@ -418,14 +421,20 @@ class KimiDeltaAttention(Module, Shardable):
         heads, head_dim = self.num_heads, self.head_dim
         head_shape = [-1, heads, head_dim]
 
-        # Concatenated q, k, v in that order: the adapter's conv channel
-        # layout, and the order the shard's conv weight was sliced for.
+        # Concatenated q, k, v in that order: the conv's channel layout.
         qkv = ops.concat(
             [self.q_proj(x), self.k_proj(x), self.v_proj(x)], axis=-1
         ).cast(DType.float32)
 
         conv_weight = ops.reshape(
-            self.conv1d.to(device).cast(DType.float32),
+            ops.concat(
+                [
+                    self.q_conv1d.to(device),
+                    self.k_conv1d.to(device),
+                    self.v_conv1d.to(device),
+                ],
+                axis=0,
+            ).cast(DType.float32),
             [self.conv_dim, self.conv_kernel_size],
         )
         row_offsets_uint32 = input_row_offsets.cast(DType.uint32)

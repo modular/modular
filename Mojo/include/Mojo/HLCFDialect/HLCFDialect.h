@@ -20,6 +20,8 @@
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
+#pragma GCC visibility push(default)
 #include "Mojo/HLCFDialect/HLCFDialect.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_HLCFDIALECT_HLCFDIALECT_H

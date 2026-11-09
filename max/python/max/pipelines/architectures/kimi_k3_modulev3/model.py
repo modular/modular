@@ -59,8 +59,8 @@ from max.graph import BufferValue, TensorType, TensorValue
 from max.nn import Embedding, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     MLAKVCacheParams,
@@ -69,8 +69,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor
@@ -404,6 +404,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         mla_rope_table_rows: int | None = None,
         quant_config: QuantConfig | None = None,
         ep_config: EPConfig | None = None,
+        max_tokens_per_expert: int = 8192,
     ) -> None:
         """Builds the model's layers and weights.
 
@@ -448,6 +449,9 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             weight, so ``forward`` reads them off the tail of ``kv_inputs``
             instead of a stored attribute (which ``Module.stage`` would
             otherwise declare as one).
+            max_tokens_per_expert: Rows one forward can route to an expert
+            (``KimiK3Config.max_tokens_per_expert``), a serving-time bound
+            like ``mla_buffer_size``.
         """
         super().__init__()
         self.config = config
@@ -526,6 +530,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     topk_group=config.topk_group,
                     moe_renormalize=config.moe_renormalize,
                     quant_config=quant_config,
+                    max_tokens_per_expert=max_tokens_per_expert,
                 )
 
             layers.append(
@@ -826,14 +831,20 @@ def _fuse_gate_up(gate: np.ndarray, up: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(np.concatenate([gate, up], axis=0))
 
 
-def _fuse_qkv_proj(q: np.ndarray, k: np.ndarray, v: np.ndarray) -> np.ndarray:
-    """Merges q, k and v into one ``[3 * inner, hidden]`` projection weight.
+def _fuse_qkvgb_proj(
+    q: np.ndarray,
+    k: np.ndarray,
+    v: np.ndarray,
+    g: np.ndarray,
+    b: np.ndarray,
+) -> np.ndarray:
+    """Merges q, k, v, g and beta into one ``[4 * inner + heads, hidden]`` weight.
 
-    ``KimiK3KDAAttention.qkv_proj`` takes the merged weight. This eager
+    ``KimiK3KDAAttention.qkvg_proj`` takes the merged weight. This eager
     loader is single-device, so a plain row concat is the TP-degree-1 case
     of the weight adapter's per-rank interleave.
     """
-    return np.ascontiguousarray(np.concatenate([q, k, v], axis=0))
+    return np.ascontiguousarray(np.concatenate([q, k, v, g, b], axis=0))
 
 
 def _fuse_qkv_conv_weight(
@@ -929,11 +940,13 @@ def load_kimi_k3_weights(
         attn = layer.attention
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            attn.qkv_proj.weight = Tensor(
-                _fuse_qkv_proj(
+            attn.qkvg_proj.weight = Tensor(
+                _fuse_qkvgb_proj(
                     get(f"{attn_src}.q_proj.weight"),
                     get(f"{attn_src}.k_proj.weight"),
                     get(f"{attn_src}.v_proj.weight"),
+                    get(f"{attn_src}.g_proj.weight"),
+                    get(f"{attn_src}.b_proj.weight"),
                 ),
                 dtype=DType.float32,
             )
@@ -942,12 +955,6 @@ def load_kimi_k3_weights(
             )
             attn.f_b_proj.weight = Tensor(
                 get(f"{attn_src}.f_b_proj.weight"), dtype=DType.float32
-            )
-            attn.b_proj.weight = Tensor(
-                get(f"{attn_src}.b_proj.weight"), dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                get(f"{attn_src}.g_proj.weight"), dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 get(f"{attn_src}.o_proj.weight"), dtype=DType.float32
@@ -1019,7 +1026,7 @@ def load_kimi_k3_weights(
             assert isinstance(ffn, KimiK3LatentMoE)
             moe = f"{src}.block_sparse_moe"
             ffn.gate.gate_score.weight = Tensor(
-                get(f"{moe}.gate.weight"), dtype=DType.float32
+                get(f"{moe}.gate.weight"), dtype=DType.bfloat16
             )
             ffn.gate.e_score_correction_bias = Tensor(
                 get(f"{moe}.gate.e_score_correction_bias"), dtype=DType.float32

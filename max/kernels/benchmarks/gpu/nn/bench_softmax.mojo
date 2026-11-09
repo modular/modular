@@ -56,7 +56,6 @@ def bench_softmax_gpu[
             dtype,
             simd_width_of[dtype, target=ctx.target](),
             rank,
-            target="gpu",
         ](
             input_fn,
             Coord(shape),
@@ -84,7 +83,7 @@ def bench_softmax_gpu[
         ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
             return data_buf.load[width=width](coords)
 
-        softmax[dtype, rank, target="gpu", reduce_dim=rank - 1](
+        softmax[dtype, rank, reduce_dim=rank - 1](
             rowwise_input_fn,
             Coord(shape),
             ComptimeInt[cols](),

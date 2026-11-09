@@ -42,6 +42,7 @@ from std.random import seed
 from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
+from nn.attention.gpu.mla import SM100MLA
 from max.gpu.host.info import _is_sm10x_gpu
 
 from _paged_prefill_test_utils import run_test_paged_prefill
@@ -127,6 +128,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=1,
                 diagnostic_bands=True,
+                kernels=SM100MLA,
             ](64, 64, ctx)
             seed(0)
             run_test_paged_prefill[
@@ -140,6 +142,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=1,
                 diagnostic_bands=True,
+                kernels=SM100MLA,
             ](128, 128, ctx)
 
             # GLM: v=64 < nope=128 (the production GLM shape).
@@ -156,6 +159,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=1,
                 diagnostic_bands=True,
+                kernels=SM100MLA,
             ](64, 64, ctx)
             # Multi-KV-tile + cached prefix for the v < nope 2-O path (the
             # (64, 64) row above is a single KV tile at cache=0). seq=128
@@ -176,6 +180,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=128,
+                kernels=SM100MLA,
             ](128, 256, ctx)
 
             # STRESS: v=192 > nope=128 (in-bounds; exercises the split-KV path).
@@ -192,6 +197,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=1,
                 diagnostic_bands=True,
+                kernels=SM100MLA,
             ](64, 64, ctx)
             # Multi-KV-tile + cached prefix for the v > nope 2-O path (mirror
             # of the v=64 multi-tile row above). seq=128 over a 128-token
@@ -210,6 +216,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=128,
+                kernels=SM100MLA,
             ](128, 256, ctx)
 
             # REAL GLM-5.1: qk_nope=192, q_depth=256, v=256. ov_depth=256 is too
@@ -248,6 +255,7 @@ def main() raises:
                     page_size=PAGE_SIZE,
                     batch_size=1,
                     diagnostic_bands=True,
+                    kernels=SM100MLA,
                 ](seq, seq, ctx)
 
             # Tiny / odd single-O seq edges (fresh prefill; heads=16 so these
@@ -272,6 +280,7 @@ def main() raises:
                     page_size=PAGE_SIZE,
                     batch_size=1,
                     diagnostic_bands=True,
+                    kernels=SM100MLA,
                 ](seq, seq, ctx)
 
             # Tiny-Q x many-KV single-O: 14 queries appended after a long
@@ -295,6 +304,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=498,
+                kernels=SM100MLA,
             ](14, 512, ctx)
 
             # REAL GLM single-O with a CACHED PREFIX (cache_length > 0) and a
@@ -330,6 +340,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=1920,
+                kernels=SM100MLA,
             ](128, 2048, ctx)
             seed(0)
             run_test_paged_prefill[
@@ -343,6 +354,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=1,
                 diagnostic_bands=True,
+                kernels=SM100MLA,
             ](512, 512, ctx)
 
             # Multi-Q-tile x many-KV-tile single-O: seq_len=512 (4 BM=128 Q
@@ -365,6 +377,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=1536,
+                kernels=SM100MLA,
             ](512, 2048, ctx)
 
             # Prime / non-tile-aligned single-O shapes: odd partial tiles in Q,
@@ -386,6 +399,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=510,
+                kernels=SM100MLA,
             ](521, 1031, ctx)
             # seq_len=1031 (prime) = 8*128 + 7 -> 9 Q tiles, with a prime
             # num_keys=1553 = 24*64 + 17 -> 25 single-O KV tiles; cache=522
@@ -403,6 +417,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=522,
+                kernels=SM100MLA,
             ](1031, 1553, ctx)
 
             # ---------------------------------------------------------------
@@ -431,6 +446,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=1,
                 diagnostic_bands=True,
+                kernels=SM100MLA,
             ](128, 128, ctx)
             # heads=3: odd head count + odd seq (15) with a cached prefix
             # (num_keys=128, cache=113) so a few queries fold many single-O
@@ -448,6 +464,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=113,
+                kernels=SM100MLA,
             ](15, 128, ctx)
             # heads=128: the production DP-attention head count. Heaviest
             # single-O instantiation, so run exactly ONE modest shape — a
@@ -468,6 +485,7 @@ def main() raises:
                 batch_size=1,
                 diagnostic_bands=True,
                 cache_length=448,
+                kernels=SM100MLA,
             ](64, 512, ctx)
 
             # ---------------------------------------------------------------
@@ -495,6 +513,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=2,
                 diagnostic_bands=True,
+                kernels=SM100MLA,
             ](128, 128, ctx)
             # batch=4 with a cached prefix (seq=64, num_keys=128, cache=64):
             # four per-batch cache_row_offsets rows + a non-zero start_pos,
@@ -512,4 +531,5 @@ def main() raises:
                 batch_size=4,
                 diagnostic_bands=True,
                 cache_length=64,
+                kernels=SM100MLA,
             ](64, 128, ctx)

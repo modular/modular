@@ -69,9 +69,7 @@ def run_row_scatter[
     ) raises {var data_tt, var out_tt, var upd_tt, var idx_tt, imm}:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[]) raises {imm}:
-            scatter_nd_generator[target="gpu"](
-                data_tt, idx_tt, upd_tt, out_tt, ctx
-            )
+            scatter_nd_generator(data_tt, idx_tt, upd_tt, out_tt, ctx)
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
@@ -126,9 +124,7 @@ def run_elem_scatter[
     ) raises {var data_tt, var out_tt, var upd_tt, var idx_tt, imm}:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext[]) raises {imm}:
-            scatter_nd_generator[target="gpu"](
-                data_tt, idx_tt, upd_tt, out_tt, ctx
-            )
+            scatter_nd_generator(data_tt, idx_tt, upd_tt, out_tt, ctx)
 
         bencher_iter_custom(b, kernel_launch, ctx)
 

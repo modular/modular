@@ -53,9 +53,9 @@ import torch
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.legacy.layer import Module
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.glm5_next.glm5_next import Glm5Next
 from max.pipelines.architectures.glm5_next.model_config import (
@@ -296,15 +296,6 @@ def _tower_weights() -> dict[str, torch.Tensor]:
     tower = Glm5NextVisionTransformer(config, DeviceRef.CPU())
     weights: dict[str, torch.Tensor] = {}
     for name, (_, shape) in _shapes(tower).items():
-        if name == "patch_embed.proj.weight":
-            # The checkpoint stores the projection as its Conv3d.
-            shape = [
-                shape[0],
-                config.in_channels,
-                config.temporal_patch_size,
-                config.patch_size,
-                config.patch_size,
-            ]
         checkpoint_name = "model.visual." + name.replace(
             "attn.qkv_proj.", "attn.qkv."
         )
@@ -315,8 +306,11 @@ def _tower_weights() -> dict[str, torch.Tensor]:
 
 
 def _checkpoint_name(name: str) -> str:
-    """Undoes the one adapter rename a post-adapter name does not survive."""
-    return name.replace(
+    """Returns a parameter's checkpoint name, the one the rules rename to
+    ``name``."""
+    if name == "lm_head.weight":
+        return name
+    return "model.language_model." + name.replace(
         "indexer.index_kpool_compress_gate.weight",
         "indexer.index_kpool_compress_gate",
     )
@@ -328,8 +322,8 @@ def _draft_checkpoint_name(name: str) -> str:
     if name.startswith("decoder_layer."):
         return _checkpoint_name(prefix + name[len("decoder_layer.") :])
     if name.startswith("shared_head_norm."):
-        return prefix + "shared_head.norm." + name[len("shared_head_norm.") :]
-    return prefix + name
+        name = "shared_head.norm." + name[len("shared_head_norm.") :]
+    return _checkpoint_name(prefix + name)
 
 
 def _random_weights(
@@ -524,6 +518,7 @@ def _pipeline(
                 device_graph_capture=speculative,
                 # The plain run reports the logits behind each token.
                 disable_overlap=not speculative,
+                prefer_module_v3=False,
             ),
             speculative=(
                 SpeculativeConfig(

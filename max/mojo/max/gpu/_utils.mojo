@@ -166,13 +166,6 @@ comptime _dtype_to_llvm_type_i32[dtype: DType] = __mlir_type.`i32` if dtype in (
     DType.uint32,
 ) else _dtype_to_llvm_type_f64[dtype]
 
-comptime _dtype_to_llvm_type_i64[dtype: DType] = __mlir_type.`i64` if dtype in (
-    DType.int64,
-    DType.uint64,
-) else _dtype_to_llvm_type_i32[dtype]
-
-comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
-
 
 @inline(.nodebug)
 def _dtype_to_llvm_type_str[dtype: DType]() -> StaticString:

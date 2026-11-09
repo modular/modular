@@ -43,15 +43,13 @@ from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from max.gpu.primitives.grid_controls import (
     PDL,
-    PDLLevel,
-    pdl_launch_attributes,
 )
 from max.gpu.memory import external_memory, fence_mbarrier_init
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from layout.tma_async import TMATensorTile
 from structured_kernels.tile_types import (
     TmaOpType,
@@ -59,7 +57,7 @@ from structured_kernels.tile_types import (
     static_row_major,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS

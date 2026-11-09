@@ -18,9 +18,9 @@ from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from . import weight_adapters
 from .flint import Flint
 from .model_config import FlintConfig
+from .weight_adapters import flint_weight_rules
 
 flint_arch = SupportedArchitecture(
     name="FlintForCausalLM_ModuleV3",
@@ -32,9 +32,8 @@ flint_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=flint_weight_rules,
+    use_weight_rules=True,
     task=PipelineTask.TEXT_GENERATION,
     config=FlintConfig,
     memory_planner=PagedMemoryPlanner,

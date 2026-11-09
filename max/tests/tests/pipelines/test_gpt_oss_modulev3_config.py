@@ -21,8 +21,8 @@ from unittest.mock import NonCallableMock
 import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.rotary_embedding import YarnScalingParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
+from max.nn.rope_scaling import YarnScalingParams
 from max.pipelines.architectures.gpt_oss_modulev3 import (
     GptOss,
     gpt_oss_modulev3_arch,

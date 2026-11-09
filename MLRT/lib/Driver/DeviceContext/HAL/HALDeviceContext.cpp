@@ -28,6 +28,7 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -36,6 +37,7 @@
 #include <initializer_list>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <utility>
 
 extern "C" {
@@ -44,6 +46,7 @@ int32_t MojoHAL_Device_numberOfDevices(const char *api);
 const char *MojoHAL_Device_getApiAndArch(char **out_api, char **out_arch,
                                          int32_t device_id);
 const char *MojoHAL_DeviceContext_enableAllPeerAccess();
+const char *MojoHAL_DeviceContext_allPeerAccessEnabled(bool *out_enabled);
 const char *MojoHAL_DeviceContext_create(MojoHALContextBox **out_ctx,
                                          const char *api, int32_t device_id);
 void MojoHAL_DeviceContext_copy(MojoHALContextBox **out_ctx,
@@ -90,6 +93,8 @@ const char *MojoHAL_DeviceContext_getApi(char **out_api,
 int64_t MojoHAL_DeviceContext_id(MojoHALContextBox *ctx);
 bool MojoHAL_DeviceContext_canAccess(MojoHALContextBox *ctx,
                                      MojoHALContextBox *peer);
+const char *MojoHAL_DeviceContext_enablePeerAccess(MojoHALContextBox *ctx,
+                                                   MojoHALContextBox *peer);
 bool MojoHAL_DeviceContext_isCompatible(MojoHALContextBox *ctx);
 const char *MojoHAL_DeviceContext_isHostUnified(bool *out_unified,
                                                 MojoHALContextBox *ctx);
@@ -103,6 +108,7 @@ const char *MojoHAL_DeviceContext_getAttribute(int32_t *out_value,
                                                MojoHALContextBox *ctx,
                                                int32_t attr);
 const char *MojoHAL_DeviceBuffer_createSubBuffer(MojoHALBufferBox **out_buf,
+                                                 void **out_ptr,
                                                  MojoHALBufferBox *parent,
                                                  uint64_t byteOffset,
                                                  uint64_t byteSize);
@@ -210,19 +216,31 @@ int Device::numberOfDevices(StringRef api) {
 }
 
 namespace {
-/// Maps a plugin API name onto the `Device::API` string constants. Plugin
-/// APIs without a dedicated constant (e.g. the mock test plugin) report the
-/// generic gpuAPI.
+/// Maps a plugin API name onto a `Device::API` that outlives every `Device`.
+/// A plugin API without a dedicated constant keeps its own name, as the legacy
+/// driver's plugin backends report theirs: kernel registrations select on it,
+/// so collapsing it to gpuAPI would select a generic GPU kernel instead.
 Device::API mapAPI(StringRef api) {
-  if (api == Device::cpuAPI)
-    return Device::cpuAPI;
-  if (api == Device::cudaAPI)
-    return Device::cudaAPI;
-  if (api == Device::hipAPI)
-    return Device::hipAPI;
-  if (api == Device::metalAPI)
-    return Device::metalAPI;
-  return Device::gpuAPI;
+  for (Device::API known :
+       {Device::cpuAPI, Device::cudaAPI, Device::hipAPI, Device::metalAPI})
+    if (api == known)
+      return known;
+  // Plugins are few and loaded once, so the set stays small, and every call
+  // after a plugin's first device takes only the shared lock: `adoptMojoBox`
+  // calls this on the kernel-execution hot path. Both are leaked so that a
+  // driver call during static destruction still finds them alive, and so that
+  // a leaked `Device`'s `api_` never dangles. Each shared library that links
+  // this file gets its own copy, which is harmless: callers compare names by
+  // content, never by pointer.
+  static auto &mutex = *new std::shared_mutex;
+  static auto &names = *new llvm::StringSet<>;
+  {
+    std::shared_lock<std::shared_mutex> lock(mutex);
+    if (auto it = names.find(api); it != names.end())
+      return it->getKey();
+  }
+  std::unique_lock<std::shared_mutex> lock(mutex);
+  return names.insert(api).first->getKey();
 }
 
 } // namespace
@@ -233,6 +251,15 @@ ErrorOrSuccess Device::enableAllPeerAccess() {
   if (const char *err = MojoHAL_DeviceContext_enableAllPeerAccess())
     return takeError(err);
   return {};
+}
+
+ErrorOr<bool> Device::allPeerAccessEnabled() {
+  if (AsyncRT::isVirtualDeviceMode())
+    return false;
+  bool enabled = false;
+  if (const char *err = MojoHAL_DeviceContext_allPeerAccessEnabled(&enabled))
+    return takeError(err);
+  return enabled;
 }
 
 ErrorOr<DeviceRef> Device::create(StringRef api, int id) {
@@ -438,6 +465,15 @@ ErrorOr<bool> Device::canAccess(const Device &other) const {
   return MojoHAL_DeviceContext_canAccess(mojoCtx_, other.mojoCtx_);
 }
 
+ErrorOrSuccess Device::enablePeerAccess(const Device &peer) {
+  if (isVirtual() || peer.isVirtual())
+    return virtualDeviceError("peer access");
+  if (const char *err =
+          MojoHAL_DeviceContext_enablePeerAccess(mojoCtx_, peer.mojoCtx_))
+    return takeError(err);
+  return {};
+}
+
 // ===-- DeviceBuffer ----------------------------------------------------=== //
 
 DeviceBuffer::~DeviceBuffer() {
@@ -487,18 +523,20 @@ ErrorOr<DeviceBufferRef> DeviceBuffer::createSubBuffer(size_t byteOffset,
   // re-slice directly; Host boxes carry a Mojo HostBuffer, whose export
   // returns the same kind of DeviceBuffer view over the pinned host region.
   MojoHALBufferBox *buf = nullptr;
+  // The plugin may give a device view an address of its own.
+  void *ptr = static_cast<char *>(ptr_) + byteOffset;
   const char *err = kind_ == BoxKind::Host
                         ? MojoHAL_HostBuffer_createSubBuffer(
                               &buf, mojoBox_, byteOffset, byteSize)
                         : MojoHAL_DeviceBuffer_createSubBuffer(
-                              &buf, mojoBox_, byteOffset, byteSize);
+                              &buf, &ptr, mojoBox_, byteOffset, byteSize);
   if (err)
     return takeError(err);
   // Sub-buffer boxes are plain Mojo DeviceBuffer views regardless of what
   // backs the parent; `parent_` keeps the parent box (and any mapping) alive.
-  return DeviceBufferRef::take(new DeviceBuffer(
-      buf, static_cast<char *>(ptr_) + byteOffset, byteSize, isHost_,
-      BoxKind::Device, context_.copy(), DeviceBufferRef::copy(this)));
+  return DeviceBufferRef::take(
+      new DeviceBuffer(buf, ptr, byteSize, isHost_, BoxKind::Device,
+                       context_.copy(), DeviceBufferRef::copy(this)));
 }
 
 void *DeviceBuffer::releasePtr() {
@@ -1003,8 +1041,8 @@ void *DeviceStream::ptr() const {
   return handle;
 }
 
-ErrorOrSuccess DeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                                    uint64_t value) const {
+ErrorOrSuccess DeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                               uint64_t value) const {
   if (device_->isVirtual())
     return virtualDeviceError("host-value waits");
   if (const char *err = MojoHAL_DeviceStream_waitOnHostValue(
@@ -1375,10 +1413,35 @@ using M::AsyncRT::CPUDevice;
 using M::Driver::DeviceBuffer;
 using M::Driver::DeviceBufferRef;
 
-// Backs the HAL Mojo `DeviceStream.wait_for_host_value`.
+// Backs the HAL Mojo `DeviceStream.wait_for_flag`.
 MODULAR_EXPORT uint64_t
 AsyncRT_CompletionFlag_devicePtr(M::Driver::CompletionFlag *flag) {
   return flag->devicePtr();
+}
+
+MODULAR_EXPORT void
+AsyncRT_CompletionFlag_retain(M::Driver::CompletionFlag *flag) {
+  M::Driver::CompletionFlagRef::lowLevelAddRef(flag);
+}
+
+MODULAR_EXPORT void
+AsyncRT_CompletionFlag_release(M::Driver::CompletionFlag *flag) {
+  M::Driver::CompletionFlagRef::lowLevelDropRef(flag);
+}
+
+MODULAR_EXPORT void
+AsyncRT_CompletionFlag_signal(M::Driver::CompletionFlag *flag, uint64_t value) {
+  flag->signal(value);
+}
+
+MODULAR_EXPORT uint64_t
+AsyncRT_CompletionFlag_load(M::Driver::CompletionFlag *flag) {
+  return flag->load();
+}
+
+MODULAR_EXPORT void
+AsyncRT_CompletionFlag_reset(M::Driver::CompletionFlag *flag) {
+  flag->reset();
 }
 
 // Backs the HAL Mojo `DeviceBuffer.take_handle()`, so `takeRCRef` consumers

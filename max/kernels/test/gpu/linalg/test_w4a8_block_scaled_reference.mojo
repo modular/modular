@@ -99,7 +99,7 @@ def check_reference_against_grouped_kernel[
     ctx.enqueue_copy(escale_dev, escale_host)
     ctx.enqueue_memset(c_dev, nan[C_DTYPE]())
 
-    grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True, target="gpu"](
+    grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True](
         TileTensor(c_dev, row_major(Coord(M, Idx[N]))).as_unsafe_any_origin(),
         TileTensor(a_dev, row_major(Coord(M, Idx[K]))).as_unsafe_any_origin(),
         TileTensor(

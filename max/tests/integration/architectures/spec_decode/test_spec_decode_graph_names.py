@@ -38,6 +38,9 @@ MACH_GRAPH_NAMES = {
         "Eagle3MHADeepseekV3DraftModel": "eagle3_mha_kimik25_graph",
         "dflash": "unified_dflash_kimi_k25_graph",
     },
+    "KimiK3ForConditionalGeneration_ModuleV3": {
+        "dspark": "unified_dspark_kimi_k3_modulev3",
+    },
     "MiMoV2ForCausalLM": {"dflash": "unified_dflash_mimo_v2"},
     "Qwen3_5ForConditionalGeneration": {
         "dflash2": "qwen3_5_with_dflash2_graph",

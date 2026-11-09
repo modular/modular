@@ -61,15 +61,13 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module
-from max.nn.common_layers.functional_kernels import (
-    mla_prefill_decode_graph,
-    store_mla_latent_ragged,
-)
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.multi_latent_attention import MLAPrefillMetadata
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kv_cache import MLAKVCacheParams, spec_decode_cache_slack
+from max.nn.kernels import mla_prefill_decode_graph
+from max.nn.kernels.mla import store_mla_latent_ragged
+from max.nn.kv_cache import MLAKVCacheParams, spec_decode_cache_slack
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor

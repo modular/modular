@@ -10,17 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The real checkpoint's key list, renamed by the adapter, covers the module.
+"""The real checkpoint's keys, named by the weight rules, cover the modules.
 
 ``testdata/checkpoint_keys.txt`` lists the ``weight_map`` keys of
 ``model.safetensors.index.json`` at revision ``a4e59da52a7b``. A missing
-parameter already fails ``Module.compile``; this also catches two checkpoint
-keys renamed onto one parameter, where the second silently wins.
+parameter already fails ``Module.compile``; this also catches a checkpoint key
+that lands under neither module, which the modules would silently skip.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -29,7 +28,7 @@ import pytest
 from max import functional as F
 from max.driver import CPU, Buffer, DeviceSpec
 from max.dtype import DType
-from max.graph.weights import SafetensorWeights, WeightData
+from max.graph.weights import SafetensorWeights
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.muse_glimmer import MuseGlimmerConfig
 from max.pipelines.architectures.muse_glimmer.muse_glimmer import (
@@ -39,16 +38,14 @@ from max.pipelines.architectures.muse_glimmer.vision import (
     MuseGlimmerVisionModel,
 )
 from max.pipelines.architectures.muse_glimmer.weight_adapters import (
-    convert_safetensor_language_state_dict,
-    convert_safetensor_vision_state_dict,
+    muse_glimmer_weight_rules,
 )
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, WeightTransform
 from max.tensor import default_dtype
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 TESTDATA = Path(__file__).parent / "testdata"
-Converter = Callable[..., dict[str, WeightData]]
 
 
 def _pipeline_config() -> Mock:
@@ -102,10 +99,7 @@ def vision_names(config: MuseGlimmerConfig) -> set[str]:
     return set(dict(tower.parameters))
 
 
-def _convert(
-    keys: list[str],
-    converter: Converter = convert_safetensor_language_state_dict,
-) -> set[str]:
+def _named(keys: list[str]) -> set[str]:
     placeholder = Buffer.from_numpy(np.zeros(1, dtype=np.float32))
     weights = SafetensorWeights(
         [],
@@ -113,30 +107,24 @@ def _convert(
         tensors_to_file_idx={},
         _st_weight_map=dict.fromkeys(keys, placeholder),
     )
-    return set(converter(dict(weights.items())))
+    hf = AutoConfig.from_pretrained(str(TESTDATA / "config.json"))
+    transform = WeightTransform(muse_glimmer_weight_rules(hf))
+    return set(transform(dict(weights.items())))
 
 
-def test_checkpoint_keys_cover_module(
+def test_checkpoint_keys_cover_modules(
     checkpoint_keys: list[str],
     expected_names: set[str],
     vision_names: set[str],
 ) -> None:
-    converted = _convert(checkpoint_keys)
-    assert converted == expected_names
-    vision = _convert(checkpoint_keys, convert_safetensor_vision_state_dict)
+    named = _named(checkpoint_keys)
+    decoder = {
+        n.removeprefix("decoder.") for n in named if n.startswith("decoder.")
+    }
+    vision = {
+        n.removeprefix("vision.") for n in named if n.startswith("vision.")
+    }
+    assert decoder == expected_names
     assert vision == vision_names
-    # Each converter raises on a key neither of them owns, so the two
-    # outputs account for every checkpoint key exactly when the sizes add up.
-    assert len(converted) + len(vision) == len(checkpoint_keys)
-
-
-@pytest.mark.parametrize(
-    "converter",
-    [
-        convert_safetensor_language_state_dict,
-        convert_safetensor_vision_state_dict,
-    ],
-)
-def test_unknown_key_raises(converter: Converter) -> None:
-    with pytest.raises(ValueError, match="Unexpected checkpoint key"):
-        _convert(["model.mtp.weight"], converter)
+    # Each key lands under exactly one of the two modules.
+    assert len(decoder) + len(vision) == len(checkpoint_keys)

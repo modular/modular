@@ -21,7 +21,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
-from layout.tile_layout import blocked_product
+from layout.layout import blocked_product
 from layout._fillers import arange
 from layout.tensor_engine import DefaultEngine
 from std.testing import assert_equal

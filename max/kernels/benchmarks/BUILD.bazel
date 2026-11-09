@@ -202,6 +202,7 @@ _EXTRA_CONSTRAINTS = {
     "gpu/nn/bench_mha_prefill_v2.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + from_expcnt
     "gpu/nn/bench_mha_prefill_v2_paged.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + paged KV operand
     "gpu/nn/bench_mhc_pre.mojo": ["//:mi355_gpu"],  # mhc_pre is gfx950-only (bf16 MFMA projection)
+    "gpu/nn/bench_moe_glue_chain.mojo": ["//:mi355_gpu"],  # K3 MoE glue chain bench: quantize_mx_amd is the CDNA4 MXFP8 arm
     "gpu/quantization/bench_qmatmul_int4.mojo": ["//:nvidia_gpu"],  # INT4 GEMM only compiles for NVIDIA
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_block_scaled_matmul_compute_fn.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
@@ -369,6 +370,7 @@ mojo_binary(
             # Same reason, timed on remote MI355.
             "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             "gpu/nn/bench_mla_decode_sparse_bf16_amd.mojo",
+            "gpu/nn/bench_topk_split_amd.mojo",
             # Same reason: the split KV cache no-regression gate, timed on
             # remote B200.
             "gpu/nn/bench_mha_sm100_split_kv.mojo",
@@ -380,6 +382,8 @@ mojo_binary(
             "gpu/bench_squeeze_shape.mojo",
             # Same reason: dedicated `mojo_test` below for the tile op.
             "gpu/bench_tile.mojo",
+            # Dedicated `mojo_test` below, timed on remote B200.
+            "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
         ],
     )
 ]
@@ -412,6 +416,7 @@ mojo_binary(
             # Same reason, timed on remote MI355.
             "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             "gpu/nn/bench_mla_decode_sparse_bf16_amd.mojo",
+            "gpu/nn/bench_topk_split_amd.mojo",
             # Same reason: the split KV cache no-regression gate, timed on
             # remote B200.
             "gpu/nn/bench_mha_sm100_split_kv.mojo",
@@ -423,9 +428,42 @@ mojo_binary(
             "gpu/bench_squeeze_shape.mojo",
             # Same reason: dedicated `mojo_test` below for the tile op.
             "gpu/bench_tile.mojo",
+            # Dedicated `mojo_test` below, timed on remote B200.
+            "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
         ],
     )
 ]
+
+# SM100 BF16 grouped matmul per token tile width at one routed-rows shape
+# (`--test_arg=--counts=...`, `--ids=...`); timed on remote B200.
+mojo_test(
+    name = "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "40",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo.run"],
+)
 
 # `mo.squeeze_shape` / `mo.unsqueeze_shape` through their registered
 # `execute` entry points (gather_scatter.mojo). A `mojo_test` so it can be
@@ -796,6 +834,37 @@ build_test(
     name = "gpu/nn/bench_mla_decode_sparse_bf16_amd.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/nn/bench_mla_decode_sparse_bf16_amd.mojo.run"],
+)
+
+# The AMD row-split top-k against the select it replaces; out of the glob so
+# it can be timed on remote MI355, as the benchmarks above.
+mojo_test(
+    name = "gpu/nn/bench_topk_split_amd.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_topk_split_amd.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:max_mojo",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/bench_topk_split_amd.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_topk_split_amd.mojo.run"],
 )
 
 # Deps/data/env shared by the softmax / m3 benchmark targets below.

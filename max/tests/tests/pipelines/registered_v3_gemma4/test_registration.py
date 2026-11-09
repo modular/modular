@@ -24,7 +24,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
     Gemma4TextConfig,
@@ -67,11 +68,9 @@ def test_raw_checkpoint_names_are_preserved_until_role_weights_are_prepared() ->
     assert "model.language_model.layers.0.input_layernorm.weight" in raw
 
 
-def test_finalize_completes_a_copy_of_the_text_config(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The text config's rope_theta raises when read, as a full copy reads it.
-    planning = Gemma4TextConfig(
+def _planning_text_config(**overrides: Any) -> Gemma4TextConfig:
+    """A one-layer text config; ``overrides`` replaces any of its fields."""
+    fields: dict[str, Any] = dict(
         vocab_size=8,
         hidden_size=8,
         intermediate_size=8,
@@ -98,13 +97,23 @@ def test_finalize_completes_a_copy_of_the_text_config(
         kv_params=NonCallableMock(),
         layer_types=["sliding_attention"],
     )
+    fields.update(overrides)
+    return Gemma4TextConfig(**fields)
+
+
+def _finalize(
+    planning: Gemma4TextConfig,
+    monkeypatch: pytest.MonkeyPatch,
+    n_devices: int = 1,
+) -> Gemma4Config:
+    """Finalizes a config around ``planning``; checkpoint parsing is stubbed."""
     monkeypatch.setattr(
         Gemma4ForConditionalGenerationConfig,
         "finalize",
         lambda self, huggingface_config, state_dict, return_logits: None,
     )
     config = Gemma4Config.__new__(Gemma4Config)
-    config.devices = [DeviceRef.CPU()]
+    config.devices = [DeviceRef.CPU()] * n_devices
     config.text_config = planning
     config.finalize(
         NonCallableMock(),
@@ -114,12 +123,63 @@ def test_finalize_completes_a_copy_of_the_text_config(
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
         ),
     )
+    return config
+
+
+def test_finalize_completes_a_copy_of_the_text_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The text config's rope_theta raises when read, as a full copy reads it.
+    planning = _planning_text_config()
+    config = _finalize(planning, monkeypatch)
     assert config.text_config is not planning
     assert (
         config.text_config.return_hidden_states
         == ReturnHiddenStates.ALL_NORMALIZED
     )
     assert planning.return_hidden_states == ReturnHiddenStates.NONE
+
+
+def _moe_text_config(**overrides: Any) -> Gemma4TextConfig:
+    """The 26B-A4B MoE widths, with KV heads that split over 8 devices."""
+    fields: dict[str, Any] = dict(
+        num_key_value_heads=8,
+        num_global_key_value_heads=8,
+        enable_moe_block=True,
+        num_experts=128,
+        top_k_experts=8,
+        moe_intermediate_size=704,
+    )
+    fields.update(overrides)
+    return _planning_text_config(**fields)
+
+
+_NVFP4 = QuantConfig.nvfp4(mlp_quantized_layers=(), attn_quantized_layers=())
+
+
+@pytest.mark.parametrize(
+    ("quant_config", "n_devices", "ok"),
+    [
+        (None, 8, True),
+        (_NVFP4, 1, True),
+        (_NVFP4, 4, True),
+        # 704 / 8 = 88, not a multiple of the 16-wide NVFP4 scale block.
+        (_NVFP4, 8, False),
+    ],
+    ids=["bf16_tp8", "nvfp4_tp1", "nvfp4_tp4", "nvfp4_tp8"],
+)
+def test_finalize_checks_each_device_gets_whole_expert_scale_blocks(
+    quant_config: QuantConfig | None,
+    n_devices: int,
+    ok: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    planning = _moe_text_config(quant_config=quant_config)
+    if ok:
+        _finalize(planning, monkeypatch, n_devices)
+        return
+    with pytest.raises(ValueError, match="moe_intermediate_size"):
+        _finalize(planning, monkeypatch, n_devices)
 
 
 def test_unified_checkpoint_skips_only_the_vision_tower() -> None:

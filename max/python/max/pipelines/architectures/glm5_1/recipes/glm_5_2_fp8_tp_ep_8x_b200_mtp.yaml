@@ -24,5 +24,6 @@ speculative:
   num_speculative_tokens: 5
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   max_batch_input_tokens: 8192

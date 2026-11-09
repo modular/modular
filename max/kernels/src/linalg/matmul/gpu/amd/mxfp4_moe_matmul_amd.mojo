@@ -51,7 +51,7 @@ from layout import (
 )
 from layout._utils import make_amd_buffer_resource
 from layout.tile_tensor import stack_allocation
-from layout.tile_layout import col_major, row_major
+from layout.layout import col_major, row_major
 
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,

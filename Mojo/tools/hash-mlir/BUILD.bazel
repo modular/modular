@@ -5,11 +5,17 @@ package(default_visibility = ["//Mojo:consumers"])
 modular_cc_binary(
     name = "hash-mlir",
     srcs = glob(["*.cpp"]),
-    deps = [
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
         "//Mojo:ToolCommon",
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//mlir:BytecodeWriter",
     ],
 )

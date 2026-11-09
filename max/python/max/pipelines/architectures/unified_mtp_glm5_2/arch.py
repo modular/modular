@@ -18,6 +18,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
+from ..glm5_1.arch import glm_format_spec
 from ..glm5_1.model_config import Glm5_1Config
 from ..glm5_1.reasoning import (
     GlmReasoningParser,  # noqa: F401  registers "glm45"
@@ -54,6 +55,7 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     batching=UnifiedMTPGlm5_2BatchProcessor,
     tool_parser="glm45",
     reasoning_parser="glm45",
+    format_spec=glm_format_spec,
     # The draft layer copies the target's MLA cache params, so it reads the
     # same NVFP4 layout through the same sparse MLA kernels.
     supports_nvfp4_kv_cache=True,

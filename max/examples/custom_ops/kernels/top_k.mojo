@@ -66,7 +66,6 @@ struct TopK:
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
         K: Int,
-        target: StaticString,
     ](
         out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
         out_idxs: OutputTensor[dtype=.int32, rank=rank, ...],
@@ -75,7 +74,7 @@ struct TopK:
     ) raises:
         comptime assert rank == 2, "rank must be 2"
         comptime assert not (
-            target == "gpu" and K > WARP_SIZE
+            ctx.target.is_gpu() and K > WARP_SIZE
         ), "K can't be larger than warp size"
 
         var shape = in_vals.shape()
@@ -153,7 +152,7 @@ struct TopK:
                 # Retirement must be visible before the next candidate reload.
                 barrier()
 
-        comptime if target == "gpu":
+        comptime if ctx.target.is_gpu():
             dev_ctx.enqueue_function[top_k_gpu[K]](
                 out_vals_tensor,
                 out_idxs_tensor,

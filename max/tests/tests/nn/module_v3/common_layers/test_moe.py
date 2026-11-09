@@ -21,12 +21,12 @@ import pytest
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.nn.common_layers.functional_kernels import moe_finalize
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.moe import (
     MoE,
     TensorParallelMoE,
 )
+from max.nn.kernels import moe_finalize
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import (
     DeviceMapping,

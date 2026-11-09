@@ -35,14 +35,14 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     KVCacheParams,
     MLAAttnKey,
     padded_lut_cols,
 )
-from max.nn.legacy.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.support.math import ceildiv
 
 

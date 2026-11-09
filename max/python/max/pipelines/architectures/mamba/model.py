@@ -23,9 +23,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import MHAKVCacheParams
-from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import LogProbabilities, TextContext
 from max.pipelines.lib import (
     KVCacheConfig,

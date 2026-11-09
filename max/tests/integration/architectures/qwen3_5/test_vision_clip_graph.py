@@ -21,13 +21,13 @@ this file is the only place that exercises the split at all.
 
 The batched case is the one that matters. Tiling a clip's position arrays up to
 the pixel length -- the workaround a single shared dimension forces -- makes a
-lone clip come out right, because ``mo.spatial_merge`` reads only the first
+lone clip come out right, because ``vision.spatial_merge`` reads only the first
 ``h * w`` rows of each item. Any grid FOLLOWING that clip is then read from the
 wrong input offset and silently mixes in another item's position embeddings. So
 the tests below always put a second item after the clip.
 
 The encoder is built at a reduced depth with random weights: the questions here
-are shape and offset arithmetic through ``mo.spatial_merge``, the per-temporal-
+are shape and offset arithmetic through ``vision.spatial_merge``, the per-temporal-
 patch attention segments and the patch merger, none of which depend on trained
 values.
 """
@@ -269,7 +269,7 @@ def test_item_after_a_clip_is_not_corrupted(compiled) -> None:  # noqa: ANN001
     """An image's embeddings do not depend on a clip sitting before it.
 
     The concrete failure a shared symbolic dimension forces: with the position
-    arrays tiled up to the pixel length, ``mo.spatial_merge`` advances its
+    arrays tiled up to the pixel length, ``vision.spatial_merge`` advances its
     input cursor past the tiled copies and reads the trailing image's positions
     from the wrong offset -- mixing in the clip's. Nothing in a single-clip
     batch can see that, because the kernel reads only the first ``h * w`` rows
@@ -304,7 +304,7 @@ def test_clip_position_rows_are_replicated_across_slices(
     The position grid is replicated across temporal patches, and attention is
     segmented per temporal patch, so a clip whose slices hold the same pixels
     must produce the same embeddings in every slice. Had
-    ``mo.spatial_merge`` read the position rows at a shifted offset per slice,
+    ``vision.spatial_merge`` read the position rows at a shifted offset per slice,
     they would diverge.
     """
     grid_t, grid_h, grid_w = 3, 4, 6
@@ -328,7 +328,7 @@ def test_a_clip_encodes_as_its_temporal_patches(compiled) -> None:  # noqa: ANN0
 
     A serving engine that preprocesses a clip one temporal patch at a time
     packs the patches as ``t`` one-patch items, where MAX's tokenizer lays the
-    clip out as one. Attention, rotary positions and ``mo.spatial_merge``'s
+    clip out as one. Attention, rotary positions and ``vision.spatial_merge``'s
     position replication all work per temporal patch, so the tower computes
     the same thing from both.
     """

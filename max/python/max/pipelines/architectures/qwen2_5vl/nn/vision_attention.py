@@ -19,13 +19,13 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
+from max.nn._graph_ops import flash_attention_ragged_gpu
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.attention import num_heads_for_device
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged_gpu
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.stacked_linear import StackedLinear
+from max.nn.quant_config import QuantConfig
 
 
 class DistributedVisionWindowAttention(Module, Shardable):

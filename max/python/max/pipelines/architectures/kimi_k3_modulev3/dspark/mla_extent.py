@@ -58,7 +58,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.paged_kv_cache._common import (
     cache_valid_length_for_context,

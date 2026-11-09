@@ -41,7 +41,7 @@ from max.gpu.host.nvidia.tma import TMADescriptor
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import syncwarp
 from layout import Coord, TileTensor, coord, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -69,7 +69,7 @@ def test_grouped_tensormap_update_kernel[
     num_blocks: Int,
     tile_shape: Coord,
     desc_shape: Coord,
-    thread_layout: TileLayout,
+    thread_layout: Layout,
     dst_a_origin: MutOrigin,
     dst_b_origin: MutOrigin,
     group_a_ptrs_origin: MutOrigin,

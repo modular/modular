@@ -19,20 +19,14 @@ from algorithm import rowwise
 from builtin_kernels.monoids import ReduceSum
 from layout import Coord
 from max.gpu.host import DeviceContext
-from std.sys.info import CompilationTarget
 from std.testing import assert_equal
 
 comptime dtype = DType.float32
 
 
-def _target[T: CompilationTarget]() -> StaticString:
-    return "cpu" if T.is_cpu() else "gpu"
-
-
 def check_sums(ctx: DeviceContext, rows: Int, cols: Int) raises:
-    comptime target = _target[type_of(ctx).target]()
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[dtype, 1], target, 64, dtype
+        ReduceSum[dtype, 1], type_of(ctx).target, 64, dtype
     ]()
     var n = rows * cols
     var x_h = ctx.enqueue_create_host_buffer[dtype](n)
@@ -81,7 +75,7 @@ def check_sums(ctx: DeviceContext, rows: Int, cols: Int) raises:
 
         rowwise.once(emit, ctx_p)
 
-    rowwise.launch[axis=1, simd_width=simd_width, target=target, num_phases=1](
+    rowwise.launch[axis=1, simd_width=simd_width, num_phases=1](
         body, Coord(rows, cols), ctx
     )
     ctx.enqueue_copy(out_h, out_d)
@@ -96,9 +90,8 @@ def check_sums(ctx: DeviceContext, rows: Int, cols: Int) raises:
 
 
 def check_doubled(ctx: DeviceContext, rows: Int, cols: Int) raises:
-    comptime target = _target[type_of(ctx).target]()
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[dtype, 1], target, 64, dtype
+        ReduceSum[dtype, 1], type_of(ctx).target, 64, dtype
     ]()
     var n = rows * cols
     var x_h = ctx.enqueue_create_host_buffer[dtype](n)
@@ -133,7 +126,7 @@ def check_doubled(ctx: DeviceContext, rows: Int, cols: Int) raises:
 
         rowwise.reduce(coords, cols, ctx_p, tile_fn)
 
-    rowwise.launch[axis=1, simd_width=simd_width, target=target, num_phases=1](
+    rowwise.launch[axis=1, simd_width=simd_width, num_phases=1](
         body, Coord(rows, cols), ctx
     )
     ctx.enqueue_copy(out_h, out_d)

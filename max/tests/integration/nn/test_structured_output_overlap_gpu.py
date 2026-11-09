@@ -30,7 +30,7 @@ from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import inplace_memcpy, wait_host_value_with_dep
+from max.nn._graph_ops import inplace_memcpy, wait_host_value_with_dep
 from max.pipelines.lib.pipeline_variants.structured_output_overlap import (
     StructuredOutputOverlapState,
 )
@@ -164,7 +164,7 @@ def test_payload_shape_matches_wait_host_value(
     """``wait_payload`` is CPU int64[2] = [flag._unsafe_ptr, 1].
 
     Matches the contract in
-    ``max.nn.legacy.kernels.wait_host_value_with_dep``'s docstring.
+    ``max.nn._graph_ops.wait_host_value_with_dep``'s docstring.
     """
     payload = state.wait_payload
     assert payload.dtype == DType.int64
@@ -432,7 +432,7 @@ def test_overlap_smoke_graph_ir_dump(
     accelerator: Accelerator, state: StructuredOutputOverlapState
 ) -> None:
     """Dump the smoke graph IR so chain wiring between
-    ``mo.wait_host_value_with_dep`` and ``mo.inplace_memcpy`` is
+    ``runtime.wait_host_value_with_dep`` and ``runtime.inplace_memcpy`` is
     auditable.
 
     The two ops share ``scratch`` as a mutable operand, so the
@@ -454,7 +454,7 @@ def test_overlap_smoke_graph_ir_dump(
     assert "wait_host_value_with_dep" in ir, (
         f"wait_host_value_with_dep op not found in IR:\n{ir}"
     )
-    assert "mo.inplace_memcpy" in ir or "inplace_memcpy" in ir, (
+    assert "runtime.inplace_memcpy" in ir or "inplace_memcpy" in ir, (
         f"inplace_memcpy op not found in IR:\n{ir}"
     )
 

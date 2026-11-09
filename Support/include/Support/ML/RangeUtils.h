@@ -19,14 +19,15 @@
 #define SUPPORT_ML_RANGEUTILS_H
 
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 #include <cstdint>
 
 namespace M {
 
 /// Return the number of results given the start/limit/step values. Returns an
 /// error if the given values are invalid.
-ErrorOr<int64_t> getRangeNumElements(int64_t start, int64_t limit,
-                                     int64_t step);
+MODULAR_CXX_EXPORT ErrorOr<int64_t>
+getRangeNumElements(int64_t start, int64_t limit, int64_t step);
 
 } // namespace M
 

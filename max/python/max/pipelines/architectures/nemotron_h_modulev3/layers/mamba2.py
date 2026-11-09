@@ -23,12 +23,12 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
 from max.nn import Module
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     causal_conv1d_varlen_fwd,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
+from max.nn.common_layers.mesh_axis import TP
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 

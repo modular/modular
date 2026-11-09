@@ -44,6 +44,8 @@ def unmatched_hits(status_code: Int) -> Int:
     match status_code:
         case 200:
             hits += 1
+        case _:
+            pass
     return hits
 
 

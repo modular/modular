@@ -525,7 +525,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ] + ([_PLUGIN] if precompile_mefs else []),
             ignore_unresolved_imports = ignore_unresolved_imports,
-            target_compatible_with = select({
+            target_compatible_with = target_compatible_with + select({
                 # No point in running these, causes "error replanting symlinks" failures
                 "//:asan": ["@platforms//:incompatible"],
                 "//:ubsan": ["@platforms//:incompatible"],

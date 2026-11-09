@@ -47,7 +47,6 @@ def softmax[
     & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     AxisSizeT: CoordLike,
     /,
-    target: StaticString,
     logsoftmax: Bool = False,
     reduce_dim: Int = rank - 1,
 ](
@@ -72,7 +71,11 @@ def softmax[
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "softmax requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
-        ReduceSum[accum, 1], target, 64, dtype, accum
+        ReduceSum[accum, 1],
+        context.T.target,
+        64,
+        dtype,
+        accum,
     ]()
 
     @inline(.always)
@@ -166,7 +169,6 @@ def softmax[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         computationally_expensive=True,
         num_phases=3,
         dtype_size=size_of[dtype](),

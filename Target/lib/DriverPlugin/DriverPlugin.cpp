@@ -117,27 +117,6 @@ void DriverImpl::reset_() {
   driverHandle_ = nullptr;
 }
 
-#define ASSIGN_OR_ERROR(type, var, expr)                                       \
-  type var;                                                                    \
-  {                                                                            \
-    auto exprOr = (expr);                                                      \
-    if (exprOr.isError()) {                                                    \
-      return Error(std::string("Driver plugin: ") + exprOr.getError());        \
-    }                                                                          \
-    var = exprOr.takeValue();                                                  \
-  }                                                                            \
-  while (false)                                                                \
-    ;
-
-#define RETURN_IF_ERROR2(expr, message)                                        \
-  do {                                                                         \
-    auto exprOr = (expr);                                                      \
-    if (exprOr.isError()) {                                                    \
-      return Error(std::string("Driver plugin: ") + message + ": " +           \
-                   exprOr.getError())                                          \
-    }                                                                          \
-  } while (false);
-
 #define RETURN_IF_BAD_STATUS(activity, obj, api, ...)                          \
   do {                                                                         \
     M_driver_status_t status = obj->api(__VA_ARGS__);                          \
@@ -148,13 +127,6 @@ void DriverImpl::reset_() {
       return Error(std::string("Failed ") + activity +                         \
                    ": Driver plugin failed " + std::string(#api) + "() on " +  \
                    obj->soPath_);                                              \
-    }                                                                          \
-  } while (false);
-
-#define RETURN_IF_FAILED(condition, message)                                   \
-  do {                                                                         \
-    if (!(condition)) {                                                        \
-      return Error(message + std::string(" for driver plugin ") + soPath_);    \
     }                                                                          \
   } while (false);
 
@@ -368,6 +340,9 @@ getArchFromPlugins() {
 
 MODULAR_CXX_EXPORT ErrorOr<std::unique_ptr<CompilationDevice>>
 getCompilationDevice(StringRef api, StringRef arch) {
+  // Virtual-device mode reaches here without having created a real device, so
+  // nothing else has loaded the plugins yet and the API map would be empty.
+  ensurePluginsLoaded();
   DriverImpl *impl = findDriverForApi(api);
   if (!impl)
     return Error("No plugin registered for API: " + api.str());

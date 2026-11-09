@@ -34,21 +34,23 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.legacy.graph_groups import HiddenStates
-from max.nn.legacy.kv_cache import (
+from max.nn.activation import GatedActivation
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.graph_groups import HiddenStates
 from max.nn.legacy.layer import LayerList, MissingLayer, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.moe import GatedActivation, MoE, MoEQuantized
+from max.nn.legacy.moe import MoE, MoEQuantized
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import DecoderOutputs, ReturnHiddenStates
+from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
 )

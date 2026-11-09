@@ -16,7 +16,11 @@ import os
 from pathlib import Path
 
 import pytest
-from max.driver import accelerator_count
+from max.driver import (
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, _OpaqueType, ops
@@ -113,6 +117,51 @@ def test_api_scoped_kernel_valid(
         )
 
     session.load(graph)
+
+
+def _on_blackwell() -> bool:
+    # `accelerator_architecture_name` raises on a host without an accelerator.
+    return (
+        accelerator_count() > 0
+        and accelerator_api() == "cuda"
+        and accelerator_architecture_name().startswith("sm_10")
+    )
+
+
+@pytest.mark.skipif(
+    not _on_blackwell(),
+    reason="both registrations hold only on a Blackwell GPU",
+)
+def test_ambiguous_kernel_selection(
+    kernel_verification_ops_path: Path,
+) -> None:
+    # Hopper-and-Blackwell and Ampere-and-Blackwell kernels each cover an
+    # architecture that the other does not, and both hold on Blackwell, so
+    # `ops.custom` reports the tie, with each candidate and the Mojo source
+    # that declares it.
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.GPU())
+    graph = Graph(
+        "test_ambiguous_kernel_selection",
+        input_types=[tensor_type, tensor_type],
+        output_types=[tensor_type],
+    )
+    with graph:
+        graph._import_kernels([kernel_verification_ops_path])
+
+        with pytest.raises(ValueError) as err:
+            ops.custom(
+                "my_add_ambiguous",
+                device=DeviceRef.GPU(),
+                values=[graph.inputs[0], graph.inputs[1]],
+                out_types=[tensor_type],
+            )
+    message = str(err.value)
+    assert "ambiguous kernel resolution for 'my_add_ambiguous'" in message
+    assert "MyAddHopperBlackwell: cond=" in message
+    assert "MyAddAmpereBlackwell: cond=" in message
+    assert 'arch("sm_90a")' in message
+    assert 'arch("sm_80")' in message
+    assert "__init__.mojo" in message
 
 
 def test_my_add_invalid_inputs_count(
@@ -337,25 +386,23 @@ def test_variadic_ins_outs_valid(
     session.load(graph)
 
 
-def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
+def test_variadic_size_0_valid(kernel_verification_ops_path: Path) -> None:
+    # A `TensorTuple` variadic may bind no operands.
     tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
-        "test_variadic_size_0_invalid",
+        "test_variadic_size_0_valid",
         input_types=[tensor_type],
         output_types=[tensor_type],
     )
     with graph:
         graph._import_kernels([kernel_verification_ops_path])
-        with pytest.raises(ValueError) as err:
+        graph.output(
             ops.custom(
                 "variadic_add",
                 device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
-            )
-        assert (
-            "Could not provide all input arguments to op 'variadic_add': missing operands starting from argument named 'input'"
-            in str(err.value)
+            )[0]
         )
 
 
@@ -432,7 +479,7 @@ def test_reduction_valid() -> None:
             "takes one input, got 2",
         ),
         (
-            "mo.reduce.arg_max.tmp",
+            "reduction.arg_max.tmp",
             [[8, 128]],
             [(DType.float32, [8, 1])],
             "has 2 output fields, but the op has 1 results",
@@ -462,7 +509,7 @@ def test_reduction_valid() -> None:
             "results must be tensors of the input's rank",
         ),
         (
-            "mo.reduce.arg_max.tmp",
+            "reduction.arg_max.tmp",
             [[4, 16]],
             [(DType.float32, [4, 1]), (DType.int64, [1, 16])],
             "results reduce different axes",

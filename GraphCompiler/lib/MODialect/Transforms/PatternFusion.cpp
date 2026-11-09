@@ -79,19 +79,12 @@ struct PatternFusionPass : public impl::PatternFusionBase<PatternFusionPass> {
     }
 
     MO::PackParamCache cache;
-    MO::MHAOptions mhaOpts{
-        enableMHAPattern.getValue(),
-        mhaAllowUnsafeBCast.getValue(),
-        mhaAllowInternalReshape.getValue(),
-        debugMHAPattern.getValue(),
-    };
-
     MO::DeviceInfoMapping deviceInfoMapping(
         graphOp->getParentOfType<mlir::ModuleOp>());
 
     RewritePatternSet patterns{ctx};
     // Register SwiGLU before the split-to-slice lowering below.
-    MO::populateFusionPatterns(patterns, cache, targetDeviceRef, mhaOpts,
+    MO::populateFusionPatterns(patterns, cache, targetDeviceRef,
                                deviceInfoMapping);
 
     if (failed(applyPatternsGreedily(graphOp, std::move(patterns))))

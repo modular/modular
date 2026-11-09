@@ -449,12 +449,12 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
           Lets a CPU thread signal a GPU queue (or vice versa) by writing a
           64-bit value to a single location that is visible to both. Pair
           with :meth:`DeviceQueue.wait_for_host_value` or the
-          ``mo.wait_host_value`` graph op to gate downstream GPU work on a
+          ``runtime.wait_host_value`` graph op to gate downstream GPU work on a
           host-produced result without a second queue or a blocking host
           callback.
 
-          Currently requires a CUDA-backed :class:`Device`; constructing
-          against any other backend raises ``RuntimeError``.
+          Requires a CUDA, HIP or Metal :class:`Device`; other backends
+          raise ``RuntimeError``.
 
           .. invisible-code-block: python
 
@@ -470,22 +470,15 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
               assert flag.load() == 0  # initialized to zero
 
           Args:
-              device: A CUDA-backed device. Other backends raise
-                  ``RuntimeError``.
+              device: A CUDA, HIP or Metal device.
        )nbdoc")
       .def(nb::init<const Python::Device &>(), "device"_a)
-      .def_prop_ro("device_ptr", &Python::CompletionFlag::devicePtr,
-                   R"nbdoc(
-              Device-visible 64-bit address of the 8-byte slot.
-
-              Suitable for passing to graph ops or queue APIs that wait
-              on a memory value.
-            )nbdoc")
       .def("reset", &Python::CompletionFlag::reset,
            R"nbdoc(
-              Clears the flag back to ``0`` with a relaxed atomic store.
+              Clears the flag back to ``0``.
 
-              Safe to call before any consumer has observed the address.
+              Don't reset while a queue is still waiting on the flag, and
+              don't signal a lower value without a reset.
             )nbdoc")
       .def("signal", &Python::CompletionFlag::signal, "value"_a,
            R"nbdoc(
@@ -495,7 +488,7 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
               host-side acquire ``load``).
 
               Primary intended use is priming the flag at setup time so
-              the first captured-graph replay's ``mo.wait_host_value``
+              the first captured-graph replay's ``runtime.wait_host_value``
               passes immediately, before any async kickoff has run.
               Direct Python signalling on the hot path is usually a
               mistake; prefer the async-host-func trampoline, which
@@ -522,9 +515,9 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
               Raw 64-bit address of the underlying ``M::Driver::CompletionFlag``.
 
               Intended for packing into a graph-op payload buffer
-              (such as for ``mo.wait_host_value``); parallels the
+              (such as for ``runtime.wait_host_value``); parallels the
               trampoline/user_data pointers returned by
-              ``__unsafe_pack_py_host_func`` for ``mo.launch_host_func``.
+              ``__unsafe_pack_py_host_func`` for ``runtime.launch_host_func``.
 
               The caller must keep this ``CompletionFlag`` Python object
               alive for the duration of any graph execution that
@@ -780,9 +773,9 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
       .def("wait_for_host_value", &Python::DeviceStream::waitForHostValue,
            "flag"_a, "value"_a,
            R"nbdoc(
-          Stalls the queue until ``flag``'s 64-bit value equals ``value``.
+          Stalls the queue until ``flag`` holds at least ``value``.
 
-          Wraps the MLRT ``DeviceStream::enqueueWaitOnHostValue`` primitive
+          Wraps the MLRT ``DeviceStream::enqueueWaitOnFlag`` primitive
           (CUDA's ``cuStreamWaitValue64``). Typically paired with
           ``Device.__unsafe_enqueue_async_py_host_func`` to gate
           downstream GPU work on a host-side AsyncRT task that signals
@@ -790,10 +783,15 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
           avoids a host ``synchronize()`` and captures cleanly into a
           CUDA graph as a wait-value node.
 
+          While the wait is pending, the thread that signals ``flag`` must
+          not block on this queue first: no ``synchronize()``, no copy into
+          or out of pageable host memory, and don't drop ``flag``. Each of
+          those waits for the queue, which is waiting for the flag.
+
           Args:
-              flag: The completion flag to wait on. The queue observes
-                  ``flag.device_ptr`` via the pinned device-mapped alias.
-              value: The 64-bit value to wait for (equality).
+              flag: The completion flag to wait on.
+              value: The 64-bit value to wait for. Keep values below
+                  2**63: HIP compares them as signed.
 
           Raises:
               RuntimeError: If the underlying device does not support
@@ -925,7 +923,7 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
 
       The returned integers are suitable for passing to
       ``MLRT::DeviceStream::enqueueHostFunc`` (and, by extension, to the
-      ``mo.launch_host_func`` custom op). The trampoline is a C ABI
+      ``runtime.launch_host_func`` custom op). The trampoline is a C ABI
       ``void(void*)`` function; ``user_data_ptr`` owns a heap allocation
       holding the Python callable.
 

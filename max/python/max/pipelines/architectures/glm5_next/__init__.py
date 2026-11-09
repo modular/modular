@@ -22,7 +22,7 @@ from .memory_planner import Glm5NextMemoryPlanner
 from .model import Glm5NextModel
 from .model_config import Glm5NextConfig, Glm5NextVisionConfig
 from .quantization import Glm5NextQuantScheme
-from .weight_adapters import convert_glm5_next_state_dict
+from .weight_adapters import glm5_next_weight_rules
 
 __all__ = [
     "Glm5Next",
@@ -31,6 +31,6 @@ __all__ = [
     "Glm5NextModel",
     "Glm5NextQuantScheme",
     "Glm5NextVisionConfig",
-    "convert_glm5_next_state_dict",
     "glm5_next_arch",
+    "glm5_next_weight_rules",
 ]

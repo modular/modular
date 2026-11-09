@@ -229,6 +229,15 @@ def test_pointer_to() raises:
     assert_not_equal(0, Pointer(to=local)[])
 
 
+def test_pointer_to_infers_address_space() raises:
+    var local = 1
+    var shared = Pointer(to=local).unsafe_address_space_cast[.SHARED]()
+    var ptr = Pointer(to=shared[])
+    comptime assert type_of(ptr).address_space == .SHARED
+    assert_equal(Int(ptr), Int(shared))
+    _ = local
+
+
 def test_explicit_copy_of_pointer_address() raises:
     var local = 1
     var ptr = Pointer[Int](to=local)

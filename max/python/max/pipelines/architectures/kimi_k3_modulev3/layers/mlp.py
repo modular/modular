@@ -21,9 +21,9 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn import Linear, Module
+from max.nn._graph_ops import swiglu_quantize_dynamic_block_scaled
+from max.nn.activation import GatedActivation
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import swiglu_quantize_dynamic_block_scaled
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 

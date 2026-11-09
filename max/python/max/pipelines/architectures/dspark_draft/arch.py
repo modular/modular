@@ -12,15 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 """Supported architecture entry for the dSpark speculative draft."""
 
+from collections.abc import Sequence
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer, WeightRule
 from max.pipelines.modeling.types import PipelineTask
 
 from ..speculators_common.draft_config import (
     speculators_dspark_width,
 )
 from .model import DSparkDraftArchConfig
+
+
+def dspark_draft_weight_rules(
+    huggingface_config: object,
+) -> Sequence[WeightRule]:
+    """Returns no rules.
+
+    The draft module takes a speculators checkpoint's names as they are.
+    """
+    del huggingface_config
+    return ()
+
 
 # Speculators-format DSpark drafters declare the generic
 # architectures ["DSparkDraftModel"], shared across target model lines
@@ -48,4 +62,6 @@ dspark_speculators_draft_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=DSparkDraftArchConfig,
     checkpoint_draft_width=speculators_dspark_width,
+    weight_rules=dspark_draft_weight_rules,
+    use_weight_rules=True,
 )

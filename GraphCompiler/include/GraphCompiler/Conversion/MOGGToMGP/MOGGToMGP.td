@@ -23,9 +23,6 @@ def MOGGToMGP : Pass<"mogg-to-mgp", "ModuleOp"> {
     `mef` primitives.
   }];
   let options = [
-    Option<"compiledFrameworkLabel", "compiled-framework-label", "std::string",
-      /*default=*/"\"mof\"",
-      "The label for resulting MGP graph. Default is mof.">,
     Option<"minimumCpuAlignment", "min-cpu-alignment", "size_t",
       /*default=*/"kPreferredMemoryAlignment",
      "Minimum alignment for all CPU buffers (both constants and allocated)">

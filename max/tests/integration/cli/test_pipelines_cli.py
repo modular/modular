@@ -73,6 +73,7 @@ def test_pipelines_cli__smollm_float32(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -99,6 +100,7 @@ def test_pipelines_cli__invalid_quantization_encoding(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -127,6 +129,7 @@ def test_pipelines_cli__model_and_model_path_conflict(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -152,6 +155,7 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "--model",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -175,6 +179,7 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "--model",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -217,6 +222,7 @@ def test_pipelines_cli__generate_turns_the_vendor_blas_fallback_off_on_amd(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--quantization-encoding=float32",
                 "--max-length=128",
@@ -404,6 +410,7 @@ def test_pipelines_cli__generate_rejects_image_flags_for_text_models(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--height=256",
                 "--num-images-per-prompt=1",
@@ -433,6 +440,7 @@ def test_pipelines_cli__generate_ignores_unset_flags(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--max-new-tokens=8",
             ]
@@ -718,6 +726,7 @@ def test_pipelines_cli__profile_on_a_text_model_passes_the_flag_check(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--profile",
                 "--max-new-tokens=4",
@@ -750,3 +759,20 @@ def test_pipelines_cli__every_generate_flag_has_a_kind() -> None:
     assert params - config_params == (text | image | shared) - config_params
     # The config flags rejected on image models are real flags too.
     assert (text & config_params) <= params
+
+
+def test_pipelines_cli__module_v3_default_and_v2_opt_in() -> None:
+    command = pipelines.main.commands["generate"]
+    ctx = click.Context(command)
+    parameter = next(
+        param
+        for param in command.get_params(ctx)
+        if param.name == "prefer_module_v3"
+    )
+    assert parameter.default is True
+    assert "--no-prefer-module-v3" in parameter.secondary_opts
+
+    with command.make_context(
+        "generate", ["--no-prefer-module-v3"], resilient_parsing=True
+    ) as parsed:
+        assert parsed.params["prefer_module_v3"] is False

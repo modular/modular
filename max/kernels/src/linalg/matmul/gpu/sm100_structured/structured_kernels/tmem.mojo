@@ -22,7 +22,7 @@ shared memory. This module provides type-safe abstractions:
 """
 
 from layout import TensorLayout
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from std.sys import size_of
 
 from max.gpu.sync import syncwarp

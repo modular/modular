@@ -18,7 +18,6 @@
 #include "AsyncRT/Runtime/Allocator.h"
 #include "Support/ADT/ConcurrentAppendingVector.h"
 #include "Support/LLVMForwardDecls.h"
-#include "Support/MArchTarget/Host.h"
 #include "Support/Process.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/Threading/Atomics.h"

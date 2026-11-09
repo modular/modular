@@ -40,7 +40,6 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     DefaultEngine,
-    ImmTileTensor,
     TensorLayout,
     TileTensor,
     row_major,
@@ -54,13 +53,18 @@ from nn.attention.mha_mask import (
     MaskName,
     MHAMask,
     NullMask,
-    RelativeLogitsMask,
     SlidingWindowCausalMask,
     SlidingWindowNonCausalMask,
 )
 
 from std.utils.numerics import min_or_neg_inf
 from max.gpu.primitives.grid_controls import PDLLevel
+from extensibility import Fused, Input, LoadAccess, TensorTuple
+from nn.attention.operand_masks import AdditiveMask
+from nn.attention.operand_masks import (
+    RelativeLogitsMask as OperandRelativeLogitsMask,
+)
+from nn.attention.operand_masks import SegmentMask as OperandSegmentMask
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -775,12 +779,8 @@ def dispatch_mask[
     mask_type: String,
     local_window_size: Int = -1,
 ](callback_fn: Some[callback_fn_type],) raises -> None:
-    """Instantiate an `MHAMask` by name and invoke a callback with it.
-
-    Resolves the mask string to one of the built-in `MHAMask` implementations
-    at compile time and calls `callback_fn` with a concrete mask instance.
-    This lets callers write mask-agnostic kernels while still specialising the
-    generated code per mask type.
+    """Instantiate an `MHAMask` that reads no operands by name and invoke a
+    callback with it.
 
     Parameters:
         mask_type: Name of the mask (e.g. `"causal"`, `"null"`,
@@ -794,8 +794,54 @@ def dispatch_mask[
         callback_fn: Parametric callback invoked with the resolved mask.
 
     Raises:
-        Compile-time assertion error if `mask_type` is unrecognised or if
-        `local_window_size` is inconsistent with the selected mask.
+        Compile-time assertion error if `mask_type` is unrecognised, if it
+        names a mask that reads operands, or if `local_window_size` is
+        inconsistent with the selected mask.
+    """
+    return dispatch_mask[mask_type, local_window_size](
+        TensorTuple(), callback_fn
+    )
+
+
+@inline(.always)
+def dispatch_mask[
+    MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
+    //,
+    mask_type: String,
+    local_window_size: Int = -1,
+](
+    mask_operands: TensorTuple[*MaskIns],
+    callback_fn: Some[callback_fn_type],
+) raises -> None:
+    """Build an `MHAMask` by name from its graph operands and invoke a
+    callback with it.
+
+    Resolves the mask string to one of the built-in `MHAMask` implementations
+    at compile time, builds it with `make` from `mask_operands`, and calls
+    `callback_fn` with it. This lets callers write mask-agnostic kernels
+    while still specialising the generated code per mask type, and lets one
+    kernel take every mask whatever operands it reads.
+
+    Parameters:
+        MaskIns: The mask operand types.
+        mask_type: Name of the mask (e.g. `"causal"`, `"null"`,
+            `"sliding_window_causal"`, `"segment"`). Must match one of the
+            `MaskName` constants.
+        local_window_size: Sliding-window or chunk size for masks that
+            require it. Must be `-1` for masks that ignore it and positive
+            for masks that require it.
+
+    Args:
+        mask_operands: The mask's graph operands: none for the masks that
+            read none, the ids and row offsets for `"segment"`, the mask for
+            `"additive"`, the bias, cache lengths and row offsets for
+            `"relative_logits"`.
+        callback_fn: Parametric callback invoked with the resolved mask.
+
+    Raises:
+        Compile-time assertion error if `mask_type` is unrecognised, if the
+        operands don't match the mask, or if `local_window_size` is
+        inconsistent with the selected mask.
     """
 
     @inline(.always)
@@ -805,80 +851,53 @@ def dispatch_mask[
     # TODO: attach string constants to mask types themselves.
     comptime match mask_type:
         case "causal":
-            return outer_wrapper(CausalMask())
+            return outer_wrapper(CausalMask.make(mask_operands))
         case "chunked":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for ChunkedMask"
-            return outer_wrapper(ChunkedMask[local_window_size]())
+            return outer_wrapper(
+                ChunkedMask[local_window_size].make(mask_operands)
+            )
         case "null":
-            return outer_wrapper(NullMask())
+            return outer_wrapper(NullMask.make(mask_operands))
         case "sliding_window_causal":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for SlidingWindowCausalMask"
-            return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+            return outer_wrapper(
+                SlidingWindowCausalMask[local_window_size].make(mask_operands)
+            )
         case "sliding_window_noncausal":
             comptime assert local_window_size > 0, (
                 "You must specify local_window_size for"
                 " SlidingWindowNonCausalMask"
             )
             return outer_wrapper(
-                SlidingWindowNonCausalMask[local_window_size]()
+                SlidingWindowNonCausalMask[local_window_size].make(
+                    mask_operands
+                )
             )
         case "chunked_causal":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for ChunkedCausalMask"
-            return outer_wrapper(ChunkedCausalMask[local_window_size]())
+            return outer_wrapper(
+                type_of(ChunkedCausalMask[local_window_size]()).make(
+                    mask_operands
+                )
+            )
+        case "segment":
+            return outer_wrapper(OperandSegmentMask[].make(mask_operands))
+        case "additive":
+            return outer_wrapper(AdditiveMask[].make(mask_operands))
+        case "relative_logits":
+            # Causal visibility unless `local_window_size` is positive.
+            return outer_wrapper(
+                OperandRelativeLogitsMask[local_window_size].make(mask_operands)
+            )
         case _:
             comptime assert False, "Unsupported mask type: " + mask_type
-
-
-@inline(.always)
-def dispatch_relative_logits_mask[
-    dtype: DType,
-    BiasLayout: TensorLayout,
-    bias_origin: ImmOrigin,
-    CacheLengthsLayout: TensorLayout,
-    cache_lengths_origin: ImmOrigin,
-    RowOffsetsLayout: TensorLayout,
-    row_offsets_origin: ImmOrigin,
-    //,
-    local_window_size: Int = -1,
-](
-    bias_nd: ImmTileTensor[dtype, BiasLayout, bias_origin],
-    cache_lengths: ImmTileTensor[
-        .uint32, CacheLengthsLayout, cache_lengths_origin
-    ],
-    input_row_offsets: ImmTileTensor[
-        .uint32, RowOffsetsLayout, row_offsets_origin
-    ],
-    callback_fn: Some[callback_fn_type],
-) raises -> None:
-    """Wrap `bias_nd` in a `RelativeLogitsMask` and invoke `callback_fn`.
-
-    This carries runtime state (the bias table plus the tensors that recover
-    its ragged-flat row), so it lives
-    outside `dispatch_mask`'s zero-arg string dispatch. `local_window_size`
-    picks the visibility mask: `<= 0` (canonically `-1`, the graph-level
-    "no window" value) -> `CausalMask`, else
-    `SlidingWindowCausalMask[local_window_size]`. The mask structs
-    themselves report "no window" as `sliding_window_size() == 0`; this
-    function is where the two conventions meet.
-    """
-    comptime if local_window_size <= 0:
-        return callback_fn(
-            RelativeLogitsMask[visibility=CausalMask()](
-                bias_nd, cache_lengths, input_row_offsets
-            )
-        )
-    else:
-        return callback_fn(
-            RelativeLogitsMask[
-                visibility=SlidingWindowCausalMask[local_window_size]()
-            ](bias_nd, cache_lengths, input_row_offsets)
-        )
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`

@@ -21,6 +21,7 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/ToolCommon/PassManagerConfigOptions.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/SmallSet.h"
@@ -49,7 +50,7 @@ class TargetBackend;
 
 /// The purpose of this class is to provide methods to lower concrete KGEN
 /// functions to LLVM, and then to objects.
-class ObjectCompiler {
+class MODULAR_CXX_EXPORT ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
   static ErrorOr<std::unique_ptr<ObjectCompiler>>

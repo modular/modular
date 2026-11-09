@@ -22,7 +22,7 @@ All implementations are based on that reference material.
 from std.sys import bit_width_of
 from std.utils import IndexList
 
-from extensibility import ManagedTensorSlice
+from layout import TileTensor, coord_to_index_list
 
 
 @fieldwise_init
@@ -141,14 +141,21 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
 
     def __init__(
         out self,
-        tensor: ManagedTensorSlice[dtype=Self.dtype, rank=Self.rank, ...],
+        tensor: TileTensor[Self.dtype, address_space=.GENERIC, ...],
     ):
-        self.data = Pointer(to=tensor.unsafe_ptr()[])
+        comptime assert tensor.rank == Self.rank
+        self.data = tensor.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+            MutAnyOrigin
+        ]()
         self.device = DLDevice()
         self._rank = Int32(Self.rank)
         self.data_type = DLDataType.from_dtype[Self.dtype]()
-        self.shape = tensor.shape()
-        self.strides = tensor.strides()
+        self.shape = rebind[IndexList[Self.rank]](
+            coord_to_index_list(tensor.layout.shape_coord())
+        )
+        self.strides = rebind[IndexList[Self.rank]](
+            coord_to_index_list(tensor.layout.stride_coord())
+        )
         self.byte_offset = 0
 
         self._shape_ptr = (

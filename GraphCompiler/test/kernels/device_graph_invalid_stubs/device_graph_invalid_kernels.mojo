@@ -23,15 +23,19 @@ from max.gpu.host import DeviceContext, DeviceGraphBuilder
 
 import extensibility
 from extensibility import (
+    Fused,
     IOSpec,
+    Input,
     InputTensor,
     InputVariadicTensors,
+    LoadAccess,
+    Output,
     OutputTensor,
     StableInputTensor,
     StableInputVariadicTensors,
     StableTensor,
+    Tensor,
     _FusedComputeOutputTensor,
-    _FusedInputTensor as FusedInputTensor,
     _FusedOutputTensor as FusedOutputTensor,
 )
 
@@ -83,11 +87,9 @@ struct StableOutputOnBuildGraph:
 @extensibility.register("stable_over_fused_execute")
 struct StableOverFusedExecute:
     @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: FusedInputTensor[dtype=dtype, rank=rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ):
         pass

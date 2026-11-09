@@ -21,10 +21,10 @@ from typing import Any
 from max import functional as F
 from max.dtype import DType
 from max.nn import Module
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
 )
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.linear import Linear
 from max.tensor import Tensor
 from max.tensor.sharding import AxisAssignment, replicated_rows

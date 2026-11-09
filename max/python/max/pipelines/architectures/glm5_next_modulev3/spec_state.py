@@ -25,7 +25,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 from max.graph import BufferValue, Dim, TensorValue
-from max.nn.legacy.kv_cache import RecurrentStateInputsPerDevice
+from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.pipelines.architectures.glm5_next.spec_state import (
     RecurrentStateRollback,
     deferred_seed_offsets,

@@ -38,7 +38,7 @@ def test_rank2_basic() raises:
         repeats_stack[1] = 3
         var repeats = TileTensor(repeats_stack, row_major[2]())
 
-        tile[target="gpu"](
+        tile(
             input.make_dynamic[.int64](),
             repeats.make_dynamic[.int64](),
             output.make_dynamic[.int64](),
@@ -73,7 +73,7 @@ def test_rank1_int32() raises:
         repeats_stack[0] = 3
         var repeats = TileTensor(repeats_stack, row_major[1]())
 
-        tile[target="gpu"](
+        tile(
             input.make_dynamic[.int64](),
             repeats.make_dynamic[.int64](),
             output.make_dynamic[.int64](),
@@ -104,7 +104,7 @@ def test_rank3_and_rank4() raises:
         repeats3_stack[1] = 2
         repeats3_stack[2] = 1
         var repeats3 = TileTensor(repeats3_stack, row_major[3]())
-        tile[target="gpu"](
+        tile(
             input3.make_dynamic[.int64](),
             repeats3.make_dynamic[.int64](),
             output3.make_dynamic[.int64](),
@@ -135,7 +135,7 @@ def test_rank3_and_rank4() raises:
         repeats4_stack[2] = 1
         repeats4_stack[3] = 2
         var repeats4 = TileTensor(repeats4_stack, row_major[4]())
-        tile[target="gpu"](
+        tile(
             input4.make_dynamic[.int64](),
             repeats4.make_dynamic[.int64](),
             output4.make_dynamic[.int64](),
@@ -170,7 +170,7 @@ def test_identity_repeats() raises:
         repeats_stack[0] = 1
         repeats_stack[1] = 1
         var repeats = TileTensor(repeats_stack, row_major[2]())
-        tile[target="gpu"](
+        tile(
             input.make_dynamic[.int64](),
             repeats.make_dynamic[.int64](),
             output.make_dynamic[.int64](),
@@ -200,7 +200,7 @@ def test_float_bit_patterns() raises:
         var repeats_stack = Array[Scalar[DType.int64], 1](fill={})
         repeats_stack[0] = 2
         var repeats = TileTensor(repeats_stack, row_major[1]())
-        tile[target="gpu"](
+        tile(
             input.make_dynamic[.int64](),
             repeats.make_dynamic[.int64](),
             output.make_dynamic[.int64](),
@@ -238,7 +238,7 @@ def test_empty_output() raises:
         repeats_stack[0] = 0
         repeats_stack[1] = 2
         var repeats = TileTensor(repeats_stack, row_major[2]())
-        tile[target="gpu"](
+        tile(
             input.make_dynamic[.int64](),
             repeats.make_dynamic[.int64](),
             output.make_dynamic[.int64](),

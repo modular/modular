@@ -24,7 +24,7 @@ These are pure functions: the layer holds the checkpoint parameters
 every tensor. The three ``pre_mix`` states are distinct (see
 :class:`_PreMixOmitted` and :func:`mhc_shifted_post_pre`).
 
-Each boundary between two sublayers is main's one-kernel ``mo.mega_mhc``
+Each boundary between two sublayers is main's one-kernel ``hyper_connection.mega_mhc``
 step (:func:`mhc_fused_post_pre`); the composed :func:`mhc_post` and
 :func:`mhc_pre` remain for the trunk's first site, the Engram sites and
 the tap capture. A tensor-parallel caller reduces its sublayer partials
@@ -36,17 +36,13 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferType, Dim, TensorType, TensorValue, ops
-from max.nn.common_layers.functional_kernels import (
-    hyper_connection_gates,
-)
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _block_scaled_quantize_out_types,
     _is_sm10x_gpu,
     mhc_post_supports,
 )
-from max.nn.legacy.kernels import (
-    mhc_post as _mhc_post_kernel,
-)
+from max.nn._graph_ops import mhc_post as _mhc_post_kernel
+from max.nn.kernels import hyper_connection_gates
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 
@@ -296,7 +292,9 @@ def _mega_post_pre(
             device=device,
         )
     results = ops.inplace_custom(
-        "mo.mega_mhc.mxfp8" if mxfp8 else "mo.mega_mhc",
+        "hyper_connection.mega_mhc.mxfp8"
+        if mxfp8
+        else "hyper_connection.mega_mhc",
         device=device,
         values=[
             ops.cast(sublayer_out, DType.bfloat16),

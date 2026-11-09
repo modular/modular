@@ -35,12 +35,9 @@ from typing import Any, TypeVar
 
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
-from max.nn.legacy.kv_cache import (
-    MultiKVCacheParams,
-    RecurrentStateInputsPerDevice,
-)
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 from ..block_driver import BlockBatch, BlockProposer
@@ -70,9 +67,8 @@ __all__ = [
     "sequential_proposer",
     "signal_buffer_index",
     "speculates_on_last_stage",
-    "tail_buffers",
-    "tail_kv",
     "trailing_buffers",
+    "trailing_input_tree",
     "trailing_input_types",
     "verify_for",
 ]
@@ -82,6 +78,7 @@ VerifyFn = Callable[[SequentialBatch | BlockBatch], Verified[Any]]
 """Verifies a driver batch on the target."""
 
 _TARGET_ADAPTERS: Mapping[str, str] = {
+    "BeamForCausalLM_ModuleV3": ".beam_modulev3.spec_adapters",
     "DeepseekV3ForCausalLM": ".deepseekV3.spec_adapters",
     "DeepseekV4ForCausalLM": ".deepseekV4.spec_adapters",
     "DeepseekV41ForCausalLM": ".deepseekV41.spec_adapters",
@@ -231,26 +228,6 @@ def speculates_on_last_stage(target_arch: str, method: str) -> bool:
     return _adapter(target_arch, method).speculates_on_last_stage
 
 
-def tail_kv(target_arch: str) -> str | None:
-    """Returns the target's KV child declared past the canonical tail.
-
-    The graph declares it there rather than among its KV inputs. The result is
-    none when it declares no such child.
-    """
-    return _adapter(target_arch).tail_kv
-
-
-def tail_buffers(
-    target_arch: str,
-    tail: Sequence[RecurrentStateInputsPerDevice[Buffer, Buffer]],
-) -> list[Buffer]:
-    """Returns the inputs of the :func:`tail_kv` child.
-
-    They come in the order the graph's tail declares them.
-    """
-    return _adapter(target_arch).tail_buffers(tail)
-
-
 def check(
     target_arch: str, speculative: SpeculativeConfig, structured_output: bool
 ) -> None:
@@ -288,6 +265,17 @@ def trailing_input_types(
 ) -> Sequence[TensorType | BufferType]:
     """Returns the inputs the target's call takes past the canonical tail."""
     return _adapter(target_arch, method).trailing_input_types(target_config)
+
+
+def trailing_input_tree(
+    target_arch: str, method: str, target_config: Any
+) -> Mapping[str, object] | None:
+    """Returns the groups that name :func:`trailing_input_types`.
+
+    ``None`` for a target whose trailing inputs an exported graph leaves
+    unnamed.
+    """
+    return _adapter(target_arch, method).trailing_input_tree(target_config)
 
 
 def trailing_buffers(

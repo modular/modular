@@ -63,6 +63,9 @@ try:
 except Exception:
     _MAX_METRICS_PORT = 8001  # Fallback if SDK not available
 
+# The Mach engine's ``--metrics-address`` default port.
+_MACH_METRICS_PORT = 9090
+
 
 @dataclass
 class HistogramData:
@@ -207,13 +210,14 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
     if ":" in host:
         host = f"[{host}]"
 
-    # MAX engines expose Prometheus metrics on a dedicated port: MAX Serve
-    # via its own metrics server and the Mach engine via its
-    # ``--metrics-address`` flag (the benchmark CI passes the same port the
-    # SDK config uses; see benchmarkServingRun.yaml). Other backends are
-    # scraped on the same port as the base URL.
-    if backend in ("modular", "modular-chat", "mach"):
+    # MAX engines expose Prometheus metrics on a dedicated port rather than
+    # the base URL's, which for mach is the orchestrator's: MAX Serve on its
+    # SDK config port, the Mach engine on its ``--metrics-address`` default.
+    # Other backends are scraped on the same port as the base URL.
+    if backend in ("modular", "modular-chat"):
         metrics_port = _MAX_METRICS_PORT
+    elif backend == "mach":
+        metrics_port = _MACH_METRICS_PORT
     else:
         metrics_port = parsed_url.port or 8000
 

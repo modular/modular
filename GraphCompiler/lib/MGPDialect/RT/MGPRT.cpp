@@ -54,17 +54,6 @@ AsyncRTWrapper<T> wrap(T *ptr) {
 }
 
 template <typename T, typename... Args>
-void fulfillReady(AnyAsyncValueRef &value, Args &&...args) {
-  if (value.getPointer() && value.getPointer()->isIndirect()) {
-    value.copy().emplaceIndirect<T>(std::forward<Args>(args)...);
-  } else {
-    CPUDevice &cpuDevice = *CPUDevice::getCurrentCPUDeviceOrNull();
-    value = AnyAsyncValueRef::createReady<T>(cpuDevice,
-                                             std::forward<Args>(args)...);
-  }
-}
-
-template <typename T, typename... Args>
 AsyncValue *createReadyValue(Args &&...args) {
   CPUDevice &cpuDevice = *CPUDevice::getCurrentCPUDeviceOrNull();
   AnyAsyncValueRef value =

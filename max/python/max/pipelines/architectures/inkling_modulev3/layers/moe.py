@@ -24,17 +24,17 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn import Module
-from max.nn.common_layers.mlp import MLP
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.comm.ep.ep_kernels import fused_silu
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
     moe_sink_gate_router,
 )
-from max.nn.legacy.moe.quant_strategy import Nvfp4Scales, NvMxf4f8Strategy
-from max.nn.legacy.quant_config import QuantConfig, fp4_packed_k
+from max.nn._graph_ops.ep import fused_silu
+from max.nn._graph_ops.moe_quant import Nvfp4Scales, NvMxf4f8Strategy
+from max.nn.activation import GatedActivation
+from max.nn.common_layers.mlp import MLP
+from max.nn.quant_config import QuantConfig, fp4_packed_k
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context
 

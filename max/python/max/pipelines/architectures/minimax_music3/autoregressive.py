@@ -51,10 +51,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    MHAKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 from max.tensor import Tensor, default_dtype

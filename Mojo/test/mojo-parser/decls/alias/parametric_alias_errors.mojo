@@ -33,9 +33,11 @@ comptime inlineWhereIsError[x: Int where x > 0] = x
 comptime ComptimeWithParametricType2[x: Int]: SIMD[.int, x*20] = SIMD[.int, x]()
 
 # expected-error @below {{'SIMD[.int, _]' is not concrete, use '[]' to bind missing parameters}}
+# expected-note @below {{missing parameter 'size'}}
 comptime HoleAnnotation[x: Int]: SIMD[.int, _] = SIMD[.int, x]()
 
 # expected-error @below {{'Origin[mut=mut]' is not concrete, use '[]' to bind missing parameters}}
+# expected-note @below {{missing parameter '_mlir_origin'}}
 comptime MutOriginAnn[mut: Bool]: Origin[mut=mut] = AnyOrigin[mut=mut]
 
 def implicit_generator_constraint_drop_error[cond: Bool]():

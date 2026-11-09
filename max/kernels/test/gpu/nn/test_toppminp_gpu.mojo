@@ -59,7 +59,7 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
         self.p_threshold = p_threshold
 
 
-def time_kernel[](
+def time_kernel(
     mut m: Bench,
     ctx: DeviceContext[],
     kernel_name: String,

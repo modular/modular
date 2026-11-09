@@ -89,7 +89,8 @@ modular_eager_py_test(
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -276,6 +277,8 @@ modular_eager_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
+    # `max.tensor` imports `max.nn.legacy` lazily to allocate signal buffers
+    # for two or more devices, so no source here imports it.
     ignore_extra_deps = [
         "//max/python/max/nn/legacy",
     ],
@@ -403,7 +406,6 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
         "//max/python/max/nn/legacy/hooks",
     ],
 )

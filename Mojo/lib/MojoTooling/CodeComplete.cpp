@@ -23,6 +23,7 @@
 #include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/MojoTooling/DeclRendering.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
+#include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/Filesystem/Paths.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
@@ -123,6 +124,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
       // Grab the documentation for the import. Do this out of the current
       // context to avoid pulling in a bunch of unwanted state.
       MLIRContext ctx{MLIRContext::Threading::DISABLED};
+      configureKGENContext(&ctx);
       FrontendOptions frontendOptions = shared.frontendOptions;
       frontendOptions.autoFixItHandler = nullptr;
       frontendOptions.useMLIRDiagnostics = false;

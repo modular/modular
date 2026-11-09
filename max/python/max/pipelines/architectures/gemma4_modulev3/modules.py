@@ -84,6 +84,9 @@ class Gemma4Decoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
             inputs.vision.scatter_indices,
             *tree.leaves(inputs.kv),
         )
+        # The outputs are replicated, and a serving engine reads them from one
+        # device.
+        output = tuple(t.local_shards[0] for t in output)
         return DecoderOutputs(
             next_token_logits=output[0],
             logits=output[1] if len(output) == 3 else None,

@@ -43,8 +43,8 @@ from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, Weights
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.glm5_next.model_config import (
     Glm5NextConfig as GraphGlm5NextConfig,
@@ -58,11 +58,8 @@ from max.pipelines.architectures.glm5_next_modulev3.model_config import (
 )
 from max.pipelines.architectures.glm5_next_modulev3.mtp import Glm5NextMTP
 from max.pipelines.architectures.glm5_next_modulev3.weight_adapters import (
-    convert_glm5_next_state_dict,
-)
-from max.pipelines.architectures.mtp_glm5_next.model import draft_weight_name
-from max.pipelines.architectures.mtp_glm5_next_modulev3.weight_adapters import (
-    convert_glm5_next_with_mtp_state_dict,
+    glm5_next_mtp_weight_rules,
+    glm5_next_weight_rules,
 )
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -73,6 +70,7 @@ from max.pipelines.lib import (
     PipelineArgs,
     PipelineConfig,
     PipelineRuntimeConfig,
+    WeightTransform,
     _hf_config,
 )
 from max.pipelines.lib.generate import GenerateIterator
@@ -205,6 +203,24 @@ MEDIA_TOKENS = {
 }
 """The media token ids GLM's tokenizer reads off the config, past the
 vocabulary, since no prompt holds media."""
+
+QUANTIZATION_CONFIG = {
+    "quant_method": "fp8",
+    "fmt": "e4m3",
+    "activation_scheme": "dynamic",
+    "weight_block_size": [128, 128],
+    # As in the published checkpoint, the bfloat16 `kv_b_proj`s are listed:
+    # the rules read which MLA projections stay unquantized off this list.
+    "modules_to_not_convert": [
+        "lm_head",
+        "model.embed_tokens",
+        *(
+            f"model.layers.{i}.self_attn.kv_b_proj"
+            for i in (NUM_LAYERS - 1, NUM_LAYERS)
+        ),
+    ],
+}
+"""The checkpoint's FP8 config."""
 
 _MLA_RAW = ("q_a_proj", "q_b_proj", "kv_a_proj_with_mqa", "kv_b_proj")
 
@@ -478,13 +494,7 @@ def checkpoint(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 "vision_config": VISION_CONFIG,
                 **MEDIA_TOKENS,
                 "tie_word_embeddings": False,
-                "quantization_config": {
-                    "quant_method": "fp8",
-                    "fmt": "e4m3",
-                    "activation_scheme": "dynamic",
-                    "weight_block_size": [128, 128],
-                    "modules_to_not_convert": ["lm_head", "model.embed_tokens"],
-                },
+                "quantization_config": QUANTIZATION_CONFIG,
             }
         )
     )
@@ -492,29 +502,26 @@ def checkpoint(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def test_the_checkpoint_round_trips_through_the_adapters(
+def test_the_checkpoint_round_trips_through_the_rules(
     checkpoint: Path,
 ) -> None:
-    """Checks the generated names are the ones the adapters read, so every
+    """Checks the generated names are the ones the rules read, so every
     parameter loads from the weight written for it."""
     target_shapes, draft_shapes = _shapes()
     with safe_open(str(checkpoint / "model.safetensors"), "np") as f:
         names = set(f.keys())
     stub = {name: _name_only(name) for name in names}
-    hf_config = SimpleNamespace(num_hidden_layers=NUM_LAYERS)
-    target = convert_glm5_next_state_dict(stub, hf_config)
+    hf_config = SimpleNamespace(
+        num_hidden_layers=NUM_LAYERS, quantization_config=QUANTIZATION_CONFIG
+    )
+    target = WeightTransform(glm5_next_weight_rules(hf_config))(stub)
     assert set(target) == set(target_shapes)
-    prefix = f"language_model.layers.{NUM_LAYERS}."
-    draft = {
-        draft_weight_name(name.removeprefix(prefix))
-        for name in convert_glm5_next_with_mtp_state_dict(stub, hf_config)
-        if name.startswith(prefix)
-    }
-    assert draft == set(draft_shapes)
+    draft = WeightTransform(glm5_next_mtp_weight_rules(hf_config))(stub)
+    assert set(draft) == set(draft_shapes)
 
 
 def _name_only(name: str) -> Weights:
-    """A checkpoint weight the adapters only rename."""
+    """A checkpoint weight the rules only rename."""
     weight = NonCallableMock()
     weight.data.return_value = WeightData.from_numpy(
         np.zeros((2, 2), np.float32), name

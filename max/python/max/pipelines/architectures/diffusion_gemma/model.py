@@ -27,7 +27,7 @@ accepted-canvas commits reuse the donor paths unchanged.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from max import tree
@@ -36,7 +36,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
 from max.pipelines.lib import CompilationTimer, PipelineModel
 from max.pipelines.lib.graph_specs import GraphRole
@@ -66,6 +66,11 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
     """
 
     decoder_model: Model
+
+    # The Gemma4 config reads fields the DiffusionGemma HF config removes.
+    model_config_cls: ClassVar[type[Any]] = (
+        DiffusionGemmaForBlockDiffusionConfig
+    )
 
     # The donor mixes in ``LogProbabilitiesMixin``, which claims the
     # capability by overriding ``compute_log_probabilities``. This port

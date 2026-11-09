@@ -20,10 +20,11 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+import huggingface_hub
 from max.driver import CPU
 from max.engine import InferenceSession
 from max.graph import SymbolicDim
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheParams,
     KVLeafRegion,
@@ -48,7 +49,9 @@ from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.lib.tokenizer import resolve_token_id_bound
 from max.pipelines.lib.weight_transform import WeightEntry, WeightNaming
+from max.pipelines.modeling.types import PipelineTokenizer
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import BufferLayout, TensorLayout
@@ -74,7 +77,8 @@ from .kv_cache import (
 from .model_artifact import ModelArtifact
 from .pipeline_modules import PipelineModules
 from .serialization import serialize
-from .value_types import ARTIFACT_SUFFIX, ArtifactError
+from .tokenizer import Tokenizer
+from .value_types import ARTIFACT_SUFFIX, ArtifactError, HuggingFaceRef
 
 logger = logging.getLogger("max.pipelines")
 
@@ -191,6 +195,7 @@ def model_artifact(
     engine_config: EngineConfig | None = None,
     kv_cache: KVCacheLayout | None = None,
     format_spec: FormatSpec | None = None,
+    tokenizer: Tokenizer | None = None,
     weight_loader: WeightNaming | None = None,
 ) -> ModelArtifact:
     """Assembles the artifact of a built pipeline's graphs.
@@ -207,6 +212,7 @@ def model_artifact(
         engine_config: The settings the pipeline is built with.
         kv_cache: The layout of the pipeline's KV cache, if it has one.
         format_spec: The FormatSpec document of the checkpoint it serves.
+        tokenizer: The tokenizer the checkpoint is served with.
         weight_loader: The entries that name each graph's weights.
 
     Returns:
@@ -220,6 +226,7 @@ def model_artifact(
         vision = pipeline_model.vision_metadata()
     return ModelArtifact(
         model=modules,
+        tokenizer=tokenizer,
         format_spec=format_spec,
         engine_config=engine_config,
         kv_cache=kv_cache,
@@ -374,6 +381,8 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             stride_alignment=params.stride_alignment,
             scratch=params.scratch,
             kvcache_quant_config=_quantization(params),
+            speculative_method=params.speculative_method,
+            num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
         )
     elif type(params) is MLAKVCacheParams:
@@ -391,6 +400,8 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             stride_alignment=params.stride_alignment,
             scratch=params.scratch,
             kvcache_quant_config=_quantization(params),
+            speculative_method=params.speculative_method,
+            num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
         )
     elif type(params) is RecurrentStateParams:
@@ -463,6 +474,83 @@ def checkpoint_format_spec(
     return arch.format_spec
 
 
+def checkpoint_tokenizer(
+    arch: SupportedArchitecture | None,
+    repo: HuggingFaceRepo,
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+    pipeline_config: PipelineConfig | None,
+) -> Tokenizer | None:
+    """Returns the checkpoint's tokenizer files and the ids it is served with.
+
+    The files are the checkpoint's own, at its revision. The chat templates
+    are the ones the pipeline's tokenizer renders, including a
+    ``--chat-template`` override.
+
+    Args:
+        arch: The pipeline's architecture, which names the tokenizer family.
+        repo: The checkpoint.
+        tokenizer: The pipeline's tokenizer.
+        pipeline_config: The pipeline's configuration, which the vocab size
+            and EOS ids are read from.
+
+    Returns:
+        The component, or ``None`` for a tokenizer with no Hugging Face
+        ``delegate``.
+    """
+    delegate = getattr(tokenizer, "delegate", None)
+    if delegate is None:
+        return None
+    files: dict[str, HuggingFaceRef] = {}
+    for name in (
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "tiktoken.model",
+    ):
+        if repo.repo_type == "local":
+            if Path(repo.local_path, name).is_file():
+                files[name] = HuggingFaceRef(
+                    repo.local_path, repo.revision, name
+                )
+            continue
+        cached = huggingface_hub.try_to_load_from_cache(
+            repo.repo_id, name, revision=repo.revision
+        )
+        if isinstance(cached, str):
+            path = cached
+        else:
+            try:
+                path = huggingface_hub.hf_hub_download(
+                    repo.repo_id, name, revision=repo.revision
+                )
+            except huggingface_hub.errors.EntryNotFoundError:
+                continue
+        # The cache keeps each file at snapshots/<commit>/<name>, which pins
+        # the reference to the commit the weights resolved to.
+        files[name] = HuggingFaceRef(repo.repo_id, Path(path).parent.name, name)
+    template = delegate.chat_template
+    templates: dict[str, str | Path] = (
+        {"default": template}
+        if isinstance(template, str)
+        else dict(template or {})
+    )
+    named = arch.tokenizer_family if arch is not None else None
+    if callable(named):
+        named = named(repo)
+    family, flavor = named or (None, None)
+    vocab_size = resolve_token_id_bound(delegate, pipeline_config)
+    return Tokenizer(
+        family=family,
+        flavor=flavor,
+        files=files,
+        chat_templates=templates,
+        vocab_size=vocab_size,
+        sampleable_vocab_size=min(
+            max(delegate.get_vocab().values()) + 1, vocab_size
+        ),
+        eos_token_ids=tuple(sorted(tokenizer.eos_token_ids)),
+    )
+
+
 def export_pipeline(
     pipeline_config: PipelineConfig,
     path: str | os.PathLike[str],
@@ -472,8 +560,8 @@ def export_pipeline(
 
     Builds the pipeline the same way serving does, so the artifact holds the
     graphs a served pipeline compiles, the settings it is built with, the
-    FormatSpec document of the checkpoint it serves, and the entries that
-    name each graph's weights if its naming is rules.
+    FormatSpec document and tokenizer of the checkpoint it serves, and the
+    entries that name each graph's weights if its naming is rules.
 
     Args:
         pipeline_config: The pipeline's configuration.
@@ -507,17 +595,17 @@ def export_pipeline(
             " not record its compiled graphs by role"
         )
     model = pipeline_modules(pipeline, architecture)
+    decoder = model.roles.get("decoder") or model.roles.get("spec_decoder")
     dims = (
-        batch_processor_dims(pipeline._pipeline_model, model.roles["decoder"])
+        batch_processor_dims(pipeline._pipeline_model, decoder)
         if isinstance(pipeline, TextGenerationPipelineInterface)
-        and "decoder" in model.roles
+        and decoder is not None
         else None
     )
+    arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config, task)
+    repo = pipeline_config.model.huggingface_model_repo
     if format_spec is None:
-        format_spec = checkpoint_format_spec(
-            PIPELINE_REGISTRY.architecture_for_config(pipeline_config, task),
-            pipeline_config.model.huggingface_model_repo,
-        )
+        format_spec = checkpoint_format_spec(arch, repo)
     naming = (
         pipeline.weight_naming
         if isinstance(pipeline, SupportsWeightNaming)
@@ -542,6 +630,9 @@ def export_pipeline(
         format_spec=FormatSpec(format_spec)
         if format_spec is not None
         else None,
+        tokenizer=checkpoint_tokenizer(
+            arch, repo, retrieved.tokenizer, pipeline_config
+        ),
         weight_loader=WeightNaming(named_graphs) if named_graphs else None,
     )
     written = serialize(artifact, dest)

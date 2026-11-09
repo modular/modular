@@ -61,20 +61,20 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _is_apple_gpu,
     block_scales_interleave,
     grouped_matmul_block_scaled,
+    grouped_quantize_dynamic_block_scaled,
     moe_create_indices_with_slots,
     moe_router_group_limited,
-    quantize_dynamic_scaled_float8,
 )
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import QuantConfig, ceildiv
+from max.nn.quant_config import ceildiv
 
 from ..model_config import DeepseekV4Config
-from .quantization import LINEAR_QUANT_BLOCK, linear_for
+from .quantization import linear_for
 
 # e2m1 weights carry one e8m0 scale per 32 elements along K (OCP MXFP4), and
 # the SM100 scale-factor atom covers 128 rows -- both fixed by the kernel.
@@ -327,42 +327,50 @@ class _PackedExpertWeight(Module):
 
 
 def _quantize_rows_for_w4a8(
-    x: TensorValue, quant_config: QuantConfig, scale_slot: TensorValue
+    x: TensorValue,
+    row_offsets: TensorValue,
+    scales_offsets: TensorValue,
+    expert_ids: TensorValue,
+    slot_rows: TensorValue | None,
 ) -> tuple[TensorValue, TensorValue]:
-    """``act_quant(x, 128, "ue8m0")`` laid out for the 32-group W4A8 kernel.
+    """Quantizes ``x`` to FP8 with one e8m0 scale per 32 elements.
 
-    The reference quantizes an expert's input with one power-of-two scale per
-    128 elements (``fp4_gemm``'s A side); the kernel wants one scale per 32.
-    Quantizing at 128 and repeating each scale four times along K feeds the
-    kernel the identical activation codes and scales, so the result matches
-    the reference bit for bit (PROGRESS-194-QUANT §1, route (a)). Quantizing
-    at 32 directly changes 27 % of the codes and cannot be gated exactly.
+    The scales are in the layout ``grouped_matmul_block_scaled`` reads.
 
-    ``x`` holds one row per slot, packed by expert. The codes stay packed;
-    only the scales are laid out by ``scale_slot`` (the slot whose scales
-    each scale row holds) into the 128-row-aligned tiles the kernel reads.
+    This deliberately departs from the checkpoint's reference, whose
+    ``linear()`` quantizes fp4-expert inputs with ``act_quant(x, 128, ...)``,
+    one scale per 128. A per-32 scale is never coarser than the per-128 one
+    covering it, so codes differ only where a finer scale fits the block
+    better.
+
+    Args:
+        x: ``[rows, K]`` rows. Unsorted tokens if ``slot_rows`` is set,
+            else rows in sorted-slot order.
+        row_offsets: ``[groups + 1]`` uint32 cumulative rows per group.
+        scales_offsets: ``[groups]`` uint32 scale-tile offset per group.
+        expert_ids: ``[groups]`` int32 local expert id per group.
+        slot_rows: ``[rows]`` int32 source row in ``x`` of each output row,
+            or ``None``.
+
+    Returns:
+        The ``float8_e4m3fn`` codes and their scales.
     """
-    width = int(x.shape[1])
-    quantized, scales = quantize_dynamic_scaled_float8(
+    device = x.device
+    # ``act_quant`` has no static input scale.
+    sf_tensor = ops.broadcast_to(
+        ops.constant(1.0, DType.float32, device=device), expert_ids.shape
+    )
+    return grouped_quantize_dynamic_block_scaled(
         ops.cast(x, DType.bfloat16),
-        quant_config.input_scale,
-        quant_config.weight_scale,
-        group_size_or_per_token=LINEAR_QUANT_BLOCK,
-        out_type=DType.float8_e4m3fn,
+        row_offsets=row_offsets,
+        scales_offsets=scales_offsets,
+        expert_ids=expert_ids,
+        sf_tensor=sf_tensor,
+        sf_vector_size=FP4_WEIGHT_BLOCK,
         scales_type=DType.float8_e8m0fnu,
+        out_type=DType.float8_e4m3fn,
+        indices=slot_rows,
     )
-    # scales: [K/128, rows padded to 16] -> [rows, K/128] -> scale rows ->
-    # [scale rows, K/32].
-    groups = width // LINEAR_QUANT_BLOCK
-    repeat = LINEAR_QUANT_BLOCK // FP4_WEIGHT_BLOCK
-    per_row = ops.transpose(scales[:, 0 : x.shape[0]], 0, 1)
-    per_row = ops.gather(per_row, scale_slot, axis=0)
-    rows = scale_slot.shape[0]
-    per_row = ops.reshape(
-        ops.broadcast_to(ops.unsqueeze(per_row, -1), [rows, groups, repeat]),
-        [rows, groups * repeat],
-    )
-    return quantized, block_scales_interleave(per_row, FP4_WEIGHT_BLOCK)
 
 
 def local_expert_groups(
@@ -395,9 +403,7 @@ class DeepseekV4RoutedExperts(Module):
     one row each. Only the A-side scales are padded: the kernel reads each
     group's scales from 128-row tiles of its own, located per group by
     ``a_scale_offsets`` (``start // 128 + offset`` is the group's first
-    tile, the layout ``ep_comm``'s ``pad_expert_offsets`` builds). So the
-    quantize and the GEMMs touch the slots only, and the padding -- up to
-    127 rows per non-empty group -- costs one scale gather.
+    tile, the layout ``ep_comm``'s ``pad_expert_offsets`` builds).
     """
 
     # Where ``slot_weight`` multiplies into the gate/up -> down-proj chain.
@@ -407,7 +413,6 @@ class DeepseekV4RoutedExperts(Module):
         super().__init__()
         if config.quant_config is None:
             raise ValueError("native routed experts need config.quant_config")
-        self.quant_config = config.quant_config
         self.n_experts = config.n_routed_experts
         self.topk = config.num_experts_per_tok
         self.hidden = config.hidden_size
@@ -448,11 +453,20 @@ class DeepseekV4RoutedExperts(Module):
         x: TensorValue,
         a_offsets: TensorValue,
         scale_offsets: TensorValue,
-        scale_slot: TensorValue,
+        slot_rows: TensorValue | None,
         expert_ids: TensorValue,
     ) -> TensorValue:
+        """Runs one grouped W4A8 GEMM over ``x``.
+
+        ``slot_rows`` maps each slot to its row in ``x``. It is ``None`` if
+        ``x`` is already in sorted-slot order.
+        """
         quantized, a_scales = _quantize_rows_for_w4a8(
-            x, self.quant_config, scale_slot
+            x,
+            a_offsets,
+            scale_offsets,
+            expert_ids,
+            slot_rows,
         )
         device = x.device
         ones_f32 = ops.constant(
@@ -464,7 +478,9 @@ class DeepseekV4RoutedExperts(Module):
         # shape at run time.
         usage = ops.concat(
             [
-                ops.cast(ops.shape_to_tensor([x.shape[0]]), DType.uint32),
+                ops.cast(
+                    ops.shape_to_tensor([quantized.shape[0]]), DType.uint32
+                ),
                 ops.constant(
                     np.array([self.n_experts], np.uint32),
                     DType.uint32,
@@ -509,7 +525,6 @@ class DeepseekV4RoutedExperts(Module):
         slot_weight: TensorValue,
         a_offsets: TensorValue,
         scale_offsets: TensorValue,
-        scale_slot: TensorValue,
         expert_ids: TensorValue,
     ) -> TensorValue:
         """The clamped SwiGLU over ``gate_up``, then the down projection.
@@ -531,7 +546,7 @@ class DeepseekV4RoutedExperts(Module):
         if not self._weight_after_down_proj:
             h = h * ops.unsqueeze(slot_weight, -1)
         return self._grouped(
-            self.down_proj, h, a_offsets, scale_offsets, scale_slot, expert_ids
+            self.down_proj, h, a_offsets, scale_offsets, None, expert_ids
         )
 
     def _routed(
@@ -563,13 +578,10 @@ class DeepseekV4RoutedExperts(Module):
 
         # One kernel buckets the slots and lays out what the GEMMs read: the
         # group CSR (a_offsets), each sorted slot's token row and weight, and
-        # the scale tiles. Group g's scales occupy the 128-row tiles from
-        # aligned_start[g], the exclusive prefix sum of the group sizes
+        # the scale-tile offsets. Group g's scales occupy the 128-row tiles
+        # from aligned_start[g], the exclusive prefix sum of the group sizes
         # rounded up to 128; the GEMM finds that first tile as start[g] //
-        # 128 plus the group's scale offset. Scale row r of group g holds
-        # sorted slot start[g] + (r - aligned_start[g]) while that is below
-        # start[g + 1]; the rest of the tile is never multiplied into a
-        # stored row and holds slot 0, as do the rows past every group.
+        # 128 plus the group's scale offset.
         (
             _order,
             a_offsets,
@@ -577,9 +589,9 @@ class DeepseekV4RoutedExperts(Module):
             expert_ids,
             _usage,
             scale_offsets,
-            slot_token,
+            slot_rows,
             slot_weight,
-            scale_slot,
+            _scale_slot,
         ) = moe_create_indices_with_slots(
             router_idx,
             ops.cast(ops.reshape(weights, [slots]), DType.float32),
@@ -597,14 +609,13 @@ class DeepseekV4RoutedExperts(Module):
         scale_offsets = scale_offsets[0 : self.n_experts]
         expert_ids = expert_ids[0 : self.n_experts]
 
-        x_sorted = ops.gather(x, slot_token, axis=0)
-
+        # The quantize gathers the rows, so ``x`` stays in token order.
         gate_up = self._grouped(
             self.gate_up_proj,
-            x_sorted,
+            x,
             a_offsets,
             scale_offsets,
-            scale_slot,
+            slot_rows,
             expert_ids,
         )
         down = self._activate_and_down(
@@ -612,7 +623,6 @@ class DeepseekV4RoutedExperts(Module):
             slot_weight,
             a_offsets,
             scale_offsets,
-            scale_slot,
             expert_ids,
         )
         if self._weight_after_down_proj:

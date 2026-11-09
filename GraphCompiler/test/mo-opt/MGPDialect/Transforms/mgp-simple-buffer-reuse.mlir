@@ -12,7 +12,7 @@
 //  -> execute(in %alloc0, out %alloc1)
 //  -> execute(in %alloc1, out %alloc0)
 
-mgp.model @serial : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @serial devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -54,7 +54,7 @@ mgp.model @serial : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.o
 // Even though the lifetimes are the same as above and indicate that the buffer
 // can be reused, the sizes are different so the simple buffer reuse pass will
 // not reuse.
-mgp.model @serial_negative : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @serial_negative devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -100,7 +100,7 @@ mgp.model @serial_negative : mof devices [#M.device_ref<"cpu", 0>] init (%weight
 // buffer here. The lifetime analysis gives up at the stable create, so the
 // buffer is never a reuse candidate even though its visible uses all precede
 // the consumer's.
-mgp.model @stable_slot_not_reused : mof devices [#M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @stable_slot_not_reused devices [#M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %weights, %gpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>

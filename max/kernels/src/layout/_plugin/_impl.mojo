@@ -26,7 +26,7 @@ from max.gpu.host.info import _gpu_mlir_target
 from ._overlay import LAYOUT_PLUGINS
 from ._trait import LayoutPluginHooks
 from ..tensor_engine import TensorEngine
-from ..tile_layout import TensorLayout
+from ..layout import TensorLayout
 
 
 def _plugin_index[target: _TargetType, i: Int = 0]() -> Int:

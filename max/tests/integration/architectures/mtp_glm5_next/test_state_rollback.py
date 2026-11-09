@@ -18,8 +18,8 @@ plain forward over the accepted tokens alone. All three must match exactly.
 
 - The KDA recurrent pool, through the verify ring and the fold. Needs the
   ``kda_verify_ring`` and ``kda_state_fold`` kernels.
-- The KDA conv window, through Qwen3.5's conv replay over the KDA layer's
-  captured inputs.
+- The KDA conv window, placed by the same ``kda_state_fold`` launch, checked
+  against a per-layer conv replay.
 - The indexer tail ring, through the deferred seed and its replay.
 """
 
@@ -33,14 +33,14 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.legacy.kernels import mla_kpool_seed_tail
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops import mla_kpool_seed_tail
+from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     kda_decode,
-    kda_verify_ring,
     verify_width_operand,
 )
+from max.nn._graph_ops.state_space.kimi_delta import kda_verify_ring
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     KpoolTailReplayInputs,
 )
@@ -171,7 +171,12 @@ def _compile_kda(
     num_drafts: int = NUM_DRAFTS,
     rollback: bool = True,
 ) -> Callable[[], dict[str, np.ndarray]]:
-    """Compiles the KDA verify, the fold, and the reference recurrence."""
+    """Compiles the KDA verify, the fused fold, and the reference arm.
+
+    The fused fold writes the recurrent pool and places the conv windows in
+    one launch; the reference arm replays the conv windows per layer and
+    decodes the accepted tokens one request at a time.
+    """
     batch = len(seq_lengths)
     rng = np.random.default_rng(7)
     total = sum(seq_lengths)
@@ -189,6 +194,15 @@ def _compile_kda(
     ring_shape = (POOL_ROWS, *_ring_row_shape())
     state_rows = _rows(batch, 0)
     ring_rows = _rows(batch, 1)
+    conv_rows = _rows(batch, 2)
+    conv_shape = (POOL_ROWS, CONV_DIM, CONV_KERNEL - 1)
+    conv_init = rng.standard_normal(conv_shape).astype(np.float32) * 0.4
+    # Stands in for the verify's captured conv input; signed, so a window
+    # placed from the wrong rows or cast wrongly shows up in the compare.
+    window = rng.standard_normal((total, CONV_DIM)).astype(np.float32)
+    conv_weight = rng.standard_normal((CONV_DIM, CONV_KERNEL)).astype(
+        np.float32
+    )
 
     gpu = DeviceRef.GPU()
     table = TensorType(DType.uint32, [NUM_LAYERS, "batch_size"], device=gpu)
@@ -203,9 +217,14 @@ def _compile_kda(
         table,
         TensorType(DType.int64, [len(ref_rows)], device=gpu),
         TensorType(DType.uint32, [batch + 1], device=gpu),
+        TensorType(DType.float32, [total, CONV_DIM], device=gpu),
+        TensorType(DType.float32, [CONV_DIM, CONV_KERNEL], device=gpu),
+        table,
         BufferType(DType.float32, pool_shape, device=gpu),
         BufferType(DType.float32, ring_shape, device=gpu),
         BufferType(DType.float32, pool_shape, device=gpu),
+        BufferType(DType.float32, conv_shape, device=gpu),
+        BufferType(DType.float32, conv_shape, device=gpu),
     ]
     with Graph("kda_ring_rollback", input_types=types) as graph:
         (
@@ -222,10 +241,29 @@ def _compile_kda(
             ring_rows_v,
             ref_rows_v,
             ref_offsets_v,
-        ) = (value.tensor for value in graph.inputs[:13])
-        live, ring, reference = (value.buffer for value in graph.inputs[13:])
+            window_v,
+            conv_weight_v,
+            conv_rows_v,
+        ) = (value.tensor for value in graph.inputs[:16])
+        (
+            live,
+            ring,
+            reference,
+            conv,
+            conv_reference,
+        ) = (value.buffer for value in graph.inputs[16:])
         verify_width = verify_width_operand(num_drafts)
         cu_seqlens = offsets_v.cast(DType.int32)
+        captures = [
+            KdaReplayInputs(
+                qkv=window_v,
+                conv_weight=conv_weight_v,
+                raw_gate=gate_v,
+                beta_logits=beta_v,
+                qkv_window=window_v,
+            )
+            for _ in range(NUM_LAYERS)
+        ]
         readouts = []
         for layer in range(NUM_LAYERS):
             readout = kda_verify_ring(
@@ -246,17 +284,35 @@ def _compile_kda(
             )
             readouts.append(readout)
         if rollback:
+            num_drafts_v = ops.constant(num_drafts, DType.int64, device=gpu)
             fold_kda_state_pools(
                 [live],
                 [state_rows_v],
                 [ring],
                 [ring_rows_v],
-                accepted_lengths(
-                    offsets_v,
-                    accepted_v,
-                    ops.constant(num_drafts, DType.int64, device=gpu),
-                ),
+                [conv],
+                [conv_rows_v],
+                [captures],
+                accepted_lengths(offsets_v, accepted_v, num_drafts_v),
                 [offsets_v],
+                [],
+                verify_width,
+            )
+            # The reference arm's conv replay: the per-layer launches, over
+            # the same accepted plan.
+            row_indices, replay_offsets = accepted_row_plan(
+                offsets_v,
+                accepted_v,
+                num_drafts_v,
+                window_v.shape[0],
+                gpu,
+            )
+            replay_conv_pools(
+                [captures],
+                [conv_reference],
+                [conv_rows_v],
+                row_indices,
+                replay_offsets,
                 [],
                 verify_width,
             )
@@ -294,6 +350,9 @@ def _compile_kda(
         ring_rows,
         ref_rows,
         ref_offsets,
+        window,
+        conv_weight,
+        conv_rows,
     ]
 
     def execute() -> dict[str, np.ndarray]:
@@ -304,6 +363,8 @@ def _compile_kda(
                 "live": init,
                 "ring": np.full(ring_shape, POISON, dtype=np.float32),
                 "reference": init,
+                "conv": conv_init,
+                "conv_reference": conv_init,
             },
         )
         out["init"] = init
@@ -313,21 +374,32 @@ def _compile_kda(
 
 
 @pytest.mark.parametrize("accepted", [[0], [1], [NUM_DRAFTS]])
-def test_the_fold_lands_the_kda_state_on_the_accepted_prefix(
+def test_the_fold_lands_the_kda_state_and_conv_on_the_accepted_prefix(
     accepted: list[int],
 ) -> None:
     pools = _compile_kda([RING_LEN], accepted)()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
+    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
 
 
 def test_each_request_folds_its_own_kda_length() -> None:
     pools = _compile_kda([RING_LEN] * 3, [NUM_DRAFTS, 1, 0])()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
+    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
+
+
+def test_a_request_longer_than_the_ring_still_places_its_conv_window() -> None:
+    """The fold skips the long row's state, which the verify committed, but
+    still places its conv window."""
+    pools = _compile_kda([RING_LEN, RING_LEN + 2], [1, NUM_DRAFTS])()
+    np.testing.assert_array_equal(pools["live"], pools["reference"])
+    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
 
 
 def test_the_kda_verify_leaves_the_live_pool_alone() -> None:
     pools = _compile_kda([RING_LEN] * 2, [NUM_DRAFTS, 1], rollback=False)()
     np.testing.assert_array_equal(pools["live"], pools["init"])
+    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
 
 
 @pytest.mark.parametrize("seq_lengths", [[1], [5], [1, 9]])
@@ -336,6 +408,7 @@ def test_a_committed_kda_window_lands_on_the_forward(
 ) -> None:
     pools = _compile_kda(seq_lengths, [0] * len(seq_lengths), num_drafts=0)()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
+    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
     np.testing.assert_array_equal(pools["output_0"], pools["output_1"])
 
 

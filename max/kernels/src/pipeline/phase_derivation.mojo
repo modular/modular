@@ -16,7 +16,7 @@ Contains:
   - PhaseAction, PhaseStep: declarative recipe primitives
   - apply_phase_recipe: recipe evaluator
   - single_buffer_prologue_recipe, single_buffer_epilogue_recipe
-  - pipe_to_list, default_prologue, default_kernel, default_epilogue
+  - default_prologue, default_kernel, default_epilogue
   - _strip_drain_fuse_blocks, _expand_epilogue_blocks
   - derive_epilogue_from_program
   - double_buffer_edge_rules, single_buffer_edge_rules, apply_edge_rules
@@ -28,7 +28,7 @@ Contains:
 from std.collections import List
 
 from .config import PipelineConfig, ScheduleConfig
-from .pipeline_dsl import Pipe, ScheduleEntry
+from .pipeline_dsl import ScheduleEntry
 from .program import MMABlockSpec, PipelineProgram
 from .types import (
     DepEdge,
@@ -260,11 +260,6 @@ def single_buffer_epilogue_recipe() -> List[PhaseStep]:
 # =============================================================================
 # Framework Default Derivations (reusable by PipelineSchedule implementations)
 # =============================================================================
-
-
-def pipe_to_list[N: Int](p: Pipe[N]) -> List[OpDesc]:
-    """Convert a Pipe to a List[OpDesc]."""
-    return List(length=N, fill_with=lambda (i: Int) -> OpDesc: p.ops[i])
 
 
 def default_prologue(
@@ -773,6 +768,8 @@ def apply_edge_rules(
                         continue
                     case 2 if c_op.k_offset == KOffsetKind.K_PREV:
                         continue
+                    case _:
+                        pass
 
                 # Compute loop distance.
                 var d = rule.loop_distance

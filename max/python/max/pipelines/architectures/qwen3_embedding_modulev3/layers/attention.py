@@ -20,11 +20,11 @@ from max import functional as F
 from max.driver import CPU
 from max.graph import Dim
 from max.nn import Linear, Module
-from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
 )
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 

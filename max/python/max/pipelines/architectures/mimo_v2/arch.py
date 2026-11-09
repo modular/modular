@@ -25,7 +25,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from .model import MiMoV2Model
 from .model_config import MiMoV2Config
-from .weight_adapters import convert_safetensor_state_dict
+from .weight_adapters import mimo_v2_weight_rules
 
 mimo_v2_arch = SupportedArchitecture(
     name="MiMoV2ForCausalLM",
@@ -38,9 +38,8 @@ mimo_v2_arch = SupportedArchitecture(
     pipeline_model=MiMoV2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_safetensor_state_dict,
-    },
+    weight_rules=mimo_v2_weight_rules,
+    use_weight_rules=True,
     config=MiMoV2Config,
     batching=GptOssBatchProcessor,
     multi_gpu_supported=True,

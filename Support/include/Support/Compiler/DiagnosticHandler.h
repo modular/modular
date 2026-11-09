@@ -16,13 +16,14 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/Diagnostics.h"
 #include <cstdint>
 #include <vector>
 
 namespace M {
 /// This diagnostic handler captures MLIR diagnostics emitted into a vector.
-class DiagnosticHandler {
+class MODULAR_CXX_EXPORT DiagnosticHandler {
 public:
   DiagnosticHandler(MLIRContext *ctx, bool capturePerThread = true);
   ~DiagnosticHandler();

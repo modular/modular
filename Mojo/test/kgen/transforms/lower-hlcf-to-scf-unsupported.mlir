@@ -59,3 +59,93 @@ kgen.func @exit_below_loop_body(%c: !kgen.scalar<bool>) {
   }
   hlcf.return
 }
+
+// -----
+
+// A `while` loop whose body breaks again has a second exit, which the
+// `scf.while` split cannot express.
+kgen.func @while_loop_second_exit(%c: !kgen.scalar<bool>, %d: !kgen.scalar<bool>) {
+  // expected-error @below {{only when its `continue`/`break` terminates the loop body}}
+  hlcf.loop {
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    hlcf.if %d {
+      // expected-note @below {{`break` nested in `hlcf.if` here}}
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    hlcf.continue
+  }
+  hlcf.return
+}
+
+// -----
+
+// A labeled `break` in a nested loop exits the outer loop, so it is a second
+// exit of the outer `while` loop too.
+kgen.func @while_loop_break_from_inner_loop(%c: !kgen.scalar<bool>, %d: !kgen.scalar<bool>) {
+  // expected-error @below {{only when its `continue`/`break` terminates the loop body}}
+  hlcf.loop "outer" {
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    hlcf.loop "inner" {
+      hlcf.if %d {
+        // expected-note @below {{`break` nested in `hlcf.if` here}}
+        hlcf.break "outer"
+      } else {
+        hlcf.yield
+      }
+      hlcf.break
+    }
+    hlcf.continue
+  }
+  hlcf.return
+}
+
+// -----
+
+// It is a second exit wherever the nested loop sits, before the exit check
+// too.
+kgen.func @break_from_inner_loop_before_check(%c: !kgen.scalar<bool>, %d: !kgen.scalar<bool>) {
+  // expected-error @below {{only when its `continue`/`break` terminates the loop body}}
+  hlcf.loop "outer" {
+    hlcf.loop "inner" {
+      hlcf.if %d {
+        // expected-note @below {{`break` nested in `hlcf.if` here}}
+        hlcf.break "outer"
+      } else {
+        hlcf.yield
+      }
+      hlcf.break
+    }
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    hlcf.continue
+  }
+  hlcf.return
+}
+
+// -----
+
+// The same holds for a labeled `break` that ends the nested loop's body.
+kgen.func @break_ends_inner_loop_body() {
+  // expected-error @below {{only when its `continue`/`break` terminates the loop body}}
+  hlcf.loop "outer" {
+    hlcf.loop "inner" {
+      // expected-note @below {{`break` nested in `hlcf.loop` here}}
+      hlcf.break "outer"
+    }
+    hlcf.continue
+  }
+  hlcf.return
+}

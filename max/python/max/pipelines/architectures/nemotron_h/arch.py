@@ -55,9 +55,7 @@ nemotron_h_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: convert_nemotron_h_state_dict,
     },
-    # SSM recurrent state is not reconstructable from a token prefix, so prefix
-    # caching must be disabled.
-    required_arguments={"enable_prefix_caching": False},
+    checkpoints_recurrent_state=True,
     config=NemotronHConfig,
     multi_gpu_supported=False,
     # Reasoning opens implicitly (template pre-fills ``<think>``) and closes
@@ -66,14 +64,5 @@ nemotron_h_arch = SupportedArchitecture(
     # qwen3_5 parsers match Nemotron-3's Qwen-format template exactly.
     reasoning_parser="qwen3_5",
     tool_parser="qwen3_5",
-    # SSM conv and state pools are pre-allocated, fixed-address, full-pool
-    # buffers.  The in-place slot-indexed kernels (causal_conv1d_varlen_fwd,
-    # mamba2_ssd_chunk_scan_varlen_fwd_inplace) mutate them directly on the
-    # GPU via slot_idx — no host-device sync required.  ``inplace_copy_from``
-    # short-circuits when src-is-self (same Buffer object) so pool contents
-    # survive graph-capture replay unchanged.  The registered pipeline model
-    # implements SupportsSSMStateWarmup for the decoder's request state, so the
-    # overlap pipeline releases warmup slots after each (batch_size,
-    # cache_length) probe, preventing pool exhaustion.
     supports_device_graph_capture=True,
 )

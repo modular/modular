@@ -126,6 +126,102 @@ template Type IndexDepthAdjuster::replaceCached(Type);
 // ParameterCollector
 //===----------------------------------------------------------------------===//
 
+ParameterCollector::AttrOrType
+ParameterCollector::fromSignature(const Signature &signature) {
+  if (auto attrScope = dyn_cast<ParameterScopeAttrInterface>(signature))
+    return Attribute(attrScope);
+  return Type(cast<ParameterScopeTypeInterface>(signature));
+}
+
+bool ParameterCollector::isInParameterLessCache(AttrOrType expr) const {
+  const void *key = isa<Attribute>(expr)
+                        ? cast<Attribute>(expr).getAsOpaquePointer()
+                        : cast<Type>(expr).getAsOpaquePointer();
+  return cache.parameterLess.contains(key);
+}
+
+unsigned ParameterCollector::getOrCreateSignatureContextId(size_t depth) {
+  // A stack with fewer than `depth` signatures gives a shorter sequence. A
+  // shorter sequence never gets the same id as a sequence of length `depth`.
+  size_t numSignatures = std::min(depth, signatures.size());
+  unsigned id = 0;
+  for (const Signature &sig :
+       llvm::reverse(ArrayRef(signatures).take_back(numSignatures))) {
+    unsigned nextId = signatureContextIds.size() + 1;
+    id = signatureContextIds.try_emplace({id, fromSignature(sig)}, nextId)
+             .first->second;
+  }
+  return id;
+}
+
+ParameterCollector::VisitedInfo
+ParameterCollector::verifyAndCollect(AttrOrType expr) {
+  SmallVector<ParamDeclRefAttr> allUses;
+  VisitedInfo info;
+  if (auto attr = dyn_cast<Attribute>(expr))
+    collectUsesFromAttrUncached(attr, allUses, info.hasCtxEvalExpr,
+                                info.requiredSignatureDepth);
+  else
+    collectUsesFromTypesUncached(cast<Type>(expr), allUses, info.hasCtxEvalExpr,
+                                 info.requiredSignatureDepth);
+  // Each child of `expr` contributes each use of the child once. Different
+  // children can contribute the same use. The loop below keeps the first
+  // occurrence of each use.
+  DenseSet<ParamDeclRefAttr> seen;
+  for (ParamDeclRefAttr use : allUses)
+    if (seen.insert(use).second)
+      info.uses.push_back(use);
+  return info;
+}
+
+void ParameterCollector::collectMemoized(
+    AttrOrType expr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
+  auto mergeIntoReturnValues = [&](const VisitedInfo &info) {
+    uses.append(info.uses.begin(), info.uses.end());
+    hasCtxEvalExpr |= info.hasCtxEvalExpr;
+    requiredSignatureDepth =
+        std::max(requiredSignatureDepth, info.requiredSignatureDepth);
+  };
+
+  if (auto it = visited.find(expr); it != visited.end()) {
+    const VisitedInfo &result = it->second;
+    unsigned contextId =
+        getOrCreateSignatureContextId(result.requiredSignatureDepth);
+    if (result.verifiedContextIds.contains(contextId)) {
+      mergeIntoReturnValues(result);
+      return;
+    }
+
+    // TODO(dgurchenkov): Skip the step below for uses of ParameterCollector
+    // that do not verify or issue errors.
+    //
+    // Verification depends on the signature context, so verify `expr` in this
+    // one. The facts do not depend on the context, so the scan finds the same
+    // facts as `result`.
+    [[maybe_unused]] VisitedInfo rescanned = verifyAndCollect(expr);
+    // The scan can insert into `visited`, which invalidates `result`.
+    VisitedInfo &entry = visited.find(expr)->second;
+    assert(rescanned.uses == entry.uses &&
+           rescanned.hasCtxEvalExpr == entry.hasCtxEvalExpr &&
+           rescanned.requiredSignatureDepth == entry.requiredSignatureDepth &&
+           "the facts of a sub-expression must not depend on the context");
+    entry.verifiedContextIds.insert(contextId);
+    mergeIntoReturnValues(entry);
+    return;
+  }
+
+  VisitedInfo info = verifyAndCollect(expr);
+  mergeIntoReturnValues(info);
+
+  // `cache` answers later visits to `expr` before this function runs.
+  if (isInParameterLessCache(expr))
+    return;
+  info.verifiedContextIds.insert(
+      getOrCreateSignatureContextId(info.requiredSignatureDepth));
+  visited.try_emplace(expr, std::move(info));
+}
+
 void ParameterCollector::collectUsesFromAttr(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
     bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
@@ -157,6 +253,12 @@ void ParameterCollector::collectUsesFromAttrImpl(
     return;
   }
 
+  collectMemoized(attr, uses, hasCtxEvalExpr, requiredSignatureDepth);
+}
+
+void ParameterCollector::collectUsesFromAttrUncached(
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
   // Look through any SugarAttr's we encounter.
   if (auto sugar = dyn_cast<SugarAttr>(attr)) {
     collectUsesFromAttr(sugar.getCanonical(), uses, hasCtxEvalExpr,
@@ -320,6 +422,12 @@ void ParameterCollector::collectUsesFromTypesImpl(
     return;
   }
 
+  collectMemoized(type, uses, hasCtxEvalExpr, requiredSignatureDepth);
+}
+
+void ParameterCollector::collectUsesFromTypesUncached(
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasCtxEvalExpr,
+    size_t &requiredSignatureDepth) {
   // Check any StructType's we encounter.
   if (auto refType = dyn_cast<StructTypeInterface>(type))
     verifyRefType(refType);

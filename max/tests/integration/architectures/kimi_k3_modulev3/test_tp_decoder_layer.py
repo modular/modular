@@ -67,7 +67,7 @@ def _arr(*shape: int) -> np.ndarray:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
     # Matches test_tp_attention.py's MLA parameters: flash_attention_gpu has
@@ -181,12 +181,11 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
     shared_inter = moe_inter
     beta, linear_beta, eps = 1.5, 1.5, 1e-5
 
-    qkv_parts_np = [_arr(inner, hidden) for _ in range(3)]  # q, k, v
+    qkv_parts_np = [_arr(inner, hidden) for _ in range(4)]  # q, k, v, g
+    b_proj_np = _arr(heads, hidden)
     attn_weights = {
         "f_a_proj": _arr(head_dim, hidden),
         "f_b_proj": _arr(inner, head_dim),
-        "b_proj": _arr(heads, hidden),
-        "g_proj": _arr(inner, hidden),
         "o_proj": _arr(hidden, inner),
     }
     conv_weight_np = _arr(3 * inner, conv_kernel)
@@ -232,8 +231,9 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
             conv_kernel_size=conv_kernel,
             gate_lower_bound=None,
         )
-        attention.qkv_proj.weight = Tensor(
-            interleave_for_tp(qkv_parts_np, tp_size), dtype=DType.float32
+        attention.qkvg_proj.weight = Tensor(
+            interleave_for_tp([*qkv_parts_np, b_proj_np], tp_size),
+            dtype=DType.float32,
         )
         for name, arr in attn_weights.items():
             getattr(attention, name).weight = Tensor(arr, dtype=DType.float32)

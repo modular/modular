@@ -47,9 +47,10 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.quant_config import (
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -79,6 +80,14 @@ from runtime_config import text_config
 # The rig's DP width: four ranks, each running the full attention heads on
 # its own request shard.
 _DP = 4
+# A custom op stages as `mo.custom [symbol = "<name>"]`.
+_CUSTOM_OP = re.compile(r'symbol = "([\w.]+)"')
+# The CSA2 ops that are not the attention itself.
+_CSA2_STAGE_OPS = (
+    "attention.csa2.prefill",
+    "attention.csa2.decode",
+    "attention.csa2.index_list",
+)
 
 
 @contextmanager
@@ -360,19 +369,20 @@ def test_dp4_ep4_off_graph_takes_no_replay_input(staged_dp4_ep4: str) -> None:
 def test_dp4_ep4_graph_uses_the_v2_writeback_and_unordered_picks(
     staged_dp4_ep4: str,
 ) -> None:
-    census = Counter(re.findall(r"\b(?:mo|mogg|mgp)\.[\w.]+", staged_dp4_ep4))
-    assert census["mo.mhc.post"] == 3 * _DP
-    assert census["mo.top_k.per_row"] == 0
-    assert census["mo.log1p"] == 0, "the router scores with V2's log form"
+    census = Counter(_CUSTOM_OP.findall(staged_dp4_ep4))
+    assert census["hyper_connection.mhc.post"] == 3 * _DP
+    assert census["reduction.top_k.per_row"] == 0
+    assert "mo.log1p" not in staged_dp4_ep4, (
+        "the router scores with V2's log form"
+    )
 
 
 def test_dp4_ep4_attention_writes_wo_as_mxfp8_rows(staged_dp4_ep4: str) -> None:
-    names = set(
-        re.findall(
-            r"\bmo\.csa2\.(?:attention|prefill|decode)[\w.]*",
-            staged_dp4_ep4,
-        )
-    )
+    names = {
+        name
+        for name in _CUSTOM_OP.findall(staged_dp4_ep4)
+        if name.startswith("attention.csa2") and ".index_list" not in name
+    }
     assert names, "no CSA2 attention in the staged graph"
     for name in sorted(names):
         assert ".mxfp8" in name, f"{name} does not write wo_a's MXFP8 rows"
@@ -428,23 +438,24 @@ def test_dp4_ep4_graph_compiles() -> None:
 def test_dp4_ep4_graph_fuses_the_query_norms_quantize_and_window_store(
     staged_dp4_ep4: str,
 ) -> None:
-    kernels = Counter(re.findall(r"mo\.csa\.[\w.]+", staged_dp4_ep4))
+    kernels = Counter(_CUSTOM_OP.findall(staged_dp4_ep4))
     layers = _dp_text_config().num_hidden_layers
-    assert kernels["mo.csa.rms_norm_quantize_q_store_kv"] == layers * _DP
-    assert kernels["mo.csa.window_kv_store"] == 0
+    assert kernels["attention.csa.rms_norm_quantize_q_store_kv"] == layers * _DP
+    assert kernels["attention.csa.window_kv_store"] == 0
 
 
 def test_dp4_ep4_graph_rotates_the_query_in_the_attention(
     staged_dp4_ep4: str,
 ) -> None:
-    ops = Counter(re.findall(r"\bmo\.[\w.]+", staged_dp4_ep4))
+    ops = Counter(_CUSTOM_OP.findall(staged_dp4_ep4))
     layers = _dp_text_config().num_hidden_layers
     attention = {
         name: count
         for name, count in ops.items()
-        if name.startswith("mo.csa2.attention")
+        if name.startswith("attention.csa2")
+        and not name.startswith(_CSA2_STAGE_OPS)
     }
-    assert ops["mo.matmul.mxfp8.rope_tail"] == 0
+    assert ops["matmul.mxfp8.rope_tail"] == 0
     assert attention
     assert all(name.endswith(".rope_q") for name in attention), attention
     assert sum(attention.values()) == layers * _DP

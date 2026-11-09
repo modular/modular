@@ -24,6 +24,7 @@
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/DeviceContext/PinnedCompletionFlag.h"
 #include "NVML.h"
 #include "Support/HashUtils.h"
 #include "Support/Profiling/Ranges.h"
@@ -1443,19 +1444,19 @@ ErrorOrSuccess CUDADeviceStream::enqueueHostFunc(void (*fn)(void *),
   return success();
 }
 
-ErrorOrSuccess
-CUDADeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                         uint64_t value) const {
+ErrorOrSuccess CUDADeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                                   uint64_t value) const {
   const auto &cudaDevice = CUDADevice::cast(this->device());
   CUDA_WITH_DEV_ERR(cudaDevice);
-  // Wait until *flag.devicePtr() == value. CU_STREAM_WAIT_VALUE_FLUSH is
-  // intentionally omitted: it's gated by CAN_FLUSH_REMOTE_WRITES, which
-  // is 0 on most current devices, and writes from a normal host thread
-  // are visible via the device-mapped pinned alias without it.
+  // No CU_STREAM_WAIT_VALUE_FLUSH: most devices lack CAN_FLUSH_REMOTE_WRITES,
+  // and host writes reach the device through the pinned alias anyway.
   CUDA_CHECK_ERR(cudaDevice.cudaDriver().cuStreamWaitValue64_v2(
-      stream_, reinterpret_cast<CUdeviceptr>(flag.devicePtr()), value,
+      stream_,
+      reinterpret_cast<CUdeviceptr>(
+          PinnedCompletionFlag::cast(flag).devicePtr()),
+      value,
       static_cast<unsigned int>(
-          CUstreamWaitValue_flags::CU_STREAM_WAIT_VALUE_EQ)));
+          CUstreamWaitValue_flags::CU_STREAM_WAIT_VALUE_GEQ)));
   return success();
 }
 
@@ -1909,8 +1910,8 @@ ErrorOr<CompletionFlagRef> CUDADeviceContext::allocateCompletionFlag() {
   }
   // Initialize the flag to zero so the first wait observes a clean state.
   *static_cast<uint64_t *>(hostPtr) = 0;
-  return CompletionFlagRef::take(
-      new CompletionFlag(*this, hostPtr, reinterpret_cast<uint64_t>(devPtr)));
+  return CompletionFlagRef::take(new PinnedCompletionFlag(
+      *this, hostPtr, reinterpret_cast<uint64_t>(devPtr)));
 }
 
 ErrorOrSuccess CUDADeviceContext::freeCompletionFlag(void *hostPtr) {

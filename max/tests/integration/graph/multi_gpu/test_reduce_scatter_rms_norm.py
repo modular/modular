@@ -72,6 +72,7 @@ def _rs_rms_norm_graph(
     rows_per_device: list[int],
     group_size: int | None,
     with_residual: bool = True,
+    quant_bits: int = 0,
 ) -> Graph:
     devices = signals.devices
     num_devices = len(devices)
@@ -120,6 +121,7 @@ def _rs_rms_norm_graph(
             residuals=residuals,
             weight_offset=WEIGHT_OFFSET,
             group_size=group_size,
+            quant_bits=quant_bits,
         )
         graph.output(*normed, *residual)
         return graph
@@ -541,3 +543,89 @@ def test_grouped_reduce_scatter_rms_norm_ragged_execution() -> None:
         host_residuals,
         "grouped-ragged",
     )
+
+
+@pytest.mark.parametrize("quant_bits", [4, 8])
+@pytest.mark.parametrize(
+    "rows, regime", [(8, "fused"), (1024 + 3, "two_launch")]
+)
+def test_reduce_scatter_rms_norm_quantized_execution(
+    quant_bits: int, rows: int, regime: str
+) -> None:
+    """``quant_bits`` quantizes only the two-launch arm's peer traffic.
+
+    The fused arm must stay bit-identical to the exact op. The two-launch
+    arm's sum must differ from the exact sum (the quantized path ran) by at
+    most each peer's per-32-group quantization bound, and its norm must be the
+    norm of the sum it returned.
+    """
+    num_gpus = 4
+    if num_gpus > accelerator_count():
+        pytest.skip(f"Not enough GPUs ({num_gpus}).")
+
+    rows_per_device = [rows] * num_gpus
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    graph = _rs_rms_norm_graph(
+        signals, rows_per_device, group_size=None, quant_bits=quant_bits
+    )
+    devices = [Accelerator(n) for n in range(num_gpus)]
+    session = InferenceSession(devices=[CPU(), *devices])
+    compiled = session.load(graph)
+    (
+        tensor_inputs,
+        gamma_inputs,
+        residual_inputs,
+        host_acts,
+        host_gammas,
+        host_residuals,
+    ) = _inputs_and_gammas(rows_per_device, devices, num_gpus)
+    outputs = list(
+        compiled.execute(
+            *tensor_inputs, *gamma_inputs, *residual_inputs, *signals.buffers()
+        )
+    )
+    if regime == "fused":
+        _check(
+            outputs,
+            num_gpus,
+            num_gpus,
+            rows_per_device,
+            host_acts,
+            host_gammas,
+            host_residuals,
+            f"quant{quant_bits}-fused",
+        )
+        return
+
+    step = 1.0 / 14.0 + 1.0 / 128.0 if quant_bits == 4 else 1.0 / 16.0
+    group_max = [
+        np.repeat(
+            np.abs(a).reshape(rows, COLS // 32, 32).max(axis=-1), 32, axis=-1
+        )
+        for a in host_acts
+    ]
+    exact = np.sum(host_acts, axis=0) + host_residuals[0]
+    row = 0
+    for dev in range(num_gpus):
+        units = _shard_rows(rows, num_gpus, dev)
+        window = slice(row, row + units)
+        row += units
+        got = _from_device_bf16(cast(Buffer, outputs[num_gpus + dev]))
+        bound = (
+            sum(
+                step * group_max[p][window] for p in range(num_gpus) if p != dev
+            )
+            + np.abs(exact[window]) / 64.0
+        )
+        err = np.abs(got - exact[window])
+        assert np.all(err <= bound), (
+            f"quant{quant_bits}: GPU {dev} sum off by {float(err.max())}"
+        )
+        assert not np.array_equal(got, _bf16(exact[window])), (
+            f"quant{quant_bits}: GPU {dev} sum is exact; nothing was quantized"
+        )
+        nrm = _from_device_bf16(cast(Buffer, outputs[dev]))
+        ref = _host_rmsnorm(got, host_gammas[dev])
+        assert np.allclose(nrm, ref, rtol=2e-2, atol=2e-2), (
+            f"quant{quant_bits}: GPU {dev} norm is not the norm of its sum"
+        )

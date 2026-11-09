@@ -29,8 +29,8 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import fused_chunked_qkv_rope_store_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn._graph_ops import fused_chunked_qkv_rope_store_ragged
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.mimo_v2.layers.attention import (
     QkvChunkLayout,
     prepare_qkv_unfused,
@@ -425,7 +425,7 @@ def _unchecked_graph(
         qkv, offsets, freqs = (value.tensor for value in graph.inputs[:3])
         cache = params.unflatten_kv_inputs(iter(graph.inputs[3:]))[0]
         q = ops.inplace_custom(
-            "mo.chunked_qkv_rope_store.ragged.paged",
+            "kv_cache.chunked_qkv_rope_store.ragged.paged",
             device=device,
             values=[
                 qkv,

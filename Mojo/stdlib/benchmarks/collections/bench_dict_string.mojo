@@ -129,7 +129,7 @@ struct KeysContainer[KeyEndType: DType = .uint32](ImplicitlyCopyable, Sized):
         )
 
     @inline(.always)
-    def add(mut self, key: StringSlice):
+    def add(mut self, key: StringSpan):
         var prev_end = (
             0 if self.count
             == 0 else self.keys_end[unsafe_offset=self.count - 1]
@@ -181,17 +181,17 @@ struct KeysContainer[KeyEndType: DType = .uint32](ImplicitlyCopyable, Sized):
         self.count = count
 
     @inline(.always)
-    def get(self, index: Int) -> StringSlice[ImmOrigin(origin_of(self))]:
+    def get(self, index: Int) -> StringSpan[ImmOrigin(origin_of(self))]:
         var keys_ptr = self.keys.as_imm().unsafe_origin_cast[origin_of(self)]()
         if index < 0 or index >= self.count:
-            return StringSlice(
+            return StringSpan(
                 unsafe_from_utf8=Span(unsafe_ptr=keys_ptr, length=0)
             )
         var start = 0 if index == 0 else Int(
             self.keys_end[unsafe_offset=index - 1]
         )
         var length = Int(self.keys_end[unsafe_offset=index]) - start
-        return StringSlice(
+        return StringSpan(
             unsafe_from_utf8=Span(
                 unsafe_ptr=keys_ptr.unsafe_offset(start), length=length
             )
@@ -202,16 +202,14 @@ struct KeysContainer[KeyEndType: DType = .uint32](ImplicitlyCopyable, Sized):
         self.count = 0
 
     @inline(.always)
-    def __getitem__(
-        self, index: Int
-    ) -> StringSlice[ImmOrigin(origin_of(self))]:
+    def __getitem__(self, index: Int) -> StringSpan[ImmOrigin(origin_of(self))]:
         return self.get(index)
 
     @inline(.always)
     def __len__(self) -> Int:
         return self.count
 
-    def keys_vec(self, out result: List[StringSlice[origin_of(self)]]):
+    def keys_vec(self, out result: List[StringSpan[origin_of(self)]]):
         var keys = type_of(result)(capacity=self.count)
         for i in range(self.count):
             keys.append(self[i])
@@ -343,10 +341,10 @@ struct StringDict[
         return self.count
 
     @inline(.always)
-    def __contains__(self, key: StringSlice) -> Bool:
+    def __contains__(self, key: StringSpan) -> Bool:
         return self._find_key_index(key) != 0
 
-    def put(mut self, key: StringSlice, value: Self.V):
+    def put(mut self, key: StringSpan, value: Self.V):
         if self.count >= self.capacity - (self.capacity >> 3):
             self._rehash()
 
@@ -503,7 +501,7 @@ struct StringDict[
             )
         )
 
-    def get(self, key: StringSlice, default: Self.V) -> Self.V:
+    def get(self, key: StringSpan, default: Self.V) -> Self.V:
         var key_index = self._find_key_index(key)
         if key_index == 0:
             return default.copy()
@@ -513,7 +511,7 @@ struct StringDict[
                 return default.copy()
         return self.values[key_index - 1].copy()
 
-    def delete(mut self, key: StringSlice):
+    def delete(mut self, key: StringSpan):
         comptime if not Self.destructive:
             return
 
@@ -526,7 +524,7 @@ struct StringDict[
 
     def upsert(
         mut self,
-        key: StringSlice,
+        key: StringSpan,
         update: def(value: Optional[Self.V]) thin -> Self.V,
     ):
         var key_index = self._find_key_index(key)
@@ -555,7 +553,7 @@ struct StringDict[
         self.count = 0
 
     @inline(.always)
-    def _find_key_index(self, key: StringSlice) -> Int:
+    def _find_key_index(self, key: StringSpan) -> Int:
         var key_hash = hash(key).cast[Self.KeyCountType]()
         var modulo_mask = self.capacity - 1
 

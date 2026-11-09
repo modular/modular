@@ -15,8 +15,6 @@ _EXTRA_DEPS = {
     "test_grouped_nvfp4_row_amax_quantization.mojo": ["//max:nn"],
     # The reference rotates with nn.rope's rope_ragged.
     "test_rope_block_scaled_quantization.mojo": ["//max:nn"],
-    # The reference normalizes with the graph op's rms_norm.
-    "test_rms_norm_block_scaled_quantization.mojo": ["//max:builtin_kernels"],
 }
 
 _FP8_FP4_TESTS = [

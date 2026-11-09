@@ -1061,6 +1061,18 @@ def test_region_chains_after_recording_context(ctx: DeviceContext[]) raises:
             assert_equal(host[i], Float32(15))
 
 
+def test_recording_context_is_graph_capturing(ctx: DeviceContext[]) raises:
+    print("Test is_graph_capturing() is True only on a recording context.")
+    assert_false(ctx.is_graph_capturing())
+
+    def build(mut builder: DeviceGraphBuilder) raises:
+        with builder.recording_context() as rec:
+            assert_true(rec.is_graph_capturing())
+
+    _ = DeviceGraph.create(ctx, build)
+    assert_false(ctx.is_graph_capturing())
+
+
 def test_as_context_kernel_chain(ctx: DeviceContext[]) raises:
     print(
         "Test recording a two-kernel chain through DeviceGraphBuilder"

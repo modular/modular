@@ -30,6 +30,7 @@ speculative:
   num_speculative_tokens: 3
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   reasoning_parser: hy_v4
   tool_parser: hy_v4

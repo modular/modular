@@ -72,15 +72,12 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.graph_groups import BatchContext
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.layer import Module as GraphApiModule
-from max.nn.legacy.transformer import (
-    ReturnHiddenStates,
-    ReturnLogits,
-    logits_outputs,
-)
+from max.nn.legacy.transformer import logits_outputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.modeling.types import PipelineTask
@@ -127,6 +124,7 @@ from .request_state import (
     split_state_outputs,
 )
 from .role_contracts import DecoderInputs, DecoderOutputs, VisionInputs
+from .weight_transform import CheckpointRole, WeightEntry, WeightTransform
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -695,6 +693,19 @@ class GraphApiDecoderPipelineModel(
 
     def _hf_config_for_weights(self) -> AutoConfig | None:
         return self.huggingface_config
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads the checkpoint through the architecture's adapter.
+
+        A checkpoint that loads through rules names the decoder's weights.
+        """
+        if isinstance(self.adapter, WeightTransform):
+            self.weight_naming = {
+                GraphRole.DECODER: (
+                    WeightEntry(CheckpointRole.TARGET, self.adapter),
+                )
+            }
+        return super()._load_state_dict()
 
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
         """Loads the graphs with the session used to initialize EP first."""

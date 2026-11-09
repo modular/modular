@@ -38,7 +38,7 @@ from internal_utils import arg_parse, coprime_multiplier
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Coord, Idx, TileTensor, row_major
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_utils import MHAConfig, maybe_null_pointer
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
@@ -395,6 +395,7 @@ def _run_case_impl[
         sparse=True,
         skip_masked_tiles=True,
         physical_indices=not logical,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,

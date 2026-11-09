@@ -16,6 +16,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include <string>
 
 namespace M {
@@ -25,12 +26,12 @@ namespace M {
 /// Base-64 encode a string that conforms to RFC4648 Section 5 (URL and filename
 /// safe). This implementation does not include the `=` padding at the end of
 /// the encoded bytes.
-std::string encodeURLSafeBase64(StringRef str);
+MODULAR_CXX_EXPORT std::string encodeURLSafeBase64(StringRef str);
 
 /// Base-64 decode a string that conforms to RFC4648 Section 5 (URL and filename
 /// safe). This implementation does not include the `=` padding at the end of
 /// the encoded bytes.
-ErrorOr<std::string> decodeURLSafeBase64(StringRef str);
+MODULAR_CXX_EXPORT ErrorOr<std::string> decodeURLSafeBase64(StringRef str);
 } // namespace M
 
 #endif // SUPPORT_BASE64_H

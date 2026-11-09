@@ -47,18 +47,18 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     kda_chunk,
     kda_chunk_supports_head_dims,
     kda_decode,
+    verify_width_operand,
+)
+from max.nn._graph_ops.state_space.kimi_delta import (
+    KDA_GATE_LOWER_BOUND,
+    KdaStateLayout,
     kda_ring_record_elements,
     kda_state_fold,
     kda_verify_ring,
-    verify_width_operand,
-)
-from max.nn.legacy.state_space.kimi_delta import (
-    KDA_GATE_LOWER_BOUND,
-    KdaStateLayout,
 )
 
 # The chunk pipeline reassociates the fp32 arithmetic, so it is graded on
@@ -1495,6 +1495,9 @@ _RING_PADDING = 3
 _RING_POISON = np.float32(-7.75e18)
 _POOL_SLOTS = 6
 _RING_ROWS = 5
+_CONV_SLOTS = 6
+_CONV_TAPS = 3
+"""The conv pool's rows and window width, a kernel-size-4 conv."""
 
 
 def _assert_reproduces(
@@ -1519,6 +1522,47 @@ def _assert_reproduces(
 def _pool_shape(kd: int, num_value_heads: int) -> list[int]:
     """The pool's shape, which the equal head widths make layout-independent."""
     return [_POOL_SLOTS, num_value_heads, kd, kd]
+
+
+def _conv_dim(kd: int, num_value_heads: int) -> int:
+    """The conv input's width: one q, k and v segment per value head."""
+    return 3 * num_value_heads * kd
+
+
+def _conv_shape(kd: int, num_value_heads: int) -> list[int]:
+    """The conv pool's shape: windows ``_conv_dim`` wide, ``_CONV_TAPS``
+    deep."""
+    return [_CONV_SLOTS, _conv_dim(kd, num_value_heads), _CONV_TAPS]
+
+
+def _expected_conv_pool(
+    conv_init: np.ndarray,
+    windows: np.ndarray,
+    offsets: np.ndarray,
+    lengths: list[int],
+    accepted: list[int],
+    conv_rows: np.ndarray,
+) -> np.ndarray:
+    """The conv windows the fold should place, one q, k and v segment wide.
+
+    At an accepted length ``L`` (clamped to the request's rows), window
+    slot ``j`` takes the captured input at position ``L - taps + j`` once
+    that lies in the request's rows, and the pre-verify entry ``L + j``
+    otherwise. The placement only copies, so this NumPy view of it is exact.
+    """
+    pool = conv_init.copy()
+    taps = _CONV_TAPS
+    for b, row in enumerate(conv_rows):
+        kept = min(accepted[b], lengths[b])
+        if kept <= 0:
+            continue
+        for j in range(taps):
+            lookback = kept - taps + j
+            if lookback >= 0:
+                pool[row, :, j] = windows[offsets[b] + lookback]
+            else:
+                pool[row, :, j] = conv_init[row, :, kept + j]
+    return pool
 
 
 def _kda_graph_inputs(
@@ -1593,9 +1637,18 @@ def _ring_model(
     state_layout: KdaStateLayout,
     num_drafts: int,
     fold: bool,
+    place_conv: bool = True,
 ) -> Model:
+    """Builds the verify, then optionally the fold, over the same buffers.
+
+    ``fold=False`` is the verify alone. Otherwise the fold also places the
+    conv window, unless ``place_conv`` is false, which takes the no-conv arm
+    a rollback that replays the conv itself uses. The conv operands stay
+    graph inputs either way, so one caller feeds the same buffers to both.
+    """
     gpu = DeviceRef.GPU()
     stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    conv_dim = _conv_dim(kd, num_value_heads)
     with Graph(
         "kda_verify_ring_and_fold",
         input_types=[
@@ -1613,6 +1666,11 @@ def _ring_model(
             ),
             TensorType(DType.int32, [batch], device=gpu),
             TensorType(DType.uint32, [batch], device=gpu),
+            # The fold's conv operands: one captured window, the conv pool
+            # and its rows.
+            TensorType(DType.float32, ["total_t", conv_dim], device=gpu),
+            TensorType(DType.uint32, [1, batch], device=gpu),
+            BufferType(DType.float32, _conv_shape(kd, num_value_heads), gpu),
         ],
     ) as graph:
         q, k, v, raw_gate, beta, a_log, dt_bias, cu_seqlens = (
@@ -1623,6 +1681,9 @@ def _ring_model(
         ring = graph.inputs[10].buffer
         ring_indices = graph.inputs[11].tensor
         accepted = graph.inputs[12].tensor
+        window = graph.inputs[13].tensor
+        conv_rows = graph.inputs[14].tensor
+        conv_pool = graph.inputs[15].buffer
         verify_width = verify_width_operand(num_drafts)
         out = kda_verify_ring(
             q,
@@ -1641,7 +1702,21 @@ def _ring_model(
             output_dtype=DType.float32,
             state_layout=state_layout,
         )
-        if fold:
+        if fold and place_conv:
+            kda_state_fold(
+                pool,
+                ring,
+                ops.unsqueeze(indices.cast(DType.uint32), 0),
+                ops.unsqueeze(ring_indices.cast(DType.uint32), 0),
+                accepted,
+                cu_seqlens,
+                verify_width,
+                conv_pool=conv_pool,
+                conv_row_ids=conv_rows,
+                qkv_windows=[window],
+                state_layout=state_layout,
+            )
+        elif fold:
             kda_state_fold(
                 pool,
                 ring,
@@ -1784,6 +1859,13 @@ def test_kda_verify_ring_and_fold_match_decode(
             dtype=np.float32,
         )
     )
+    conv_dim = _conv_dim(kd, num_value_heads)
+    window = rng.standard_normal((total, conv_dim)).astype(np.float32)
+    conv_rows = np.array([2, 0, 3], dtype=np.uint32)
+    conv_init = (
+        rng.standard_normal(_conv_shape(kd, num_value_heads)) * 0.4
+    ).astype(np.float32)
+    conv_pool = buf(conv_init.copy())
     out = ring_model.execute(
         buf(q),
         buf(k),
@@ -1798,6 +1880,9 @@ def test_kda_verify_ring_and_fold_match_decode(
         ring,
         buf(ring_indices),
         buf(np.array(accepted, dtype=np.uint32)),
+        buf(window),
+        buf(conv_rows.reshape(1, -1)),
+        conv_pool,
     )
     _assert_reproduces(
         torch.from_dlpack(out[0]).cpu().numpy(),
@@ -1808,6 +1893,19 @@ def test_kda_verify_ring_and_fold_match_decode(
         torch.from_dlpack(pool).cpu().numpy(),
         expected_pool,
         "the folded pool differs from kda_decode over the accepted tokens",
+    )
+    # The conv window placement is a copy, so it is exact whatever the target.
+    expected_conv = (
+        conv_init
+        if num_drafts == 0
+        else _expected_conv_pool(
+            conv_init, window, offsets, lengths, accepted, conv_rows
+        )
+    )
+    np.testing.assert_array_equal(
+        torch.from_dlpack(conv_pool).cpu().numpy(),
+        expected_conv,
+        err_msg="the placed conv windows differ from the per-layer replay",
     )
     ring_after = torch.from_dlpack(ring).cpu().numpy()
     if num_drafts == 0:
@@ -1828,6 +1926,125 @@ def test_kda_verify_ring_and_fold_match_decode(
             "an unowned ring row moved"
         )
     assert full_pool.shape == expected_pool.shape
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+def test_kda_state_fold_without_conv_folds_the_same_pool(
+    session: InferenceSession,
+) -> None:
+    """A fold given no conv operands lands the pool the conv fold lands.
+
+    Kimi K3's rollback replays the conv itself and folds without the window
+    placement, which is a separate op. Its fold must be the same fold, so
+    both arms run over equal pools from one batch of inputs, and the no-conv
+    arm must leave the conv pool where it found it.
+    """
+    kd, num_key_heads, num_value_heads = 32, 1, 2
+    state_layout: KdaStateLayout = "K_FIRST"
+    num_drafts = 3
+    lengths = [4, 3]
+    accepted = [3, 0]
+    batch = len(lengths)
+    total = sum(lengths)
+    offsets = np.concatenate([[0], np.cumsum(lengths)]).astype(np.int32)
+    rng = np.random.default_rng(11)
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    models = [
+        _ring_model(
+            session,
+            kd,
+            num_key_heads,
+            num_value_heads,
+            batch,
+            state_layout,
+            num_drafts,
+            fold=True,
+            place_conv=place_conv,
+        )
+        for place_conv in (True, False)
+    ]
+    device = models[0].input_devices[0]
+
+    def buf(array: np.ndarray) -> md.Buffer:
+        return md.Buffer.from_numpy(np.ascontiguousarray(array)).to(device)
+
+    pool_init = (
+        rng.standard_normal(_pool_shape(kd, num_value_heads)) * 0.3
+    ).astype(np.float32)
+    conv_init = (
+        rng.standard_normal(_conv_shape(kd, num_value_heads)) * 0.4
+    ).astype(np.float32)
+    conv_rows = np.array([2, 0], dtype=np.uint32)
+    # One batch of inputs for both arms: the folds differ only in whether they
+    # place the window, so anything else that differed would hide a divergence.
+    operands = [
+        rng.standard_normal((total, num_key_heads, kd)).astype(np.float32),
+        rng.standard_normal((total, num_key_heads, kd)).astype(np.float32),
+        rng.standard_normal((total, num_value_heads, kd)).astype(np.float32),
+        rng.standard_normal((total, num_value_heads, kd)).astype(np.float32),
+        rng.standard_normal((total, num_value_heads)).astype(np.float32),
+        (rng.standard_normal(num_value_heads) * 0.5).astype(np.float32),
+        rng.standard_normal((num_value_heads, kd)).astype(np.float32),
+        offsets,
+    ]
+    ring_init = np.full(
+        (_RING_ROWS, num_value_heads, _RING_LEN, stride),
+        _RING_POISON,
+        dtype=np.float32,
+    )
+    window = rng.standard_normal(
+        (total, _conv_dim(kd, num_value_heads))
+    ).astype(np.float32)
+    state_indices = np.array([4, 1], dtype=np.int32)
+    ring_indices = np.array([2, 0], dtype=np.int32)
+    pooled = []
+    for model, place_conv in zip(models, (True, False), strict=True):
+        pool = buf(pool_init.copy())
+        conv_pool = buf(conv_init.copy())
+        model.execute(
+            *[buf(operand) for operand in operands],
+            pool,
+            buf(state_indices),
+            buf(ring_init.copy()),
+            buf(ring_indices),
+            buf(np.array(accepted, dtype=np.uint32)),
+            buf(window),
+            buf(conv_rows.reshape(1, -1)),
+            conv_pool,
+        )
+        pooled.append(torch.from_dlpack(pool).cpu().numpy())
+        # Request 1 accepted nothing, so neither arm may write its pool row.
+        np.testing.assert_array_equal(
+            pooled[-1][state_indices[1]],
+            pool_init[state_indices[1]],
+            err_msg="a fold of zero accepted records wrote the pool",
+        )
+        conv_after = torch.from_dlpack(conv_pool).cpu().numpy()
+        if place_conv:
+            assert not np.array_equal(
+                conv_after[conv_rows[0]], conv_init[conv_rows[0]]
+            ), "the conv fold placed no window"
+            np.testing.assert_array_equal(
+                conv_after[conv_rows[1]],
+                conv_init[conv_rows[1]],
+                err_msg="a fold of zero accepted records placed a window",
+            )
+        else:
+            np.testing.assert_array_equal(
+                conv_after,
+                conv_init,
+                err_msg="a fold given no conv operands placed a window",
+            )
+    # The second request accepted nothing, so its row must be skipped and the
+    # first request's records must still land.
+    assert not np.array_equal(pooled[1], pool_init), (
+        "the fold skipped both rows"
+    )
+    _assert_reproduces(
+        pooled[1],
+        pooled[0],
+        "the fold without the conv placement differs from the conv fold",
+    )
 
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
@@ -1862,6 +2079,13 @@ def test_kda_verify_ring_leaves_the_live_pool_alone(
         np.float32
     )
     pool = buf(pool_init.copy())
+    conv_dim = _conv_dim(kd, num_value_heads)
+    window = buf(rng.standard_normal((total, conv_dim)).astype(np.float32))
+    conv_rows = np.array([5, 0], dtype=np.uint32)
+    conv_init = (
+        rng.standard_normal(_conv_shape(kd, num_value_heads)) * 0.4
+    ).astype(np.float32)
+    conv_pool = buf(conv_init.copy())
     model.execute(
         buf(rng.standard_normal((total, num_key_heads, kd)).astype(np.float32)),
         buf(rng.standard_normal((total, num_key_heads, kd)).astype(np.float32)),
@@ -1886,7 +2110,14 @@ def test_kda_verify_ring_leaves_the_live_pool_alone(
         ),
         buf(np.array([2, 0], dtype=np.int32)),
         buf(np.array([3, 3], dtype=np.uint32)),
+        window,
+        buf(conv_rows.reshape(1, -1)),
+        conv_pool,
     )
     np.testing.assert_array_equal(
         torch.from_dlpack(pool).cpu().numpy(), pool_init
+    )
+    # Without the fold nothing writes the conv pool either.
+    np.testing.assert_array_equal(
+        torch.from_dlpack(conv_pool).cpu().numpy(), conv_init
     )

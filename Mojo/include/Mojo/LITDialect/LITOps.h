@@ -74,6 +74,8 @@ class DIFileAttr;
 } // namespace M::DebugInfo
 
 #define GET_OP_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LIT.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_KGENDIALECT_LITOPS_H

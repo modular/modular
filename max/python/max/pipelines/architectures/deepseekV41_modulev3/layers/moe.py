@@ -22,6 +22,7 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn import Module
+from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.quant_linear import QuantizedLinear
 from max.nn.common_layers.quant_ops import (
@@ -35,9 +36,8 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
     QuantAwareTensor,
 )
-from max.nn.legacy.activation import GatedActivation
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.nn.transparent_module import TransparentModule
 from max.tensor import Tensor, default_device, defaults

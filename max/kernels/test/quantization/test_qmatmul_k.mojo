@@ -86,7 +86,7 @@ trait QuantizedGemm:
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> TileTensor[.uint8, MatrixLayout, MutAnyOrigin]:
+    ) -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
         ...
 
     @staticmethod
@@ -486,20 +486,15 @@ def reference_gemm[
 
 
 struct GemmContext[qgemm: QuantizedGemm]:
-    @__allow_legacy_any_origin_fields
-    var a: TileTensor[.float32, MatrixLayout, MutAnyOrigin]
+    var a: TileTensor[.float32, MatrixLayout, MutUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var b: TileTensor[.uint8, MatrixLayout, MutAnyOrigin]
+    var b: TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var b_packed: TileTensor[.uint8, MatrixLayout, MutAnyOrigin]
+    var b_packed: TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var c: TileTensor[.float32, MatrixLayout, MutAnyOrigin]
+    var c: TileTensor[.float32, MatrixLayout, MutUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var c_golden: TileTensor[.float32, MatrixLayout, MutAnyOrigin]
+    var c_golden: TileTensor[.float32, MatrixLayout, MutUntrackedOrigin]
 
     @staticmethod
     def _build_float_buffer(
@@ -513,7 +508,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
     @staticmethod
     def _build_b_buffer(
         N: Int, K: Int
-    ) raises -> TileTensor[.uint8, MatrixLayout, MutAnyOrigin]:
+    ) raises -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
         return Self.qgemm.build_b_buffer(N, K)
 
     @staticmethod

@@ -1,0 +1,50 @@
+# Dev tools that borrow from the test packages beside them -- binaries
+# run with `./bazelw run`, plus the tiny-drafter builder the golden replay
+# test draws its weights through.
+
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "make_tiny_drafter_lib",
+    # ``torch_reference`` -- the oracle the checkpoint shapes come from --
+    # is a test-only library this carries so plain python runs against it
+    # too. The golden replay test regenerates the recorded weights through
+    # the same draw.
+    testonly = True,
+    srcs = ["make_tiny_drafter.py"],
+    ignore_extra_deps = [
+        # safetensors.torch imports packaging without the wheel declaring
+        # it, at runtime but not in the dependency checker's resolution.
+        requirement("packaging"),
+    ],
+    imports = ["."],
+    deps = [
+        "//max/tests/integration/architectures/kimi_k3_modulev3/dspark:k3_dspark_reference",
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "make_tiny_drafter",
+    testonly = True,
+    srcs = ["make_tiny_drafter.py"],
+    ignore_extra_deps = [
+        # safetensors.torch imports packaging without the wheel declaring
+        # it, at runtime but not in the dependency checker's resolution.
+        requirement("packaging"),
+    ],
+    imports = ["."],
+    deps = [
+        "//max/tests/integration/architectures/kimi_k3_modulev3/dspark:k3_dspark_reference",
+        requirement("packaging"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)

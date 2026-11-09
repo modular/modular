@@ -19,10 +19,10 @@
 # per 3 bytes; MXFP8 stores one E4M3 element per byte. Output is BF16.
 #   * MAX path  -> `dynamic_block_scaled_matmul_amd` for MXFP4/MXFP8 (one
 #                  entry point for both; it picks the packing from the input
-#                  dtype) -> custom op `mo.matmul.dynamic.block.scaled.amd`
+#                  dtype) -> custom op `matmul.dynamic.block.scaled.amd`
 #                  -> the CDNA4 kernel `block_scaled_matmul_amd`.
 #                  MXFP6 goes through `dynamic_block_scaled_matmul_mxfp6`
-#                  -> `mo.matmul.dynamic.block.scaled.mxfp6` -> the CDNA4
+#                  -> `matmul.dynamic.block.scaled.mxfp6` -> the CDNA4
 #                  kernel `mxfp6_block_scaled_matmul_amd`: a separate op
 #                  because both FP6 encodings put 24 bytes in a lane, so the
 #                  byte count cannot choose between them.
@@ -78,7 +78,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     MXFP6_LANE_BYTES,
     dynamic_block_scaled_matmul_amd,
     dynamic_block_scaled_matmul_mxfp6,

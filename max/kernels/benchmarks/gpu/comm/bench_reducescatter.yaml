@@ -52,3 +52,13 @@ params:
 - <<: *commons_2d
   $M: [32]
   $D: [256]
+
+# Row reduce-scatter at M3.1-Flash TP4 prefill sizes, bf16 against the
+# quantized peer traffic (INT4, MXFP8).
+- dtype: [DType.bfloat16]
+  num_gpus: [4]
+  axis: [0]
+  multimem: [False]
+  quant_bits: [0, 4, 8]
+  $M: [1024, 2048, 4096, 8192, 16384]
+  $D: [6144]

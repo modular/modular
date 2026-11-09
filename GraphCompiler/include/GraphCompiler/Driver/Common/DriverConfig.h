@@ -24,12 +24,9 @@ namespace M {
 class DriverConfig {
 public:
   enum OptionKind {
-    kTF,
-    kTorch,
-    kMOF,
     kKernelLibrary,
     kDevice,
-    kTileBasedFusion
+    kTileBasedFusion,
   };
 
   DriverConfig(OptionKind kind, llvm::StringLiteral name)

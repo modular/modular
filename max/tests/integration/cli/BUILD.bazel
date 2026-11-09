@@ -244,3 +244,46 @@ modular_py_test(
         "//max/python/max/_entrypoints:pipelines",
     ],
 )
+
+# `max quantize --error-report-dir` end to end, one target per (model, hardware).
+# NVFP4 and MXFP8 run on SM100; MXFP4 runs on AMD CDNA, where its matmul lives.
+# The table lands in the test log (--test_output=all) and the JSON report in the
+# test's undeclared outputs (BuildBuddy -> Artifacts). Gemma is gated, so
+# HF_TOKEN has to reach the test; it skips when unset. The AMD targets have no
+# presubmit job: run them by hand with `--config=remote-mi355`.
+#
+# (model key, hardware, formats, gpu constraint, gpu-memory GB). The GB figure
+# is a scheduling hint sized to the weights plus a KV cache.
+_QUANT_ERROR_CASES = [
+    ("gemma3_1b", "b200", "nvfp4,mxfp8", "//:b200_gpu", "10"),
+    ("gemma3_1b", "amd", "mxfp4", "//:mi355_gpu", "10"),
+    ("olmo3_7b", "b200", "nvfp4,mxfp8", "//:b200_gpu", "60"),
+    ("olmo3_7b", "amd", "mxfp4", "//:mi355_gpu", "60"),
+]
+
+[
+    modular_py_test(
+        name = "test_pipelines_cli_quantize_error_report_{}_{}_gpu".format(model, hardware),
+        size = "enormous",
+        srcs = ["test_pipelines_cli_quantize_error_report_gpu.py"],
+        env = {
+            "QUANT_FORMATS": formats,
+            "QUANT_MODEL": model,
+        },
+        env_inherit = ["HF_TOKEN"],
+        exec_properties = {
+            "test.resources:gpu-memory": gpu_memory,
+        },
+        gpu_constraints = [gpu_constraint],
+        tags = [
+            "gpu",
+            "no-sandbox",
+            "requires-network",
+        ],
+        deps = [
+            "//max/python/max/_entrypoints",
+            "//max/python/max/_entrypoints:pipelines",
+        ],
+    )
+    for model, hardware, formats, gpu_constraint, gpu_memory in _QUANT_ERROR_CASES
+]

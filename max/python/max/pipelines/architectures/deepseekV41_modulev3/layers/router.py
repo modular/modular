@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from max import functional as F
 from max.dtype import DType
-from max.nn.legacy.kernels import moe_router_image_bias
+from max.nn._graph_ops import moe_router_image_bias
 from max.nn.module import Module
 from max.tensor import Tensor
 

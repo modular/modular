@@ -150,7 +150,7 @@ struct ConditionalRegPassable[T: Movable & Deinitable](
 # Origin rejection: returning an origin of a conditionally-RP argument is
 # rejected because the type might expand to RegisterPassable (in which case
 # the argument would be promoted to a register and the origin would dangle).
-# expected-error @+3 {{cannot return 'x's origin, because it might expand to a RegisterPassable type}}
+# expected-error @+3 {{cannot return 'x's origin, because it might expand to a RegisterPassable type; use a 'ref' argument with an ImmOrigin instead}}
 def bad_conditional_rp_origin[
     T: Movable & Deinitable
 ](x: ConditionalRegPassable[T]) -> ref[x] ConditionalRegPassable[T]:

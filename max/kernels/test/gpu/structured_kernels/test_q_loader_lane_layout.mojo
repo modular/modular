@@ -39,7 +39,7 @@ from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_mma_op import MhaConfigV2, MhaMmaOp
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import MhaPrefillV2

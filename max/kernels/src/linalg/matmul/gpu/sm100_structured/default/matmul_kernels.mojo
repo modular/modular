@@ -66,7 +66,7 @@ from layout import (
     coord,
     row_major,
 )
-from layout.tile_layout import Layout as _NewLayout
+from layout.layout import Layout as _NewLayout
 from structured_kernels.tile_types import (
     SMemTile as TTSMemTile,
     SMemTileArray2DRowMajor,
@@ -75,15 +75,14 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_3d_explicit_inner,
 )
-from layout.tile_layout import _IntToComptimeInt
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import _IntToComptimeInt
+from layout.layout import row_major as tt_row_major
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
 )
 from layout.tma_async import SharedMemBarrier
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -501,16 +500,6 @@ struct BlackwellMatmulSM100Kernel[
     comptime epi_load_consumer_arv_count: Int32 = Int32(Self.EPILOGUE_THREADS)
 
     # ========== Shared Memory Layout Types ==========
-
-    comptime a_smem_layout = tile_layout_k_major_typed[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
-    ].to_layout()
-
-    comptime b_smem_layout = tile_layout_k_major_typed[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ].to_layout() if Self.transpose_b else tile_layout_mn_major_typed[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ].to_layout()
 
     comptime SmemType = B200MatmulSmem[
         Self.a_type,
@@ -2926,7 +2915,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
     ]
 
-    # Typed layouts (new Layout from tile_layout.mojo).
+    # Typed layouts (new Layout from layout.mojo).
     # MmaOpSM100_SS requires transpose_b=True, so B is always K-major.
     comptime a_smem_layout_typed = tile_layout_k_major_typed[
         Self.a_type, Self.BM, Self.BK, Self.a_swizzle

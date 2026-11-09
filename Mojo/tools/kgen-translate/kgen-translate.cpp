@@ -356,6 +356,7 @@ int run(State state) {
   registerAllKGENDialects(registry);
   registerContext(registry, *ctxOr);
   MLIRContext context(registry);
+  configureKGENContext(&context);
 
   if (!generateMojoDocJSON(*resolvedPath, context, options.frontendOptions,
                            options.driverOptions.includePaths,

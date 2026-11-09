@@ -3669,18 +3669,24 @@ getConformanceCondition(StructASTDecl &structDecl, StringRef traitName) {
 }
 
 /// Emits the diagnostic for a bare `@explicit_destroy` decorator, which now
-/// requires a string message argument, with a note nudging users toward the
-/// `Deinitable where ...` replacement. The caller marks the decl
-/// erroneous and returns failure. Shared by `struct` and `trait` resolution.
+/// requires a string message argument, with a note suggesting the removal
+/// path. The caller marks the decl erroneous and returns failure. Shared by
+/// `struct` and `trait` resolution.
 static void emitExplicitDestroyRequiresArgError(SharedState &shared,
                                                 SMLoc decoratorLoc,
                                                 const ASTDecl &decl) {
   auto diag = shared.emitError(decoratorLoc)
               << "@explicit_destroy requires an argument: "
                  "`@explicit_destroy(\"...\")`";
-  diag.attachNote(decl)
-      << "Use a `not Deinitable` conformance to opt out of implicit "
-         "deletion. `@explicit_destroy` is deprecated.";
+  if (isa<TraitASTDecl>(decl)) {
+    diag.attachNote(decl)
+        << "Use a `not Deinitable` conformance on struct declarations instead. "
+           "`@explicit_destroy` on traits is deprecated.";
+  } else {
+    diag.attachNote(decl)
+        << "Use a `not Deinitable` conformance to opt out of implicit "
+           "deletion. `@explicit_destroy` is deprecated.";
+  }
 }
 
 /// Validates that an `@explicit_destroy(...)` call has exactly one string
@@ -3748,8 +3754,6 @@ findDeinitableEntry(ArrayRef<ParsedConformanceEntry> entries) {
 /// Warns that `@explicit_destroy("...")` on a struct is deprecated, with a note
 /// on the struct's `Deinitable` conformance, and a fix-it that moves the
 /// message there.
-// TODO(MOCO-4468): Deprecate the trait form too once traits accept a message
-// on their conformances.
 static void
 emitExplicitDestroyDeprecation(SharedState &shared, const CallNode *call,
                                StringRef message,
@@ -5071,6 +5075,7 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
   // argument; the bare and empty-argument forms are errors, mirroring the
   // handling on `struct`.
   std::optional<std::string> linearTypeErrorMsg;
+  std::optional<SMLoc> explicitDestroyDecoratorLoc;
   for (auto decoratorExpr : decoratorExprs) {
     if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {
       if (declRefNode->spelling == "explicit_destroy") {
@@ -5086,6 +5091,7 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
           if (failed(parseExplicitDestroyMessage(shared, callNode, message)))
             return failure();
           linearTypeErrorMsg = std::move(message);
+          explicitDestroyDecoratorLoc = callNode->getLoc();
         }
       }
     }
@@ -5101,6 +5107,11 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
     }
   } else {
     // Trait does not conform to Deinitable, so it is a linear type.
+    if (explicitDestroyDecoratorLoc) {
+      shared.emitWarning(*explicitDestroyDecoratorLoc)
+          << "'@explicit_destroy' on a trait is deprecated; only structs "
+             "support custom destruction messages right now";
+    }
     // Set a default error message if @explicit_destroy wasn't used.
     if (!linearTypeErrorMsg) {
       linearTypeErrorMsg = "unhandled explicitly destroyed type '" +

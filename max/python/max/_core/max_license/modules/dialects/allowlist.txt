@@ -100,6 +100,7 @@ M_DeviceRefAttr           # DeviceRefAttr
 M_PrimitiveArrayAttr      # PrimitiveArrayAttr; referenced by ArrayElementsAttr
 
 # --- mo (GraphCompiler/MODialect/**.td) ---
+MOComposite_DistributedAllGatherGatedResidualRMSNormOp # CompositeDistributedAllgatherGatedResidualRmsNormOp
 MOComposite_DistributedAllGatherRMSNormOp            # CompositeDistributedAllgatherRmsNormOp
 MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op  # CompositeDistributedAllgatherRmsNormQuantMxfp8Op
 MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op  # CompositeDistributedAllgatherRmsNormQuantMxfp6Op
@@ -109,9 +110,10 @@ MOComposite_FusedMatmulAddOp                         # CompositeMatmulAddOp; dec
 MOComposite_GroupedMatmulBlockScaledOp               # CompositeGroupedMatmulBlockScaledOp
 MOComposite_GroupedMatmulSwigluNvfp4Op               # CompositeGroupedMatmulSwigluNvfp4Op
 MOComposite_LayerNormRopeRaggedOp                    # CompositeLayerNormRopeRaggedOp; declares output params; graph.py reaches it structurally
-MOComposite_MaskedFlashAttentionGPUOp                # CompositeMaskedFlashAttentionGpuOp
+MOComposite_QuantizeDynamicScaledFP8Op               # CompositeQuantizeDynamicScaledFp8Op
 MOComposite_RMSNormResidualAddOp                     # CompositeRmsNormResidualAddOp; declares output params; graph.py reaches it structurally
 MOComposite_ReduceRMSNormFusedResidualAddOp          # CompositeRmsNormFusedResidualAddOp; declares output params; graph.py reaches it structurally
+MOComposite_ReduceRMSNormOp                          # CompositeReduceRmsNormOp
 MOComposite_ReduceRMSNormRoPEOp                      # CompositeRmsNormRopeOp; declares output params; graph.py reaches it structurally
 MOComposite_RopeRaggedOp                             # CompositeRopeRaggedOp
 MODialect                                            # required: module docstring for mo.cpp
@@ -123,6 +125,7 @@ MO_AbsOp                                             # AbsOp
 MO_AddOp                                             # AddOp
 MO_AllGatherOp                                       # DistributedAllgatherOp
 MO_AllReduceSumOp                                    # DistributedAllreduceSumOp
+MO_AllToAllOp                                        # DistributedAllToAllOp
 MO_AndOp                                             # AndOp
 MO_ArgMaxOp                                          # ReduceArgMaxOp
 MO_ArgMinOp                                          # ReduceArgMinOp
@@ -223,7 +226,6 @@ MO_ReduceMaxOp                                       # ReduceMaxOp
 MO_ReduceMinAndMaxOp                                 # ReduceReduceMinAndMaxOp; declares output params; graph.py reaches it structurally
 MO_ReduceMinOp                                       # ReduceMinOp
 MO_ReduceMulOp                                       # ReduceMulOp
-MO_ReduceRMSNormOp                                   # ReduceRmsNormOp
 MO_ReduceScatterSumOp                                # DistributedReducescatterSumOp
 MO_ReluOp                                            # ReluOp; declares output params; graph.py reaches it structurally
 MO_ReshapeOp                                         # ReshapeOp

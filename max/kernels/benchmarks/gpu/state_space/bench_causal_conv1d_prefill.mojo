@@ -25,14 +25,12 @@ from std.math import abs, exp, isinf, isnan, nan
 from std.memory import bitcast
 from std.random import rand, seed
 from std.testing import assert_true
-from std.utils.index import Index
 
-from extensibility import IOSpec, ManagedTensorSlice, StaticTensorSpec
 from internal_utils import arg_parse
-from layout import TileTensor, row_major
+from layout import MixedLayout, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from state_space.causal_conv1d import causal_conv1d_channel_first_fwd_cpu
-from state_space.causal_conv1d_ops import CausalConv1D
+from state_space.causal_conv1d_ops import causal_conv1d
 
 comptime WARMUP = 5
 comptime SAMPLES = 30
@@ -215,41 +213,29 @@ def _bench[
     ctx.enqueue_copy(weights_d, weights_h)
     ctx.enqueue_copy(bias_d, bias_h)
     ctx.enqueue_copy(output_d, output_h)
-    comptime spec3 = StaticTensorSpec[dtype, 3].get_unknown()
-    comptime spec2 = StaticTensorSpec[dtype, 2].get_unknown()
-    comptime spec1 = StaticTensorSpec[dtype, 1].get_unknown()
-    var input_arg = ManagedTensorSlice[io_spec=IOSpec.Input, static_spec=spec3](
-        input_d.unsafe_ptr(),
-        Index(batch, channels, seqlen),
-        Index(input_batch_stride, input_channel_stride, input_seq_stride),
+    var input_tt = TileTensor(
+        input_d,
+        MixedLayout(
+            (batch, channels, seqlen),
+            (input_batch_stride, input_channel_stride, input_seq_stride),
+        ),
     )
-    var weights_arg = ManagedTensorSlice[
-        io_spec=IOSpec.Input, static_spec=spec2
-    ](weights_d.unsafe_ptr(), (channels, width))
-    var bias_arg = ManagedTensorSlice[io_spec=IOSpec.Input, static_spec=spec1](
-        bias_d.unsafe_ptr(), (channels,)
-    )
-    var output_arg = ManagedTensorSlice[
-        io_spec=IOSpec.Output, static_spec=spec3
-    ](output_d.unsafe_ptr(), (batch, channels, seqlen))
+    var weights_tt = TileTensor(weights_d, row_major(channels, width))
+    var bias_tt = TileTensor(bias_d, row_major(channels))
+    var output_tt = TileTensor(output_d, row_major(batch, channels, seqlen))
 
     def launch(
         lctx: DeviceContext[],
     ) raises {
-        imm input_arg,
-        imm weights_arg,
-        imm bias_arg,
-        imm output_arg,
+        imm input_tt,
+        imm weights_tt,
+        imm bias_tt,
+        imm output_tt,
         imm silu_activation,
     }:
-        if silu_activation:
-            CausalConv1D["silu"].execute[target="gpu"](
-                output_arg, input_arg, weights_arg, bias_arg, lctx
-            )
-        else:
-            CausalConv1D["none"].execute[target="gpu"](
-                output_arg, input_arg, weights_arg, bias_arg, lctx
-            )
+        causal_conv1d(
+            output_tt, input_tt, weights_tt, bias_tt, silu_activation, lctx
+        )
 
     ctx.synchronize()
     launch(ctx)

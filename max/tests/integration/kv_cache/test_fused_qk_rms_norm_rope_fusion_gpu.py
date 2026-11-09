@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input-prologue fusion for ``mo.fused_qk_rms_norm_rope.ragged.paged``.
+"""Input-prologue fusion for ``kv_cache.fused_qk_rms_norm_rope.ragged.paged``.
 
 The kernel reads Q through a ``FusedInputTensor`` load lambda. When Q is a view
 over a wider producer -- e.g. a ``slice`` + ``reshape`` that carves Q out of a
@@ -37,8 +37,8 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import fused_qk_rms_norm_rope_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn._graph_ops import fused_qk_rms_norm_rope_ragged
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 pytestmark = pytest.mark.skipif(

@@ -33,10 +33,8 @@ def tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: lit.ref.store %a, [[AREF]]
     # CHECK-NEXT: [[BREF:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lit.ref.store %b, [[BREF]]
-    # CHECK-NEXT: [[AIMM:%.*]] = lit.ref.immut [[AREF]] : <!Int, mut [[ALT:.*]]>
-    # CHECK-NEXT: [[BIMM:%.*]] = lit.ref.immut [[BREF]] : <!FloatDyn, mut [[BLT:.*]]>
-    # CHECK-NEXT: [[AREBOUND:%.*]] = lit.ref.upcast [[AIMM]] : <!Int, muttoimm [[ALT]]> -> <!Int, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
-    # CHECK-NEXT: [[BREBOUND:%.*]] = lit.ref.upcast [[BIMM]] : <!FloatDyn, muttoimm [[BLT]]> -> <!FloatDyn, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
+    # CHECK-NEXT: [[AREBOUND:%.*]] = lit.ref.upcast [[AREF]] : <!Int, mut [[ALT:.*]]> -> <!Int, mut {[[ALT]], [[BLT:.*]]}>
+    # CHECK-NEXT: [[BREBOUND:%.*]] = lit.ref.upcast [[BREF]] : <!FloatDyn, mut [[BLT]]> -> <!FloatDyn, mut {[[ALT]], [[BLT]]}>
     # CHECK-NEXT: = lit.ref.pack.create([[AREBOUND]], [[BREBOUND]])
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}Tuple
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}({{.*}}, [[TMPVAR]])
@@ -50,19 +48,19 @@ def tuples_rv(a: Int, b: FloatDyn):
     use(t3)
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
-    # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK:  = lit.ref.pack.create({{.*}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}, [[TMPVAR]])
     use((a,))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
-    # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK:  = lit.ref.pack.create({{.*}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}, [[TMPVAR]])
     use((a,))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
-    # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK:  = lit.ref.pack.create({{.*}})
     # CHECK: %t2 = lit.var.decl "t2"
     # CHECK: [[TUP2:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}({{.*}}, %t2)
     var t2 = (a,)

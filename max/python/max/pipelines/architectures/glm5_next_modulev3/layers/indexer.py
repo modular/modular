@@ -35,10 +35,7 @@ from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue, ops
 from max.nn import Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.common_layers.quant_linear import QuantizedLinear
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     mla_fp8_index_top_k,
     mla_kpool_compress,
     mla_kpool_expand_topk,
@@ -49,9 +46,12 @@ from max.nn.legacy.kernels import (
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.nn.legacy.kv_cache import PagedCacheValues as GraphPagedCacheValues
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_linear import QuantizedLinear
+from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
 from max.nn.norm import LayerNorm
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     KpoolTailReplayInputs,
     exclusive_prefix_sum,

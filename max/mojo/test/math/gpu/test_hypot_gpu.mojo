@@ -88,7 +88,7 @@ def run_hypot[
         var b = y_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, hypot(a, b))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var worst = 0
     var worst_host = 0

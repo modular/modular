@@ -20,7 +20,7 @@ from max import tree
 from max.driver import DLPackArray
 from max.graph import TensorValue
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.layer import Module
 from max.pipelines.lib.registration_graph_api import decoder_outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs

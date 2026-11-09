@@ -52,6 +52,68 @@ from max.graph import DeviceRef
 from torch.utils.dlpack import from_dlpack
 
 
+def test_mega_ffn_nvfp4_fusion_dynamic_rows() -> None:
+    """Checks bounded dynamic execution, prefill scheduling, and rejection."""
+    E, D, K1, N2 = 16, 512, 512, 256
+    max_total_m = E * 256
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+
+    def _load(*, claimed: bool = False, unfused: bool = False) -> Model:
+        return session.load(
+            build_graph(
+                E,
+                "rows",
+                D,
+                K1,
+                N2,
+                "scale_rows",
+                DeviceRef.GPU(),
+                DeviceRef.CPU(),
+                max_total_m=max_total_m,
+                prefill_dynamic_claim=claimed,
+                keep_intermediate=unfused,
+            )
+        )
+
+    # Record all compiles before the first device allocation.
+    round_robin = _load()
+    claimed = _load(claimed=True)
+    unfused = _load(unfused=True)
+
+    def _inputs(rows_per_expert: int) -> list[Buffer]:
+        arrays, _ = build_np_inputs(
+            E, E * rows_per_expert, D, K1, N2, np.random.default_rng(17)
+        )
+        # Each expert owns complete 128-row scale blocks, including its tail.
+        arrays["a_scale_offsets"] = np.arange(E, dtype=np.uint32) * (
+            (rows_per_expert + 127) // 128
+        )
+        # Both emitters use this host estimate as total rows for dispatch.
+        arrays["usage_stats"][0] = E * rows_per_expert
+        for name in ("a_scales", "b_scales13_pre", "down_b_scales_pre"):
+            arrays[name].fill(0x20)  # E4M3 0.125 keeps the outputs finite.
+        return _to_buffers(arrays, device)
+
+    # Cross decode and both prefill geometries, then shrink and grow again
+    # while reusing each fused graph's persistent arrival counters.
+    for rows_per_expert in (16, 80, 256, 80, 16, 256):
+        inputs = _inputs(rows_per_expert)
+        expected = from_dlpack(unfused.execute(*inputs)[0]).cpu()
+        assert torch.isfinite(expected).all()
+        for model in (round_robin, claimed):
+            actual = from_dlpack(model.execute(*inputs)[0]).cpu()
+            assert actual.shape == (E * rows_per_expert, N2)
+            assert actual.dtype == torch.bfloat16
+            assert torch.equal(actual, expected), rows_per_expert
+
+    # This exceeds the rounded counter capacity, not just the nominal bound.
+    too_many = _inputs(257)
+    for model in (round_robin, claimed):
+        with pytest.raises(Exception, match="raise the graph's max_total_m"):
+            model.execute(*too_many)
+
+
 def _to_buffers(
     np_in: dict[str, np.ndarray], device: Accelerator
 ) -> list[Buffer]:

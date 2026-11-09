@@ -44,21 +44,17 @@ from max.driver import Buffer, accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.mesh_axis import EP, TP
-from max.nn.legacy.comm.ep import (
-    EPBatchManager,
-    EPCommInitializer,
-    EPConfig,
-    calculate_ep_max_tokens_per_rank,
-)
-from max.nn.legacy.kv_cache import (
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MLAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -185,6 +181,12 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     registry always resolves a value before this config is built."""
 
     quantization_encoding: SupportedEncoding | None = None
+
+    max_tokens_per_expert: int = 8192
+    """Rows one forward can route to an expert, which sizes the routed
+    experts' GEMM grid and the MegaFFN's workspace: set by :meth:`initialize`
+    from :meth:`routed_expert_row_bound`, since an expert receives a token at
+    most once."""
 
     mesh: DeviceMesh | None = None
     """Device mesh for sharding across multiple devices."""
@@ -839,6 +841,12 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
             ep_size=pipeline_config.runtime.ep_size,
             spec_num_draft_tokens=(
                 kimi_k3_spec_num_draft_tokens(pipeline_config)
+            ),
+        )
+        config_instance = replace(
+            config_instance,
+            max_tokens_per_expert=config_instance.routed_expert_row_bound(
+                pipeline_config
             ),
         )
         config_instance.validate_tensor_parallel_split()

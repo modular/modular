@@ -31,7 +31,7 @@ from max.gpu.primitives.grid_controls import (
 from std.utils import StaticTuple
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from layout import TensorEngine, TileTensor
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 
 from .fp6_utils import (
     FP6Format,

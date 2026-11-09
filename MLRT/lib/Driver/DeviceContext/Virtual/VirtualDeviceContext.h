@@ -29,6 +29,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 
 #include <cassert>
 #include <chrono>
@@ -52,7 +53,7 @@ using VirtualDeviceStreamRef = RCRef<VirtualDeviceStream>;
 /// It's used during compilation to validate graph structure and generate
 /// code without needing to execute on real GPUs.
 /// Virtual devices use a CompilationDevice for compilation operations.
-class VirtualDevice : public Device {
+class MODULAR_CXX_EXPORT VirtualDevice : public Device {
 public:
   VirtualDevice(int id, std::string name,
                 std::unique_ptr<CompilationDevice> compilationDevice);
@@ -121,8 +122,8 @@ public:
   // from a failure.
   ErrorOrSuccess enqueueHostFunc(void (*fn)(void *),
                                  void *userData) const override;
-  ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const override;
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const override;
   ErrorOrSuccess beginCapture() const override;
   ErrorOr<DeviceGraphRef> endCapture() override;
 
@@ -141,7 +142,7 @@ public:
 ///
 /// Compilation operations use the VirtualDevice's CompilationDevice,
 /// which can compile code without requiring GPU hardware.
-class VirtualDeviceContext : public DeviceContext {
+class MODULAR_CXX_EXPORT VirtualDeviceContext : public DeviceContext {
 public:
   explicit VirtualDeviceContext(VirtualDevice &device);
   ~VirtualDeviceContext() override;
