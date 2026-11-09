@@ -103,6 +103,60 @@ static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
   return false;
 }
 
+/// Emits an error and returns true if `fnDecl` is a nested function referenced
+/// from its own body.
+static bool diagnoseReferenceFromOwnFnBody(ASTDecl &fnDecl, SharedState &shared,
+                                           ASTDecl &useScope, SMLoc useLoc) {
+  if (!isReferenceFromOwnFnBody(fnDecl, useScope))
+    return false;
+  StringRef name = cast<DefASTDecl>(fnDecl).getOp().getDeclName().getValue();
+  auto diag =
+      shared.emitError(useLoc, "recursive references to nested functions are "
+                               "not supported; define '")
+      << name << "' at file scope";
+  diag.attachNote(fnDecl) << "nested function declared here";
+  return true;
+}
+
+TypedAttr LIT::getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
+                                         StructTypeGenerator ctxGen,
+                                         const VerifiedParamBindings &verified,
+                                         ASTDecl &useScope, SMLoc useLoc) {
+  if (diagnoseReferenceFromOwnFnBody(fnDecl, shared, useScope, useLoc))
+    return {};
+
+  ParameterEvaluationContext &evalContext = shared.getEvaluationContext();
+  FnOp funcOp = cast<DefASTDecl>(fnDecl).getOp();
+  auto unboundFn =
+      cast<GeneratorAttr>(funcOp.getFuncLiteralGenerator(evalContext));
+
+  // Rewrite the function literal from the struct's parameter space into the
+  // generator's: the struct's parameters become the generator body's values,
+  // which reference the generator's inputs, and the function's own parameters
+  // follow those inputs.
+  ArrayRef<TypedAttr> structValues = ctxGen.getStructType().getParamValues();
+  size_t numGenParams = ctxGen.getInputParamTypes().size();
+  ParameterEvaluator evaluator(structValues);
+  for (auto [idx, type] : llvm::enumerate(
+           unboundFn.getInputParamTypes().drop_front(structValues.size()))) {
+    evaluator.appendIndexBinding(ParamIndexRefAttr::get(
+        /*depth=*/0, numGenParams + idx, evaluator.getReboundType(type)));
+  }
+  TypedAttr body = evaluator.getReboundAttribute(unboundFn.getBody());
+
+  // Inference ran against this signature, so `verified`'s values and its
+  // discharged-constraint mask index its parameters and body constraints.
+  FnTypeGeneratorType signature =
+      fnDecl.getDeclFullSignature(ASTType(TypedAttr(ctxGen)));
+  auto ctxBoundFn = GeneratorAttr::get(signature.getInputParamTypes(), body,
+                                       signature.getParamListAttrs());
+
+  DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
+      ctxBoundFn.getContext(), verified.getDischargedBodyConstraints());
+  return BindParamsAttr::get(ctxBoundFn.getContext(), ctxBoundFn,
+                             verified.getValues(), discharged, &evalContext);
+}
+
 /// Utility function to perform substitutions of the bindings into the symbol
 /// for the given function declaration. It returns the resultant
 /// function reference or produces an error message and returns null.
@@ -111,15 +165,8 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                       ASTDecl &useScope, SMLoc useLoc) {
   if (auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl); defDecl) {
     FnOp funcOp = defDecl->getOp();
-    if (isReferenceFromOwnFnBody(fnDecl, useScope)) {
-      StringRef name = funcOp.getDeclName().getValue();
-      auto diag = shared.emitError(
-                      useLoc, "recursive references to nested functions are "
-                              "not supported; define '")
-                  << name << "' at file scope";
-      diag.attachNote(fnDecl) << "nested function declared here";
+    if (diagnoseReferenceFromOwnFnBody(fnDecl, shared, useScope, useLoc))
       return {};
-    }
 
     assert(!isa<TraitDeclOp>(funcOp->getParentOp()) &&
            "trait witness should always retrieved from a witness entry");

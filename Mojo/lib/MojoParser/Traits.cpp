@@ -1681,3 +1681,22 @@ LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
           .getOp();
   return populateTraitBindingEvaluator(traitSymbol, traitDecl);
 }
+
+ParameterEvaluator LIT::populateStructBindingEvaluator(StructDeclOp structDecl,
+                                                       ASTType structType,
+                                                       SharedState &shared) {
+  ParameterEvaluator evaluator = shared.getParameterEvaluator();
+  for (auto [idx, paramDecl, value] :
+       llvm::enumerate(structDecl.getParams(), structType.getParamBindings()))
+    // FIXME: the use of `isUnresolvedParam` is wrong: We only should skip
+    // "forwarded" parameters. e.g.,
+    // ```mojo
+    //   comptime A[a : Int] = Param[a, a]
+    // ```
+    // only the first `a` is a forward parameter, not the second (turning
+    // `Param[a, a]` into `Param[?, ?]` lost the the fact that two values are
+    // equal).
+    if (!structType.isUnresolvedParam(idx))
+      evaluator.setDeclBinding(paramDecl, value);
+  return evaluator;
+}

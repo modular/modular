@@ -183,7 +183,7 @@ public:
   /// the resultant function reference or producing an error message and
   /// returning null. This allows producing a reference to a parameterized
   /// function without the parameters specified.  They can be bound later.
-  TypedAttr getBoundConstantAttr() const;
+  TypedAttr getBoundConstantAttr();
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
@@ -230,7 +230,7 @@ public:
   /// is handled via the context instead of being raised as a hard error.
   PValue
   getDirectSymbol(ASTType expectedType,
-                  DeferredTypingContext *deferredTypingContext = nullptr) const;
+                  DeferredTypingContext *deferredTypingContext = nullptr);
 
   /// Try to emit the overload set as a PValue.
   PValue getIfPValue() const;
@@ -291,6 +291,13 @@ private:
               bool erroneous, ASTType contextualType = {})
       : explicitParamBindings(declScope, expr), contextualType(contextualType),
         syntax(syntax), erroneous(erroneous) {}
+
+  /// Resolve the selected candidate `fnDecl` into a single PValue callee.
+  /// `verifiedBindings`, when provided, are the bindings already inferred
+  /// against `fnDecl`'s signature under this set's contextual type.
+  PValue getCallee(ASTDecl *fnDecl,
+                   const VerifiedParamBindings &verifiedBindings) const;
+  PValue getCallee(ASTDecl *fnDecl) const;
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,
