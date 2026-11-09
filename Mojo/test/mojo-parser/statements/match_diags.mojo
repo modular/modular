@@ -345,11 +345,30 @@ __enum ParametricExhaustivityColor[
 
 
 def match_open_enum_duplicate(color: OpenColor):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match color:
     case .red:
         pass
     # expected-warning @+1 {{case is unreachable; 'red' is already covered by a previous case}}
     case .red:
+        pass
+
+
+def match_open_enum_requires_catchall(color: OpenColor):
+    # Open enums may acquire cases outside the current compilation unit.
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
+    match color:
+    case .red:
+        pass
+    case .green:
+        pass
+
+    match color:
+    case .red:
+        pass
+    case .green:
+        pass
+    case _:
         pass
 
 

@@ -1664,6 +1664,8 @@ struct BlockScaledMatmulAMD[
                                 )
                             case _:
                                 pass
+                    case _:
+                        pass
 
             # Prologue.
             comptime for i in range(len(schedule.prologue)):

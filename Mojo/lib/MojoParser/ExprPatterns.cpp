@@ -2673,7 +2673,8 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     SMLoc matchLoc, bool offerMissingCases) {
   // Covering model (see MatchCoveringSpace):
   //   - Closed EnumLike root → FiniteCtors bitset.
-  //   - Open EnumLike root → OpenCtors bitset for duplicate detection.
+  //   - Open EnumLike root → OpenCtors bitset for duplicate detection and
+  //     require a catch-all because additional constructors may exist.
   //   - Tuple/struct of EnumLike leaves → flattened Product cell bitset.
   //   - Product larger than kMaxProductCells → TooComplex (needs `_`).
   //   - Else LiteralSet: track root Equal spellings for duplicates and require
@@ -2762,7 +2763,8 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     return {};
   }
 
-  if (space->kind == MatchCoveringSpace::Kind::LiteralSet) {
+  if (space->kind == MatchCoveringSpace::Kind::OpenCtors ||
+      space->kind == MatchCoveringSpace::Kind::LiteralSet) {
     emitWarning(matchLoc, "'match' is not exhaustive; add a '_' case");
     if (offerMissingCases)
       return formatCaseArms({"_"}, caseEntries.back().caseIndent,
