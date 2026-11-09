@@ -31,6 +31,7 @@ from typing_extensions import Self, TypeVar
 
 __all__ = [
     "BatchContext",
+    "BlockDiffusionGraphInputs",
     "ConvStates",
     "DecoderGraphInputs",
     "DecoderOutputs",
@@ -341,6 +342,17 @@ class SpecDecodeOutputs(GraphGroup[str, _TensorT | tuple[_TensorT, ...]]):
     """
 
     kind = "spec_decode_outputs"
+
+
+class BlockDiffusionGraphInputs(GraphGroup[str, Any]):
+    """A block-diffusion denoiser graph's named inputs, keyed by its fields.
+
+    The keys are the
+    :class:`~max.pipelines.lib.role_contracts.BlockDiffusionInputs` fields,
+    in their order, so a serving engine finds each input by name.
+    """
+
+    kind = "block_diffusion_inputs"
 
 
 class DecoderGraphInputs(GraphGroup[str, Any]):

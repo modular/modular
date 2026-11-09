@@ -66,6 +66,10 @@ embedding row it produces. Registration checks the combination up front: a
 processor that prepares them, and a decoder that consumes them needs a
 ``VISION`` module.
 
+A registration can also add a ``BLOCK_DIFFUSION`` module, one denoise step
+over a canvas, beside the ``DECODER``, which then commits tokens into the KV
+cache. It serves through :class:`BlockDiffusionPipelineModel`.
+
 :mod:`~max.pipelines.lib.registration_runtime` lists what a registered
 config can declare about its deployment.
 """
@@ -105,6 +109,7 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPInit
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
 from max.nn.legacy.graph_groups import (
+    BlockDiffusionGraphInputs,
     DecoderGraphInputs,
     HiddenStates,
     Logits,
@@ -142,6 +147,7 @@ from .interfaces.pipeline_model import (
     ModelLoadContext,
     ModelOutputs,
     ModuleV3PipelineModelWithKVCache,
+    PipelineModel,
     _cast_to_parameter_dtypes,
 )
 from .log_probabilities import LogProbabilitiesMixin
@@ -170,7 +176,13 @@ from .request_state import (
     RequestStateStore,
     build_state_store,
 )
-from .role_contracts import DecoderInputs, DecoderOutputs, VisionInputs
+from .role_contracts import (
+    BlockDiffusionInputs,
+    BlockDiffusionOutputs,
+    DecoderInputs,
+    DecoderOutputs,
+    VisionInputs,
+)
 from .utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
@@ -216,7 +228,9 @@ _FRAMEWORK_ROLES = frozenset(
 )
 
 # The roles a registration can fill.
-_SERVED_ROLES = frozenset({GraphRole.DECODER, GraphRole.VISION})
+_SERVED_ROLES = frozenset(
+    {GraphRole.DECODER, GraphRole.VISION, GraphRole.BLOCK_DIFFUSION}
+)
 
 # The ragged batch inputs each DecoderInputs field takes its type from.
 _BATCH_FIELDS = {
@@ -305,6 +319,60 @@ def consumes_vision(module_cls: type[Module[..., Any]]) -> bool:
     registers beside a ``VISION`` module.
     """
     return bool(getattr(module_cls, "consumes_vision", False))
+
+
+def _max_canvas_batch(module_cls: type[Module[..., Any]]) -> int | None:
+    """Returns how many canvases a registered denoiser takes in one step.
+
+    A ``BLOCK_DIFFUSION`` module that sets ``max_canvas_batch`` bounds the
+    canvases the block-diffusion pipeline denoises in one step. ``None``
+    leaves the pipeline's own bound.
+    """
+    cap = getattr(module_cls, "max_canvas_batch", None)
+    return None if cap is None else int(cap)
+
+
+def _block_diffusion_input_types(
+    kv_params: KVCacheParamInterface, device_ref: DeviceRef, vocab_size: int
+) -> BlockDiffusionGraphInputs:
+    """Returns a ``BLOCK_DIFFUSION`` graph's input types, keyed by field.
+
+    The graph takes the tree as its one argument, so an exported graph names
+    its inputs.
+
+    Args:
+        kv_params: The KV cache parameters that supply the ``kv`` subtree.
+        device_ref: The device that holds the canvas tensors.
+        vocab_size: The width of the self-conditioning logits.
+    """
+    batch = ragged_batch_inputs(device_ref, ("tokens", "row_offsets"))
+    tokens, row_offsets = batch["tokens"], batch["row_offsets"]
+    assert isinstance(tokens, TensorType)
+    assert isinstance(row_offsets, TensorType)
+    return _block_diffusion_graph_inputs(
+        BlockDiffusionInputs(
+            tokens=tokens,
+            input_row_offsets=row_offsets,
+            sc_logits=TensorType(
+                DType.bfloat16,
+                ["total_seq_len", vocab_size],
+                device=device_ref,
+            ),
+            sc_enabled=TensorType(DType.float32, [1], device=device_ref),
+            temperature=TensorType(DType.float32, [1], device=device_ref),
+            kv=kv_params.get_symbolic_inputs(),
+        )
+    )
+
+
+def _block_diffusion_graph_inputs(
+    inputs: BlockDiffusionInputs[Any],
+) -> BlockDiffusionGraphInputs:
+    """Returns a denoiser's inputs as its graph takes them: keyed, in order."""
+    return BlockDiffusionGraphInputs(
+        (entry.name, getattr(inputs, entry.name))
+        for entry in dataclasses.fields(inputs)
+    )
 
 
 def supports_pipeline_stages(module_cls: type[Module[..., Any]]) -> bool:
@@ -872,6 +940,29 @@ def _role_outputs(outputs: _GroupedOutputs) -> DecoderOutputs:
         hidden_states=hidden_states,
         state=state,
     )
+
+
+class _DenoiserGraph(
+    Module[[BlockDiffusionGraphInputs], BlockDiffusionOutputs]
+):
+    """Calls a denoiser with its graph inputs as :class:`BlockDiffusionInputs`.
+
+    It is name-transparent to the denoiser, so the weight names are the
+    denoiser's own.
+    """
+
+    def __init__(
+        self, denoiser: Module[[BlockDiffusionInputs], BlockDiffusionOutputs]
+    ) -> None:
+        super().__init__()
+        denoiser.name_transparent = True
+        self.model = denoiser
+
+    def forward(
+        self, inputs: BlockDiffusionGraphInputs
+    ) -> BlockDiffusionOutputs:
+        """Groups the graph's inputs into fields and runs the denoiser."""
+        return self.model(BlockDiffusionInputs(**inputs))
 
 
 def _returned_types(spec: GraphSpec) -> tree.Tree[Type[Any]]:
@@ -1448,6 +1539,137 @@ class ModuleV3DecoderPipelineModel(
         return self._to_model_outputs(outputs)
 
 
+class BlockDiffusionPipelineModel(ModuleV3DecoderPipelineModel):
+    """Serves a registered block-diffusion text-generation architecture.
+
+    :func:`module_pipeline_model` subclasses it for a registration with a
+    ``BLOCK_DIFFUSION`` module. The registered ``DECODER`` is the causal
+    encoder the block-diffusion pipeline runs through :meth:`execute` to
+    commit tokens into the KV cache; the registered ``BLOCK_DIFFUSION``
+    module is one denoise step, compiled as a second text graph and driven
+    through :meth:`execute_denoise_step`. The ``BLOCK_DIFFUSION`` role also
+    selects the
+    :class:`~max.pipelines.lib.pipeline_variants.block_diffusion_text_generation.BlockDiffusionTextGenerationPipeline`
+    that drives it.
+    """
+
+    denoiser_cls: ClassVar[type[Module[..., Any]]]
+    """The registered ``BLOCK_DIFFUSION`` module class."""
+
+    max_canvas_batch: ClassVar[int | None] = None
+    """How many canvases one denoise step takes, when the registered
+    ``BLOCK_DIFFUSION`` module bounds it (see :func:`_max_canvas_batch`).
+    ``None`` leaves the block-diffusion pipeline's own bound."""
+
+    # The denoise loop computes no per-token logits. The capability check
+    # compares against the base stub, so rebinding it reports none.
+    compute_log_probabilities = PipelineModel.compute_log_probabilities
+
+    @property
+    def config(self) -> Any:
+        """The finalized config, with the canvas geometry the pipeline reads.
+
+        It is the config the graphs were built with, which
+        :meth:`graph_specs` binds to the batch processor.
+        """
+        processor = self.batch_processor
+        assert processor is not None and processor.config is not None, (
+            f"{type(self).__qualname__} reads its config before the model is"
+            " built"
+        )
+        return processor.config
+
+    def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
+        """Adds the denoiser's graph to the registered decoder's.
+
+        Raises:
+            TypeError: If the denoiser doesn't have ``vocab_size``.
+        """
+        specs = super().graph_specs(model_config)
+        denoiser_cls = type(self).denoiser_cls
+        checkpoint = prepare_weights(self._checkpoint, model_config)
+        state_dict = role_weights(
+            self._prepare_state_dict(checkpoint, model_config),
+            model_config,
+            GraphRole.BLOCK_DIFFUSION,
+        )
+        module_default_dtype = self._module_default_dtype(
+            state_dict, model_config
+        )
+        with F.lazy(), default_dtype(module_default_dtype):
+            denoiser = construct_module(
+                denoiser_cls, model_config, self._device_mesh()
+            )
+        vocab_size = getattr(denoiser, "vocab_size", None)
+        if not isinstance(vocab_size, int):
+            raise TypeError(
+                f"the BLOCK_DIFFUSION module {denoiser_cls.__qualname__} "
+                "needs vocab_size, the width of its self-conditioning logits"
+            )
+        graph = _DenoiserGraph(denoiser)
+        specs[GraphRole.BLOCK_DIFFUSION] = GraphSpec(
+            graph,
+            graph_name(denoiser_cls),
+            (
+                _block_diffusion_input_types(
+                    self.kv_params, self.device_refs[0], vocab_size
+                ),
+            ),
+            weights=_cast_to_parameter_dtypes(graph, state_dict),
+        )
+        return specs
+
+    def execute_denoise_step(
+        self,
+        canvas_tokens: Buffer,
+        input_row_offsets: Buffer,
+        sc_logits: Buffer,
+        sc_enabled: Buffer,
+        temperature: Buffer,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
+    ) -> tuple[Buffer, Buffer, Buffer, Buffer, Buffer]:
+        """Runs one denoise step over the canvas.
+
+        Args:
+            canvas_tokens: The canvas token ids, ``[total_seq_len]`` int64.
+            input_row_offsets: Each canvas's start in ``canvas_tokens``.
+            sc_logits: The previous step's processed logits, bf16
+                ``[total_seq_len, vocab]``.
+            sc_enabled: ``[1]`` float32; zero on the first step.
+            temperature: ``[1]`` float32; the step's schedule temperature.
+            kv_cache_inputs: The batch's paged KV cache inputs, as the KV
+                manager's ``runtime_inputs`` returns them.
+
+        Returns:
+            The fields of
+            :class:`~max.pipelines.lib.role_contracts.BlockDiffusionOutputs`,
+            in its order.
+        """
+        compiled = self.compiled_modules[GraphRole.BLOCK_DIFFUSION]
+        assert isinstance(compiled, CompiledCallable)
+        inputs = _block_diffusion_graph_inputs(
+            BlockDiffusionInputs[Buffer](
+                tokens=canvas_tokens,
+                input_row_offsets=input_row_offsets,
+                sc_logits=sc_logits,
+                sc_enabled=sc_enabled,
+                temperature=temperature,
+                kv=kv_cache_inputs,
+            )
+        )
+        outputs = tree.unflatten(
+            compiled.out_tree, compiled.execute_raw(*tree.leaves(inputs))
+        )
+        assert isinstance(outputs, BlockDiffusionOutputs)
+        return (
+            outputs.logits,
+            outputs.argmax,
+            outputs.top_k_probs,
+            outputs.top_k_indices,
+            outputs.entropy,
+        )
+
+
 def _vision_enabled(
     vision_cls: type[Module[..., Any]], model_config: object
 ) -> bool:
@@ -1809,6 +2031,25 @@ def _check_vision_registration(
         )
 
 
+def _check_block_diffusion_registration(
+    denoiser_cls: type[Module[..., Any]] | None,
+) -> None:
+    """Checks a registration's denoiser bounds its canvases sensibly.
+
+    Raises:
+        ValueError: If the ``BLOCK_DIFFUSION`` module sets a
+            ``max_canvas_batch`` below one.
+    """
+    if denoiser_cls is None:
+        return
+    cap = _max_canvas_batch(denoiser_cls)
+    if cap is not None and cap < 1:
+        raise ValueError(
+            f"the BLOCK_DIFFUSION module {denoiser_cls.__qualname__} sets "
+            f"max_canvas_batch={cap}; it must be at least 1"
+        )
+
+
 def module_pipeline_model(
     config: type[ArchConfig],
     modules: tuple[tuple[str, type[Module[..., Any]]], ...],
@@ -1827,11 +2068,11 @@ def module_pipeline_model(
     Raises:
         ValueError: If the registration names a framework-owned role, has no
             ``DECODER``.
-        NotImplementedError: If it registers a role other than ``DECODER``
-            and ``VISION``.
-        TypeError: If a registered class isn't a :class:`~max.nn.Module`, or
-            the registration's ``VISION`` module, decoder and batch processor
-            don't fit together.
+        NotImplementedError: If it registers a role other than ``DECODER``,
+            ``VISION`` and ``BLOCK_DIFFUSION``.
+        TypeError: If a registered class isn't a :class:`~max.nn.Module`,
+            or the registration's ``VISION`` module, decoder and batch
+            processor don't fit together.
     """
     registration = (config, modules, batching)
     if (cached := _PIPELINE_MODELS.get(registration)) is not None:
@@ -1854,6 +2095,7 @@ def module_pipeline_model(
     _check_vision_registration(
         decoder_cls, by_role.get(GraphRole.VISION), batching
     )
+    _check_block_diffusion_registration(by_role.get(GraphRole.BLOCK_DIFFUSION))
     name = f"{decoder_cls.__name__}PipelineModel"
     # Exporters read how tokens reach the expert dispatch off the pipeline
     # model class, to pick the matching expert-parallel backend.
@@ -1865,9 +2107,17 @@ def module_pipeline_model(
     exporter_attrs = (
         {} if layout is None else {"ep_dispatch_token_layout": layout}
     )
+    denoiser_cls = by_role.get(GraphRole.BLOCK_DIFFUSION)
+    bases: tuple[type, ...] = (ModuleV3DecoderPipelineModel,)
+    denoiser_attrs: dict[str, object] = {}
+    if denoiser_cls is not None:
+        bases = (BlockDiffusionPipelineModel,)
+        denoiser_attrs = {
+            "denoiser_cls": denoiser_cls,
+            "max_canvas_batch": _max_canvas_batch(denoiser_cls),
+        }
     # Only a decoder with state gets the release hooks, which serving
     # detects by their presence.
-    bases: tuple[type, ...] = (ModuleV3DecoderPipelineModel,)
     if hasattr(decoder_cls, "state_store"):
         bases = (RequestStateMixin, *bases)
     # Exporters build the stages of a pipelined model only.
@@ -1882,6 +2132,7 @@ def module_pipeline_model(
             "_registration": registration,
             "decoder_cls": decoder_cls,
             "vision_cls": by_role.get(GraphRole.VISION),
+            **denoiser_attrs,
             **exporter_attrs,
             "model_config_cls": config,
             "batch_processor_cls": batching or DecoderBatchProcessor,

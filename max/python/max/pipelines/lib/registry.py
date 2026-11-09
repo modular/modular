@@ -65,7 +65,11 @@ from .arch_lookup import (
 # than directly
 from .arch_lookup import PipelineModelType as PipelineModelType
 from .embeddings_pipeline import EmbeddingsPipeline
+from .graph_specs import GraphRole
 from .interfaces import PipelineModel
+from .pipeline_variants.block_diffusion_text_generation import (
+    BlockDiffusionTextGenerationPipeline,
+)
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -152,6 +156,17 @@ def get_pipeline_for_task(
         return AudioGenerationPipeline
     else:
         raise ValueError(f"Unsupported pipeline task: {task}")
+
+
+def architecture_pipeline(arch: SupportedArchitecture) -> type | None:
+    """Returns the pipeline class an architecture needs in place of its task's.
+
+    A registered role that needs its own generation loop selects it;
+    otherwise the architecture's ``pipeline_cls`` does.
+    """
+    if GraphRole.BLOCK_DIFFUSION in arch.modules:
+        return BlockDiffusionTextGenerationPipeline
+    return arch.pipeline_cls
 
 
 class _ValidatedNewContext:
@@ -776,11 +791,7 @@ class PipelineRegistry:
 
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
-        # An architecture may declare a custom pipeline class that overrides
-        # the task-based default (e.g. block-diffusion text generation).
-        # ``arch`` is already finalized above, so its choice wins.
-        if arch.pipeline_cls is not None:
-            pipeline_class = arch.pipeline_cls
+        pipeline_class = architecture_pipeline(arch) or pipeline_class
 
         # The tokenizer bound is the memory plan's planned_max_length; pixel
         # generation resolves its own per-arch bounds below.

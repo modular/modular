@@ -2,25 +2,38 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
+# Self-contained: this package holds its own copies of the configs,
+# tokenizer, processors, parsers and vision utilities it needs, so it depends
+# on no other architecture target.
 modular_py_library(
     name = "diffusion_gemma",
     srcs = glob(["**/*.py"]),
+    ignore_unresolved_imports = [
+        "decord",
+    ],
     deps = [
+        requirement("huggingface-hub"),
         requirement("numpy"),
+        requirement("pillow"),
+        requirement("requests"),
         requirement("transformers"),
         requirement("typing-extensions"),
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/nn:core",
-        "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
-        "//max/python/max/pipelines/architectures/gemma3",
-        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
+        "//max/python/max/profiler",
+        "//max/python/max/support",
     ],
 )
