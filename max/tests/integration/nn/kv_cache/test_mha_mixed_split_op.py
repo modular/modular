@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Which split record ``flash_attention_ragged`` hands to ragged MHA.
 
-The graphs are only built, never run. ``attention.mha.ragged.paged`` takes the KV
+The graphs are only built, never run. Every ragged MHA call takes the KV
 leaf's declared record after its own operands, or a zeros constant when the
-leaf has none (a draft forward drops it). Relative-logit calls take it too,
-though the kernel doesn't split a mask that reads operands. Sink calls go to
-an op that does not split, so they take no record.
+leaf has none (a draft forward drops it). The plain, sink and split-head-dim
+calls split a mixed batch with it; the relative-logit call takes it too,
+though the kernel doesn't split a mask that reads operands.
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ def _attention_op(
     "mask",
     [MHAMaskVariant.CAUSAL_MASK, MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK],
 )
-@pytest.mark.parametrize("call", ["plain", "split_head_dim"])
+@pytest.mark.parametrize("call", ["plain", "split_head_dim", "sink"])
 def test_the_leaf_record_is_the_last_mha_operand(
     call: str, mask: MHAMaskVariant
 ) -> None:
@@ -116,7 +116,9 @@ def test_the_leaf_record_is_the_last_mha_operand(
     assert "[7], ui32" in str(last.type)
 
 
-@pytest.mark.parametrize("call", ["plain", "split_head_dim", "rel_logits"])
+@pytest.mark.parametrize(
+    "call", ["plain", "split_head_dim", "sink", "rel_logits"]
+)
 def test_a_leaf_without_a_record_sends_zeros(call: str) -> None:
     op = _attention_op(call, with_record=False)
     assert record_source(op) == "mo.constant"
@@ -125,9 +127,3 @@ def test_a_leaf_without_a_record_sends_zeros(call: str) -> None:
 def test_relative_logits_take_the_leaf_record() -> None:
     op = _attention_op("rel_logits", with_record=True)
     assert record_source(op) == "argument"
-
-
-@pytest.mark.parametrize("with_record", [False, True])
-def test_a_call_that_cannot_split_takes_no_record(with_record: bool) -> None:
-    op = _attention_op("sink", with_record=with_record)
-    assert record_source(op) is None

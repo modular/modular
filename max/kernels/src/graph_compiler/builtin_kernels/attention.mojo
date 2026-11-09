@@ -41,6 +41,9 @@ from linalg.mx_format import MXFormat
 from layout import (
     TileTensor,
     RowMajorLayout,
+    TensorLayout,
+    TensorEngine,
+    DefaultEngine,
     UNKNOWN_VALUE,
 )
 from nn.attention.cpu.mha import flash_attention as nn_flash_attention
@@ -58,6 +61,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
+    generic_flash_attention_kv_cache_ragged_sink,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4,
@@ -75,6 +79,9 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_inplace_decode_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
+from nn.attention.gpu.nvidia.sm100.dispatch import (
+    mha_split_kv_decode_num_partitions,
+)
 from kv_cache.mixed_step_split import (
     MIXED_STEP_DECODE_WIDTH,
     is_packed,
@@ -3701,8 +3708,7 @@ struct Struct_mha_ragged_paged_scalar_args:
     (`kv_cache.mixed_step_split`). On NVIDIA, a valid record runs the decode
     rows and the prefill rows of one replica batch as two views, each on its
     own route, into the one output. Zeros, an invalid record, a strided
-    operand, split head dims, mask operands or another target keep the single
-    launch.
+    operand, mask operands or another target keep the single launch.
     """
 
     @inline(.always)
@@ -3787,6 +3793,10 @@ def _execute_mha_ragged_paged[
     mask_str: StaticString,
     local_window_size: Int,
     v_head_dim: Int,
+    sink: Bool = False,
+    SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
+    # `sink_weights` is optional, so its engine cannot be inferred.
+    SinkEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     q: TileTensor[q_dtype, address_space=.GENERIC, ...],
@@ -3817,20 +3827,28 @@ def _execute_mha_ragged_paged[
     ],
     mask_operands: TensorTuple[*MaskIns],
     context: DeviceContext,
+    sink_weights: OptionalReg[
+        TileTensor[
+            q_dtype, SinkLayoutType, ImmUntrackedOrigin, Engine=SinkEngine
+        ]
+    ] = None,
 ) raises:
-    """Runs `attention.mha.ragged.paged`: split by `mixed_step_split` where the
+    """Runs ragged paged MHA: split by `mixed_step_split` where the
     record and the operands allow it, else one launch."""
     # Mask operands are indexed by the whole batch's sequence ids, which a
     # split view renumbers.
     comptime if (
-        v_head_dim == -1
-        and len(MaskIns) == 0
+        len(MaskIns) == 0
         and context.target.is_gpu()
         and context.target.is_nvidia_gpu()
     ):
         if _mha_ragged_mixed_step_split[
             mask_str=mask_str,
             local_window_size=local_window_size,
+            sink=sink,
+            SinkLayoutType=SinkLayoutType,
+            SinkEngine=SinkEngine,
+            v_head_dim=v_head_dim,
         ](
             output,
             q,
@@ -3845,11 +3863,15 @@ def _execute_mha_ragged_paged[
             layer_idx,
             scale,
             context,
+            sink_weights,
         ):
             return
     _execute_mha_ragged_paged_scalar_args[
         mask_str=mask_str,
+        sink=sink,
         local_window_size=local_window_size,
+        SinkLayoutType=SinkLayoutType,
+        SinkEngine=SinkEngine,
         v_head_dim=v_head_dim,
     ](
         output,
@@ -3866,6 +3888,7 @@ def _execute_mha_ragged_paged[
         mha_decode_dispatch_metadata,
         mask_operands,
         context,
+        sink_weights,
     )
 
 
@@ -3876,6 +3899,11 @@ def _mha_ragged_mixed_step_split[
     *,
     mask_str: StaticString,
     local_window_size: Int,
+    v_head_dim: Int,
+    sink: Bool = False,
+    SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
+    # `sink_weights` is optional, so its engine cannot be inferred.
+    SinkEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     output: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
     q: TileTensor[q_dtype, address_space=.GENERIC, ...],
@@ -3898,6 +3926,11 @@ def _mha_ragged_mixed_step_split[
     layer_idx: UInt32,
     scale: Float32,
     context: DeviceContext,
+    sink_weights: OptionalReg[
+        TileTensor[
+            q_dtype, SinkLayoutType, ImmUntrackedOrigin, Engine=SinkEngine
+        ]
+    ] = None,
 ) raises -> Bool:
     """Runs ragged MHA on the head view, then on the tail view, into the
     one `output`, when `mixed_step_split` holds a split the operands allow.
@@ -3905,7 +3938,8 @@ def _mha_ragged_mixed_step_split[
     Returns False, with nothing launched, to keep the single launch. `q` and
     `output` are `[tokens, heads, depth]`, so a view is a pointer offset at
     any head count. The split-K combine covers every `q` row it gets, so
-    each view gets its own rows and batch-local offsets.
+    each view gets its own rows and batch-local offsets. With `sink`, each
+    view gets the same per-head sink weights.
     """
     if max_q_len <= MIXED_STEP_DECODE_WIDTH:
         return False
@@ -3927,9 +3961,11 @@ def _mha_ragged_mixed_step_split[
         ):
             return False
         comptime num_heads = q.static_shape[1]
-        comptime depth = q.static_shape[2]
+        comptime q_depth = q.static_shape[2]
+        comptime out_depth = output.static_shape[2]
         comptime kv_heads = kv_blocks.static_shape[4]
-        comptime row_width = num_heads * depth
+        comptime q_row_width = num_heads * q_depth
+        comptime out_row_width = num_heads * out_depth
         comptime for view_idx in range(2):
             comptime in_tail = view_idx == 1
             var view = split.tail if in_tail else split.head
@@ -3945,7 +3981,7 @@ def _mha_ragged_mixed_step_split[
                     MutAnyOrigin
                 ]()
                 rebased = rebased_buf^
-            var cache = paged_cache_rows(
+            var cache = paged_cache_rows[v_head_size=v_head_dim](
                 kv_blocks,
                 page_stride,
                 cache_lengths,
@@ -3955,29 +3991,70 @@ def _mha_ragged_mixed_step_split[
                 view.rows,
                 view.lengths_slot,
             )
-            generic_flash_attention_kv_cache_ragged[
-                mask_str=mask_str,
-                local_window_size=local_window_size,
-                output_dtype=out_dtype,
-            ](
-                TileTensor(
-                    q.ptr.unsafe_offset(view.first_token * row_width),
-                    tt_row_major(view.tokens, Idx[num_heads], Idx[depth]),
-                ).as_imm(),
-                TileTensor(row_offsets, tt_row_major(view.rows + 1)).as_imm(),
-                cache,
-                layer_idx,
-                scale,
-                TileTensor(
-                    output.ptr.unsafe_offset(view.first_token * row_width),
-                    tt_row_major(view.tokens, Idx[num_heads], Idx[depth]),
-                ),
-                context,
-                MHADecodeDispatchMetadata.from_runtime_values[
-                    num_heads, num_heads // kv_heads
-                ](view.rows, view.max_q_len, view.max_cache_len, context),
-                TensorTuple(),
+            var q_view = TileTensor(
+                q.ptr.unsafe_offset(view.first_token * q_row_width),
+                tt_row_major(view.tokens, Idx[num_heads], Idx[q_depth]),
+            ).as_imm()
+            var offsets_view = TileTensor(
+                row_offsets, tt_row_major(view.rows + 1)
+            ).as_imm()
+            var output_view = TileTensor(
+                output.ptr.unsafe_offset(view.first_token * out_row_width),
+                tt_row_major(view.tokens, Idx[num_heads], Idx[out_depth]),
             )
+            var decode_metadata: MHADecodeDispatchMetadata
+            comptime if v_head_dim > 0:
+                # The split cache's 1Q route launches this count verbatim,
+                # so it must be the split-cache policy's, like the engine's.
+                decode_metadata = MHADecodeDispatchMetadata(
+                    view.rows,
+                    view.max_q_len,
+                    mha_split_kv_decode_num_partitions[
+                        context.default_device_info.sm_count
+                    ](
+                        view.rows,
+                        view.max_cache_len,
+                        kv_heads,
+                        local_window_size if local_window_size > 0 else 0,
+                    ),
+                    view.max_cache_len,
+                )
+            else:
+                decode_metadata = MHADecodeDispatchMetadata.from_runtime_values[
+                    num_heads, num_heads // kv_heads
+                ](view.rows, view.max_q_len, view.max_cache_len, context)
+            comptime if sink:
+                generic_flash_attention_kv_cache_ragged_sink[
+                    mask_str=mask_str,
+                    local_window_size=local_window_size,
+                    output_dtype=out_dtype,
+                ](
+                    q_view,
+                    offsets_view,
+                    cache,
+                    layer_idx,
+                    scale,
+                    output_view,
+                    context,
+                    sink_weights.value(),
+                    decode_metadata,
+                )
+            else:
+                generic_flash_attention_kv_cache_ragged[
+                    mask_str=mask_str,
+                    local_window_size=local_window_size,
+                    output_dtype=out_dtype,
+                ](
+                    q_view,
+                    offsets_view,
+                    cache,
+                    layer_idx,
+                    scale,
+                    output_view,
+                    context,
+                    decode_metadata,
+                    TensorTuple(),
+                )
             _ = rebased^
         return True
     return False
@@ -3985,7 +4062,11 @@ def _mha_ragged_mixed_step_split[
 
 @extensibility.register("attention.mha.ragged.paged.sink_weights")
 struct Struct_mha_ragged_paged_sink_weights_scalar_args:
-    """Registers the `attention.mha.ragged.paged.sink_weights` graph op with the graph compiler.
+    """Registers the `attention.mha.ragged.paged.sink_weights` graph op with
+    the graph compiler.
+
+    Like `attention.mha.ragged.paged`, it splits a mixed step by the KV
+    leaf's `mixed_step_split` record on NVIDIA targets.
     """
 
     @inline(.always)
@@ -4008,6 +4089,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         scale: Float32,
         sink_weights: Some[Input & Tensor],
         mha_decode_dispatch_metadata: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -4023,6 +4105,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         comptime assert conforms_to(
             type_of(mha_decode_dispatch_metadata), TileTensorable
         )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime dtype = type_of(kv_blocks).dtype
         comptime assert type_of(output).rank == 3
         comptime assert type_of(output).dtype == dtype
@@ -4037,14 +4120,15 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         comptime assert type_of(max_cache_length).rank == 1
         comptime assert type_of(sink_weights).rank == 1
         comptime assert type_of(mha_decode_dispatch_metadata).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         var sink_weights_tt = sink_weights.to_tile_tensor[
             type_of(q).dtype
         ]().as_imm()
-        _execute_mha_ragged_paged_scalar_args[
+        _execute_mha_ragged_paged[
             mask_str=mask_str,
-            sink=True,
             local_window_size=local_window_size,
             v_head_dim=v_head_dim,
+            sink=True,
         ](
             output.to_tile_tensor(),
             q.to_tile_tensor(),
@@ -4058,6 +4142,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
             layer_idx,
             scale,
             mha_decode_dispatch_metadata.to_tile_tensor[.int64](),
+            mixed_step_split.to_tile_tensor[.uint32](),
             TensorTuple(),
             context,
             OptionalReg[type_of(sink_weights_tt)](sink_weights_tt),

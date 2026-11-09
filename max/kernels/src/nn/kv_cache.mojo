@@ -3881,7 +3881,9 @@ def generic_get_paged_cache_with_scales(
 
 
 @inline(.always)
-def paged_cache_rows(
+def paged_cache_rows[
+    v_head_size: Int = -1,
+](
     blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
     page_stride: TileTensor[DType.int64, address_space=.GENERIC, ...],
     cache_lengths: TileTensor[DType.uint32, address_space=.GENERIC, ...],
@@ -3892,10 +3894,11 @@ def paged_cache_rows(
     max_lengths_slot: Int,
     out result: PagedKVCacheCollection[
         blocks.dtype,
-        KVCacheStaticParams(
+        _paged_cache_static_params(
             blocks.static_shape[4],
             blocks.static_shape[5],
-            blocks.static_shape[1] == 1,
+            blocks.static_shape[1],
+            v_head_size,
         ),
         blocks.static_shape[3],
         MutAnyOrigin,
@@ -3916,10 +3919,11 @@ def paged_cache_rows(
     var lengths = split_args.unsafe_ptr().unsafe_offset(max_lengths_slot)
     return generic_get_paged_cache[
         blocks.dtype,
-        KVCacheStaticParams(
+        _paged_cache_static_params(
             blocks.static_shape[4],
             blocks.static_shape[5],
-            blocks.static_shape[1] == 1,
+            blocks.static_shape[1],
+            v_head_size,
         ),
         blocks.static_shape[3],
     ](

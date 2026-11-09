@@ -5433,9 +5433,9 @@ def flash_attention_ragged(
     For a cache whose key and value head dims differ, ``input`` is
     ``head_dim`` wide and the output is ``v_head_dim`` wide.
 
-    ``attention.mha.ragged.paged`` takes the KV collection's mixed-step split record
-    (zeros when it has none) and splits a mixed batch with it; the sink,
-    relative-logit and split-head-dim calls do not split.
+    ``attention.mha.ragged.paged`` and its sink variant take the KV collection's
+    mixed-step split record (zeros when it has none) as their last own operand
+    and split a mixed batch with it; the relative-logit calls do not split.
 
     Args:
         kv_params: KVCacheParams object containing key-value cache parameters.
@@ -5581,8 +5581,7 @@ def flash_attention_ragged(
     if sink_weights is not None:
         values.append(sink_weights)
     values.append(dispatch_metadata.tensor)
-    if sink_weights is None:
-        values.append(_mixed_step_split_value(kv_collection.mixed_step_split))
+    values.append(_mixed_step_split_value(kv_collection.mixed_step_split))
     if rel_logits is not None:
         # The relative-logits mask's operands trail the op's own.
         values += [rel_logits, kv_collection.cache_lengths, input_row_offsets]
