@@ -86,6 +86,7 @@ modular_py_test(
     },
     gpu_constraints = ["//:b200_gpu"],
     imports = ["."],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max:tensor",

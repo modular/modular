@@ -642,6 +642,7 @@ modular_py_test(
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",

@@ -226,6 +226,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -750,6 +751,7 @@ modular_py_test(
     # TODO(CENG-1259): Run on AMD too once HIP keeps side-stream views alive
     # after capture; the fix this test covers is CUDA only.
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -777,6 +779,7 @@ modular_py_test(
     },
     # The host wait is recorded into a captured graph on CUDA only.
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -797,6 +800,7 @@ modular_py_test(
     name = "test_splitk_matmul_device_graph",
     srcs = ["test_splitk_matmul_device_graph.py"],
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -861,6 +865,7 @@ modular_py_test(
     srcs = ["test_matmul_swiglu_fusion_gpu.py"],
     gpu_constraints = ["//:b200_gpu"],
     mojo_deps = ["//max:builtin_kernels"],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
