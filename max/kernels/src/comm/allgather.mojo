@@ -88,8 +88,9 @@ from .sync import (
 # The global default (sm_version="default") is the ultimate fallback for
 # unknown architectures -- dispatch_select_comm_config prefers arch-specific
 # defaults when available.
-comptime allgather_tuning_table = Table(
-    [
+def _allgather_default_configs() -> List[DefaultCommTuningConfig]:
+    """Returns the arch defaults every all-gather tuning table starts from."""
+    return [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
         DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
@@ -112,8 +113,37 @@ comptime allgather_tuning_table = Table(
         DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="default", num_blocks=512
         ),
+    ]
+
+
+comptime allgather_tuning_table = Table(
+    _allgather_default_configs(), "allgather_table"
+)
+
+# The plain P2P all-gather's own table. Other kernels size their grids from
+# `allgather_tuning_table` (the fused all-gather + RMSNorm, which wants one
+# block per row, and the all-to-all), so a row tuned only against
+# `bench_allgather` lives here instead.
+comptime allgather_p2p_tuning_table = Table(
+    _allgather_default_configs()
+    + [
+        # TP4 shards up to 8 MiB are barrier-bound rather than link-bound, so a
+        # smaller grid wins: every block waits at the cross-rank barrier, and at
+        # these sizes the copy is shorter than that fixed cost (~33 us per call,
+        # the intercept of the size fit). On 4xMI355X 32 blocks reached 137 GB/s
+        # per direction at a 4 MiB shard, +9 % over the 128-block default, +8 % at
+        # 6-8 MiB, +13 % at 1 MiB and +25 % at 512 KiB, while tying it at 8 MiB;
+        # from 16 MiB up 128 stays the peak (32 blocks loses 2 %). The MoE row
+        # all-gather of a mixed step is a 5.9 MiB shard (719 rows/rank); the
+        # 8160-row prefill batch is 16.7 MB and keeps the default.
+        DefaultCommTuningConfig(
+            ngpus=4,
+            num_bytes=(8 * 1024 * KB),
+            sm_version="CDNA4",
+            num_blocks=32,
+        ),
     ],
-    "allgather_table",
+    "allgather_p2p_table",
 )
 
 
@@ -1014,7 +1044,7 @@ def _allgather_p2p[
     comptime sm_version = ctx.default_device_info.version
     var max_num_blocks = _max_num_blocks.or_else(
         dispatch_select_comm_config[
-            group_size, sm_version, allgather_tuning_table
+            group_size, sm_version, allgather_p2p_tuning_table
         ](max_length * size_of[dtype]()).get_num_blocks()
     )
 
