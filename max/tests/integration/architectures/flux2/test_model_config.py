@@ -26,7 +26,7 @@ from unittest.mock import Mock, PropertyMock
 
 import pytest
 from max.driver import CPU as HostCPU
-from max.driver import Device
+from max.driver import ArchitectureVersion, Device
 from max.nn.quant_config import QuantFormat
 from max.pipelines.architectures.flux2 import model_config
 from max.pipelines.architectures.flux2.model_config import (
@@ -41,25 +41,24 @@ from max.pipelines.architectures.flux2.model_config import (
 KLEIN_CONFIG = {"guidance_embeds": False}
 DEV_CONFIG: dict[str, object] = {}
 
-M5 = Mock(api="metal", architecture_name="5-metal4")
-M5_NO_METAL4 = Mock(api="metal", architecture_name="5")
-M6 = Mock(api="metal", architecture_name="6-metal4")
-M4 = Mock(api="metal", architecture_name="4-metal4")
-CUDA = Mock(api="cuda", architecture_name="sm_100a")
+M5 = Mock(api="metal", architecture_version=ArchitectureVersion(5, 0))
+M6 = Mock(api="metal", architecture_version=ArchitectureVersion(6, 0))
+M4 = Mock(api="metal", architecture_version=ArchitectureVersion(4, 0))
+# A major of 10 passes the generation check; only the ``api`` gate rejects it.
+CUDA = Mock(api="cuda", architecture_version=ArchitectureVersion(10, 0))
 CPU = Mock(api="cpu")
 
 
 def test_is_apple_m5_or_newer() -> None:
     assert _is_apple_m5_or_newer(M5)
-    assert _is_apple_m5_or_newer(M5_NO_METAL4)
     assert _is_apple_m5_or_newer(M6)
     assert not _is_apple_m5_or_newer(M4)
     assert not _is_apple_m5_or_newer(CUDA)
     assert not _is_apple_m5_or_newer(CPU)
     # Metal device whose architecture lookup raises (unknown device name).
     unknown = Mock(api="metal")
-    type(unknown).architecture_name = PropertyMock(
-        side_effect=RuntimeError("Unknown device name")
+    type(unknown).architecture_version = PropertyMock(
+        side_effect=ValueError("Unknown device name")
     )
     assert not _is_apple_m5_or_newer(unknown)
 
@@ -73,7 +72,6 @@ def _delenv_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_default_on_for_klein_on_m5(monkeypatch: pytest.MonkeyPatch) -> None:
     _delenv_overrides(monkeypatch)
     assert _int8_w8a8_enabled(KLEIN_CONFIG, [M5])
-    assert _int8_w8a8_enabled(KLEIN_CONFIG, [M5_NO_METAL4])
 
 
 def test_default_off_outside_klein_m5(
