@@ -118,10 +118,27 @@ def _layer_rows(rows: TensorValue, layer: TensorValue) -> TensorValue:
     return ops.squeeze(rows[(slice(layer, layer + 1), 1), :], 0)
 
 
+def _qkv_projection_graph(
+    x: TensorValue,
+    q_weight: TensorValue,
+    k_weight: TensorValue,
+    v_weight: TensorValue,
+) -> TensorValue:
+    """Projects one device's q, k and v heads with one matmul.
+
+    Returns ``[total_tokens, 3 * local_heads * head_dim]`` in the conv's
+    channel order. Each weight holds only this device's head rows, so the
+    stack keeps the per-rank order.
+    """
+    weight = ops.concat([q_weight, k_weight, v_weight])
+    return ops.matmul(x.cast(weight.dtype), weight.T)
+
+
+_qkv_projection = F.functional(_qkv_projection_graph)
+
+
 def _kda_core_graph(
-    q: TensorValue,
-    k: TensorValue,
-    v: TensorValue,
+    qkv: TensorValue,
     q_conv: TensorValue,
     k_conv: TensorValue,
     v_conv: TensorValue,
@@ -148,7 +165,7 @@ def _kda_core_graph(
 ) -> TensorValue:
     """Runs one device's heads: conv, recurrence, gated norm.
 
-    Returns ``[total_tokens, local_heads * head_dim]`` in ``q``'s dtype, the
+    Returns ``[total_tokens, local_heads * head_dim]`` in ``qkv``'s dtype, the
     input of the row-parallel ``o_proj``. Both pools are mutated in place,
     except under a verify (``verify_width`` set), which records the
     recurrence into ``ring_pool`` and appends its replay inputs to
@@ -156,13 +173,13 @@ def _kda_core_graph(
     kernel's fused multiply-adds, which only a test of decode against the
     verify ring needs: a speculative graph never takes the decode branch.
     """
-    dtype = q.dtype
-    qkv_dim = q.shape[-1]
-    head_shape = [-1, int(qkv_dim) // head_dim, head_dim]
+    dtype = qkv.dtype
+    qkv_dim = int(qkv.shape[-1]) // 3
+    head_shape = [-1, qkv_dim // head_dim, head_dim]
 
-    # q, k, v in that order: the conv's channel layout. The module holds each
-    # conv weight as the checkpoint's depthwise `[channels, 1, kernel]`.
-    qkv = ops.concat([q, k, v], axis=-1).cast(DType.float32)
+    qkv = qkv.cast(DType.float32)
+    # The module holds each conv weight as the checkpoint's depthwise
+    # `[channels, 1, kernel]`.
     conv_weight = ops.reshape(
         ops.concat([q_conv, k_conv, v_conv], axis=0), [-1, q_conv.shape[-1]]
     ).cast(DType.float32)
@@ -404,10 +421,11 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         """Runs the delta attention over ``x`` and advances ``state``."""
         head_split = NamedMapping(x.mesh, (None, TP))
         verify = self.verify
+        qkv = _qkv_projection(
+            x, self.q_proj.weight, self.k_proj.weight, self.v_proj.weight
+        ).rebind_mapping(head_split)
         normed = _kda_core(
-            self.q_proj(x),
-            self.k_proj(x),
-            self.v_proj(x),
+            qkv,
             self.q_conv1d,
             self.k_conv1d,
             self.v_conv1d,

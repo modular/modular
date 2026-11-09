@@ -133,8 +133,8 @@ class KimiDeltaAttention(Module, Shardable):
         self.conv_dim = 3 * self.qkv_dim
 
         # Three separate projections and conv weights, matching the
-        # checkpoint. They are concatenated into one conv input and one conv
-        # weight at call time.
+        # checkpoint. They are concatenated into one projection weight and
+        # one conv weight at call time.
         def head_major_projection() -> Linear:
             return Linear(
                 in_dim=hidden_size,
@@ -421,10 +421,12 @@ class KimiDeltaAttention(Module, Shardable):
         heads, head_dim = self.num_heads, self.head_dim
         head_shape = [-1, heads, head_dim]
 
-        # Concatenated q, k, v in that order: the conv's channel layout.
-        qkv = ops.concat(
-            [self.q_proj(x), self.k_proj(x), self.v_proj(x)], axis=-1
-        ).cast(DType.float32)
+        # q, k, v stacked in the conv's channel order. A shard holds only its
+        # own heads, so the stack keeps the per-rank order.
+        qkv_weight = ops.concat(
+            [self.q_proj.weight, self.k_proj.weight, self.v_proj.weight]
+        ).to(device)
+        qkv = ops.matmul(x, qkv_weight.T).cast(DType.float32)
 
         conv_weight = ops.reshape(
             ops.concat(

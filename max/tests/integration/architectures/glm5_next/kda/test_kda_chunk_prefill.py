@@ -759,9 +759,9 @@ def _load_modulev3_core(session: InferenceSession, routed: bool) -> Model:
             i = graph.inputs
             graph.output(
                 modulev3_kda._kda_core_graph(
-                    q=i[0].tensor,
-                    k=i[1].tensor,
-                    v=i[2].tensor,
+                    qkv=ops.concat(
+                        [i[0].tensor, i[1].tensor, i[2].tensor], axis=-1
+                    ),
                     q_conv=i[3].tensor,
                     k_conv=i[4].tensor,
                     v_conv=i[5].tensor,
