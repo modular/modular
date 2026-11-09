@@ -81,7 +81,7 @@ axis and the tensor. The following table lists the placements.
 |-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [`Replicated`](/api/python/generated/max.tensor.sharding.Replicated/) | Every device on the axis stores a full copy                                                                                                                                                                                                                     |
 | [`Sharded`](/api/python/generated/max.tensor.sharding.Sharded/)       | The tensor axis splits across the devices on the mesh axis                                                                                                                                                                                                      |
-| `Partial`                                                             | Each device stores one term of a sum over the mesh axis                                                                                                                                                                                                         |
+| [`Partial`](/api/python/generated/max.tensor.sharding.Partial/)       | Each device stores one term of a sum over the mesh axis                                                                                                                                                                                                         |
 | [`Unknown`](/api/python/generated/max.tensor.sharding.Unknown/)       | Per-device values with no established relation between them; an op without a sharding rule returns this placement, and [`rebind_mapping()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.rebind_mapping) or a collective establishes the relation |
 
 A mapping can give each mesh axis a different placement. On a mesh with `dp`
@@ -134,10 +134,9 @@ visualize(
 )
 ```
 
-In a notebook, the `Partial` and `Unknown` cells are faded. A `Partial` cell
-represents terms of a sum across devices; an `Unknown` cell represents values
-with no established relation across devices. A terminal labels these cells
-`partial` and `unknown`:
+The visualization distinguishes `Partial` and `Unknown` cells from sharded
+cells. A `Partial` cell represents terms of a sum across devices; an `Unknown`
+cell represents values with no established relation across devices:
 
 ```output
 sharded: [8, 4] Sharded(axis=0)   partial: [8, 4] Partial()   unknown: [8, 4] Unknown()
