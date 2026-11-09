@@ -11,8 +11,11 @@ while your code continues to refer to one global array. MAX uses the same
 [`Tensor`](/api/python/generated/max.tensor.Tensor/) abstraction for
 distributed and non-distributed tensors, so ops and eager layers accept both.
 
-Each device holds a local shard. When you call an op, every device runs it on
-its local shard. Each kernel runs on one device. A collective such as
+Each device holds a local shard. When you call an op, MAX records it in a
+computation graph. The executor can run a supported graph through the
+interpreter or compile the graph and run the resulting model. The runtime
+launches each kernel on one device with the local buffers for that device's
+shard. A collective such as
 [`allreduce_sum()`](/api/python/functional/#max.functional.allreduce_sum)
 communicates across devices to combine their values.
 [`Tensor.shape`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.shape)
