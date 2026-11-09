@@ -107,6 +107,7 @@ _CARRIED = frozenset(
         "execute",
         "input_metadata",
         "output_metadata",
+        "kernel_summaries",
         "signature",
     }
 )
@@ -138,6 +139,8 @@ def test_metadata_comes_from_the_artifact(stand_in: CompileOnlyModel) -> None:
     assert list(stand_in.signature.parameters) == [
         s.name for s in stand_in.input_metadata
     ]
+    # The graph's one add is fused into a kernel the compile summarizes.
+    assert any("mo.add" in kernel for kernel in stand_in.kernel_summaries)
 
 
 def test_a_graph_missing_from_the_artifact_is_not_a_device_refusal(
