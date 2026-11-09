@@ -29,7 +29,7 @@ import re
 import numpy as np
 import pytest
 import torch
-from fusion_utils import run_and_verify_fusion
+from fusion_utils import execute, load_and_verify_fusion, run_and_verify_fusion
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -131,12 +131,10 @@ def test_concat_slice_kv_windows(session: InferenceSession) -> None:
         np.random.randn(2, 8, 16).astype(np.float32),
         np.random.randn(2, 5, 16).astype(np.float32),
     ]
-    model = session.load(graph)
+    model = load_and_verify_fusion(session, graph, fused=_CONCAT_SLICE)
     fused = [s for s in model.kernel_summaries if re.search(_CONCAT_SLICE, s)]
     assert len(fused) == 2, model.kernel_summaries
-    k_out, k_win, v_out, v_win = run_and_verify_fusion(
-        session, graph, *arrays, fused=_CONCAT_SLICE
-    )
+    k_out, k_win, v_out, v_win = execute(model, *arrays)
     k_expected = np.concatenate(arrays[:2], axis=1)
     v_expected = np.concatenate(arrays[2:], axis=1)
     np.testing.assert_array_equal(k_out, k_expected)

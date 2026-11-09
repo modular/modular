@@ -448,15 +448,6 @@ def test_tp_moe_nvfp4() -> None:
 
     compiled = session.load(graph, weights_registry=moe.state_dict())
 
-    hidden_states = torch.randn(
-        SEQ_LEN, HIDDEN_DIM, dtype=torch.bfloat16, device="cuda"
-    )
-    result = compiled.execute(
-        Buffer.from_dlpack(hidden_states).to(devices[0]),
-        *signals.buffers(),
-    )
-    all_outputs = from_dlpack(result[0]).to("cpu")
-
     # Run MoEGate separately to get topk indices/scores for reference.
     moe_gate = MoEGate(
         devices=[DeviceRef.GPU()],
@@ -480,6 +471,16 @@ def test_tp_moe_nvfp4() -> None:
     gate_compiled = session.load(
         gate_graph, weights_registry=moe_gate.state_dict()
     )
+
+    hidden_states = torch.randn(
+        SEQ_LEN, HIDDEN_DIM, dtype=torch.bfloat16, device="cuda"
+    )
+    result = compiled.execute(
+        Buffer.from_dlpack(hidden_states).to(devices[0]),
+        *signals.buffers(),
+    )
+    all_outputs = from_dlpack(result[0]).to("cpu")
+
     gate_result = gate_compiled.execute(
         Buffer.from_dlpack(hidden_states).to(devices[0])
     )

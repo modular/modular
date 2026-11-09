@@ -28,17 +28,14 @@ import re
 
 import numpy as np
 from max.driver import Buffer
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import Graph
 
 
-def run_and_verify_fusion(
-    session: InferenceSession,
-    graph: Graph,
-    *inputs: np.ndarray,
-    fused: str = "",
-) -> tuple[np.ndarray, ...]:
-    """Compiles ``graph``, checks its fusion structure, then executes it.
+def load_and_verify_fusion(
+    session: InferenceSession, graph: Graph, fused: str = ""
+) -> Model:
+    """Compiles ``graph`` and checks its fusion structure.
 
     Fusion is a compile-time property: it shows up in
     ``model.kernel_summaries`` right after ``session.load``, so this checks it
@@ -46,9 +43,7 @@ def run_and_verify_fusion(
 
     Args:
         session: The session to load ``graph`` with.
-        graph: The graph to compile and run.
-        *inputs: Executed positional inputs, matching ``graph``'s own input
-            order.
+        graph: The graph to compile.
         fused: A regular expression checked against ``model.kernel_summaries``
             with ``re.search``. For example, ``"mo.matmul.*mo.relu"`` matches
             a summary listing both leaves in that order, however other leaves
@@ -57,7 +52,7 @@ def run_and_verify_fusion(
             to execute the graph, with no fusion claim to check.
 
     Returns:
-        ``graph``'s outputs, each converted to a NumPy array.
+        The compiled ``graph``.
 
     Raises:
         AssertionError: If no summary in ``model.kernel_summaries`` matches
@@ -69,7 +64,20 @@ def run_and_verify_fusion(
             f"expected a kernel summary matching {fused!r}, got: "
             f"{model.kernel_summaries}"
         )
+    return model
 
+
+def execute(model: Model, *inputs: np.ndarray) -> tuple[np.ndarray, ...]:
+    """Executes ``model`` on NumPy inputs.
+
+    Args:
+        model: The compiled graph to run.
+        *inputs: Executed positional inputs, matching the graph's own input
+            order.
+
+    Returns:
+        The graph's outputs, each converted to a NumPy array.
+    """
     # A 0-d bool array (a scalar `mo.if`/`ops.cond` predicate) is passed
     # through as a plain Python bool: `Buffer.from_numpy` can't wrap a rank-0
     # bool array (its dtype-view path indexes `shape[-1]`, which doesn't
@@ -82,3 +90,32 @@ def run_and_verify_fusion(
     ]
     results = model.execute(*device_inputs)
     return tuple(r.to_numpy() for r in results)
+
+
+def run_and_verify_fusion(
+    session: InferenceSession,
+    graph: Graph,
+    *inputs: np.ndarray,
+    fused: str = "",
+) -> tuple[np.ndarray, ...]:
+    """Compiles ``graph``, checks its fusion structure, then executes it.
+
+    A test that executes one graph more than once loads it once with
+    :func:`load_and_verify_fusion` and runs it with :func:`execute` instead:
+    loading it again is another compile.
+
+    Args:
+        session: The session to load ``graph`` with.
+        graph: The graph to compile and run.
+        *inputs: Executed positional inputs, matching ``graph``'s own input
+            order.
+        fused: As :func:`load_and_verify_fusion`.
+
+    Returns:
+        ``graph``'s outputs, each converted to a NumPy array.
+
+    Raises:
+        AssertionError: If no summary in ``model.kernel_summaries`` matches
+            ``fused``.
+    """
+    return execute(load_and_verify_fusion(session, graph, fused), *inputs)

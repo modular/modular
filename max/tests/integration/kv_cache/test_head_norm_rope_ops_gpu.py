@@ -19,12 +19,13 @@ import ml_dtypes
 import numpy as np
 import pytest
 from max import tree
-from max.driver import CPU, Accelerator, Buffer, accelerator_count
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn._graph_ops import rope_split_store_ragged
 from max.nn.kv_cache import MHAKVCacheParams
+from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 HEAD_DIM = 64
@@ -38,7 +39,7 @@ Q_SCALE = 0.125
 QKV_WIDTH = (N_Q + 2 * N_KV) * HEAD_DIM
 
 pytestmark = pytest.mark.skipif(
-    accelerator_count() == 0 or "B200" not in Accelerator().model_name,
+    not is_b100_b200(),
     reason="the per-head attention norm ops run on B200 only",
 )
 RNG = np.random.default_rng(0)
@@ -148,10 +149,11 @@ def test_prologue_matches_unfused(prompt_lens: list[int]) -> None:
     qkv = RNG.standard_normal((tokens, QKV_WIDTH)) * 2.0
     offsets = np.concatenate([[0], np.cumsum(prompt_lens)]).astype(np.uint32)
 
+    models = [session.load(_prologue_graph(fused)) for fused in (True, False)]
     results = []
-    for fused in (True, False):
+    for model in models:
         kv = paged_kv_cache_inputs(_kv_params(), prompt_lens, total_num_pages=8)
-        (q,) = session.load(_prologue_graph(fused)).execute(
+        (q,) = model.execute(
             _bf16(qkv, device),
             Buffer.from_numpy(offsets).to(device),
             _bf16(_rope_freqs(), device),
@@ -199,13 +201,14 @@ def _epilogue_graph(fused: bool) -> Graph:
 def test_epilogue_matches_unfused(tokens: int) -> None:
     device = Accelerator()
     session = InferenceSession(devices=[device])
+    models = [session.load(_epilogue_graph(fused)) for fused in (True, False)]
     x = _bf16(RNG.standard_normal((tokens, N_Q * HEAD_DIM)) * 2.0, device)
     qkvg = _bf16(
         RNG.standard_normal((tokens, QKV_WIDTH + N_Q * HEAD_DIM)), device
     )
     outs = []
-    for fused in (True, False):
-        (out,) = session.load(_epilogue_graph(fused)).execute(x, qkvg)
+    for model in models:
+        (out,) = model.execute(x, qkvg)
         assert isinstance(out, Buffer)
         outs.append(_bits(out))
     np.testing.assert_array_equal(outs[0], outs[1])

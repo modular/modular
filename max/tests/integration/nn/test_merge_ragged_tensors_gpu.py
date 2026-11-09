@@ -14,7 +14,7 @@
 import torch
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn._graph_ops import eagle_prefill_shift_tokens, merge_ragged_tensors
 
@@ -63,34 +63,10 @@ def torch_merge_ragged_tensors(
     return torch_merged_tensor, torch_merged_row_offsets
 
 
-def merge_ragged_tensors_1d(device: Device, device_ref: DeviceRef) -> None:
-    a_batch_sizes = torch.randint(1, 20, (BATCH_SIZE,))
-    # a_row_offsets = torch.cumsum(a_batch_sizes, dim=0), with the first element being 0
-    a_offsets = torch.zeros(BATCH_SIZE + 1, dtype=torch.uint32, device="cpu")
-    a_offsets[1:] = torch.cumsum(a_batch_sizes, dim=0)
-    a_input = torch.randint(
-        0,
-        100000,
-        (int(torch.sum(a_batch_sizes).item()),),
-        dtype=torch.int32,
-        device="cpu",
-    )
-
-    b_batch_sizes = torch.randint(1, 20, (BATCH_SIZE,))
-    b_offsets = torch.zeros(BATCH_SIZE + 1, dtype=torch.uint32, device="cpu")
-    b_offsets[1:] = torch.cumsum(b_batch_sizes, dim=0)
-    b_input = torch.randint(
-        0,
-        100000,
-        (int(torch.sum(b_batch_sizes).item()),),
-        dtype=torch.int32,
-        device="cpu",
-    )
-
-    # Construct input types.
+def _merge_graph(device_ref: DeviceRef, row_dims: list[int]) -> Graph:
     a_input_type = TensorType(
         DType.int32,
-        ["a_seq_len"],
+        ["a_seq_len", *row_dims],
         device=device_ref,
     )
     a_offsets_type = TensorType(
@@ -100,7 +76,7 @@ def merge_ragged_tensors_1d(device: Device, device_ref: DeviceRef) -> None:
     )
     b_input_type = TensorType(
         DType.int32,
-        ["b_seq_len"],
+        ["b_seq_len", *row_dims],
         device=device_ref,
     )
     b_offsets_type = TensorType(
@@ -110,7 +86,7 @@ def merge_ragged_tensors_1d(device: Device, device_ref: DeviceRef) -> None:
     )
 
     with Graph(
-        "merge_ragged_tensors_1d",
+        "merge_ragged_tensors",
         input_types=(
             a_input_type,
             a_offsets_type,
@@ -127,9 +103,32 @@ def merge_ragged_tensors_1d(device: Device, device_ref: DeviceRef) -> None:
         )
 
         graph.output(merged_tensor, merged_row_offsets)
+    return graph
 
-    session = InferenceSession(devices=[device])
-    compiled = session.load(graph)
+
+def _check_merge(compiled: Model, device: Device, row_dims: list[int]) -> None:
+    a_batch_sizes = torch.randint(1, 20, (BATCH_SIZE,))
+    # a_row_offsets = torch.cumsum(a_batch_sizes, dim=0), with the first element being 0
+    a_offsets = torch.zeros(BATCH_SIZE + 1, dtype=torch.uint32, device="cpu")
+    a_offsets[1:] = torch.cumsum(a_batch_sizes, dim=0)
+    a_input = torch.randint(
+        0,
+        100000,
+        (int(torch.sum(a_batch_sizes).item()), *row_dims),
+        dtype=torch.int32,
+        device="cpu",
+    )
+
+    b_batch_sizes = torch.randint(1, 20, (BATCH_SIZE,))
+    b_offsets = torch.zeros(BATCH_SIZE + 1, dtype=torch.uint32, device="cpu")
+    b_offsets[1:] = torch.cumsum(b_batch_sizes, dim=0)
+    b_input = torch.randint(
+        0,
+        100000,
+        (int(torch.sum(b_batch_sizes).item()), *row_dims),
+        dtype=torch.int32,
+        device="cpu",
+    )
 
     results = compiled.execute(
         Buffer.from_dlpack(a_input).to(device),
@@ -149,100 +148,22 @@ def merge_ragged_tensors_1d(device: Device, device_ref: DeviceRef) -> None:
     assert torch.all(max_merged_row_offsets == torch_merged_row_offsets)
 
 
-def merge_ragged_tensors_2d(device: Device, device_ref: DeviceRef) -> None:
-    a_batch_sizes = torch.randint(1, 20, (BATCH_SIZE,))
-    # a_row_offsets = torch.cumsum(a_batch_sizes, dim=0), with the first element being 0
-    a_offsets = torch.zeros(BATCH_SIZE + 1, dtype=torch.uint32, device="cpu")
-    a_offsets[1:] = torch.cumsum(a_batch_sizes, dim=0)
-    a_input = torch.randint(
-        0,
-        100000,
-        (int(torch.sum(a_batch_sizes).item()), HIDDEN_DIM),
-        dtype=torch.int32,
-        device="cpu",
-    )
-
-    b_batch_sizes = torch.randint(1, 20, (BATCH_SIZE,))
-    b_offsets = torch.zeros(BATCH_SIZE + 1, dtype=torch.uint32, device="cpu")
-    b_offsets[1:] = torch.cumsum(b_batch_sizes, dim=0)
-    b_input = torch.randint(
-        0,
-        100000,
-        (int(torch.sum(b_batch_sizes).item()), HIDDEN_DIM),
-        dtype=torch.int32,
-        device="cpu",
-    )
-
-    # Construct input types.
-    a_input_type = TensorType(
-        DType.int32,
-        ["a_seq_len", HIDDEN_DIM],
-        device=device_ref,
-    )
-    a_offsets_type = TensorType(
-        DType.uint32,
-        ["offsets_len"],
-        device=device_ref,
-    )
-    b_input_type = TensorType(
-        DType.int32,
-        ["b_seq_len", HIDDEN_DIM],
-        device=device_ref,
-    )
-    b_offsets_type = TensorType(
-        DType.uint32,
-        ["offsets_len"],
-        device=device_ref,
-    )
-
-    with Graph(
-        "merge_ragged_tensors_1d",
-        input_types=(
-            a_input_type,
-            a_offsets_type,
-            b_input_type,
-            b_offsets_type,
-        ),
-    ) as graph:
-        a_tensor, a_row_offsets, b_tensor, b_row_offsets = graph.inputs
-        merged_tensor, merged_row_offsets = merge_ragged_tensors(
-            a_tensor.tensor,
-            a_row_offsets.tensor,
-            b_tensor.tensor,
-            b_row_offsets.tensor,
-        )
-
-        graph.output(merged_tensor, merged_row_offsets)
-
-    session = InferenceSession(devices=[device])
-    compiled = session.load(graph)
-
-    results = compiled.execute(
-        Buffer.from_dlpack(a_input).to(device),
-        Buffer.from_dlpack(a_offsets).to(device),
-        Buffer.from_dlpack(b_input).to(device),
-        Buffer.from_dlpack(b_offsets).to(device),
-    )
-
-    max_merged_tensor = torch.from_dlpack(results[0]).to("cpu")
-    max_merged_row_offsets = torch.from_dlpack(results[1]).to("cpu")
-
-    torch_merged_tensor, torch_merged_row_offsets = torch_merge_ragged_tensors(
-        a_input, a_batch_sizes, a_offsets, b_input, b_batch_sizes, b_offsets
-    )
-
-    assert torch.all(max_merged_tensor == torch_merged_tensor)
-    assert torch.all(max_merged_row_offsets == torch_merged_row_offsets)
+def _check_merge_on_gpu_and_cpu(row_dims: list[int]) -> None:
+    devices = [(Accelerator(0), DeviceRef.GPU()), (CPU(0), DeviceRef.CPU())]
+    models = [
+        InferenceSession(devices=[device]).load(_merge_graph(ref, row_dims))
+        for device, ref in devices
+    ]
+    for (device, _), model in zip(devices, models, strict=True):
+        _check_merge(model, device, row_dims)
 
 
 def test_merge_ragged_tensors_1d() -> None:
-    merge_ragged_tensors_1d(Accelerator(0), DeviceRef.GPU())
-    merge_ragged_tensors_1d(CPU(0), DeviceRef.CPU())
+    _check_merge_on_gpu_and_cpu([])
 
 
 def test_merge_ragged_tensors_2d() -> None:
-    merge_ragged_tensors_2d(Accelerator(0), DeviceRef.GPU())
-    merge_ragged_tensors_2d(CPU(0), DeviceRef.CPU())
+    _check_merge_on_gpu_and_cpu([HIDDEN_DIM])
 
 
 # ---------------------------------------------------------------------------

@@ -122,15 +122,9 @@ def _load(
 
 
 def _run(
-    session: InferenceSession,
-    chunked: bool,
-    inputs: list[np.ndarray],
-    pool: np.ndarray,
+    model: Model, inputs: list[np.ndarray], pool: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """Runs one op over ``inputs``, returning its output and the mutated pool."""
-    model = _load(
-        session, chunked, inputs[0].shape[0], inputs[-1].shape[0], pool.shape
-    )
     device = model.input_devices[0]
     pool_buf = md.Buffer.from_numpy(pool.copy()).to(device)
     args = [md.Buffer.from_numpy(a).to(device) for a in inputs]
@@ -189,8 +183,12 @@ def test_chunk_matches_decode(seq_lens: list[int]) -> None:
         cu_seqlens,
         state_indices,
     ]
-    chunk_out, chunk_pool = _run(session, True, inputs, pool)
-    decode_out, decode_pool = _run(session, False, inputs, pool)
+    chunk_model, decode_model = [
+        _load(session, chunked, total_t, batch, pool.shape)
+        for chunked in (True, False)
+    ]
+    chunk_out, chunk_pool = _run(chunk_model, inputs, pool)
+    decode_out, decode_pool = _run(decode_model, inputs, pool)
 
     assert np.all(np.isfinite(chunk_out))
     for b in range(batch):

@@ -30,9 +30,10 @@ import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.legacy import Signals
+from test_common.graph_utils import is_b100_b200
 
 NUM_GPUS = 2
 EPS = 1e-5
@@ -94,11 +95,12 @@ def _check(
     assert frac <= MISMATCH_BAR and worst <= bar, msg
 
 
-def _run(
-    graph: Graph, devices: list[Accelerator], *inputs: Buffer
-) -> list[Any]:
-    session = InferenceSession(devices=[CPU(), *devices])
-    return list(session.load(graph).execute(*inputs))
+def _session(devices: list[Accelerator]) -> InferenceSession:
+    return InferenceSession(devices=[CPU(), *devices])
+
+
+def _run(model: Model, *inputs: Buffer) -> list[Any]:
+    return list(model.execute(*inputs))
 
 
 def _per_device(
@@ -156,6 +158,10 @@ def test_column_allgather_centered_norm(rows: int) -> None:
     devices = [Accelerator(i) for i in range(NUM_GPUS)]
     fused, unfused, fused_sig, ref_sig = _centered_norm_graphs(cols, True)
     fault, _, fault_sig, _ = _centered_norm_graphs(cols, False)
+    session = _session(devices)
+    unfused_model, fused_model, fault_model = [
+        session.load(graph) for graph in (unfused, fused, fault)
+    ]
     x = RNG.standard_normal((rows, cols)).astype(np.float32)
     w = (RNG.standard_normal(cols) * 0.2).astype(np.float32)
     shards = np.split(x, NUM_GPUS, axis=1)
@@ -163,8 +169,8 @@ def test_column_allgather_centered_norm(rows: int) -> None:
         *(_to_device(s, d) for s, d in zip(shards, devices, strict=True)),
         *(_to_device(w, d) for d in devices),
     ]
-    ref = _run(unfused, devices, *inputs, *ref_sig.buffers())
-    out = _run(fused, devices, *inputs, *fused_sig.buffers())
+    ref = _run(unfused_model, *inputs, *ref_sig.buffers())
+    out = _run(fused_model, *inputs, *fused_sig.buffers())
     for i in range(NUM_GPUS):
         gathered = _from_device(out[NUM_GPUS + i])
         np.testing.assert_array_equal(gathered, _bf16(x).astype(np.float32))
@@ -174,7 +180,7 @@ def test_column_allgather_centered_norm(rows: int) -> None:
             _from_device(ref[i]),
         )
     # Planted fault: 1 + w kept in f32 (the op's default) is a different norm.
-    bad = _run(fault, devices, *inputs, *fault_sig.buffers())
+    bad = _run(fault_model, *inputs, *fault_sig.buffers())
     frac = float((_ulps(_from_device(bad[0]), _from_device(ref[0])) > 0).mean())
     print(f"f32 offset {rows} rows: {frac:.2e} differ")
     assert frac > MISMATCH_BAR, f"an f32 gamma offset passes: {frac:.2e}"
@@ -250,7 +256,7 @@ def _boundary_graphs(
 
 
 @pytest.mark.skipif(
-    accelerator_count() < NUM_GPUS or "B200" not in Accelerator().model_name,
+    accelerator_count() < NUM_GPUS or not is_b100_b200(),
     reason="gated_residual_rms_norm runs on B200 only",
 )
 @pytest.mark.parametrize("rows", ROWS)
@@ -258,6 +264,21 @@ def test_column_allgather_gated_residual_norm(rows: int) -> None:
     """The unpooled-projection boundary: 2 x 4096 columns of an 8192 row."""
     cols = 8192
     devices = [Accelerator(i) for i in range(NUM_GPUS)]
+    fused, unfused, fused_sig, ref_sig = _boundary_graphs(
+        cols, True, TEMPERATURE
+    )
+    session = _session(devices)
+    unfused_model, fused_model = [
+        session.load(graph) for graph in (unfused, fused)
+    ]
+    # Planted faults: an unscaled branch, a wrong gate temperature.
+    faults = []
+    for label, scale, temperature in (
+        ("unscaled branch", False, TEMPERATURE),
+        ("temperature 1", True, 1.0),
+    ):
+        fault, _, fault_sig, _ = _boundary_graphs(cols, scale, temperature)
+        faults.append((label, session.load(fault), fault_sig))
     branch = RNG.standard_normal((rows, cols)).astype(np.float32)
     residual = RNG.standard_normal((rows, cols)).astype(np.float32)
     weights = [
@@ -274,11 +295,8 @@ def test_column_allgather_gated_residual_norm(rows: int) -> None:
         *(_to_device(residual, d) for d in devices),
         *(_to_device(w, d) for w in weights for d in devices),
     ]
-    fused, unfused, fused_sig, ref_sig = _boundary_graphs(
-        cols, True, TEMPERATURE
-    )
-    ref = _run(unfused, devices, *inputs, *ref_sig.buffers())
-    out = _run(fused, devices, *inputs, *fused_sig.buffers())
+    ref = _run(unfused_model, *inputs, *ref_sig.buffers())
+    out = _run(fused_model, *inputs, *fused_sig.buffers())
     for i in range(NUM_GPUS):
         for k, name in enumerate(("stream", "normed")):
             _check(
@@ -287,13 +305,8 @@ def test_column_allgather_gated_residual_norm(rows: int) -> None:
                 _from_device(ref[k * NUM_GPUS + i]),
                 GATED_ROW_RMS_BAR,
             )
-    # Planted faults: an unscaled branch, a wrong gate temperature.
-    for label, scale, temperature in (
-        ("unscaled branch", False, TEMPERATURE),
-        ("temperature 1", True, 1.0),
-    ):
-        fault, _, fault_sig, _ = _boundary_graphs(cols, scale, temperature)
-        bad = _run(fault, devices, *inputs, *fault_sig.buffers())
+    for label, fault_model, fault_sig in faults:
+        bad = _run(fault_model, *inputs, *fault_sig.buffers())
         frac = float(
             (_ulps(_from_device(bad[0]), _from_device(ref[0])) > 0).mean()
         )
