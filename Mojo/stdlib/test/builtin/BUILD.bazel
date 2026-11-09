@@ -7,6 +7,7 @@ _DATA = [
 ]
 
 _NO_ASAN = [
+    "test_builtin_abort.mojo",  # _assert_aborts is a no-op under ASAN
     "test_simd.mojo",  # Takes too long to compile with ASAN
 ]
 
@@ -21,15 +22,10 @@ _PLATFORM_CONSTRAINTS = {
 _FILECHECK_TESTS = [
     "test_debug_assert.mojo",
     "test_debug_assert_compile_time.mojo",
-    "test_debug_assert_default_error.mojo",
-    "test_debug_assert_location.mojo",
     "test_debug_assert_mode_all.mojo",
-    "test_debug_assert_mode_all_error.mojo",
     "test_debug_assert_mode_none.mojo",
-    "test_debug_assert_no_message.mojo",
     "test_debug_assert_warning.mojo",
     "test_pow_negative_exponent_abort.mojo",
-    "test_range_len_overflow_abort.mojo",
     "test_simd_length_pow_negative_exponent_abort.mojo",
 ]
 
@@ -69,12 +65,7 @@ _DISABLED_ASSERTIONS = [
 ]
 
 _EXPECT_CRASH = [
-    "test_debug_assert_default_error.mojo",
     "test_pow_negative_exponent_abort.mojo",
-    "test_debug_assert_mode_all_error.mojo",
-    "test_debug_assert_location.mojo",
-    "test_debug_assert_no_message.mojo",
-    "test_range_len_overflow_abort.mojo",
     "test_simd_length_pow_negative_exponent_abort.mojo",
 ]
 
