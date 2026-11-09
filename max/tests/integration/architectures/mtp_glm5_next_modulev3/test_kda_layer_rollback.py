@@ -270,6 +270,49 @@ class _Rollback(Module[..., tuple[Tensor, ...]]):
 
 
 @functools.cache
+def _compile(batch: int, num_steps: int) -> Any:
+    """Compiles the verify, rollback and ``num_steps`` decode steps.
+
+    Each step's row count is symbolic, so batches that differ only in which
+    rows accept how many drafts share one compile.
+    """
+    device = Accelerator()
+    gpu = DeviceRef.GPU()
+    table = TensorType(DType.uint32, [1, "batch_size"], device=gpu)
+    pools = _pools()
+    ring_shape = (POOL_ROWS, *_ring_row_shape())
+    types: list[TensorType | BufferType] = [
+        TensorType(
+            DType.float32, [(NUM_DRAFTS + 1) * batch, HIDDEN], device=gpu
+        ),
+        TensorType(DType.uint32, [batch + 1], device=gpu),
+        TensorType(DType.int64, ["batch_size"], device=gpu),
+        table,
+        table,
+        table,
+    ]
+    for t in range(num_steps):
+        types.append(
+            TensorType(DType.float32, [f"step_{t}_rows", HIDDEN], device=gpu)
+        )
+        types.append(TensorType(DType.uint32, [batch + 1], device=gpu))
+    conv_type = BufferType(DType.float32, pools["conv"].shape, device=gpu)
+    rec_type = BufferType(DType.float32, pools["recurrent"].shape, device=gpu)
+    types += [
+        conv_type,
+        rec_type,
+        BufferType(DType.float32, ring_shape, device=gpu),
+        conv_type,
+        rec_type,
+    ]
+
+    mesh = DeviceMesh((device,), (1,), ("tp",))
+    with F.lazy(), default_dtype(DType.float32), default_device(mesh):
+        module = _Rollback(KimiDeltaAttention(_config()), num_steps)
+    return module.compile(*types, weights=_weights())
+
+
+@functools.cache
 def _run_spec_against_decode(
     accepted: tuple[int, ...],
 ) -> tuple[dict[str, np.ndarray], list[tuple[np.ndarray, np.ndarray]]]:
@@ -297,35 +340,9 @@ def _run_spec_against_decode(
         )
 
     device = Accelerator()
-    gpu = DeviceRef.GPU()
-    table = TensorType(DType.uint32, [1, "batch_size"], device=gpu)
     pools = _pools()
     ring_shape = (POOL_ROWS, *_ring_row_shape())
-    types: list[TensorType | BufferType] = [
-        TensorType(DType.float32, list(x.shape), device=gpu),
-        TensorType(DType.uint32, [batch + 1], device=gpu),
-        TensorType(DType.int64, ["batch_size"], device=gpu),
-        table,
-        table,
-        table,
-    ]
-    for step_x, _, _ in steps:
-        types.append(TensorType(DType.float32, list(step_x.shape), device=gpu))
-        types.append(TensorType(DType.uint32, [batch + 1], device=gpu))
-    conv_type = BufferType(DType.float32, pools["conv"].shape, device=gpu)
-    rec_type = BufferType(DType.float32, pools["recurrent"].shape, device=gpu)
-    types += [
-        conv_type,
-        rec_type,
-        BufferType(DType.float32, ring_shape, device=gpu),
-        conv_type,
-        rec_type,
-    ]
-
-    mesh = DeviceMesh((device,), (1,), ("tp",))
-    with F.lazy(), default_dtype(DType.float32), default_device(mesh):
-        module = _Rollback(KimiDeltaAttention(_config()), len(steps))
-    compiled = module.compile(*types, weights=_weights())
+    compiled = _compile(batch, len(steps))
 
     def put(value: np.ndarray) -> Buffer:
         return Buffer.from_numpy(np.ascontiguousarray(value)).to(device)
@@ -368,8 +385,11 @@ def _run_spec_against_decode(
     )
 
 
+# Each distinct decode-step count compiles its own graph: none accepted, then
+# all accepted and a mixed batch whose shorter row stops partway, which share
+# one.
 @pytest.mark.parametrize(
-    "accepted", [(0, 0), (1, 1), (NUM_DRAFTS, NUM_DRAFTS), (NUM_DRAFTS, 0)]
+    "accepted", [(0, 0), (NUM_DRAFTS, NUM_DRAFTS), (1, NUM_DRAFTS)]
 )
 def test_the_rollback_lands_where_decoding_the_accepted_tokens_does(
     accepted: tuple[int, ...],
