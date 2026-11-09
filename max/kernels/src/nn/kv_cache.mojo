@@ -2030,31 +2030,26 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
     q_index_out_dtype: DType,
     freq_dtype: DType,
     QMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     VMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     QIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -2536,31 +2531,26 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_warp_gpu[
     q_index_out_dtype: DType,
     freq_dtype: DType,
     QMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     VMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     QIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -2776,31 +2766,26 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
     main_collection_t: KVCollectionT,
     index_collection_t: KVCollectionT,
     QMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     VMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     QIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
