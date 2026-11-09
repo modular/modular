@@ -18,13 +18,19 @@ MODEL=MiniMaxAI/MiniMax-M3.1-Flash PORT=8000 DEEPSWE_HOME=~/deepswe SAMPLE_SIZE=
 MODEL=MiniMaxAI/MiniMax-M3.1-Flash PORT=8000 DEEPSWE_HOME=~/deepswe DEEPSWE_CONCURRENCY=8 \
   ./bazelw run //max/tests/integration/accuracy/model_evals:deepswe_eval_local
 
+# Only some tasks: extra arguments go to `pier run` (-i includes, -x excludes; globs)
+MODEL=MiniMaxAI/MiniMax-M3.1-Flash PORT=8000 DEEPSWE_HOME=~/deepswe \
+  ./bazelw run //max/tests/integration/accuracy/model_evals:deepswe_eval_local -- \
+  -i 'abs-*' -i adaptix-name-mapping-aliases
+
 # Against a remote server instead
 MODEL=... MAX_SERVE_URL=https://my-host OPENAI_API_KEY=... DEEPSWE_HOME=~/deepswe \
   ./bazelw run //max/tests/integration/accuracy/model_evals:deepswe_eval_local
 ```
 
 The same run on CI, as a client of an already-running deployment (48 tasks at
-once; add `-f sample_size=3` for a smoke test):
+once; add `-f sample_size=3` for a smoke test, or `-f deepswe_tasks=...` to
+pick tasks by name: comma-separated globs, `!` to exclude):
 
 ```bash
 # <deployment-url>: base URL of the deployment, without /v1
