@@ -99,12 +99,12 @@ logger = logging.getLogger("max.pipelines")
 def _cast_to_parameter_dtypes(
     module: Any, state_dict: dict[str, Any]
 ) -> dict[str, Any]:
-    """Casts float32 and bfloat16 checkpoint weights to their parameter's dtype.
+    """Casts float checkpoint weights to their parameter's dtype.
 
     ModuleV3 models have strict dtype checks: a weight's dtype must match its
     parameter's, so a float32 checkpoint can't load into a bfloat16 module
     without a cast. This function converts each ``WeightData`` value whose
-    dtype and parameter dtype are both float32 or bfloat16, and returns
+    dtype and parameter dtype are both float32, bfloat16 or float16, and returns
     every other value unchanged. The conversion runs in the current process
     through ``WeightData.astype()``. That lets it work inside a daemonic
     serve worker, which can't start the child process that
