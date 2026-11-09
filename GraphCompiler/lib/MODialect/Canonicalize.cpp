@@ -1440,18 +1440,32 @@ LogicalResult Shape::ToTensorOp::canonicalize(Shape::ToTensorOp op,
 namespace {
 /// Moves ops that read only constants and weights out of a side-stream body,
 /// so exec-invariant code motion can lift them to init.
+///
+/// Only ops whose tensor results have static shapes move. A constant
+/// broadcast to a runtime shape cannot reach init, so moving it only leaves
+/// it as its own kernel on the main stream, in front of the fork, where it
+/// can no longer fuse into the body's elementwise consumer. An op whose
+/// operand such an op produces stays too, or it would precede its producer.
 struct HoistConstantDerivedOps : public OpRewritePattern<SequenceOp> {
   using OpRewritePattern<SequenceOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(SequenceOp seq,
                                 PatternRewriter &rewriter) const override {
     bool changed = false;
-    Block &body = seq.getBodyRegion().front();
+    Region &region = seq.getBodyRegion();
+    Block &body = region.front();
     for (Operation &op :
          llvm::make_early_inc_range(body.without_terminator())) {
+      bool staticResults = llvm::all_of(op.getResultTypes(), [](Type type) {
+        auto tensorTy = dyn_cast<TensorType>(type);
+        return !tensorTy || tensorTy.hasStaticShape();
+      });
+      bool operandsOutside = llvm::none_of(op.getOperands(), [&](Value v) {
+        return region.isAncestor(v.getParentRegion());
+      });
       // An op with regions may read block arguments from inside them, which
       // the producer walk does not see.
-      if (op.getNumRegions() == 0 &&
+      if (op.getNumRegions() == 0 && staticResults && operandsOutside &&
           dataflowGraphFoldsToConstants<ConstantLike, ChainCreateOp>(&op)) {
         rewriter.moveOpBefore(&op, seq);
         changed = true;

@@ -39,7 +39,8 @@ struct SliceToSplitPattern
     SmallVector<SliceOp> sliceOps;
     Value input = op.getInput();
     for (auto user : input.getUsers()) {
-      if (auto sliceOp = dyn_cast<SliceOp>(user))
+      auto sliceOp = dyn_cast<SliceOp>(user);
+      if (sliceOp && sliceOp->getBlock() == op->getBlock())
         sliceOps.push_back(sliceOp);
     }
 
