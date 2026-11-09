@@ -2007,5 +2007,34 @@ def test_string_niche() raises:
     assert_false(Optional[String](None))
 
 
+@fieldwise_init
+struct _NoteHolder(Copyable, Movable):
+    var note: String
+
+
+def _append_to_copy(s: _NoteHolder) -> _NoteHolder:
+    var n = s.copy()
+    n.note += "a"
+    return n^
+
+
+def test_copy_on_write_keeps_capacity() raises:
+    # Appending to a copy of a heap string reallocates the shared buffer. That
+    # copy-on-write must not double the capacity, or a struct copied from a
+    # read-only argument and appended to in a loop doubles it every time.
+    var holder = _NoteHolder(String(""))
+    for _ in range(200):
+        holder = _append_to_copy(holder)
+    assert_equal(holder.note.byte_length(), 200)
+    assert_true(holder.note.capacity_bytes() <= 512)
+
+    # A copy that is appended to keeps the original intact.
+    var a = String("x") * 40
+    var b = a.copy()
+    b += "y"
+    assert_equal(a, String("x") * 40)
+    assert_equal(b.byte_length(), 41)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

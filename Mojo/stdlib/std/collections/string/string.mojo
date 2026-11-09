@@ -2358,7 +2358,13 @@ struct String(
         # Get these fields before we change _capacity_or_data
         var byte_len = self.byte_length()
         var old_ptr = self.unsafe_ptr()
-        var new_capacity = (max(capacity, self.capacity_bytes() * 2) + 7) >> 3
+        # Double only when growing; a copy-on-write of a shared buffer keeps
+        # its capacity, or each copy-then-append would double it again.
+        var grow = capacity > self.capacity_bytes()
+        var target = max(
+            capacity, self.capacity_bytes() * 2
+        ) if grow else capacity
+        var new_capacity = (target + 7) >> 3
         var new_ptr = self._alloc(new_capacity << 3)
         unsafe_memcpy(dest=new_ptr, src=old_ptr, count=byte_len)
         # If mutable buffer drop the ref count
