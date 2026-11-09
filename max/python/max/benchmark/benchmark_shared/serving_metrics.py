@@ -23,6 +23,7 @@ from collections.abc import Set as AbstractSet
 from itertools import pairwise
 from typing import TYPE_CHECKING, TypeGuard
 
+from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     PixelGenAggregates,
@@ -319,6 +320,7 @@ def calculate_metrics(
     reject_outliers: bool = False,
     record_request_text: bool = False,
     all_outputs: Sequence[RequestFuncOutput] | None = None,
+    goodput_targets: GoodputTargets | None = None,
 ) -> BenchmarkResult:
     """Computes serving metrics from the finished requests."""
     actual_output_lens: list[int] = []
@@ -345,6 +347,7 @@ def calculate_metrics(
     tool_call_responses = 0
     image_requests = 0
     lora_requests = 0
+    good_requests = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -419,6 +422,14 @@ def calculate_metrics(
         )
         if tpot is not None:
             tpots.append(tpot)
+        # ``ttft`` stays 0.0 when the endpoint reports no per-request TTFT;
+        # treat that as missing so a TTFT target is not met for free.
+        if goodput_targets is not None and goodput_targets.is_met(
+            ttft_s=o.ttft if o.ttft > 0 else None,
+            tpot_s=tpot,
+            latency_s=o.latency,
+        ):
+            good_requests += 1
         step_tpots += o.tpot
         itls += o.itl
         ttfts.append(o.ttft)
@@ -594,6 +605,18 @@ def calculate_metrics(
         failures=failures,
         request_throughput=measured_count / measured_duration,
         excluded_successful=total_successful - measured_count,
+        # Over the same requests and window as ``request_throughput``, so
+        # the two rates compare directly. Taken before outlier rejection,
+        # which drops samples from the latency series, not requests.
+        goodput_ttft_ms=goodput_targets.ttft_ms if goodput_targets else None,
+        goodput_tpot_ms=goodput_targets.tpot_ms if goodput_targets else None,
+        goodput_e2el_ms=goodput_targets.e2el_ms if goodput_targets else None,
+        request_goodput=good_requests / measured_duration
+        if goodput_targets and measured
+        else None,
+        goodput_attainment=good_requests / measured_count
+        if goodput_targets and measured
+        else None,
         # A metric is ``None`` when it has no samples (empty data list),
         # rather than a NaN-filled placeholder: NaN serializes to JSON
         # ``null`` (both via ``model_dump_json`` and BigQuery ingest),
@@ -852,6 +875,7 @@ def build_text_generation_result(
     gpu_device_groups: Mapping[str, str] | None = None,
     outputs_by_session: Mapping[str, Sequence[RequestFuncOutput]] | None = None,
     steady_state_filtering: bool = True,
+    goodput_targets: GoodputTargets | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result for text-generation tasks.
 
@@ -883,6 +907,10 @@ def build_text_generation_result(
     Per-request server token stats are attached grouped by session (numeric
     session ids in integer order) when ``outputs_by_session`` is given, else
     as one flat list in output order.
+
+    With ``goodput_targets``, the result also reports ``request_goodput`` and
+    ``goodput_attainment`` over the same requests and duration as
+    ``request_throughput``.
     """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
@@ -987,6 +1015,7 @@ def build_text_generation_result(
             reject_outliers=True,
             record_request_text=record_request_text,
             all_outputs=outputs,
+            goodput_targets=goodput_targets,
         )
 
         # Diagnostic: number of per-request TTFT outliers rejected in the
@@ -1039,6 +1068,7 @@ def build_text_generation_result(
             reject_outliers=False,
             record_request_text=record_request_text,
             all_outputs=outputs,
+            goodput_targets=goodput_targets,
         )
 
     for warn in text_metrics.confidence_warnings():

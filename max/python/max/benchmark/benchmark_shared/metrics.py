@@ -640,6 +640,17 @@ class TextGenAggregates(_CompletedRunBase):
     image_request_rate: float | None = None
     lora_request_rate: float | None = None
 
+    # The ``--goodput`` targets, in ms, and what met them. Every field is
+    # ``None`` when no target was given; the rates are also ``None`` when no
+    # request was measured. ``request_goodput`` is in requests per second
+    # over the ``request_throughput`` window, and ``goodput_attainment`` is
+    # the share of the measured requests that met every target.
+    goodput_ttft_ms: float | None = None
+    goodput_tpot_ms: float | None = None
+    goodput_e2el_ms: float | None = None
+    request_goodput: float | None = None
+    goodput_attainment: float | None = None
+
     max_input: int
     max_output: int
     max_total: int
@@ -742,6 +753,15 @@ class TextGenAggregates(_CompletedRunBase):
             d["image_request_rate"] = self.image_request_rate
         if self.lora_request_rate is not None:
             d["lora_request_rate"] = self.lora_request_rate
+        for name, value in [
+            ("goodput_ttft_ms", self.goodput_ttft_ms),
+            ("goodput_tpot_ms", self.goodput_tpot_ms),
+            ("goodput_e2el_ms", self.goodput_e2el_ms),
+            ("request_goodput", self.request_goodput),
+            ("goodput_attainment", self.goodput_attainment),
+        ]:
+            if value is not None:
+                d[name] = value
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
@@ -1247,6 +1267,13 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         completed=agg.completed if agg else None,
         failures=agg.failures if agg else None,
         request_throughput=agg.request_throughput if agg else None,
+        request_goodput=text_data.request_goodput if text_data else None,
+        goodput_attainment=(
+            text_data.goodput_attainment if text_data else None
+        ),
+        goodput_ttft_ms=text_data.goodput_ttft_ms if text_data else None,
+        goodput_tpot_ms=text_data.goodput_tpot_ms if text_data else None,
+        goodput_e2el_ms=text_data.goodput_e2el_ms if text_data else None,
         aggregate_tokens_per_minute=(
             text_data.aggregate_tokens_per_minute if text_data else None
         ),
