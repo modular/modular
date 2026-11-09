@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Decode context parallel helpers on simulated CPU meshes.
 
-A one-axis ``tp`` mesh of 4 CPUs, and a ``(dp, tp)`` mesh of two replicas of
-4 where each replica is its own DCP group.
+A one-axis ``tp`` mesh of 4 CPUs, a ``(dp, tp)`` mesh of two replicas of 4
+where each replica is its own DCP group, and a one-axis ``tp`` mesh of 8
+CPUs split into DCP groups smaller than TP.
 """
 
 from __future__ import annotations
@@ -30,9 +31,12 @@ from max.nn.common_layers.context_parallel import (
     _pack_partials,
     check_dcp_mesh,
     combine_partial_attention,
+    dcp_group_heads,
     dcp_ranks,
+    dcp_view,
     gather_topk_scores,
     split_selection,
+    to_dcp_mesh,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import (
@@ -53,6 +57,8 @@ DP_MESH = DeviceMesh(
     mesh_shape=(REPLICAS, DCP),
     axis_names=("dp", "tp"),
 )
+# TP8: DCP groups of 4 (or 2) inside it, each holding a copy of the cache.
+TP8 = DeviceMesh(devices=(CPU(),) * 8, mesh_shape=(8,), axis_names=("tp",))
 
 
 def _per_rank(
@@ -86,13 +92,25 @@ def test_ranks_restart_in_each_replica() -> None:
     assert list(dcp_ranks(DP_MESH, DCP)) == [0, 1, 2, 3] * REPLICAS
 
 
-def test_dcp_must_span_the_innermost_tp_axis() -> None:
+def test_ranks_restart_in_each_group_smaller_than_tp() -> None:
+    assert list(dcp_ranks(TP8, 4)) == [0, 1, 2, 3] * 2
+    assert list(dcp_ranks(dcp_view(TP8, 4), 4)) == [0, 1, 2, 3] * 2
+    assert list(dcp_ranks(dcp_view(TP8, 2), 2)) == [0, 1] * 4
+
+
+def test_dcp_must_tile_the_innermost_tp_axis() -> None:
     check_dcp_mesh(MESH, DCP)
     check_dcp_mesh(DP_MESH, DCP)
+    # Any divisor of tp: groups of consecutive ranks.
+    check_dcp_mesh(MESH, 2)
+    check_dcp_mesh(TP8, 4)
+    check_dcp_mesh(DP_MESH, 2)
     with pytest.raises(NotImplementedError):
         check_dcp_mesh(DP_MESH, REPLICAS * DCP)
     with pytest.raises(NotImplementedError):
-        check_dcp_mesh(MESH, 2)
+        check_dcp_mesh(MESH, 3)
+    with pytest.raises(NotImplementedError):
+        check_dcp_mesh(TP8, 16)
     tp_outer = DeviceMesh(
         devices=DP_MESH.devices,
         mesh_shape=(DCP, REPLICAS),
@@ -107,6 +125,115 @@ def test_dcp_must_span_the_innermost_tp_axis() -> None:
     )
     with pytest.raises(NotImplementedError):
         check_dcp_mesh(no_tp, DCP)
+
+
+def test_the_dcp_view_splits_tp_into_groups() -> None:
+    """The view keeps the devices and splits ``tp`` into ``(tp/dcp, dcp)``."""
+    view = dcp_view(TP8, 4)
+    assert view.devices == TP8.devices
+    assert view.mesh_shape == (2, 4)
+    assert view.axis_names == ("tp", "dcp")
+    assert dcp_view(view, 4) is view
+    # A group spanning TP leaves one group on the view's tp axis.
+    assert dcp_view(MESH, DCP).mesh_shape == (1, DCP)
+    dp_view = dcp_view(DP_MESH, 2)
+    assert dp_view.mesh_shape == (REPLICAS, 2, 2)
+    assert dp_view.axis_names == ("dp", "tp", "dcp")
+    with pytest.raises(NotImplementedError):
+        dcp_view(view, 2)
+
+
+def _claim(t: Tensor, mesh: DeviceMesh, *placements: Any) -> Tensor:
+    return Tensor._from_shards(
+        tuple(s.driver_tensor for s in t.local_shards),
+        DeviceMapping(mesh, tuple(placements)),
+    )
+
+
+def test_tensors_move_to_the_view_and_back_without_data() -> None:
+    """Placements carry over; group-only ones are Unknown on the model mesh.
+
+    A tensor sharded over ``tp`` is sharded over both of the view's axes,
+    the groups' pieces first, and folds back. One sharded across groups and
+    replicated within each has no ``tp`` placement, so it comes back
+    ``Unknown``; with one group spanning ``tp`` it comes back replicated.
+    """
+    view = dcp_view(TP8, 4)
+    frags = [np.full((2, 3), r, np.float32) for r in range(8)]
+    base = _per_rank(frags, TP8)
+    sharded = _claim(base, TP8, Sharded(1))
+    on_view = to_dcp_mesh(sharded, view)
+    assert on_view.mesh == view
+    assert on_view.placements == (Sharded(1), Sharded(1))
+    back = to_dcp_mesh(on_view, TP8)
+    assert back.mesh == TP8 and back.placements == (Sharded(1),)
+    for r, shard in enumerate(back.local_shards):
+        np.testing.assert_array_equal(shard.to_numpy(), frags[r])
+    replicated = _claim(base, TP8, Replicated())
+    assert to_dcp_mesh(replicated, view).placements == (
+        Replicated(),
+        Replicated(),
+    )
+    per_group = _claim(_per_rank(frags, view), view, Sharded(0), Replicated())
+    assert to_dcp_mesh(per_group, TP8).placements == (Unknown(),)
+    whole = dcp_view(MESH, DCP)
+    one_group = _claim(
+        _per_rank(frags[:4], whole), whole, Sharded(0), Replicated()
+    )
+    assert to_dcp_mesh(one_group, MESH).placements == (Replicated(),)
+    with pytest.raises(ValueError):
+        to_dcp_mesh(base, MESH)
+
+
+def test_a_group_attends_its_tensor_parallel_heads() -> None:
+    assert dcp_group_heads(TP8, 64, 8) == 64
+    assert dcp_group_heads(TP8, 64, 4) == 32
+    assert dcp_group_heads(TP8, 64, 2) == 16
+    assert dcp_group_heads(dcp_view(TP8, 4), 64, 4) == 32
+    assert dcp_group_heads(DP_MESH, 64, 2) == 32
+
+
+def test_combine_below_tp_leaves_each_rank_its_tp_heads() -> None:
+    """TP8 x DCP4: each group merges its 4 heads of 8 down to one per rank.
+
+    Traces the merge without compiling or running it. The partials cover a
+    group's heads, and the merged heads are each rank's TP heads, sharded
+    over the whole ``tp`` axis for ``o_proj``.
+    """
+    tokens, heads, depth, dcp = 3, 8, 5, 4
+    group_heads = dcp_group_heads(TP8, heads, dcp)
+    outs = [np.zeros((tokens, group_heads, depth), np.float32)] * 8
+    lses = [np.zeros((tokens, group_heads), np.float32)] * 8
+    out, lse = _per_rank(outs, TP8), _per_rank(lses, TP8)
+    with F.lazy():
+        merged = combine_partial_attention(out, lse, dcp)
+    assert not merged.real
+    assert merged.mesh == TP8
+    assert merged.placements == (Sharded(1),)
+    assert int(merged.shape[1]) == heads
+    for shard in merged.local_shards:
+        assert shard.shape == [tokens, heads // 8, depth]
+
+
+def test_topk_scores_gather_within_each_group_below_tp() -> None:
+    """TP8 x DCP4: each group gathers only its own four ranks' scores.
+
+    Traces the gather without compiling or running it. The groups hold
+    different token counts, so a gather that crossed groups would fail to
+    trace or give a rank more than ``dcp * k`` columns. The groups gathered
+    different scores, so the result claims nothing along ``tp``.
+    """
+    k, dcp = 3, 4
+    tokens = [1, 2]  # Per group.
+    frags = [np.zeros((tokens[r // dcp], k), np.float32) for r in range(8)]
+    scores = _per_rank(frags, TP8)
+    with F.lazy():
+        gathered = gather_topk_scores(scores, dcp)
+    assert not gathered.real
+    assert gathered.mesh == TP8
+    assert gathered.placements == (Unknown(),)
+    for r, shard in enumerate(gathered.local_shards):
+        assert shard.shape == [tokens[r // dcp], dcp * k]
 
 
 @pytest.mark.parametrize("dtype", ["float32", "bfloat16"])

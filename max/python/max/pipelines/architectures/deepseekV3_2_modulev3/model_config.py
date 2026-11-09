@@ -137,7 +137,8 @@ def check_replica_layout(
     Data parallelism runs one attention replica per device or, under
     peer-to-peer expert parallelism, tensor-parallel replicas on a
     ``(dp, tp)`` mesh whose experts span every device. A decode context
-    parallel group spans one replica's ``tp`` axis (``dcp == tp``).
+    parallel group is ``dcp`` consecutive ranks of one replica's ``tp``
+    axis, ``dcp`` any divisor of it.
 
     Allreduce EP can't back a ``(dp, tp)`` mesh: each device's MoE output
     is a partial over its own experts (the shared expert added on device 0
@@ -146,8 +147,8 @@ def check_replica_layout(
 
     Raises:
         NotImplementedError: If replicas of several devices run without
-            expert parallelism or with allreduce EP, or the DCP degree is
-            not the attention tensor-parallel degree.
+            expert parallelism or with allreduce EP, or the DCP degree does
+            not divide the attention tensor-parallel degree.
     """
     n_devices = len(runtime.mesh.devices)
     dp = max(1, runtime.data_parallel_degree)
@@ -172,12 +173,11 @@ def check_replica_layout(
         )
     attention_tp = n_devices // dp
     dcp = config.decode_context_parallel_degree
-    if dcp > 1 and dcp != attention_tp:
+    if dcp > 1 and attention_tp % dcp:
         raise NotImplementedError(
-            f"decode_context_parallel_degree={dcp} must equal the attention "
+            f"decode_context_parallel_degree={dcp} must divide the attention "
             f"tensor-parallel degree ({attention_tp}: {n_devices} devices "
-            f"over {dp} replicas); a smaller group needs a (tp / dcp, dcp) "
-            "mesh, which is not supported yet."
+            f"over {dp} replicas), so that its groups tile each replica."
         )
 
 

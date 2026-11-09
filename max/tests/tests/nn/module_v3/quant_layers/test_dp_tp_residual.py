@@ -157,6 +157,10 @@ def test_replica_layout_accepts_p2p_ep_replicas_and_dcp_per_replica() -> None:
     # One replica per device keeps either EP backend.
     _check_layout(REPLICAS * TP, use_allreduce=True)
     _check_layout(1, dcp=REPLICAS * TP, use_allreduce=True)
+    # DCP groups smaller than TP tile it: TP8 x DCP4 and DP2 x TP4 x DCP2.
+    _check_layout(1, dcp=4)
+    _check_layout(1, dcp=2)
+    _check_layout(REPLICAS, dcp=2)
 
 
 def test_replica_layout_refusals() -> None:
@@ -169,8 +173,12 @@ def test_replica_layout_refusals() -> None:
     with pytest.raises(
         NotImplementedError, match=r"attention tensor-parallel degree \(4"
     ):
-        _check_layout(REPLICAS, dcp=2)
+        _check_layout(REPLICAS, dcp=3)
+    with pytest.raises(
+        NotImplementedError, match=r"attention tensor-parallel degree \(4"
+    ):
+        _check_layout(REPLICAS, dcp=REPLICAS * TP)
     with pytest.raises(
         NotImplementedError, match=r"attention tensor-parallel degree \(8"
     ):
-        _check_layout(1, dcp=4)
+        _check_layout(1, dcp=3)

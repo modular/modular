@@ -923,6 +923,7 @@ def _run_bf16_branch[
     q_absorbed: Bool = False,
     latent_output: Bool = False,
     owned_rows: Bool = False,
+    heads: Int = B_HEADS,
 ](
     ctx: DeviceContext,
     seq_lens: List[Int],
@@ -936,7 +937,7 @@ def _run_bf16_branch[
     """Runs `mla_decode_branch_bf16`, as the BF16 `.cp` op does, for one rank.
 
     The BF16 cache starts as `_bf16_cache_pattern`. `q_in` is
-    `[tokens, B_HEADS, B_Q_DEPTH]`, or `[tokens, B_HEADS, Q_DEPTH]` already
+    `[tokens, heads, B_Q_DEPTH]`, or `[tokens, heads, Q_DEPTH]` already
     absorbed with `q_absorbed`. Every token attends over the same `B_TOPK`
     causally visible rows. With `owned_rows`, each token instead attends over
     the rows of `_bf16_owned_selection` this rank owns, compacted to the front
@@ -944,7 +945,7 @@ def _run_bf16_branch[
     length below `B_TOPK` (0 for token 0), and the rank's cache holds each
     cached position's `_bf16_cache_pattern` row at its local slot, so the
     ranks' results merge to a group of one's. Returns the cache as raw 16-bit
-    words, the output (`[tokens, B_HEADS, B_V]`, or `V_DEPTH` wide with
+    words, the output (`[tokens, heads, B_V]`, or `V_DEPTH` wide with
     `latent_output`) and the LSE.
     """
     comptime bf16 = DType.bfloat16
@@ -1030,7 +1031,7 @@ def _run_bf16_branch[
     var len_dev = ctx.enqueue_create_buffer[DType.int32](total)
     ctx.enqueue_copy(len_dev, len_host)
 
-    var q_n = total * B_HEADS * q_depth
+    var q_n = total * heads * q_depth
     if len(q_in) != q_n:
         raise Error("q_in has the wrong size")
     var q_host = ctx.enqueue_create_host_buffer[bf16](q_n)
@@ -1044,13 +1045,13 @@ def _run_bf16_branch[
         kv_host[i] = Scalar[bf16](Float32((i % 61) - 30) * 0.03)
     var kv_dev = ctx.enqueue_create_buffer[bf16](kv_n)
     ctx.enqueue_copy(kv_dev, kv_host)
-    var wuk_n = B_HEADS * V_DEPTH * B_NOPE
+    var wuk_n = heads * V_DEPTH * B_NOPE
     var wuk_host = ctx.enqueue_create_host_buffer[bf16](wuk_n)
     for i in range(wuk_n):
         wuk_host[i] = _bf16_w_uk(i)
     var wuk_dev = ctx.enqueue_create_buffer[bf16](wuk_n)
     ctx.enqueue_copy(wuk_dev, wuk_host)
-    var wuv_n = B_HEADS * B_V * V_DEPTH
+    var wuv_n = heads * B_V * V_DEPTH
     var wuv_host = ctx.enqueue_create_host_buffer[bf16](wuv_n)
     for i in range(wuv_n):
         wuv_host[i] = _bf16_w_uv(i)
@@ -1064,10 +1065,10 @@ def _run_bf16_branch[
     ctx.enqueue_copy(freqs_dev, freqs_host)
     var gamma_dev = ctx.enqueue_create_buffer[bf16](V_DEPTH)
     ctx.enqueue_memset(gamma_dev, Scalar[bf16](1.0))
-    var out_n = total * B_HEADS * out_depth
+    var out_n = total * heads * out_depth
     var out_dev = ctx.enqueue_create_buffer[bf16](out_n)
     ctx.enqueue_memset(out_dev, Scalar[bf16](7.0))
-    var lse_dev = ctx.enqueue_create_buffer[DType.float32](total * B_HEADS)
+    var lse_dev = ctx.enqueue_create_buffer[DType.float32](total * heads)
     ctx.enqueue_memset(lse_dev, Float32(123.0))
     ctx.synchronize()
 
@@ -1104,7 +1105,7 @@ def _run_bf16_branch[
     ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
         return kv_in_tt.load[width=width](Coord(coords))
 
-    var mla_args = MLADispatchScalarArgs[num_heads=B_HEADS, is_fp8_kv=False](
+    var mla_args = MLADispatchScalarArgs[num_heads=heads, is_fp8_kv=False](
         batch_size, cache_len, q_max, ctx
     )
     mla_decode_branch_bf16[
@@ -1119,10 +1120,10 @@ def _run_bf16_branch[
     ](
         TileTensor(
             out_dev.unsafe_ptr(),
-            row_major((total, Idx[B_HEADS], Idx[out_depth])),
+            row_major((total, Idx[heads], Idx[out_depth])),
         ),
         TileTensor(
-            q_dev.unsafe_ptr(), row_major((total, Idx[B_HEADS], Idx[q_depth]))
+            q_dev.unsafe_ptr(), row_major((total, Idx[heads], Idx[q_depth]))
         ),
         TileTensor(ro_dev.unsafe_ptr(), row_major(batch_size + 1)),
         TileTensor(freqs_dev.unsafe_ptr(), row_major((num_keys, Idx[B_ROPE]))),
@@ -1133,11 +1134,11 @@ def _run_bf16_branch[
         Float32(1e-6),
         TileTensor(
             wuk_dev.unsafe_ptr(),
-            row_major((Idx[B_HEADS], Idx[V_DEPTH], Idx[B_NOPE])),
+            row_major((Idx[heads], Idx[V_DEPTH], Idx[B_NOPE])),
         ),
         TileTensor(
             wuv_dev.unsafe_ptr(),
-            row_major((Idx[B_HEADS], Idx[B_V], Idx[V_DEPTH])),
+            row_major((Idx[heads], Idx[B_V], Idx[V_DEPTH])),
         ),
         mla_args.gpu_tile_tensor(),
         kv_input_fn,
@@ -1154,9 +1155,7 @@ def _run_bf16_branch[
     ctx.enqueue_copy(blocks_host, blocks_dev)
     var out_host = ctx.enqueue_create_host_buffer[bf16](out_n)
     ctx.enqueue_copy(out_host, out_dev)
-    var lse_host = ctx.enqueue_create_host_buffer[DType.float32](
-        total * B_HEADS
-    )
+    var lse_host = ctx.enqueue_create_host_buffer[DType.float32](total * heads)
     ctx.enqueue_copy(lse_host, lse_dev)
     ctx.synchronize()
 
@@ -1166,8 +1165,8 @@ def _run_bf16_branch[
     out_out = List[Float32](length=out_n, fill=0)
     for i in range(out_n):
         out_out[i] = out_host[i].cast[DType.float32]()
-    lse_out = List[Float32](length=total * B_HEADS, fill=0)
-    for i in range(total * B_HEADS):
+    lse_out = List[Float32](length=total * heads, fill=0)
+    for i in range(total * heads):
         lse_out[i] = lse_host[i]
 
     _ = blocks_dev^
@@ -1187,9 +1186,11 @@ def _run_bf16_branch[
     _ = mla_args^
 
 
-def _bf16_plain_q(total: Int) -> List[Scalar[DType.bfloat16]]:
-    var q = List[Scalar[DType.bfloat16]](capacity=total * B_HEADS * B_Q_DEPTH)
-    for i in range(total * B_HEADS * B_Q_DEPTH):
+def _bf16_plain_q[
+    heads: Int = B_HEADS
+](total: Int) -> List[Scalar[DType.bfloat16]]:
+    var q = List[Scalar[DType.bfloat16]](capacity=total * heads * B_Q_DEPTH)
+    for i in range(total * heads * B_Q_DEPTH):
         q.append(_bf16_q(i))
     return q^
 
@@ -1255,7 +1256,7 @@ def run_bf16_cp_store[
 
 
 def run_bf16_cp_owned_rows[
-    dcp_size: Int, dcp_interleave: Int
+    dcp_size: Int, dcp_interleave: Int, heads: Int = B_HEADS
 ](ctx: DeviceContext, seq_lens: List[Int], cache_len: Int) raises:
     """Checks the BF16 `.cp` branch on compacted owned rows and empty tokens.
 
@@ -1271,19 +1272,20 @@ def run_bf16_cp_owned_rows[
     """
     print(
         t"bf16_cp_owned_rows: dcp={dcp_size} interleave={dcp_interleave}"
+        t" heads={heads}"
         t" cache_len={cache_len}"
     )
     var total = 0
     for s in seq_lens:
         total += s
-    var q = _bf16_plain_q(total)
+    var q = _bf16_plain_q[heads](total)
     var words = List[UInt16]()
     var ref_out = List[Float32]()
     var ref_lse = List[Float32]()
-    _run_bf16_branch[1, 1, owned_rows=True](
+    _run_bf16_branch[1, 1, owned_rows=True, heads=heads](
         ctx, seq_lens, cache_len, 0, q, words, ref_out, ref_lse
     )
-    var n = total * B_HEADS
+    var n = total * heads
     var merged_m = List[Float64](length=n, fill=min_or_neg_inf[DType.float64]())
     var merged_w = List[Float64](length=n, fill=0)
     var merged_o = List[Float64](length=n * B_V, fill=0)
@@ -1292,9 +1294,9 @@ def run_bf16_cp_owned_rows[
     for r in range(dcp_size):
         var out = List[Float32]()
         var lse = List[Float32]()
-        _run_bf16_branch[dcp_size, dcp_interleave, owned_rows=True](
-            ctx, seq_lens, cache_len, r, q, words, out, lse
-        )
+        _run_bf16_branch[
+            dcp_size, dcp_interleave, owned_rows=True, heads=heads
+        ](ctx, seq_lens, cache_len, r, q, words, out, lse)
         for t in range(total):
             var length = len(
                 _bf16_owned_selection[dcp_size, dcp_interleave](r, t, cache_len)
@@ -1303,8 +1305,8 @@ def run_bf16_cp_owned_rows[
                 empty_rows += 1
             elif length < B_TOPK:
                 short_rows += 1
-            for h in range(B_HEADS):
-                var i = t * B_HEADS + h
+            for h in range(heads):
+                var i = t * heads + h
                 var v = Float64(lse[i])
                 if length == 0:
                     assert_true(
@@ -1334,8 +1336,8 @@ def run_bf16_cp_owned_rows[
     var max_out_err = Float64(0)
     var max_lse_err = Float64(0)
     for t in range(total):
-        for h in range(B_HEADS):
-            var i = t * B_HEADS + h
+        for h in range(heads):
+            var i = t * heads + h
             if t == 0:
                 # The group of one has no rows for token 0 either.
                 assert_true(
@@ -1495,6 +1497,7 @@ def _run_nvfp4_branch[
     dcp_interleave: Int,
     sel_dcp: Int = dcp_size,
     sel_interleave: Int = dcp_interleave,
+    heads: Int = B_HEADS,
 ](
     ctx: DeviceContext,
     seq_lens: List[Int],
@@ -1522,7 +1525,7 @@ def _run_nvfp4_branch[
     (`sel_interleave` positions in turn), so a group of one can attend over
     exactly one rank's share at the positions' own slots. Returns the value
     and scale bytes, the scale lookup table, the output
-    `[tokens, B_HEADS, B_V]` and the LSE.
+    `[tokens, heads, B_V]` and the LSE.
     """
     comptime bf16 = DType.bfloat16
     comptime fp8 = DType.float8_e4m3fn
@@ -1631,7 +1634,7 @@ def _run_nvfp4_branch[
     var len_dev = ctx.enqueue_create_buffer[DType.int32](total)
     ctx.enqueue_copy(len_dev, len_host)
 
-    var q_n = total * B_HEADS * B_Q_DEPTH
+    var q_n = total * heads * B_Q_DEPTH
     if len(q_in) != q_n:
         raise Error("q_in has the wrong size")
     var q_host = ctx.enqueue_create_host_buffer[bf16](q_n)
@@ -1645,13 +1648,13 @@ def _run_nvfp4_branch[
         kv_host[i] = Scalar[bf16](Float32((i % 61) - 30) * 0.03)
     var kv_dev = ctx.enqueue_create_buffer[bf16](kv_n)
     ctx.enqueue_copy(kv_dev, kv_host)
-    var wuk_n = B_HEADS * V_DEPTH * B_NOPE
+    var wuk_n = heads * V_DEPTH * B_NOPE
     var wuk_host = ctx.enqueue_create_host_buffer[bf16](wuk_n)
     for i in range(wuk_n):
         wuk_host[i] = _bf16_w_uk(i)
     var wuk_dev = ctx.enqueue_create_buffer[bf16](wuk_n)
     ctx.enqueue_copy(wuk_dev, wuk_host)
-    var wuv_n = B_HEADS * B_V * V_DEPTH
+    var wuv_n = heads * B_V * V_DEPTH
     var wuv_host = ctx.enqueue_create_host_buffer[bf16](wuv_n)
     for i in range(wuv_n):
         wuv_host[i] = _bf16_w_uv(i)
@@ -1665,10 +1668,10 @@ def _run_nvfp4_branch[
     ctx.enqueue_copy(freqs_dev, freqs_host)
     var gamma_dev = ctx.enqueue_create_buffer[bf16](V_DEPTH)
     ctx.enqueue_memset(gamma_dev, Scalar[bf16](1.0))
-    var out_n = total * B_HEADS * B_V
+    var out_n = total * heads * B_V
     var out_dev = ctx.enqueue_create_buffer[bf16](out_n)
     ctx.enqueue_memset(out_dev, Scalar[bf16](7.0))
-    var lse_dev = ctx.enqueue_create_buffer[DType.float32](total * B_HEADS)
+    var lse_dev = ctx.enqueue_create_buffer[DType.float32](total * heads)
     ctx.enqueue_memset(lse_dev, Float32(123.0))
     ctx.synchronize()
 
@@ -1730,7 +1733,7 @@ def _run_nvfp4_branch[
     ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
         return kv_in_tt.load[width=width](Coord(coords))
 
-    var mla_args = MLADispatchScalarArgs[num_heads=B_HEADS, is_fp8_kv=True](
+    var mla_args = MLADispatchScalarArgs[num_heads=heads, is_fp8_kv=True](
         batch_size, cache_len, q_max, ctx
     )
     mla_decode_branch_bf16[
@@ -1743,11 +1746,11 @@ def _run_nvfp4_branch[
     ](
         TileTensor(
             out_dev.unsafe_ptr(),
-            row_major((total, Idx[B_HEADS], Idx[B_V])),
+            row_major((total, Idx[heads], Idx[B_V])),
         ),
         TileTensor(
             q_dev.unsafe_ptr(),
-            row_major((total, Idx[B_HEADS], Idx[B_Q_DEPTH])),
+            row_major((total, Idx[heads], Idx[B_Q_DEPTH])),
         ),
         TileTensor(ro_dev.unsafe_ptr(), row_major(batch_size + 1)),
         TileTensor(freqs_dev.unsafe_ptr(), row_major((num_keys, Idx[B_ROPE]))),
@@ -1758,11 +1761,11 @@ def _run_nvfp4_branch[
         Float32(1e-6),
         TileTensor(
             wuk_dev.unsafe_ptr(),
-            row_major((Idx[B_HEADS], Idx[V_DEPTH], Idx[B_NOPE])),
+            row_major((Idx[heads], Idx[V_DEPTH], Idx[B_NOPE])),
         ),
         TileTensor(
             wuv_dev.unsafe_ptr(),
-            row_major((Idx[B_HEADS], Idx[B_V], Idx[V_DEPTH])),
+            row_major((Idx[heads], Idx[B_V], Idx[V_DEPTH])),
         ),
         mla_args.gpu_tile_tensor(),
         kv_input_fn,
@@ -1780,9 +1783,7 @@ def _run_nvfp4_branch[
     ctx.enqueue_copy(scales_host, scales_dev)
     var out_host = ctx.enqueue_create_host_buffer[bf16](out_n)
     ctx.enqueue_copy(out_host, out_dev)
-    var lse_host = ctx.enqueue_create_host_buffer[DType.float32](
-        total * B_HEADS
-    )
+    var lse_host = ctx.enqueue_create_host_buffer[DType.float32](total * heads)
     ctx.enqueue_copy(lse_host, lse_dev)
     ctx.synchronize()
 
@@ -1795,8 +1796,8 @@ def _run_nvfp4_branch[
     out_out = List[Float32](length=out_n, fill=0)
     for i in range(out_n):
         out_out[i] = out_host[i].cast[DType.float32]()
-    lse_out = List[Float32](length=total * B_HEADS, fill=0)
-    for i in range(total * B_HEADS):
+    lse_out = List[Float32](length=total * heads, fill=0)
+    for i in range(total * heads):
         lse_out[i] = lse_host[i]
 
     _ = values_dev^
@@ -1941,7 +1942,7 @@ def run_nvfp4_cp_store[
 
 
 def run_nvfp4_cp_owned_rows[
-    dcp_size: Int, dcp_interleave: Int
+    dcp_size: Int, dcp_interleave: Int, heads: Int = B_HEADS
 ](ctx: DeviceContext, seq_lens: List[Int], cache_len: Int) raises:
     """Checks the NVFP4 `.cp` branch on compacted owned value and scale rows.
 
@@ -1958,21 +1959,22 @@ def run_nvfp4_cp_owned_rows[
     """
     print(
         t"nvfp4_cp_owned_rows: dcp={dcp_size} interleave={dcp_interleave}"
+        t" heads={heads}"
         t" cache_len={cache_len}"
     )
     var total = 0
     for s in seq_lens:
         total += s
-    var q = _bf16_plain_q(total)
+    var q = _bf16_plain_q[heads](total)
     var values = List[UInt8]()
     var scales = List[UInt8]()
     var slut = List[Int]()
     var ref_out = List[Float32]()
     var ref_lse = List[Float32]()
-    _run_nvfp4_branch[1, 1](
+    _run_nvfp4_branch[1, 1, heads=heads](
         ctx, seq_lens, cache_len, 0, q, values, scales, slut, ref_out, ref_lse
     )
-    var n = total * B_HEADS
+    var n = total * heads
     var merged_m = List[Float64](length=n, fill=min_or_neg_inf[DType.float64]())
     var merged_w = List[Float64](length=n, fill=0)
     var merged_o = List[Float64](length=n * B_V, fill=0)
@@ -1982,7 +1984,7 @@ def run_nvfp4_cp_owned_rows[
     for r in range(dcp_size):
         var out = List[Float32]()
         var lse = List[Float32]()
-        _run_nvfp4_branch[dcp_size, dcp_interleave](
+        _run_nvfp4_branch[dcp_size, dcp_interleave, heads=heads](
             ctx, seq_lens, cache_len, r, q, values, scales, slut, out, lse
         )
         # The same selected positions, read by a group of one at their own
@@ -1990,7 +1992,11 @@ def run_nvfp4_cp_owned_rows[
         var one_out = List[Float32]()
         var one_lse = List[Float32]()
         _run_nvfp4_branch[
-            1, 1, sel_dcp=dcp_size, sel_interleave=dcp_interleave
+            1,
+            1,
+            sel_dcp=dcp_size,
+            sel_interleave=dcp_interleave,
+            heads=heads,
         ](
             ctx,
             seq_lens,
@@ -2026,8 +2032,8 @@ def run_nvfp4_cp_owned_rows[
                 empty_rows += 1
             elif length < B_TOPK:
                 short_rows += 1
-            for h in range(B_HEADS):
-                var i = t * B_HEADS + h
+            for h in range(heads):
+                var i = t * heads + h
                 var v = Float64(lse[i])
                 if length == 0:
                     assert_true(
@@ -2060,8 +2066,8 @@ def run_nvfp4_cp_owned_rows[
     var max_out_err = Float64(0)
     var max_lse_err = Float64(0)
     for t in range(total):
-        for h in range(B_HEADS):
-            var i = t * B_HEADS + h
+        for h in range(heads):
+            var i = t * heads + h
             if t == 0:
                 assert_true(
                     isinf(ref_lse[i]) and ref_lse[i] < 0, "reference LSE"
@@ -2126,3 +2132,17 @@ def main() raises:
             run_nvfp4_cp_owned_rows[4, 1](ctx, [1, 3, 2], cache_len=101)
             run_nvfp4_cp_owned_rows[8, 1](ctx, [2, 3, 1], cache_len=300)
             run_nvfp4_cp_owned_rows[2, PAGE_SIZE](ctx, [2, 3], cache_len=250)
+            # A DCP group smaller than TP attends its share of the heads:
+            # TP8 x DCP4 runs 32 of GLM's 64 per device, TP8 x DCP2 16.
+            run_bf16_cp_owned_rows[4, 1, heads=32](
+                ctx, [1, 3, 2], cache_len=101
+            )
+            run_bf16_cp_owned_rows[2, PAGE_SIZE, heads=16](
+                ctx, [2, 3], cache_len=250
+            )
+            run_nvfp4_cp_owned_rows[4, 1, heads=32](
+                ctx, [2, 3, 1], cache_len=300
+            )
+            run_nvfp4_cp_owned_rows[2, PAGE_SIZE, heads=16](
+                ctx, [2, 3], cache_len=250
+            )

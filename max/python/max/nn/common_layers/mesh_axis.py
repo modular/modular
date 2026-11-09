@@ -36,17 +36,26 @@ DP = "dp"
 #: Mesh axis name for expert parallelism.
 EP = "ep"
 
+#: Mesh axis name for decode context parallelism: the innermost part of the
+#: ``tp`` axis in a mesh's DCP view
+#: (:func:`max.nn.common_layers.context_parallel.dcp_view`).
+DCP = "dcp"
+
 
 def dcp_axis(mesh: DeviceMesh) -> int:
     """Returns the index of the mesh axis a DCP group spans.
 
     Decode context parallelism (DCP, see
-    :mod:`max.nn.common_layers.context_parallel`) spans the ``tp`` axis, or
-    the only axis of a one-axis mesh.
+    :mod:`max.nn.common_layers.context_parallel`) spans the ``dcp`` axis of
+    a mesh's DCP view. On a mesh without one it spans the ``tp`` axis, or
+    the only axis of a one-axis mesh, of which a DCP group is a run of
+    consecutive devices.
 
     Raises:
         NotImplementedError: If a mesh of several axes has no ``tp`` axis.
     """
+    if DCP in mesh.axis_names:
+        return mesh.axis_names.index(DCP)
     if TP in mesh.axis_names:
         return mesh.axis_names.index(TP)
     if mesh.ndim == 1:
@@ -56,4 +65,4 @@ def dcp_axis(mesh: DeviceMesh) -> int:
     )
 
 
-__all__ = ["DP", "EP", "TP", "dcp_axis"]
+__all__ = ["DCP", "DP", "EP", "TP", "dcp_axis"]
