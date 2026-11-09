@@ -254,12 +254,16 @@ trait Iterator(Deinitable, Movable):
         try:
             while True:
                 _ = self.__next__()
-                if n == Int.MAX:
-                    abort("Iterator.count: overflow encountered")
-                n += 1
+                n = _count_increment(n)
         except StopIteration:
             pass
         return n
+
+
+def _count_increment(n: Int) -> Int:
+    if n == Int.MAX:
+        abort("Iterator.count: overflow encountered")
+    return n + 1
 
 
 @inline(.always)
