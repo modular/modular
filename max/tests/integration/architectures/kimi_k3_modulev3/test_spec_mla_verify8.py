@@ -598,13 +598,14 @@ def test_verify8_fold_arm_matches_stepwise() -> None:
             _HEADS_FOLD_ARM, params, _random_weights(_HEADS_FOLD_ARM)
         )
         hidden_rows = _step_input()
+        # One healthy pool serves the healthy, stepwise and truncated runs:
+        # every run stores its own rows before attending, so sharing the
+        # pool's pages and lookup table changes nothing but the rebuild
+        # cost.
+        healthy_pool = _healthy_pool(params, device)
 
-        healthy = _verify_once(
-            layer, _healthy_pool(params, device), hidden_rows, device
-        )
-        stepwise = _stepwise(
-            layer, _healthy_pool(params, device), hidden_rows, device
-        )
+        healthy = _verify_once(layer, healthy_pool, hidden_rows, device)
+        stepwise = _stepwise(layer, healthy_pool, hidden_rows, device)
         sabotaged = _verify_once(
             layer,
             _decode_assumed_pool(params, device),
@@ -613,7 +614,7 @@ def test_verify8_fold_arm_matches_stepwise() -> None:
         )
         truncated = _verify_once(
             layer,
-            _healthy_pool(params, device),
+            healthy_pool,
             hidden_rows,
             device,
             buffer_size=_TRUE_PADDED_WINDOW - _PAGE_SIZE,
@@ -670,13 +671,10 @@ def test_verify8_prefill_arm_matches_stepwise() -> None:
             _HEADS_PREFILL_ARM, params, _random_weights(_HEADS_PREFILL_ARM)
         )
         hidden_rows = _step_input()
+        healthy_pool = _healthy_pool(params, device)
 
-        healthy = _verify_once(
-            layer, _healthy_pool(params, device), hidden_rows, device
-        )
-        stepwise = _stepwise(
-            layer, _healthy_pool(params, device), hidden_rows, device
-        )
+        healthy = _verify_once(layer, healthy_pool, hidden_rows, device)
+        stepwise = _stepwise(layer, healthy_pool, hidden_rows, device)
 
     err = _parity_report("prefill arm verify8 vs stepwise", healthy, stepwise)
     assert err < _TOL_PREFILL_ARM, (
@@ -691,7 +689,7 @@ def test_verify8_prefill_arm_matches_stepwise() -> None:
     with default_device(device):
         short = _verify_once(
             layer,
-            _healthy_pool(params, device),
+            healthy_pool,
             hidden_rows,
             device,
             buffer_size=_TRUE_PADDED_WINDOW - _PAGE_SIZE,
