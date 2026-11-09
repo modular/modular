@@ -91,7 +91,10 @@ def _wire_precompile(
         pytest_args: The arguments the consumer passes to pytest.
         deps: The consumer's deps.
         data: The consumer's data.
-        env: The consumer's env.
+        env: The consumer's env, including whether it reads the shared
+            HuggingFace cache. A test that resolves a model by name has to
+            find it in the same cache while recording, or the record run
+            looks in an empty one.
         mojo_deps: The consumer's `mojo_deps`.
         imports: The consumer's import paths.
         gpu_constraints: The consumer's GPU requirements, which say which arch
@@ -336,9 +339,9 @@ def modular_py_test(
     default_exec_properties = get_default_exec_properties(tags, gpu_constraints)
     extra_env |= get_default_test_env(exec_properties)
 
-    if "requires-network" in tags:
-        # Assume networking is used for huggingface and add the cache
-        extra_env |= {"HF_ESCAPES_SANDBOX": "1"}
+    # Assume networking is used for huggingface and add the cache
+    hf_env = {"HF_ESCAPES_SANDBOX": "1"} if "requires-network" in tags else {}
+    extra_env |= hf_env
 
     test_srcs = [src for src in srcs if src.split("/")[-1].startswith("test_")]
     non_test_srcs = [src for src in srcs if not src.split("/")[-1].startswith("test_")]
@@ -427,7 +430,7 @@ def modular_py_test(
                     pytest_args = final_args,
                     deps = deps,
                     data = data,
-                    env = env,
+                    env = hf_env | env,
                     mojo_deps = mojo_deps,
                     imports = imports,
                     gpu_constraints = gpu_constraints,
@@ -483,7 +486,7 @@ def modular_py_test(
                 pytest_args = final_args,
                 deps = deps,
                 data = data,
-                env = env,
+                env = hf_env | env,
                 mojo_deps = mojo_deps,
                 imports = imports,
                 gpu_constraints = gpu_constraints,
