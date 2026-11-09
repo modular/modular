@@ -13,9 +13,12 @@ description: >-
      (NoneType is a struct), builtin/builtin_slice.mojo (Slice fields),
      collections/string/string_span.mojo (StaticString, StringSpan),
      memory/span.mojo (non-owning view), collections/optional.mojo
-     (value() aborts on empty), collections/array.mojo,
-     utils/variant.mojo, os/os.mojo (abort -> Never). Set and Variant are
-     NOT in the prelude. -->
+     (__bool__ is presence, or_else(), .Some/.None cases),
+     collections/array.mojo, utils/variant.mojo (isa), os/os.mojo
+     (abort -> Never). Set and Variant are NOT in the prelude.
+     Compiler verified: 2026-11-09, repo build at 8b35b569
+       (Optional and Variant sections only)
+     Last updated: 2026-11-09 (Optional uses pattern matching) -->
 
 Mojo is statically typed. Every value has a type that is known at compile
 time. This page catalogs built-in types that are available in every
@@ -118,37 +121,60 @@ Mojo includes a flexible set of collection types.
 
 ### Optional
 
-An `Optional[T]` holds a `T` or nothing. It's truthy when a value is
-present:
+An `Optional[T]` holds a value of type `T` or nothing. It's truthy when
+a value is present, even if that value is zero:
+
+```mojo
+from std.testing import assert_true, assert_false
+
+def main() raises:
+    var maybe: Optional[Int] = 5
+    assert_true(maybe)   # passes
+    maybe = 0
+    assert_true(maybe)   # passes
+    maybe = None
+    assert_false(maybe)  # passes
+```
+
+To use a default when an `Optional` is empty, call `or_else()`:
+
+```mojo
+var maybe: Optional[Int] = None
+print(maybe.or_else(0))  # 0
+```
+
+Pattern matching lets you safely check for a value and unwrap it in one
+step. Use `if case` when you only need the value, or `match` to handle both
+cases:
 
 ```mojo
 var maybe: Optional[Int] = 5
-if maybe:
-    print(maybe.value())     # 5
-```
 
-`value()` aborts on empty `Optional`s. Guard it with a truthiness check, or
-call `or_else()` to supply a default:
+if case .Some(value) = maybe:
+    print(value)  # 5
 
-```mojo
-var empty: Optional[Int] = None
-# empty.value()              # aborts: the Optional is empty
-print(empty.or_else(0))      # 0
+match maybe:
+    case .Some(value):
+        print(value)  # 5
+    case .None:
+        print("maybe doesn't have a value")  # Or provide a default
 ```
 
 ### Variant
 
 A `Variant` holds one value from a fixed set of types, tracked at
-runtime. Test the active type with `isa[T]()`, and read it by
-indexing with that type:
+runtime. Use `isa[T]()` to check the active type, and index with that
+type to access the value:
 
 ```mojo
 from std.utils import Variant
 
 var v = Variant[Int, String](5)
-print(v[Int])                # 5
+print(v.isa[Int]())  # True
+print(v[Int])        # 5
+
 v.set[String]("text")
-print(v[String])             # text
+print(v[String])     # text
 ```
 
 ## Memory types

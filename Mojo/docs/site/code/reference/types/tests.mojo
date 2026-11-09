@@ -20,7 +20,7 @@
 #     pages and have no standalone runnable code.
 from std.collections import Set
 from std.os import abort
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_false, assert_true
 from std.utils import Variant
 
 
@@ -47,16 +47,42 @@ def test_string_lengths() raises:
 # --- Collection types: Optional ---
 
 
-def test_optional() raises:
+def test_optional_truthiness() raises:
     var maybe: Optional[Int] = 5
-    var present = False
-    if maybe:
-        present = True
-    assert_true(present)
-    assert_equal(maybe, 5)
+    assert_true(maybe)
+    maybe = 0
+    assert_true(maybe)  # truthy even when the value is zero
+    maybe = None
+    assert_false(maybe)
 
-    var empty: Optional[Int] = None
-    assert_equal(empty.or_else(0), 0)
+
+def test_optional_or_else() raises:
+    var maybe: Optional[Int] = None
+    assert_equal(maybe.or_else(0), 0)
+
+
+def test_optional_pattern_matching() raises:
+    var maybe: Optional[Int] = 5
+    if case .Some(value) = maybe:
+        assert_equal(value, 5)
+    else:
+        raise Error("if case should match a present value")
+
+    var label: String
+    match maybe:
+        case .Some(value):
+            label = String(value)
+        case .None:
+            label = "none"
+    assert_equal(label, "5")
+
+    maybe = None
+    match maybe:
+        case .Some(value):
+            label = String(value)
+        case .None:
+            label = "none"
+    assert_equal(label, "none")
 
 
 # --- Collection types: Variant ---
@@ -64,6 +90,7 @@ def test_optional() raises:
 
 def test_variant() raises:
     var v = Variant[Int, String](5)
+    assert_true(v.isa[Int]())
     assert_equal(v[Int], 5)
     v.set[String]("text")
     assert_equal(v[String], "text")
@@ -140,7 +167,9 @@ def test_slice_views() raises:
 def main() raises:
     test_set_display_and_type()
     test_string_lengths()
-    test_optional()
+    test_optional_truthiness()
+    test_optional_or_else()
+    test_optional_pattern_matching()
     test_variant()
     test_bool()
     test_error_raises()
