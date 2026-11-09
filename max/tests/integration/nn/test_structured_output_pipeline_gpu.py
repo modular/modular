@@ -91,24 +91,6 @@ def test_structured_output_pipeline_e2e() -> None:
     compiled = backend._compiler.compile_regex("ab")
     matcher = XgrammarMatcher(GrammarMatcher(compiled))
 
-    # Pinned host buffers for the cross-device transfers. Backed by
-    # `Usage.STAGING` (page-locked host memory tied to the GPU)
-    # so D2H/H2D copies can be properly asynchronous and `to_numpy()`
-    # exposes a zero-copy host view.
-    token_pinned = Buffer(
-        dtype=DType.int64, shape=[1], device=accelerator, usage=Usage.STAGING
-    )
-    mask_pinned = Buffer(
-        dtype=DType.float32,
-        shape=[_VOCAB_SIZE],
-        device=accelerator,
-        usage=Usage.STAGING,
-    )
-    token_pinned_view = token_pinned.to_numpy()
-    mask_pinned_view = mask_pinned.to_numpy()
-    token_pinned_view[0] = -1
-    mask_pinned_view[:] = -1.0
-
     # Host callback: read the just-arrived D2H token, advance the FSM,
     # convert the bitmask into an additive logits mask (0.0 allowed,
     # -inf forbidden), and write it into mask_pinned in place.
@@ -183,6 +165,24 @@ def test_structured_output_pipeline_e2e() -> None:
 
     session = InferenceSession(devices=[accelerator, CPU()])
     model = session.load(graph)
+
+    # Pinned host buffers for the cross-device transfers. Backed by
+    # `Usage.STAGING` (page-locked host memory tied to the GPU)
+    # so D2H/H2D copies can be properly asynchronous and `to_numpy()`
+    # exposes a zero-copy host view.
+    token_pinned = Buffer(
+        dtype=DType.int64, shape=[1], device=accelerator, usage=Usage.STAGING
+    )
+    mask_pinned = Buffer(
+        dtype=DType.float32,
+        shape=[_VOCAB_SIZE],
+        device=accelerator,
+        usage=Usage.STAGING,
+    )
+    token_pinned_view = token_pinned.to_numpy()
+    mask_pinned_view = mask_pinned.to_numpy()
+    token_pinned_view[0] = -1
+    mask_pinned_view[:] = -1.0
 
     # Stage the GPU mask buffer (zero-init; overwritten by H2D) and the
     # host_func payload buffer.

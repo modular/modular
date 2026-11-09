@@ -79,6 +79,11 @@ def test_wait_host_value_releases_on_callback_store(
             "runtime.wait_host_value is only supported on CUDA/HIP devices"
         )
 
+    session = InferenceSession(devices=[accelerator])
+    model = session.load(
+        _build_launch_then_wait_graph(DeviceRef.from_device(accelerator))
+    )
+
     flag = CompletionFlag(accelerator)
 
     called: list[int] = []
@@ -101,11 +106,6 @@ def test_wait_host_value_releases_on_callback_store(
         called.append(1)
 
     trampoline_ptr, user_data_ptr = __unsafe_pack_py_host_func(cb)
-
-    session = InferenceSession(devices=[accelerator])
-    model = session.load(
-        _build_launch_then_wait_graph(DeviceRef.from_device(accelerator))
-    )
 
     kickoff_payload = Buffer(shape=[2], dtype=DType.int64)
     kickoff_payload[0] = trampoline_ptr
@@ -140,9 +140,6 @@ def test_wait_host_value_passes_when_flag_already_set(
             "runtime.wait_host_value is only supported on CUDA/HIP devices"
         )
 
-    flag = CompletionFlag(accelerator)
-    flag.signal(1)
-
     with Graph(
         "wait_only",
         input_types=[BufferType(DType.int64, [2], device=DeviceRef.CPU())],
@@ -155,6 +152,9 @@ def test_wait_host_value_passes_when_flag_already_set(
 
     session = InferenceSession(devices=[accelerator])
     model = session.load(graph)
+
+    flag = CompletionFlag(accelerator)
+    flag.signal(1)
 
     wait_payload_buf = Buffer(shape=[2], dtype=DType.int64)
     wait_payload_buf[0] = flag._unsafe_ptr

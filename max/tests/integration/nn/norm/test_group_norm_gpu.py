@@ -16,27 +16,25 @@ from __future__ import annotations
 import pytest
 import torch
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.legacy import GroupNorm
 
 
-def max_group_norm(  # noqa: ANN201
+def load_max_group_norm(
     gpu_session: InferenceSession,
-    input_tensor: torch.Tensor,
+    shape: torch.Size,
     num_groups: int,
     num_channels: int,
     eps: float = 1e-5,
     affine: bool = False,
     weight: torch.Tensor | None = None,
     bias: torch.Tensor | None = None,
-):
+) -> Model:
     device_ref = DeviceRef.GPU()
     with Graph(
         "group_norm",
-        input_types=(
-            TensorType(DType.float32, input_tensor.shape, device_ref),
-        ),
+        input_types=(TensorType(DType.float32, shape, device_ref),),
     ) as graph:
         layer = GroupNorm(num_groups, num_channels, eps, affine)
         output = layer(graph.inputs[0].tensor)
@@ -44,11 +42,8 @@ def max_group_norm(  # noqa: ANN201
     if affine:
         assert weight is not None and bias is not None
         state_dict = {"weight": weight, "bias": bias}
-        model = gpu_session.load(graph, weights_registry=state_dict)
-    else:
-        model = gpu_session.load(graph)
-    model_out = model(input_tensor)
-    return torch.from_dlpack(model_out[0])
+        return gpu_session.load(graph, weights_registry=state_dict)
+    return gpu_session.load(graph)
 
 
 def torch_group_norm(
@@ -97,16 +92,24 @@ def test_group_norm(
     torch.manual_seed(42)
 
     # Create input tensor with shape (batch_size, channels, sequence_length)
-    input_tensor = torch.randn(
-        (5, num_channels, 15),
-        dtype=torch.float32,
-    ).to("cuda")
+    input_tensor = torch.randn((5, num_channels, 15), dtype=torch.float32)
 
     # Create weight and bias if using affine transform
     weight = torch.randn(num_channels) if affine else None
     bias = torch.randn(num_channels) if affine else None
 
-    # Run both implementations
+    model = load_max_group_norm(
+        gpu_session,
+        input_tensor.shape,
+        num_groups=num_groups,
+        num_channels=num_channels,
+        eps=1e-5,
+        affine=affine,
+        weight=weight,
+        bias=bias,
+    )
+
+    input_tensor = input_tensor.to("cuda")
     torch_out = torch_group_norm(
         input_tensor,
         num_groups=num_groups,
@@ -116,17 +119,7 @@ def test_group_norm(
         weight=weight,
         bias=bias,
     )
-
-    max_out = max_group_norm(
-        gpu_session,
-        input_tensor,
-        num_groups=num_groups,
-        num_channels=num_channels,
-        eps=1e-5,
-        affine=affine,
-        weight=weight,
-        bias=bias,
-    )
+    max_out = torch.from_dlpack(model(input_tensor)[0])
 
     torch.testing.assert_close(
         torch_out,

@@ -178,19 +178,6 @@ def _execute(model: Model, hidden_states: torch.Tensor) -> torch.Tensor:
     return from_dlpack(result[0]).clone()
 
 
-def _run_moe(
-    weights: dict[str, WeightData | torch.Tensor],
-    hidden_states: torch.Tensor,
-    *,
-    fused_swiglu_layout_without_ep: bool,
-) -> torch.Tensor:
-    model = _compile_moe(
-        weights,
-        fused_swiglu_layout_without_ep=fused_swiglu_layout_without_ep,
-    )
-    return _execute(model, hidden_states)
-
-
 @pytest.fixture(scope="module")
 def swigluoai_models() -> tuple[Model, Model, Model]:
     torch.manual_seed(17)
@@ -260,14 +247,13 @@ def test_moe_nvfp4_without_row_bound_accepts_long_prefill(
 def test_moe_nvfp4_single_gpu() -> None:
     """Verify single-GPU NVFP4 MoEQuantized builds and produces finite output."""
     torch.manual_seed(42)
+    model = _compile_moe(
+        _random_weights(), fused_swiglu_layout_without_ep=False
+    )
     hidden_states = torch.randn(
         SEQ_LEN, HIDDEN_DIM, dtype=torch.bfloat16, device="cuda"
     )
-    output_tensor = _run_moe(
-        _random_weights(),
-        hidden_states,
-        fused_swiglu_layout_without_ep=False,
-    )
+    output_tensor = _execute(model, hidden_states)
 
     assert output_tensor.shape == (SEQ_LEN, HIDDEN_DIM)
     assert torch.all(torch.isfinite(output_tensor))
@@ -282,15 +268,13 @@ def test_moe_nvfp4_fused_swiglu_layout_matches_chain() -> None:
     """
     torch.manual_seed(7)
     weights = _random_weights()
+    chain_model = _compile_moe(weights, fused_swiglu_layout_without_ep=False)
+    fused_model = _compile_moe(weights, fused_swiglu_layout_without_ep=True)
     hidden_states = torch.randn(
         SEQ_LEN, HIDDEN_DIM, dtype=torch.bfloat16, device="cuda"
     )
-    chain = _run_moe(
-        weights, hidden_states, fused_swiglu_layout_without_ep=False
-    )
-    fused = _run_moe(
-        weights, hidden_states, fused_swiglu_layout_without_ep=True
-    )
+    chain = _execute(chain_model, hidden_states)
+    fused = _execute(fused_model, hidden_states)
 
     assert torch.all(torch.isfinite(fused))
     cosine = torch.nn.functional.cosine_similarity(

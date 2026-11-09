@@ -952,6 +952,7 @@ modular_py_test(
     # generic Mojo via `foreach_fusion_tile` with no NVIDIA-specific branch).
     # Widen this once the path is validated on other targets.
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",

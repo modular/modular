@@ -42,11 +42,7 @@ MAX_SEQ_LEN = 1152
 @pytest.fixture
 def input_tensor(text_config: Gemma3TextConfig) -> torch.Tensor:
     torch.manual_seed(42)
-    return (
-        torch.randn(1, 11, text_config.hidden_size)
-        .to(torch.bfloat16)
-        .to("cuda")
-    )
+    return torch.randn(1, 11, text_config.hidden_size).to(torch.bfloat16)
 
 
 def _get_position_embeddings(
@@ -109,6 +105,7 @@ def generate_torch_outputs(
     `layer_idx % 6 == 5`, the global `RoPE` is used. Otherwise, the local `RoPE`
     is used.
     """
+    input_tensor = input_tensor.to("cuda")
     layer = (
         Gemma3Attention(
             text_config,
@@ -149,7 +146,6 @@ def generate_max_outputs(
     is used.
     """
     is_gpu = isinstance(device, Accelerator)
-    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_seq_len = input_tensor.shape[1]
 
@@ -205,14 +201,6 @@ def generate_max_outputs(
     )
     attention.load_state_dict(state_dict)
 
-    # Set up blank KV cache.
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # Construct input types.
     input_type = TensorType(
         dtype,
@@ -248,6 +236,16 @@ def generate_max_outputs(
 
     compiled = session.load(graph, weights_registry=attention.state_dict())
 
+    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
+
+    # Set up blank KV cache.
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
+
     # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0])
@@ -271,10 +269,6 @@ def test_attention_local_rope(
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
 ) -> None:
-    torch_output = generate_torch_outputs(
-        text_config, input_tensor, attention_weights, layer_idx=0
-    )
-
     max_output = generate_max_outputs(
         text_config,
         input_tensor,
@@ -282,6 +276,10 @@ def test_attention_local_rope(
         DType.bfloat16,
         Accelerator(),
         layer_idx=0,
+    )
+
+    torch_output = generate_torch_outputs(
+        text_config, input_tensor, attention_weights, layer_idx=0
     )
 
     torch.testing.assert_close(
@@ -297,19 +295,19 @@ def test_attention_global_rope(
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
 ) -> None:
-    torch_output = generate_torch_outputs(
-        text_config,
-        input_tensor,
-        attention_weights,
-        layer_idx=5,
-    )
-
     max_output = generate_max_outputs(
         text_config,
         input_tensor,
         attention_weights,
         DType.bfloat16,
         Accelerator(),
+        layer_idx=5,
+    )
+
+    torch_output = generate_torch_outputs(
+        text_config,
+        input_tensor,
+        attention_weights,
         layer_idx=5,
     )
 

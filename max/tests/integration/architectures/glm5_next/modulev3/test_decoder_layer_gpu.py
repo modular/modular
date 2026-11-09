@@ -27,6 +27,7 @@ from contextlib import contextmanager, nullcontext
 
 import pytest
 import torch
+from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -117,7 +118,9 @@ def _input_type(mesh: DeviceMesh) -> TensorLayout:
 
 
 def _layer(fn_dtype: DType, mesh: DeviceMesh) -> _Layer1:
-    with default_device(mesh), default_dtype(DType.bfloat16):
+    # Every test traces or compiles the layer with its own weights, so its
+    # initial parameters never need to exist on the device.
+    with F.lazy(), default_device(mesh), default_dtype(DType.bfloat16):
         return _Layer1(_config(fn_dtype))
 
 
