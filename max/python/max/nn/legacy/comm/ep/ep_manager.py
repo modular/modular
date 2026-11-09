@@ -1432,8 +1432,8 @@ class EPCommInitializer:
     """List of atomic counters used for synchronization."""
 
     expert_load: list[Buffer]
-    """Per-device EPLB expert-load tallies, zeroed at construction and never
-    reset. Empty unless ``config.eplb_count_expert_load`` is set."""
+    """Per-device EPLB expert-load tallies, zeroed by :meth:`run_init` and
+    never reset. Empty unless ``config.eplb_count_expert_load`` is set."""
 
     fused_moe_workspace: tuple[int, int] | None = None
     """Bytes per device and token block of the one-launch fused MoE workspace
@@ -1458,27 +1458,6 @@ class EPCommInitializer:
             config.moe_dim,
         )
 
-        # Create atomic counters for each GPU in each buffer group
-        self.atomic_counters = [
-            Buffer(
-                DType.int32,
-                [self.atomic_counter_size],
-                device=Accelerator(i % self.config.n_gpus_per_node),
-            )
-            for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
-        ]
-
-        self.expert_load = []
-        if config.eplb_count_expert_load:
-            n_ranks = config.n_gpus_per_node * config.n_nodes
-            zeros = np.zeros(
-                (config.num_moe_layers, config.n_experts // n_ranks), np.uint64
-            )
-            self.expert_load = [
-                Buffer.from_numpy(zeros).to(Accelerator(i))
-                for i in range(config.n_gpus_per_node)
-            ]
-
     def ep_init(self, session: InferenceSession) -> None:
         """Initialize Expert Parallelism communication infrastructure.
 
@@ -1496,14 +1475,13 @@ class EPCommInitializer:
     def init_module(self) -> EPInit:
         """Prepares this process for EP initialization.
 
-        Enables peer access between the local GPUs and sets the NVSHMEM
-        environment, so call it before compiling the module it returns. Then
-        run the compiled graph with :meth:`run_init`.
+        Sets the NVSHMEM environment and returns the module to compile. It
+        touches no device, so the module compiles under virtual devices too;
+        :meth:`run_init` does the device work.
 
         Returns:
             The module whose graph sets up SHMEM and allocates the EP buffers.
         """
-        enable_all_peer_access()
         logger.info("Initializing EP communication infrastructure...")
         logger.info(
             f"Estimated EP memory usage per device: {to_human_readable_bytes(self.config.estimate_memory_usage())}"
@@ -1537,21 +1515,45 @@ class EPCommInitializer:
         self._fused_moe = _ep_fused_moe_requested()
         self.config.fused_moe_ready = False
         self.fused_moe_workspace = None
-        return EPInit(
-            self.config, self.atomic_counters[0].shape, self._fused_moe
-        )
+        return EPInit(self.config, [self.atomic_counter_size], self._fused_moe)
 
     def run_init(self, init_model: Model) -> None:
         """Runs the compiled EP initialization graph.
 
-        Keeps the device pointers to the SHMEM buffers it allocates, and sets
-        the config's node ID.
+        Allocates the atomic counters and the expert-load tallies, enables
+        peer access between the local GPUs, and runs the graph. Keeps the
+        device pointers to the SHMEM buffers it allocates, and sets the
+        config's node ID.
 
         Args:
             init_model: The graph of :meth:`init_module`, compiled and
                 initialized.
         """
         self.init_model = init_model
+        config = self.config
+
+        # Create atomic counters for each GPU in each buffer group
+        self.atomic_counters = [
+            Buffer(
+                DType.int32,
+                [self.atomic_counter_size],
+                device=Accelerator(i % config.n_gpus_per_node),
+            )
+            for i in range(NUM_GROUPS * config.n_gpus_per_node)
+        ]
+
+        self.expert_load = []
+        if config.eplb_count_expert_load:
+            n_ranks = config.n_gpus_per_node * config.n_nodes
+            zeros = np.zeros(
+                (config.num_moe_layers, config.n_experts // n_ranks), np.uint64
+            )
+            self.expert_load = [
+                Buffer.from_numpy(zeros).to(Accelerator(i))
+                for i in range(config.n_gpus_per_node)
+            ]
+
+        enable_all_peer_access()
 
         # Execute the graph to initialize SHMEM and get device pointers
         all_outputs = self.init_model.execute(*self.atomic_counters)

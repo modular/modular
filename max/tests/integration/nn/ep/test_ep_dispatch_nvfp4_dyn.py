@@ -260,7 +260,6 @@ def test_ep_dispatch_nvfp4_dyn_global_scales(
         nvfp4_dyn_global_scales=True,
     )
     ep_comm_init = EPCommInitializer(config)
-    ep_comm_init.ep_init(session)
     ep_batch_manager = EPBatchManager(config)
 
     torch.manual_seed(0)
@@ -312,6 +311,7 @@ def test_ep_dispatch_nvfp4_dyn_global_scales(
         graph.output(outputs)
 
     compiled = session.load(graph)
+    ep_comm_init.ep_init(session)
     results = compiled.execute(
         *[Buffer.from_dlpack(x).to(devices[i]) for i, x in enumerate(inputs)],
         *[
