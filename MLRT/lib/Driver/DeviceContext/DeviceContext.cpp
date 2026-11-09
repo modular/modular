@@ -288,6 +288,10 @@ ErrorOrSuccess Device::vmmMapAndSetAccess(void *, size_t, uint64_t) {
 ErrorOrSuccess Device::vmmUnmap(void *, size_t) {
   return vmmUnsupportedError();
 }
+ErrorOrSuccess Device::vmmMap(void *va, size_t byteSize, uint64_t handle) {
+  return vmmMapAndSetAccess(va, byteSize, handle);
+}
+ErrorOrSuccess Device::vmmSetAccess(void *, size_t) { return success(); }
 
 MODULAR_CXX_EXPORT size_t Device::allocationAlignment() const {
   return memoryManager().allocationAlignment();

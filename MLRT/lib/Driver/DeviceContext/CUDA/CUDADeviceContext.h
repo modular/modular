@@ -112,6 +112,8 @@ public:
   ErrorOrSuccess vmmMapAndSetAccess(void *va, size_t byteSize,
                                     uint64_t handle) override;
   ErrorOrSuccess vmmUnmap(void *va, size_t byteSize) override;
+  ErrorOrSuccess vmmMap(void *va, size_t byteSize, uint64_t handle) override;
+  ErrorOrSuccess vmmSetAccess(void *va, size_t byteSize) override;
 
   ErrorOr<Device::MemInfo> getMemoryInfo() const override;
   ErrorOr<AllocationRange> allocationRange(void *ptr) const override;

@@ -289,6 +289,12 @@ public:
                                             uint64_t handle);
   // Unmap [va, va+byteSize); the handle remains valid for reuse.
   virtual ErrorOrSuccess vmmUnmap(void *va, size_t byteSize);
+  // Map `handle` into [va, va+byteSize), leaving access to a later
+  // vmmSetAccess over a range that may span several mappings, so a caller
+  // mapping many granules grants access once. The defaults fall back to
+  // vmmMapAndSetAccess and a no-op, for backends that do not split the two.
+  virtual ErrorOrSuccess vmmMap(void *va, size_t byteSize, uint64_t handle);
+  virtual ErrorOrSuccess vmmSetAccess(void *va, size_t byteSize);
 
   virtual ErrorOr<Device::MemInfo> getMemoryInfo() const = 0;
 

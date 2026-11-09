@@ -367,4 +367,89 @@ TEST_F(MemoryManagerVMMTest, NoDeferredViewFreeWhileBaseCaptures) {
   cache->clear();
 }
 
+// Stream-ordered reuse (MAX-1123). A stream frees a block it cannot reuse for a
+// larger request, and the root cannot cover that request alone. The miss
+// remaps the freed block's pages into a fresh range together with only the
+// pages the root has to add, without a host synchronize: the free is gated
+// behind a host flag the test holds shut, so a synchronize on the stream (or
+// a host wait for the free's event) would never return, and the allocation
+// returning while the flag is still shut is the proof. The old range retires
+// on the regular drain once the stream has run past it.
+TEST_F(MemoryManagerVMMTest, LargerRequestRemapsTheStreamsOwnFreePages) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const size_t kPage = 256 * kMiB; // the target's VMM page
+  const size_t kSmall = 2 * kPage; // A
+  const size_t kLarge = 3 * kPage; // B > A; A + the budget's rest covers it
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kPage);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(CompletionFlagRef, gate, ctx->allocateCompletionFlag());
+  gate->reset();
+
+  {
+    MemoryManagerFreeList child(ctx.getPointer(), *cache, cache->freeList(),
+                                /*disableFlush=*/false, /*label=*/"remap");
+    ASSIGN_NO_ERR(void *, small, child.allocate(kSmall, mode));
+    EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kSmall);
+
+    // Shut the gate, then free: the free's event is ordered behind the gate,
+    // so A stays on this stream's free list and never reaches the root.
+    EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*gate, 1));
+    EXPECT_NO_ERR(child.free(small));
+
+    // Only 2 pages are left to create, so B needs A's 2 pages. It must come
+    // back with the gate still shut.
+    ASSIGN_NO_ERR(void *, large, child.allocate(kLarge, mode));
+    EXPECT_NE(large, nullptr);
+    EXPECT_EQ(cache->streamRemaps(), 1u);
+    EXPECT_EQ(cache->streamRemapReusedBytes(), kSmall);
+    // A's pages were reused: B added exactly B - A of new physical.
+    EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kLarge);
+    EXPECT_EQ(cache->retiringRangesForTesting(), 1u);
+
+    // The old range waits for the stream, which is still behind the gate.
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+    EXPECT_EQ(cache->retiringRangesForTesting(), 1u);
+
+    gate->signal(1);
+    EXPECT_NO_ERR(writeAndVerify(*ctx, large, kLarge, kPage));
+    // The stream ran past the gate: the drain retires the old range, and the
+    // pages stay mapped under B, so nothing is created or lost.
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+    EXPECT_EQ(cache->retiringRangesForTesting(), 0u);
+    EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kLarge);
+    EXPECT_NO_ERR(writeAndVerify(*ctx, large, kLarge, kPage));
+
+    EXPECT_NO_ERR(child.free(large));
+    EXPECT_NO_ERR(ctx->synchronize());
+  }
+  cache->clear();
+}
+
+// Steady state does not remap: a request that fits a block the stream freed
+// reuses it in place.
+TEST_F(MemoryManagerVMMTest, RequestThatFitsTheStreamsFreeBlockDoesNotRemap) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const size_t kPage = 256 * kMiB;
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kPage);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  {
+    MemoryManagerFreeList child(ctx.getPointer(), *cache, cache->freeList(),
+                                /*disableFlush=*/false, /*label=*/"steady");
+    for (int i = 0; i < 4; ++i) {
+      ASSIGN_NO_ERR(void *, big, child.allocate(3 * kPage, mode));
+      EXPECT_NO_ERR(child.free(big));
+      ASSIGN_NO_ERR(void *, smaller, child.allocate(2 * kPage, mode));
+      EXPECT_NO_ERR(child.free(smaller));
+    }
+    EXPECT_EQ(cache->streamRemaps(), 0u);
+    EXPECT_NO_ERR(ctx->synchronize());
+  }
+  cache->clear();
+}
+
 } // namespace

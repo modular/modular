@@ -818,6 +818,22 @@ ErrorOrSuccess CUDADevice::vmmMapAndSetAccess(void *va, size_t byteSize,
   return success();
 }
 
+ErrorOrSuccess CUDADevice::vmmMap(void *va, size_t byteSize, uint64_t handle) {
+  CUDA_WITH_DEV_ERR(*this);
+  CUDA_CHECK_ERR(
+      driver_.cuMemMap(reinterpret_cast<CUdeviceptr>(va), byteSize, 0,
+                       static_cast<CUmemGenericAllocationHandle>(handle), 0));
+  return success();
+}
+
+ErrorOrSuccess CUDADevice::vmmSetAccess(void *va, size_t byteSize) {
+  CUDA_WITH_DEV_ERR(*this);
+  const std::vector<CUmemAccessDesc> &descs = vmmAccessDescs();
+  CUDA_CHECK_ERR(driver_.cuMemSetAccess(reinterpret_cast<CUdeviceptr>(va),
+                                        byteSize, descs.data(), descs.size()));
+  return success();
+}
+
 ErrorOrSuccess CUDADevice::vmmUnmap(void *va, size_t byteSize) {
   CUDA_WITH_DEV_ERR(*this);
   CUDA_CHECK_ERR(
