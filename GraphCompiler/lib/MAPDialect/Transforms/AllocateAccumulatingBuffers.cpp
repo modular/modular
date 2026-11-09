@@ -43,12 +43,14 @@ namespace M::MAP {
 namespace {
 
 // Matmul/conv/concat accumulate into their output, so they must accumulate in
-// their own dtype even under a dtype-changing epilogue. TODO(#22349): remove
-// once those respect the fusion contract.
+// their own dtype even under a dtype-changing epilogue. Custom matmuls are
+// registered under the `matmul.` class. TODO(#22349): remove once those
+// respect the fusion contract.
 static bool containsMatmulOrConvOrConcat(IterOpaqueOp op) {
   for (auto callOp : op.getBody().front().getOps<CallOpaqueOp>()) {
     StringRef opName = callOp.getKernelName();
-    if (opName.contains(MO::ConcatOp::getOperationName()) ||
+    if (opName.starts_with("matmul.") ||
+        opName.contains(MO::ConcatOp::getOperationName()) ||
         opName.contains(MO::MatmulOp::getOperationName()) ||
         opName.contains(MO::BatchMatmulOp::getOperationName()) ||
         opName.contains(MO::ConvOp::getOperationName()) ||

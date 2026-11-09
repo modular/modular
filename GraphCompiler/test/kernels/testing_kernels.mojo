@@ -2171,6 +2171,33 @@ struct MatmulFuseOut:
         _matmul[c.dtype](a, b, out_func)
 
 
+# A naive matmul under a `matmul.` class name, the form custom matmul ops are
+# registered with.
+@extensibility.register("matmul.fuse_out", extensibility.CPU)
+struct MatmulClassFuseOut:
+    @staticmethod
+    def execute(
+        c: Some[Output & Fused & StoreAccess],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert ctx.target.is_cpu()
+        comptime assert conforms_to(type_of(c), Storable)
+        comptime dtype = type_of(c).dtype
+        var at = a.to_tile_tensor[dtype]()
+        var bt = b.to_tile_tensor[dtype]()
+        var m = Int(a.shape()[0].value())
+        var k = Int(a.shape()[1].value())
+        var n = Int(b.shape()[1].value())
+        for i in range(m):
+            for j in range(n):
+                var acc = Scalar[dtype](0)
+                for l in range(k):
+                    acc += at.load[width=1]((i, l)) * bt.load[width=1]((l, j))
+                c.store[1]((i, j), acc)
+
+
 @extensibility.register_shape_function("matmul_fuse_out")
 def matmul_fuse_out_shape(
     a: Some[Tensor],
