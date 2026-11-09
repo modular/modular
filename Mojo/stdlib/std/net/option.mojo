@@ -127,9 +127,13 @@ comptime ReuseAddress = FlagOption["ReuseAddress", _SOL_SOCKET, _SO_REUSEADDR]
 connections from an earlier socket still hold.
 
 A server that restarts needs it to bind its port again while connections from
-its last run are still closing.
+its last run are still closing. Set it before the socket binds, such as on a
+`TCPSocket` before `bind()`.
 """
 
 comptime ReusePort = FlagOption["ReusePort", _SOL_SOCKET, _SO_REUSEPORT]
 """Represents `SO_REUSEPORT`: whether other sockets can bind the same address
-and port."""
+and port.
+
+Set it before the socket binds, such as on a `TCPSocket` before `bind()`.
+"""
