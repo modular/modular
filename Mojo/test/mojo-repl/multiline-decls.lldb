@@ -82,7 +82,7 @@ comptime unary_fn_type = __mlir_type[
     `, `,
     Pointer[Int, MutAnyOrigin],
     `, `,
-    DeviceContext[],
+    DeviceContext,
     `) -> `,
     NoneType,
 ]

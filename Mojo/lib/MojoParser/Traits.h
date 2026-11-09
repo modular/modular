@@ -106,12 +106,6 @@ FailureOr<TypedAttr> getUniqueWitnessForTypeIfConforms(
 /// we expose parametric trait support to users).
 std::optional<ParameterEvaluator>
 populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol, SharedState &shared);
-
-/// Populate a ParameterEvaluator with the parameters `structType` binds on
-/// `structDecl`. Parameters left unbound by `structType` get no binding.
-ParameterEvaluator populateStructBindingEvaluator(StructDeclOp structDecl,
-                                                  ASTType structType,
-                                                  SharedState &shared);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_TRAITS_H

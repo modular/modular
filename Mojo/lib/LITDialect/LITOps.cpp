@@ -1305,11 +1305,9 @@ TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
 
   // TODO: we don't need sig in struct type under the generator representation.
   // Remove it after fully migration.
-  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
-  SmallVector<TypedAttr> sigForwardParams = llvm::map_to_vector(
-      forwardParams, [&](TypedAttr p) { return plusOneAdjuster.replace(p); });
+  auto newSig = paramValues.empty() ? sig : sig.bind(paramValues);
   auto st = LIT::StructType::get(getFullyResolvedSymbolRef(*this),
-                                 forwardParams, sig.bind(sigForwardParams));
+                                 forwardParams, newSig);
 
   auto genBody = TypeParamAttr::get(st, StructMetaType::get(st));
   // A simple type without parameters.

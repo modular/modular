@@ -663,6 +663,11 @@ comptime foo = Foo[_, SomeStruct[1, 1, 1]()]
 def depends_on_a[a: Int]() -> Int:
     return a
 
+# expected-note @+1 {{'NestedDeps' declared here}}
+struct NestedDeps[a: Int, b: Int = depends_on_a[a]()](Movable where False):
+    pass
+
+
 @fieldwise_init
 struct AutoParamVA[*values: Int](Movable where False):
     pass
@@ -680,6 +685,10 @@ def bad_unpack():
 
 # expected-error @+1 {{value passed to 'shape' cannot be converted from 'IntLiteral[23456]' to 'AutoParamVA[*$1]', it depends on an unresolved parameter '$0'}}
 comptime bad = TakeAutoParamVA[23456]
+
+# TODO: we could potentially support this.
+# expected-error @+1 {{'NestedDeps' failed to infer parameter 'b', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
+comptime something = NestedDeps[_]
 
 # MOCO-3867: struct field with unbound parameter should emit error, not crash.
 struct UnboundFieldContainer[T: AnyType, size: Int](Movable where False):

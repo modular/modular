@@ -427,8 +427,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 ///
 /// 'decl' is the alias declaration to resolve.
 static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
-                                    ASTType ctxType, SMLoc refLoc,
-                                    IREmitter &emitter) {
+                                    ArrayRef<TypedAttr> paramValues,
+                                    SMLoc refLoc, IREmitter &emitter) {
 
   // If the param is declared in a function, then just directly use it.
   Operation *parent = decl->getParentOp();
@@ -445,7 +445,7 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       DenseMap<StringAttr, size_t> paramDeclIndices;
       for (auto [idx, paramDecl] : llvm::enumerate(structDecl.getParams()))
         paramDeclIndices[paramDecl.getName()] = idx;
-      assert(paramDeclIndices.size() == ctxType.getParamBindings().size() &&
+      assert(paramDeclIndices.size() == paramValues.size() &&
              "incorrect number of type parameters for struct");
 
       // If the reference is to a member of the struct that has bindings, remap
@@ -469,7 +469,7 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
                                                          -> WalkResult {
         if (auto it = paramDeclIndices.find(attr.getName());
             it != paramDeclIndices.end() &&
-            ctxType.isUnresolvedParam(it->second)) {
+            isa<UnboundAttr>(paramValues[it->second])) {
           emitter.shared.emitError(refLoc, "cannot access comptime member '")
               << declName << "' with unbound parameter '"
               << structDecl.getName() << "." << attr.getName().str() << "'";
@@ -480,9 +480,8 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       if (findUnboundParams.wasInterrupted())
         return {};
 
-      // The walk above ensures the alias only uses bound parameters.
-      ParameterEvaluator evaluator =
-          populateStructBindingEvaluator(structDecl, ctxType, emitter.shared);
+      ParameterEvaluator evaluator = emitter.shared.getParameterEvaluator(
+          structDecl.getParams(), paramValues);
       return evaluator.getReboundAttribute(aliasValue);
     }
 
@@ -496,8 +495,8 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       StructDeclOp structDeclOp = cast<StructASTDecl>(structAstDecl).getOp();
       assert(decl.getValueAttr() && "Extension's alias should have value");
       TypedAttr aliasValue = decl.getValueAttr();
-      ParameterEvaluator evaluator =
-          populateStructBindingEvaluator(structDeclOp, ctxType, emitter.shared);
+      ParameterEvaluator evaluator = emitter.shared.getParameterEvaluator(
+          structDeclOp.getParams(), paramValues);
       return evaluator.getReboundAttribute(aliasValue);
     }
 
@@ -1464,7 +1463,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   if (auto *aliasDecl = dyn_cast<AliasASTDecl>(decl)) {
     AliasDeclOp param = aliasDecl->getOp();
     PValue result =
-        resolveAliasReference(param, spelling, /*ctxType=*/{}, loc, emitter);
+        resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
 
     // Maintain alias sugar, e.g. print "UInt8" as UInt8 instead of SIMD[..].
     // We don't maintain sugar for aliases whose name start with _, because that
@@ -1483,7 +1482,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
   // If this is a type declaration, return it as a type.
   if (auto *structDecl = dyn_cast<StructASTDecl>(decl))
-    return emitter.emitCResult(structDecl->getOp().bindReference(nullptr), expr,
+    return emitter.emitCResult(structDecl->getOp().legacyBindReference(), expr,
                                dest);
   if (auto *traitDecl = dyn_cast<TraitASTDecl>(decl))
     return emitter.emitCResult(traitDecl->getOp().getCanonicalTrait(), expr,
@@ -1846,16 +1845,8 @@ static PValue substituteParametersIntoUserDefinedType(
 static PValue
 bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
                      ArrayRef<Operand> operands, IREmitter &emitter,
-                     SMLoc rsquareLoc,
+                     const SourceRange &range,
                      ParamBindings::BindingKind initialBindingKind) {
-  ASTDecl *typeDecl = LIT::isTypeExpr(callable)
-                          ? ASTType(callable).getDecl(emitter.shared)
-                          : nullptr;
-  // Notify the listener before parsing the bindings, which may fail.
-  if (typeDecl)
-    emitter.shared.notifyListenerOnParameterBinding(typeDecl, rsquareLoc,
-                                                    operands);
-
   // Build up a ParamBindings set to validate and check the bindings.
   ParamBindings paramBindings(emitter.getDeclScope(), expr);
   if (failed(parseParameterBindings(operands, emitter, paramBindings,
@@ -1867,12 +1858,9 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
   // diagnostic emitter points to the original struct definition.
   ParamInf inference(paramBindings, sig.getInputParamTypes(),
                      sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true,
-                     /*declIfDirect=*/typeDecl,
+                     /*allowImplicitConversions=*/true, nullptr,
                      /*discardError=*/false,
-                     /*deferredTypingContext=*/emitter.deferredTypingContext,
-                     /*additionalAssumptions=*/sig.getBodyConstraints(),
-                     /*withinParameterScope=*/true);
+                     /*deferredTypingContext=*/emitter.deferredTypingContext);
   VerifiedParamBindings newBindings = inference.inferForStruct();
   if (!newBindings)
     return {};
@@ -2419,8 +2407,9 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     // Decl, and should be handled below;
     assert(isa<StructASTDecl>(typeDecl) ||
            isa_and_nonnull<ExtensionASTDecl>(memberDecls[0]->getParentDecl()));
-    PValue result = resolveAliasReference(aliasDecl->getOp(), spelling,
-                                          baseRVType, getLoc(), emitter);
+    PValue result =
+        resolveAliasReference(aliasDecl->getOp(), spelling,
+                              baseRVType.getParamBindings(), getLoc(), emitter);
     return emitter.emitResult(getParamMemberSugar(result), this, dest);
   } else if (auto *witness = dyn_cast<WitnessASTDecl>(memberDecls[0])) {
     assert(sugarIsa<TraitType>(typeDecl->getIfTypeValue()) &&
@@ -3486,7 +3475,7 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       PValue result = [&]() -> PValue {
         if (auto sig = sugarDynCast<GeneratorType>(baseType)) {
           return bindToGeneratorValue(value, sig, this, operands, emitter,
-                                      rsquareLoc, bindingKind);
+                                      getIndexRange(), bindingKind);
         }
         return substituteParametersIntoUserDefinedType(value, this, operands,
                                                        lsquareLoc, rsquareLoc,
@@ -3769,14 +3758,6 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (kind == ExprNode::Kind::kCmpEQ || kind == ExprNode::Kind::kCmpNE) {
     PValue lhsPV = lhs.ir.getIfPValue();
     PValue rhsPV = rhs.ir.getIfPValue();
-
-    // FIXME: Should we support this? we should be able to compare two partially
-    // bound type, but upcasting to AnyType below require a concrete type.
-    for (auto [pv, expr] : {std::pair{lhsPV, lhs.expr}, {rhsPV, rhs.expr}})
-      if (LIT::StructTypeGenerator::dynCast(pv) &&
-          !emitter.emitType({pv, expr}, TypeStrictness::kConcrete))
-        return {};
-
     // TODO: maybe we can extend this to any type value at the same depth, for
     // now, just handle the most common case.
     if (lhsPV && rhsPV && LIT::isFirstLevelTypeExpr(lhsPV) &&

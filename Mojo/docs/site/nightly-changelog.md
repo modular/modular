@@ -41,23 +41,6 @@ This version is still a work in progress.
   def process(p: Optional[Pointer[Int, _]]): ...
   ```
 
-- Mojo now allows unbound a parameter that has a default dependencies, the
-  default value will later be refined when the unbound parameter is provided:
-
-  ```mojo
-  def depends_on_a[a: Int]() -> Int:
-      return a
-
-  struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
-      ...
-
-  # No longer a compilation error
-  comptime Partial = NestedDeps[_]
-
-  # Bound = NestedDeps[3, depend_on_a[3]()]
-  comptime Bound = Partial[3]  
-  ```
-
 ## Language changes
 
 - `@explicit_destroy("<message>")` on a struct is deprecated and now emits a

@@ -154,19 +154,6 @@ TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                  const VerifiedParamBindings &verifiedBindings,
                                  ASTDecl &useScope, SMLoc useLoc);
 
-/// Like `getBoundConstAttrForFn`, for a struct method looked up through a
-/// struct type generator such as `S` in `S(...)` or a parametric alias of `S`.
-/// `verifiedBindings` were inferred against
-/// the contextual signature of `ctxGen`, which is parameterized by
-/// the generator's inputs rather than the struct's parameters, so the callee
-/// is first partially bound to `ctxGen` and the bindings are applied
-/// to that.
-TypedAttr
-getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
-                          StructTypeGenerator ctxGen,
-                          const VerifiedParamBindings &verifiedBindings,
-                          ASTDecl &useScope, SMLoc useLoc);
-
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_PARAMBINDINGS_H

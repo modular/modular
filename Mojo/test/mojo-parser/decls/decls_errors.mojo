@@ -258,7 +258,7 @@ def badCalls(arg: Int):
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{invalid call to 'test': failed to infer parameter 'j'}}
-  TestTuple[Int, Bool]().test[1]()
+  TestTuple[Int, FloatLiteral]().test[1]()
 
 def badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]'}}

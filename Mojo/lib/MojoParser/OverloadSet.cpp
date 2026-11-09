@@ -86,14 +86,16 @@ static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
                                                 const ExprNode *expr) {
   ParamBindings paramBindings(declScope, expr);
   // We need to do extra work to forward a generator's parameters.
-  if (auto gen = LIT::StructTypeGenerator::dynCast(PValue(type))) {
-    GeneratorType genType = gen.getType();
+  if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(type));
+      genAttr && sugarIsa<LIT::StructType>(ASTType(genAttr.getBody()))) {
+    auto genType = cast<GeneratorType>(genAttr.getType());
     auto pogs = genType.getParamListAttrs().getPogs();
     // The generator's inputs are prepended to the callee's full signature,
     // so its constraints (e.g. `comptime A[c: Bool] where c = S[c]`) index
     // them without adjustment.
     paramBindings.addConstraints(genType.getBodyConstraints());
-    for (auto [type, pog] : llvm::zip_equal(gen.getInputParamTypes(), pogs)) {
+    for (auto [type, pog] :
+         llvm::zip_equal(genAttr.getInputParamTypes(), pogs)) {
       paramBindings.add(expr, UnboundAttr::get(type), pog.getName());
     }
     return paramBindings;
@@ -189,14 +191,10 @@ static SMLoc getAttributeNameLoc(const ExprNode *expr) {
   return {};
 }
 
-PValue OverloadSet::getCallee(ASTDecl *fnDecl) const {
-  return getCallee(fnDecl, VerifiedParamBindings());
-}
-
-PValue
-OverloadSet::getCallee(ASTDecl *fnDecl,
-                       const VerifiedParamBindings &verifiedBindings) const {
-  ParamBindings paramBindings = getParamBindings(fnDecl);
+/// Resolve the callee into a single PValue callee.
+static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
+                        CallSyntax syntax,
+                        const VerifiedParamBindings &verifiedBindings = {}) {
   // Check deprecation and stability warnings for the resolved function.
   // For method calls (instance or static via attribute access), compute the
   // fixit location as the method identifier, not the full expression.
@@ -210,15 +208,6 @@ OverloadSet::getCallee(ASTDecl *fnDecl,
   // Take the fast path to avoid verify binding again if a verified binding has
   // been provided.
   if (verifiedBindings) {
-    // Bindings inferred through a struct type generator are in the
-    // generator's parameter space, so bind the callee to it first.
-    ASTType ctxType = getContextualType(fnDecl);
-    if (ctxType && isa<DefASTDecl>(fnDecl)) {
-      if (auto genCtx = LIT::StructTypeGenerator::dynCast(PValue(ctxType)))
-        return getCtxBoundConstAttrForFn(
-            *fnDecl, paramBindings.shared, genCtx, verifiedBindings,
-            paramBindings.declScope, paramBindings.getExprLoc());
-    }
     return getBoundConstAttrForFn(*fnDecl, paramBindings.shared,
                                   verifiedBindings, paramBindings.declScope,
                                   paramBindings.getExprLoc());
@@ -542,7 +531,8 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
 
     // On success, wrap things up into one callee, we know that the best fitness
     // has a verified bindings coming out of parameter inference.
-    return getCallee(selectedDecl, bestFitness.getParamBindings());
+    return getCallee(selectedDecl, getParamBindings(selectedDecl), syntax,
+                     bestFitness.getParamBindings());
   }
   if (isErroneous())
     return {};
@@ -968,7 +958,8 @@ CalleeResult OverloadSet::filterOverloadSet(
     // Finally, wrap things up into one callee, resolving it to a PValue with
     // the parameters bound and substituted into its signature.
     PValue boundFunction =
-        getCallee(selectedDecl, bestFitness.getParamBindings());
+        getCallee(selectedDecl, getParamBindings(selectedDecl), syntax,
+                  bestFitness.getParamBindings());
 
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
         selectedDecl->getDeclImplicitConversionKind() ==
@@ -1191,7 +1182,8 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(getDeclScope(), EC_OverloadResolution);
-    PValue callee = getCallee(selectedMethod, candidateBindings.front());
+    PValue callee = getCallee(selectedMethod, getParamBindings(selectedMethod),
+                              syntax, candidateBindings.front());
     PValue result = emitter.emitPValue({callee, getExpr()},
                                        EC_OverloadResolution, functionType);
     assert(result && "Conversion should always succeed");
@@ -1251,15 +1243,9 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 /// the resultant function reference or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parameters specified.  They can be bound later.
-TypedAttr OverloadSet::getBoundConstantAttr() {
-  if (fnDecls.size() == 1) {
-    // FIXME: this is wrong, we should forward the generator parameter.
-    if (auto gen = LIT::StructTypeGenerator::dynCast(
-            PValue(getContextualType(fnDecls[0])))) {
-      contextualType = gen.getBodyWithUnboundInputs();
-    }
-    return getCallee(fnDecls[0]);
-  }
+TypedAttr OverloadSet::getBoundConstantAttr() const {
+  if (fnDecls.size() == 1)
+    return getCallee(fnDecls[0], getParamBindings(fnDecls[0]), syntax);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
@@ -1427,9 +1413,8 @@ PValue OverloadSet::lookupAndResolve(
 /// expected type if provided or using current bindings if an emitter is
 /// provided.  This emits errors if 'emitter' is non-null, but does not if it
 /// is null.
-PValue
-OverloadSet::getDirectSymbol(ASTType expectedType,
-                             DeferredTypingContext *deferredTypingContext) {
+PValue OverloadSet::getDirectSymbol(
+    ASTType expectedType, DeferredTypingContext *deferredTypingContext) const {
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // Bind the parameters if there is any.

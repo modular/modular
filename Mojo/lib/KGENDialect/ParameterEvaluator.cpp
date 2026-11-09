@@ -645,9 +645,6 @@ PartiallySpecializedInputParams::from(
     if (::isa<UnboundAttr>(value)) {
       // An unbound parameter stays a parameter of the specialized generator:
       // bind it to that generator's own variable at its new index.
-      //
-      // NOTE: we don't do depth adjustment here because the conversion since we
-      // view every unbound attr as quoted.
       auto value = ParamIndexRefAttr::get(
           /*depth=*/0, unboundParamTypes.size(), remappedDeclType);
       unboundParamTypes.push_back(remappedDeclType);
@@ -656,15 +653,7 @@ PartiallySpecializedInputParams::from(
       // The value comes from the caller, one scope out, and may refer to
       // outer-context indexed parameters. Increase depth by one when pushing
       // into the current scope.
-      TypedAttr inScope = [&]() {
-        // A quoted value already lives in the generator's own scope (e.g. an
-        // in-scope parameter default). Its references to earlier parameters
-        // are still numbered in the original generator's parameter space.
-        if (auto quote = sugarDynCast<QuoteAttr>(value))
-          return evaluator.getReboundAttribute(quote.getQuotedParam());
-        return addOneAdjuster.replace(value);
-      }();
-
+      auto inScope = addOneAdjuster.replace(value);
       auto inScopeType = inScope.getType();
       if (inScopeType != remappedDeclType &&
           !isEqualCanon(inScopeType, remappedDeclType)) {

@@ -907,12 +907,6 @@ private:
 
   void validateDecl(ASTDecl &decl, AliasDeclOp aliasOp,
                     ValidationKind validation) {
-    // Without a parameter list of its own, an alias's value may still be a
-    // generator (e.g. `comptime a = Foo[...]`), but its parameters belong to
-    // the right-hand side and are documented there.
-    if (cast<AliasASTDecl>(decl).getUserParamDecls().empty())
-      return;
-
     // Grab the parameters to the alias (for parametric aliases). Inferred
     // parameters are valid to document but not required, so track separately.
     llvm::MapVector<StringRef, const char *> seenParameters;

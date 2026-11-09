@@ -109,12 +109,12 @@ def test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK-NEXT: !lit.generator<<>!kgen.func.literal<{{.*}}inferred_partial_dependent{{.*}}<:!Int x, :!Int {:scalar<index> 1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound = partially_bound_dependent[y]
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +, "z": !lit.struct<#ParamType <:!Int *(0,0)>>>
-    # CHECK-SAME: meta<!lit.struct<#InferredStruct <:!Int *(0,0), :!Int {:scalar<index> 1}, :!lit.struct<#ParamType <:!Int *(0,0)>> *(0,1)>>>> = <#kgen.gen<@inferred::@InferredStruct<:!Int *(0,0), :!Int {:scalar<index> 1}, :!lit.struct<#ParamType <:!Int *(0,0)>> *(0,1)>>>
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: meta<!lit.struct<#InferredStruct <:!Int ?, :!Int {:scalar<index> 1}, :!lit.struct<#ParamType <:!Int ?>> ?>,
+    # CHECK-SAME: <"x": !Int, +, "z": !lit.struct<#ParamType <:!Int *(0,0)>>>>> = <{{.*}}@InferredStruct<:!Int ?, :!Int {:scalar<index> 1}, :!lit.struct<#ParamType <:!Int ?>> ?>>
     comptime partially_bound_type = InferredStruct[1, ...]
-    # CHECK-NEXT: partially_bound_explicit_inferred{{.*}} = <#kgen.gen<@inferred::@InferredStruct<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}, :!lit.struct<#ParamType <:!Int {:scalar<index> 1}>> *(0,0)>>>
+    # CHECK-NEXT: partially_bound_explicit_inferred{{.*}} = <@inferred::@InferredStruct<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}, :!lit.struct<#ParamType <:!Int {:scalar<index> 1}>> ?>>
     comptime partially_bound_explicit_inferred = InferredStruct[x=1, 2, ...]
-    # CHECK-NEXT: fully_bound_type{{.*}}, @inferred::@InferredStruct<:!Int x, :!Int {:scalar<index> 1}, :!lit.struct<#ParamType <:!Int x>> y>)>
+    # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<:!Int x, :!Int {:scalar<index> 1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound_type = partially_bound_type[y]
 
     # CHECK-NEXT: lit.var.decl "inferred_type" var : !lit.ref<!lit.struct<#InferredStructConversion <:!Int x, :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int, :!lit.struct<#ParamType <:!Int x>> y>>

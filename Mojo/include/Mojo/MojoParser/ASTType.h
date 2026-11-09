@@ -91,10 +91,6 @@ public:
   ArrayRef<TypedAttr> getParamBindings() const;
   TypeSignatureType getSignature() const;
 
-  /// Returns true if the parameter binding at `idx` is unresolved, i.e., the
-  /// param value depends on sibling parameters that are unbound.
-  bool isUnresolvedParam(size_t idx) const;
-
   /// Return this type with any parameter bindings removed.
   ASTType getWithoutParameters(SharedState &shared) const;
 

@@ -378,16 +378,6 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
   }
 }
 
-/// Bind every input of a generator to an UnboundAttr, so that a generator over
-/// a struct prints as the partially bound struct, e.g. `SIMD[.int, _]`.
-static ParameterEvaluator getUnboundInputsEvaluator(ArrayRef<Type> inputTypes) {
-  ParameterEvaluator evaluator;
-  for (Type type : inputTypes)
-    evaluator.appendIndexBinding(
-        UnboundAttr::get(evaluator.getReboundType(type)));
-  return evaluator;
-}
-
 /// Print the input parameter types of a generator type/attr.
 /// This needs to handle the case when 'paramInfo' is null.
 /// An additional attr/type body can be provided that will also be rebound with
@@ -764,10 +754,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   };
 
   if (auto genAttr = dyn_cast<GeneratorAttr>(param)) {
-    if (auto structGen = StructTypeGenerator::dynCast(genAttr)) {
-      printParam(os, structGen.getBodyWithUnboundInputs(), ctx);
-      return;
-    }
     os << "comptime";
     printGeneratorAttr(genAttr);
     return;
@@ -1939,11 +1925,6 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     printFnGeneratorType(FnOrFnLiteralTypeGeneratorType::get(type), os, ctx);
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
     printParam(os, paramRef.getParam(), ctx);
-  } else if (auto genType = dyn_cast<GeneratorType>(type);
-             genType && sugarIsa<StructMetaType>(genType.getBody())) {
-    ASTType(getUnboundInputsEvaluator(genType.getInputParamTypes())
-                .getReboundType(genType.getBody()))
-        .print(os, ctx);
   } else if (auto genType = dyn_cast<GeneratorType>(type)) {
     PogListAttr paramList = genType.getParamListAttrs();
     ParameterEvaluator evaluator;
