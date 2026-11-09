@@ -1061,6 +1061,66 @@ def test_connector_lookup_admission_stop_carries_the_reason(
     )
 
 
+@pytest.mark.parametrize(
+    ("answer", "hinted"),
+    [("offered", False), ("empty", True), ("unseen", False)],
+)
+def test_connector_lookup_drops_carry_the_reason_answer_and_hint(
+    answer: metrics.LookupDropAnswer, hinted: bool
+) -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.cache_connector_lookup_drops(
+        3, reason="shrink_cap", answer=answer, hinted=hinted
+    )
+    recorder.cache_connector_lookup_dropped_blocks(
+        9, reason="shrink_cap", hinted=hinted
+    )
+
+    drops, blocks = (c.args[0] for c in client.send_measurement.call_args_list)
+    assert (drops.instrument_name, drops.value, drops.attributes) == (
+        "max.cache.connector_lookup_drops",
+        3,
+        {
+            "model": "m",
+            "reason": "shrink_cap",
+            "answer": answer,
+            "hinted": str(hinted).lower(),
+        },
+    )
+    assert (blocks.instrument_name, blocks.value, blocks.attributes) == (
+        "max.cache.connector_lookup_dropped_blocks",
+        9,
+        {"model": "m", "reason": "shrink_cap", "hinted": str(hinted).lower()},
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "is_histogram"),
+    [
+        ("max.cache.connector_lookup_drops", False),
+        ("max.cache.connector_lookup_dropped_blocks", False),
+        ("max.cache.connector_lookup_shrink_cap_blocks", False),
+        ("max.cache.connector_lookup_shrink_depth", True),
+        ("max.cache.connector_lookup_reasks_per_request", True),
+        ("max.cache.connector_lookup_hand_backs_per_request", True),
+    ],
+)
+def test_connector_lookup_drop_instruments(
+    name: str, is_histogram: bool
+) -> None:
+    common.configure_metrics(Settings())
+    instrument = metrics.SERVE_METRICS[name]
+    if is_histogram:
+        assert _is_histogram(instrument)
+        assert name in common.HISTOGRAM_BUCKETS_BY_METRIC
+    else:
+        assert isinstance(instrument, _ProxyCounter)
+    metrics.MaxMeasurement(name, 2).commit()  # Should not raise
+
+
 def test_scheduler_step_time_is_a_separate_histogram() -> None:
     name = "max.scheduler.batch_step_time"
     assert _is_histogram(metrics.SERVE_METRICS[name])

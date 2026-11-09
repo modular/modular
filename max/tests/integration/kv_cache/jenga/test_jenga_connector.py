@@ -210,6 +210,9 @@ class FakeConnector:
         # Whether a probe answer may be loaded from, as the tiered
         # connector's, which is one lookup, may.
         self.probes_are_lookups = False
+        # Whether hints are dropped before the wire, as dKV drops them on a
+        # tree with a sliding leaf.
+        self.strips_hints = False
         self.started: list[FakeLookup] = []
         self.started_probes: list[FakeProbe] = []
         self.loaded_from: list[KVLookup] = []
@@ -295,6 +298,9 @@ class FakeConnector:
 
     def probe_is_lookup(self) -> bool:
         return self.probes_are_lookups
+
+    def routes_hint(self, hint: bytes) -> bool:
+        return not self.strips_hints
 
     def load_lookup(
         self,
@@ -4666,3 +4672,669 @@ def test_a_rolled_back_peer_onload_is_written_back_ahead_of_the_retry(
     tail = hashes[len(prefix) : manager._state_of(ctx).committed_idx]
     assert [sent[FULL] for _, sent in connector.offloads] == [prefix, tail]
     assert manager.take_metrics().dkv_peer_writeback_blocks == len(prefix)
+
+
+def _start_deferred_lookup(
+    tokens: Sequence[int] = (1, 2, 3, 4),
+    num_device_blocks: int = 0,
+) -> tuple[
+    JengaBlockManager, FakeConnector, TextContext, list[bytes], KVTransfer
+]:
+    """Holds ``tokens`` in a deferred connector and starts the request's lookup.
+
+    Returns the hashes the lookup was asked about, past ``num_device_blocks``
+    on device, and the transfer the deferred alloc returned. The metrics the
+    setup ran up are taken, so a test reads only its own.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    if num_device_blocks:
+        held = _hold_in_connector_with_a_device_hit(
+            manager, connector, tokens, num_device_blocks
+        )
+    else:
+        held = _hold_only_in_the_connector(manager, connector, tokens)
+    manager.take_metrics()
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    return manager, connector, ctx, held[num_device_blocks:-1], pending
+
+
+def _see_answer(connector: FakeConnector, pending: KVTransfer) -> None:
+    """Answers the latest lookup and polls it the way the scheduler does."""
+    connector.started[-1].answer()
+    # The first poll repeats what the alloc saw, so the second reads it.
+    pending.is_complete()
+    assert pending.is_complete()
+
+
+@pytest.mark.parametrize("answer", ["seen", "unpolled", "out"])
+def test_release_counts_the_lookup_it_drops(answer: str) -> None:
+    """A run is counted only for an answer seen to come back.
+
+    One that came back but was never polled is as unseen as one still out.
+    """
+    manager, connector, ctx, asked, pending = _start_deferred_lookup()
+    if answer == "seen":
+        _see_answer(connector, pending)
+    elif answer == "unpolled":
+        connector.started[-1].answer()
+
+    manager.release(ctx)
+
+    metrics = manager.take_metrics()
+    seen = answer == "seen"
+    assert metrics.connector_lookup_drops == {
+        ("release", "offered" if seen else "unseen", False): 1
+    }
+    expected_blocks = {("release", False): len(asked)} if seen else {}
+    assert metrics.connector_lookup_dropped_blocks == expected_blocks
+    assert metrics.connector_lookup_reasks_per_request == {}
+    assert metrics.connector_lookup_hand_backs_per_request == {}
+
+
+def test_a_hand_back_counts_the_run_it_drops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, connector, ctx, asked, pending = _start_deferred_lookup()
+    _see_answer(connector, pending)
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", 0.0)
+
+    assert manager.hand_back_lookup(ctx)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("hand_back", "offered", False): 1
+    }
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("hand_back", False): len(asked)
+    }
+
+
+def test_a_stale_answer_asked_again_counts_the_run_it_drops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, connector, ctx, asked, pending = _start_deferred_lookup()
+    _see_answer(connector, pending)
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", 0.0)
+
+    assert not manager.alloc(ctx, defer_lookup=True).is_complete()
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("stale_reask", "offered", False): 1
+    }
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("stale_reask", False): len(asked)
+    }
+
+
+@pytest.mark.parametrize("gives_up_on", ["poll_failed", "timeout"])
+def test_a_lookup_given_up_on_counts_no_run(
+    gives_up_on: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager, connector, _, _, pending = _start_deferred_lookup()
+    if gives_up_on == "poll_failed":
+        connector.started[-1].error = RuntimeError("the handle is gone")
+    else:
+        monkeypatch.setattr(
+            jenga_block_manager, "_CONNECTOR_LOOKUP_TIMEOUT_S", 0.0
+        )
+
+    pending.is_complete()
+    assert pending.is_complete()
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {(gives_up_on, "unseen", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {}
+
+
+def test_a_synchronous_alloc_counts_the_lookup_it_drops() -> None:
+    """The lookup out was never answered, and the one asked in place loads."""
+    manager, connector, ctx, asked, _ = _start_deferred_lookup()
+
+    manager.alloc(ctx)
+
+    assert connector.loads[-1][1][FULL] == asked
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("sync_alloc", "unseen", False): 1
+    }
+    assert metrics.connector_lookup_dropped_blocks == {}
+
+
+def test_a_shrink_asked_again_counts_how_far_the_hit_shrank() -> None:
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    manager, connector, ctx, asked, pending = _start_deferred_lookup(
+        tokens, num_device_blocks=3
+    )
+    manager.pools[0].reset_prefix_cache()
+    _see_answer(connector, pending)
+
+    assert not manager.alloc(ctx, defer_lookup=True).is_complete()
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("shrink_reask", "offered", False): 1
+    }
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("shrink_reask", False): len(asked)
+    }
+    assert metrics.connector_lookup_shrink_depths == {3: 1}
+    assert metrics.connector_lookup_shrink_cap_blocks == 0
+
+
+def test_a_shrink_past_the_re_asks_counts_the_cap() -> None:
+    """Each shrink is one deep, and the re-asks widen the run asked.
+
+    The answers offer 1, 2 and 3 blocks. The third shrink comes past the
+    request's re-asks, so it computes the block the device lost and the 3
+    the dropped answer offered. Its release records the 2 re-asks it made.
+    """
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    manager, connector, ctx, asked, _ = _start_deferred_lookup(
+        tokens, num_device_blocks=6
+    )
+    assert len(asked) == 1
+    held = [*manager._state_of(ctx).hashes]
+    pool = manager.pools[0]
+    cache = pool.prefix_caches[FULL]
+    for depth in (5, 4, 3):
+        connector.started[-1].answer()
+        pool.uncommit_block(cache[held[depth]])
+        manager.alloc(ctx, defer_lookup=True)
+    assert jenga_block_manager._MAX_CONNECTOR_LOOKUP_REASKS == 2
+    assert len(connector.started) == 3
+    manager.release(ctx)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("shrink_reask", "offered", False): 2,
+        ("shrink_cap", "offered", False): 1,
+    }
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("shrink_reask", False): 1 + 2,
+        ("shrink_cap", False): 3,
+    }
+    assert metrics.connector_lookup_shrink_depths == {1: 3}
+    assert metrics.connector_lookup_shrink_cap_blocks == 1 + 3
+    assert metrics.connector_lookup_reasks_per_request == {2: 1}
+    assert metrics.connector_lookup_hand_backs_per_request == {}
+
+
+def test_a_shrink_found_at_the_load_counts_how_far_the_hit_shrank() -> None:
+    """A synchronous alloc reads an answered lookup without the re-ask check.
+
+    So a hit that shrank is only found once it is taken, and the gap is
+    then asked in place and loaded.
+    """
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    manager, connector, ctx, asked, pending = _start_deferred_lookup(
+        tokens, num_device_blocks=3
+    )
+    _see_answer(connector, pending)
+    manager.pools[0].reset_prefix_cache()
+
+    manager.alloc(ctx)
+
+    assert ctx.cached_prefix_external_length == len(tokens) - 1
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("shrink_at_load", "offered", False): 1
+    }
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("shrink_at_load", False): len(asked)
+    }
+    assert metrics.connector_lookup_shrink_depths == {3: 1}
+
+
+def test_a_device_hit_grown_over_the_ask_counts_covered() -> None:
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    manager, connector, ctx, _, pending = _start_deferred_lookup(tokens)
+    other = make_ctx(tokens)
+    manager.claim(other)
+    manager.alloc(other)
+    manager.release(other)
+    manager.take_metrics()
+    _see_answer(connector, pending)
+
+    manager.alloc(ctx, defer_lookup=True)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {("covered", "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {}, "the device served it"
+
+
+def test_a_request_skipping_the_connector_counts_skip() -> None:
+    """Forced, since a request skips the connector only after a failed load."""
+    manager, connector, ctx, asked, pending = _start_deferred_lookup()
+    manager._state_of(ctx).skips_connector = True
+    _see_answer(connector, pending)
+
+    manager.alloc(ctx, defer_lookup=True)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {("skip", "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("skip", False): len(asked)
+    }
+
+
+def test_an_empty_answer_counts_nothing_to_load() -> None:
+    connector = FakeConnector([FULL], deferred_lookups=True)
+    manager = make_manager(connector)
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    _see_answer(connector, pending)
+
+    manager.alloc(ctx, defer_lookup=True)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("nothing_to_load", "empty", False): 1
+    }
+    assert metrics.connector_lookup_dropped_blocks == {}
+
+
+def test_an_answer_whose_run_the_device_hit_grew_over_counts_covered() -> None:
+    """The answer offered a run, and the device hit now ends past it.
+
+    The prompt runs on past that hit, so the load path reads the answer and
+    finds nothing to load, which is the device's doing, not an empty answer.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    held = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    other = make_ctx(tokens[:5])
+    manager.claim(other)
+    manager.alloc(other)
+    manager.release(other)
+    manager.take_metrics()
+    _see_answer(connector, pending)
+
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert ctx.cached_prefix_length == len(held)
+    assert ctx.cached_prefix_external_length == 0
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {("covered", "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {}
+
+
+def _tight_replay(
+    deferred_lookups: bool,
+) -> tuple[JengaBlockManager, FakeConnector, TextContext, int]:
+    """A request whose connector run a three huge block pool cannot hold.
+
+    Returns the depth of that run.
+    """
+    connector = FakeConnector(
+        [VALUES, SCALES], asynchronous=False, deferred_lookups=deferred_lookups
+    )
+    filler = make_manager(
+        connector, leaves=(VALUES, SCALES), num_huge_blocks=16
+    )
+    tokens = [1, 2, 3, 4, 5]
+    ctx = make_ctx(tokens)
+    filler.claim(ctx)
+    filler.alloc(ctx)
+    ctx.update(9)
+    filler.step(ctx)
+    filler.offload(0)
+    tight = make_manager(connector, leaves=(VALUES, SCALES), num_huge_blocks=3)
+    replay = make_ctx(tokens)
+    tight.claim(replay)
+    return tight, connector, replay, len(tokens) - 1
+
+
+def test_a_run_without_room_counts_no_room_once() -> None:
+    tight, connector, replay, run = _tight_replay(deferred_lookups=True)
+    pending = tight.alloc(replay, defer_lookup=True)
+    _see_answer(connector, pending)
+
+    with pytest.raises(InsufficientBlocksError):
+        tight.alloc(replay, defer_lookup=True)
+    tight.release(replay)
+
+    metrics = tight.take_metrics()
+    assert metrics.connector_lookup_drops == {("no_room", "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {("no_room", False): run}
+
+
+def test_a_run_asked_in_place_without_room_counts_no_room() -> None:
+    tight, _, replay, run = _tight_replay(deferred_lookups=False)
+
+    with pytest.raises(InsufficientBlocksError):
+        tight.alloc(replay)
+
+    metrics = tight.take_metrics()
+    assert metrics.connector_lookup_drops == {("no_room", "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {("no_room", False): run}
+
+
+@pytest.mark.parametrize("reason", ["load_refused", "load_failed"])
+def test_a_refused_and_a_failed_load_count_apart(reason: str) -> None:
+    manager, connector, ctx, asked, pending = _start_deferred_lookup()
+    if reason == "load_refused":
+        connector.evict_before_load = set(asked)
+    else:
+        connector.load_error = KVLoadFailed("memory transfer failed")
+    _see_answer(connector, pending)
+
+    manager.alloc(ctx, defer_lookup=True)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {(reason, "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {
+        (reason, False): len(asked)
+    }
+
+
+@pytest.mark.parametrize("breaks_at", ["masks", "load"])
+def test_a_raising_load_counts_exception(breaks_at: str) -> None:
+    """An answer too broken to read is counted, as offering nothing."""
+    manager, connector, ctx, asked, pending = _start_deferred_lookup()
+    lookup = connector.started[-1]
+    _see_answer(connector, pending)
+    if breaks_at == "masks":
+        lookup._masks = {}
+        expected: type[Exception] = KeyError
+    else:
+        connector.load_error = ValueError("rows do not match the tree")
+        expected = ValueError
+
+    with pytest.raises(expected):
+        manager.alloc(ctx, defer_lookup=True)
+
+    metrics = manager.take_metrics()
+    readable = breaks_at == "load"
+    assert metrics.connector_lookup_drops == {
+        ("exception", "offered" if readable else "unseen", False): 1
+    }
+    expected_blocks = {("exception", False): len(asked)} if readable else {}
+    assert metrics.connector_lookup_dropped_blocks == expected_blocks
+
+
+@pytest.mark.parametrize("reason", ["load_refused", "load_failed"])
+def test_a_synchronous_lookup_counts_the_answer_it_drops(reason: str) -> None:
+    """A lookup answered in place leaves no handle, and its drop still counts."""
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager = make_manager(connector)
+    held = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    if reason == "load_refused":
+        connector.evict_before_load = set(held)
+    else:
+        connector.load_error = KVLoadFailed("memory transfer failed")
+    manager.take_metrics()
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+
+    manager.alloc(ctx)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {(reason, "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {
+        (reason, False): len(held) - 1
+    }
+
+
+def test_a_synchronous_lookup_that_finds_nothing_counts_no_drop() -> None:
+    """A cold miss asked in place leaves no answer to drop."""
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager = make_manager(connector)
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+
+    manager.alloc(ctx)
+
+    assert connector.lookups
+    assert manager.take_metrics().connector_lookup_drops == {}
+
+
+def test_a_probe_answer_dropped_unread_counts_its_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A probe that is the lookup is in hand without ever being polled."""
+    manager, _, ctx, loadable, _ = _lookup_probe_setup(monkeypatch)
+    manager.take_metrics()
+    manager.start_lookup(ctx)
+
+    manager.release(ctx)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {("release", "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("release", False): len(loadable)
+    }
+
+
+def test_a_loaded_lookup_counts_no_drop() -> None:
+    manager, connector, ctx, asked, pending = _start_deferred_lookup()
+    _see_answer(connector, pending)
+
+    manager.alloc(ctx, defer_lookup=True)
+    manager.release(ctx)
+
+    assert connector.loads[-1][1][FULL] == asked
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {}
+    assert metrics.connector_lookup_dropped_blocks == {}
+
+
+def test_a_lookup_given_up_on_counts_once_however_often_it_goes_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, _, ctx, _, pending = _start_deferred_lookup()
+    monkeypatch.setattr(jenga_block_manager, "_CONNECTOR_LOOKUP_TIMEOUT_S", 0.0)
+    pending.is_complete()
+    assert pending.is_complete()
+
+    manager.hand_back_lookup(ctx)
+    manager.release(ctx)
+
+    assert manager.take_metrics().connector_lookup_drops == {
+        ("timeout", "unseen", False): 1
+    }
+
+
+def test_a_lookup_dropped_before_a_raise_counts_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The raise hands back the lookup it consumed, which already went back."""
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    manager, connector, ctx, _, pending = _start_deferred_lookup(
+        tokens, num_device_blocks=3
+    )
+    _see_answer(connector, pending)
+    manager.pools[0].reset_prefix_cache()
+
+    def broken_lookup(
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        raise ValueError("the store is gone")
+
+    monkeypatch.setattr(connector, "lookup", broken_lookup)
+
+    with pytest.raises(ValueError):
+        manager.alloc(ctx)
+
+    assert manager.take_metrics().connector_lookup_drops == {
+        ("shrink_at_load", "offered", False): 1
+    }
+
+
+def test_a_released_claim_records_its_hand_backs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, connector, ctx, _, pending = _start_deferred_lookup()
+    monkeypatch.setattr(jenga_block_manager, "_LOOKUP_HAND_BACK_AGE_S", 0.0)
+    for _ in range(jenga_block_manager._MAX_CONNECTOR_LOOKUP_HAND_BACKS):
+        _see_answer(connector, pending)
+        assert manager.hand_back_lookup(ctx)
+        pending = manager.alloc(ctx, defer_lookup=True)
+
+    manager.release(ctx)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_hand_backs_per_request == {2: 1}
+    assert metrics.connector_lookup_reasks_per_request == {}
+    assert metrics.connector_lookup_drops == {
+        ("hand_back", "offered", False): 2,
+        ("release", "unseen", False): 1,
+    }
+
+
+@pytest.mark.parametrize(
+    ("has_hint", "strips_hints"), [(True, False), (True, True), (False, False)]
+)
+def test_a_dropped_lookup_is_labeled_by_the_hint_the_connector_routed(
+    has_hint: bool, strips_hints: bool
+) -> None:
+    """A hint the connector drops before the wire, as dKV does on a tree
+    with a windowed leaf, labels nothing."""
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    connector.strips_hints = strips_hints
+    manager = make_manager(connector, num_huge_blocks=32)
+    held = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    manager.take_metrics()
+    ctx = make_ctx([1, 2, 3, 4])
+    if has_hint:
+        ctx.dkv_cache_hint = b'{"peers": []}'
+    manager.claim(ctx)
+    pending = manager.alloc(ctx, defer_lookup=True)
+    assert connector.lookups[-1][2] == ctx.dkv_cache_hint
+    _see_answer(connector, pending)
+
+    manager.release(ctx)
+
+    hinted = has_hint and not strips_hints
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {("release", "offered", hinted): 1}
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("release", hinted): len(held) - 1
+    }
+
+
+@pytest.mark.parametrize("hinted", [True, False])
+def test_a_dropped_in_place_lookup_is_labeled_by_its_cache_hint(
+    hinted: bool,
+) -> None:
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager = make_manager(connector)
+    held = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    connector.evict_before_load = set(held)
+    manager.take_metrics()
+    ctx = make_ctx([1, 2, 3, 4])
+    if hinted:
+        ctx.dkv_cache_hint = b'{"peers": []}'
+    manager.claim(ctx)
+
+    manager.alloc(ctx)
+
+    assert connector.lookups[-1][2] == ctx.dkv_cache_hint
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("load_refused", "offered", hinted): 1
+    }
+    assert metrics.connector_lookup_dropped_blocks == {
+        ("load_refused", hinted): len(held) - 1
+    }
+
+
+@pytest.mark.parametrize("reason", ["no_room", "load_refused", "load_failed"])
+def test_a_drop_at_the_load_costs_only_the_run_past_the_grown_device_hit(
+    reason: str,
+) -> None:
+    """The device hit grew by three blocks while the lookup was out.
+
+    The answer offered every block asked, but the load would have read only
+    the run past the grown hit, so that is all the drop costs. The request
+    that grew it stays claimed, so filling the pool cannot evict that hit.
+    """
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    manager, connector, ctx, asked, pending = _start_deferred_lookup(tokens)
+    other = make_ctx(tokens[:4])
+    manager.claim(other)
+    manager.alloc(other)
+    manager.take_metrics()
+    _see_answer(connector, pending)
+    pool = manager.pools[0]
+    if reason == "no_room":
+        for _ in range(pool.num_free_blocks(FULL)):
+            pool.alloc_block(FULL)
+    elif reason == "load_refused":
+        connector.evict_before_load = set(asked)
+    else:
+        connector.load_error = KVLoadFailed("memory transfer failed")
+
+    if reason == "no_room":
+        with pytest.raises(InsufficientBlocksError):
+            manager.alloc(ctx, defer_lookup=True)
+    else:
+        manager.alloc(ctx, defer_lookup=True)
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {(reason, "offered", False): 1}
+    assert metrics.connector_lookup_dropped_blocks == {
+        (reason, False): len(asked) - 3
+    }
+
+
+def test_the_re_ask_cap_counts_no_computed_blocks_for_an_in_place_connector() -> (
+    None
+):
+    """A connector that answers in place is asked about the gap at once.
+
+    The third shrink still drops the answer at the cap, but the alloc then
+    loads the gap in place, so nothing was computed because of it.
+    """
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    manager, connector, ctx, _, _ = _start_deferred_lookup(
+        tokens, num_device_blocks=6
+    )
+    held = [*manager._state_of(ctx).hashes]
+    pool = manager.pools[0]
+    cache = pool.prefix_caches[FULL]
+    for depth in (5, 4):
+        connector.started[-1].answer()
+        pool.uncommit_block(cache[held[depth]])
+        manager.alloc(ctx, defer_lookup=True)
+    connector.started[-1].answer()
+    pool.uncommit_block(cache[held[3]])
+    connector.deferred_lookups = False
+
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert ctx.cached_prefix_external_length == len(tokens) - 1 - 3
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops[("shrink_cap", "offered", False)] == 1
+    assert metrics.connector_lookup_shrink_cap_blocks == 0
+
+
+def test_a_lookup_given_up_on_after_it_answered_counts_as_unseen() -> None:
+    """A poll that raises gives the lookup up even with an answer in.
+
+    The manager never read that answer, so it counts none of it.
+    """
+    manager, connector, _, _, pending = _start_deferred_lookup()
+    lookup = connector.started[-1]
+    lookup.answer()
+    lookup.error = RuntimeError("the handle is gone")
+
+    pending.is_complete()
+    assert pending.is_complete()
+
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {
+        ("poll_failed", "unseen", False): 1
+    }
+    assert metrics.connector_lookup_dropped_blocks == {}

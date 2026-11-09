@@ -23,7 +23,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
 from typing import NamedTuple, TypeVar
 
-from max.nn.kv_cache.metrics import dkv_tier_degraded
+from max.nn.kv_cache.metrics import (
+    ConnectorLookupAnswer,
+    ConnectorLookupDrop,
+    dkv_tier_degraded,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,
@@ -136,6 +140,13 @@ _Count = TypeVar("_Count", int, float)
 def _moved(counts: Mapping[str, _Count]) -> Iterator[tuple[str, _Count]]:
     """The labeled counts that moved this window, skipping the zeros."""
     return ((label, count) for label, count in counts.items() if count)
+
+
+def _samples(times_by_value: Mapping[int, int]) -> Iterator[int]:
+    """Each histogram sample, as often as it occurred this window."""
+    for value, times in times_by_value.items():
+        for _ in range(times):
+            yield value
 
 
 def _format_spec_decode_clause(
@@ -427,6 +438,24 @@ class BatchMetrics:
     # connector. Each is served by recomputing the request's prefix.
     connector_load_failures: int = 0
 
+    # Connector lookup answers the Jenga block manager dropped, for any
+    # connector. Empty, or 0, when none was dropped this window. See
+    # ``KVCacheMetrics`` for what each counts.
+    connector_lookup_drops: dict[
+        tuple[ConnectorLookupDrop, ConnectorLookupAnswer, bool], int
+    ] = field(default_factory=dict)
+    connector_lookup_dropped_blocks: dict[
+        tuple[ConnectorLookupDrop, bool], int
+    ] = field(default_factory=dict)
+    connector_lookup_shrink_depths: dict[int, int] = field(default_factory=dict)
+    connector_lookup_shrink_cap_blocks: int = 0
+    connector_lookup_reasks_per_request: dict[int, int] = field(
+        default_factory=dict
+    )
+    connector_lookup_hand_backs_per_request: dict[int, int] = field(
+        default_factory=dict
+    )
+
     # How many of ``cache_hit_tokens`` the KV connector served. The remainder
     # came from the device prefix cache, which is how ``cache_hits`` splits per
     # ``tier``. Always 0 without a connector.
@@ -615,6 +644,16 @@ class BatchMetrics:
         connector_loads_refused = 0
         connector_offload_blocks_dropped = 0
         connector_load_failures = 0
+        connector_lookup_drops: dict[
+            tuple[ConnectorLookupDrop, ConnectorLookupAnswer, bool], int
+        ] = {}
+        connector_lookup_dropped_blocks: dict[
+            tuple[ConnectorLookupDrop, bool], int
+        ] = {}
+        connector_lookup_shrink_depths: dict[int, int] = {}
+        connector_lookup_shrink_cap_blocks = 0
+        connector_lookup_reasks_per_request: dict[int, int] = {}
+        connector_lookup_hand_backs_per_request: dict[int, int] = {}
         num_replicas = sch_config.data_parallel_degree
 
         # Data-parallel balance, along two axes: active tokens (compute load
@@ -687,6 +726,22 @@ class BatchMetrics:
                 metrics_agg.connector_offload_blocks_dropped
             )
             connector_load_failures = metrics_agg.connector_load_failures
+            connector_lookup_drops = metrics_agg.connector_lookup_drops
+            connector_lookup_dropped_blocks = (
+                metrics_agg.connector_lookup_dropped_blocks
+            )
+            connector_lookup_shrink_depths = (
+                metrics_agg.connector_lookup_shrink_depths
+            )
+            connector_lookup_shrink_cap_blocks = (
+                metrics_agg.connector_lookup_shrink_cap_blocks
+            )
+            connector_lookup_reasks_per_request = (
+                metrics_agg.connector_lookup_reasks_per_request
+            )
+            connector_lookup_hand_backs_per_request = (
+                metrics_agg.connector_lookup_hand_backs_per_request
+            )
 
             disk_byte_count = kv_cache.disk_byte_count()
             total_disk_kv_bytes = disk_byte_count.total
@@ -980,6 +1035,12 @@ class BatchMetrics:
             connector_loads_refused=connector_loads_refused,
             connector_offload_blocks_dropped=connector_offload_blocks_dropped,
             connector_load_failures=connector_load_failures,
+            connector_lookup_drops=connector_lookup_drops,
+            connector_lookup_dropped_blocks=connector_lookup_dropped_blocks,
+            connector_lookup_shrink_depths=connector_lookup_shrink_depths,
+            connector_lookup_shrink_cap_blocks=connector_lookup_shrink_cap_blocks,
+            connector_lookup_reasks_per_request=connector_lookup_reasks_per_request,
+            connector_lookup_hand_backs_per_request=connector_lookup_hand_backs_per_request,
             nixl_read_latency_max_ms=nixl_read_latency_max_ms,
             overlap_active=overlap_active,
             completed=completed_batch_stats,
@@ -1343,6 +1404,21 @@ class BatchMetrics:
         if self.connector_load_failures:
             extra["connector_load_failures"] = self.connector_load_failures
 
+        # One scalar key per label, as publish_metrics sends. The block
+        # manager only keeps labels that moved.
+        for key, drops in self.connector_lookup_drops.items():
+            drop, answer, hinted = key
+            labels = f"{drop}_answer_{answer}_hinted_{str(hinted).lower()}"
+            extra[f"connector_lookup_drops_{labels}"] = drops
+        for blocks_key, blocks in self.connector_lookup_dropped_blocks.items():
+            drop, hinted = blocks_key
+            labels = f"{drop}_hinted_{str(hinted).lower()}"
+            extra[f"connector_lookup_dropped_blocks_{labels}"] = blocks
+        if self.connector_lookup_shrink_cap_blocks:
+            extra["connector_lookup_shrink_cap_blocks"] = (
+                self.connector_lookup_shrink_cap_blocks
+            )
+
         if self.total_disk_kv_bytes != 0:
             extra["total_disk_kv_bytes"] = self.total_disk_kv_bytes
             extra["used_disk_kv_pct"] = self.used_disk_kv_pct
@@ -1650,6 +1726,34 @@ class BatchMetrics:
         # Outside the host tier's guard: dKV reports no host tier.
         if self.connector_load_failures:
             METRICS.cache_connector_load_failures(self.connector_load_failures)
+
+        # Per-window deltas the block manager only fills when something was
+        # dropped, so publishing what is there loses nothing, and a window
+        # with no drop sends nothing.
+        for key, drops in self.connector_lookup_drops.items():
+            drop, answer, hinted = key
+            METRICS.cache_connector_lookup_drops(
+                drops, reason=drop, answer=answer, hinted=hinted
+            )
+        for blocks_key, blocks in self.connector_lookup_dropped_blocks.items():
+            drop, hinted = blocks_key
+            METRICS.cache_connector_lookup_dropped_blocks(
+                blocks, reason=drop, hinted=hinted
+            )
+        if self.connector_lookup_shrink_cap_blocks:
+            METRICS.cache_connector_lookup_shrink_cap_blocks(
+                self.connector_lookup_shrink_cap_blocks
+            )
+        # Kept as counts by value, so each sample is recorded rather than
+        # averaged over the window.
+        for depth in _samples(self.connector_lookup_shrink_depths):
+            METRICS.cache_connector_lookup_shrink_depth(depth)
+        for reasks in _samples(self.connector_lookup_reasks_per_request):
+            METRICS.cache_connector_lookup_reasks_per_request(reasks)
+        for hand_backs in _samples(
+            self.connector_lookup_hand_backs_per_request
+        ):
+            METRICS.cache_connector_lookup_hand_backs_per_request(hand_backs)
 
         if self.total_disk_kv_bytes != 0:
             METRICS.cache_used_disk_kv_pct(self.used_disk_kv_pct * 100)

@@ -134,6 +134,52 @@ def test_kv_cache_metrics_add_sums_the_dkv_hint_loss_fields() -> None:
     assert total.dkv_hint_blocks_unserved == 33
 
 
+def test_kv_cache_metrics_add_sums_the_connector_lookup_drop_fields() -> None:
+    """Dropped lookups and the samples behind their histograms sum across
+    replicas, key by key."""
+    first = KVCacheMetrics(
+        connector_lookup_drops={
+            ("release", "offered", False): 1,
+            ("timeout", "unseen", True): 2,
+        },
+        connector_lookup_dropped_blocks={("release", False): 7},
+        connector_lookup_shrink_depths={1: 2},
+        connector_lookup_shrink_cap_blocks=3,
+        connector_lookup_reasks_per_request={2: 1},
+        connector_lookup_hand_backs_per_request={1: 4},
+    )
+    second = KVCacheMetrics(
+        connector_lookup_drops={
+            ("release", "offered", False): 10,
+            ("release", "offered", True): 3,
+        },
+        connector_lookup_dropped_blocks={
+            ("release", False): 5,
+            ("release", True): 9,
+        },
+        connector_lookup_shrink_depths={1: 1, 6: 1},
+        connector_lookup_shrink_cap_blocks=30,
+        connector_lookup_reasks_per_request={1: 2},
+        connector_lookup_hand_backs_per_request={1: 1},
+    )
+
+    total = first + second
+
+    assert total.connector_lookup_drops == {
+        ("release", "offered", False): 11,
+        ("timeout", "unseen", True): 2,
+        ("release", "offered", True): 3,
+    }
+    assert total.connector_lookup_dropped_blocks == {
+        ("release", False): 12,
+        ("release", True): 9,
+    }
+    assert total.connector_lookup_shrink_depths == {1: 3, 6: 1}
+    assert total.connector_lookup_shrink_cap_blocks == 33
+    assert total.connector_lookup_reasks_per_request == {2: 1, 1: 2}
+    assert total.connector_lookup_hand_backs_per_request == {1: 5}
+
+
 def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
     """device_blocks_served and cross_replica_{blocks,bytes}_copied sum
     across replicas (CENG-845 G0/G0-DP tier-attribution counters)."""
