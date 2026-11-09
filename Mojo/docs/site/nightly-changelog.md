@@ -267,6 +267,16 @@ This version is still a work in progress.
   print(i)  # error: use of invalidated interior reference 'opt["value"]'
   ```
 
+- `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
+  and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
+  instead of a `RawFileDescriptor`. You can pass a `FileHandle` or
+  `FileDescriptor` directly, since both convert implicitly:
+
+  ```mojo
+  with open("log.txt", "w") as f:
+      print("hello", file=f)
+  ```
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and
