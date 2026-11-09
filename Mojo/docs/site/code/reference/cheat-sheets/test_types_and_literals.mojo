@@ -208,8 +208,12 @@ def test_optionals() raises:
     var bar: Optional[Int] = 42
     assert_equal(foo.or_else(0), 0)  # default fallback
     assert_equal(bar.or_else(0), 42)
-    assert_false(Bool(foo))  # check then access
-    assert_equal(bar, 42)
+    if case .Some(_) = foo:  # check then access
+        raise Error("foo should be empty")
+    if case .Some(value) = bar:
+        assert_equal(value, 42)
+    else:
+        raise Error("bar should hold a value")
 
 
 def test_empty_collections() raises:
