@@ -107,14 +107,16 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
                    PogListAttr declaredParamPogs, bool allowImplicitConversions,
                    ASTDecl *declIfDirect, bool discardError,
                    DeferredTypingContext *deferredTypingContext,
-                   ArrayRef<ConstraintAttr> additionalAssumptions)
+                   ArrayRef<ConstraintAttr> additionalAssumptions,
+                   bool withinParameterScope)
     : InferenceState(paramBinding.declScope, declaredParamTypes,
                      declaredParamPogs, paramBinding.getExprLoc(), discardError,
                      deferredTypingContext, additionalAssumptions),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
       deferredGivenParams(declaredParamTypes.size(), false),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
-      allowImplicitConversions(allowImplicitConversions) {}
+      allowImplicitConversions(allowImplicitConversions),
+      withinParameterScope(withinParameterScope) {}
 
 // TODO: Reconsolidate this.
 namespace M::KGEN::LIT {
@@ -956,23 +958,6 @@ VerifiedParamBindings ParamInf::inferForStruct() {
             << "' declared here";
       }
     }
-
-    // Skip the unprovable-constraint diagnostic when the caller has asked
-    // the inference state to discard errors (i.e. it's filtering candidates,
-    // not committing to this binding).
-    if (!diag.isDiscarding() && !bodyUnprovableConstraints.empty()) {
-      // If the caller installed a deferred typing context, record
-      // the body-unprovable constraints there and suppress the error.
-      // Otherwise, fall back to the existing hard-error path.
-      if (deferredTypingContext) {
-        for (ConstraintAttr c : bodyUnprovableConstraints)
-          deferredTypingContext->addInconclusive(c, paramBindings.getExprLoc());
-      } else {
-        emitUnprovableConstraintsFromFitness(
-            bodyUnprovableConstraints, paramBindings.shared,
-            paramBindings.getExprLoc(), declIfKnown);
-      }
-    }
   });
 
   isInferForStruct = true;
@@ -994,6 +979,26 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   if (failed(checkBodyConstraints()))
     return {};
 
+  // Skip the unprovable-constraint diagnostic when the caller has asked
+  // the inference state to discard errors (i.e. it's filtering candidates,
+  // not committing to this binding).
+  if (!diag.isDiscarding() && !bodyUnprovableConstraints.empty()) {
+    // If the caller installed a deferred typing context, record
+    // the body-unprovable constraints there and suppress the error.
+    // Otherwise, fall back to the existing hard-error path.
+    if (deferredTypingContext) {
+      // if we have a deferred type context, all unprovable constraints will
+      // be passed over, for the current inference, mark them as discharged.
+      dischargedBodyConstraints.set();
+      for (ConstraintAttr c : bodyUnprovableConstraints)
+        deferredTypingContext->addInconclusive(c, paramBindings.getExprLoc());
+    } else {
+      emitUnprovableConstraintsFromFitness(
+          bodyUnprovableConstraints, paramBindings.shared,
+          paramBindings.getExprLoc(), declIfKnown);
+    }
+  }
+
   succeeded = true;
   ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
       getShared().getContext(), evaluator.getIndexBindings());
@@ -1014,12 +1019,16 @@ LogicalResult ParamInf::inferFromDefaults() {
     value = evaluator.getReboundAttribute(value);
 
     // Don't try to infer from default values that have unresolved references
-    // to other parameters.
-    //
-    // TODO: If the references points to a `_` parameter, we might still want to
-    // install it without erasing the index reference.
-    if (hasReferences(value))
-      return success();
+    // to other parameters, unless the result is used within a parameter scope
+    // where those references stay meaningful.
+
+    if (hasReferences(value)) {
+      if (!withinParameterScope)
+        return success();
+      // The default expression are within the current parameter scope, quote it
+      // before pulling it out.
+      value = QuoteAttr::get(value);
+    }
 
     ASTType argType = evaluator.getReboundType(declaredParamTypes[idx]);
     FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(

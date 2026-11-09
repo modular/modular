@@ -376,22 +376,6 @@ OverloadFitness OverloadFitness::evaluateDirectCall(
     }
   }
 
-  if (ASTType contextualType = callable.getContextualType(candidate)) {
-    if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(contextualType));
-        genAttr && sugarIsa<StructType>(ASTType(genAttr.getBody()))) {
-      VerifiedParamBindings &verifiedBindings = result.paramBindings;
-      auto genNumParams = genAttr.getInputParamTypes().size();
-      ArrayRef binding = verifiedBindings.getValues().take_front(genNumParams);
-      auto bound = BindParamsAttr::get(genAttr.getContext(), genAttr, binding,
-                                       &shared.getEvaluationContext());
-      SmallVector<TypedAttr> remappedBinding(ASTType(bound).getParamBindings());
-      llvm::append_range(remappedBinding,
-                         verifiedBindings.getValues().drop_front(genNumParams));
-      verifiedBindings.setBindings(
-          ParameterExprArrayAttr::get(genAttr.getContext(), remappedBinding));
-    }
-  }
-
   return result;
 }
 

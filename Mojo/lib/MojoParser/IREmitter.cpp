@@ -1432,6 +1432,19 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
       }
     }
   }
+
+  // This should be the only representation of a partially bound struct type
+  if (auto gen = StructTypeGenerator::dynCast(PValue(type));
+      gen && !gen.getInputParamTypes().empty()) {
+    auto diag = emitError(value.expr->getLoc())
+                << type
+                << " is not concrete, use '[]' to bind missing parameters";
+    for (PogMetadataAttr pog : gen.getMetadata().getPogs())
+      diag.attachNote(value.expr->getLoc())
+          << "missing parameter '" << pog.getName().getValue() << "'";
+    return {};
+  }
+
   if (llvm::any_of(type.getParamBindings(),
                    [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
     auto diag = emitError(value.expr->getLoc())
