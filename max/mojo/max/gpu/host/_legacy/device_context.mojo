@@ -7798,14 +7798,18 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
             The architecture name, such as `sm_100a` or `gfx942`.
 
         Raises:
-            If the device does not report an architecture.
+            If the driver query fails or the device does not report an
+            architecture.
         """
         var arch_name = StaticString()
-        # The export reports a failed query as an empty name.
-        external_call[
-            "AsyncRT_DeviceContext_archName",
-            NoneType,
-        ](Pointer(to=arch_name), self._ctx[]._handle)
+        # const char *AsyncRT_DeviceContext_archName(StringRef *result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_archName",
+                _CString[],
+            ](Pointer(to=arch_name), self._ctx[]._handle),
+            location=call_location(),
+        )
         if not arch_name:
             raise Error(
                 t"device {self.id} does not report a compilation target"

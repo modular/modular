@@ -13,6 +13,7 @@
 """Tests the `Device` view returned by `DeviceContext.device()`."""
 
 from max.gpu.host import DeviceAttribute, DeviceContext
+from std.sys.defines import is_defined
 from std.testing import (
     assert_equal,
     assert_false,
@@ -20,6 +21,12 @@ from std.testing import (
     assert_true,
     TestSuite,
 )
+
+# `--config=hal-device-context` defines `HAL_DEVICE_CONTEXT`; the two backends
+# word the driver's no-architecture error differently.
+comptime _NO_ARCH_ERROR = "failed to get device property 'arch'" if is_defined[
+    "HAL_DEVICE_CONTEXT"
+]() else "Not implemented for device: cpu"
 
 
 def _multiprocessor_count(ctx: DeviceContext) raises -> Int:
@@ -147,6 +154,11 @@ def test_device_cannot_peer_cpu() raises:
     var cpu = DeviceContext.cpu()
     with DeviceContext() as ctx:
         assert_false(ctx.device().can_access_peer(cpu.device()))
+
+
+def test_device_get_arch_reports_driver_error() raises:
+    with assert_raises(contains=_NO_ARCH_ERROR):
+        _ = DeviceContext.cpu().device().get_arch()
 
 
 def test_device_through_borrowed_context() raises:

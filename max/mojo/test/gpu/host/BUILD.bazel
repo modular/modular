@@ -77,6 +77,13 @@ mojo_test(
 mojo_test(
     name = "test_device_view.mojo.test",
     srcs = ["test_device_view.mojo"],
+    copts = select({
+        "//:hal_device_context_enabled": [
+            "-D",
+            "HAL_DEVICE_CONTEXT",
+        ],
+        "//conditions:default": [],
+    }),
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
     deps = [

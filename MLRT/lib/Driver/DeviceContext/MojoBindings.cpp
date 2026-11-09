@@ -123,14 +123,16 @@ MODULAR_EXPORT void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result,
   *result = ctx->device().api();
 }
 
-MODULAR_EXPORT void AsyncRT_DeviceContext_archName(llvm::StringRef *result,
-                                                   DeviceContext *ctx) {
+MODULAR_EXPORT const char *
+AsyncRT_DeviceContext_archName(llvm::StringRef *result, DeviceContext *ctx) {
   TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceContext_archName", TRACY_COLOR_GRAY);
   ErrorOr<const char *> archName = ctx->device().getArchName();
-  if (archName.isError())
+  if (archName.isError()) {
     *result = "";
-  else
-    *result = archName.get();
+    return raiseError(archName.getError());
+  }
+  *result = archName.get();
+  return nullptr;
 }
 
 MODULAR_EXPORT const char *
