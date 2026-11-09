@@ -165,6 +165,7 @@ class NemotronHBackbone(
         input_row_offsets: Tensor,
         capture_rows: Tensor | None = None,
         update_state: Tensor | None = None,
+        verify_width: Tensor | None = None,
     ) -> tuple[Tensor, tuple[Tensor, ...], tuple[MambaReplayCapture, ...]]:
         """Runs the layer stack.
 
@@ -181,6 +182,8 @@ class NemotronHBackbone(
                 requests write their new Mamba state back to their rows. A
                 request with the flag false only reads its state. ``None``
                 updates every request.
+            verify_width: The verify's ``[K]`` width operand; required when
+                the config sets ``capture_mamba_replay``.
 
         Returns:
             The final pre-norm hidden states, the hidden states selected by
@@ -228,6 +231,9 @@ class NemotronHBackbone(
                     assert capture_rows is not None, (
                         "capture_mamba_replay needs the rows to capture"
                     )
+                    assert verify_width is not None, (
+                        "capture_mamba_replay needs the verify width"
+                    )
                     h, replay = call(
                         h,
                         access,
@@ -235,6 +241,7 @@ class NemotronHBackbone(
                         has_initial_state,
                         update_state,
                         capture_rows,
+                        verify_width,
                     )
                     replays.append(replay)
                 else:
@@ -359,6 +366,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor,
         update_state: Tensor,
+        verify_width: Tensor,
     ) -> tuple[ModuleV3Outputs, Tensor, tuple[MambaReplayCapture, ...]]:
         """Runs a speculative verify pass on the given Mamba state.
 
@@ -373,6 +381,8 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             update_state: The ``[batch_size]`` bool flags selecting which
                 requests advance their state. A request with drafts must not,
                 since its accepted prefix is not known until the replay.
+            verify_width: The verify's ``[K]`` width operand; required when
+                the config sets ``capture_mamba_replay``.
 
         Returns:
             The model outputs, the selected hidden states as one tensor
@@ -390,6 +400,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             state,
             capture_rows,
             update_state,
+            verify_width,
         )
         assert hidden is not None, "a verify pass returns hidden states"
         return outputs, hidden, replays
@@ -404,6 +415,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor | None,
         update_state: Tensor | None = None,
+        verify_width: Tensor | None = None,
     ) -> tuple[
         ModuleV3Outputs,
         Tensor | None,
@@ -417,6 +429,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             input_row_offsets,
             capture_rows,
             update_state,
+            verify_width,
         )
 
         # One projection and one gather serve both outputs when ALL logits

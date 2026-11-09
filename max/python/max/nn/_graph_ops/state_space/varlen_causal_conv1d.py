@@ -224,3 +224,68 @@ def causal_conv1d_varlen_fwd(
         },
     )
     return cast(TensorValue, results[0])
+
+
+def causal_conv1d_varlen_fwd_rows(
+    x: TensorValue,
+    weight: TensorValue,
+    bias: TensorValue,
+    conv_states: BufferValue,
+    query_start_loc: TensorValue,
+    cache_indices: TensorValue,
+    has_initial_state: TensorValue,
+    update_state: TensorValue,
+    verify_width: TensorValue,
+    activation: str = "silu",
+    channels_last: bool = False,
+    use_residual: bool = False,
+) -> TensorValue:
+    """Applies the varlen causal depthwise conv1d for a mixed verify graph.
+
+    A row longer than ``K + 1`` tokens is a prefill row and commits its
+    state window at its last real token; the flag keeps its meaning for
+    shorter rows.
+
+    Args:
+        x: As in :func:`causal_conv1d_varlen_fwd`.
+        weight: As in :func:`causal_conv1d_varlen_fwd`.
+        bias: As in :func:`causal_conv1d_varlen_fwd`.
+        conv_states: As in :func:`causal_conv1d_varlen_fwd`.
+        query_start_loc: As in :func:`causal_conv1d_varlen_fwd`.
+        cache_indices: As in :func:`causal_conv1d_varlen_fwd`.
+        has_initial_state: As in :func:`causal_conv1d_varlen_fwd`.
+        update_state: The ``[batch]`` bool; always present here.
+        verify_width: The ``[K]`` int64 operand
+            :func:`verify_width_operand` returns; read for its length only.
+        activation: As in :func:`causal_conv1d_varlen_fwd`.
+        channels_last: As in :func:`causal_conv1d_varlen_fwd`.
+        use_residual: As in :func:`causal_conv1d_varlen_fwd`.
+
+    Returns:
+        The conv output with the same shape/layout as ``x``.
+        ``conv_states`` is mutated in place.
+    """
+    device = x.device
+    out_type = TensorType(x.dtype, x.shape, device)
+    results = ops.inplace_custom(
+        "causal_conv1d_varlen_fwd_rows",
+        device,
+        [
+            x,
+            weight,
+            bias,
+            conv_states,
+            query_start_loc,
+            cache_indices,
+            has_initial_state,
+            update_state,
+            verify_width,
+        ],
+        [out_type],
+        parameters={
+            "activation": activation,
+            "channels_last": channels_last,
+            "use_residual": use_residual,
+        },
+    )
+    return cast(TensorValue, results[0])

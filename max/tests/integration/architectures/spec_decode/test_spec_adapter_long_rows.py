@@ -25,11 +25,18 @@ from max.pipelines.lib import PIPELINE_REGISTRY
 from max.pipelines.speculative import proposers, spec_adapters
 
 
-@pytest.mark.parametrize("method", ["mtp", "dflash2"])
-def test_a_gated_delta_target_commits_long_rows(method: str) -> None:
-    assert spec_adapters.verify_commits_long_rows(
-        "Qwen3_5ForConditionalGeneration", method
-    )
+@pytest.mark.parametrize(
+    ("target_arch", "method"),
+    [
+        ("Qwen3_5ForConditionalGeneration", "mtp"),
+        ("Qwen3_5ForConditionalGeneration", "dflash2"),
+        ("NemotronHForCausalLM_ModuleV3", "dspark"),
+    ],
+)
+def test_a_recurrent_target_commits_long_rows(
+    target_arch: str, method: str
+) -> None:
+    assert spec_adapters.verify_commits_long_rows(target_arch, method)
 
 
 @pytest.mark.parametrize(

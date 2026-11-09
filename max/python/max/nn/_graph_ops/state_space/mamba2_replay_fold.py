@@ -25,6 +25,8 @@ def mamba2_replay_fold(
     conv_rows: TensorValue,
     ssm_rows: TensorValue,
     replay_bounds: TensorValue,
+    merged_offsets: TensorValue,
+    verify_width: TensorValue,
     projected: Sequence[TensorValue],
     convolved: Sequence[TensorValue],
     A: Sequence[TensorValue],
@@ -37,7 +39,9 @@ def mamba2_replay_fold(
     accepted rows, all in one launch. The SSM state lands exactly where
     replaying those rows through
     :func:`~max.nn._graph_ops.state_space.mamba2_ssd_chunk_scan_varlen_fwd_inplace` would
-    put it. Every request continues its live state. GPU only.
+    put it. Every request continues its live state. A row longer than
+    ``K + 1`` tokens is a prefill row and folds nothing: the verify
+    committed its state itself. GPU only.
 
     Args:
         conv_pool: The ``[max_slots, conv_dim, width - 1]`` conv windows,
@@ -48,6 +52,11 @@ def mamba2_replay_fold(
         ssm_rows: The ``[num_layers, batch]`` uint32 SSM-state rows.
         replay_bounds: The ``[2 * batch]`` int32 accepted ``(start, end)``
             rows of each request.
+        merged_offsets: The ``[batch + 1]`` uint32 cumulative row offsets
+            of the verified sequences.
+        verify_width: The ``[K]`` int64 operand
+            :func:`~max.nn._graph_ops.state_space.verify_width_operand`
+            returns; read for its length only.
         projected: Each layer's ``in_proj`` output rows,
             ``[rows, nheads * head_dim + conv_dim + nheads]``: the gate, the
             conv input and ``dt``.
@@ -74,6 +83,8 @@ def mamba2_replay_fold(
             conv_rows,
             ssm_rows,
             replay_bounds,
+            merged_offsets,
+            verify_width,
             *projected,
             *convolved,
             *heads,
