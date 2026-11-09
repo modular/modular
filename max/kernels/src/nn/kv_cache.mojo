@@ -1009,7 +1009,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     q_out_dtype: DType,
     freq_dtype: DType,
     QInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -1105,7 +1104,6 @@ def fused_qk_rms_norm_rope_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     QInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -1315,13 +1313,11 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     q_index_out_dtype: DType,
     freq_dtype: DType,
     MainQInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     IndexQInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -1488,13 +1484,11 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     index_page_size: Int,
     index_cache_dtype: DType,
     MainQInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     IndexQInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width

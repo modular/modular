@@ -2475,7 +2475,6 @@ def fused_qk_rms_norm_rope_ragged(
     parameters: dict[str, bool | int | str | DType] = {
         "interleaved": interleaved,
         "multiply_before_cast": multiply_before_cast,
-        "cache_dtype": kv_params.dtype,
     }
     assert kv_params.page_size is not None
 
@@ -2631,8 +2630,6 @@ def fused_dual_qk_rms_norm_rope_ragged(
     parameters: dict[str, bool | int | str | DType] = {
         "interleaved": interleaved,
         "multiply_before_cast": multiply_before_cast,
-        "main_cache_dtype": main_kv_params.dtype,
-        "index_cache_dtype": index_kv_params.dtype,
     }
     assert main_kv_params.page_size is not None
     assert index_kv_params.page_size is not None
