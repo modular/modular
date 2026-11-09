@@ -2228,28 +2228,29 @@ LogicalResult GraphBlobOp::verifyRegions() {
   return success();
 }
 
-// Emits the body's declarative calls as one launch. Each configuration is a
-// `GraphBlobExecutionConfig`: the blob launches the configurations' `merge`,
-// passes each call's `active_threads`, and runs each `execute_device` only on
-// the threads it names:
+// Emits the body's declarative calls as one launch on every core and thread of
+// the device, the `all_cores` of the first call's configuration type. Each call
+// runs its `execute_device` only on the first blocks of the launch, as many as
+// its own grid has:
 //
 //   var config0 = Kernel0[...].execute_configuration[...](operands0...)
 //   var config1 = Kernel1[...].execute_configuration[...](operands1...)
 //   comptime T0 = type_of(operand0)  # one per distinct operand
 //   comptime C = type_of(config0)
-//   var config = config0.merge(config1)
-//   def execute_device_N(a0: T0.DeviceType, ..., a5: C.ActiveThreads,
-//                        a6: C.ActiveThreads):
-//       if C.is_thread_active(a5):
+//   var launch = C.all_cores()
+//   def execute_device_N(a0: T0.DeviceType, ..., a5: Int32, a6: Int32):
+//       if _graph_blob.is_thread_active(a5):
 //           Kernel0[...].execute_device[...](T0(a0), ...)
-//       C.barrier()
-//       if C.is_thread_active(a6):
+//       _graph_blob.barrier()
+//       if _graph_blob.is_thread_active(a6):
 //           Kernel1[...].execute_device[...](...)
-//   mogg_launch_declarative[execute_device_N](ctx, config, operand0, ...,
-//                                             config0.active_threads(),
-//                                             config1.active_threads())
+//   mogg_launch_declarative[execute_device_N](
+//       ctx, launch, operand0, ...,
+//       _graph_blob.active_threads(config0.get_grid_dim(),
+//                                  config0.get_block_dim(),
+//                                  launch.get_grid_dim(),
+//                                  launch.get_block_dim()), ...)
 //
-// `merge` takes `Self`, so the calls must return the same configuration type.
 // Every thread reaches every barrier, so a barrier sits outside the guards.
 LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
   // Each body op emits through `lowerOpToMojo`, which passes it only the state,
@@ -2266,23 +2267,27 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
   assert(!blob.members.empty() && "the verifier requires a call");
 
   MojoBuilder &builder = state.builder;
-  MojoValue config = blob.members.front().config;
-  MojoValue configType = builder.comptime(MojoValue("type_of")({}, {config}));
-  for (const GraphBlobEmission::Member &member : llvm::drop_begin(blob.members))
-    config = builder.var(config.get("merge")({}, {member.config}),
-                         /*cache=*/false);
+  MojoValue graphBlob(kGraphBlobModuleAlias);
+  MojoValue configType =
+      builder.comptime(MojoValue("type_of")({}, {blob.members.front().config}));
+  MojoValue launch =
+      builder.var(configType.get("all_cores")(), /*cache=*/false);
 
   SmallVector<unsigned> active;
-  for (const GraphBlobEmission::Member &member : blob.members)
-    active.push_back(blob.args.addScalar(member.config.get("active_threads")(),
-                                         configType.get("ActiveThreads")));
+  for (const GraphBlobEmission::Member &member : blob.members) {
+    MojoValue threads = graphBlob.get("active_threads")(
+        {}, {member.config.get("get_grid_dim")(),
+             member.config.get("get_block_dim")(), launch.get("get_grid_dim")(),
+             launch.get("get_block_dim")()});
+    active.push_back(blob.args.addScalar(threads, MojoValue("Int32")));
+  }
 
   MojoValue kernel =
       emitDeviceKernel(builder, blob.args, [&](const FunctionBody &body) {
         for (auto [i, member] : llvm::enumerate(blob.members)) {
           if (i > 0)
-            builder.call(configType.get("barrier"));
-          MojoValue isActive = configType.get("is_thread_active")(
+            builder.call(graphBlob.get("barrier"));
+          MojoValue isActive = graphBlob.get("is_thread_active")(
               {}, {body.arguments[active[i]]});
           builder.if_(isActive, [&] {
             builder.verbatim(member.call.executeDevice(
@@ -2290,7 +2295,7 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
           });
         }
       });
-  emitLaunch(state, state.getMojoValueFor(blob.ctx), kernel, blob.args, config);
+  emitLaunch(state, state.getMojoValueFor(blob.ctx), kernel, blob.args, launch);
   return success();
 }
 

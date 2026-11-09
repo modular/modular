@@ -128,6 +128,7 @@
 /max/BUILD.bazel @modular/sdlc
 /max/mojo/max/__init__.mojo @modular/stdlib @modular/kernels @copilot-pull-request-reviewer @modular/driver
 /max/mojo/max/_category_.json @modular/mojo-docs
+/max/mojo/max/_graph_blob.mojo @modular/stdlib @modular/runtime @copilot-pull-request-reviewer
 /max/mojo/max/BUILD.bazel @modular/stdlib
 /max/mojo/max/algorithm/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
 /max/mojo/max/benchmark/ @modular/stdlib @copilot-pull-request-reviewer

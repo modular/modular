@@ -10,12 +10,12 @@
 // verification is disabled.
 
 // A `mogg.graph_blob` launches its declarative calls as one kernel: each
-// call's `execute_configuration` runs on the host, the blob launches their
-// `merge`, and the kernel runs each `execute_device` only where
-// `is_thread_active` accepts that call's `active_threads`, with a barrier
-// between them. The intermediate `%b` crosses the launch once per use.
+// call's `execute_configuration` runs on the host, the blob launches on the
+// first configuration type's `all_cores`, and the kernel runs each
+// `execute_device` only where `_graph_blob.is_thread_active` accepts that
+// call's grid, with a barrier between them. The intermediate `%b` crosses the launch once per use.
 
-// CHECK-NOT: import max._graph_blob
+// CHECK: import max._graph_blob as _graph_blob
 // CHECK: def {{__[A-Za-z0-9_]+}}({{.*}}, [[CTX:[A-Za-z0-9_]+]]: {{.*}}DeviceContext) raises:
 // CHECK:   var [[CONFIG0:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration([[OUT0:[A-Za-z0-9_]+]], [[IN0:[A-Za-z0-9_]+]])
 // CHECK:   comptime [[OUT0_T:[A-Za-z0-9_]+]] = type_of([[OUT0]])
@@ -24,14 +24,14 @@
 // CHECK:   comptime [[OUT1_T:[A-Za-z0-9_]+]] = type_of([[OUT1]])
 // CHECK:   comptime [[IN1_T:[A-Za-z0-9_]+]] = type_of([[IN1]])
 // CHECK:   comptime [[CONFIG_T:[A-Za-z0-9_]+]] = type_of([[CONFIG0]])
-// CHECK:   var [[CONFIG:[A-Za-z0-9_]+]] = [[CONFIG0]].merge([[CONFIG1]])
-// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].DeviceType, [[A1:[A-Za-z0-9_]+]]: [[IN0_T]].DeviceType, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].DeviceType, [[A3:[A-Za-z0-9_]+]]: [[IN1_T]].DeviceType, [[ACTIVE0:[A-Za-z0-9_]+]]: [[CONFIG_T]].ActiveThreads, [[ACTIVE1:[A-Za-z0-9_]+]]: [[CONFIG_T]].ActiveThreads):
-// CHECK-NEXT: if {{\(?}}[[CONFIG_T]].is_thread_active([[ACTIVE0]]){{\)?}}:
+// CHECK:   var [[LAUNCH:[A-Za-z0-9_]+]] = [[CONFIG_T]].all_cores()
+// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].DeviceType, [[A1:[A-Za-z0-9_]+]]: [[IN0_T]].DeviceType, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].DeviceType, [[A3:[A-Za-z0-9_]+]]: [[IN1_T]].DeviceType, [[ACTIVE0:[A-Za-z0-9_]+]]: Int32, [[ACTIVE1:[A-Za-z0-9_]+]]: Int32):
+// CHECK-NEXT: if {{\(?}}_graph_blob.is_thread_active([[ACTIVE0]]){{\)?}}:
 // CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT0_T]]([[A0]]), [[IN0_T]]([[A1]]))
-// CHECK: [[CONFIG_T]].barrier()
-// CHECK-NEXT: if {{\(?}}[[CONFIG_T]].is_thread_active([[ACTIVE1]]){{\)?}}:
+// CHECK: _graph_blob.barrier()
+// CHECK-NEXT: if {{\(?}}_graph_blob.is_thread_active([[ACTIVE1]]){{\)?}}:
 // CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT1_T]]([[A2]]), [[IN1_T]]([[A3]]))
-// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[CONFIG]], [[OUT0]], [[IN0]], [[OUT1]], [[IN1]], [[CONFIG0]].active_threads(), [[CONFIG1]].active_threads())
+// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[LAUNCH]], [[OUT0]], [[IN0]], [[OUT1]], [[IN1]], _graph_blob.active_threads([[CONFIG0]].get_grid_dim(), [[CONFIG0]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim()), _graph_blob.active_threads([[CONFIG1]].get_grid_dim(), [[CONFIG1]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim()))
 
 mo.graph @blob(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %0:2 = mogg.routine (%arg0 : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)

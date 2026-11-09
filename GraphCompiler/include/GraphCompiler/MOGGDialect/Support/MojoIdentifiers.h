@@ -57,6 +57,11 @@ namespace M::MOGG {
 constexpr llvm::StringLiteral kOpaqueTypeMappingAttrName =
     "mogg.opaque_type_mapping";
 
+/// The module of the primitives a graph blob's kernel calls, and the name a
+/// graph with a blob imports it as.
+constexpr llvm::StringLiteral kGraphBlobModule = "max._graph_blob";
+constexpr llvm::StringLiteral kGraphBlobModuleAlias = "_graph_blob";
+
 /// The `@register` decorators, owned by KGEN's `LITUtils.h`, which the Mojo
 /// parser also uses. A kernel struct's method names are
 /// `stringifyKernelFunctionKind`'s.
