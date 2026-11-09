@@ -70,6 +70,7 @@ __all__ = [
     "trailing_buffers",
     "trailing_input_tree",
     "trailing_input_types",
+    "verify_commits_long_rows",
     "verify_for",
 ]
 
@@ -249,6 +250,16 @@ def prepares_every_batch(target_arch: str) -> bool:
     The inputs past the canonical tail count.
     """
     return _adapter(target_arch).prepares_every_batch
+
+
+def verify_commits_long_rows(target_arch: str, method: str) -> bool:
+    """Returns whether the target's verify commits a long row.
+
+    A long row is longer than one token and its drafts, and the commit must
+    happen in every recurrent leaf under ``method``. Mach's ``gen_mef``
+    writes the answer to the export's sidecar.
+    """
+    return _adapter(target_arch, method).verify_commits_long_rows
 
 
 def signal_buffer_index(target_arch: str) -> int | None:

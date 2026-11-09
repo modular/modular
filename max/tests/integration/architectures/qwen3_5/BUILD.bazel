@@ -380,7 +380,9 @@ modular_py_test(
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",
     ],
@@ -424,6 +426,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_state_rollback",
+    size = "medium",
     srcs = ["test_state_rollback.py"],
     deps = [
         "//max/python/max/driver",
@@ -479,6 +482,33 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mixed_step_chunk",
+    size = "large",
+    srcs = ["test_mixed_step_chunk.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    # Bit-exact only on the NVIDIA chunk path; other GPUs take the serial
+    # ring fallback, which rounds differently from the base forward.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",

@@ -172,8 +172,8 @@ class _Harness:
             signals, conv, rec, base_conv, base_rec, ring = (
                 v.buffer for v in graph.inputs[5:]
             )
-            # Any rows the ring holds work, and request ``r`` at row ``r`` is
-            # one.
+            # Any rows the ring buffer holds work, and request ``r`` at row
+            # ``r`` is one.
             ring_rows = ops.range(
                 start=0,
                 stop=Dim("batch_size"),
@@ -196,7 +196,6 @@ class _Harness:
                     [x], [signals], layer_state_access(leaves, 0), [offsets]
                 )
             if rollback_width != forward_width:
-                state.num_draft_tokens = Dim(rollback_width)
                 state.verify_width = verify_width_operand(rollback_width)
             state.roll_forward(
                 leaves,
@@ -309,17 +308,17 @@ def _run(
 
 
 _CASES = [
-    [[1]],
-    [[2]],
-    [[3]],
-    [[4]],
-    [[5]],
-    [[64]],
-    [[564]],
+    pytest.param([[1]], id="one-token-row"),
+    pytest.param([[2]], id="row-past-the-one-token-clamp"),
+    pytest.param([[3]], id="three-token-row-commits"),
+    pytest.param([[4]], id="row-at-the-ring"),
+    pytest.param([[5]], id="row-past-the-ring"),
+    pytest.param([[64]], id="long-prompt-row"),
+    pytest.param([[564]], id="longer-prompt-row"),
     # One prompt prefilled in two chunks.
-    [[300], [264]],
+    pytest.param([[300], [264]], id="prompt-in-two-chunks"),
     # A one-token decode row riding a prompt's launch.
-    [[1, 564]],
+    pytest.param([[1, 564]], id="decode-row-riding-a-prompt"),
 ]
 
 
@@ -334,13 +333,33 @@ def test_a_committed_step_matches_the_base_forward(
     np.testing.assert_array_equal(out["readout"], out["base_readout"])
 
 
-# A width-one plan holds two rows per request, so longer prompts would replay
-# past it.
-@pytest.mark.parametrize("length", [1, 2])
-def test_rolling_back_a_committed_step_is_detectable(length: int) -> None:
+# A one-token row is the only one the rollback's clamp lets through at the
+# step's width; a longer committed row replays and folds nothing.
+def test_rolling_back_a_committed_step_is_detectable() -> None:
     """Checks a rollback left enabled at width zero corrupts the pools."""
-    out = _run([[length]], forward_width=0, rollback_width=1)
+    out = _run([[1]], forward_width=0, rollback_width=1)
     assert not (
         np.array_equal(out["conv"], out["base_conv"])
         and np.array_equal(out["recurrent"], out["base_recurrent"])
     )
+
+
+@pytest.mark.parametrize(
+    "length",
+    [
+        pytest.param(2, id="row-past-the-one-token-clamp"),
+        pytest.param(4, id="row-at-the-ring"),
+    ],
+)
+def test_a_left_enabled_rollback_holds_a_committed_row(length: int) -> None:
+    """Checks the rollback's clamp holds a committed row on the forward."""
+    out = _run([[length]], forward_width=0, rollback_width=1)
+    np.testing.assert_array_equal(out["conv"], out["base_conv"])
+    np.testing.assert_array_equal(out["recurrent"], out["base_recurrent"])
+
+
+def test_a_left_enabled_rollback_leaves_a_long_rows_pools_correct() -> None:
+    """Checks the rollback's ring clamp holds a long row's committed state."""
+    out = _run([[564]], forward_width=0, rollback_width=1)
+    np.testing.assert_array_equal(out["conv"], out["base_conv"])
+    np.testing.assert_array_equal(out["recurrent"], out["base_recurrent"])

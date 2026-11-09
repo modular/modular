@@ -44,14 +44,17 @@ Inputs:
 Outputs:
   conv_output_ragged : [total_seq_len, conv_dim]              float32
       Causal conv output in the same ragged layout as the input.
-  qkv_window         : [total_seq_len, conv_dim]              float32
-      A copy of the input under CAPTURE_INPUT; untouched otherwise.
+  qkv_window         : [batch_size * window_row_len, conv_dim] float32
+      Under CAPTURE_INPUT, a copy of every row of at most window_row_len
+      tokens, row b at window row b * window_row_len; untouched otherwise.
   (conv_state is mutated in place; there is no separate state-out
    tensor.  Window slot j ends up holding the raw input at position
    seq_len - (kernel_size-1) + j within the sequence, carrying forward
    from the old window when seq_len is shorter.  Under
    WRITE_STATE = False the window is left alone and the only result is
-   the conv output.)
+   the conv output, except that under CAPTURE_INPUT a row longer than
+   window_row_len writes the window ending at its last real token, before
+   its num_draft_tokens drafts.)
 
 Thread mapping (GPU)
 --------------------
@@ -106,6 +109,8 @@ def gated_delta_conv1d_fwd_gpu[
     total_seq_len: Int32,
     conv_dim: Int32,
     tokens_per_block: Int32,
+    window_row_len: Int32,
+    num_draft_tokens: Int32,
     qkv_input_ragged: TileTensor[
         work_dtype, qkv_input_ragged_LT, ImmUntrackedOrigin, Engine=Engine
     ],
@@ -133,9 +138,15 @@ def gated_delta_conv1d_fwd_gpu[
     The thread owning a sequence's first token computes the outputs that
     see the old conv window and then rewrites the window; later tokens read
     only the ragged input. With `WRITE_STATE` False the window is left
-    unchanged. With `CAPTURE_INPUT` every thread also copies the input it
-    owns to `qkv_window`, which has the output's shape; otherwise
-    `qkv_window` is never touched.
+    unchanged.
+
+    With `CAPTURE_INPUT` (a verify's forward launch) every thread of a row
+    of at most `window_row_len` tokens also copies the input it owns to that
+    row's slot of `qkv_window`, for the rollback to replay. A longer row is
+    not copied: its head thread writes the window ending at the row's last
+    real token, before the `num_draft_tokens` drafts every verify row ends
+    with, so the rollback replays none of it. Both arguments are read only
+    under `CAPTURE_INPUT`.
 
     Every thread waits for the preceding grid before it reads any operand,
     since each of them (the input, the weight, the offsets) can be that
@@ -228,23 +239,6 @@ def gated_delta_conv1d_fwd_gpu[
         first_flat_token_idx,
         min(first_flat_token_idx + _tokens_per_block, _total_seq_len),
     ):
-        comptime if CAPTURE_INPUT:
-            if active:
-                qkv_window_flat.store(
-                    (
-                        UInt32(flat_token_idx) * window_row_stride
-                        + window_channel_offset,
-                    ),
-                    rebind[Scalar[work_dtype]](
-                        qkv_input_flat.load(
-                            (
-                                UInt32(flat_token_idx) * input_row_stride
-                                + input_channel_offset,
-                            )
-                        )
-                    ),
-                )
-
         if flat_token_idx >= sequence_end_flat_idx:
             # Rightmost b with input_row_offsets[b] <= flat_token_idx, which
             # skips zero-length sequences.
@@ -296,6 +290,27 @@ def gated_delta_conv1d_fwd_gpu[
         var token_position_in_sequence = (
             flat_token_idx - sequence_start_flat_idx
         )
+
+        comptime if CAPTURE_INPUT:
+            if active and sequence_length <= Int(window_row_len):
+                qkv_window_flat.store(
+                    (
+                        UInt32(
+                            batch_item_idx * Int(window_row_len)
+                            + token_position_in_sequence
+                        )
+                        * window_row_stride
+                        + window_channel_offset,
+                    ),
+                    rebind[Scalar[work_dtype]](
+                        qkv_input_flat.load(
+                            (
+                                UInt32(flat_token_idx) * input_row_stride
+                                + input_channel_offset,
+                            )
+                        )
+                    ),
+                )
 
         if token_position_in_sequence >= KERNEL_SIZE_MINUS_ONE:
             # All K taps come from the ragged input; conv_state is untouched.
@@ -385,12 +400,19 @@ def gated_delta_conv1d_fwd_gpu[
                     Scalar[work_dtype](conv_sum),
                 )
 
+        var writes_state = WRITE_STATE
+        var state_end = sequence_length
+        comptime if CAPTURE_INPUT:
+            if sequence_length > Int(window_row_len):
+                writes_state = True
+                state_end = sequence_length - Int(num_draft_tokens)
+
         # Safe in place: every old-window read precedes the write to its slot.
         # Never return here; this thread may own more tokens in its tile.
-        comptime if WRITE_STATE:
+        if writes_state:
             comptime for state_slot_j in range(KERNEL_SIZE_MINUS_ONE):
                 var source_position_in_sequence = (
-                    sequence_length - KERNEL_SIZE_MINUS_ONE + state_slot_j
+                    state_end - KERNEL_SIZE_MINUS_ONE + state_slot_j
                 )
 
                 var state_value: Scalar[state_dtype] = 0

@@ -3876,6 +3876,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
             slot_idx.to_tile_tensor[.uint32](),
             input_row_offsets.to_tile_tensor[.uint32](),
             conv_output_ragged.to_tile_tensor(),
+            0,
             ctx,
         )
 
@@ -3893,11 +3894,15 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         slot_idx: TileTensor[DType.uint32, ...],
         input_row_offsets: TileTensor[DType.uint32, ...],
         qkv_window: TileTensor[mut=True, work_dtype, ...],
+        num_draft_tokens: Int,
         ctx: DeviceContext,
     ) raises:
-        """Launches the conv, also copying its input to `qkv_window` when
-        `capture_input`. `qkv_window` then has the output's shape and is
-        otherwise never touched.
+        """Launches the conv. With `capture_input`, a verify's forward
+        launch at `num_draft_tokens` drafts, it copies each row that fits a
+        slot of `qkv_window` to that slot and writes the window of every
+        longer row at the row's last real token (see
+        `gated_delta_conv1d_fwd_gpu`). `qkv_window` holds `batch_size` slots
+        of equal length and is otherwise never touched.
         """
         comptime assert conv_output_ragged.rank == 2
         comptime assert qkv_input_ragged.rank == 2
@@ -3954,18 +3959,39 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         if batch_size == 0 or total_seq_len == 0:
             return
 
-        # The kernel addresses the ragged input and output with 32-bit linear
-        # offsets (the conv_state pool keeps 64-bit offsets).
+        var window_row_len = 0
+        comptime if capture_input:
+            window_row_len = Int(qkv_window.dim[0]()) // batch_size
+            debug_assert(
+                window_row_len * batch_size == Int(qkv_window.dim[0]()),
+                "gated_delta_conv1d_fwd: qkv_window must hold one slot per row",
+            )
+            if num_draft_tokens + 1 > window_row_len:
+                raise Error(
+                    t"gated_delta_conv1d_fwd: a verify of {num_draft_tokens}"
+                    t" drafts needs slots of at least {num_draft_tokens + 1}"
+                    t" tokens, got {window_row_len}"
+                )
+
+        # The kernel addresses the ragged input, the output and the copy with
+        # 32-bit linear offsets (the conv_state pool keeps 64-bit offsets).
         var max_input_offset = (total_seq_len - 1) * Int(
             qkv_input_ragged.dynamic_stride(0)
         ) + (conv_dim - 1) * Int(qkv_input_ragged.dynamic_stride(1))
         var max_output_offset = (total_seq_len - 1) * Int(
             conv_output_ragged.dynamic_stride(0)
         ) + (conv_dim - 1) * Int(conv_output_ragged.dynamic_stride(1))
-        if max(max_input_offset, max_output_offset) > Int(UInt32.MAX):
+        var max_window_offset = 0
+        comptime if capture_input:
+            max_window_offset = (Int(qkv_window.dim[0]()) - 1) * Int(
+                qkv_window.dynamic_stride(0)
+            ) + (conv_dim - 1) * Int(qkv_window.dynamic_stride(1))
+        if max(
+            max(max_input_offset, max_output_offset), max_window_offset
+        ) > Int(UInt32.MAX):
             raise Error(
-                t"gated_delta_conv1d_fwd: ragged input/output linear offsets"
-                t" must be below 2**32 elements, got"
+                t"gated_delta_conv1d_fwd: ragged input, output and copy linear"
+                t" offsets must be below 2**32 elements, got"
                 t" total_seq_len={total_seq_len}, conv_dim={conv_dim}"
             )
 
@@ -4005,6 +4031,8 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                 Int32(total_seq_len),
                 Int32(conv_dim),
                 Int32(tokens_per_block),
+                Int32(window_row_len),
+                Int32(num_draft_tokens),
                 qkv_input_ragged,
                 conv_weight,
                 conv_state,
@@ -4080,21 +4108,21 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
     forward launch only reads it and the rollback launch places it at the
     accepted length.
 
-    A rollback launch at `K == 0` leaves `conv_output_ragged` unwritten. At
-    `K > 0` the forward launch raises unless every row is one token and its
-    `K` drafts.
+    A rollback launch at `K == 0` leaves `conv_output_ragged` unwritten.
 
-    The forward launch at `K > 0` also copies its input to `qkv_window`,
-    which the rollback replays from; with every row one token and its
-    drafts, the copy is the whole input. Every other launch leaves
-    `qkv_window` unwritten.
+    The forward launch at `K > 0` also copies each row that fits a slot of
+    `qkv_window`, as one token and its `K` drafts do, into that slot for the
+    rollback to replay. A longer row, as a prompt chunk mixed into the batch,
+    is not copied: the forward writes its window at its last real token, so
+    the copy stays `batch_size` slots long whatever the chunk. Every other
+    launch leaves `qkv_window` unwritten.
 
     Parameters:
         rollback: Whether this is the rollback's launch.
 
     Tensor Shapes:
         As `gated_delta_conv1d_fwd`, plus
-        - qkv_window         : [batch_size * (K + 1), conv_dim]       (OUT)
+        - qkv_window         : [batch_size * slot_len, conv_dim]     (OUT)
         - verify_width       : [K]                                   int64
     """
 
@@ -4132,25 +4160,6 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
         var committed = num_draft_tokens == 0
         if Self.rollback and committed:
             return
-        # The rollback's replay plan is sized to one token plus its drafts
-        # per row, so a wider row would take it out of bounds.
-        var batch_size = Int(slot_idx.shape()[0].value())
-        if (
-            not Self.rollback
-            and not committed
-            and Int(qkv_input_ragged.shape()[0].value())
-            != batch_size * (num_draft_tokens + 1)
-        ):
-            raise Error(
-                "gated_delta_conv1d_verify_fwd: a verify of ",
-                num_draft_tokens,
-                " drafts takes one token and its drafts per row, ",
-                batch_size * (num_draft_tokens + 1),
-                " rows for ",
-                batch_size,
-                " requests, got ",
-                Int(qkv_input_ragged.shape()[0].value()),
-            )
         if committed or Self.rollback:
             GatedDeltaConv1dFwd[write_state=True].execute(
                 conv_output_ragged,
@@ -4170,6 +4179,7 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 slot_idx.to_tile_tensor[.uint32](),
                 input_row_offsets.to_tile_tensor[.uint32](),
                 qkv_window.to_tile_tensor[work_dtype](),
+                num_draft_tokens,
                 ctx,
             )
 
@@ -4495,8 +4505,12 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
     The verify width `K` is the length of `verify_width`, whose contents are
     never read. At `K == 0` there is no draft to reject, so this runs
     `gated_delta_recurrence_fwd` on `recurrent_state` instead and writes no
-    ring record. The fold skips at the same width. At `K > 0` every row's
-    window of `K + 1` tokens must fit `RING_LEN`.
+    ring record. The fold skips at the same width. At `K > 0` a row of at
+    most one token and its drafts records; a longer row, as a prompt mixed
+    into a verify batch, records nothing and commits its state at its last
+    real token, so the graph folds it with zero. With `skip_long_rows` such
+    a row writes zeros over its outputs and leaves the state to the
+    caller's chunked forward.
 
     Tensor Shapes:
         - recurrence_output  : [total_seq_len, value_dim]                 (OUT)
@@ -4513,7 +4527,9 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
     """
 
     @staticmethod
-    def execute(
+    def execute[
+        skip_long_rows: Bool = False,
+    ](
         recurrence_output: Some[Output & Tensor],
         qkv_conv_output: Some[Input & Tensor],
         decay_per_token: Some[Input & Tensor],
@@ -4614,6 +4630,12 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
             ctx.target.is_gpu()
         ), "gated_delta_recurrence_verify_ring_fwd is only supported on GPU."
 
+        # Every verify row holds at least one token and its drafts, so a
+        # window of exactly that many tokens per row has no long row.
+        var total_seq_len = Int(qkv_conv_output_tt.dim[0]())
+        var records_only = total_seq_len == shape.batch_size * (
+            num_draft_tokens + 1
+        )
         var dispatched = False
         if shape.key_head_dim == 128 and shape.value_head_dim == 128:
             _check_ring_record_stride[128, 128](
@@ -4623,50 +4645,63 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
             )
             comptime for shift in range(1, 4):
                 comptime kRING_LEN = 1 << shift
-                if ring_len == kRING_LEN:
-                    dispatched = True
-                    ctx.enqueue_function[
-                        gated_delta_recurrence_verify_ring_gpu[
-                            work_dtype,
-                            state_dtype,
-                            ring_dtype,
-                            128,
-                            128,
-                            kRING_LEN,
-                            recurrence_output_tt.LayoutType,
-                            qkv_conv_output_tt.LayoutType,
-                            decay_per_token_tt.LayoutType,
-                            beta_per_token_tt.LayoutType,
-                            recurrent_state_tt.LayoutType,
-                            slot_idx_tt.LayoutType,
-                            input_row_offsets_tt.LayoutType,
-                            ring_tt.LayoutType,
-                            ring_slot_idx_tt.LayoutType,
-                            recurrence_output_tt.Engine,
-                            # RECORDS_ONLY: the draft-window check above
-                            # bounds every row by ring_len; the kernel's
-                            # safe assert still traps a caller that slips
-                            # a longer ragged row through input_row_offsets.
-                            True,
-                        ]
-                    ](
-                        Int32(shape.batch_size),
-                        Int32(shape.num_value_heads),
-                        Int32(shape.num_key_heads),
-                        Int32(shape.key_dim),
-                        recurrence_output_tt,
-                        recurrent_state_tt,
-                        slot_idx_tt,
-                        qkv_conv_output_tt,
-                        decay_per_token_tt,
-                        beta_per_token_tt,
-                        input_row_offsets_tt,
-                        ring_tt,
-                        ring_slot_idx_tt,
-                        grid_dim=(shape.batch_size * shape.num_value_heads,),
-                        block_dim=(128,),
-                        attributes=pdl_launch_attributes(PDLLevel.ON),
-                    )
+                # The three named variants; (False, False) is the plain
+                # verify, which a mixed batch with skip off still takes.
+                comptime for kRECORDS_ONLY, kSKIP in [
+                    (True, False),
+                    (False, True),
+                    (False, False),
+                ]:
+                    # A records-only batch has no long row, so it runs the
+                    # plain records-only kernel.
+                    if (
+                        ring_len == kRING_LEN
+                        and records_only == kRECORDS_ONLY
+                        and (skip_long_rows and not records_only) == kSKIP
+                    ):
+                        dispatched = True
+                        ctx.enqueue_function[
+                            gated_delta_recurrence_verify_ring_gpu[
+                                work_dtype,
+                                state_dtype,
+                                ring_dtype,
+                                128,
+                                128,
+                                kRING_LEN,
+                                recurrence_output_tt.LayoutType,
+                                qkv_conv_output_tt.LayoutType,
+                                decay_per_token_tt.LayoutType,
+                                beta_per_token_tt.LayoutType,
+                                recurrent_state_tt.LayoutType,
+                                slot_idx_tt.LayoutType,
+                                input_row_offsets_tt.LayoutType,
+                                ring_tt.LayoutType,
+                                ring_slot_idx_tt.LayoutType,
+                                recurrence_output_tt.Engine,
+                                kRECORDS_ONLY,
+                                kSKIP,
+                            ]
+                        ](
+                            Int32(shape.batch_size),
+                            Int32(shape.num_value_heads),
+                            Int32(shape.num_key_heads),
+                            Int32(shape.key_dim),
+                            Int32(num_draft_tokens),
+                            recurrence_output_tt,
+                            recurrent_state_tt,
+                            slot_idx_tt,
+                            qkv_conv_output_tt,
+                            decay_per_token_tt,
+                            beta_per_token_tt,
+                            input_row_offsets_tt,
+                            ring_tt,
+                            ring_slot_idx_tt,
+                            grid_dim=(
+                                shape.batch_size * shape.num_value_heads,
+                            ),
+                            block_dim=(128,),
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
+                        )
         if not dispatched:
             raise Error(
                 "gated_delta_recurrence_verify_ring_fwd: unsupported",

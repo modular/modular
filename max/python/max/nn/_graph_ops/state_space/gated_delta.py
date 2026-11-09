@@ -86,11 +86,12 @@ from max.graph import (
 class GatedDeltaReplayInputs(NamedTuple):
     """One layer's per-token inputs to the two state kernels.
 
-    Speculative decoding runs the verify pass over K+1 positions and then has
-    to land the pools on the accepted prefix instead. Every op feeding these
-    tensors is causal or pointwise, so re-running the two kernels over the
-    accepted rows from the pre-verify state reproduces the state the verify
-    pass held at that length. Captured only when the caller asks for it.
+    Speculative decoding runs the verify pass over the merged window and then
+    has to land the pools on the accepted prefix instead. Every op feeding
+    these tensors is causal or pointwise, so re-running the two kernels over
+    the accepted rows from the pre-verify state reproduces the state the
+    verify pass held at that length. Captured only when the caller asks for
+    it.
     """
 
     qkv: TensorValue
@@ -325,9 +326,11 @@ def gated_delta_conv1d_verify_fwd(
     rollback launch does nothing, leaving its output unwritten. Otherwise the
     forward launch only reads the window and the rollback launch writes it.
 
-    The forward launch with drafts also copies its input for the rollback to
-    replay. Every row is then one token and its drafts, so the copy is the
-    whole input. Every other launch leaves the copy unwritten.
+    The forward launch with drafts also copies each row of at most
+    ``K + 1`` tokens, as one token and its drafts, into that row's slot of
+    the copy for the rollback to replay. A longer row, as a prompt chunk mixed
+    into the batch, is not copied: the forward writes its window at its last
+    real token instead. Every other launch leaves the copy unwritten.
 
     Args:
         qkv_input_ragged: The ``[total_seq_len, conv_dim]`` conv input.
@@ -452,6 +455,8 @@ def gated_delta_recurrence_verify_ring_fwd(
     ring_slot_idx: TensorValue,
     input_row_offsets: TensorValue,
     verify_width: TensorValue,
+    *,
+    skip_long_rows: bool = False,
 ) -> TensorValue:
     """Runs the recurrence over a speculative verify window into a ring.
 
@@ -474,6 +479,8 @@ def gated_delta_recurrence_verify_ring_fwd(
         ring_slot_idx: The ``[batch_size]`` ring rows.
         input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
         verify_width: The operand :func:`verify_width_operand` returns.
+        skip_long_rows: Leave a row longer than the verify window to the
+            caller: its outputs are zeros and its state is not written.
 
     Returns:
         The recurrence output, ``[total_seq_len, value_dim]``.
@@ -499,6 +506,7 @@ def gated_delta_recurrence_verify_ring_fwd(
                 DType.float32, [qkv_conv_output.shape[0], value_dim], device
             )
         ],
+        parameters={"skip_long_rows": skip_long_rows},
     )
     return cast(TensorValue, results[0])
 
@@ -526,8 +534,8 @@ def gated_delta_state_fold(
         row_ids: The ``[num_layers, batch_size]`` live pool rows.
         ring_row_ids: The ``[num_layers, batch_size]`` ring rows.
         num_accepted: The ``[batch_size]`` records to fold. A count past
-            ``RING_LEN`` names a row the verify was too long to record and
-            committed itself, and is skipped.
+            ``RING_LEN`` cannot be folded (the ring holds no more) and is
+            skipped.
         verify_width: The operand :func:`verify_width_operand` returns.
     """
     ops.inplace_custom(

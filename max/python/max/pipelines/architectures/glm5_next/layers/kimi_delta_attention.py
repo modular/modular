@@ -448,6 +448,7 @@ class KimiDeltaAttention(Module, Shardable):
                 input_row_offsets=row_offsets_uint32,
             )
         else:
+            assert ring is not None, "a verify needs a ring"
             conv_out, qkv_window = gated_delta_conv1d_verify_fwd(
                 qkv_input_ragged=qkv,
                 conv_weight=conv_weight,

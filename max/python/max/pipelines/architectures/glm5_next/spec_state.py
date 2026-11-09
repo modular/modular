@@ -283,23 +283,6 @@ class RecurrentStateRollback:
         assert self.num_draft_tokens is not None
         assert all(map(has_verify_ring, state)), "the cache declares no ring"
         num_draft_tokens = _shape_to_scalar(self.num_draft_tokens, device)
-        window = self.kda_captures[0][0].qkv_window
-        assert window is not None
-        # The verify copied its rows whenever it had drafts, which is whenever
-        # the rollback runs. Clamping to the copy keeps the gathers in bounds
-        # when it does not.
-        row_indices, replay_offsets = accepted_row_plan(
-            merged_offsets,
-            num_accepted,
-            num_draft_tokens,
-            window.shape[0],
-            device,
-            # Each row is one token and its drafts whenever the rollback
-            # runs, and the plan shrinks to a row per request when it does
-            # not.
-            plan_rows=Dim("batch_size") * (1 + self.num_draft_tokens),
-        )
-        self._plan = (row_indices, replay_offsets, num_draft_tokens)
 
         def leaves(
             leaf_id: str,
@@ -311,6 +294,18 @@ class RecurrentStateRollback:
         conv = leaves(CONV_LEAF_ID)
         recurrent = leaves(RECURRENT_LEAF_ID)
         ring = leaves(VERIFY_RING_LEAF_ID)
+        window = self.kda_captures[0][0].qkv_window
+        assert window is not None
+        # This verify never carries a prompt row, so every row is one
+        # token and its drafts: the window copy is the input, row for row.
+        row_indices, replay_offsets = accepted_row_plan(
+            merged_offsets,
+            num_accepted,
+            num_draft_tokens,
+            window.shape[0],
+            device,
+        )
+        self._plan = (row_indices, replay_offsets, num_draft_tokens)
         # The fold places the conv windows in the same launch that folds the
         # ring, so the rollback launches nothing per layer.
         fold_kda_state_pools(

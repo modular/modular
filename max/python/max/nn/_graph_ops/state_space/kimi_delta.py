@@ -46,6 +46,8 @@ __all__ = [
     "amd_kda_chunk_workspace_bytes",
     "kda_chunk",
     "kda_chunk_predicate",
+    "kda_chunk_rows",
+    "kda_chunk_rows_servable",
     "kda_chunk_servable",
     "kda_chunk_workspace_bytes",
     "kda_decode",
@@ -128,6 +130,28 @@ def kda_chunk_supports_head_dims(
             and key_head_dim == value_head_dim == _AMD_CHUNK_HEAD_DIM
         )
     return (key_head_dim, value_head_dim) in _SUPPORTED_HEAD_DIMS
+
+
+def kda_chunk_rows_servable(key_head_dim: int, value_head_dim: int) -> bool:
+    """Reports whether ``kda_chunk_rows`` can run this head geometry.
+
+    Row select needs the sm100 fused or bt16 path, whose kernels only
+    instantiate at a head width the fused arm accepts; a geometry outside
+    that keeps the non-skip serial ring.
+
+    Args:
+        key_head_dim: Per-head key width.
+        value_head_dim: Per-head value width.
+
+    Returns:
+        ``True`` when the fused arm accepts these head widths; the caller
+        gates the accelerator and the registration alongside.
+    """
+    return (
+        key_head_dim == value_head_dim
+        and key_head_dim % 64 == 0
+        and value_head_dim == 128
+    )
 
 
 def _check_amd_chunk_contract(
@@ -912,6 +936,140 @@ def kda_chunk(
         state_layout=state_layout,
         use_computebound=use_computebound,
     )
+
+
+def kda_chunk_rows(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    raw_gate: TensorValue,
+    beta_logits: TensorValue,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    passthrough: TensorValue,
+    verify_width: TensorValue,
+    *,
+    output_dtype: DType,
+    gate_mode: KdaGateMode = "original",
+    beta_mode: KdaBetaMode = "logits",
+    state_layout: KdaStateLayout = "K_FIRST",
+) -> TensorValue:
+    """Runs the KDA chunk recurrence over the rows a ring leaves to the caller.
+
+    A row longer than one token and its drafts is walked over its first
+    ``len - K`` tokens, where ``K`` is ``verify_width``'s length; every
+    other row keeps the values ``passthrough`` holds, including its pool
+    row, whose updates the ring records for the fold.
+
+    Args:
+        q: ``[total_tokens, num_key_heads, key_head_dim]``; as for
+            :func:`kda_chunk`.
+        k: ``[total_tokens, num_key_heads, key_head_dim]``; as for
+            :func:`kda_chunk`.
+        v: ``[total_tokens, num_value_heads, value_head_dim]``; as for
+            :func:`kda_chunk`.
+        raw_gate: Forget-gate pre-activation; as for :func:`kda_chunk`.
+        beta_logits: Per-token delta-rule beta; as for :func:`kda_chunk`.
+        a_log: Per-head gate scale; as for :func:`kda_chunk`.
+        dt_bias: Per-key gate bias; as for :func:`kda_chunk`.
+        cu_seqlens: ``[batch_size + 1]`` int32 exclusive prefix offsets; as
+            for :func:`kda_chunk`.
+        state_pool: Mutable pool, laid out per ``state_layout``; as for
+            :func:`kda_chunk`.
+        state_indices: ``[batch_size]`` int32 pool slot per sequence; as for
+            :func:`kda_chunk`.
+        passthrough: ``[total_tokens, num_value_heads, value_head_dim]``
+            float32 readout to start from.
+        verify_width: The operand
+            :func:`~max.nn._graph_ops.state_space.verify_width_operand` returns.
+        output_dtype: Dtype of the returned tensor; must be float32.
+        gate_mode: Forget-gate form; as for :func:`kda_chunk`.
+        beta_mode: Whether the kernel applies the sigmoid to ``beta_logits``;
+            as for :func:`kda_chunk`.
+        state_layout: Pool axis order; as for :func:`kda_chunk`.
+
+    Returns:
+        ``[total_tokens, num_value_heads, value_head_dim]``.
+    """
+    if output_dtype != DType.float32:
+        raise ValueError(
+            f"kda_chunk_rows starts from an fp32 passthrough, got {output_dtype}"
+        )
+    _check_dtype(DType.float32, passthrough=passthrough)
+    _check_dtype(DType.int64, verify_width=verify_width)
+    _check_rank(3, passthrough=passthrough)
+    _check_rank(1, verify_width=verify_width)
+    # The launcher's copy is sized by the destination, so a short passthrough
+    # would read past its end.
+    _check_same_dim(
+        "the packed token axis", v=v.shape[0], passthrough=passthrough.shape[0]
+    )
+    _check_same_dim(
+        "the value-head axis", v=v.shape[1], passthrough=passthrough.shape[1]
+    )
+    _check_same_dim(
+        "the value-head width", v=v.shape[2], passthrough=passthrough.shape[2]
+    )
+    _check_dtypes(
+        q,
+        k,
+        v,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_indices,
+    )
+    _check_shapes(
+        "kda_chunk_rows",
+        q,
+        k,
+        v,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        state_layout,
+    )
+    total_tokens, num_value_heads, value_head_dim = v.shape
+    results = ops.inplace_custom(
+        "kda_chunk_rows",
+        v.device,
+        [
+            ops.unsqueeze(q, 0),
+            ops.unsqueeze(k, 0),
+            ops.unsqueeze(v, 0),
+            ops.unsqueeze(raw_gate, 0),
+            ops.unsqueeze(beta_logits, 0),
+            a_log,
+            dt_bias,
+            cu_seqlens,
+            state_pool,
+            state_indices,
+            ops.unsqueeze(passthrough, 0),
+            verify_width,
+        ],
+        [
+            TensorType(
+                output_dtype,
+                [1, total_tokens, num_value_heads, value_head_dim],
+                v.device,
+            )
+        ],
+        parameters={
+            "gate_mode": gate_mode,
+            "beta_mode": beta_mode,
+            "state_layout": state_layout,
+        },
+    )
+    return ops.squeeze(cast(TensorValue, results[0]), 0)
 
 
 def kda_ring_record_elements(key_head_dim: int, value_head_dim: int) -> int:

@@ -384,6 +384,9 @@ def run_slot_indexed_gpu[
             Int32(total_seq_len),
             Int32(conv_dim),
             Int32(tokens_per_block),
+            # Read only under CAPTURE_INPUT.
+            Int32(0),
+            Int32(0),
             qkv_input_tt,
             conv_weight_tt,
             conv_state_tt,
@@ -640,21 +643,28 @@ def _launch_conv[
     conv_out: DeviceBuffer[.float32],
     seq_len: Int,
     qkv_window: DeviceBuffer[.float32],
+    window_row_len: Int,
+    num_draft_tokens: Int = 0,
+    batch: Int = 1,
+    max_slots: Int = 2,
 ) raises:
-    """Runs one kernel-size-4 conv launch over one row of `seq_len` tokens."""
+    """Runs one kernel-size-4 conv launch over `batch` rows of `seq_len`
+    tokens in all, with a `window_row_len`-token slot of `qkv_window` per row.
+    """
     comptime KERNEL_SIZE = 4
     comptime CONV_DIM = 8
-    comptime MAX_SLOTS = 2
     comptime CONV1D_BLOCK_DIM = 128
     var qkv_tt = TileTensor(qkv, row_major(seq_len, CONV_DIM))
     var weight_tt = TileTensor(weight, row_major(CONV_DIM, KERNEL_SIZE))
     var pool_tt = TileTensor(
-        pool, row_major(MAX_SLOTS, CONV_DIM, KERNEL_SIZE - 1)
+        pool, row_major(max_slots, CONV_DIM, KERNEL_SIZE - 1)
     )
-    var slot_tt = TileTensor(slot, row_major(1))
-    var offsets_tt = TileTensor(offsets, row_major(2))
+    var slot_tt = TileTensor(slot, row_major(batch))
+    var offsets_tt = TileTensor(offsets, row_major(batch + 1))
     var out_tt = TileTensor(conv_out, row_major(seq_len, CONV_DIM))
-    var window_tt = TileTensor(qkv_window, row_major(seq_len, CONV_DIM))
+    var window_tt = TileTensor(
+        qkv_window, row_major(batch * window_row_len, CONV_DIM)
+    )
     var kernel = ctx.compile_function[
         gated_delta_conv1d_fwd_gpu[
             DType.float32,
@@ -676,10 +686,12 @@ def _launch_conv[
     comptime tokens_per_block = 1
     ctx.enqueue_function(
         kernel,
-        Int32(1),
+        Int32(batch),
         Int32(seq_len),
         Int32(CONV_DIM),
         Int32(tokens_per_block),
+        Int32(window_row_len),
+        Int32(num_draft_tokens),
         qkv_tt,
         weight_tt,
         pool_tt,
@@ -757,6 +769,7 @@ def run_deferred_window_write(accepted: Int) raises:
         conv_out,
         WINDOW,
         qkv_window,
+        WINDOW,
     )
     _launch_conv[True](
         ctx,
@@ -768,6 +781,7 @@ def run_deferred_window_write(accepted: Int) raises:
         conv_out,
         WINDOW,
         unused_window,
+        WINDOW,
     )
     _launch_conv[True](
         ctx,
@@ -779,6 +793,7 @@ def run_deferred_window_write(accepted: Int) raises:
         conv_out,
         WINDOW,
         unused_window,
+        WINDOW,
     )
 
     var pool_after = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
@@ -797,6 +812,247 @@ def run_deferred_window_write(accepted: Int) raises:
 def test_a_deferred_window_carries_the_old_window_forward() raises:
     run_deferred_window_write(1)
     run_deferred_window_write(2)
+
+
+def run_long_row_commit(seq_len: Int, drafts: Int) raises:
+    """Checks a captured row longer than its slot commits at its last real token.
+
+    One capturing launch runs a `seq_len`-token row, the last `drafts` of them
+    drafts, against a 4-token slot. The pool must match a writing launch over
+    the row's real tokens alone, and the slot must stay unwritten.
+    """
+    comptime KERNEL_SIZE = 4
+    comptime CONV_DIM = 8
+    comptime SLOT = 4
+    comptime POOL_ELEMS = 2 * CONV_DIM * (KERNEL_SIZE - 1)
+    comptime SENTINEL: Float32 = 7.0
+    var ctx = DeviceContext()
+
+    var qkv_h = ctx.enqueue_create_host_buffer[.float32](seq_len * CONV_DIM)
+    rand[.float32](qkv_h.unsafe_ptr(), seq_len * CONV_DIM)
+    var weight_h = ctx.enqueue_create_host_buffer[.float32](
+        CONV_DIM * KERNEL_SIZE
+    )
+    rand[.float32](weight_h.unsafe_ptr(), CONV_DIM * KERNEL_SIZE)
+    var pool_h = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    rand[.float32](pool_h.unsafe_ptr(), POOL_ELEMS)
+    var slot_h = ctx.enqueue_create_host_buffer[.uint32](1)
+    slot_h[0] = 1
+    var row_offsets_h = ctx.enqueue_create_host_buffer[.uint32](2)
+    row_offsets_h[0] = 0
+    row_offsets_h[1] = UInt32(seq_len)
+    var real_offsets_h = ctx.enqueue_create_host_buffer[.uint32](2)
+    real_offsets_h[0] = 0
+    real_offsets_h[1] = UInt32(seq_len - drafts)
+    var window_h = ctx.enqueue_create_host_buffer[.float32](SLOT * CONV_DIM)
+    for i in range(SLOT * CONV_DIM):
+        window_h[i] = SENTINEL
+
+    var qkv = ctx.enqueue_create_buffer[.float32](seq_len * CONV_DIM)
+    var weight = ctx.enqueue_create_buffer[.float32](CONV_DIM * KERNEL_SIZE)
+    var pool = ctx.enqueue_create_buffer[.float32](POOL_ELEMS)
+    var reference_pool = ctx.enqueue_create_buffer[.float32](POOL_ELEMS)
+    var slot = ctx.enqueue_create_buffer[.uint32](1)
+    var row_offsets = ctx.enqueue_create_buffer[.uint32](2)
+    var real_offsets = ctx.enqueue_create_buffer[.uint32](2)
+    var conv_out = ctx.enqueue_create_buffer[.float32](seq_len * CONV_DIM)
+    var reference_out = ctx.enqueue_create_buffer[.float32](seq_len * CONV_DIM)
+    var qkv_window = ctx.enqueue_create_buffer[.float32](SLOT * CONV_DIM)
+    var unused_window = ctx.enqueue_create_buffer[.float32](SLOT * CONV_DIM)
+    ctx.enqueue_copy(qkv, qkv_h)
+    ctx.enqueue_copy(weight, weight_h)
+    ctx.enqueue_copy(pool, pool_h)
+    ctx.enqueue_copy(reference_pool, pool_h)
+    ctx.enqueue_copy(slot, slot_h)
+    ctx.enqueue_copy(row_offsets, row_offsets_h)
+    ctx.enqueue_copy(real_offsets, real_offsets_h)
+    ctx.enqueue_copy(qkv_window, window_h)
+    ctx.synchronize()
+
+    _launch_conv[False, CAPTURE_INPUT=True](
+        ctx,
+        qkv,
+        weight,
+        pool,
+        slot,
+        row_offsets,
+        conv_out,
+        seq_len,
+        qkv_window,
+        SLOT,
+        drafts,
+    )
+    _launch_conv[True](
+        ctx,
+        qkv,
+        weight,
+        reference_pool,
+        slot,
+        real_offsets,
+        reference_out,
+        seq_len,
+        unused_window,
+        SLOT,
+    )
+
+    var pool_after = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    var reference_after = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    var window_after = ctx.enqueue_create_host_buffer[.float32](SLOT * CONV_DIM)
+    ctx.enqueue_copy(pool_after, pool)
+    ctx.enqueue_copy(reference_after, reference_pool)
+    ctx.enqueue_copy(window_after, qkv_window)
+    var out_after = ctx.enqueue_create_host_buffer[.float32](seq_len * CONV_DIM)
+    var reference_out_after = ctx.enqueue_create_host_buffer[.float32](
+        seq_len * CONV_DIM
+    )
+    ctx.enqueue_copy(out_after, conv_out)
+    ctx.enqueue_copy(reference_out_after, reference_out)
+    ctx.synchronize()
+    for i in range((seq_len - drafts) * CONV_DIM):
+        assert_equal(
+            out_after[i],
+            reference_out_after[i],
+            "a real token's conv output diverged at element " + String(i),
+        )
+    for i in range(POOL_ELEMS):
+        assert_equal(
+            pool_after[i],
+            reference_after[i],
+            "the committed window diverged at element " + String(i),
+        )
+    for i in range(SLOT * CONV_DIM):
+        assert_equal(window_after[i], SENTINEL, "a long row was copied")
+
+
+def test_each_row_takes_its_own_slot_and_a_long_row_commits_alone() raises:
+    """Checks slot copies and the long-row commit in one mixed launch.
+
+    Rows of 4, 9 and 2 tokens at 3 drafts and 4-token slots: the short rows
+    copy into their own slots and keep their pool slots, and the long row
+    copies nothing and writes its pool slot at its last real token.
+    """
+    comptime KERNEL_SIZE = 4
+    comptime CONV_DIM = 8
+    comptime SLOT = 4
+    comptime BATCH = 3
+    comptime TOTAL = 15
+    comptime DRAFTS = 3
+    comptime SLOT_ELEMS = CONV_DIM * (KERNEL_SIZE - 1)
+    comptime POOL_ELEMS = BATCH * SLOT_ELEMS
+    comptime WINDOW_ELEMS = BATCH * SLOT * CONV_DIM
+    comptime SENTINEL: Float32 = 7.0
+    var ctx = DeviceContext()
+
+    var qkv_h = ctx.enqueue_create_host_buffer[.float32](TOTAL * CONV_DIM)
+    rand[.float32](qkv_h.unsafe_ptr(), TOTAL * CONV_DIM)
+    var weight_h = ctx.enqueue_create_host_buffer[.float32](
+        CONV_DIM * KERNEL_SIZE
+    )
+    rand[.float32](weight_h.unsafe_ptr(), CONV_DIM * KERNEL_SIZE)
+    var pool_h = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    rand[.float32](pool_h.unsafe_ptr(), POOL_ELEMS)
+    var slot_h = ctx.enqueue_create_host_buffer[.uint32](BATCH)
+    var row_offsets_h = ctx.enqueue_create_host_buffer[.uint32](BATCH + 1)
+    var real_offsets_h = ctx.enqueue_create_host_buffer[.uint32](BATCH + 1)
+    for b in range(BATCH):
+        slot_h[b] = UInt32(b)
+    row_offsets_h[0] = 0
+    row_offsets_h[1] = 4
+    row_offsets_h[2] = 13
+    row_offsets_h[3] = 15
+    # The long row's real tokens alone, for the reference write.
+    real_offsets_h[0] = 0
+    real_offsets_h[1] = 4
+    real_offsets_h[2] = 10
+    real_offsets_h[3] = 15
+    var window_h = ctx.enqueue_create_host_buffer[.float32](WINDOW_ELEMS)
+    for i in range(WINDOW_ELEMS):
+        window_h[i] = SENTINEL
+
+    var qkv = ctx.enqueue_create_buffer[.float32](TOTAL * CONV_DIM)
+    var weight = ctx.enqueue_create_buffer[.float32](CONV_DIM * KERNEL_SIZE)
+    var pool = ctx.enqueue_create_buffer[.float32](POOL_ELEMS)
+    var reference_pool = ctx.enqueue_create_buffer[.float32](POOL_ELEMS)
+    var slot = ctx.enqueue_create_buffer[.uint32](BATCH)
+    var row_offsets = ctx.enqueue_create_buffer[.uint32](BATCH + 1)
+    var real_offsets = ctx.enqueue_create_buffer[.uint32](BATCH + 1)
+    var conv_out = ctx.enqueue_create_buffer[.float32](TOTAL * CONV_DIM)
+    var qkv_window = ctx.enqueue_create_buffer[.float32](WINDOW_ELEMS)
+    var unused_window = ctx.enqueue_create_buffer[.float32](WINDOW_ELEMS)
+    ctx.enqueue_copy(qkv, qkv_h)
+    ctx.enqueue_copy(weight, weight_h)
+    ctx.enqueue_copy(pool, pool_h)
+    ctx.enqueue_copy(reference_pool, pool_h)
+    ctx.enqueue_copy(slot, slot_h)
+    ctx.enqueue_copy(row_offsets, row_offsets_h)
+    ctx.enqueue_copy(real_offsets, real_offsets_h)
+    ctx.enqueue_copy(qkv_window, window_h)
+    ctx.synchronize()
+
+    _launch_conv[False, CAPTURE_INPUT=True](
+        ctx,
+        qkv,
+        weight,
+        pool,
+        slot,
+        row_offsets,
+        conv_out,
+        TOTAL,
+        qkv_window,
+        SLOT,
+        DRAFTS,
+        BATCH,
+        BATCH,
+    )
+    _launch_conv[True](
+        ctx,
+        qkv,
+        weight,
+        reference_pool,
+        slot,
+        real_offsets,
+        conv_out,
+        TOTAL,
+        unused_window,
+        SLOT,
+        0,
+        BATCH,
+        BATCH,
+    )
+
+    var pool_after = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    var reference_after = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    var window_after = ctx.enqueue_create_host_buffer[.float32](WINDOW_ELEMS)
+    ctx.enqueue_copy(pool_after, pool)
+    ctx.enqueue_copy(reference_after, reference_pool)
+    ctx.enqueue_copy(window_after, qkv_window)
+    ctx.synchronize()
+    for i in range(POOL_ELEMS):
+        var expected = reference_after[i] if i // SLOT_ELEMS == 1 else pool_h[i]
+        assert_equal(pool_after[i], expected, "pool element " + String(i))
+    # Window slot rows: row 0's 4 tokens, nothing for row 1, row 2's 2.
+    for slot_row in range(BATCH * SLOT):
+        var source = -1
+        if slot_row < 4:
+            source = slot_row
+        elif slot_row >= 8 and slot_row < 10:
+            source = 13 + slot_row - 8
+        for c in range(CONV_DIM):
+            var expected: Float32 = SENTINEL
+            if source >= 0:
+                expected = qkv_h[source * CONV_DIM + c]
+            assert_equal(
+                window_after[slot_row * CONV_DIM + c],
+                expected,
+                "window slot row " + String(slot_row),
+            )
+
+
+def test_a_row_longer_than_its_slot_commits_its_window_itself() raises:
+    # Two real tokens: the window keeps one slot of the old window.
+    run_long_row_commit(5, 3)
+    run_long_row_commit(6, 3)
+    run_long_row_commit(12, 7)
 
 
 def test_a_deferred_window_rebuilt_from_inputs() raises:
@@ -936,6 +1192,9 @@ def test_gated_delta_conv1d_gpu_deep_slot_no_alias() raises:
         Int32(total_seq_len),
         Int32(conv_dim),
         Int32(1),
+        # Read only under CAPTURE_INPUT.
+        Int32(0),
+        Int32(0),
         qkv_input_tt,
         conv_weight_tt,
         conv_state_tt,

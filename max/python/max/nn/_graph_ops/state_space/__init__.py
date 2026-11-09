@@ -32,6 +32,8 @@ from .gated_group_rmsnorm import gated_group_rmsnorm
 from .kimi_delta import (
     kda_chunk,
     kda_chunk_is_registered,
+    kda_chunk_rows,
+    kda_chunk_rows_servable,
     kda_chunk_supports_head_dims,
     kda_decode,
     kda_ring_record_elements,
@@ -55,6 +57,8 @@ __all__ = [
     "gated_group_rmsnorm",
     "kda_chunk",
     "kda_chunk_is_registered",
+    "kda_chunk_rows",
+    "kda_chunk_rows_servable",
     "kda_chunk_supports_head_dims",
     "kda_decode",
     "kda_ring_record_elements",

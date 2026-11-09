@@ -1538,6 +1538,20 @@ class SpecDecodePipelineModel(
         """Returns the target and draft architectures this config pairs."""
         return _Pairing.from_pipeline_config(self.pipeline_config)
 
+    @property
+    def verify_commits_long_rows(self) -> bool:
+        """Whether the verify commits a long row in every recurrent leaf.
+
+        A long row is longer than the verify window. An export's sidecar carries
+        this (Mach's ``gen_mef`` reads it).
+        """
+        speculative = self.pipeline_config.speculative
+        assert speculative is not None
+        assert speculative.speculative_method is not None
+        return spec_adapters.verify_commits_long_rows(
+            self.pairing.adapter_arch, speculative.speculative_method
+        )
+
     @cached_property
     def takes_signal_buffers(self) -> bool:
         """Returns whether the graph takes signal buffers.
