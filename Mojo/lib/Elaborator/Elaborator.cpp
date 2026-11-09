@@ -1088,6 +1088,7 @@ ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
 
     Operation *terminator = block.getTerminator();
     op->getBlock()->getOperations().splice(iter, block.getOperations());
+    Block *deadBlock = nullptr;
 
     // Update the values for the result parameters and do other processing
     // necessary for comptime.yield.
@@ -1100,7 +1101,7 @@ ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
     } else if (auto hlcfTerm =
                    dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
       // If it's an hlcf.return op, we have to split the block after the return.
-      hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
+      deadBlock = hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
       // Drop all uses of the if op because any of its uses will be null and
       // void at this point.
       op->dropAllDefinedValueUses();
@@ -1116,6 +1117,14 @@ ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
     recursivelyEraseFromNestedScopes(node, op);
     op->erase();
     parentFrame.ops.pop_back();
+
+    // Manually remove the ops in the dead block. Cannot drop everything
+    // afterwards since it may contain ops from outer scopes.
+    if (deadBlock) {
+      llvm::erase_if(parentFrame.ops, [&](Operation *o) {
+        return deadBlock->findAncestorOpInBlock(*o) != nullptr;
+      });
+    }
     return success();
   };
 
@@ -1657,10 +1666,6 @@ ElaborationState Elaborator::processScope(ImplNode *node,
 }
 
 ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
-  if (Block *block = op->getBlock())
-    if (!block->isEntryBlock())
-      return ElaborationState::advance();
-
   if (auto declare = dyn_cast<ParamDeclareOp>(op))
     return processParamDeclareOp(node, declare);
   if (auto constant = dyn_cast<ParamConstantOp>(op))

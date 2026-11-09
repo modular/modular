@@ -964,6 +964,7 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
 
     Operation *terminator = block.getTerminator();
     op->getBlock()->getOperations().splice(iter, block.getOperations());
+    Block *deadBlock = nullptr;
 
     // Update the values for the result parameters and do other processing
     // necessary for comptime.yield.
@@ -976,7 +977,7 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
     } else if (auto hlcfTerm =
                    dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
       // If it's an hlcf.return op, we have to split the block after the return.
-      hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
+      deadBlock = hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
       // Drop all uses of the if op because any of its uses will be null and
       // void at this point.
       op->dropAllDefinedValueUses();
@@ -992,6 +993,14 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
     recursivelyEraseFromNestedScopes(node, op);
     op->erase();
     parentFrame.ops.pop_back();
+
+    // Manually remove the ops in the dead block. Cannot drop everything
+    // afterwards since it may contain ops from outer scopes.
+    if (deadBlock) {
+      llvm::erase_if(parentFrame.ops, [&](Operation *o) {
+        return deadBlock->findAncestorOpInBlock(*o) != nullptr;
+      });
+    }
     return success();
   };
 
@@ -1575,10 +1584,6 @@ ElaborationState ParametricElaborator::processScope(PImplNode *node,
 
 ElaborationState ParametricElaborator::processOp(PImplNode *node,
                                                  Operation *op) {
-  if (Block *block = op->getBlock())
-    if (!block->isEntryBlock())
-      return ElaborationState::advance();
-
   // ParamDeclareOp declaring a new parameter, in param space
   // ParamConstantOp cpuDevice constant value
   // ParamMaterializeOp same as ParamConstantOp, cpuDevice constant? value
