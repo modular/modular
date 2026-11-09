@@ -1412,6 +1412,39 @@ modular_cc_test(
     ],
 )
 
+# A virtual device configured for the real accelerator's target must report
+# that accelerator's identity. Runs on the NVIDIA and AMD GPU lanes in the
+# default config; under --config=hal-device-context, run it through
+# CAPIHALTests. Metal has no virtual device (MOCO-2411).
+modular_cc_test(
+    name = "VirtualDeviceParityTest",
+    size = "small",
+    srcs = ["VirtualDeviceParityTest.cpp"],
+    data = _CAPI_TEST_PLUGINS,
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    env = _CAPI_TEST_PLUGIN_ENV,
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
+        "//MLRT:Driver/ArchitectureVersion",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 # The cases that need two accelerators, which are peer access and peer copies.
 modular_cc_test(
     name = "CAPIPeerTest",
@@ -1433,9 +1466,9 @@ modular_cc_test(
     ],
 )
 
-# The C API tests under --config=hal-device-context, which no CI lane runs on
-# a GPU. Run with that config plus a remote GPU config, for example
-# `--config=hal-device-context --config=remote-b200`.
+# The C API and virtual device parity tests under --config=hal-device-context,
+# which no CI lane runs on a GPU. Run with that config plus a remote GPU
+# config, for example `--config=hal-device-context --config=remote-b200`.
 test_suite(
     name = "CAPIHALTests",
     tags = ["manual"],
@@ -1443,6 +1476,7 @@ test_suite(
         ":CAPIConcurrencyTest",
         ":CAPIPeerTest",
         ":CAPITest",
+        ":VirtualDeviceParityTest",
     ],
 )
 
