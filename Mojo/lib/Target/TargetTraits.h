@@ -118,6 +118,11 @@ public:
   /// generic driver code need not special-case the target.
   virtual bool forcesExportedSymbols() const { return false; }
 
+  /// Whether the target's emitter accepts only one entry function per
+  /// artifact. When true, the offload compiler compiles each offload kernel of
+  /// this target on its own instead of bundling them into one module.
+  virtual bool requiresPerKernelOffload() const { return false; }
+
   /// Default target CPU for `triple` when none is given, or empty to use the
   /// generic host/cross-compile fallback.
   virtual llvm::StringRef defaultCPU(const llvm::Triple &triple) const {
