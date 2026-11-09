@@ -406,6 +406,10 @@ This version is still a work in progress.
   vector width, such as the halves `split()` returns for small vectors, now
   use the intrinsic.
 
+- `**` with an integer exponent no longer truncates the exponent to 32 bits,
+  so `Float64(2.0) ** Int64(4294967296)` is now `inf` instead of `1.0`, and
+  `Float64(2.0) ** Int32.MIN` is now `0.0` instead of `1.0`.
+
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns.
 

@@ -3846,7 +3846,7 @@ def _pow[
         result = {}
 
         comptime for i in range(width):
-            result[i] = _powi(base[i], exp[i].cast[DType.int32]())
+            result[i] = _powi(base[i], exp[i])
     elif base.dtype.is_integral() and exp.dtype.is_floating_point():
         comptime assert False, (
             "an integer cannot be raised to a floating point power; use a"
@@ -3902,7 +3902,11 @@ def _powf[
 
 
 @inline(.always)
-def _powi(base: Scalar, exp: Int32) -> type_of(base):
+def _powi(
+    base: Scalar, exp: Scalar
+) -> type_of(base) where (
+    exp.dtype.is_integral()
+) else "exponent must be integral":
     comptime if base.dtype.is_integral():
         if exp < 0:
             # Trap rather than return a truncated result, the way NumPy rejects
@@ -3913,7 +3917,10 @@ def _powi(base: Scalar, exp: Int32) -> type_of(base):
             )
 
     var a = base
-    var b = abs(exp) if base.dtype.is_floating_point() else exp
+    # Negating in the unsigned type gives `MIN` a magnitude too.
+    var b = exp.cast[_unsigned_integral_type_of[exp.dtype]()]()
+    if exp < 0:
+        b = 0 - b
     var res: Scalar[base.dtype] = 1
     while b > 0:
         if b & 1:
