@@ -401,3 +401,7 @@ This version is still a work in progress.
 
 - A `comptime if conforms_to(T, Deinitable)` guard now correctly refines `T`
   and deinits it after its last use.
+
+- Building a `SIMD` value from a list literal with the wrong number of elements
+  is now a compile-time error. Previously, `var x: Int = [1, 2, 3, 4]` compiled
+  and kept only the first element.
