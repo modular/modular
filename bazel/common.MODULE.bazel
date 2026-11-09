@@ -173,6 +173,20 @@ single_version_override(
 )
 
 single_version_override(
+    module_name = "jemalloc",
+    patch_strip = 1,
+    patches = [
+        # As part of building this, jemalloc expects an `nm` from the
+        # cc toolchain, but plumbing it through requires a rules_cc fix.
+        # Without it, the action just gives us "/bin/bash: line 1: -a: command not found"
+        # since `{nm}` expands to nothing. Unless/until we want to fix it,
+        # just disable the feature. This is not a flag but just a setting,
+        # so annoyingly we have to patch it.
+        "//bazel/public-patches:jemalloc-no-private-namespace.patch",
+    ],
+)
+
+single_version_override(
     module_name = "with_cfg.bzl",
     patch_strip = 1,
     patches = [
