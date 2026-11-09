@@ -30,9 +30,14 @@ from max.nn.kv_cache import (
     PagedKVLeafRegion,
 )
 from max.nn.kv_cache.cache_params import (
+    _MAX_INT32_ROW_ID,
+    _MAX_UINT32_SCALE_ROW_ID,
+    _check_paged_row_ids,
+    page_stride_of,
+)
+from max.nn.kv_cache.cache_params import (
     SpeculativeMethod as CacheSpeculativeMethod,
 )
-from max.nn.kv_cache.cache_params import page_stride_of
 from max.pipelines.speculative import SpeculativeMethod
 
 
@@ -714,3 +719,33 @@ def test_a_padded_leaf_hands_byte_movers_its_padded_grid() -> None:
     )
     assert isinstance(buffer, KVCacheBuffer)
     assert page_stride_of(buffer.values[0]) == 192
+
+
+# GLM 5.3's NVFP4 MLA scale pages hold 78 layers x 128 tokens of rows.
+_GLM53_SCALE_ROWS_PER_PAGE = 78 * 128
+
+
+@pytest.mark.parametrize(
+    ("num_pages", "max_row_id", "fits"),
+    [
+        # Past 215,092 pages the scale rows no longer fit int32.
+        (215_092, _MAX_INT32_ROW_ID, True),
+        (215_093, _MAX_INT32_ROW_ID, False),
+        # The uint32 kernels keep all ones for an unused slot.
+        (430_185, _MAX_UINT32_SCALE_ROW_ID, True),
+        (430_186, _MAX_UINT32_SCALE_ROW_ID, False),
+    ],
+)
+def test_paged_row_ids_must_fit_the_kernels(
+    num_pages: int, max_row_id: int, fits: bool
+) -> None:
+    def check() -> None:
+        _check_paged_row_ids(
+            "scales", num_pages, _GLM53_SCALE_ROWS_PER_PAGE, max_row_id
+        )
+
+    if fits:
+        check()
+    else:
+        with pytest.raises(ValueError, match="reduce the KV cache memory"):
+            check()

@@ -67,7 +67,12 @@ from ._common import (
     compute_block_hashes,
 )
 from .block_utils import InsufficientBlocksError, KVHashAlgo, LittleKVCacheBlock
-from .jenga_block_pool import JengaBlockPool, _pristine_pool_can_satisfy
+from .jenga_block_pool import (
+    _TOP_BLOCK_FRACTION,
+    JengaBlockPool,
+    _pristine_pool_can_satisfy,
+    min_huge_bid_for_top_fraction,
+)
 from .kv_group_coordinator import (
     FullKVGroupCoordinator,
     KVGroupCoordinatorInterface,
@@ -449,8 +454,21 @@ def create_pools(
 ) -> list[JengaBlockPool]:
     """Returns one pool per replica, each tiling the same huge blocks."""
     ratios = {leaf_id: leaf.ratio for leaf_id, leaf in leaf_infos.items()}
+    min_huge_bid = min_huge_bid_for_top_fraction(
+        num_huge_blocks, _TOP_BLOCK_FRACTION
+    )
+    if min_huge_bid:
+        logger.warning(
+            "MODULAR_KV_JENGA_DEBUG_TOP_BLOCK_FRACTION=%s: allocating only"
+            " huge blocks %d..%d, so KV capacity is cut to that share. For"
+            " tests only.",
+            _TOP_BLOCK_FRACTION,
+            min_huge_bid,
+            num_huge_blocks - 1,
+        )
     return [
-        JengaBlockPool(num_huge_blocks, ratios) for _ in range(num_replicas)
+        JengaBlockPool(num_huge_blocks, ratios, min_huge_bid=min_huge_bid)
+        for _ in range(num_replicas)
     ]
 
 

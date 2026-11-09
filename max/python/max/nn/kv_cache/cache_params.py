@@ -442,6 +442,39 @@ _SCALE_TMA_ALIGN_BYTES = 16
 # Recurrent-state kernels take pool row ids as int32.
 _MAX_INT32_ROW_ID = 2**31 - 1
 
+# The sparse MLA kernels on an NVFP4 cache read a key's scale-pool row as a
+# uint32 whose all-ones value marks an unused slot.
+_MAX_UINT32_SCALE_ROW_ID = 2**32 - 2
+
+
+def _check_paged_row_ids(
+    leaf_id: str, num_pages: int, rows_per_page: int, max_row_id: int
+) -> None:
+    """Raises if a paged leaf has more rows than its kernels can address.
+
+    A kernel that folds ``page * rows_per_page + row`` into a 32-bit id
+    aliases or drops rows past its limit without an error, and only once the
+    pool fills into its highest pages, so a short eval never sees it.
+
+    Args:
+        leaf_id: The leaf, for the error message.
+        num_pages: Pages the leaf's view holds on one device.
+        rows_per_page: The finest rows a kernel may fold into one page.
+        max_row_id: The highest row id those kernels address.
+
+    Raises:
+        ValueError: If the last row's id is past ``max_row_id``.
+    """
+    num_rows = num_pages * rows_per_page
+    if num_rows - 1 > max_row_id:
+        raise ValueError(
+            f"leaf {leaf_id!r} would have {num_rows} rows ({num_pages} pages"
+            f" of {rows_per_page}), but its kernels address rows up to"
+            f" {max_row_id}, so rows past it would silently alias or read as"
+            " unused; reduce the KV cache memory budget"
+        )
+
+
 PACKED_PAGE_STRIDE = -1
 """``page_stride`` sentinel meaning the pages are packed."""
 
@@ -2336,6 +2369,14 @@ class KVCacheParams(KVCacheParamInterface):
         values, values_packed, values_padded = views(
             self.shape_per_block, self.dtype, values_id
         )
+        # The paged TMA and gather paths fold value rows into int32.
+        for pages in values:
+            _check_paged_row_ids(
+                values_id,
+                pages.shape[0],
+                math.prod(self.shape_per_block[:-1]),
+                _MAX_INT32_ROW_ID,
+            )
         scales, scales_packed, scales_padded = (
             views(
                 self.shape_per_scale_block,
@@ -2345,6 +2386,14 @@ class KVCacheParams(KVCacheParamInterface):
             if quantized and quant_config is not None
             else (None, None, None)
         )
+        if scales is not None and self.is_nvfp4_kv_cache:
+            for pages in scales:
+                _check_paged_row_ids(
+                    scales_id,
+                    pages.shape[0],
+                    math.prod(self.shape_per_scale_block[:-1]),
+                    _MAX_UINT32_SCALE_ROW_ID,
+                )
         return KVCacheBuffer(
             leaf_id=values_id,
             replicates_kv_across_tp=self.replicates_kv_across_tp,
