@@ -17,10 +17,7 @@ cc_library(
         ".",
         "dynolog/src/ipcfabric",
     ],
-    target_compatible_with = [
-        "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
-    ],
+    target_compatible_with = ["@platforms//os:linux"],
     # Only libkineto consumes these headers; cross-repo visibility works
     # the same way libkineto.BUILD already references @fmt.
     visibility = ["@libkineto//:__pkg__"],

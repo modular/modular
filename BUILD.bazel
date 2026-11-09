@@ -544,6 +544,22 @@ selects.config_setting_group(
     ],
 )
 
+selects.config_setting_group(
+    name = "linux_aarch64_no_tracy",
+    match_all = [
+        ":linux_aarch64",
+        ":tracy_disabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "linux_no_tracy",
+    match_any = [
+        ":linux_x86_64_no_tracy",
+        ":linux_aarch64_no_tracy",
+    ],
+)
+
 # Routes the C++ DeviceContext through the HAL implementation; referenced by
 # shared source selects. Mirrored from the internal //BUILD.bazel.
 bool_flag(

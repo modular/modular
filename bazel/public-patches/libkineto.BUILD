@@ -31,10 +31,6 @@
 #     relevant once libkineto is linked into a shared library;
 #     today the cc_library produces a static archive, so symbol scoping
 #     happens at the final .so link, not here.
-#   - aarch64 Linux. The CUPTI build + CUDA dep chain are validated only
-#     on x86_64, so target_compatible_with conservatively restricts to it.
-#     (The CUDA header chain itself resolves on aarch64 via cuda_sbsa, so
-#     lifting this is mostly a validation exercise.)
 
 load(
     "@libkineto//:libkineto/libkineto_defs.bzl",
@@ -129,10 +125,7 @@ cc_library(
     ],
     copts = LIBKINETO_COPTS,
     local_defines = LIBKINETO_LOCAL_DEFINES,
-    target_compatible_with = [
-        "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
-    ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":libkineto_headers",
         ":libkineto_src_headers",
@@ -161,13 +154,9 @@ cc_library(
     # define beside the @dynolog//:ipcfabric_headers dep they require avoids a
     # define-without-headers skew if a future SHA bump moves those sources.
     local_defines = LIBKINETO_LOCAL_DEFINES + ["ENABLE_IPC_FABRIC=1"],
-    # The CUPTI build is validated only on x86_64 today, so restrict to it
-    # conservatively. aarch64 + AMD-only builds keep the headers-only target
-    # ":libkineto_headers" instead.
-    target_compatible_with = [
-        "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
-    ],
+    # x86_64 and aarch64 (Grace): cuda_cupti_headers and
+    # cuda_runtime_headers select the sbsa redistributables on aarch64.
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":libkineto_api_objs",
         ":libkineto_headers",
@@ -211,8 +200,8 @@ cc_library(
     # cpu-only source set carries IpcFabricConfigClient.cpp /
     # DaemonConfigLoader.cpp, which need @dynolog//:ipcfabric_headers.
     local_defines = LIBKINETO_ROCM_LOCAL_DEFINES + ["ENABLE_IPC_FABRIC=1"],
-    # AMD GPU hosts are Linux x86_64 (the MI355 CI executors); keep the same
-    # conservative constraint as the CUPTI flavor.
+    # AMD GPU hosts are Linux x86_64 (the MI355 CI executors), and ROCm has
+    # no aarch64 host support, so this flavor stays x86_64-only.
     target_compatible_with = [
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
