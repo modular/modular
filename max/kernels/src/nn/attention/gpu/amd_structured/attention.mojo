@@ -809,6 +809,14 @@ struct Attention[
             # (windowed/chunked); Causal/Null skip it. `fold_seq_len` is 1 off
             # the fold path, so non-MLA decode is byte-identical to the
             # single-token span.
+            comptime if Self._fold_active and not Self.mla_mode:
+                # The runtime query length: a sequence shorter than the tile's
+                # S slots must not push the span base below key 0.
+                return self.mask.status(
+                    UInt32(self.batch_idx),
+                    (Int(self.num_keys - self.seq_len), Int(kv_tile_start_row)),
+                    (Int(self.seq_len), Int(Self.BN)),
+                )
             comptime fold_seq_len = (
                 Self.query_rows // Self.heads_inner
             ) if Self._fold_active else 1
@@ -826,6 +834,43 @@ struct Attention[
                 ),
                 (Int(Self.BM), Int(Self.BN)),
             )
+
+    @inline(.always)
+    def decode_first_key(self) -> Int:
+        """Returns the first key a decode CTA must visit.
+
+        A mask that fully hides a prefix of the keys and opts in through
+        `supports_decode_token_fold` (windowed) names it through `start_column`
+        for the earliest query row of the decode step, so split-K partitions
+        only the visible range. Every other mask starts at key 0.
+
+        Returns:
+            The first visible key position, tile-aligned by the mask.
+        """
+        comptime if not Self.mask_t.supports_decode_token_fold:
+            return 0
+        else:
+            comptime if Self._fold_active and not Self.mla_mode:
+                comptime span = Self.query_rows // Self.heads_inner
+                var first_row = max(self.num_keys - self.seq_len, 0)
+                return min(
+                    Int(
+                        self.mask.start_column[
+                            span, Self.BN, Self.k_t.page_size
+                        ](UInt32(self.batch_idx), UInt32(first_row))
+                    ),
+                    self.num_keys,
+                )
+            else:
+                return min(
+                    Int(
+                        self.mask.start_column[1, Self.BN, Self.k_t.page_size](
+                            UInt32(self.batch_idx),
+                            UInt32(max(self.num_keys - 1, 0)),
+                        )
+                    ),
+                    self.num_keys,
+                )
 
     @inline(.always)
     def mask_advance(mut self):
