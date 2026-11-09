@@ -2347,6 +2347,14 @@ def test_config__fp4_kv_cache_needs_an_opted_in_architecture() -> None:
         )
 
 
+def test_config__float16_kv_cache_format_overrides_encoding() -> None:
+    """A quantized checkpoint can keep its KV cache in float16."""
+    assert cache_dtype_for_encoding("float4_e2m1fnx2", None) == DType.bfloat16
+    assert (
+        cache_dtype_for_encoding("float4_e2m1fnx2", "float16") == DType.float16
+    )
+
+
 def test_config__fp4_kv_cache_format_maps_to_packed_uint8() -> None:
     """Both FP4 spellings store packed uint8, and ``nvfp4`` is not a format."""
     assert cache_dtype_for_encoding(None, "float4_e2m1fn") == DType.uint8
