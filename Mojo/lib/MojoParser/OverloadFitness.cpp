@@ -104,10 +104,11 @@ static void diagnoseFailedRefTypeConversion(MojoInflightDiag &diag,
                          << " doesn't match expected element type "
                          << ASTType(argType.getElementType());
   } else if (argType.getAddressSpace() != operandRefTy.getAddressSpace()) {
-    diag.attachNote(loc) << "operand address space "
-                         << operandRefTy.getAddressSpace()
-                         << " doesn't match expected address space "
-                         << argType.getAddressSpace();
+    diag.attachNote(loc)
+        << "operand address space "
+        << ASTType::getAddressSpaceForDisplay(operandRefTy.getAddressSpace())
+        << " doesn't match expected address space "
+        << ASTType::getAddressSpaceForDisplay(argType.getAddressSpace());
   } else if (!IREmitter::canZeroCostConvert(operandRefTy.getOriginType(),
                                             argType.getOriginType(), shared,
                                             declScope)

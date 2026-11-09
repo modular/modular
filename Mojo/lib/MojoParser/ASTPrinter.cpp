@@ -1556,7 +1556,8 @@ static void printRef(RefType refType, raw_ostream &os,
   if (!refType.isDefaultAddrSpace()) {
     if (printed)
       os << ", ";
-    ASTType::printParam(os, refType.getAddressSpace(), ctx);
+    ASTType::printParam(
+        os, ASTType::getAddressSpaceForDisplay(refType.getAddressSpace()), ctx);
     printed = true;
   }
   os << (printed ? "] " : " ");

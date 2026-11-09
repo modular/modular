@@ -1718,11 +1718,25 @@ LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
   ParamMatcher matcher(getGivenBindings().callExpr, *this,
                        /*allowImplicitConversions=*/false);
 
+  SMLoc loc = getGivenBindings().callExpr->getLoc();
   if (failed(matcher.matchSingleEltStruct(actualRef.getAddressSpace(),
-                                          expectedRef.getAddressSpace())) ||
-      failed(matcher.matchSingleEltStruct(actualRef.getOrigin(),
-                                          expectedRef.getOrigin())))
+                                          expectedRef.getAddressSpace()))) {
+    auto &diag = getMojoDiag(loc);
+    diag << "cannot initialize a value in address space "
+         << ASTType::getAddressSpaceForDisplay(actualRef.getAddressSpace())
+         << " with an initializer for address space "
+         << ASTType::getAddressSpaceForDisplay(expectedRef.getAddressSpace());
+    matcher.failureReason->addExplanation(diag);
     return failure();
+  }
+  if (failed(matcher.matchSingleEltStruct(actualRef.getOrigin(),
+                                          expectedRef.getOrigin()))) {
+    auto &diag = getMojoDiag(loc);
+    diag << "cannot initialize a value with origin " << actualRef.getOrigin()
+         << " with an initializer for origin " << expectedRef.getOrigin();
+    matcher.failureReason->addExplanation(diag);
+    return failure();
+  }
   return success();
 }
 

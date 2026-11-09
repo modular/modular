@@ -2099,18 +2099,19 @@ void IREmitter::emitNormalReturn(Location loc, Value value, bool emitEndFunc) {
 //===--------------------------------------------------------------------===//
 
 VarDeclOp IREmitter::emitVarDecl(const Twine &name, Type type, Location loc,
-                                 VarDeclKind kind) {
+                                 VarDeclKind kind, TypedAttr addressSpace) {
   if (!builder) {
     emitErrorForDynamicValueInParameter(loc);
     return {};
   }
   StringAttr originAttr = declScope.mangleParamName(name);
-  return VarDeclOp::create(*builder, loc, type, name.str(), originAttr, kind);
+  return VarDeclOp::create(*builder, loc, type, name.str(), originAttr, kind,
+                           addressSpace);
 }
 
 VarDeclOp IREmitter::emitVarDecl(StringAttr name, Type type, Location loc,
-                                 VarDeclKind kind) {
-  return emitVarDecl(name.strref(), type, loc, kind);
+                                 VarDeclKind kind, TypedAttr addressSpace) {
+  return emitVarDecl(name.strref(), type, loc, kind, addressSpace);
 }
 
 //===--------------------------------------------------------------------===//

@@ -735,6 +735,78 @@ static FromImportDecorators parseFromImportDecorators(SharedState &shared,
                                                       LexerCursor startCursor,
                                                       size_t stmtIndent);
 
+static constexpr StringLiteral kAddressSpaceDecorator = "__address_space";
+
+/// The decorators written before a 'var' statement in a function body.
+struct VarStmtDecorators {
+  /// The operand of the `@__address_space` decorator, if present and valid.
+  ExprNode *addressSpace = nullptr;
+  bool hasUnsupported = false;
+};
+
+/// Re-lex the decorators before a 'var' statement in a function body (which
+/// the statement parser skipped) and validate any supported decorators.
+static VarStmtDecorators parseVarStmtDecorators(SharedState &shared,
+                                                LexerCursor startCursor,
+                                                size_t stmtIndent) {
+  VarStmtDecorators result;
+  Lexer decorLexer(shared.diags, startCursor);
+  ParserBase decorParser(shared, decorLexer);
+  auto decorators = decorParser.parseDecorators((ssize_t)stmtIndent);
+  // Walk in source order so a duplicate is reported where it is written.
+  for (auto [expr, cursor] : llvm::reverse(decorators)) {
+    auto *call = dyn_cast<CallNode>(expr);
+    auto *declRef = dyn_cast<DeclRefNode>(call ? call->callee : expr);
+    if (!declRef || declRef->spelling != kAddressSpaceDecorator) {
+      result.hasUnsupported = true;
+      continue;
+    }
+    if (!call || call->operands.size() != 1 ||
+        !call->operands.front().isPositional()) {
+      shared.emitError(expr->getLoc(),
+                       "@__address_space takes a single positional "
+                       "'AddressSpace' argument")
+          << expr->getRange();
+      continue;
+    }
+    if (result.addressSpace) {
+      shared.emitError(expr->getLoc(), "@__address_space is specified more "
+                                       "than once; remove the duplicate")
+          << expr->getRange();
+      continue;
+    }
+    result.addressSpace = call->operands.front().expr;
+  }
+  return result;
+}
+
+/// Attach an `@__address_space` operand to the 'var' pattern of a statement
+/// declaring a single name: `var x = e`, `var x: T = e` or `var x: T`.
+/// Diagnoses any other statement shape.
+static void attachVarAddressSpace(SharedState &shared, ExprNode *stmt,
+                                  ExprNode *addressSpace) {
+  ExprNode *pattern = stmt;
+  if (auto *assign = dyn_cast<BinOpNode>(pattern);
+      assign && assign->kind == ExprNode::kAssign)
+    pattern = assign->lhs;
+  // A statement-level `var x: T` parses as `(var x): T`.
+  if (auto *typed = dyn_cast<BinOpNode>(pattern);
+      typed && typed->kind == ExprNode::kTypePattern)
+    pattern = typed->lhs;
+
+  auto *varPattern = dyn_cast<UnaryOpNode>(pattern);
+  if (varPattern && varPattern->kind == ExprNode::kVarPat &&
+      isa<DeclRefNode>(varPattern->subExpr)) {
+    varPattern->addressSpace = addressSpace;
+    return;
+  }
+
+  shared.emitError(stmt->getLoc(),
+                   "@__address_space only applies to a 'var' that declares a "
+                   "single name")
+      << stmt->getRange();
+}
+
 ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                                   size_t stmtIndent) {
   // Generate pretty stack traces if a crash happens in this scope.
@@ -941,10 +1013,19 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // statement.
   ExprNode *expr = nullptr;
   bool isVarStatement = getToken().is(Token::kw_var);
-  rejectDecorator(/*inFunctionBody=*/isVarStatement,
-                  /*printToken=*/isVarStatement);
+  VarStmtDecorators varDecorators;
+  if (isVarStatement && hadDecorators) {
+    varDecorators = parseVarStmtDecorators(shared, startCursor, stmtIndent);
+    if (varDecorators.hasUnsupported)
+      rejectDecorator(/*inFunctionBody=*/true);
+  } else {
+    rejectDecorator(/*inFunctionBody=*/isVarStatement,
+                    /*printToken=*/isVarStatement);
+  }
   if (parseSimpleStmtExprs(expr, stmtIndent))
     return failure();
+  if (varDecorators.addressSpace)
+    attachVarAddressSpace(shared, expr, varDecorators.addressSpace);
 
   // We cannot emit general statements unless we're in a function body.
   auto *otherParent = dyn_cast<OtherOpASTDecl>(&getParentDecl());

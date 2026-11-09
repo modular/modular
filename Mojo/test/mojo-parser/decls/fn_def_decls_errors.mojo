@@ -223,6 +223,15 @@ def return_ref_type_error(a: def (x: MemoryType) thin -> ref [x] MemoryType):
     # expected-error @+1 {{cannot implicitly convert 'def(x: MemoryType) thin -> ref[*[0,0]] MemoryType' value to 'Int'}}
     var b: Int = a
 
+def ref_address_space_type_error[o: Origin[mut=True], addr_space: AddressSpace](
+    a: def (ref [o, addr_space] x: MemoryType) thin -> None,
+    b: def (ref [o, AddressSpace.SHARED] x: MemoryType) thin -> None,
+):
+    # expected-error @+1 {{cannot implicitly convert 'def(ref[o, addr_space] x: MemoryType) thin -> None' value to 'Int'}}
+    var c: Int = a
+    # expected-error @+1 {{cannot implicitly convert 'def(ref[o, 2] x: MemoryType) thin -> None' value to 'Int'}}
+    var d: Int = b
+
 struct SBValue(RegisterPassable):
     pass
 

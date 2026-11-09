@@ -732,11 +732,17 @@ private:
 };
 
 struct UnaryOpNode final : public ExprNode {
-  UnaryOpNode(Kind kind, SMLoc opLoc, ExprNode *subExpr)
-      : ExprNode(kind), opLoc(opLoc), subExpr(subExpr) {}
+  UnaryOpNode(Kind kind, SMLoc opLoc, ExprNode *subExpr,
+              ExprNode *addressSpace = nullptr)
+      : ExprNode(kind), opLoc(opLoc), subExpr(subExpr),
+        addressSpace(addressSpace) {}
 
   const SMLoc opLoc;
   ExprNode *const subExpr;
+
+  /// For a statement-level 'var' pattern, the operand of its
+  /// address-space decorator, if any.
+  ExprNode *addressSpace;
 
   static bool classof(const ExprNode *node) {
     return node->kind >= kFirstUnaryOp && node->kind <= kLastUnaryOp;

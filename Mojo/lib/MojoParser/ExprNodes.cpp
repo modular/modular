@@ -1332,8 +1332,9 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     if (isRefOrBind)
       varType = RefType::getAnyOrigin(varType, true);
 
-    VarDeclOp varDecl = emitter.emitVarDecl(
-        spelling, varType, expr->getLocation(emitter), declKind);
+    VarDeclOp varDecl =
+        emitter.emitVarDecl(spelling, varType, expr->getLocation(emitter),
+                            declKind, dest.getPatternAddressSpace());
     auto &varASTDecl =
         cast<VarASTDecl>(emitter.getDeclResolver().addFullyResolvedDecl(
             varDecl.getOperation(), varDecl.getNameAttr(), loc, &lookupScope));
@@ -4451,7 +4452,29 @@ UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
     return this;
 
   return emitter.shared.stmtAllocator.create<UnaryOpNode>(
-      kind, opLoc, const_cast<ExprNode *>(newSubExpr));
+      kind, opLoc, const_cast<ExprNode *>(newSubExpr), addressSpace);
+}
+
+/// Evaluate the operand of an `@__address_space` decorator to the address
+/// space index it names. Returns null after diagnosing if it doesn't name one.
+static TypedAttr emitVarAddressSpace(const ExprNode *expr, IREmitter &emitter) {
+  // The contextual type is what lets the operand be written as `.SHARED`.
+  ASTType addrSpaceType = emitter.shared.lookupBuiltinType(
+      "AddressSpace", emitter.declScope, expr->getLoc());
+  if (addrSpaceType.isTypeCheckErrorType())
+    return {};
+
+  PValue value = emitter.emitExprPValue(expr, EC_Decorator, addrSpaceType);
+  if (!value)
+    return {};
+
+  TypedAttr addrSpace =
+      ASTType::extractAddressSpace(value.get(), expr->getLoc(), emitter.shared);
+  if (!addrSpace) {
+    emitter.emitError(expr->getLoc(), "expected an 'AddressSpace' value")
+        << expr->getRange();
+  }
+  return addrSpace;
 }
 
 AnyValue UnaryOpNode::emitComptime(ExprDest &dest, IREmitter &emitter) const {
@@ -4480,6 +4503,10 @@ AnyValue UnaryOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 
     dest.setPatternDeclKind(kind == kVarPat ? PatternDeclKind::kVar
                                             : PatternDeclKind::kRef);
+    // On a bad operand, declare the var in the default address space so later
+    // uses of it don't report spurious errors.
+    if (addressSpace)
+      dest.setPatternAddressSpace(emitVarAddressSpace(addressSpace, emitter));
     auto result = emitter.emitExpr(subExpr, dest);
 
     if (result && !result.getIfLValue()) {

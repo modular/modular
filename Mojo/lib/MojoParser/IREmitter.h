@@ -648,11 +648,12 @@ public:
   void emitNormalReturn(Location loc, Value value = Value(),
                         bool emitEndFunc = true);
 
-  /// Helper to emit a VarDeclOp with a uniquely generated origin name.
+  /// Helper to emit a VarDeclOp with a uniquely generated origin name. A null
+  /// address space means the default one.
   VarDeclOp emitVarDecl(const Twine &name, Type type, Location loc,
-                        VarDeclKind kind);
+                        VarDeclKind kind, TypedAttr addressSpace = {});
   VarDeclOp emitVarDecl(StringAttr name, Type type, Location loc,
-                        VarDeclKind kind);
+                        VarDeclKind kind, TypedAttr addressSpace = {});
 
   /// Internal implementation of call emission, use emitCall/emitIndirectCall
   /// or higher level wrappers instead.

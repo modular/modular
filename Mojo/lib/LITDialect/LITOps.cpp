@@ -2332,12 +2332,15 @@ void VarDeclOp::walkDefinitions(
 }
 
 void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
-                      StringRef name, StringRef originName, VarDeclKind kind) {
+                      StringRef name, StringRef originName, VarDeclKind kind,
+                      TypedAttr addressSpace) {
   auto originType = b.getType<OriginType>(/*isMutable=*/true);
   auto originNameAttr = b.getAttr<StringAttr>(originName);
   auto originDecl = ParamDeclAttr::get(originNameAttr, originType);
-  auto resultType = RefType::get(
-      elementType, ParamDeclRefAttr::get(originNameAttr, originType));
+  auto origin = ParamDeclRefAttr::get(originNameAttr, originType);
+  auto resultType = addressSpace
+                        ? RefType::get(elementType, origin, addressSpace)
+                        : RefType::get(elementType, origin);
   build(b, state, resultType, name, kind, originDecl);
 }
 

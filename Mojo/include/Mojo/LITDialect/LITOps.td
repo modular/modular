@@ -1133,7 +1133,8 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
                    "StringRef":$originName,
-                   "VarDeclKind":$kind)>
+                   "VarDeclKind":$kind,
+                   CArg<"TypedAttr", "{}">:$addressSpace)>
   ];
   let extraClassDeclaration = [{
     bool isSynthetic();
