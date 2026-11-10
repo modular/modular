@@ -3913,7 +3913,9 @@ def paged_cache_rows[
     Same type as the `generic_get_paged_cache` collection of the whole batch;
     only the per-row tables move and the max lengths change. The caller
     checks that the lookup table and `split_args` (a
-    `kv_cache.mixed_step_split` record) are packed.
+    `kv_cache.mixed_step_split` record) are packed. Use it to build a
+    collection from operands; `rows_view` views an existing collection and
+    keeps its scales.
     """
     var lut_cols = Int(lookup_table.dim[1]())
     var lengths = split_args.unsafe_ptr().unsafe_offset(max_lengths_slot)

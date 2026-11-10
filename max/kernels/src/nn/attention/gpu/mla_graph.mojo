@@ -55,6 +55,7 @@ from layout import (
     row_major,
 )
 from layout.layout import Layout
+from layout.layout import ComptimeInt, RowMajorLayout
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
 from std.utils.index import StaticTuple
@@ -75,6 +76,13 @@ from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
 from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import KVCacheStaticParams
+from kv_cache.mixed_step_split import (
+    MIXED_STEP_DECODE_WIDTH,
+    MixedSplit,
+    SplitView,
+    is_packed,
+    rebase_row_offsets,
+)
 from nn.kv_cache import KVCollectionT, KVCacheT
 from kv_cache.types import PagedKVCache
 from nn.attention.latent_sparse_attention import (
@@ -90,11 +98,13 @@ from nn.attention.gpu.mla import (
     AMDMLA,
     LegacyNVMLA,
     MLAKernels,
+    MLA_DECODE_MAX_SEQ_LEN,
     SM100MLA,
     _k_cache_to_buffer,
     flare_mla_decoding,
     flare_mla_decoding_rows,
     mla_decode_max_seq_len,
+    mla_prefill_plan,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_bf16_num_partitions,
@@ -108,6 +118,7 @@ from nn.attention.gpu.mla_common import (
 from nn.attention.mha_mask import PaddingMask, SparseRowsDecodeMask
 from nn.attention.mha_utils import (
     MHAConfig,
+    NonNullPointer,
     NullPointer,
     OptionalPointer,
     as_optional_reg,
@@ -3696,7 +3707,7 @@ def mla_prefill_decode_graph_fp8[
     dtype: DType,
     fp8_dtype: DType,
     fp8_scale_dtype: DType,
-    collection_t: KVCollectionT,
+    collection_t: KVCollectionT & Deinitable,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
@@ -3727,6 +3738,7 @@ def mla_prefill_decode_graph_fp8[
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
+    allow_split: Bool = True,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -3765,6 +3777,8 @@ def mla_prefill_decode_graph_fp8[
     num_partitions_in: Optional[Int] = None,
     prefill_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     selection_lag: Int = 0,
+    mixed_split: Optional[MixedSplit] = None,
+    decode_num_partitions: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -3807,6 +3821,8 @@ def mla_prefill_decode_graph_fp8[
         attn_sink_inert: Whether the caller guarantees an inert attention
             sink; see `mla_decode_branch_fp8`.
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
+        allow_split: Whether a passed `mixed_split` may run as two
+            self-calls (defaults to True); the per-view calls pass False.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -3870,12 +3886,133 @@ def mla_prefill_decode_graph_fp8[
         selection_lag: Positions between the token each sparse row was
             computed for and the token that reads it; read by the decode
             branch only.
+        mixed_split: The validated split of the batch into a decode and a
+            prefill view (defaults to None, one whole-batch route); the
+            caller checks the record against the batch before passing one.
+        decode_num_partitions: The decode view's split-K count, overriding
+            the heuristic for that view only (defaults to None).
     """
 
     var seq_len = q.dim(0)
 
     if seq_len == 0:
         return
+
+    # Two self-calls, one per view, so each view's route gate sees its own
+    # max query length; refused splits fall through to the whole-batch route.
+    comptime if (
+        allow_split
+        and ctx.target.is_nvidia_gpu()
+        and not has_extra_k
+        and not fold_shared_index
+    ):
+        if case .Some(split) = mixed_split:
+            if (
+                is_packed(q)
+                and is_packed(output)
+                and is_packed(input_row_offsets)
+            ):
+                for i in range(2):
+                    var view = split.tail if i == 1 else split.head
+                    var args = _mla_split_view[
+                        num_heads=q.static_shape[1], sparse_mla=sparse_mla
+                    ](
+                        view,
+                        kv_collection,
+                        layer_idx,
+                        input_row_offsets,
+                        scalar_args_buf,
+                        buffer_row_offsets,
+                        cache_offsets,
+                        buffer_length,
+                        num_partitions_in,
+                        decode_num_partitions,
+                        d_indices,
+                        prefill_d_indices,
+                        indices_stride,
+                        topk_lengths,
+                        ctx,
+                    )
+                    var view_row_offsets = TileTensor(
+                        args.row_offsets, row_major(view.rows + 1)
+                    )
+                    var view_scalar_args = TileTensor(
+                        args.scalar_args, row_major((Idx[3],))
+                    )
+                    var view_buffer_row_offsets = TileTensor(
+                        args.plan_row_offsets, row_major(args.plan_rows)
+                    )
+                    var view_cache_offsets = TileTensor(
+                        args.plan_cache_offsets, row_major(args.plan_rows)
+                    )
+
+                    var first_token = view.first_token
+
+                    @inline(.always)
+                    def view_kv_input_fn[
+                        width: Int
+                    ](coords: IndexList[2]) {
+                        var kv_input_fn, var first_token
+                    } -> SIMD[DType.bfloat16, width]:
+                        return kv_input_fn[width=width](
+                            IndexList[2](coords[0] + first_token, coords[1])
+                        )
+
+                    mla_prefill_decode_graph_fp8[
+                        dtype=dtype,
+                        fp8_dtype=fp8_dtype,
+                        fp8_scale_dtype=fp8_scale_dtype,
+                        m_scale_granularity=m_scale_granularity,
+                        n_scale_granularity=n_scale_granularity,
+                        k_scale_granularity=k_scale_granularity,
+                        mask_str=mask_str,
+                        sparse_mla=sparse_mla,
+                        sparse_indices_stride=sparse_indices_stride,
+                        fold_shared_index=fold_shared_index,
+                        fp8_q=fp8_q,
+                        has_extra_k=has_extra_k,
+                        physical_indices=physical_indices,
+                        sparse_row=sparse_row,
+                        AttnSinkPtrType=AttnSinkPtrType,
+                        TopkLengthsPtrType=TopkLengthsPtrType,
+                        attn_sink_inert=attn_sink_inert,
+                        kernels=kernels,
+                        allow_split=False,
+                    ](
+                        _mla_split_token_rows(
+                            output, view.first_token, view.tokens
+                        ),
+                        _mla_split_token_rows(q, view.first_token, view.tokens),
+                        view_row_offsets,
+                        freqs_cis,
+                        kv_norm_gamma,
+                        args.collection,
+                        layer_idx,
+                        scale,
+                        epsilon,
+                        view_buffer_row_offsets,
+                        view_cache_offsets,
+                        buffer_length,
+                        view.max_q_len,
+                        w_k,
+                        w_k_scale,
+                        w_uk,
+                        w_uk_scale,
+                        w_uv,
+                        w_uv_scale,
+                        view_scalar_args,
+                        view_kv_input_fn,
+                        ctx,
+                        args.d_indices,
+                        indices_stride,
+                        args.topk_lengths,
+                        attn_sink_ptr,
+                        num_partitions_in=args.num_partitions,
+                        prefill_d_indices=args.prefill_d_indices,
+                        selection_lag=selection_lag,
+                    )
+                    _ = args^
+                return
 
     @inline(.always)
     def decode_branch[skip_masked_tiles: Bool]() raises {imm}:
@@ -5032,8 +5169,445 @@ def mla_prefill_branch_sparse_bf16[
 
 
 @inline(.always)
+def _mla_split_token_rows(
+    t: TileTensor[address_space=.GENERIC, ...],
+    first_token: Int,
+    tokens: Int,
+) -> TileTensor[
+    t.dtype,
+    RowMajorLayout[
+        *Coord[
+            Int, ComptimeInt[t.static_shape[1]], ComptimeInt[t.static_shape[2]]
+        ].element_types
+    ],
+    t.origin,
+]:
+    """Returns the `[tokens, num_heads, depth]` rows of `t` starting at
+    `first_token`, as a pointer offset with packed strides."""
+    comptime num_heads = t.static_shape[1]
+    comptime depth = t.static_shape[2]
+    comptime row_width = num_heads * depth
+    return {
+        ptr = t.ptr.unsafe_offset(first_token * row_width),
+        layout = row_major(tokens, Idx[num_heads], Idx[depth]),
+    }
+
+
+@inline(.always)
+def _mla_split_scalar_args(
+    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
+    element_offset: Int,
+) -> TileTensor[.int64, RowMajorLayout[ComptimeInt[3]], scalar_args_buf.origin]:
+    """Returns a width-3 view of the dispatch values starting at
+    `element_offset`."""
+    return {
+        ptr = scalar_args_buf.ptr.unsafe_offset(element_offset),
+        layout = row_major((Idx[3],)),
+    }
+
+
+def _mla_split_dispatch_triple_kernel(
+    dst: MutPointer[Int64, MutAnyOrigin],
+    src: MutPointer[Int64, MutAnyOrigin],
+    rows: Int32,
+    max_q_len: Int32,
+):
+    """Writes one view's dispatch triple: its own rows and max query length,
+    then the batch's third element, which this route does not read."""
+    dst[0] = Int64(rows)
+    dst[1] = Int64(max_q_len)
+    dst[2] = src[2]
+
+
+def _mla_split_dispatch_args(
+    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
+    view: SplitView,
+    ctx: DeviceContext,
+) raises -> Tuple[
+    MutPointer[Int64, MutAnyOrigin], Optional[DeviceBuffer[.int64]]
+]:
+    """Returns the view's dispatch triple and the buffer to keep alive, if any.
+
+    The decode kernel strides its split-K outputs by the triple's row count, so
+    a prefill view needs its own triple rather than the whole batch's.
+    """
+    if view.is_decode():
+        var decode_args = _mla_split_scalar_args(scalar_args_buf, 3)
+        return (
+            decode_args.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
+                MutAnyOrigin
+            ](),
+            None,
+        )
+    var triple = ctx.enqueue_create_buffer[.int64](3)
+    var triple_ptr = triple.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var batch_args = _mla_split_scalar_args(scalar_args_buf, 0)
+    var batch_args_ptr = batch_args.ptr.unsafe_mut_cast[
+        True
+    ]().unsafe_origin_cast[MutAnyOrigin]()
+    ctx.enqueue_function[_mla_split_dispatch_triple_kernel](
+        triple_ptr,
+        batch_args_ptr,
+        Int32(view.rows),
+        Int32(view.max_q_len),
+        grid_dim=1,
+        block_dim=1,
+    )
+    return (triple_ptr, triple^)
+
+
+@inline(.always)
+def _mla_split_offset_pointer[T: OptionalPointer](ptr: T, offset: Int) -> T:
+    """Returns `ptr` advanced by `offset` elements; a null `T` stays null."""
+    comptime if T.is_null:
+        return ptr
+    else:
+        return rebind[T](
+            NonNullPointer[T.dtype, T.address_space](
+                as_optional_reg(ptr).value().unsafe_offset(offset)
+            )
+        )
+
+
+@inline(.always)
+def _mla_split_partitions(
+    view: SplitView,
+    num_partitions_in: Optional[Int],
+    decode_num_partitions: Optional[Int],
+) -> Optional[Int]:
+    """Returns the view's split-K count: a decode view takes
+    `decode_num_partitions` when the caller gave a count, and keeps the
+    branch's own count when it gave none (the sparse arms); a prefill view
+    keeps the caller's count."""
+    if view.is_decode():
+        return decode_num_partitions if num_partitions_in else None
+    return num_partitions_in
+
+
+@inline(.always)
+def _mla_split_indices(
+    indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
+    offset: Int,
+) -> OptionalReg[MutPointer[Int32, MutAnyOrigin]]:
+    """Returns `indices` advanced by `offset` rows; `None` stays `None`."""
+    if case .Some(ptr) = indices:
+        return OptionalReg[MutPointer[Int32, MutAnyOrigin]](
+            ptr.unsafe_offset(offset)
+        )
+    return None
+
+
+@inline(.always)
+def _mla_split_row_offsets(
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    view: SplitView,
+    batch: Int,
+    ctx: DeviceContext,
+) raises -> Tuple[
+    MutPointer[UInt32, MutAnyOrigin], Optional[DeviceBuffer[.uint32]]
+]:
+    """Returns the view's row-offset pointer, rebased, and the buffer to keep
+    alive; the buffer is None when the view starts at row 0."""
+    var row_offsets = input_row_offsets.ptr.unsafe_mut_cast[
+        True
+    ]().unsafe_origin_cast[MutAnyOrigin]()
+    var rebased: Optional[DeviceBuffer[.uint32]] = None
+    if view.first_row != 0:
+        var rebased_buf = rebase_row_offsets[with_cache_offsets=False](
+            row_offsets, row_offsets, batch, view, ctx
+        )
+        row_offsets = rebased_buf.unsafe_ptr().unsafe_origin_cast[
+            MutAnyOrigin
+        ]()
+        rebased = rebased_buf^
+    return (row_offsets, rebased)
+
+
+@fieldwise_init
+struct _MLASplitPrefillPlan:
+    """The plan buffers of one split view, kept alive by their holder."""
+
+    var buffer_row_offsets: DeviceBuffer[.uint32]
+    var cache_offsets: DeviceBuffer[.uint32]
+    var buffer_lengths: DeviceBuffer[.int32]
+
+    @inline(.always)
+    def pointers(
+        mut self,
+    ) -> Tuple[
+        MutPointer[UInt32, MutAnyOrigin], MutPointer[UInt32, MutAnyOrigin]
+    ]:
+        """Returns the buffer row offsets and cache offsets pointers."""
+        return (
+            self.buffer_row_offsets.unsafe_ptr().unsafe_origin_cast[
+                MutAnyOrigin
+            ](),
+            self.cache_offsets.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+        )
+
+
+def _mla_split_prefill_plan[
+    cache_t: KVCacheT,
+](
+    view_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    k_cache: cache_t,
+    buffer_length: Int,
+    ctx: DeviceContext,
+) raises -> _MLASplitPrefillPlan:
+    """Plans one split view's prefill rows into the whole-batch host bound,
+    which covers at least the view's rows."""
+    var rows = Int(view_row_offsets.dim[0]()) - 1
+    var buffer_row_offsets = ctx.enqueue_create_buffer[.uint32](rows + 1)
+    var cache_offsets = ctx.enqueue_create_buffer[.uint32](rows + 1)
+    var buffer_lengths = ctx.enqueue_create_buffer[.int32](1)
+    mla_prefill_plan(
+        TileTensor(
+            buffer_row_offsets.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+            row_major(Idx[1], rows + 1),
+        ),
+        TileTensor(
+            cache_offsets.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+            row_major(Idx[1], rows + 1),
+        ),
+        TileTensor(
+            buffer_lengths.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+            row_major(Idx[1]),
+        ),
+        view_row_offsets,
+        k_cache,
+        UInt32(buffer_length),
+        ctx,
+    )
+    return _MLASplitPrefillPlan(
+        buffer_row_offsets^, cache_offsets^, buffer_lengths^
+    )
+
+
+# Threads per block of the per-row top-k gather; the grid covers every row.
+comptime _MLA_SPLIT_ROW_THREADS = 128
+
+
+def _mla_split_row_lengths_kernel(
+    dst: MutPointer[Int32, MutAnyOrigin],
+    token_lengths: MutPointer[Int32, MutAnyOrigin],
+    row_offsets: MutPointer[UInt32, MutAnyOrigin],
+    first_row: Int32,
+    rows: Int32,
+):
+    """Writes each view row's last-token top-k length."""
+    var b = global_idx.x
+    if b < Int(rows):
+        dst[b] = token_lengths[Int(row_offsets[Int(first_row) + b + 1]) - 1]
+
+
+@inline(.always)
+def _mla_split_reads_lengths_per_row[
+    cache_dtype: DType, num_heads: Int, sparse_mla: Bool
+](max_q_len: Int) -> Bool:
+    """Whether the self-call reads one top-k length per row: it takes the
+    decode branch with more than one token per row."""
+    return max_q_len > 1 and mla_graph_takes_decode_branch[
+        cache_dtype, num_heads, sparse_mla
+    ](max_q_len)
+
+
+def _mla_split_topk_lengths[
+    TopkLengthsPtrType: OptionalPointer
+](
+    topk_lengths: TopkLengthsPtrType,
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    first_row: Int,
+    rows: Int,
+    first_token: Int,
+    *,
+    per_row: Bool,
+    ctx: DeviceContext,
+) raises -> Tuple[TopkLengthsPtrType, Optional[DeviceBuffer[.int32]]]:
+    """Returns a view's top-k lengths and the buffer to keep alive, if any.
+
+    A mixed step carries one length per query token. A `per_row` view gets
+    each row's last-token length, which bounds every token of the row;
+    otherwise the view reads the tokens' own lengths from `first_token`.
+    """
+    comptime if not TopkLengthsPtrType.is_null:
+        if per_row:
+            comptime assert TopkLengthsPtrType.dtype == DType.int32
+            var lengths = ctx.enqueue_create_buffer[.int32](rows)
+            ctx.enqueue_function[_mla_split_row_lengths_kernel](
+                lengths.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                rebind[MutPointer[Int32, MutAnyOrigin]](
+                    as_optional_reg(topk_lengths).value()
+                ),
+                input_row_offsets.ptr.unsafe_mut_cast[
+                    True
+                ]().unsafe_origin_cast[MutAnyOrigin](),
+                Int32(first_row),
+                Int32(rows),
+                grid_dim=max(1, ceildiv(rows, _MLA_SPLIT_ROW_THREADS)),
+                block_dim=_MLA_SPLIT_ROW_THREADS,
+            )
+            var view_lengths = rebind[TopkLengthsPtrType](
+                NonNullPointer[.int32](lengths)
+            )
+            return (view_lengths, Optional(lengths^))
+    return (
+        _mla_split_offset_pointer[TopkLengthsPtrType](
+            topk_lengths, first_token
+        ),
+        None,
+    )
+
+
+@fieldwise_init
+struct _MLASplitView[
+    collection_t: KVCollectionT & Deinitable,
+    TopkLengthsPtrType: OptionalPointer,
+](Movable):
+    """One split view's operands, its rows of the KV collection, and the
+    buffers they point into, which live as long as this value."""
+
+    var collection: Self.collection_t
+
+    @__allow_legacy_any_origin_fields
+    var row_offsets: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var scalar_args: MutPointer[Int64, MutAnyOrigin]
+    var num_partitions: Optional[Int]
+
+    @__allow_legacy_any_origin_fields
+    var d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]]
+
+    @__allow_legacy_any_origin_fields
+    var prefill_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]]
+    var topk_lengths: Self.TopkLengthsPtrType
+
+    @__allow_legacy_any_origin_fields
+    var plan_row_offsets: MutPointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var plan_cache_offsets: ImmPointer[UInt32, ImmutAnyOrigin]
+    var plan_rows: Int
+    var _rebased: Optional[DeviceBuffer[.uint32]]
+    var _scalar_args: Optional[DeviceBuffer[.int64]]
+    var _row_lengths: Optional[DeviceBuffer[.int32]]
+    var _plan: Optional[_MLASplitPrefillPlan]
+
+
+def _mla_split_view[
+    collection_t: KVCollectionT & Deinitable,
+    TopkLengthsPtrType: OptionalPointer,
+    //,
+    *,
+    num_heads: Int,
+    sparse_mla: Bool,
+](
+    view: SplitView,
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
+    buffer_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    buffer_length: Int,
+    num_partitions_in: Optional[Int],
+    decode_num_partitions: Optional[Int],
+    d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
+    prefill_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
+    indices_stride: Int,
+    topk_lengths: TopkLengthsPtrType,
+    ctx: DeviceContext,
+) raises -> _MLASplitView[collection_t, TopkLengthsPtrType]:
+    """Returns one view's operands for a combined MLA op's self-call; both
+    arms build their views here so they cannot drift apart."""
+
+    comptime assert (
+        MIXED_STEP_DECODE_WIDTH == MLA_DECODE_MAX_SEQ_LEN
+    ), "the split's decode class and the route's fold cap must agree"
+    var view_collection = kv_collection.rows_view(
+        view.first_row,
+        view.rows,
+        UInt32(view.max_q_len),
+        UInt32(view.max_cache_len),
+    )
+    var batch = Int(input_row_offsets.dim[0]()) - 1
+    var row_offsets, rebased = _mla_split_row_offsets(
+        input_row_offsets, view, batch, ctx
+    )
+    var scalar_args, scalar_args_owned = _mla_split_dispatch_args(
+        scalar_args_buf, view, ctx
+    )
+
+    # The self-call's route decides the length form; ask it, not the view.
+    var view_topk_lengths, row_lengths = _mla_split_topk_lengths(
+        topk_lengths,
+        input_row_offsets,
+        view.first_row,
+        view.rows,
+        view.first_token,
+        per_row=_mla_split_reads_lengths_per_row[
+            collection_t.CacheType.dtype, num_heads, sparse_mla
+        ](view.max_q_len),
+        ctx=ctx,
+    )
+
+    # The whole-batch plan describes rows this view does not hold, so the
+    # prefill view plans its own rows.
+    var plan: Optional[_MLASplitPrefillPlan] = None
+    var plan_row_offsets = buffer_row_offsets.ptr.unsafe_mut_cast[
+        True
+    ]().unsafe_origin_cast[MutAnyOrigin]()
+    var plan_cache_offsets = cache_offsets.ptr.unsafe_origin_cast[
+        ImmutAnyOrigin
+    ]()
+    var plan_rows = batch + 1
+    comptime if not sparse_mla:
+        if not view.is_decode():
+            var view_plan = _mla_split_prefill_plan(
+                TileTensor(row_offsets, row_major(view.rows + 1)),
+                view_collection.get_key_cache(Int(layer_idx)),
+                buffer_length,
+                ctx,
+            )
+            var plan_pointers = view_plan.pointers()
+            plan_row_offsets = plan_pointers[0]
+            plan_cache_offsets = (
+                plan_pointers[1]
+                .unsafe_mut_cast[False]()
+                .unsafe_origin_cast[ImmutAnyOrigin]()
+            )
+            plan_rows = view.rows + 1
+            plan = view_plan^
+
+    return _MLASplitView[collection_t, TopkLengthsPtrType](
+        collection=view_collection,
+        row_offsets=row_offsets,
+        scalar_args=scalar_args,
+        num_partitions=_mla_split_partitions(
+            view, num_partitions_in, decode_num_partitions
+        ),
+        d_indices=_mla_split_indices(
+            d_indices, view.first_token * indices_stride
+        ),
+        prefill_d_indices=_mla_split_indices(
+            prefill_d_indices, view.first_token * indices_stride
+        ),
+        topk_lengths=view_topk_lengths,
+        plan_row_offsets=plan_row_offsets,
+        plan_cache_offsets=plan_cache_offsets,
+        plan_rows=plan_rows,
+        _rebased=rebased^,
+        _scalar_args=scalar_args_owned^,
+        _row_lengths=row_lengths^,
+        _plan=plan^,
+    )
+
+
+@inline(.always)
 def mla_prefill_decode_graph_bf16[
-    collection_t: KVCollectionT,
+    collection_t: KVCollectionT & Deinitable,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
@@ -5055,6 +5629,7 @@ def mla_prefill_decode_graph_bf16[
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
+    allow_split: Bool = True,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -5085,6 +5660,8 @@ def mla_prefill_decode_graph_bf16[
     num_partitions_in: Optional[Int] = None,
     prefill_d_indices: OptionalReg[MutPointer[Int32, MutAnyOrigin]] = None,
     selection_lag: Int = 0,
+    mixed_split: Optional[MixedSplit] = None,
+    decode_num_partitions: Optional[Int] = None,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
@@ -5114,6 +5691,8 @@ def mla_prefill_decode_graph_bf16[
         nvfp4_convert_max_rows: Most rows that conversion may allocate
             (defaults to 0).
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
+        allow_split: Whether a passed `mixed_split` may run as two
+            self-calls (defaults to True); the per-view calls pass False.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -5169,11 +5748,116 @@ def mla_prefill_decode_graph_bf16[
         selection_lag: Positions between the token each sparse row was
             computed for and the token that reads it; read by the decode
             branch only.
+        mixed_split: The validated split of the batch into a decode and a
+            prefill view (defaults to None, one whole-batch route); the
+            caller checks the record against the batch before passing one.
+        decode_num_partitions: The decode view's split-K count, overriding
+            the heuristic for that view only (defaults to None).
     """
     var seq_len = q.dim(0)
 
     if seq_len == 0:
         return
+
+    # Two self-calls, one per view, so each view's route gate sees its own
+    # max query length; refused splits fall through to the whole-batch route.
+    comptime if allow_split and ctx.target.is_nvidia_gpu():
+        if case .Some(split) = mixed_split:
+            if (
+                is_packed(q)
+                and is_packed(output)
+                and is_packed(input_row_offsets)
+            ):
+                for i in range(2):
+                    var view = split.tail if i == 1 else split.head
+                    var args = _mla_split_view[
+                        num_heads=q.static_shape[1], sparse_mla=sparse_mla
+                    ](
+                        view,
+                        kv_collection,
+                        layer_idx,
+                        input_row_offsets,
+                        scalar_args_buf,
+                        buffer_row_offsets,
+                        cache_offsets,
+                        buffer_length,
+                        num_partitions_in,
+                        decode_num_partitions,
+                        d_indices,
+                        prefill_d_indices,
+                        indices_stride,
+                        topk_lengths,
+                        ctx,
+                    )
+                    var view_row_offsets = TileTensor(
+                        args.row_offsets, row_major(view.rows + 1)
+                    )
+                    var view_scalar_args = TileTensor(
+                        args.scalar_args, row_major((Idx[3],))
+                    )
+                    var view_buffer_row_offsets = TileTensor(
+                        args.plan_row_offsets, row_major(args.plan_rows)
+                    )
+                    var view_cache_offsets = TileTensor(
+                        args.plan_cache_offsets, row_major(args.plan_rows)
+                    )
+
+                    var first_token = view.first_token
+
+                    @inline(.always)
+                    def view_kv_input_fn[
+                        width: Int
+                    ](coords: IndexList[2]) {
+                        var kv_input_fn, var first_token
+                    } -> SIMD[DType.bfloat16, width]:
+                        return kv_input_fn[width=width](
+                            IndexList[2](coords[0] + first_token, coords[1])
+                        )
+
+                    mla_prefill_decode_graph_bf16[
+                        mask_str=mask_str,
+                        sparse_mla=sparse_mla,
+                        sparse_indices_stride=sparse_indices_stride,
+                        physical_indices=physical_indices,
+                        sparse_row=sparse_row,
+                        AttnSinkPtrType=AttnSinkPtrType,
+                        TopkLengthsPtrType=TopkLengthsPtrType,
+                        nvfp4_convert_ratio=nvfp4_convert_ratio,
+                        nvfp4_convert_max_rows=nvfp4_convert_max_rows,
+                        kernels=kernels,
+                        allow_split=False,
+                    ](
+                        _mla_split_token_rows(
+                            output, view.first_token, view.tokens
+                        ),
+                        _mla_split_token_rows(q, view.first_token, view.tokens),
+                        view_row_offsets,
+                        freqs_cis,
+                        kv_norm_gamma,
+                        args.collection,
+                        layer_idx,
+                        scale,
+                        epsilon,
+                        view_buffer_row_offsets,
+                        view_cache_offsets,
+                        buffer_length,
+                        view.max_q_len,
+                        w_k,
+                        w_uk,
+                        w_uv,
+                        view_scalar_args,
+                        view_kv_input_fn,
+                        ctx,
+                        args.d_indices,
+                        indices_stride,
+                        args.topk_lengths,
+                        attn_sink_ptr,
+                        args.num_partitions,
+                        args.prefill_d_indices,
+                        selection_lag,
+                    )
+                    _ = args^
+                return
 
     @inline(.always)
     def decode_branch[skip_masked_tiles: Bool]() raises {imm}:

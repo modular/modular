@@ -3641,6 +3641,7 @@ def _mla_fp8_index_top_k(
             device=q.device,
         )
         out_types = [logical_type, out_type]
+    values.append(_mixed_step_split_value(k_collection.mixed_step_split))
     return [
         r.tensor
         for r in ops.inplace_custom(
@@ -7445,6 +7446,18 @@ def mla_prefill_decode_graph(
         # differ only in their lag share one compiled kernel.
         input_values.append(
             ops.constant(selection_lag, DType.int32, device=DeviceRef.CPU())
+        )
+    # The split ops these Python builders emit, each of which declares the
+    # record; the quantized op declares it too but no builder emits it.
+    if op_name in (
+        "attention.mla.graph.prefill.decode.paged",
+        "attention.mla.graph.prefill.decode.paged.fp8",
+        "attention.mla.graph.prefill.decode.paged.sparse",
+        "attention.mla.graph.prefill.decode.paged.fp8.sparse",
+        "attention.mla.graph.prefill.decode.paged.sparse.nvfp4",
+    ):
+        input_values.append(
+            _mixed_step_split_value(kv_collection.mixed_step_split)
         )
 
     return ops.inplace_custom(

@@ -41,7 +41,6 @@ from max.nn._graph_ops import (
 )
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import KVCacheQuantizationConfig, MLAKVCacheParams
-from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
 from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
     MLAPrefillMetadata,
@@ -59,6 +58,7 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
+from test_common.mixed_step_split_ops import record_source
 
 
 def test_mla_prefill_decode_graph_sparse_smoke() -> None:
@@ -298,8 +298,8 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
     operands; the sparse ops take them and route to their ``.nvfp4``
     registrations. Staging checks every op against its registration, so a
     missing or misordered operand fails here. The prefill op carries the
-    convert-once bounds, which the environment overrides. Neither op takes the
-    leaf's split record.
+    convert-once bounds, which the environment overrides. The prefill op takes
+    the leaf's split record; the decode-only op takes none.
     """
     monkeypatch.setenv("MODULAR_MLA_NVFP4_PREFILL_CONVERT_RATIO", "37")
     monkeypatch.setenv("MODULAR_MLA_NVFP4_PREFILL_CONVERT_MAX_ROWS", "4096")
@@ -457,15 +457,15 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
             "attention.mla."
         )
     ]
-    symbols = [mlir.StringAttr(op.attributes["symbol"]).value for op in mla_ops]
-    assert "attention.mla.graph.prefill.decode.paged.sparse.nvfp4" in symbols
-    assert "attention.mla.graph.decode.paged.sparse.nvfp4" in symbols
-    for op in mla_ops:
-        assert not [
-            value
-            for value in op.operands
-            if f"[{MIXED_STEP_SPLIT_SIZE}], ui32" in str(value.type)
-        ], mlir.StringAttr(op.attributes["symbol"]).value
+    by_symbol = {
+        mlir.StringAttr(op.attributes["symbol"]).value: op for op in mla_ops
+    }
+    prefill_symbol = "attention.mla.graph.prefill.decode.paged.sparse.nvfp4"
+    decode_symbol = "attention.mla.graph.decode.paged.sparse.nvfp4"
+    assert prefill_symbol in by_symbol
+    assert decode_symbol in by_symbol
+    assert record_source(by_symbol[prefill_symbol]) == "argument"
+    assert record_source(by_symbol[decode_symbol]) is None
 
     ir = str(g)
     assert '"attention.mla.graph.prefill.decode.paged.sparse.nvfp4"' in ir
