@@ -2046,19 +2046,24 @@ def MOGG_TensorCreateBroadcastOp : MOGG_Op<"tensor.create.broadcast", [
   let summary = "Build a codegen tensor that is a broadcast view of another codegen tensor.";
   let description = [{
     A zero-copy view with numpy broadcasting semantics, indexed by the
-    consuming loop's index.
+    consuming loop's index. `$staticOutShape` is the output shape with `dyn`
+    where a dim is known only at runtime, and `$runtimeOutShape` the same shape
+    built at runtime with `mogg.shape.create`, so identical shapes CSE. A view
+    composed on top, such as a slice, clamps its bounds against the runtime
+    shape.
   }];
   let arguments = (ins
-    MOSH_ShapeAttr:$outShape,
+    MOSH_ShapeAttr:$staticOutShape,
     TypeAttr:$elementType,
     BoolAttr:$mut,
-    MOGG_TensorLike:$input
+    MOGG_TensorLike:$input,
+    MOGG_Shape:$runtimeOutShape
   );
   let results = (outs MOGG_Tensor:$result);
   let assemblyFormat = [{
-    `(` $input `)`
+    `(` $input `,` $runtimeOutShape `)`
     `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
-        `outShape` `=` qualified($outShape) `>`
+        `staticOutShape` `=` qualified($staticOutShape) `>`
     attr-dict `:` qualified(type($input))
   }];
 }
@@ -2101,24 +2106,24 @@ def MOGG_TensorCreateReshapeOp : MOGG_Op<"tensor.create.reshape", [
   let summary = "Build a codegen tensor that is a reshape view of another codegen tensor.";
   let description = [{
     A zero-copy row-major view indexed by the consuming loop's index.
-    `$outShape` is the static shape (`dyn` where unknown) and `$shape` the
-    runtime one, built with `mogg.shape.create` so identical shapes CSE.
-    Unlike broadcast/transpose, the result's stride comes from the output
-    shape alone, so a wrong runtime dim corrupts every element past the first
-    row.
+    `$staticOutShape` is the output shape with `dyn` where a dim is known only
+    at runtime, and `$runtimeOutShape` the same shape built at runtime with
+    `mogg.shape.create`, so identical shapes CSE. Unlike broadcast/transpose,
+    the result's stride comes from the output shape alone, so a wrong runtime
+    dim corrupts every element past the first row.
   }];
   let arguments = (ins
-    MOSH_ShapeAttr:$outShape,
+    MOSH_ShapeAttr:$staticOutShape,
     TypeAttr:$elementType,
     BoolAttr:$mut,
     MOGG_TensorLike:$input,
-    MOGG_Shape:$shape
+    MOGG_Shape:$runtimeOutShape
   );
   let results = (outs MOGG_Tensor:$result);
   let assemblyFormat = [{
-    `(` $input `,` $shape `)`
+    `(` $input `,` $runtimeOutShape `)`
     `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
-        `outShape` `=` qualified($outShape) `>`
+        `staticOutShape` `=` qualified($staticOutShape) `>`
     attr-dict `:` qualified(type($input))
   }];
 }

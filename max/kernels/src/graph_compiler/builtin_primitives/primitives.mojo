@@ -2684,17 +2684,19 @@ def _mogg_broadcast_view_strides[
 def mogg_tensor_create_broadcast[
     dtype: DType,
     in_rank: Int,
+    out_rank: Int,
     //,
     output_static_shape: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
+    output_shape: IndexList[out_rank],
 ) -> ManagedTensorSlice[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_coord_layout[
-        output_static_shape.rank,
+        out_rank,
         output_static_shape,
         _mogg_broadcast_view_strides[
-            output_static_shape.rank,
+            out_rank,
             in_rank,
             input.static_spec.static_layout._shape_types,
             input.static_spec.static_layout._stride_types,
@@ -2703,27 +2705,30 @@ def mogg_tensor_create_broadcast[
 ]:
     """Backing primitive for `mogg.tensor.create.broadcast`: a zero-copy
     reindexed view of `input` that replicates it (numpy broadcasting
-    semantics) up to `output_static_shape` -- a leading dimension `input`
-    doesn't have, or an aligned dimension where `input`'s size is 1, gets
-    stride 0. Preserves whatever static shape/stride information is known
-    at compile time.
+    semantics) up to `output_shape` -- a leading dimension `input` doesn't
+    have, or an aligned dimension where `input`'s size is 1, gets stride 0.
+    Preserves whatever static shape/stride information is known at compile
+    time.
 
     Parameters:
         dtype: The element type of `input`.
         in_rank: The rank of `input`.
-        output_static_shape: The view's shape (broadcast shapes are always
-            statically known by Mojo emission time; see
-            `mo.static.broadcast_to`'s own docstring).
+        out_rank: The rank of the broadcast view (and of
+            `output_static_shape`).
+        output_static_shape: The view's shape, where known at compile time.
 
     Args:
         input: The tensor to broadcast.
+        output_shape: The view's shape at runtime. A symbolic dim, such as
+            the rows of `[r, 1] -> [r, 4096]`, is known only here, and a view
+            composed on top (a slice) clamps its bounds against it.
     """
-    comptime out_rank = output_static_shape.rank
+    comptime assert (
+        out_rank == output_static_shape.rank
+    ), "out_rank must match output_static_shape's own rank"
     comptime delta = out_rank - in_rank
-    var new_shape = IndexList[out_rank]()
     var new_strides = IndexList[out_rank]()
     comptime for i in range(out_rank):
-        new_shape[i] = Int(output_static_shape[i])
         comptime if i < delta:
             new_strides[i] = 0
         else:
@@ -2731,7 +2736,7 @@ def mogg_tensor_create_broadcast[
                 new_strides[i] = 0
             else:
                 new_strides[i] = input.stride_length[i - delta]()
-    return {input.unsafe_ptr(), new_shape, new_strides}
+    return {input.unsafe_ptr(), output_shape, new_strides}
 
 
 @register_internal("mogg.tensor.create.reshape")

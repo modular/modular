@@ -569,45 +569,42 @@ LogicalResult TensorCreateSliceOp::emitMojo(EmitMojoState &state) {
   return success();
 }
 
-LogicalResult TensorCreateBroadcastOp::emitMojo(EmitMojoState &state) {
-  // Mojo infers dtype/rank from $input. A broadcast's shape is always static
-  // by emission time (see `mo.static.broadcast_to`), so output_static_shape
-  // carries all of it.
-  auto broadcastCreatePrimDecl = state.registry.lookupPrimitive(
-      TensorCreateBroadcastOp::getOperationName());
-  ASSERT_STREAM(broadcastCreatePrimDecl,
-                "Primitive not found for "
-                    << TensorCreateBroadcastOp::getOperationName());
-  MojoValue primitive(primitiveMojoName(broadcastCreatePrimDecl));
+// Prints a view whose layout comes from its output shape at runtime:
+//
+//   comptime static_shape = Coord(...)                                  (1)
+//   var shape = coord_to_index_list(<$runtimeOutShape>)                 (2)
+//   var view = <primitive>[output_static_shape = static_shape](
+//       <$input>, shape)                                                (3)
+//
+// Mojo infers dtype/rank from $input. A broadcast reads its strides from the
+// input but its runtime dims from `$runtimeOutShape`, which a slice composed on
+// top clamps against; a reshape also de-linearizes its strides from it.
+template <typename OpT>
+static LogicalResult emitShapedView(OpT op, EmitMojoState &state) {
+  auto primDecl = state.registry.lookupPrimitive(OpT::getOperationName());
+  ASSERT_STREAM(primDecl,
+                "Primitive not found for " << OpT::getOperationName());
+  MojoValue primitive(primitiveMojoName(primDecl));
+  // (1)
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(op.getStaticOutShape().getIntDims()));
+  // (2)
+  MojoValue outputShapeValue = state.builder.var(MojoValue(kFnCoordToIndexList)(
+      {}, {state.getMojoValueFor(op.getRuntimeOutShape())}));
+  // (3)
   MojoValue result = state.builder.var(primitive(
       {MojoValue(kParameterOutputStaticShape).equal(outputStaticShape)},
-      {state.getMojoValueFor(getInput())}));
-  state.setMojoValueFor(getResult(), result);
+      {state.getMojoValueFor(op.getInput()), outputShapeValue}));
+  state.setMojoValueFor(op.getResult(), result);
   return success();
 }
 
+LogicalResult TensorCreateBroadcastOp::emitMojo(EmitMojoState &state) {
+  return emitShapedView(*this, state);
+}
+
 LogicalResult TensorCreateReshapeOp::emitMojo(EmitMojoState &state) {
-  // Mojo infers dtype/rank from $input; output_static_shape keeps the static
-  // dims typed as such. Unlike broadcast/transpose (strides from the input),
-  // reshape's runtime stride de-linearizes its output shape, so runtime dims
-  // arrive as `$shape`, converted to an `IndexList` via `coord_to_index_list`.
-  auto reshapeCreatePrimDecl =
-      state.registry.lookupPrimitive(TensorCreateReshapeOp::getOperationName());
-  ASSERT_STREAM(reshapeCreatePrimDecl,
-                "Primitive not found for "
-                    << TensorCreateReshapeOp::getOperationName());
-  MojoValue primitive(primitiveMojoName(reshapeCreatePrimDecl));
-  MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
-  MojoValue outputShapeValue = state.builder.var(
-      MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getShape())}));
-  MojoValue result = state.builder.var(primitive(
-      {MojoValue(kParameterOutputStaticShape).equal(outputStaticShape)},
-      {state.getMojoValueFor(getInput()), outputShapeValue}));
-  state.setMojoValueFor(getResult(), result);
-  return success();
+  return emitShapedView(*this, state);
 }
 
 LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
@@ -2315,11 +2312,11 @@ static MOSH::ShapeAttr captureShape(Value tensor) {
   if (auto op = dyn_cast_or_null<TensorCreateSliceOp>(def))
     return op.getOutShape();
   if (auto op = dyn_cast_or_null<TensorCreateBroadcastOp>(def))
-    return op.getOutShape();
+    return op.getStaticOutShape();
   if (auto op = dyn_cast_or_null<TensorCreateTransposeOp>(def))
     return op.getOutShape();
   if (auto op = dyn_cast_or_null<TensorCreateReshapeOp>(def))
-    return op.getOutShape();
+    return op.getStaticOutShape();
   return {};
 }
 namespace {

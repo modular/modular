@@ -96,6 +96,28 @@ def test_broadcast_rank_expanding(session: InferenceSession) -> None:
     )
 
 
+def test_slice_of_dynamic_broadcast(session: InferenceSession) -> None:
+    """A slice over a broadcast with a symbolic dim reads the right rows.
+
+    The slice clamps its bounds against the broadcast view's runtime shape, so
+    that shape has to carry the symbolic dim's value, not a placeholder.
+    """
+    with Graph(
+        "slice_of_dynamic_broadcast",
+        input_types=[
+            TensorType(DType.float32, ["n", 1], device=DeviceRef.CPU()),
+            TensorType(DType.float32, ["n", 4], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, y = (v.tensor for v in graph.inputs)
+        graph.output((x.broadcast_to([x.shape[0], 4]) + y)[1:])
+
+    a = np.random.randn(6, 1).astype(np.float32)
+    b = np.random.randn(6, 4).astype(np.float32)
+    (out,) = run_and_verify_fusion(session, graph, a, b)
+    np.testing.assert_allclose(out, (a + b)[1:], rtol=1e-5, atol=1e-5)
+
+
 def test_transpose_static(session: InferenceSession) -> None:
     """A standalone `mo.transpose` (2D swap) compiles and runs correctly."""
     with Graph(
