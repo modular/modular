@@ -14,6 +14,7 @@
 #ifndef TARGET_LIB_HIP_QUEUE_H
 #define TARGET_LIB_HIP_QUEUE_H
 
+#include "HAL/M_driver_flag.h"
 #include "HIPApi.h"
 #include "Memory.h"
 
@@ -54,6 +55,12 @@ struct M_driver_queue {
 
   M_driver_status_t launchHostFunc(void (*fn)(void *), void *user_data);
   M_driver_status_t waitValue64(uint64_t device_address, uint64_t value);
+
+  // The conditions hipStreamWaitValue64 supports natively.
+  static constexpr uint32_t kFlagConditions =
+      M_DRIVER_FLAG_CONDITION_GEQ | M_DRIVER_FLAG_CONDITION_EQ;
+  M_driver_status_t waitFlag(M_driver_flag_t flag, uint64_t value,
+                             M_driver_flag_condition_t condition);
 
   M_driver_status_t synchronize();
 };

@@ -18,6 +18,7 @@
 #include "Device.h"
 #include "Driver.h"
 #include "Event.h"
+#include "Flag.h"
 #include "Function.h"
 #include "Memory.h"
 #include "llvm/ADT/SmallVector.h"
@@ -299,6 +300,8 @@ M_driver_status_t M_driver_queue::setMemory(M_driver_memory_t dst,
   void *dstPtr = static_cast<char *>(dstContents) + dstOffset;
 
   // A host memset into shared memory (see copyToDevice): drain, then write.
+  // TODO(DRIV-730): host write drains the queue, so it blocks behind a pending
+  // flag wait; port the legacy blit/compute fill.
   if (M_driver_status_t status = drainPriorWork();
       status != M_DRIVER_STATUS_SUCCESS)
     return status;
@@ -345,6 +348,8 @@ M_driver_status_t M_driver_queue::fillMemory(M_driver_memory_t dst,
         "destination buffer not properly aligned");
 
   // A host fill into shared memory (see copyToDevice): drain, then write.
+  // TODO(DRIV-730): host write drains the queue, so it blocks behind a pending
+  // flag wait; port the legacy blit/compute fill.
   if (M_driver_status_t status = drainPriorWork();
       status != M_DRIVER_STATUS_SUCCESS)
     return status;
@@ -617,6 +622,29 @@ M_driver_status_t M_driver_queue::waitForEvents(M_driver_event_t *events,
   return M_DRIVER_STATUS_SUCCESS;
 }
 
+M_driver_status_t
+M_driver_queue::waitFlag(M_driver_flag_t flag, uint64_t value,
+                         M_driver_flag_condition_t condition) {
+  if (condition != M_DRIVER_FLAG_CONDITION_GEQ)
+    return M_DRIVER_STATUS_UNIMPLEMENTED;
+  NS::SharedPtr<MTL::SharedEvent> event = flag->currentEvent();
+  // An event's value only rises, so a satisfied wait can never gate again.
+  if (event->signaledValue() >= value)
+    return M_DRIVER_STATUS_SUCCESS;
+
+  std::lock_guard<std::mutex> lock(mMutex);
+  // Every later command buffer encodes the wait until a signal satisfies it.
+  // The entry's reference keeps the event alive past M_driver_flag_destroy
+  // and M_driver_flag_reset.
+  DonatedWait wait;
+  wait.event = NS::SharedPtr<MTL::Event>(event);
+  wait.sharedView = event.get();
+  wait.value = value;
+  mDonatedWaits.push_back(std::move(wait));
+  mCommitSeq += 1;
+  return M_DRIVER_STATUS_SUCCESS;
+}
+
 M_driver_status_t M_driver_queue_create(M_driver_context_t context,
                                         M_driver_queue_t *queue) {
   if (context == nullptr)
@@ -738,6 +766,16 @@ M_driver_status_t M_driver_queue_wait_for_events(M_driver_queue_t queue,
   if (events == nullptr)
     return M_DRIVER_STATUS_BAD_EVENT;
   return queue->waitForEvents(events, num_events);
+}
+
+M_driver_status_t
+M_driver_queue_wait_flag(M_driver_queue_t queue, M_driver_flag_t flag,
+                         uint64_t value, M_driver_flag_condition_t condition) {
+  if (queue == nullptr)
+    return M_DRIVER_STATUS_BAD_QUEUE;
+  if (flag == nullptr)
+    return M_DRIVER_STATUS_INVALID_ARG;
+  return queue->waitFlag(flag, value, condition);
 }
 
 M_driver_status_t M_driver_queue_synchronize(M_driver_queue_t queue) {

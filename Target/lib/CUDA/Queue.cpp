@@ -15,6 +15,7 @@
 #include "Context.h"
 #include "Device.h"
 #include "Event.h"
+#include "Target/lib/Support/PinnedSlotFlag.h"
 
 using M::Target::CUDA::cudaErrorStatus;
 
@@ -288,6 +289,32 @@ M_driver_status_t M_driver_queue::waitValue64(uint64_t device_address,
   if (CUresult r = context.device.driver.rawCuda.cuStreamWaitValue64(
           stream, static_cast<CUdeviceptr>(device_address), value,
           CU_STREAM_WAIT_VALUE_GEQ);
+      r != CUDA_SUCCESS)
+    return cudaErrorStatus(&context.device.driver, r, "cuStreamWaitValue64");
+  return M_DRIVER_STATUS_SUCCESS;
+}
+
+M_driver_status_t
+M_driver_queue::waitFlag(M_driver_flag_t flag, uint64_t value,
+                         M_driver_flag_condition_t condition) {
+  unsigned int cuCondition;
+  switch (condition) {
+  case M_DRIVER_FLAG_CONDITION_GEQ:
+    cuCondition = CU_STREAM_WAIT_VALUE_GEQ;
+    break;
+  case M_DRIVER_FLAG_CONDITION_EQ:
+    cuCondition = CU_STREAM_WAIT_VALUE_EQ;
+    break;
+  default:
+    return M_DRIVER_STATUS_UNIMPLEMENTED;
+  }
+  ScopedContext scope(context.primaryCtx, context.device.driver.rawCuda);
+  QUICK_RETURN_IF_ERROR(scope.status);
+  // No CU_STREAM_WAIT_VALUE_FLUSH: most devices lack CAN_FLUSH_REMOTE_WRITES,
+  // and host writes reach the device through the pinned alias anyway.
+  if (CUresult r = context.device.driver.rawCuda.cuStreamWaitValue64(
+          stream, static_cast<CUdeviceptr>(flag->deviceAddress()), value,
+          cuCondition);
       r != CUDA_SUCCESS)
     return cudaErrorStatus(&context.device.driver, r, "cuStreamWaitValue64");
   return M_DRIVER_STATUS_SUCCESS;
