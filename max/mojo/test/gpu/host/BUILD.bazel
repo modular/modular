@@ -2,8 +2,6 @@ load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
-exports_files(["test_device_view.mojo"])
-
 mojo_test(
     name = "test_device_type_encoder_target.mojo.test",
     srcs = ["test_device_type_encoder_target.mojo"],
@@ -74,6 +72,21 @@ mojo_test(
     ],
 )
 
+# Under the HAL `DeviceContext`, `test_device_view` loads the CPU plugin for
+# its CPU peer and the GPU vendor's plugin through `MODULAR_DRIVER_PLUGINS`.
+[
+    config_setting(
+        name = "hal_" + vendor,
+        constraint_values = ["//:" + vendor],
+        flag_values = {"//:hal_device_context": "true"},
+    )
+    for vendor in [
+        "nvidia_gpu",
+        "amd_gpu",
+        "apple_gpu",
+    ]
+]
+
 mojo_test(
     name = "test_device_view.mojo.test",
     srcs = ["test_device_view.mojo"],
@@ -83,6 +96,33 @@ mojo_test(
             "HAL_DEVICE_CONTEXT",
         ],
         "//conditions:default": [],
+    }),
+    data = select({
+        ":hal_nvidia_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:CUDAPlugin.so",
+        ],
+        ":hal_amd_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:HIPPlugin.so",
+        ],
+        ":hal_apple_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:MetalPlugin.so",
+        ],
+        "//conditions:default": [],
+    }),
+    env = select({
+        ":hal_nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        ":hal_amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        ":hal_apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        "//conditions:default": {},
     }),
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
