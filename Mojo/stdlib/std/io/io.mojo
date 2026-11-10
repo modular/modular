@@ -228,12 +228,10 @@ def _printf_cpu[
 ](*args: *types, file: BorrowedFileDescriptor[_] = stdout):
     with _fdopen(file) as fd:
         # int fprintf(FILE *restrict stream, const char *restrict fmt, ...);
-        # The pack is loaded so the variadic arguments are the values
-        # themselves rather than references to them.
         _ = external_call["KGEN_CompilerRT_fprintf", Int32, num_fixed_args=2](
             fd,
             get_static_string[fmt]().as_c_string_span(),
-            args.get_loaded_kgen_pack(),
+            *args,
         )
 
 
@@ -293,14 +291,12 @@ def _snprintf[
     """
 
     # int snprintf(char *restrict s, size_t n, const char *restrict fmt, ...);
-    # The pack is loaded so the variadic arguments are the values themselves
-    # rather than references to them.
     return Int(
         external_call["snprintf", Int32, num_fixed_args=3](
             str,
             size,
             get_static_string[fmt]().as_c_string_span(),
-            args.get_loaded_kgen_pack(),
+            *args,
         )
     )
 
