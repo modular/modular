@@ -1745,6 +1745,7 @@ modular_shared_library(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",

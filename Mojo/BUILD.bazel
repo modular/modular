@@ -948,10 +948,12 @@ modular_cc_library(
     hdrs = glob(["include/Mojo/ToolCommon/*.h"]),
     defines = ["MLRT_ACCELERATOR_SUPPORT=1"],
     internal_deps = select({
-        # Under --config=hal-device-context we don't link the full DeviceContext,
-        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
+        # Under --config=hal-device-context the tools link CompilationDevice and
+        # the HAL-only CompilerDeviceArch, not a DeviceContext runtime.
         "//:hal_device_context_enabled": ["//MLRT:Driver/DeviceContextAPI"],
-        "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
+        # Linked through //MLRT:Driver/Runtime by targets that list it in
+        # dynamic_deps, and statically by the rest.
+        "//conditions:default": ["//MLRT:Driver/Runtime.static"],
     }),
     tags = ["no-clang-tidy-headers"],
     visibility = [
@@ -1023,11 +1025,6 @@ modular_shared_library(
     internal_deps = [
         "//MLRT:Core",
     ] + select({
-        # Under --config=hal-device-context we don't link the full DeviceContext,
-        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
-        "//:hal_device_context_enabled": ["//MLRT:Driver/CompilerDeviceArch"],
-        "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
-    }) + select({
         "//:tracy_enabled": ["@tracy//:Tracy.import"],
         "//conditions:default": [],
     }),
@@ -1058,10 +1055,6 @@ modular_shared_library(
     exports = [
         "//AsyncRT:Runtime",
         "//MLRT:Core",
-        "//MLRT:Driver/CompilationDeviceImpl",
-        "//MLRT:Driver/DeviceAffinity",
-        "//MLRT:Driver/KernelLoadGate",
-        "//MLRT:Driver/LaunchTraceRegistry",
         "//Support:Buffer",
         "//Support:DLFcn",
         "//Support:HashUtils",
@@ -1069,13 +1062,7 @@ modular_shared_library(
         "//Support:LogFFI",
         "//Support:ML",
         "//Support:Profiling",
-        "//Target:DriverPlugin",
-    ] + select({
-        # Under --config=hal-device-context the HAL shim in
-        # //MLRT:Driver/DeviceContext implements the same M::Driver classes.
-        "//:hal_device_context_enabled": [],
-        "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
-    }),
+    ],
     deps = [
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals.static",
@@ -1673,6 +1660,7 @@ modular_shared_library(
         "@llvm-project//clang:clangBasic",
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/Runtime",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],
@@ -1682,47 +1670,24 @@ modular_shared_library(
         "@@mbedtls+//:__subpackages__",
     ],
     includes = [],
-    internal_deps = select({
-        # Under --config=hal-device-context we don't link the full DeviceContext,
-        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
-        "//:hal_device_context_enabled": [
-            "//MLRT:Driver/CompilationDeviceImpl",
-            "//MLRT:Driver/CompilerDeviceArch",
-        ],
-        "//conditions:default": [],
-    }),
     exports = [
         ":ExecutionEngine",
         ":KGENDialect",
         ":MojoTooling",
         "//AsyncRT:CompilerSupport",
-        "//AsyncRT:Runtime",
         "//Cache",
         "//Init",
-        "//MLRT:Driver/CompilationDeviceImpl",
-        "//MLRT:Driver/DeviceAffinity",
-        "//MLRT:Driver/KernelLoadGate",
-        "//MLRT:Driver/LaunchTraceRegistry",
         "//Support:Base64",
         "//Support:CommonCLOptions",
         "//Support:Context",
         "//Support:CrashReporting",
-        "//Support:DLFcn",
         "//Support:DebugInfoDialect",
         "//Support:Driver",
-        "//Support:HashUtils",
         "//Support:IPInt",
         "//Support:IPRational",
-        "//Support:Log",
         "//Support:Telemetry",
         "//Support:URI",
-        "//Target:DriverPlugin",
-    ] + select({
-        # Under --config=hal-device-context the HAL shim in
-        # //MLRT:Driver/DeviceContext implements the same M::Driver classes.
-        "//:hal_device_context_enabled": [],
-        "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
-    }),
+    ],
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",

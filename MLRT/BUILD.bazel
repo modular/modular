@@ -585,8 +585,8 @@ modular_cc_library(
 # for the Mojo/KGEN compiler family, so those binaries can detect the target
 # accelerator arch WITHOUT linking the DeviceContext runtime. dlopens the driver
 # plugin and queries device 0 over the `M_driver_*` C ABI directly. Only built
-# under --config=hal-device-context, where the compiler family links it (alongside
-# Driver/CompilationDeviceImpl for PTX->cubin) in place of the DeviceContext runtime.
+# under --config=hal-device-context, where Driver/Runtime carries it in place of
+# the legacy DeviceContext implementation.
 modular_cc_library(
     name = "Driver/CompilerDeviceArch",
     srcs = ["lib/Driver/DeviceContext/CompilerDeviceArch.cpp"],
@@ -633,6 +633,44 @@ modular_cc_library(
     alwayslink = True,  # keep
 )
 
+_DRIVER_RUNTIME_LIBS = [
+    ":Driver/CompilationDeviceImpl",
+    ":Driver/DeviceAffinity",
+    ":Driver/KernelLoadGate",
+    ":Driver/LaunchTraceRegistry",
+    "//Target:DriverPlugin",
+] + select({
+    "//:hal_device_context_enabled": [":Driver/CompilerDeviceArch"],
+    "//conditions:default": [":Driver/DeviceContextImplCpp"],
+})
+
+# The single owner of the C++ driver: the legacy DeviceContext implementation,
+# kernel compilation, plugin loading, and the process-wide driver registries.
+# Every binary and shared library that needs the driver links this one, so the
+# function-local statics behind those registries (device caches, plugin and pool
+# mutexes, the launch trace) exist once per process. Ships with the Mojo
+# compiler, which needs the compilation half without max-core installed.
+#
+# Under --config=hal-device-context the runtime half is the HAL shim in
+# Driver/DeviceContext instead, and CompilerDeviceArch stands in for the arch
+# probe and error formatter that CompilationDeviceImpl calls.
+modular_shared_library(
+    name = "Driver/Runtime",
+    srcs = [],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+    ],
+    output_name = "MDriver",
+    visibility = ["//visibility:public"],
+    exports = _DRIVER_RUNTIME_LIBS,
+    # Also in `deps`, so a target that depends on `Driver/Runtime.static` links
+    # the driver statically when it doesn't list this library in dynamic_deps.
+    deps = [":Driver/DeviceContextAPI"] + _DRIVER_RUNTIME_LIBS,
+)
+
 modular_shared_library(
     name = "Driver/DeviceContext",
     srcs = [],
@@ -647,6 +685,7 @@ modular_shared_library(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Mojo:CompilerRT",
+        ":Driver/Runtime",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],
@@ -789,6 +828,7 @@ modular_shared_library(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Mojo:CompilerRT",
+        ":Driver/Runtime",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],
@@ -1084,8 +1124,7 @@ modular_cc_library(
 # depends on Driver/DeviceContextAPI (headers) and NOT on an implementation:
 # the device contexts it hands out must be the process's, and a statically
 # linked implementation would be a second copy of them. Consumers that need
-# the implementation at runtime link //MLRT:Driver/DeviceContext (or libmax,
-# which carries the same implementation) exactly once.
+# the implementation at runtime link //MLRT:Driver/Runtime, its one owner.
 modular_cc_library(
     name = "Driver/CAPI",
     srcs = ["lib/Driver/CAPI/DriverCAPI.cpp"],
@@ -1115,6 +1154,7 @@ modular_shared_library(
     dynamic_deps = [
         "@llvm-project//llvm:LLVM",
         ":Driver/DeviceContext",
+        ":Driver/Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Mojo:CompilerRT",
         "//Support:Globals",

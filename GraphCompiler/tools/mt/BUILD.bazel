@@ -15,6 +15,7 @@ modular_cc_binary(
         "//AsyncRT:RuntimeGlobals",
         "//GraphCompiler:MGPRT",
         "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
