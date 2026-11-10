@@ -1470,6 +1470,33 @@ modular_cc_test(
     ],
 )
 
+# Metal gets its own target because //:has_gpu does not include Metal yet.
+[
+    modular_cc_test(
+        name = name,
+        size = "small",
+        srcs = ["CompletionFlagTest.cpp"],
+        data = _CAPI_TEST_PLUGINS,
+        env = _CAPI_TEST_PLUGIN_ENV,
+        gpu_constraints = [gpu],
+        tags = ["gpu"],
+        target_compatible_with = select({
+            incompatible: ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            ":TestUtils",
+            "//MLRT:Driver/DeviceContextAPI",
+            "//MLRT:Driver/DeviceContextImpl",
+            "//Support:Base",
+        ],
+    )
+    for name, gpu, incompatible in [
+        ("CompletionFlagTest", "//:has_gpu", "@platforms//os:macos"),
+        ("MetalCompletionFlagTest", "//:apple_gpu", "//:asan"),
+    ]
+]
+
 # The C API and virtual device parity tests under --config=hal-device-context,
 # which no CI lane runs on a GPU. Run with that config plus a remote GPU
 # config, for example `--config=hal-device-context --config=remote-b200`.
