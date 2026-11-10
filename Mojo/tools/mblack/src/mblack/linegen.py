@@ -412,6 +412,15 @@ class LineGenerator(Visitor[Line]):
             yield from self.line()
             yield from self.visit(child)
 
+    def visit_decorated(self, node: Node) -> Iterator[Line]:
+        """Visit a decorated statement."""
+        for child in node.children:
+            # A decorated `var` ends in its own NEWLINE, whose prefix holds the
+            # trailing comment of the `var` line.
+            if child.type != token.NEWLINE:
+                yield from self.line()
+            yield from self.visit(child)
+
     def visit_power(self, node: Node) -> Iterator[Line]:
         for idx, leaf in enumerate(node.children[:-1]):
             next_leaf = node.children[idx + 1]
@@ -632,12 +641,17 @@ class LineGenerator(Visitor[Line]):
         parens: set[str],
         nodeTypes: set[int] | None = None,
     ):
-        # Only sort for struct/enum/trait, not regular class
+        # Only sort for struct/enum/union/trait, not regular class
         from mblib2to3.pgen2 import token as mtoken
 
         if nodeTypes is None:
             nodeTypes = set()
-        if node.children[0].type in (mtoken.STRUCT, mtoken.ENUM, mtoken.TRAIT):
+        if node.children[0].type in (
+            mtoken.STRUCT,
+            mtoken.ENUM,
+            mtoken.UNION,
+            mtoken.TRAIT,
+        ):
             self._sort_struct_trait_conformances(node)
         # Fallback to original logic
         yield from self.visit_stmt(node, keywords, parens, nodeTypes)
@@ -690,6 +704,7 @@ class LineGenerator(Visitor[Line]):
             nodeTypes={
                 mtoken.STRUCT,
                 mtoken.ENUM,
+                mtoken.UNION,
                 mtoken.TRAIT,
                 mtoken.EXTENSION,
             },
@@ -701,7 +716,6 @@ class LineGenerator(Visitor[Line]):
         self.visit_import_from = partial(v, keywords=Ø, parens={"import"})
         self.visit_del_stmt = partial(v, keywords=Ø, parens={"del"})
         self.visit_async_funcdef = self.visit_async_stmt
-        self.visit_decorated = self.visit_decorators
 
         # Mojo-specific declarations
         from mblib2to3.pgen2 import token as mtoken

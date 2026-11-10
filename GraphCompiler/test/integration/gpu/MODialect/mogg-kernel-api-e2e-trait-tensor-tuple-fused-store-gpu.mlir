@@ -1,4 +1,4 @@
-// RUN: mo-opt %s -o %t.mlir --gc-pipeline="constant-fold=false kernel-library-paths=%kernel_api_test_lib default-device-label=gpu compiled-framework-label=mof" --allow-unregistered-dialect
+// RUN: mo-opt %s -o %t.mlir --gc-pipeline="constant-fold=false kernel-library-paths=%kernel_api_test_lib default-device-label=gpu" --allow-unregistered-dialect
 // RUN: mt --execute %t.mlir --result-output-style=full | FileCheck %s
 
 // GPU twin of mogg-kernel-api-e2e-trait-tensor-tuple-fused-store.mlir:

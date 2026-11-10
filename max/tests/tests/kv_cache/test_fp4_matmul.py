@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for FP4 matmul kernels in max.nn.legacy.kernels."""
+"""Tests for FP4 matmul kernels in max.nn._graph_ops."""
 
 from __future__ import annotations
 
@@ -20,16 +20,16 @@ from typing import Any
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _fused_qkv_ragged_matmul_scaled_float4 as fused_qkv_ragged_matmul_scaled_float4,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
     grouped_matmul_block_scaled,
     quantize_dynamic_block_scaled,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
@@ -227,7 +227,7 @@ def test_quantize_dynamic_block_scaled_fp4(
     expected_scales_shape: list[int],
 ) -> None:
     """Tests quantize_dynamic_block_scaled with valid FP4 inputs."""
-    from max.nn.legacy.kernels import _is_sm10x_gpu
+    from max.nn._graph_ops import _is_sm10x_gpu
 
     device = DeviceRef.CPU()
     with Graph(
@@ -255,7 +255,7 @@ def test_quantize_dynamic_block_scaled_fp4(
 
 def test_quantize_mxfp4() -> None:
     """Tests quantize_dynamic_block_scaled with MXFP4 params."""
-    from max.nn.legacy.kernels import _is_sm10x_gpu
+    from max.nn._graph_ops import _is_sm10x_gpu
 
     device = DeviceRef.CPU()
     with Graph(

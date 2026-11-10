@@ -17,7 +17,8 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.moe import NvMxf4f8Strategy, moe_fp8
+from max.nn._graph_ops.moe_quant import NvMxf4f8Strategy
+from max.nn.legacy.moe import moe_fp8
 from max.pipelines.architectures.mimo_v2.layers.moe import mimo_v2_moe
 from max.pipelines.architectures.mimo_v2.quant import parse_quant_scheme
 from transformers.configuration_utils import PretrainedConfig

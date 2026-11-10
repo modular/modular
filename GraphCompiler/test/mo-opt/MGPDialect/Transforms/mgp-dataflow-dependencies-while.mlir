@@ -30,7 +30,7 @@
 // CHECK:   %[[SSA91]] |-> {%[[SSA90]], %[[arg45]][2], %[[SSA93]][2]}
 // CHECK: maybeSameAs end
 
-mgp.model @repeat1 : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @repeat1 devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -72,7 +72,7 @@ mgp.model @repeat1 : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.
 // CHECK:   %[[SSA83]] |-> {%[[SSA82]], %[[arg42]][2]}
 // CHECK: maybeSameAs end
 
-mgp.model @repeat2 : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @repeat2 devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -116,7 +116,7 @@ mgp.model @repeat2 : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.
 // CHECK:   %[[SSA74]]#1 |-> {%[[SSA73]], %[[arg39]][2]}
 // CHECK: maybeSameAs end
 
-mgp.model @repeat3 : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @repeat3 devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -200,7 +200,7 @@ mgp.model @repeat3 : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.
 // CHECK:   %[[SSA65]][2] |-> {%[[SSA63]]}
 // CHECK: runsLater end
 
-mgp.model @simple : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @simple devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -261,7 +261,7 @@ mgp.model @simple : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.o
 // CHECK:   %[[SSA53]]#1 |-> {%[[SSA51]], %[[SSA52]], %[[arg24]][2], %[[arg25]][2], %[[arg22]][3], %[[arg23]][3]}
 // CHECK: maybeSameAs end
 
-mgp.model @crissCross : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @crissCross devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -325,7 +325,7 @@ mgp.model @crissCross : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !m
 // CHECK:   %[[SSA44]] |-> {%[[arg17]][2], %[[arg18]][2], %[[arg19]][2], %[[arg14]][3], %[[arg15]][3], %[[arg16]][3], %[[SSA45]][3], %[[SSA43]]#0, %[[SSA43]]#1, %[[SSA43]]#2}
 // CHECK: impliesReady end
 
-mgp.model @shift : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @shift devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

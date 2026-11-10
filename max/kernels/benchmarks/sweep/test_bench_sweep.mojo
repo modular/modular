@@ -49,7 +49,7 @@ comptime N = (1 << 21) + 7
 def assert_bits_equal[
     dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     buf: DeviceBuffer[dtype, ...],
     expected: List[Scalar[dtype]],
     what: String,
@@ -70,7 +70,7 @@ def assert_bits_equal[
                 )
 
 
-def check_uniform[dtype: DType](ctx: DeviceContext) raises:
+def check_uniform[dtype: DType](ctx: DeviceContext[]) raises:
     var buf = ctx.enqueue_create_buffer[dtype](N)
     fill_uniform(ctx, buf, 7, -2.0, 3.0)
     assert_bits_equal(
@@ -90,7 +90,7 @@ def check_uniform[dtype: DType](ctx: DeviceContext) raises:
     )
 
 
-def check_affine[dtype: DType](ctx: DeviceContext) raises:
+def check_affine[dtype: DType](ctx: DeviceContext[]) raises:
     var buf = ctx.enqueue_create_buffer[dtype](N)
     fill_affine(ctx, buf, 3, -5)
     assert_bits_equal(
@@ -98,7 +98,7 @@ def check_affine[dtype: DType](ctx: DeviceContext) raises:
     )
 
 
-def check_page_table(ctx: DeviceContext, layout: PageLayout) raises:
+def check_page_table(ctx: DeviceContext[], layout: PageLayout) raises:
     comptime n = 12345
     var lut = ctx.enqueue_create_buffer[DType.uint32](n)
     fill_page_table(ctx, lut, layout, seed=3)
@@ -114,7 +114,7 @@ def check_page_table(ctx: DeviceContext, layout: PageLayout) raises:
 
 
 def check_sparse_indices(
-    ctx: DeviceContext, pad_invalid: Bool, index_stride: Int = 0
+    ctx: DeviceContext[], pad_invalid: Bool, index_stride: Int = 0
 ) raises:
     comptime page_size = 64
     comptime batch = 3
@@ -167,7 +167,7 @@ def check_distinct_stride() raises:
     assert_equal(distinct_stride(3, 2049, 2048), 4)
 
 
-def check_linear_grade(ctx: DeviceContext) raises:
+def check_linear_grade(ctx: DeviceContext[]) raises:
     var buf = ctx.enqueue_create_buffer[DType.uint32](1000)
     fill_linear_grade(ctx, buf, 700, 1300)
     var expected = linear_grade_host(1000, 700, 1300)
@@ -177,7 +177,7 @@ def check_linear_grade(ctx: DeviceContext) raises:
     assert_equal(linear_grade_host(1, 700, 1300)[0], 1000)
 
 
-def check_lut_view(ctx: DeviceContext) raises:
+def check_lut_view(ctx: DeviceContext[]) raises:
     comptime page_size = 64
     comptime batch = 5
     var table = PageTable[page_size](
@@ -264,7 +264,7 @@ def check_plan_groups() raises:
         _ = plan_groups(configs, require, bytes, budget=40)
 
 
-def check_fixture_bytes(ctx: DeviceContext) raises:
+def check_fixture_bytes(ctx: DeviceContext[]) raises:
     var fp = Footprint()
     PageTable[128].require(fp, 2, 1000)
     PageTable[128].require(fp, 1, 5000)
@@ -278,7 +278,7 @@ def check_fixture_bytes(ctx: DeviceContext) raises:
     )
 
 
-def check_copy_luts(ctx: DeviceContext) raises:
+def check_copy_luts(ctx: DeviceContext[]) raises:
     var fp = Footprint()
     # Three dense copies of a 2 x 3-page config, and four copies of a
     # 1 x 10-page config that touches 2 of its pages.
@@ -326,7 +326,7 @@ def check_copy_luts(ctx: DeviceContext) raises:
         table.write_copies(ctx, 5, 1, 10, touched)
 
 
-def check_host_fill(ctx: DeviceContext) raises:
+def check_host_fill(ctx: DeviceContext[]) raises:
     """The host fill and copy path: what a target without fill kernels gets,
     forced through `on_host`. Same bits as the device path, since both call
     the same formulas; the partial fills cover the shorter-copy view."""

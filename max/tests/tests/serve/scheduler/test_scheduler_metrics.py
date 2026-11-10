@@ -22,7 +22,7 @@ from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache import JengaKVCacheManager
 from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
@@ -2307,6 +2307,12 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_own_runs_short_of_hint.assert_not_called()
     mock_metrics.dkv_split_loads.assert_not_called()
     mock_metrics.dkv_overlapped_peer_lookups.assert_not_called()
+    mock_metrics.dkv_peer_writeback_blocks.assert_not_called()
+    mock_metrics.dkv_peer_writeback_blocks_evicted.assert_not_called()
+    mock_metrics.dkv_peer_writeback_blocks_dropped.assert_not_called()
+    mock_metrics.dkv_peer_writeback_hold_expired.assert_not_called()
+    mock_metrics.dkv_peer_writeback_hold_latency.assert_not_called()
+    mock_metrics.dkv_peer_writeback_held_offloads.assert_not_called()
     mock_metrics.dkv_hinted_lookups.assert_not_called()
     mock_metrics.dkv_hinted_lookup_latency.assert_not_called()
     assert "dkv_prepare_load_degraded" not in metrics.to_log_extra()
@@ -2343,6 +2349,50 @@ def test_dkv_peer_rounds_while_degraded_reach_the_log_and_the_counters() -> (
     assert metrics.dkv_peer_rounds_while_degraded == 7
     mock_metrics.dkv_peer_rounds_while_degraded.assert_called_once_with(7)
     assert metrics.to_log_extra()["dkv_peer_rounds_while_degraded"] == 7
+
+
+def test_dkv_hint_loss_counters_reach_the_log_and_the_counters() -> None:
+    """The hint denominator and the blocks lost to each reason publish beside
+    the hint counters, and only the reasons that moved go out."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_hints_received=40,
+        dkv_hint_blocks_forgone_by_reason={"chain_mismatch": 120, "gapped": 0},
+        dkv_own_run_blocks_short_of_hint=6,
+        dkv_peer_blocks_short_of_hint=8,
+        dkv_hint_blocks_unserved=5,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_hints_received.assert_called_once_with(40)
+    mock_metrics.dkv_hint_blocks_forgone_by_reason.assert_called_once_with(
+        120, reason="chain_mismatch"
+    )
+    mock_metrics.dkv_own_run_blocks_short_of_hint.assert_called_once_with(6)
+    mock_metrics.dkv_peer_blocks_short_of_hint.assert_called_once_with(8)
+    mock_metrics.dkv_hint_blocks_unserved.assert_called_once_with(5)
+    extra = metrics.to_log_extra()
+    assert extra["dkv_hints_received"] == 40
+    assert extra["dkv_own_run_blocks_short_of_hint"] == 6
+    assert extra["dkv_peer_blocks_short_of_hint"] == 8
+    assert extra["dkv_hint_blocks_unserved"] == 5
 
 
 def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
@@ -2388,6 +2438,134 @@ def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
     assert extra["dkv_overlapped_peer_lookups"] == 4
     assert extra["dkv_hinted_lookups"] == 5
     assert extra["dkv_hinted_lookup_avg_ms"] == 2.5
+
+
+def _publish_lookup_drops(
+    kv_metrics: KVCacheMetrics,
+) -> tuple[MagicMock, dict[str, object]]:
+    """Publishes a batch carrying ``kv_metrics``, with no dKV tier attached."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = kv_metrics
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    return mock_metrics, metrics.to_log_extra()
+
+
+def test_connector_lookup_drops_reach_the_log_and_the_counters() -> None:
+    """Every label the block manager counted publishes, with or without dKV,
+    and each histogram sample is recorded as often as it occurred."""
+    mock_metrics, extra = _publish_lookup_drops(
+        KVCacheMetrics(
+            connector_lookup_drops={
+                ("shrink_cap", "offered", True): 2,
+                ("timeout", "unseen", False): 3,
+            },
+            connector_lookup_dropped_blocks={("shrink_cap", True): 8},
+            connector_lookup_shrink_depths={1: 2, 4: 1},
+            connector_lookup_shrink_cap_blocks=11,
+            connector_lookup_reasks_per_request={2: 2},
+            connector_lookup_hand_backs_per_request={1: 1},
+        )
+    )
+
+    assert mock_metrics.cache_connector_lookup_drops.call_args_list == [
+        call(2, reason="shrink_cap", answer="offered", hinted=True),
+        call(3, reason="timeout", answer="unseen", hinted=False),
+    ]
+    mock_metrics.cache_connector_lookup_dropped_blocks.assert_called_once_with(
+        8, reason="shrink_cap", hinted=True
+    )
+    mock_metrics.cache_connector_lookup_shrink_cap_blocks.assert_called_once_with(
+        11
+    )
+    assert mock_metrics.cache_connector_lookup_shrink_depth.call_args_list == [
+        call(1),
+        call(1),
+        call(4),
+    ]
+    assert (
+        mock_metrics.cache_connector_lookup_reasks_per_request.call_args_list
+        == [call(2), call(2)]
+    )
+    hand_backs = mock_metrics.cache_connector_lookup_hand_backs_per_request
+    hand_backs.assert_called_once_with(1)
+    drops = "connector_lookup_drops"
+    assert extra[f"{drops}_shrink_cap_answer_offered_hinted_true"] == 2
+    assert extra[f"{drops}_timeout_answer_unseen_hinted_false"] == 3
+    assert extra["connector_lookup_dropped_blocks_shrink_cap_hinted_true"] == 8
+    assert extra["connector_lookup_shrink_cap_blocks"] == 11
+
+
+def test_a_window_without_lookup_drops_publishes_none() -> None:
+    mock_metrics, extra = _publish_lookup_drops(KVCacheMetrics())
+
+    mock_metrics.cache_connector_lookup_drops.assert_not_called()
+    mock_metrics.cache_connector_lookup_dropped_blocks.assert_not_called()
+    mock_metrics.cache_connector_lookup_shrink_cap_blocks.assert_not_called()
+    mock_metrics.cache_connector_lookup_shrink_depth.assert_not_called()
+    mock_metrics.cache_connector_lookup_reasks_per_request.assert_not_called()
+    mock_metrics.cache_connector_lookup_hand_backs_per_request.assert_not_called()
+    assert not any(key.startswith("connector_lookup_") for key in extra)
+
+
+def test_dkv_peer_writeback_counters_reach_the_log_and_the_counters() -> None:
+    """The peer-load write-back's queued and evicted blocks publish beside
+    the split-load counters, so the switch's effect is visible."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_peer_writeback_blocks=6,
+        dkv_peer_writeback_blocks_evicted=2,
+        dkv_peer_writeback_blocks_dropped=3,
+        dkv_peer_writeback_hold_expired=4,
+        dkv_peer_writeback_held_offloads=2,
+        dkv_peer_writeback_hold_ms_total=30.0,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_peer_writeback_blocks.assert_called_once_with(6)
+    mock_metrics.dkv_peer_writeback_blocks_evicted.assert_called_once_with(2)
+    mock_metrics.dkv_peer_writeback_blocks_dropped.assert_called_once_with(3)
+    mock_metrics.dkv_peer_writeback_hold_expired.assert_called_once_with(4)
+    mock_metrics.dkv_peer_writeback_hold_latency.assert_called_once_with(15.0)
+    mock_metrics.dkv_peer_writeback_held_offloads.assert_called_once_with(2)
+    extra = metrics.to_log_extra()
+    assert extra["dkv_peer_writeback_blocks"] == 6
+    assert extra["dkv_peer_writeback_blocks_evicted"] == 2
+    assert extra["dkv_peer_writeback_blocks_dropped"] == 3
+    assert extra["dkv_peer_writeback_hold_expired"] == 4
+    assert extra["dkv_peer_writeback_hold_avg_ms"] == 15.0
+    assert extra["dkv_peer_writeback_held_offloads"] == 2
 
 
 _DKV_ORPHAN_FIELDS = {

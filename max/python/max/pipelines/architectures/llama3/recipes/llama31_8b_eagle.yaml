@@ -22,3 +22,6 @@ draft_model:
 
 speculative:
   speculative_method: eagle
+
+runtime:
+  prefer_module_v3: false

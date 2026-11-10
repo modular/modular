@@ -371,28 +371,6 @@ struct ArcPointer[T: Movable](
             .unsafe_origin_cast[ImmOrigin(origin)]()
         )
 
-    @doc_hidden
-    @deprecated(use=ptr)
-    def unsafe_ptr[
-        mut: Bool,
-        origin: Origin[mut=mut],
-        //,
-    ](ref[origin] self) -> Pointer[Self.T, origin]:
-        """Retrieves a pointer to the underlying memory.
-
-        Parameters:
-            mut: Whether the pointer is mutable.
-            origin: The origin of the pointer.
-
-        Returns:
-            A `Pointer` to the pointee.
-        """
-        return (
-            Pointer(to=self._inner[].payload_ref())
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
-
     def count(self) -> UInt64:
         """Returns the current strong reference count.
 
@@ -590,12 +568,13 @@ struct WeakPointer[T: Movable](ImplicitlyCopyable, RegisterPassable):
     @inline(.never)
     def __deinit__(deinit self):
         """Decrement the weak count and free the allocation if last."""
-        if self._inner and self._inner.unsafe_value()[].drop_weak():
-            dealloc(
-                ThinAllocation(
-                    unsafe_owned_ptr=self._inner.unsafe_value()
-                ).unsafe_with_layout({length = 1})
-            )
+        if case .Some(inner) = self._inner:
+            if inner[].drop_weak():
+                dealloc(
+                    ThinAllocation(unsafe_owned_ptr=inner).unsafe_with_layout(
+                        {length = 1}
+                    )
+                )
 
     def try_upgrade(self) -> Optional[ArcPointer[Self.T]]:
         """Attempts to obtain a strong reference.
@@ -604,8 +583,9 @@ struct WeakPointer[T: Movable](ImplicitlyCopyable, RegisterPassable):
             An `ArcPointer` sharing the allocation, or `None` if the
             payload has already been destroyed (strong count reached 0).
         """
-        if self._inner and self._inner.unsafe_value()[].try_add_strong():
-            return {ArcPointer[Self.T](_inner=self._inner.unsafe_value())}
+        if case .Some(inner) = self._inner:
+            if inner[].try_add_strong():
+                return {ArcPointer[Self.T](_inner=inner)}
         return Optional[ArcPointer[Self.T]]()
 
     def strong_count(self) -> UInt64:

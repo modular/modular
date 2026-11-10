@@ -10,18 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Selects the active HAL plugin hooks.
+"""Selects a target's HAL plugin hooks.
 
-`CurrentHalPlugin` is resolved from the registered `HAL_PLUGINS`, keyed on the
-target's `stdlib_plugin` field. The default build resolves to
-`DefaultHalPlugin`.
+Every HAL type resolves its plugin through `HalPluginForTarget`, so this file
+is the one place the selection rule lives. The plugin is matched from
+`HAL_PLUGINS` by the `name` of the target's stdlib plugin, and a target that
+no listed plugin names fails to compile.
 """
 
 from ._trait import HalPluginHooks
 from ._overlay import HAL_PLUGINS
 from std.sys.info import CompilationTarget
 
-comptime CurrentHalPlugin: HalPluginHooks = HAL_PLUGINS.current.HookFor[
-    CompilationTarget.current()
-]
-"""The active HAL plugin."""
+comptime HalPluginForTarget[target: CompilationTarget]: HalPluginHooks = (
+    HAL_PLUGINS.for_target[target._mlir_value].HookFor[target]
+)
+"""The HAL plugin hooks selected for `target`."""

@@ -597,23 +597,41 @@ driver's error is appended as `direct device allocation also failed: ...`. The
 manager's category comes first because it is the part that tells you what to
 change.
 
-| Category                       | Meaning                                                                                                                                                                                                                         | What to try                                                                                                                           |
-|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
-| `out of memory`                | The budget is exhausted. Synchronizing and a smaller page size together would not free enough.                                                                                                                                  | Reduce memory use (batch size, KV cache, and so on) or raise the budget (`MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT`).       |
-| `avoidable`                    | The memory exists but is unusable right now. It is either *pending* (freed on a stream, waiting for the stream to finish) or *trapped* (free bytes in pages that also hold live allocations). The message reports both amounts. | For pending memory, synchronize before the allocation. For trapped memory, lower `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB`. |
-| `unaccounted`                  | The manager expected to succeed, but the driver refused. Something outside the manager holds the memory, such as another process or context on the device, or a direct driver allocation.                                       | Check `nvidia-smi` for other consumers, and lower the budget percentage to leave room for them.                                       |
-| `VA fragmentation`             | There is enough physical memory, but no contiguous virtual address range is large enough.                                                                                                                                       | Raise `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_VA_FACTOR` (default 4: the reserved VA is 4x the budget).                            |
-| `arena unavailable`            | The VMM arena was never reserved, so nothing can be allocated. The reservation error, if any, is appended.                                                                                                                      | Look at the appended reservation error. This is a setup failure, not memory pressure.                                                 |
-| `illegal during graph capture` | During a graph capture, a request landed in memory that was not backed before the capture began. Mapping is illegal mid-capture.                                                                                                | The capture needs more memory than was free when it started. Reduce allocations inside the capture, or free memory before capturing.  |
+| Category                       | Meaning                                                                                                                                                                                                                                        | What to try                                                                                                                                                             |
+|--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `out of memory`                | The budget is exhausted. Synchronizing and a smaller page size together would not free enough.                                                                                                                                                 | Reduce memory use (batch size, KV cache, and so on) or raise the budget (`MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT`).                                         |
+| `avoidable`                    | The memory exists but is unusable right now. It is either *pending* (freed on a stream, waiting for the stream to finish) or *trapped* (free bytes in pages that also hold live allocations). The message reports both amounts.                | For pending memory, synchronize before the allocation. For trapped memory, lower `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB`.                                   |
+| `retained by graph capture`    | The memory exists and is free, but it sits on a free list that never releases it (a graph-capture pool). A captured graph may still read those blocks, so they come back only when the graphs holding them are released. Waiting does nothing. | Hold fewer captured graphs, or capture shapes largest first so a later capture reuses a retained block instead of carving a new one. `pending_by_owner` names the pool. |
+| `unaccounted`                  | The manager expected to succeed, but the driver refused. Something outside the manager holds the memory, such as another process or context on the device, or a direct driver allocation.                                                      | Check `nvidia-smi` for other consumers, and lower the budget percentage to leave room for them.                                                                         |
+| `VA fragmentation`             | There is enough physical memory, but no contiguous virtual address range is large enough.                                                                                                                                                      | Raise `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_VA_FACTOR` (default 4: the reserved VA is 4x the budget).                                                              |
+| `arena unavailable`            | The VMM arena was never reserved, so nothing can be allocated. The reservation error, if any, is appended.                                                                                                                                     | Look at the appended reservation error. This is a setup failure, not memory pressure.                                                                                   |
+| `illegal during graph capture` | During a graph capture, a request landed in memory that was not backed before the capture began. Mapping is illegal mid-capture.                                                                                                               | The capture needs more memory than was free when it started. Reduce allocations inside the capture, or free memory before capturing.                                    |
 
 The snapshot fields, in bytes unless noted:
 
 - `budget`, `used`: the manager's budget and the bytes under live allocations.
 - `available`: what can be allocated immediately (whole free pages, pooled
   pages, and budget not yet committed).
-- `recoverable_by_sync`: whole pages that hold only pending frees.
-  `pending_total` counts all pending bytes, including ones in pages that also
-  hold live allocations, which synchronizing alone cannot recover.
+- `recoverable_by_sync`: whole pages that hold only pending frees and that a
+  synchronize would release. `pending_total` counts all pending bytes,
+  including ones in pages that also hold live allocations, which synchronizing
+  alone cannot recover.
+- `retained`, `retained_bytes`: the part of the pending total that no wait
+  reaches, because its free list never migrates to its parent. Excluded from
+  `recoverable_by_sync`. Graph-capture pools are the only such lists today.
+  `retained_bytes` is everything the pools hold; `retained` is the whole pages
+  of it that releasing the graphs hands back.
+- `retained_trapped`: the difference between the two, which is the retained
+  bytes sharing a page with a live allocation. Excluded from `trapped` as well
+  as from `recoverable_by_sync`, because a smaller page separates those bytes
+  from the live allocation and leaves them retained. Only a smaller page *and*
+  releasing the graphs frees them.
+- `pending_by_owner`: pending bytes and block counts by the free list holding
+  them, largest first, tagged `(retained)` when that list never releases. The
+  free list the error names is the one the allocation missed on, which is
+  often not the one holding the memory, so this is usually the field that
+  names what to change. Capped at three holders in the message; the verbose
+  log prints one `oom log pending_owner=` line per holder.
 - `trapped`: free or pending bytes in pages that also hold live allocations.
   Only a smaller page size recovers them.
 - `largest_root_free_va`, `va_size`: the largest contiguous free virtual range

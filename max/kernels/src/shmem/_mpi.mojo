@@ -198,6 +198,8 @@ def get_mpi_comm_world() raises -> MPIComm:
     var comm_world_ptr = handle.get_symbol[OpaquePointer[MutUntrackedOrigin]](
         cstr_name="ompi_mpi_comm_world".as_c_string_span()
     )
-    if not comm_world_ptr:
-        raise Error("symbol ompi_mpi_comm_world not found in MPI library")
-    return comm_world_ptr.value()
+    match comm_world_ptr:
+        case .Some(comm_world):
+            return comm_world
+        case .None:
+            raise Error("symbol ompi_mpi_comm_world not found in MPI library")

@@ -28,8 +28,8 @@ from typing import Any, TypeVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, load_weights, weights_format
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.kv_cache import KVCacheParams
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.arch_lookup import ARCH_LOOKUP
 from max.pipelines.lib.interfaces.arch_config import (
@@ -329,7 +329,9 @@ def _target_config(context: ModelLoadContext) -> DeepseekV3Config:
         parse_state_dict_from_weights(
             pipeline_config,
             load_weights(paths),
-            target.weight_adapters.get(weights_format(paths)),
+            target.checkpoint_adapters(
+                pipeline_config.model.huggingface_config
+            ).get(weights_format(paths)),
         ),
         max_seq_len=context.max_seq_len,
         max_batch_total_tokens=context.max_batch_total_tokens,

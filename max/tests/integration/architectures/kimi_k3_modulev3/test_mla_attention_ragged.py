@@ -27,7 +27,7 @@ from _paged_cache_test_utils import build_paged_cache
 from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
 )
@@ -45,7 +45,7 @@ _PAGE_SIZE = 128
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_forward_ragged_matches_forward() -> None:
     rng = np.random.default_rng(0)

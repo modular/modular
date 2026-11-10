@@ -24,7 +24,7 @@ productionized (see GEX-3919).
 """
 
 from layout import Coord, TensorLayout, TileTensor, coord_to_index_list
-from layout.tile_layout import Layout as _NewLayout
+from layout.layout import Layout as _NewLayout
 from layout.tile_io import GenericToLocalTileCopier, LocalToGenericTileCopier
 from std.utils import IndexList
 from linalg.utils import TileConsumer

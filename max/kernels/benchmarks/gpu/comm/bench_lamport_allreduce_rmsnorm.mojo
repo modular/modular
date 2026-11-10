@@ -83,7 +83,7 @@ def _run_rms_norm[
     gamma_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var shape = (M, K)
     var in_view = TileTensor(in_ptr, row_major(Coord(shape)))
@@ -117,7 +117,7 @@ def _verify_results[
     num_cols: Int,
 ](
     num_rows: Int,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     sigs_ar: List[DeviceBuffer[.uint8]],
     sigs_fused: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[dtype]],
@@ -248,7 +248,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
     ngpus: Int,
     num_cols: Int,
     cache_busting: Bool = True,
-](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext[]]) raises:
     var length = num_rows * num_cols
 
     # ---- Shared per-GPU input + signal buffer setup. ----
@@ -399,10 +399,10 @@ def bench_fused_lamport_allreduce_rmsnorm[
     # ===== Benchmark 1: fused `lamport_allreduce_rmsnorm` (1 kernel) =====
     @inline(.always)
     def bench_fused_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
         @inline(.always)
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn(ctx_inner: DeviceContext[], cache_iter: Int) raises {imm}:
             lamport_allreduce_rmsnorm[dtype, ngpus](
                 ctx_idx,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -434,11 +434,11 @@ def bench_fused_lamport_allreduce_rmsnorm[
     # ===== Benchmark 2: unfused `allreduce` + `rms_norm_gpu` (2 kernels) =====
     @inline(.always)
     def bench_unfused_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = InTensorType(
@@ -536,7 +536,7 @@ def main() raises:
         )
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 

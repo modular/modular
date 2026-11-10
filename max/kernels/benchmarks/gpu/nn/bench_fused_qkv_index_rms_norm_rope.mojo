@@ -123,7 +123,7 @@ def bench_fused_qkv_index_rms_norm_rope[
     main_kv_heads: Int,
     index_q_heads: Int,
     index_kv_heads: Int,
-](ctx: DeviceContext, mut m: Bench, batch_size: Int, seq_len: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, batch_size: Int, seq_len: Int) raises:
     """Benchmarks the fused single launch vs the unfused two-launch sequence."""
     comptime main_params = KVCacheStaticParams(
         num_heads=main_kv_heads, head_size=head_dim
@@ -385,7 +385,7 @@ def bench_fused_qkv_index_rms_norm_rope[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var main_kv_tile = TileTensor(
                 cb_main_kv_unfused.offset_ptr(iteration), main_kv_layout
             )
@@ -432,7 +432,6 @@ def bench_fused_qkv_index_rms_norm_rope[
                 return q_index_src.load[width=width]((token, head, col))
 
             fused_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](
@@ -449,7 +448,6 @@ def bench_fused_qkv_index_rms_norm_rope[
                 ctx,
             )
             fused_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](
@@ -504,7 +502,7 @@ def bench_fused_qkv_index_rms_norm_rope[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var main_kv_tile = TileTensor(
                 cb_main_kv_fused.offset_ptr(iteration), main_kv_layout
             )
@@ -550,12 +548,11 @@ def bench_fused_qkv_index_rms_norm_rope[
             ]:
                 return q_index_src.load[width=width]((token, head, col))
 
-            # Exercises the merged dual op (`mo.fused_qk_rms_norm_rope.ragged.paged.dual`,
+            # Exercises the merged dual op (`kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual`,
             # landed separately), which collapses the two single-pair launches above
             # into one. It takes a per-band epsilon, so `main_epsilon`/`index_epsilon`
             # are passed twice below with the same value the unfused pair uses.
             fused_dual_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](

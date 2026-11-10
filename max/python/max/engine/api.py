@@ -31,7 +31,7 @@ from max._core.engine import CompiledModels as _CompiledModels
 from max._core.engine import DebugConfig as DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
-from max._core.engine import PrintStyle
+from max._core.engine import ModelMetadata, PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.engine import read as _read
 from max._core.mlrt import AsyncValue as _AsyncValue
@@ -457,13 +457,40 @@ class CompiledModel:
         Args:
             path: Filesystem path to write the MEF to.
         """
-        if isinstance(self._compiled, _CompiledModels):
-            self._compiled.export_mef(str(path))
-            return
-        self._compiled.wait()
-        if (exc := self._compiled.exception()) is not None:
+        self._resolved().export_mef(str(path))
+
+    def _resolved(self) -> _CompiledModels:
+        """Returns the compiled artifact, waiting for a pending compile.
+
+        Needs no device, so a virtual-device caller can read the artifact's
+        own metadata.
+        """
+        compiled = self._compiled
+        if isinstance(compiled, _CompiledModels):
+            return compiled
+        compiled.wait()
+        if (exc := compiled.exception()) is not None:
             raise exc
-        self._compiled.result().export_mef(str(path))
+        return compiled.result()
+
+    def _model_metadata(self, name: str) -> ModelMetadata:
+        """Returns the metadata of top-level graph ``name``.
+
+        Waits for a pending compile. Needs no device.
+
+        Raises:
+            RuntimeError: If the artifact has no graph named ``name``. The
+                names a caller holds come from the source module's top-level
+                graphs, so a miss means the compile and the module disagree.
+        """
+        compiled = self._resolved()
+        for metadata in compiled:
+            if metadata.name == name:
+                return metadata
+        raise RuntimeError(
+            f"Graph {name!r} is not in the compiled artifact, which holds "
+            f"{compiled.names}."
+        )
 
 
 class CompileOnlyExecutionError(RuntimeError):
@@ -480,6 +507,10 @@ class CompileOnlyModel:
     and raises :class:`CompileOnlyExecutionError` from everything that would
     need the device. A stand-in that answered those calls with placeholder
     values would move the failure to whatever consumed them.
+
+    Input and output metadata, the signature derived from them, and the kernel
+    summaries are the exception: the compile fixes them, so the stand-in reads
+    them from the artifact.
     """
 
     def __init__(self, name: str, compiled: CompiledModel) -> None:
@@ -512,6 +543,23 @@ class CompileOnlyModel:
     # Explicit, unlike the refusals below, so that this stays callable: a
     # caller testing `callable(model)` gets the same answer a Model gives.
     __call__ = execute
+
+    @property
+    def input_metadata(self) -> list[TensorSpec]:
+        """See :attr:`Model.input_metadata`."""
+        return self.compiled._model_metadata(self.name).input_metadata
+
+    @property
+    def output_metadata(self) -> list[TensorSpec]:
+        """See :attr:`Model.output_metadata`."""
+        return self.compiled._model_metadata(self.name).output_metadata
+
+    @property
+    def kernel_summaries(self) -> list[str]:
+        """See :attr:`Model.kernel_summaries`."""
+        return self.compiled._model_metadata(self.name).kernel_summaries
+
+    signature = property(_Model_signature)
 
     def __getattr__(self, name: str) -> NoReturn:
         """Refuses any :class:`Model` member this stand-in does not carry.
@@ -1186,17 +1234,13 @@ class InferenceSession:
             # Return one stand-in per top-level graph in the artifact so callers
             # that key by graph name still work; the stand-in refuses anything
             # that would need the device rather than pretending to have one.
-            if not compiled._graph_names:
-                raise ValueError(
-                    "Cannot initialize a path-compiled artifact in "
-                    "virtual-device mode: graph names are unknown without "
-                    "an MLIR module to inspect. Initialize on a real device "
-                    "instead, or compile from a Graph/Module."
-                )
+            # A path-compiled artifact has no source module to read names
+            # from, but the artifact lists them itself.
+            names = compiled._graph_names or tuple(compiled._resolved().names)
             # Deliberately not a Model: the point is that it cannot execute.
             return {
                 name: cast(Model, CompileOnlyModel(name, compiled))
-                for name in compiled._graph_names
+                for name in names
             }
 
         weights_registry_real: Mapping[str, DLPackArray] = (

@@ -640,6 +640,17 @@ class TextGenAggregates(_CompletedRunBase):
     image_request_rate: float | None = None
     lora_request_rate: float | None = None
 
+    # The ``--goodput`` targets, in ms, and what met them. Every field is
+    # ``None`` when no target was given; the rates are also ``None`` when no
+    # request was measured. ``request_goodput`` is in requests per second
+    # over the ``request_throughput`` window, and ``goodput_attainment`` is
+    # the share of the measured requests that met every target.
+    goodput_ttft_ms: float | None = None
+    goodput_tpot_ms: float | None = None
+    goodput_e2el_ms: float | None = None
+    request_goodput: float | None = None
+    goodput_attainment: float | None = None
+
     max_input: int
     max_output: int
     max_total: int
@@ -742,6 +753,15 @@ class TextGenAggregates(_CompletedRunBase):
             d["image_request_rate"] = self.image_request_rate
         if self.lora_request_rate is not None:
             d["lora_request_rate"] = self.lora_request_rate
+        for name, value in [
+            ("goodput_ttft_ms", self.goodput_ttft_ms),
+            ("goodput_tpot_ms", self.goodput_tpot_ms),
+            ("goodput_e2el_ms", self.goodput_e2el_ms),
+            ("request_goodput", self.request_goodput),
+            ("goodput_attainment", self.goodput_attainment),
+        ]:
+            if value is not None:
+                d[name] = value
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
@@ -1177,7 +1197,10 @@ class BenchmarkResult(BaseModel):
             d["lora_metrics"] = self.lora_metrics.to_result_dict()
         # Lightweight steady-state detection diagnostics (no duplicate metric
         # set — scalars only for observability / PERF-2615 telemetry).
-        if self.steady_state_detected is not None:
+        if (
+            self.steady_state_detected is not None
+            or self.steady_state_mode is not None
+        ):
             d["steady_state_detected"] = self.steady_state_detected
             d["steady_state_window_count"] = self.steady_state_window_count
             d["steady_state_mode"] = self.steady_state_mode
@@ -1244,6 +1267,13 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         completed=agg.completed if agg else None,
         failures=agg.failures if agg else None,
         request_throughput=agg.request_throughput if agg else None,
+        request_goodput=text_data.request_goodput if text_data else None,
+        goodput_attainment=(
+            text_data.goodput_attainment if text_data else None
+        ),
+        goodput_ttft_ms=text_data.goodput_ttft_ms if text_data else None,
+        goodput_tpot_ms=text_data.goodput_tpot_ms if text_data else None,
+        goodput_e2el_ms=text_data.goodput_e2el_ms if text_data else None,
         aggregate_tokens_per_minute=(
             text_data.aggregate_tokens_per_minute if text_data else None
         ),
@@ -1361,11 +1391,11 @@ class SpecDecodeMetrics:
 
     - vLLM-style counters (``vllm:spec_decode_*``): ``num_drafts``,
       ``num_draft_tokens``, ``num_accepted_tokens``, ``accepted_per_pos``.
-    - MAX-style histogram (``maxserve_spec_decode_acceptance_rate_per_position``):
+    - MAX-style histogram (``max_spec_decode_acceptance_rate_per_position``):
       ``per_pos_rate_sum`` / ``per_pos_rate_count`` give running sums and counts
       of observed acceptance-rate samples per position. Window averages are
       computed via deltas.
-    - MAX-style histogram (``maxserve_spec_decode_avg_acceptance_length``):
+    - MAX-style histogram (``max_spec_decode_avg_acceptance_length``):
       ``avg_acceptance_length_sum`` / ``avg_acceptance_length_count`` track
       observations of accepted drafts per verification, without the bonus
       token that a verify step also commits.
@@ -1462,14 +1492,14 @@ def calculate_spec_decode_stats(
     ``num_accepted_tokens``) are computed when the backend exposed them
     (vLLM-style). Per-position acceptance rates are computed from either the
     vLLM ``num_accepted_tokens_per_pos`` counter or the MAX-style
-    ``maxserve_spec_decode_acceptance_rate_per_position`` histogram, whichever
+    ``max_spec_decode_acceptance_rate_per_position`` histogram, whichever
     is available.
 
     When only MAX histograms are present (no vLLM-style counters), an aggregate
     **acceptance_rate** (0--100, matching the printed benchmark column) is the
     count-weighted mean of per-position acceptance-rate observations pooled
     across positions. **acceptance_length** can additionally be taken from the
-    ``maxserve_spec_decode_avg_acceptance_length`` histogram delta mean plus
+    ``max_spec_decode_avg_acceptance_length`` histogram delta mean plus
     the bonus token, matching the vLLM-style definition.
 
     Args:

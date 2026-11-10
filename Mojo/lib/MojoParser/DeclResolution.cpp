@@ -78,13 +78,13 @@ static StructASTDecl *getStructOrTargetStruct(ASTDecl &decl,
 /// failure on parse error.
 static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
                              std::optional<size_t> stmtIndent,
-                             bool allowUnbound) {
+                             TypeStrictness strictness) {
   ExprNode *expr = nullptr;
   if (p.parseExpression(expr, stmtIndent))
     return failure();
 
   IREmitter emitter(declScope, EC_Type);
-  result = emitter.emitExprType(expr, allowUnbound);
+  result = emitter.emitExprType(expr, strictness);
   if (!result)
     return failure();
 
@@ -573,6 +573,18 @@ private:
 
 static constexpr StringLiteral kAnnotationDecorator = "__annotation";
 
+/// Return true if `decorator` is `@__address_space`, in either the bare or the
+/// called form. It only applies to a `var` statement in a function body, which
+/// the statement parser handles, so declarations diagnose it themselves rather
+/// than letting it reach the emitter as an unknown name.
+static bool isAddressSpaceDecorator(ExprNode *decorator) {
+  const ExprNode *callee = decorator;
+  if (auto callNode = dyn_cast<CallNode>(decorator))
+    callee = callNode->callee;
+  auto declRef = dyn_cast<DeclRefNode>(callee);
+  return declRef && declRef->spelling == "__address_space";
+}
+
 bool StructDecorators::isAnnotationDecorator(ExprNode *decorator) {
   const ExprNode *callee = decorator;
   if (auto callNode = dyn_cast<CallNode>(decorator))
@@ -731,9 +743,16 @@ void Decorators::applyBodyDecorators(
     return;
 
   SmallVector<ExprNode *> exprDecorators;
-  for (auto decorator : decl.getBodyDecorators())
+  for (auto decorator : decl.getBodyDecorators()) {
+    if (isAddressSpaceDecorator(decorator)) {
+      emitError(decorator->getLoc(),
+                "@__address_space only applies to a 'var' in a function body")
+          << decorator->getRange();
+      continue;
+    }
     if (failed(process(decorator)))
       exprDecorators.push_back(decorator);
+  }
 
   // Emit the expressions and persist the resulting PValue into the IR.
   // TODO: Emit an attempt to call the decorator value.
@@ -2804,7 +2823,7 @@ LogicalResult AliasASTDecl::resolveSignature(Lexer &lexer) {
   ASTType type;
   if (bodyTypeExpr) {
     IREmitter emitter(sigDecl, EC_Type);
-    type = emitter.emitExprType(bodyTypeExpr, /*allowUnbound=*/true);
+    type = emitter.emitExprType(bodyTypeExpr, TypeStrictness::kParametric);
     if (!type)
       return failure();
   }
@@ -2818,26 +2837,9 @@ LogicalResult AliasASTDecl::resolveSignature(Lexer &lexer) {
       return failure();
 
     IREmitter emitter(sigDecl, EC_AliasValue);
-
-    // Parametric aliases become generator types whose *body* type may still
-    // mention unbound / infer-only parameters (e.g. `Origin[mut=mut]` leaves
-    // `_mlir_origin` open). That type annotation maybe dependent on the
-    // parameters of the comptime.
-    ASTType emissionType = type;
-    if (type && type.hasUnboundParameters()) {
-      if (paramSignature.paramDeclAttrs.empty()) {
-        p.emitError(initExpr->getLoc(),
-                    "cannot construct a value with parametric type: ")
-            << type << initExpr->getRange();
-        return failure();
-      }
-      emissionType = {};
-    }
-
     // Emit the value and convert to the expected type if we know it and it is
     // concrete enough to convert into.
-    PValue rhsValue =
-        emitter.emitExprPValue(initExpr, EC_AliasValue, emissionType);
+    PValue rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
     if (!rhsValue)
       return failure();
 
@@ -3369,7 +3371,7 @@ static ParseResult resolveConformanceList(
   for (const ParsedConformanceEntry &conformance : parsedConformances) {
     IREmitter typeEmitter(declScope, EC_Type);
     ASTType type = typeEmitter.emitExprType(conformance.typeExpr,
-                                            /*allowUnbound=*/false);
+                                            TypeStrictness::kParametric);
     if (!type)
       return failure();
 
@@ -3596,7 +3598,8 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
           callNode->operands.size() == 1) {
         if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].expr)) {
           IREmitter emitter(*parentDecl, EC_Type);
-          if (ASTType t = emitter.emitExprType(drn)) {
+          if (ASTType t =
+                  emitter.emitExprType(drn, TypeStrictness::kConcrete)) {
             structOp.setNonmaterializableTargetAttr(TypeAttr::get(t.mlirType));
             return success();
           }
@@ -3685,18 +3688,24 @@ getConformanceCondition(StructASTDecl &structDecl, StringRef traitName) {
 }
 
 /// Emits the diagnostic for a bare `@explicit_destroy` decorator, which now
-/// requires a string message argument, with a note nudging users toward the
-/// `Deinitable where ...` replacement. The caller marks the decl
-/// erroneous and returns failure. Shared by `struct` and `trait` resolution.
+/// requires a string message argument, with a note suggesting the removal
+/// path. The caller marks the decl erroneous and returns failure. Shared by
+/// `struct` and `trait` resolution.
 static void emitExplicitDestroyRequiresArgError(SharedState &shared,
                                                 SMLoc decoratorLoc,
                                                 const ASTDecl &decl) {
   auto diag = shared.emitError(decoratorLoc)
               << "@explicit_destroy requires an argument: "
                  "`@explicit_destroy(\"...\")`";
-  diag.attachNote(decl)
-      << "Use a `not Deinitable` conformance to opt out of implicit "
-         "deletion. `@explicit_destroy` is deprecated.";
+  if (isa<TraitASTDecl>(decl)) {
+    diag.attachNote(decl)
+        << "Use a `not Deinitable` conformance on struct declarations instead. "
+           "`@explicit_destroy` on traits is deprecated.";
+  } else {
+    diag.attachNote(decl)
+        << "Use a `not Deinitable` conformance to opt out of implicit "
+           "deletion. `@explicit_destroy` is deprecated.";
+  }
 }
 
 /// Validates that an `@explicit_destroy(...)` call has exactly one string
@@ -3764,8 +3773,6 @@ findDeinitableEntry(ArrayRef<ParsedConformanceEntry> entries) {
 /// Warns that `@explicit_destroy("...")` on a struct is deprecated, with a note
 /// on the struct's `Deinitable` conformance, and a fix-it that moves the
 /// message there.
-// TODO(MOCO-4468): Deprecate the trait form too once traits accept a message
-// on their conformances.
 static void
 emitExplicitDestroyDeprecation(SharedState &shared, const CallNode *call,
                                StringRef message,
@@ -3933,7 +3940,7 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   }
 
   // Compute the struct's self type.
-  setSelfType(StructASTDecl::computeSelfType(structOp));
+  setSelfType(computeSelfType());
 
   // Structs are memory-only unless they opt-in to being passed in registers.
   structOp.setConvention(TypeConvention::MemoryOnly);
@@ -4684,7 +4691,7 @@ LogicalResult StructFieldASTDecl::resolveSignature(Lexer &lexer) {
                         &identifierLoc) ||
       p.parseToken(Token::colon, "struct field declaration must have a type") ||
       parseType(p, type, getStructDecl(), getIndentation(),
-                /*allowUnbound=*/false))
+                TypeStrictness::kConcrete))
     return failure();
 
   if (sugarIsa<TraitType>(type)) {
@@ -4716,6 +4723,13 @@ LogicalResult StructFieldASTDecl::resolveSignature(Lexer &lexer) {
             UnitAttr::get(fieldOp.getContext()));
         continue;
       }
+    }
+    if (isAddressSpaceDecorator(decorator)) {
+      shared.emitError(decorator->getLoc(),
+                       "struct fields can't have an address space; put "
+                       "@__address_space on the 'var' that holds the struct")
+          << SourceRange(decorator->getRangeStart(), decorator->getRangeEnd());
+      continue;
     }
     if (succeeded(structDecorators.processFieldDecorator(decorator, fieldOp)))
       continue;
@@ -4883,7 +4897,7 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
   SmallVector<Type> payloadTypes;
   for (ExprNode *typeExpr : payload) {
     IREmitter emitter(enumDecl, EC_Type);
-    ASTType type = emitter.emitExprType(typeExpr, /*allowUnbound=*/false);
+    ASTType type = emitter.emitExprType(typeExpr, TypeStrictness::kConcrete);
     if (!type)
       return failure();
     if (sugarIsa<TraitType>(type)) {
@@ -5087,6 +5101,7 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
   // argument; the bare and empty-argument forms are errors, mirroring the
   // handling on `struct`.
   std::optional<std::string> linearTypeErrorMsg;
+  std::optional<SMLoc> explicitDestroyDecoratorLoc;
   for (auto decoratorExpr : decoratorExprs) {
     if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {
       if (declRefNode->spelling == "explicit_destroy") {
@@ -5102,6 +5117,7 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
           if (failed(parseExplicitDestroyMessage(shared, callNode, message)))
             return failure();
           linearTypeErrorMsg = std::move(message);
+          explicitDestroyDecoratorLoc = callNode->getLoc();
         }
       }
     }
@@ -5117,6 +5133,11 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
     }
   } else {
     // Trait does not conform to Deinitable, so it is a linear type.
+    if (explicitDestroyDecoratorLoc) {
+      shared.emitWarning(*explicitDestroyDecoratorLoc)
+          << "'@explicit_destroy' on a trait is deprecated; only structs "
+             "support custom destruction messages right now";
+    }
     // Set a default error message if @explicit_destroy wasn't used.
     if (!linearTypeErrorMsg) {
       linearTypeErrorMsg = "unhandled explicitly destroyed type '" +
@@ -5292,12 +5313,11 @@ LogicalResult ExtensionASTDecl::resolveSignature(Lexer &lexer) {
     return failure();
   }
 
-  StructDeclOp structDeclOp = structAstDecl->getOp();
   SymbolRefAttr targetStructAttr = structAstDecl->getSymbolRef();
   extensionDeclOp.setTargetStructAttr(targetStructAttr);
 
   // Extension methods use the target struct's self type.
-  setSelfType(StructASTDecl::computeSelfType(structDeclOp));
+  setSelfType(structAstDecl->computeSelfType());
 
   // Use the parent scope to resolve the traits in the conformance list.
   // TODO(MOCO-522): This might need to change once we have parametric traits,

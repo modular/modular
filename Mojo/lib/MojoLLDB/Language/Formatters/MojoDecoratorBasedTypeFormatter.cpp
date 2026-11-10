@@ -60,7 +60,8 @@ public:
     return GetSyntheticValue()->GetChildAtIndex(idx);
   }
 
-  llvm::Expected<size_t> GetIndexOfChildWithName(ConstString name) override {
+  llvm::Expected<size_t>
+  GetIndexOfChildWithName(llvm::StringRef name) override {
     return GetSyntheticValue()->GetIndexOfChildWithName(name);
   }
 

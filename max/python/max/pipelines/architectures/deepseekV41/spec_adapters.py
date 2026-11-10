@@ -38,16 +38,14 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import (
-    ReturnHiddenStates,
-    ReturnLogits,
-    logits_postprocess,
-)
+from max.nn.legacy.transformer import logits_postprocess
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.speculative.block_driver import (
     Accepted,
+    ArgmaxDraftSampler,
     BlockBatch,
     DraftSampler,
     SampledDraftSampler,
@@ -820,6 +818,27 @@ class _Verify:
         )
 
 
+def _draft_sample(
+    sampler: DraftSampler,
+) -> Callable[[TensorValue, TensorValue, int], TensorValue] | None:
+    """Adapts a draft sampler to the bias-aware draft callback.
+
+    A sampled proposal draws from the raw logits and the per-position bias in
+    one fused kernel, so the bias is handed over instead of added in the
+    graph. A greedy proposal drafts through ``argmax_with_bias``, which adds
+    the bias inside the kernel; any other sampler receives the biased logits.
+    """
+    if isinstance(sampler, SampledDraftSampler):
+        return lambda logits, bias, position: sampler.sample_biased(
+            logits, bias, position
+        )
+    if isinstance(sampler, ArgmaxDraftSampler):
+        return None
+    return lambda logits, bias, position: sampler.sample_next(
+        ops.cast(logits, DType.float32) + bias, position
+    )
+
+
 class _DSparkProposer:
     """Drafts a block of tokens with the DSpark stages.
 
@@ -977,12 +996,11 @@ class _DSparkProposer:
         logits = lead.logits(
             block_hs, self._verify.replicas(batch)[0].head.weight
         )
-        sample: Callable[[TensorValue, int], TensorValue] = (
-            lambda step_logits, position: sampler.sample_next(
-                step_logits, position
-            )
+        drafts = lead.draft(
+            logits,
+            accepted.next_tokens,
+            sampler=_draft_sample(sampler),
         )
-        drafts, _ = lead.draft(logits, accepted.next_tokens, sampler=sample)
         return ops.cast(drafts, accepted.next_tokens.dtype)
 
     def _replica_head(
@@ -1037,8 +1055,8 @@ class _DSparkProposer:
             stage.draft(
                 stage.logits(hs, trunk.head.weight),
                 anchors,
-                sampler=local.sample_next,
-            )[0]
+                sampler=_draft_sample(local),
+            )
             for stage, trunk, hs, anchors, local in zip(
                 self.stages(batch),
                 self._verify.replicas(batch),

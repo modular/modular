@@ -49,7 +49,7 @@ def run_mha[
     num_partitions: Int,
     bench: Bool,
     verify: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -97,7 +97,9 @@ def run_mha[
             mut b: Bencher,
         ) raises {var cb_q, var cb_k, var cb_v, var cb_o, imm}:
             @inline(.always)
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def _kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 # Construct device buffers with offsets.
                 var q_device = TileTensor(
                     cb_q.offset_ptr(iteration),

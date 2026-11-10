@@ -20,7 +20,7 @@ from std.python import PythonObject
 from std.python.numpy import copy_to_numpy_tensor, from_numpy_tensor
 
 from .coord import DynamicCoord
-from .tile_layout import RowMajorLayout, TensorLayout, row_major
+from .layout import RowMajorLayout, TensorLayout, row_major
 from .tile_tensor import TileTensor
 from .tensor_engine import DefaultEngine, TensorEngine
 

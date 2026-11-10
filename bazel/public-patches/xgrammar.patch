@@ -4664,8 +4664,18 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
      ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
    }
  
-@@ -1175,44 +3336,49 @@ void JSONSchemaConverter::AddBasicRules() {
-     indent_manager_ = IndentManager(std::nullopt, ", ", false, std::nullopt);
+@@ -1170,49 +3331,57 @@ void JSONSchemaConverter::AddBasicRules() {
+   // Create basic rules with a temporary indent manager for compact format
+   auto saved_indent_manager = indent_manager_;
++  // The cached free-form rules use the node's item separator and whitespace
++  // bound. A free-form value then accepts the same separators and whitespace
++  // as a typed value.
+   if (any_whitespace_) {
+-    indent_manager_ = IndentManager(std::nullopt, ",", true, std::nullopt);
++    indent_manager_ = IndentManager(std::nullopt, item_sep_, true, max_whitespace_cnt_);
+   } else {
+-    indent_manager_ = IndentManager(std::nullopt, ", ", false, std::nullopt);
++    indent_manager_ = IndentManager(std::nullopt, item_sep_, false, std::nullopt);
    }
  
 +  const GenerationContext value_ctx = MakeValueContext();

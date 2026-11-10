@@ -89,7 +89,7 @@ def _get_dylib_function[
 
 @fieldwise_init
 struct PointerMode(TrivialRegisterPassable, Writable):
-    """UnsafePointer mode to use for alpha/beta ."""
+    """Pointer mode to use for alpha/beta ."""
 
     var _value: Int32
     comptime HOST = PointerMode(0)
@@ -306,7 +306,7 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable, Writable):
     int32_t, default: same as CUBLASLT_MATMUL_DESC_COMPUTE_TYPE.
     """
     comptime CUBLASLT_MATMUL_DESC_POINTER_MODE = Self(2)
-    """UnsafePointer mode of alpha and beta, see PointerMode. When DEVICE_VECTOR is in use,
+    """Pointer mode of alpha and beta, see PointerMode. When DEVICE_VECTOR is in use,
     alpha/beta vector lengths must match number of output matrix rows.
 
     int32_t, default: HOST.
@@ -364,7 +364,7 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable, Writable):
     int64_t, default: 0.
     """
     comptime CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER = Self(11)
-    """UnsafePointer for epilogue auxiliary buffer.
+    """Pointer for epilogue auxiliary buffer.
 
     - Output vector for ReLu bit-mask in forward pass when RELU_AUX
      or RELU_AUX_BIAS epilogue is used.
@@ -558,12 +558,12 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable, Writable):
     int32_t, default 0 (atomic synchronization disabled).
     """
     comptime CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER = Self(29)
-    """EXPERIMENTAL: UnsafePointer to a device array of input atomic counters consumed by a matmul.
+    """EXPERIMENTAL: Pointer to a device array of input atomic counters consumed by a matmul.
 
     int32_t *, default: NULL.
     """
     comptime CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER = Self(30)
-    """EXPERIMENTAL: UnsafePointer to a device array of output atomic counters produced by a matmul.
+    """EXPERIMENTAL: Pointer to a device array of output atomic counters produced by a matmul.
 
     int32_t *, default: NULL.
     """
@@ -1028,14 +1028,14 @@ def cublasLtMatmulAlgoGetHeuristic(
 ) raises -> Result:
     """Query cublasLt heuristic for algorithm appropriate for given use case.
 
-        lightHandle            UnsafePointer to the allocated cuBLASLt handle for the cuBLASLt
+        lightHandle            Pointer to the allocated cuBLASLt handle for the cuBLASLt
                                           context. See cublasLtHandle_t.
         operationDesc          Handle to the matrix multiplication descriptor.
         Adesc                  Handle to the layout descriptors for matrix A.
         Bdesc                  Handle to the layout descriptors for matrix B.
         Cdesc                  Handle to the layout descriptors for matrix C.
         Ddesc                  Handle to the layout descriptors for matrix D.
-        preference             UnsafePointer to the structure holding the heuristic search
+        preference             Pointer to the structure holding the heuristic search
                                           preferences descriptor. See cublasLtMatrixLayout_t.
         requestedAlgoCount     Size of heuristicResultsArray (in elements) and requested
                                           maximum number of algorithms to return.

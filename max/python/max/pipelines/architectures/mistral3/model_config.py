@@ -19,7 +19,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.architectures.mistral.model_config import MistralConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding

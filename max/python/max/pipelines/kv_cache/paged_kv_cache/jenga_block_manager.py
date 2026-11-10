@@ -26,16 +26,20 @@ import logging
 import os
 import time
 from bisect import bisect_left
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import chain
 
 from max._core.driver import _batch_copy_rows
 from max._kv_core import longest_joint_prefix_hit
 from max.driver import Buffer
-from max.nn.legacy.kv_cache import KVCacheGroupId, KVLeafRegion
-from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheGroupId, KVLeafRegion
+from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.kv_cache.metrics import (
+    ConnectorLookupAnswer,
+    ConnectorLookupDrop,
+    KVCacheMetrics,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
@@ -47,6 +51,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVLookup,
     KVProbe,
     KVTransfer,
+    writeback_blocks_of,
 )
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -66,7 +71,12 @@ from ._common import (
     compute_block_hashes,
 )
 from .block_utils import InsufficientBlocksError, KVHashAlgo, LittleKVCacheBlock
-from .jenga_block_pool import JengaBlockPool, _pristine_pool_can_satisfy
+from .jenga_block_pool import (
+    _TOP_BLOCK_FRACTION,
+    JengaBlockPool,
+    _pristine_pool_can_satisfy,
+    min_huge_bid_for_top_fraction,
+)
 from .kv_group_coordinator import (
     FullKVGroupCoordinator,
     KVGroupCoordinatorInterface,
@@ -85,6 +95,17 @@ logger = logging.getLogger("max.pipelines")
 # the dKV client's 10 s plan TTL, so an answer still leaves time to load it.
 # Each re-ask gets its own deadline.
 _CONNECTOR_LOOKUP_TIMEOUT_S = 5.0
+
+# How long a peer write-back that has not landed holds back the offloads that
+# follow it in their chains. Past that they settle unordered, which costs only
+# the brief hole the hold exists to close, while holding them for good would
+# pin their pages for good. Kept below dKV's TRANSFER_DEADLINE (5 s,
+# dkv-connector-pyo3/src/transfer.rs), past which a poll force-settles a
+# transfer inline on the scheduler thread: a run whose write-back went out in
+# the same `offload` call is released a second before its own deadline, and a
+# run posted a forward later is released earlier still, so the poll that
+# registers it normally finds its copy landed.
+_PEER_WRITEBACK_HOLD_TIMEOUT_S = 4.0
 
 # How often one request's connector lookup is asked again because the device
 # hit it was asked past shrank before the answer was read. Past that a shrink
@@ -149,6 +170,27 @@ def _env_flag(name: str) -> bool:
     return value == "1"
 
 
+@dataclass(frozen=True)
+class _QueuedOffload:
+    """One entry the next ``offload`` sends, and what orders it.
+
+    ``parent_hash`` is the hash of the block before the entry in its request's
+    chain, the same on every leaf, or ``None`` for an entry that starts the
+    chain or does not stream, as a checkpoint does. ``writeback`` marks
+    peer-filled hashes written back to the connector's own tier, which
+    ``offload`` counts in the write-back metrics as it walks them.
+    ``orphaned`` marks a write-back whose request let its pages go, by a
+    rollback or a release before the copy landed: a hash missing by the
+    offload is then a block nobody wrote back, counted as dropped rather than
+    evicted.
+    """
+
+    hashes: Mapping[str, Sequence[bytes]]
+    parent_hash: bytes | None = None
+    writeback: bool = False
+    orphaned: bool = False
+
+
 @dataclass
 class _PendingTransfer:
     """An in-flight async connector transfer and the pages it pins.
@@ -156,12 +198,22 @@ class _PendingTransfer:
     ``blocks`` are pinned per leaf until the copy lands, so nothing evicts or
     reuses them mid-copy. ``commit_hashes`` is set only for onloads, whose
     prefix-cache publish is deferred until the H2D has actually landed.
+    ``parent_hash`` is the hash before an offloaded run, or before an
+    onload's first block, in its chain, and ``publishes`` what a peer
+    write-back, or an offload held behind one, publishes once it settles. An
+    offload whose ``parent_hash`` is unpublished settles behind it, until a
+    write-back's ``hold_deadline`` passes.
     """
 
     event: KVTransfer
     blocks: dict[str, list[LittleKVCacheBlock]]
     commit_hashes: list[bytes] | None = None
     splice: _OnloadSplice | None = None
+    parent_hash: bytes | None = None
+    publishes: frozenset[bytes] = frozenset()
+    hold_deadline: float | None = None
+    hold_expired: bool = False
+    held_since: float | None = None
 
     def pinned_blocks(self) -> Iterator[LittleKVCacheBlock]:
         """Every block this transfer pins, across all its leaves."""
@@ -181,6 +233,10 @@ class _PendingLookup:
     last two hand the handle back at once and read as a miss, so a request
     is never held out of the batch for good and an idle engine does not
     keep polling a lookup that will never answer.
+
+    ``on_drop`` counts the drop when the handle goes back, including a
+    give-up inside a poll. ``hint`` is the cache hint the lookup was asked
+    with, kept to label that count.
     """
 
     def __init__(
@@ -189,11 +245,19 @@ class _PendingLookup:
         handle: KVLookup,
         first_block: int,
         started_at: float,
+        hint: bytes | None,
+        on_drop: Callable[
+            [_PendingLookup, ConnectorLookupDrop, int | None], None
+        ],
     ) -> None:
         self.handle = handle
         self.first_block = first_block
+        self.hint = hint
         self.missed = False
+        # The run the answer offered, once a drop count has read it.
+        self.answer_run: int | None = None
         self._connector = connector
+        self._on_drop = on_drop
         self._started_at = started_at
         self._answered = False
         self._returned = False
@@ -226,7 +290,7 @@ class _PendingLookup:
                 "cache miss",
                 self._connector.name,
             )
-            self._give_up()
+            self._give_up("poll_failed")
             return True
 
         if complete:
@@ -238,7 +302,7 @@ class _PendingLookup:
                 self._connector.name,
                 _CONNECTOR_LOOKUP_TIMEOUT_S,
             )
-            self._give_up()
+            self._give_up("timeout")
         return self._answered
 
     def age_s(self) -> float:
@@ -256,18 +320,44 @@ class _PendingLookup:
             and self.age_s() >= _LOOKUP_HAND_BACK_AGE_S
         )
 
-    def abandon(self) -> None:
-        """Hands the handle back, once however often this is called."""
+    def known_masks(self) -> Mapping[str, Sequence[bool]] | None:
+        """Returns the answer if it is in hand, or ``None``.
+
+        Never polls the handle, so counting a drop cannot change when an
+        answer is seen. ``None`` for a lookup given up on and for one not
+        yet seen to answer.
+        """
+        if self.missed:
+            return None
+        if (
+            self._masks is None
+            and not self._answered
+            and not isinstance(self.handle, CompletedLookup)
+        ):
+            return None
+        return self.masks()
+
+    def abandon(
+        self, reason: ConnectorLookupDrop, blocks: int | None = None
+    ) -> None:
+        """Hands the handle back, once however often this is called.
+
+        Only the call that hands it back counts the drop, under ``reason``,
+        costing ``blocks`` when the caller measured them.
+        """
         if self._returned:
             return
         self._returned = True
-        self._connector.abandon_lookup(self.handle)
+        try:
+            self._on_drop(self, reason, blocks)
+        finally:
+            self._connector.abandon_lookup(self.handle)
 
-    def _give_up(self) -> None:
+    def _give_up(self, reason: ConnectorLookupDrop) -> None:
         """Hands the handle back and reads as a miss from now on."""
         self.missed = True
         self._answered = True
-        self.abandon()
+        self.abandon(reason)
 
 
 class _PendingProbe:
@@ -406,8 +496,21 @@ def create_pools(
 ) -> list[JengaBlockPool]:
     """Returns one pool per replica, each tiling the same huge blocks."""
     ratios = {leaf_id: leaf.ratio for leaf_id, leaf in leaf_infos.items()}
+    min_huge_bid = min_huge_bid_for_top_fraction(
+        num_huge_blocks, _TOP_BLOCK_FRACTION
+    )
+    if min_huge_bid:
+        logger.warning(
+            "MODULAR_KV_JENGA_DEBUG_TOP_BLOCK_FRACTION=%s: allocating only"
+            " huge blocks %d..%d, so KV capacity is cut to that share. For"
+            " tests only.",
+            _TOP_BLOCK_FRACTION,
+            min_huge_bid,
+            num_huge_blocks - 1,
+        )
     return [
-        JengaBlockPool(num_huge_blocks, ratios) for _ in range(num_replicas)
+        JengaBlockPool(num_huge_blocks, ratios, min_huge_bid=min_huge_bid)
+        for _ in range(num_replicas)
     ]
 
 
@@ -583,6 +686,17 @@ class RequestCacheState:
     resumable: _RequestResumableState = _RequestResumableState()
     """Where the request can currently resume."""
 
+    peer_loaded_hashes: dict[str, list[bytes]] = field(default_factory=dict)
+    """The hashes, per streamed leaf, a landed onload read from a remote peer
+    rather than the connector's own tier, which are written back to that tier
+    once queued for offload. An onload that landed inside an ``alloc`` waits
+    here until that alloc ends or rolls it back, either of which queues it."""
+
+    peer_onload: _OnloadSplice | None = None
+    """The in-flight onload whose transfer reports peer-filled blocks. Its
+    landing records them only while it is still this one, so an onload rolled
+    back before it landed records nothing."""
+
     def lookup_is_stale(self) -> bool:
         """Returns whether the answer is too old to load and is asked again.
 
@@ -738,6 +852,9 @@ class JengaBlockManager:
 
         # State for the KVConnector.
         self._connector = connector
+        # One bound method every lookup shares, so starting one allocates
+        # nothing to count its drop.
+        self._on_lookup_drop = self._count_lookup_drop
         # Admission recency touches, applied once the forward has launched so
         # they stay off the allocation path. Only recency: a block being loaded
         # is pinned by the load. A device hit's host copy is not, so one at
@@ -750,10 +867,15 @@ class JengaBlockManager:
         self._pending_transfers: list[list[_PendingTransfer]] = [
             [] for _ in range(self._num_replicas)
         ]
-        # Each leaf's hashes to offload at the next `offload` call, per entry.
-        self._pending_offloads: list[list[dict[str, Sequence[bytes]]]] = [
+        # What the next `offload` call sends, per replica: committed runs and
+        # peer write-backs, each with its parent hash, and checkpoints.
+        self._pending_offloads: list[list[_QueuedOffload]] = [
             [] for _ in range(self._num_replicas)
         ]
+        # Queued write-backs plus tracked transfers that publish something,
+        # on every replica. While none exist nothing can be held, so the hold
+        # scans are skipped, as with the option off.
+        self._holders_outstanding = 0
 
     # ============================================================================
     # Request Lifecycle APIs
@@ -845,6 +967,12 @@ class JengaBlockManager:
                 req_id, CheckpointEventKind.RELEASE, ctx.tokens.processed_length
             )
         )
+        # Normally queued when the onload landed; this covers an alloc that
+        # raised before queueing what it landed. Best effort: another request
+        # may have device-hit those blocks and posted a tail past them in the
+        # meantime, which nothing held because this write-back was in neither
+        # queue.
+        self._queue_peer_writeback(self._requests[req_id])
         self.offload(replica_idx)
 
         for group in self._groups.values():
@@ -858,7 +986,8 @@ class JengaBlockManager:
         state = self._requests.pop(req_id)
         self._pending_probes.pop(req_id, None)
         self._priced_hashes.pop(req_id, None)
-        self._abandon_pending_lookup(state)
+        self._abandon_pending_lookup(state, "release")
+        self._record_lookup_retries(state)
 
     def abandon_presence(self, ctx: TextContext) -> None:
         """Drops the request's pricing probe, for one released unclaimed."""
@@ -870,11 +999,107 @@ class JengaBlockManager:
         probe = self._pending_probes.get(ctx.request_id)
         return probe is not None and not probe.is_answered()
 
-    def _abandon_pending_lookup(self, state: RequestCacheState) -> None:
+    def _abandon_pending_lookup(
+        self, state: RequestCacheState, reason: ConnectorLookupDrop
+    ) -> None:
         """Hands back a lookup the request started and will never load from."""
         pending, state.pending_lookup = state.pending_lookup, None
         if pending is not None:
-            pending.abandon()
+            pending.abandon(reason)
+
+    def _count_lookup_drop(
+        self,
+        pending: _PendingLookup,
+        reason: ConnectorLookupDrop,
+        blocks: int | None,
+    ) -> None:
+        """Counts a lookup whose handle goes back without a load.
+
+        ``blocks`` is what a drop at the load measured past the device hit
+        then. Elsewhere the drop costs the run the answer offered.
+        """
+        run = self._answer_run(pending)
+        answer: ConnectorLookupAnswer = (
+            "unseen" if run is None else "offered" if run else "empty"
+        )
+        self._record_lookup_drop(
+            reason,
+            answer,
+            (run or 0) if blocks is None else blocks,
+            hinted=self._routes_hint(pending.hint),
+        )
+
+    def _answer_run(self, pending: _PendingLookup) -> int | None:
+        """Returns the run a lookup's answer offered, in prompt blocks.
+
+        Counted from the lookup's ``first_block``, which is where the device
+        hit ended when it was asked. ``None`` without an answer in hand, or
+        with one too broken to read, which the load could not have used
+        either. Read once per lookup, and never raises, because it runs on
+        paths that are already unwinding.
+        """
+        if pending.answer_run is not None:
+            return pending.answer_run
+        try:
+            masks = pending.known_masks()
+            if masks is None:
+                return None
+            pending.answer_run = self._longest_connector_hit(masks)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
+            # BaseException because a pyo3 PanicException is not an Exception.
+            logger.debug(
+                "counting a dropped lookup could not read its answer",
+                exc_info=True,
+            )
+            return None
+        return pending.answer_run
+
+    def _routes_hint(self, hint: bytes | None) -> bool:
+        """Returns whether a lookup asked with ``hint`` was routed by it."""
+        return (
+            hint is not None
+            and self._connector is not None
+            and self._connector.routes_hint(hint)
+        )
+
+    def _record_lookup_drop(
+        self,
+        reason: ConnectorLookupDrop,
+        answer: ConnectorLookupAnswer,
+        blocks: int,
+        *,
+        hinted: bool,
+    ) -> None:
+        """Counts one dropped lookup answer and the ``blocks`` it cost."""
+        drops = self._metrics.connector_lookup_drops
+        key = (reason, answer, hinted)
+        drops[key] = drops.get(key, 0) + 1
+        if blocks:
+            dropped = self._metrics.connector_lookup_dropped_blocks
+            blocks_key = (reason, hinted)
+            dropped[blocks_key] = dropped.get(blocks_key, 0) + blocks
+
+    def _record_lookup_shrink(self, depth: int) -> None:
+        """Counts a device hit that shrank ``depth`` blocks under a lookup."""
+        shrinks = self._metrics.connector_lookup_shrink_depths
+        shrinks[depth] = shrinks.get(depth, 0) + 1
+
+    def _record_lookup_retries(self, state: RequestCacheState) -> None:
+        """Records a released claim's re-asks and hand backs, when it had any.
+
+        Claims with none are skipped, so the common release costs two
+        compares and the distributions describe the claims that retried.
+        """
+        if state.connector_lookup_reasks:
+            reasks = self._metrics.connector_lookup_reasks_per_request
+            count = state.connector_lookup_reasks
+            reasks[count] = reasks.get(count, 0) + 1
+        if state.connector_lookup_hand_backs:
+            hand_backs = self._metrics.connector_lookup_hand_backs_per_request
+            count = state.connector_lookup_hand_backs
+            hand_backs[count] = hand_backs.get(count, 0) + 1
 
     def _apply_deferred_touches(self) -> None:
         """Sends the connector the admission touches queued since the last."""
@@ -978,6 +1203,9 @@ class JengaBlockManager:
                 allocation_owner=self,
             )
 
+        # An onload that landed in place is queued as the alloc ends, or by
+        # the rollback if the alloc rolls it back.
+        self._queue_peer_writeback(self._state_of(ctx))
         return transfer
 
     @traced
@@ -1142,7 +1370,7 @@ class JengaBlockManager:
             return False
 
         state.connector_lookup_hand_backs += 1
-        self._abandon_pending_lookup(state)
+        self._abandon_pending_lookup(state, "hand_back")
         return True
 
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
@@ -1166,6 +1394,13 @@ class JengaBlockManager:
         Each cache then frees the blocks the request no longer needs, keeping
         what resuming at ``resumable``'s boundaries needs.
         """
+        # The scheduler polls an onload itself, so the request can run on a
+        # copy that landed after the last drain. Draining it here queues its
+        # write-back ahead of the tail this step commits. The drain covers
+        # every replica's transfers, so the first such step in a batch lands
+        # the others too; revisit if `poll_transfers` grows costly.
+        if self._state_of(ctx).peer_onload is not None:
+            self.poll_transfers()
         self._apply_deferred_touches()
         replica_idx = self._replica_of(ctx)
         write_ranges = ctx.kv_cache_write_ranges
@@ -1397,16 +1632,31 @@ class JengaBlockManager:
                 held = group.blocks_held_of_connector_hit(num_blocks)
                 needed[leaf_id] = state.hashes[num_blocks - held : num_blocks]
             if needed:
-                self._pending_offloads[state.replica_idx].append(needed)
+                self._pending_offloads[state.replica_idx].append(
+                    _QueuedOffload(needed)
+                )
+        if not self._pending_offloads[replica_idx]:
+            return
         pool = self.pools[replica_idx]
-        for hashes_by_leaf in self._pending_offloads[replica_idx]:
+        # A run whose parent is unpublished is held, here at posting as
+        # `poll_transfers` holds it later. A checkpoint carries no parent and
+        # is never held: write-back covers streamed leaves only.
+        now = time.monotonic()
+        unpublished = (
+            self._unpublished_hashes(now, skip_queued=replica_idx)
+            if self._holders_outstanding
+            else set()
+        )
+        for queued in self._pending_offloads[replica_idx]:
             src: dict[str, list[LittleKVCacheBlock]] = {
                 leaf_id: [] for leaf_id in self._cacheable_leaf_ids
             }
             block_hashes: dict[str, list[bytes]] = {
                 leaf_id: [] for leaf_id in self._cacheable_leaf_ids
             }
-            for leaf_id, hashes in hashes_by_leaf.items():
+            writeback = queued.writeback
+            parent_hash = queued.parent_hash
+            for leaf_id, hashes in queued.hashes.items():
                 prefix_cache = pool.prefix_caches[leaf_id]
                 stops_at_gap = self._cacheable_groups[
                     leaf_id
@@ -1419,6 +1669,17 @@ class JengaBlockManager:
                         continue
                     src[leaf_id].append(block)
                     block_hashes[leaf_id].append(block_hash)
+                if writeback:
+                    sent = len(block_hashes[leaf_id])
+                    self._metrics.dkv_peer_writeback_blocks += sent
+                    if queued.orphaned:
+                        self._metrics.dkv_peer_writeback_blocks_dropped += (
+                            len(hashes) - sent
+                        )
+                    else:
+                        self._metrics.dkv_peer_writeback_blocks_evicted += (
+                            len(hashes) - sent
+                        )
             if not any(block_hashes.values()):
                 continue
             bids = {
@@ -1430,20 +1691,51 @@ class JengaBlockManager:
                 replica_idx=replica_idx,
             )
             # Use the event to determine which pages the connector needs to read
-            # and track only those in the transfer.
-            if not event.is_complete():
+            # and track only those in the transfer. A held one is not polled
+            # here either, since a connector may publish an offload on the
+            # first poll that sees its copy land. One that took no page
+            # publishes nothing and holds nothing.
+            took_pages = any(event.g0_blocks_per_leaf.values())
+            held = (
+                took_pages
+                and parent_hash is not None
+                and parent_hash in unpublished
+            )
+            if held or not event.is_complete():
                 by_bid = {
                     leaf_id: {block.bid: block for block in blocks}
                     for leaf_id, blocks in src.items()
                 }
+                taken_blocks = {
+                    leaf_id: [by_bid[leaf_id][bid] for bid in taken]
+                    for leaf_id, taken in event.g0_blocks_per_leaf.items()
+                }
+                publishes: frozenset[bytes] = frozenset()
+                if writeback or held:
+                    hash_of = {
+                        leaf_id: dict(zip(bids[leaf_id], hashes, strict=True))
+                        for leaf_id, hashes in block_hashes.items()
+                    }
+                    publishes = frozenset(
+                        hash_of[leaf_id][bid]
+                        for leaf_id, taken in event.g0_blocks_per_leaf.items()
+                        for bid in taken
+                    )
+                    unpublished |= publishes
                 self._track_transfer(
                     event,
-                    {
-                        leaf_id: [by_bid[leaf_id][bid] for bid in taken]
-                        for leaf_id, taken in event.g0_blocks_per_leaf.items()
-                    },
+                    taken_blocks,
                     replica_idx,
+                    parent_hash=parent_hash,
+                    publishes=publishes,
+                    hold_deadline=now + _PEER_WRITEBACK_HOLD_TIMEOUT_S
+                    if writeback and publishes
+                    else None,
+                    held_since=now if held else None,
                 )
+        self._holders_outstanding -= sum(
+            queued.writeback for queued in self._pending_offloads[replica_idx]
+        )
         self._pending_offloads[replica_idx].clear()
 
     def poll_transfers(self) -> None:
@@ -1461,8 +1753,56 @@ class JengaBlockManager:
                 continue
             pool = self.pools[replica_idx]
             still_pending: list[_PendingTransfer] = []
+            # A connector may publish an offload the moment a poll sees its
+            # copy land, as dKV registers it. So an offload whose run follows
+            # a block a peer write-back, or an offload held behind one, has
+            # yet to publish is not polled until that settles. That orders
+            # registration only on one replica: dKV queues a register on the
+            # polling client's FIFO settle worker, and each DP replica has its
+            # own, so across replicas it orders polls rather than registers.
+            #
+            # Only write-backs start a hold. A write-back carries the whole
+            # pulled prefix, so its copy can outlast a forward, while a plain
+            # run normally lands before the next one is posted; plain runs on
+            # one chain are left unordered. Holding every run behind any
+            # in-flight parent would close that rarer window too, at the cost
+            # of a hold on nearly every decode offload. Holding everything
+            # posted after a write-back on its replica, and leaning on the
+            # FIFO settle worker, would be simpler but stalls unrelated
+            # chains and still misses other replicas.
+            now = time.monotonic()
+            unpublished = (
+                self._unpublished_hashes(now, skip_pending=replica_idx)
+                if self._holders_outstanding
+                else set()
+            )
             unreached = iter(pending_list)
             for pending in unreached:
+                # Counted whether or not the copy has landed since, so a hold
+                # that lapsed between two polls still counts, once.
+                if (
+                    pending.hold_deadline is not None
+                    and now >= pending.hold_deadline
+                    and not pending.hold_expired
+                ):
+                    pending.hold_expired = True
+                    self._metrics.dkv_peer_writeback_hold_expired += 1
+                if (
+                    pending.commit_hashes is None
+                    and pending.parent_hash is not None
+                    and pending.parent_hash in unpublished
+                ):
+                    if pending.held_since is None:
+                        pending.held_since = now
+                    still_pending.append(pending)
+                    unpublished.update(pending.publishes)
+                    continue
+                if pending.held_since is not None:
+                    self._metrics.dkv_peer_writeback_held_offloads += 1
+                    self._metrics.dkv_peer_writeback_hold_ms_total += (
+                        now - pending.held_since
+                    ) * 1000
+                    pending.held_since = None
                 try:
                     complete = pending.event.is_complete()
                 except KVLoadFailed as failure:
@@ -1470,6 +1810,7 @@ class JengaBlockManager:
                     # unpublished: they hold no valid KV.
                     for block in pending.pinned_blocks():
                         pool.free_block(block)
+                    self._holders_outstanding -= bool(pending.publishes)
                     if pending.splice is not None:
                         self._fail_onload(pending.splice, failure)
                     continue
@@ -1481,20 +1822,82 @@ class JengaBlockManager:
                     # would free their blocks a second time.
                     for block in pending.pinned_blocks():
                         pool.free_block(block)
+                    self._holders_outstanding -= bool(pending.publishes)
                     self._pending_transfers[replica_idx] = still_pending + list(
                         unreached
                     )
                     raise
                 if not complete:
                     still_pending.append(pending)
+                    # An offload held at posting keeps holding the runs past
+                    # it until its own copy lands, even once its own hold has
+                    # lifted, so the chain still registers in order. That wait
+                    # is a plain copy's, so only a write-back needs a deadline.
+                    if self._holds(pending, now):
+                        unpublished.update(pending.publishes)
                     continue
                 if pending.commit_hashes is not None:
                     self._commit_onloaded_blocks(
                         pool, pending.blocks, pending.commit_hashes
                     )
+                    splice = pending.splice
+                    state = (
+                        self._requests.get(splice.request_id)
+                        if splice is not None
+                        else None
+                    )
+                    if state is not None and state.peer_onload is splice:
+                        state.peer_onload = None
+                        self._record_peer_loads(
+                            state,
+                            pending.event,
+                            pending.blocks,
+                            pending.commit_hashes,
+                        )
+                        self._queue_peer_writeback(state)
+                    else:
+                        self._queue_orphaned_writeback(replica_idx, pending)
                 for block in pending.pinned_blocks():
                     pool.free_block(block)
+                self._holders_outstanding -= bool(pending.publishes)
             self._pending_transfers[replica_idx] = still_pending
+
+    def _unpublished_hashes(
+        self,
+        now: float,
+        *,
+        skip_pending: int | None = None,
+        skip_queued: int | None = None,
+    ) -> set[bytes]:
+        """Returns what write-backs and the offloads they hold must publish.
+
+        Covers every replica's peer write-backs and the offloads held behind
+        them, in flight or queued. DP replicas share one co-located dKV and
+        copy prefixes across, so a run on one replica can follow pulled blocks
+        another is writing back.
+        ``skip_pending`` and ``skip_queued`` leave out the replica whose
+        transfers or queue the caller walks itself, in order.
+        """
+        unpublished: set[bytes] = set()
+        for idx, pending_list in enumerate(self._pending_transfers):
+            if idx != skip_pending:
+                for pending in pending_list:
+                    if self._holds(pending, now):
+                        unpublished.update(pending.publishes)
+        for idx, queue in enumerate(self._pending_offloads):
+            if idx != skip_queued:
+                for queued in queue:
+                    if queued.writeback:
+                        for hashes in queued.hashes.values():
+                            unpublished.update(hashes)
+        return unpublished
+
+    @staticmethod
+    def _holds(pending: _PendingTransfer, now: float) -> bool:
+        """Whether an unsettled offload still holds the runs that follow it."""
+        return bool(pending.publishes) and (
+            pending.hold_deadline is None or now < pending.hold_deadline
+        )
 
     def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
         """Returns whether any async transfer is in flight on the replica."""
@@ -1663,7 +2066,7 @@ class JengaBlockManager:
             )
         except BaseException:
             if pending is not None:
-                pending.abandon()
+                pending.abandon("exception")
             raise
 
     def _load_connector_prefix_cache_hit(
@@ -1689,7 +2092,10 @@ class JengaBlockManager:
         state = self._requests[request_id]
         if connector is None or not desired or state.skips_connector:
             if pending is not None:
-                pending.abandon()
+                if desired:
+                    pending.abandon("skip")
+                else:
+                    pending.abandon("covered", blocks=0)
             return miss
         # Already handed back, because polling it raised or it ran past its
         # deadline.
@@ -1702,7 +2108,8 @@ class JengaBlockManager:
         # only when the connector answers in place, and otherwise serves it
         # as a miss with the hit kept.
         if pending is not None and num_device_blocks < pending.first_block:
-            pending.abandon()
+            self._record_lookup_shrink(pending.first_block - num_device_blocks)
+            pending.abandon("shrink_at_load")
             pending = None
 
         lookup: KVLookup | None = None
@@ -1733,7 +2140,25 @@ class JengaBlockManager:
         # the request owns.
         if aligned == 0 or not pool.can_satisfy_demand(held):
             if pending is not None:
-                pending.abandon()
+                # A run the device hit grew over is covered, so
+                # nothing_to_load always means the answer was empty.
+                reason: ConnectorLookupDrop = (
+                    "no_room"
+                    if aligned
+                    else "covered"
+                    if self._answer_run(pending)
+                    else "nothing_to_load"
+                )
+                pending.abandon(reason, blocks=aligned)
+            elif aligned:
+                # A lookup asked in place that found nothing is a miss with
+                # no answer to drop, so only a run the pool refused counts.
+                self._record_lookup_drop(
+                    "no_room",
+                    "offered",
+                    aligned,
+                    hinted=self._routes_hint(hint),
+                )
             return miss
 
         rows = {
@@ -1773,10 +2198,16 @@ class JengaBlockManager:
             # remaining run no longer ends where the prefix does.
             if isinstance(err, KVLoadFailed):
                 self._skip_connector_after_failure(request_id, err)
+                reason = "load_failed"
             else:
                 logger.warning("serving a request as a cache miss: %s", err)
+                reason = "load_refused"
             if pending is not None:
-                pending.abandon()
+                pending.abandon(reason, blocks=aligned)
+            else:
+                self._record_lookup_drop(
+                    reason, "offered", aligned, hinted=self._routes_hint(hint)
+                )
             for blocks in rows.values():
                 for block in blocks:
                     pool.free_block(block)
@@ -1793,19 +2224,27 @@ class JengaBlockManager:
         loaded_hashes = list(desired[:aligned])
         if landed:
             self._commit_onloaded_blocks(pool, loaded_blocks, loaded_hashes)
+            self._record_peer_loads(state, event, loaded_blocks, loaded_hashes)
         else:
             start_idx = state.committed_idx
+            splice = _OnloadSplice(
+                request_id=request_id,
+                start_idx=start_idx,
+                end_idx=start_idx
+                + (num_device_blocks + aligned) * self._block_size,
+            )
+            if writeback_blocks_of(event):
+                state.peer_onload = splice
+            first_loaded = start_idx // self._block_size + num_device_blocks
             self._track_transfer(
                 event,
                 loaded_blocks,
                 replica_idx,
                 commit_hashes=loaded_hashes,
-                splice=_OnloadSplice(
-                    request_id=request_id,
-                    start_idx=start_idx,
-                    end_idx=start_idx
-                    + (num_device_blocks + aligned) * self._block_size,
-                ),
+                splice=splice,
+                parent_hash=state.hashes[first_loaded - 1]
+                if first_loaded
+                else None,
             )
         return aligned, loaded_blocks, event
 
@@ -1825,6 +2264,110 @@ class JengaBlockManager:
                     and not block.is_null
                 ):
                     pool.commit_into_prefix_cache(block_hash, block)
+
+    def _record_peer_loads(
+        self,
+        state: RequestCacheState,
+        event: KVTransfer,
+        blocks: Mapping[str, list[LittleKVCacheBlock]],
+        hashes: Sequence[bytes],
+    ) -> None:
+        """Records which of a landed onload's hashes a remote peer served.
+
+        Write-back covers the streamed, full-attention leaves only, which
+        offload their whole prefix as it commits. That is complete today:
+        MAX sends no peer hint for a tree with a sliding leaf (see
+        ``DKVConnector._usable_hint``), so a windowed leaf is never
+        peer-filled. ``blocks`` is each leaf's row, positional with
+        ``hashes``.
+        """
+        for leaf_id, pulled in self._peer_filled(event, blocks, hashes).items():
+            state.peer_loaded_hashes.setdefault(leaf_id, []).extend(pulled)
+
+    def _peer_filled(
+        self,
+        event: KVTransfer,
+        blocks: Mapping[str, list[LittleKVCacheBlock]],
+        hashes: Sequence[bytes],
+    ) -> dict[str, list[bytes]]:
+        """Returns the hashes a remote peer filled, per streamed leaf."""
+        served = writeback_blocks_of(event)
+        pulled: dict[str, list[bytes]] = {}
+        for leaf_id in self._streamed_leaf_ids:
+            bids = set(served.get(leaf_id, ()))
+            if bids:
+                pulled[leaf_id] = [
+                    block_hash
+                    for block, block_hash in zip(
+                        blocks[leaf_id], hashes, strict=True
+                    )
+                    if not block.is_null and block.bid in bids
+                ]
+        return pulled
+
+    def _queue_orphaned_writeback(
+        self, replica_idx: int, pending: _PendingTransfer
+    ) -> None:
+        """Queues the write-back of an onload whose request let it go.
+
+        Its request was released, or rolled the onload back, before the copy
+        landed. The pulled blocks are published all the same, and a later
+        request can device-hit them and compute past them, so they are
+        written back like any other. ``offload``'s walk checks they are still
+        cached, and counts one gone by then as dropped.
+        """
+        assert pending.commit_hashes is not None
+        hashes = pending.commit_hashes
+        pulled = self._peer_filled(pending.event, pending.blocks, hashes)
+        if not any(pulled.values()):
+            return
+        first = min(
+            hashes.index(leaf_hashes[0])
+            for leaf_hashes in pulled.values()
+            if leaf_hashes
+        )
+        self._pending_offloads[replica_idx].append(
+            _QueuedOffload(
+                pulled,
+                parent_hash=hashes[first - 1] if first else pending.parent_hash,
+                writeback=True,
+                orphaned=True,
+            )
+        )
+        self._holders_outstanding += 1
+
+    def _queue_peer_writeback(
+        self, state: RequestCacheState, *, orphaned: bool = False
+    ) -> None:
+        """Queues the request's peer-filled hashes for the next offload.
+
+        Queued as the onload lands, or as its alloc rolls it back, so the
+        co-located dKV takes them before the blocks computed past them: a
+        store holding the request's head and its computed tail without the
+        peer-filled middle would read as owning a prefix it cannot serve.
+        ``offload`` reads the pages back through the prefix cache and pins
+        what it takes, so they are still valid when the copy runs, whether
+        the request still holds them, its release offloads before freeing
+        them, or a rollback left them cached. One evicted before then is
+        skipped, and counted as dropped for a rollback's ``orphaned``
+        write-back, whose pages nobody else held, or as evicted otherwise.
+        """
+        if any(state.peer_loaded_hashes.values()):
+            first = min(
+                state.hashes.index(hashes[0])
+                for hashes in state.peer_loaded_hashes.values()
+                if hashes
+            )
+            self._pending_offloads[state.replica_idx].append(
+                _QueuedOffload(
+                    state.peer_loaded_hashes,
+                    parent_hash=state.hashes[first - 1] if first else None,
+                    writeback=True,
+                    orphaned=orphaned,
+                )
+            )
+            self._holders_outstanding += 1
+            state.peer_loaded_hashes = {}
 
     def _skip_connector_after_failure(
         self, request_id: RequestID, failure: KVLoadFailed
@@ -1878,6 +2421,7 @@ class JengaBlockManager:
             return
         splice, failure = state.failed_onload
         state.failed_onload = None
+        state.peer_onload = None
         if (
             state.committed_idx != splice.end_idx
             or ctx.tokens.processed_length != splice.end_idx
@@ -1903,6 +2447,10 @@ class JengaBlockManager:
         replica_idx: int,
         commit_hashes: list[bytes] | None = None,
         splice: _OnloadSplice | None = None,
+        parent_hash: bytes | None = None,
+        publishes: frozenset[bytes] = frozenset(),
+        hold_deadline: float | None = None,
+        held_since: float | None = None,
     ) -> None:
         """Tracks an async connector transfer and the pages it pins.
 
@@ -1927,8 +2475,13 @@ class JengaBlockManager:
                 },
                 commit_hashes=commit_hashes,
                 splice=splice,
+                parent_hash=parent_hash,
+                publishes=publishes,
+                hold_deadline=hold_deadline,
+                held_since=held_since,
             )
         )
+        self._holders_outstanding += bool(publishes)
 
     # ============================================================================
     # Misc
@@ -2480,7 +3033,7 @@ class JengaBlockManager:
             and pending.is_answered()
             and state.lookup_is_stale()
         ):
-            self._abandon_pending_lookup(state)
+            self._abandon_pending_lookup(state, "stale_reask")
             state.connector_lookup_hand_backs += 1
             pending = None
         if pending is None:
@@ -2519,6 +3072,9 @@ class JengaBlockManager:
                     ),
                     first_block=num_device_blocks,
                     started_at=time.monotonic() - probe.age_s(),
+                    # The probe was asked with the same hint.
+                    hint=ctx.dkv_cache_hint,
+                    on_drop=self._on_lookup_drop,
                 )
                 return True
             if probed == 0:
@@ -2532,7 +3088,7 @@ class JengaBlockManager:
             if start:
                 return False
             state.pending_lookup = None
-            pending.abandon()
+            pending.abandon("sync_alloc")
             return True
         if not start or pending.missed:
             return True
@@ -2550,9 +3106,22 @@ class JengaBlockManager:
         )
         if num_device_blocks >= pending.first_block:
             return True
-        self._abandon_pending_lookup(state)
+        shrink = pending.first_block - num_device_blocks
+        self._record_lookup_shrink(shrink)
         if state.connector_lookup_reasks >= _MAX_CONNECTOR_LOOKUP_REASKS:
+            # The blocks the device lost plus the run the answer offered past
+            # them estimate what asking again would have saved. A connector
+            # that answers in place is asked about the gap at once, so it
+            # loses none of them. The run is read once, and the drop count
+            # below reuses it.
+            run = self._answer_run(pending)
+            if connector is not None and connector.defers_lookup(replica_idx):
+                self._metrics.connector_lookup_shrink_cap_blocks += shrink + (
+                    run or 0
+                )
+            self._abandon_pending_lookup(state, "shrink_cap")
             return True
+        self._abandon_pending_lookup(state, "shrink_reask")
 
         state.connector_lookup_reasks += 1
         replacement = self._start_connector_lookup(
@@ -2604,6 +3173,8 @@ class JengaBlockManager:
             ),
             first_block=first_block,
             started_at=started_at,
+            hint=ctx.dkv_cache_hint,
+            on_drop=self._on_lookup_drop,
         )
         self._state_of(ctx).pending_lookup = pending
         return pending
@@ -2622,6 +3193,12 @@ class JengaBlockManager:
         reused_tokens = state.committed_idx - committed_idx
         if reused_tokens == 0:
             return
+        # The pages a peer filled stay published past the rollback, and the
+        # retry device-hits them and computes past them, so they are written
+        # back as if the request had kept them. One rolled back before its
+        # copy landed is written back when it lands.
+        self._queue_peer_writeback(state, orphaned=True)
+        state.peer_onload = None
         state.committed_idx = committed_idx
         self._release_uncommitted_blocks(ctx, replica_idx)
         self._metrics.cache_tokens -= reused_tokens
@@ -2674,8 +3251,13 @@ class JengaBlockManager:
             run = req_hashes[first_block:last_block]
             prefix_caches = self.pools[replica_idx].prefix_caches
             self._pending_offloads[replica_idx].append(
-                {
-                    leaf_id: [h for h in run if h in prefix_caches[leaf_id]]
-                    for leaf_id in self._streamed_leaf_ids
-                }
+                _QueuedOffload(
+                    {
+                        leaf_id: [h for h in run if h in prefix_caches[leaf_id]]
+                        for leaf_id in self._streamed_leaf_ids
+                    },
+                    parent_hash=req_hashes[first_block - 1]
+                    if first_block
+                    else None,
+                )
             )

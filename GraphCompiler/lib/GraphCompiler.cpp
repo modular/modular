@@ -247,10 +247,6 @@ void M::MO::buildMoPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
 
-  std::string_view compiledFrameworkLabel;
-  if (opts.compiledFrameworkLabel.hasValue())
-    compiledFrameworkLabel = opts.compiledFrameworkLabel;
-
   std::optional<std::string> cacheDir;
   if (opts.cacheDir.hasValue())
     cacheDir = opts.cacheDir;
@@ -261,8 +257,7 @@ void M::MO::buildMoPipeline(mlir::OpPassManager &pm,
   // TODO(GEX-886): Remove symbolic optimization's dependency on constant
   // folding.
   if (opts.constantFold)
-    pm.addPass(MO::createConstantFoldPass(compiledFrameworkLabel, cacheDir,
-                                          kernelLibraryPaths));
+    pm.addPass(MO::createConstantFoldPass(cacheDir, kernelLibraryPaths));
 
   pm.addPass(MO::createHoistConstantSubgraphsIntoParent());
   pm.addNestedPass<MO::GraphOp>(mlir::createCSEPass());
@@ -283,17 +278,11 @@ void M::MO::buildMoPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
 
   if (opts.constantFold)
-    pm.addPass(MO::createConstantFoldPass(compiledFrameworkLabel, cacheDir,
-                                          kernelLibraryPaths));
+    pm.addPass(MO::createConstantFoldPass(cacheDir, kernelLibraryPaths));
 
   pm.addPass(MO::createInferLayouts());
   if (opts.usePatterns) {
     MOGG::PatternFusionOptions patternFusionOpts;
-    patternFusionOpts.mhaAllowUnsafeBCast =
-        opts.patternFusionMHAAllowUnsafeBCasts;
-    patternFusionOpts.mhaAllowInternalReshape =
-        opts.patternFusionMHAAllowInternalReshape;
-    patternFusionOpts.enableMHAPattern = opts.patternFusionMHAEnable;
     patternFusionOpts.targetDevice = opts.defaultDeviceLabel;
     patternFusionOpts.targetDeviceId = opts.defaultDeviceId;
     pm.addPass(MOGG::createPatternFusion(patternFusionOpts));
@@ -324,8 +313,7 @@ void M::MO::buildMoPipeline(mlir::OpPassManager &pm,
   pm.addPass(MO::createMergeAdjacentParallels());
 
   if (opts.constantFold)
-    pm.addPass(MO::createConstantFoldPass(compiledFrameworkLabel, cacheDir,
-                                          kernelLibraryPaths));
+    pm.addPass(MO::createConstantFoldPass(cacheDir, kernelLibraryPaths));
 
   if (opts.fuseJitKernels) {
     // Without fusion this can add extraneous copies.
@@ -347,6 +335,8 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
     pm.addNestedPass<GraphOp>(MAP::createFuseMutableLoads());
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
+  pm.addNestedPass<GraphOp>(MAP::createReductionLoopInvariantCodeMotion());
+  pm.addNestedPass<GraphOp>(MAP::createReductionCSE());
 
   // After fusion settles, give every fused-output epilogue a real store pointer
   // (plus a pre-cast accumulation buffer for mixed-precision accumulation).
@@ -370,9 +360,11 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
 }
 
 void M::MO::buildMoggPipeline(mlir::OpPassManager &pm,
-                              const MoggPipelineOptions &) {
+                              const MoggPipelineOptions &opts) {
   pm.addPass(MOGG::createLegalizeRowwiseKernels());
   pm.addPass(MOGG::createConformCallOperands());
+  if (opts.enableGraphBlobs)
+    pm.addPass(MOGG::createFormGraphBlobs());
   pm.addPass(MOGG::createOutlineRoutines());
   pm.addPass(MOGG::createWrapFuncsWithTrace());
 
@@ -511,8 +503,6 @@ static void gcPipelineImpl(mlir::OpPassManager &pm,
   moOpts.debugPrintAllTensors = opts.debugPrintAllTensors;
   moOpts.useShapeInference = opts.useShapeInference;
   moOpts.constantFold = opts.constantFold;
-  if (opts.compiledFrameworkLabel.hasValue())
-    moOpts.compiledFrameworkLabel = opts.compiledFrameworkLabel.getValue();
   if (opts.cacheDir.hasValue())
     moOpts.cacheDir = opts.cacheDir.getValue();
   moOpts.symbolicFfastMath = opts.symbolicFfastMath;
@@ -520,11 +510,6 @@ static void gcPipelineImpl(mlir::OpPassManager &pm,
   moOpts.kernelLibraryPaths = kernelLibraryPaths;
   moOpts.kernelDeclsPrePopulated = opts.kernelDeclsPrePopulated;
   moOpts.usePatterns = opts.usePatterns;
-  moOpts.patternFusionMHAEnable = opts.patternFusionMHAEnable;
-  moOpts.patternFusionMHAAllowUnsafeBCasts =
-      opts.patternFusionMHAAllowUnsafeBCasts;
-  moOpts.patternFusionMHAAllowInternalReshape =
-      opts.patternFusionMHAAllowInternalReshape;
   moOpts.sanityCheckShapeFuncs = opts.sanityCheckShapeFuncs;
   moOpts.defaultDeviceLabel = opts.defaultDeviceLabel;
   moOpts.defaultDeviceId = opts.defaultDeviceId;
@@ -536,11 +521,10 @@ static void gcPipelineImpl(mlir::OpPassManager &pm,
   mapOpts.fuseMutableLoadStore = opts.fuseMutableLoadStore;
 
   MoggPipelineOptions moggOpts;
+  moggOpts.enableGraphBlobs = opts.enableGraphBlobs;
 
   MGP::MOGGToMGPOptions moToPrimOpts;
   moToPrimOpts.minimumCpuAlignment = opts.minimumCpuAlignment;
-  if (opts.compiledFrameworkLabel.hasValue())
-    moToPrimOpts.compiledFrameworkLabel = opts.compiledFrameworkLabel;
 
   MgpPipelineOptions mgpOpts;
   mgpOpts.kernelLibraryPaths = kernelLibraryPaths;
@@ -576,9 +560,11 @@ static void gcPipelineImpl(mlir::OpPassManager &pm,
   buildStage([&](auto &p) { buildMoPipeline(p, moOpts); }, "mo-pre-map");
 
   // Stable-tensor marking must see MO ops, so it runs as the last MO-level
-  // pass before the dialect is lowered away.
+  // pass before the dialect is lowered away. Composites decompose just before
+  // it, once the patterns that fuse them have run.
   buildStage(
       [&](auto &p) {
+        p.addPass(MO::createTmpDecomposeComposites());
         p.addPass(MO::createMarkStableTensorsPass());
         p.addPass(MO::createMOToMAP());
       },

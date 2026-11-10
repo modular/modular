@@ -23,15 +23,17 @@ from std.ffi import (
     external_call,
 )
 from std.io import FileDescriptor, IOError, RawFileDescriptor
-from std.io._syscall import check
+from std.io._syscall import check, retry_io_interrupted
+from std.net.addr import SocketAddr
 from std.sys import size_of
-from std.sys._libc import FcntlCommands, FcntlFDFlags, close, fcntl
+from std.sys._libc import FcntlCommands, FcntlFDFlags, close, fcntl, time_t
 from std.sys.info import CompilationTarget, platform_map, platform_type_map
 
-from .inet import SockaddrIn, SockaddrIn6
+from .inet import SockaddrIn, SockaddrIn6, SockaddrStorage
 from .linux import (
     AF_INET6 as linux_AF_INET6,
     SOCK_CLOEXEC as linux_SOCK_CLOEXEC,
+    accept4 as linux_accept4,
     sockaddr as linux_sockaddr,
     sockaddr_in as linux_sockaddr_in,
     sockaddr_in6 as linux_sockaddr_in6,
@@ -40,13 +42,13 @@ from .linux import (
 )
 from .macos import (
     AF_INET6 as macos_AF_INET6,
-    SO_NOSIGPIPE as macos_SO_NOSIGPIPE,
     sockaddr as macos_sockaddr,
     sockaddr_in as macos_sockaddr_in,
     sockaddr_in6 as macos_sockaddr_in6,
     sockaddr_storage as macos_sockaddr_storage,
     sockaddr_un as macos_sockaddr_un,
 )
+from .socket_addr import from_sockaddr_storage
 
 comptime socklen_t = c_uint
 """C `socklen_t`: the size of a socket address or option value, in bytes."""
@@ -234,8 +236,6 @@ comptime F_SETFL: c_int = 4
 # Socket option values
 # ===----------------------------------------------------------------------=== #
 
-comptime time_t = c_long
-"""C `time_t`: a time in whole seconds."""
 comptime suseconds_t = Scalar[
     platform_map[
         T=DType, "suseconds_t", linux=c_long.dtype, macos=DType.int32
@@ -293,7 +293,7 @@ comptime sockaddr_un = platform_type_map[
 """The compilation target's C `struct sockaddr_un`."""
 
 comptime sockaddr_storage = platform_type_map[
-    Trait=Copyable,
+    Trait=SockaddrStorage,
     linux=linux_sockaddr_storage,
     macos=macos_sockaddr_storage,
 ]
@@ -565,50 +565,94 @@ def socketpair(
 def open_socket(
     domain: c_int, type: c_int, protocol: c_int
 ) raises IOError -> FileDescriptor:
-    """Opens a socket that's close-on-exec and that doesn't raise `SIGPIPE`
-    when written to after the peer closes, where the platform can set that up
-    front.
+    """Opens a socket that's close-on-exec.
 
     If a setup step fails after the socket opens, the socket is closed before
     that step's error is raised.
     """
     comptime if CompilationTarget.is_linux():
-        # Linux suppresses `SIGPIPE` per send, with `MSG_NOSIGNAL`.
         var fd = check(
             socket(domain, type | linux_SOCK_CLOEXEC, protocol), "socket"
         )
         return FileDescriptor(unsafe_raw_fd=RawFileDescriptor(fd))
     elif CompilationTarget.is_macos():
-        # TODO: macOS has no `SOCK_CLOEXEC`, so a process spawned between
-        # `socket()` and `fcntl()` inherits the socket. Spawning children with
-        # `POSIX_SPAWN_CLOEXEC_DEFAULT` would close that gap.
-        var c_fd = check(socket(domain, type, protocol), "socket")
-        var fd = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(c_fd))
-        var on: c_int = 1
-        try:
-            _ = check(
-                fcntl(
-                    fd._raw(), FcntlCommands.F_SETFD, FcntlFDFlags.FD_CLOEXEC
-                ),
-                "fcntl",
-            )
-            _ = check(
-                setsockopt(
-                    fd._raw(),
-                    SOL_SOCKET,
-                    macos_SO_NOSIGPIPE,
-                    Pointer(to=on).unsafe_bitcast[NoneType](),
-                    socklen_t(size_of[c_int]()),
-                ),
-                "setsockopt",
-            )
-        except e:
-            # ignore an error returned from close, and re-raise the op above
-            # that failed.
-            try:
-                fd^.close()
-            finally:
-                raise e
-        return fd^
+        var fd = check(socket(domain, type, protocol), "socket")
+        return _set_up_macos_socket(
+            FileDescriptor(unsafe_raw_fd=RawFileDescriptor(fd))
+        )
     else:
         CompilationTarget.unsupported_target_error[operation="open_socket"]()
+
+
+def accept_socket(
+    sockfd: c_int,
+) raises IOError -> Tuple[FileDescriptor, SocketAddr]:
+    """Accepts a connection on a listening socket, sets up the new socket the
+    way `open_socket` does, and returns it with the peer's address."""
+    var storage = sockaddr_storage()
+
+    def attempt() raises IOError {mut storage, imm} -> c_int:
+        var len = socklen_t(size_of[sockaddr_storage]())
+        comptime if CompilationTarget.is_linux():
+            return check(
+                linux_accept4(
+                    sockfd,
+                    Pointer(to=storage).unsafe_bitcast[linux_sockaddr](),
+                    Pointer(to=len),
+                    linux_SOCK_CLOEXEC,
+                ),
+                "accept",
+            )
+        elif CompilationTarget.is_macos():
+            return check(
+                accept(
+                    sockfd,
+                    Pointer(to=storage).unsafe_bitcast[sockaddr](),
+                    Pointer(to=len),
+                ),
+                "accept",
+            )
+        else:
+            CompilationTarget.unsupported_target_error[
+                operation="accept_socket"
+            ]()
+
+    var fd = FileDescriptor(
+        unsafe_raw_fd=RawFileDescriptor(retry_io_interrupted(attempt))
+    )
+    comptime if CompilationTarget.is_macos():
+        fd = _set_up_macos_socket(fd^)
+    var addr: SocketAddr
+    try:
+        addr = from_sockaddr_storage(storage, "accept")
+    except e:
+        try:
+            fd^.close()
+        finally:
+            raise e
+    return (fd^, addr)
+
+
+# TODO: macOS has no `SOCK_CLOEXEC` or `accept4`, so a process spawned between
+# creating a socket and the `fcntl()` here inherits it. Spawning children with
+# `POSIX_SPAWN_CLOEXEC_DEFAULT` would close that gap.
+def _set_up_macos_socket(
+    var fd: FileDescriptor,
+) raises IOError -> FileDescriptor:
+    """Makes a new socket close-on-exec, closing it if that fails."""
+    try:
+        _ = check(
+            fcntl(fd._raw(), FcntlCommands.F_SETFD, FcntlFDFlags.FD_CLOEXEC),
+            "fcntl",
+        )
+        # TODO: Maybe set `macos.SO_NOSIGPIPE` socket option, we should already
+        # likely set MSG_NOSIGNAL in each send/recv call so it may not be
+        # necessary, but also it doesn't hurt either.
+    except e:
+        # ignore an error returned from close, and re-raise the op above
+        # that failed.
+        try:
+            fd^.close()
+        finally:
+            raise e
+    return fd^

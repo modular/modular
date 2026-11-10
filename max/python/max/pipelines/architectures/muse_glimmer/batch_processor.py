@@ -10,40 +10,91 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for the Muse Glimmer ModuleV3 pipeline."""
+"""Shared decoder batching and image-cache hooks for Muse Glimmer roles."""
 
 from __future__ import annotations
 
-from max.driver import Buffer
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.pipelines.context import TextAndVisionContext
-from max.pipelines.lib.interfaces.batch_processor import (
-    ModuleV3SingleReplicaBatchProcessor,
-)
+from collections.abc import Sequence
+from typing import Any
 
-from .inputs import MuseGlimmerInputs
+from max.driver import Buffer, Device
+from max.engine import InferenceSession
+from max.pipelines.context import ImageMetadata, TextAndVisionContext
+from max.pipelines.lib.module_registration import DecoderBatchProcessor
+from max.pipelines.lib.vision_batching import create_empty_image_embeddings
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
+from max.tensor.compilation import CompiledCallable
+
+from .batch_vision_inputs import pack_uncached_images
+from .model_config import MuseGlimmerConfig
 
 
-class MuseGlimmerBatchProcessor(
-    ModuleV3SingleReplicaBatchProcessor[TextAndVisionContext, MuseGlimmerInputs]
-):
-    """Ragged batching for Muse Glimmer (single GPU, no signals).
+class MuseGlimmerBatchProcessor(DecoderBatchProcessor):
+    """Encodes selected images while shared batching prepares decoder fields."""
 
-    Only tokens and offsets are built here; the pipeline's
-    ``VisionEncoderCache`` fills the base vision fields.
-    """
+    _vision_model: CompiledCallable[Any, Any] | None = None
 
-    def _make_inputs(
+    @property
+    def _vision_config(self) -> MuseGlimmerConfig:
+        """Returns the architecture config used for image packing."""
+        assert isinstance(self.config, MuseGlimmerConfig)
+        return self.config
+
+    def bind_vision_encoder(
         self,
         *,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
-    ) -> MuseGlimmerInputs:
-        return MuseGlimmerInputs(
-            tokens=tokens,
-            input_row_offsets=input_row_offsets,
-            return_n_logits=return_n_logits,
-            kv_cache_inputs=kv_cache_inputs,
+        vision_model: CompiledCallable[Any, Any],
+        session: InferenceSession,
+    ) -> None:
+        """Binds the framework-compiled vision graph."""
+        self._vision_model = vision_model
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> list[Buffer] | None:
+        """Packs the pipeline-selected uncached images to device."""
+        if self._vision_config.vision_config is None:
+            return None
+        return pack_uncached_images(
+            selection,
+            devices[0],
+            self._vision_config.vision_config,
+            self._vision_config.dtype,
         )
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: list[Buffer] | None,
+    ) -> VisionEncodeResult:
+        """Runs the vision tower on the images :meth:`pack_vision_inputs` packed."""
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(devices)
+            )
+        assert self._vision_model is not None, (
+            "This checkpoint has no vision tower; image inputs are not"
+            " supported."
+        )
+        embeddings = self._vision_model(*packed).local_shards[0].driver_tensor
+        return VisionEncodeResult(embeddings=embeddings.to(devices))
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-row image embeddings for text-only batches.
+
+        Cached: this is hit on every step, so it must not allocate per call.
+        """
+        if not hasattr(self, "_cached_empty_embeddings"):
+            self._cached_empty_embeddings = create_empty_image_embeddings(
+                devices,
+                self._vision_config.text_config.hidden_size,
+                self._vision_config.dtype,
+            )
+        return self._cached_empty_embeddings

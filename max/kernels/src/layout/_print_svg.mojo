@@ -14,7 +14,7 @@ from std.pathlib import Path
 from std.sys import size_of
 
 from layout import Coord, TileTensor, TensorLayout, TensorEngine, coord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.swizzle import Swizzle
 
 
@@ -27,7 +27,7 @@ def print_svg[
     //,
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
-    element_layout: TileLayout = TileLayout(coord[1, 1], coord[0, 0]),
+    element_layout: Layout = Layout(coord[1, 1], coord[0, 0]),
 ](
     tensor_base: TileTensor[mut=False, ...],
     tensors: List[
@@ -62,7 +62,7 @@ def _print_svg_impl[
     //,
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
-    element_layout: TileLayout = TileLayout(coord[1, 1], coord[0, 0]),
+    element_layout: Layout = Layout(coord[1, 1], coord[0, 0]),
 ](
     tensor_base: TileTensor[mut=False, ...],
     tensors: List[
@@ -166,10 +166,11 @@ def _print_svg_impl[
                 cell_size,
                 '" fill="',
             )
-            if color_map and swizzle:
-                writer.write(color_map.value()(idx, 0))
-            else:
-                writer.write(colors[0])
+            match color_map:
+                case .Some(color_fn) if swizzle:
+                    writer.write(color_fn(idx, 0))
+                case _:
+                    writer.write(colors[0])
             writer.write(
                 '" opacity="0.6" stroke="#E1E8ED" stroke-width="1"'
                 ' filter="url(#cellShadow)"/>\n'

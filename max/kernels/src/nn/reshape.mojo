@@ -14,7 +14,7 @@
 
 from layout import Coord, TileTensor
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 from std.utils.index import IndexList
 

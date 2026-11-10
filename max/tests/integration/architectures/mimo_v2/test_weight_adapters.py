@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests the MiMo-V2 weight adapter on tensors named as Xiaomi's checkpoint
+"""Tests the MiMo-V2 weight rules on tensors named as Xiaomi's checkpoint
 names them."""
 
 from __future__ import annotations
@@ -25,11 +25,12 @@ import pytest
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.quant_config import QuantFormat
+from max.nn.quant_config import QuantFormat
 from max.pipelines.architectures.mimo_v2.quant import parse_quant_scheme
 from max.pipelines.architectures.mimo_v2.weight_adapters import (
-    convert_safetensor_state_dict,
+    mimo_v2_weight_rules,
 )
+from max.pipelines.lib import WeightTransform
 from transformers.configuration_utils import PretrainedConfig
 
 QUANTIZATION = {
@@ -129,14 +130,12 @@ def test_renames_the_checkpoint_without_moving_bytes(tmp_path: Path) -> None:
     path = tmp_path / "model.safetensors"
     blobs = _write(path, np.random.default_rng(0))
 
-    adapted = convert_safetensor_state_dict(
-        dict(SafetensorWeights([path]).items()), huggingface_config=_config()
-    )
+    transform = WeightTransform(mimo_v2_weight_rules(_config()))
+    adapted = transform(dict(SafetensorWeights([path]).items()))
 
     assert sorted(adapted) == sorted(name for *_, name in TENSORS.values())
     for source, (_, shape, name) in TENSORS.items():
         data = adapted[name]
-        assert data.name == name
         assert list(data.shape) == shape, name
         buffer = Buffer.from_dlpack(data.data)
         raw = np.from_dlpack(buffer.view(_UINT[data.dtype.size_in_bytes]))

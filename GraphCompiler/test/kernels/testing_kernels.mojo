@@ -11,13 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.builtin.device_passable import DevicePassable
-from std.builtin.rebind import downcast
 from std.collections import Array, Optional
 from std.collections.string import StaticString
 from std.math import ceildiv, iota
 from std.ffi import external_call
 from max.gpu import global_idx
-from max.gpu.host.info import is_cpu
 from std.sys.info import simd_width_of
 from max.algorithm.functional import elementwise
 import extensibility
@@ -25,7 +23,7 @@ from extensibility import GridBlockLaunchConfig
 from layout import TensorLayout
 from layout import TileTensor, CoordLike, Coord, DefaultEngine, row_major
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from extensibility import StaticTensorSpec
 from algorithm.reduce_op import ReduceOp
 from max.gpu.host import DeviceContext, DeviceContextArray, Dim
@@ -158,9 +156,7 @@ struct OpaqueToCustomScalarSI32Reg:
 @extensibility.register("opaque_add_to_tensor_si32_reg")
 struct OpaqueAddToTensorSI32Reg:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: OutputTensor[dtype=.int32, rank=1, ...],
         x: MyCustomScalarRegSI32,
         y: MyCustomScalarRegSI32,
@@ -171,9 +167,7 @@ struct OpaqueAddToTensorSI32Reg:
 @extensibility.register("opaque_add_to_tensor_f32_reg")
 struct OpaqueAddToTensorF32:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: OutputTensor[dtype=.float32, rank=1, ...],
         x: MyCustomScalarRegF32,
         y: MyCustomScalarRegF32,
@@ -212,9 +206,7 @@ struct OpaqueToCustomScalarSI32:
 @extensibility.register("opaque_add_to_tensor_si32")
 struct OpaqueAddToTensorSI32:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: OutputTensor[dtype=.int32, rank=1, ...],
         x: MyCustomScalarSI32,
         y: MyCustomScalarSI32,
@@ -225,9 +217,7 @@ struct OpaqueAddToTensorSI32:
 @extensibility.register("opaque_add_to_tensor_si32_raises")
 struct OpaqueAddToTensorSI32Raises:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         outp: OutputTensor[dtype=.int32, rank=1, ...],
         x: MyCustomScalarSI32,
         y: MyCustomScalarSI32,
@@ -243,9 +233,7 @@ struct OpaqueAddToTensorSI32Raises:
 @extensibility.register("imposter_add")
 struct Foo:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: InputTensor,
         y: InputTensor,
@@ -257,7 +245,7 @@ struct Foo:
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=target](func, z, ctx)
+        foreach(func, z, ctx)
 
 
 @extensibility.register_shape_function("imposter_add")
@@ -272,9 +260,7 @@ def imposter_add_shape(
 @extensibility.register("imposter_add_raising_shape")
 struct FooRaisingShape:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: InputTensor,
         y: InputTensor,
@@ -286,7 +272,7 @@ struct FooRaisingShape:
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=target](func, z, ctx)
+        foreach(func, z, ctx)
 
 
 @extensibility.register_shape_function("imposter_add_raising_shape")
@@ -328,16 +314,14 @@ def _gpu_negate_kernel[
 @extensibility.register("trait_negate")
 struct TraitNegate:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
         # The host-entry bound is the role + metadata traits; each target arm
         # asserts the capability it needs (mirrors `DenseElementwiseKernel`).
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(x), TileTensorable)
             # `z.to_tile_tensor()` picks the mutable projection for an Output;
@@ -400,16 +384,14 @@ def _gpu_stable_negate_kernel[
 @extensibility.register("trait_stable_negate")
 struct TraitStableNegate:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Tensor & Stable],
         ctx: DeviceContext,
     ) raises:
-        comptime assert not is_cpu[
-            target
-        ](), "trait_stable_negate: a stable address slot is device memory"
+        comptime assert (
+            not ctx.target.is_cpu()
+        ), "trait_stable_negate: a stable address slot is device memory"
         comptime assert conforms_to(type_of(z), DevicePassable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         var xt = x.to_tile_tensor()
@@ -436,9 +418,7 @@ struct TraitStableNegate:
 @extensibility.register("trait_negate_tile_tensor")
 struct TraitNegateTileTensor:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -447,7 +427,7 @@ struct TraitNegateTileTensor:
         comptime assert conforms_to(type_of(x), TileTensorable)
         var zt = z.to_tile_tensor()
         var xt = x.to_tile_tensor[type_of(z).dtype]()
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             var n = Int(x.shape().product())
             var zf = zt.reshape(row_major(n))
             var xf = xt.reshape(row_major(n))
@@ -468,20 +448,23 @@ struct TraitNegateTileTensor:
 
 
 # UNIFIED-closure fused-load variant: the device kernel binds the PROJECTED load
-# proxy (`downcast[XHost.device_type, Loadable]`, access-enabled) and reads it
-# through a unified closure that captures that projected value. Same context gate
-# as store: the closure captures `device_type` (created after projection), so the
-# load body's `comptime assert _access_enabled` passes; a host-side load is a
-# compile error (see `trait_fused_load_host_negative`).
+# proxy (`XHost.device_type`, access-enabled), asserts that it is `Loadable`, and
+# reads it through a unified closure that captures that projected value. Same
+# context gate as store: the closure captures `device_type` (created after
+# projection), so the load body's `comptime assert _access_enabled` passes; a
+# host-side load is a compile error (see `trait_fused_load_host_negative`).
 def _gpu_fused_load_negate_unified_closure_kernel[
     XHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
     output: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    input: downcast[XHost.device_type, Loadable],
+    input: XHost.device_type,
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        XHost.device_type, Loadable
+    ), "the input's device value must be Loadable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -497,14 +480,12 @@ def _gpu_fused_load_negate_unified_closure_kernel[
 @extensibility.register("trait_fused_load_negate_unified_closure")
 struct TraitFusedLoadNegateUnifiedClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(x), Loadable)
             var zt = z.to_tile_tensor()
@@ -539,9 +520,7 @@ struct TraitFusedLoadNegateUnifiedClosure:
 @extensibility.register("trait_fused_load_host_negative")
 struct TraitFusedLoadHostNegative:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
@@ -574,7 +553,6 @@ def _gpu_fused_load_negate_host_unified_closure_kernel[
 def _fused_load_negate[
     Z: Output & TileTensorable,
     //,
-    target: StaticString,
 ](
     ctx: DeviceContext,
     z: Z,
@@ -590,7 +568,7 @@ def _fused_load_negate[
     """
     comptime assert conforms_to(Z, TileTensorable)
     comptime assert conforms_to(type_of(load_fn), TrivialRegisterPassable)
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         var zt = z.to_tile_tensor()
         var zf = zt.reshape(row_major(n))
         for i in range(n):
@@ -622,15 +600,13 @@ def _fused_load_negate[
 @extensibility.register("trait_fused_load_host_unified_closure")
 struct TraitFusedLoadHostUnifiedClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
         var n = Int(z.shape().product())
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             # CPU: arg already access-enabled, capture directly.
             comptime assert conforms_to(
                 type_of(x),
@@ -643,7 +619,7 @@ struct TraitFusedLoadHostUnifiedClosure:
             ](idx: Int) {var x} -> SIMD[dtype, width]:
                 return rebind[SIMD[dtype, width]](x.load[width]((idx,)))
 
-            _fused_load_negate[target=target](ctx, z, n, cpu_load_fn)
+            _fused_load_negate(ctx, z, n, cpu_load_fn)
         else:
             # GPU: project via accessor and capture the access-enabled view.
             comptime assert conforms_to(type_of(x), DevicePassable)
@@ -657,7 +633,7 @@ struct TraitFusedLoadHostUnifiedClosure:
             ](idx: Int) {var xv} -> SIMD[dtype, width]:
                 return rebind[SIMD[dtype, width]](xv.load[width]((idx,)))
 
-            _fused_load_negate[target=target](ctx, z, n, gpu_load_fn)
+            _fused_load_negate(ctx, z, n, gpu_load_fn)
 
 
 # NEGATIVE control: a host-built closure that captures the fused-load host
@@ -669,9 +645,7 @@ struct TraitFusedLoadHostUnifiedClosure:
 @extensibility.register("trait_fused_load_host_closure_negative")
 struct TraitFusedLoadHostClosureNegative:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
@@ -703,7 +677,7 @@ struct TraitFusedLoadHostClosureNegative:
         # `load_fn`. The capturing endpoint compiles the closure body on the
         # host, passing the encoded device-type instance, so the body sees the
         # `_access_enabled = False` proxy and the load gate rejects it.
-        _fused_load_negate[target=target](ctx, z, n, load_fn)
+        _fused_load_negate(ctx, z, n, load_fn)
 
 
 # Trait-lane in-place mutable kernel: `x` is read and written through the same
@@ -713,9 +687,9 @@ struct TraitFusedLoadHostClosureNegative:
 @extensibility.register("trait_inplace_increment")
 struct TraitInplaceIncrement:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[MutableInput & TileTensorable], ctx: DeviceContext) raises:
+    def execute(
+        x: Some[MutableInput & TileTensorable], ctx: DeviceContext
+    ) raises:
         comptime assert conforms_to(type_of(x), MutableInput)
         comptime assert conforms_to(type_of(x), TileTensorable)
         var xt = x.to_tile_tensor()
@@ -751,18 +725,21 @@ struct TraitInplaceIncrement:
 # `trait_negate` but with a fused input instead of a dense one.
 # Device entry for the fused-load negate path: one thread per element negates the
 # producer's fused load into the dense output. `input` is the device-projected
-# fused-load wrapper, bound by ONLY its `Loadable` capability via
-# `downcast[XHost.device_type, Loadable]` (the `XHost: DevicePassable` generic is
-# just the carrier that names the device type).
+# fused-load wrapper, typed as `XHost.device_type` (the `XHost: DevicePassable`
+# generic is just the carrier that names the device type). The body assert
+# requires ONLY its `Loadable` capability.
 def _gpu_fused_load_negate_kernel[
     XHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
     output: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    input: downcast[XHost.device_type, Loadable],
+    input: XHost.device_type,
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        XHost.device_type, Loadable
+    ), "the input's device value must be Loadable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -775,14 +752,12 @@ def _gpu_fused_load_negate_kernel[
 @extensibility.register("trait_fused_load_negate")
 struct TraitFusedLoadNegate:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(x), Loadable)
             var zt = z.to_tile_tensor()
@@ -858,14 +833,13 @@ struct TraitTensorTupleAdd:
         Outs: TypeList[Trait=Output & TileTensorable, ...],
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         bias: Some[Input & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert len(Outs) == len(Ins)
             comptime assert conforms_to(type_of(bias), TileTensorable)
             var bt = bias.to_tile_tensor()
@@ -915,6 +889,84 @@ struct TraitTensorTupleAdd:
             )
 
 
+# `z = bias + sum(inputs)` over rank-1 tensors. The `TensorTuple` may be
+# empty, and a fixed argument follows it. CPU only.
+@extensibility.register("trait_tensor_tuple_sum")
+struct TraitTensorTupleSum:
+    @staticmethod
+    def execute[
+        Ins: TypeList[Trait=Input & TileTensorable, ...],
+        //,
+    ](
+        z: Some[Output & TileTensorable],
+        inputs: TensorTuple[*Ins],
+        bias: Some[Input & TileTensorable],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert ctx.target.is_cpu()
+        comptime assert conforms_to(type_of(z), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        var zt = z.to_tile_tensor()
+        var bt = bias.to_tile_tensor()
+        comptime OutT = SIMD[type_of(zt).dtype, 1]
+        for j in range(Int(z.shape().product())):
+            var acc = bt.load[width=1]((j,)).cast[type_of(zt).dtype]()
+            comptime for i in range(len(Ins)):
+                comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+                acc += (
+                    inputs[i]
+                    .to_tile_tensor()
+                    .load[width=1]((j,))
+                    .cast[type_of(zt).dtype]()
+                )
+            zt.store((j,), rebind[OutT](acc))
+
+
+# `trait_tensor_tuple_sum` with a `TensorTuple` last on each side: `z = bias +
+# sum(inputs)`, and each of `copies` gets `z`. Either tuple may be empty. CPU
+# only.
+@extensibility.register("trait_tensor_tuple_sum_tail")
+struct TraitTensorTupleSumTail:
+    @staticmethod
+    def execute[
+        Outs: TypeList[Trait=Output & TileTensorable, ...],
+        Ins: TypeList[Trait=Input & TileTensorable, ...],
+        //,
+    ](
+        z: Some[Output & TileTensorable],
+        copies: TensorTuple[*Outs],
+        bias: Some[Input & TileTensorable],
+        inputs: TensorTuple[*Ins],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert ctx.target.is_cpu()
+        comptime assert conforms_to(type_of(z), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        var zt = z.to_tile_tensor()
+        var bt = bias.to_tile_tensor()
+        comptime OutT = SIMD[type_of(zt).dtype, 1]
+        for j in range(Int(z.shape().product())):
+            var acc = bt.load[width=1]((j,)).cast[type_of(zt).dtype]()
+            comptime for i in range(len(Ins)):
+                comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+                acc += (
+                    inputs[i]
+                    .to_tile_tensor()
+                    .load[width=1]((j,))
+                    .cast[type_of(zt).dtype]()
+                )
+            zt.store((j,), rebind[OutT](acc))
+            comptime for i in range(len(Outs)):
+                comptime assert conforms_to(type_of(copies[i]), TileTensorable)
+                var ct = copies[i].to_tile_tensor()
+                ct.store(
+                    (j,),
+                    rebind[SIMD[type_of(ct).dtype, 1]](
+                        acc.cast[type_of(ct).dtype]()
+                    ),
+                )
+
+
 # Device entry for `trait_tensor_tuple_add_array`: one thread per element of the
 # concatenated pairs, which finds the pair `k` that owns it. Both tuples arrive
 # as `Array`s of `TileTensor`s built on the host.
@@ -958,7 +1010,6 @@ struct TraitTensorTupleAddArray:
         Outs: TypeList[Trait=Output & TileTensorable, ...],
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         bias: Some[Input & TileTensorable],
@@ -968,12 +1019,12 @@ struct TraitTensorTupleAddArray:
         comptime assert len(Outs) == len(Ins)
         comptime assert conforms_to(type_of(bias), TileTensorable)
         var bt = bias.to_tile_tensor()
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             raise Error("trait_tensor_tuple_add_array only runs on the GPU")
         else:
             comptime out_dtype = Outs[0].dtype
             comptime in_dtype = Ins[0].dtype
-            comptime DynamicLayout1D = TileLayout[
+            comptime DynamicLayout1D = Layout[
                 shape_types=DynamicCoord[.int64, 1].element_types,
                 stride_types=DynamicCoord[.int64, 1].element_types,
             ]
@@ -1068,13 +1119,12 @@ struct TraitTensorTupleFusedConcat:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), TileTensorable)
             var zt = z.to_tile_tensor()
             comptime out_dtype = type_of(zt).dtype
@@ -1157,13 +1207,12 @@ struct TraitTensorTupleFusedStoreSplit:
     def execute[
         Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor()
             var xf = xt.reshape(row_major(Int(x.shape().product())))
@@ -1204,17 +1253,20 @@ struct TraitTensorTupleFusedStoreSplit:
 # Output-store (epilogue) fusion: computes `2 * x[i]` and hands it to the fused
 # store, which runs the consumer epilogue and writes. `x` is a plain dense input.
 # Device entry for the fused-store double path: one thread per element computes
-# `2 * x` and hands it to the device-projected fused-store wrapper, bound by ONLY
-# its `Storable` capability via `downcast[ZHost.device_type, Storable]`.
+# `2 * x` and hands it to the device-projected fused-store wrapper,
+# `ZHost.device_type`. The body assert requires ONLY its `Storable` capability.
 def _gpu_fused_store_double_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    output: downcast[ZHost.device_type, Storable],
+    output: ZHost.device_type,
     input: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, Storable
+    ), "the output's device value must be Storable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1226,14 +1278,12 @@ def _gpu_fused_store_double_kernel[
 @extensibility.register("trait_fused_store_double")
 struct TraitFusedStoreDouble:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
@@ -1262,24 +1312,29 @@ struct TraitFusedStoreDouble:
 
 def _gpu_fused_store_parameter_closure_kernel[
     dtype: DType,
-    ZDev: Storable,
+    ZHost: DevicePassable,
     LayoutType: TensorLayout,
     store_adapter: def[OutT: Storable, width: Int](
         OutT, Coord, SIMD[OutT.dtype, width]
     ) thin -> None,
 ](
-    output: ZDev,
+    output: ZHost.device_type,
     input: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, Storable
+    ), "the output's device value must be Storable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
         return
-    store_adapter[ZDev, 1](
+    store_adapter[ZHost.device_type, 1](
         output,
         Coord(i),
-        rebind[SIMD[ZDev.dtype, 1]](input.reshape(row_major(n))[i]),
+        rebind[SIMD[ZHost.device_type.dtype, 1]](
+            input.reshape(row_major(n))[i]
+        ),
     )
 
 
@@ -1297,7 +1352,7 @@ def _launch_fused_store_parameter_closure[
     ctx.enqueue_function[
         _gpu_fused_store_parameter_closure_kernel[
             dtype,
-            downcast[ZHost.device_type, Storable],
+            ZHost,
             LayoutType,
             store_adapter,
         ]
@@ -1313,14 +1368,12 @@ def _launch_fused_store_parameter_closure[
 @extensibility.register("trait_fused_store_parameter_closure")
 struct TraitFusedStoreParameterClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
@@ -1349,23 +1402,26 @@ struct TraitFusedStoreParameterClosure:
 
 
 # Device entry for the UNIFIED-closure fused-store path. The device kernel binds
-# the PROJECTED store proxy by its `Storable` capability via
-# `downcast[ZHost.device_type, Storable]` -- the projected value has
-# `_access_enabled=True`. It then creates a unified closure that captures that
-# projected value and performs the store. This is the supported closure shape: the
-# closure is created AFTER projection, so it captures `device_type` and the store
-# body's `comptime assert _access_enabled` gate passes. A host-created closure
-# over the device-passable HOST proxy (or a direct host-side store) hits
+# the PROJECTED store proxy, `ZHost.device_type`, and asserts its `Storable`
+# capability -- the projected value has `_access_enabled=True`. It then creates
+# a unified closure that captures that projected value and performs the store.
+# This is the supported closure shape: the closure is created AFTER projection,
+# so it captures `device_type` and the store body's
+# `comptime assert _access_enabled` gate passes. A host-created closure over the
+# device-passable HOST proxy (or a direct host-side store) hits
 # `_access_enabled=False` and fails to compile -- see the negative test kernel.
 def _gpu_fused_store_unified_closure_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    output: downcast[ZHost.device_type, Storable],
+    output: ZHost.device_type,
     input: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, Storable
+    ), "the output's device value must be Storable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1383,14 +1439,12 @@ def _gpu_fused_store_unified_closure_kernel[
 @extensibility.register("trait_fused_store_unified_closure")
 struct TraitFusedStoreUnifiedClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
@@ -1425,9 +1479,7 @@ struct TraitFusedStoreUnifiedClosure:
 @extensibility.register("trait_fused_store_host_negative")
 struct TraitFusedStoreHostNegative:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -1452,17 +1504,20 @@ struct TraitFusedStoreHostNegative:
 # Device entry for the fused-transform path: one thread per element computes
 # `x[i] + 1`, applies the fused transform via `z.compute`, and stores through
 # the output-buffer projection `z.to_tile_tensor()`. `z` is the device-projected
-# transform wrapper, bound by ONLY `_LegacyComputable & TileTensorable` via
-# `downcast[ZHost.device_type, _LegacyComputable & TileTensorable]`.
+# transform wrapper, `ZHost.device_type`. The body assert requires ONLY
+# `_LegacyComputable & TileTensorable`.
 def _gpu_fused_transform_bias_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    z: downcast[ZHost.device_type, _LegacyComputable & TileTensorable],
+    z: ZHost.device_type,
     x: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, _LegacyComputable & TileTensorable
+    ), "the output's device value must be _LegacyComputable and TileTensorable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1484,10 +1539,13 @@ def _gpu_fused_transform_bias_store_form_kernel[
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    z: downcast[ZHost.device_type, Storable],
+    z: ZHost.device_type,
     x: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, Storable
+    ), "the output's device value must be Storable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1499,9 +1557,7 @@ def _gpu_fused_transform_bias_store_form_kernel[
 @extensibility.register("trait_fused_transform_bias")
 struct TraitFusedTransformBias:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         # The output declares only `Output & Fused & _LegacyComputeOutput`.
         # The body branches on the form the graph compiler delivered:
         # `_LegacyComputable & TileTensorable` (the transform plus the output
@@ -1511,7 +1567,7 @@ struct TraitFusedTransformBias:
         ctx: DeviceContext,
     ) raises:
         var n = Int(z.shape().product())
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
             var xf = xt.reshape(row_major(n))
@@ -1559,21 +1615,25 @@ struct TraitFusedTransformBias:
 
 
 # UNIFIED-closure fused-transform variant: the device kernel binds the PROJECTED
-# transform proxy (`downcast[ZHost.device_type, _LegacyComputable & TileTensorable]`,
-# access-enabled) and applies the transform + final store through a unified
-# closure that captures that projected value. Same context gate as store/load: the
-# closure captures `device_type`, so the `compute`/`to_tile_tensor` bodies'
-# `comptime assert _access_enabled` passes; a host-side transform is a compile
-# error (see `trait_fused_transform_host_negative`).
+# transform proxy (`ZHost.device_type`, access-enabled), asserts that it is
+# `_LegacyComputable & TileTensorable`, and applies the transform + final store
+# through a unified closure that captures that projected value. Same context
+# gate as store/load: the closure captures `device_type`, so the
+# `compute`/`to_tile_tensor` bodies' `comptime assert _access_enabled` passes; a
+# host-side transform is a compile error (see
+# `trait_fused_transform_host_negative`).
 def _gpu_fused_transform_bias_unified_closure_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    z: downcast[ZHost.device_type, _LegacyComputable & TileTensorable],
+    z: ZHost.device_type,
     x: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, _LegacyComputable & TileTensorable
+    ), "the output's device value must be _LegacyComputable and TileTensorable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1593,15 +1653,13 @@ def _gpu_fused_transform_bias_unified_closure_kernel[
 @extensibility.register("trait_fused_transform_bias_unified_closure")
 struct TraitFusedTransformBiasUnifiedClosure:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & _LegacyComputeOutput],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
         var n = Int(z.shape().product())
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var xt = x.to_tile_tensor[type_of(z).dtype]()
             var xf = xt.reshape(row_major(n))
@@ -1658,14 +1716,13 @@ struct TraitTupleThenComputeOutput:
     def execute[
         Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         z: Some[Output & Fused & _LegacyComputeOutput],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             var n = Int(x.shape().product())
             var xt = x.to_tile_tensor[type_of(z).dtype]()
@@ -1702,9 +1759,7 @@ struct TraitTupleThenComputeOutput:
 @extensibility.register("trait_fused_transform_host_negative")
 struct TraitFusedTransformHostNegative:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & _LegacyComputeOutput],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -1716,39 +1771,34 @@ struct TraitFusedTransformHostNegative:
         _ = z.compute[1](Coord(0), SIMD[type_of(z).dtype, 1](0))
 
 
-# Kernel with both a struct-level (`flip`) and fn-level (`dtype`) compile-time
-# parameter, where an argument type references the fn-level param. Exercises
-# two MOToMOGG paths that broke in different ways during the
-# MojoLibraryAnalysis migration:
-#   1. `validateCustomOpParameters` rejected legitimate calls passing a
-#      struct-level param because the validation only walked fn-level params.
-#   2. EmitMojo's `inferByInputs` collection mapped depth-0 `ParamIndexRefAttr`s
-#      into `fnLevelParams` alone, but Mojo lays out the generator's param
-#      list as `structLevelParams + fnLevelParams`, so the lookup was off by
-#      `structLevelParams.size()` -- e.g. for a kernel with struct param
-#      `flip` and fn params `[dtype, target]`, an arg referencing `dtype` is
-#      `*(0, 1)`, which mapped to `target` (`fnLevelParams[1]`) instead of
-#      `dtype` (`(struct + fn)[1]`).
+# A kernel with a struct-level parameter (`flip`) and fn-level parameters
+# (`Z`, `X`) that the argument types name. Mojo puts the struct-level
+# parameters first in the generator's parameter list, so a depth-0
+# `ParamIndexRefAttr` in an argument type indexes the merged list. MOToMOGG
+# must accept `flip` as a call parameter, and `inferByInputs` must resolve
+# `*(0, 1)` to `Z` in the merged list. An index into the fn-level parameters
+# alone is off by the number of struct-level parameters.
 @extensibility.register("imposter_add_struct_param")
 struct FooWithStructParam[flip: Bool]:
     @staticmethod
     def execute[
-        dtype: DType,
+        Z: Output & Tensor,
+        X: Input & Tensor,
         //,
-        target: StaticString,
-    ](
-        z: OutputTensor[dtype=dtype, ...],
-        x: InputTensor[dtype=dtype, ...],
-        ctx: DeviceContext,
-    ) raises:
-        @inline(.always)
-        def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
-            var v = rebind[SIMD[z.dtype, width]](x.load[width](idx))
-            comptime if Self.flip:
-                return -v
-            return v
+    ](z: Z, x: X, ctx: DeviceContext) raises:
+        comptime assert conforms_to(Z, TileTensorable)
+        comptime assert conforms_to(X, TileTensorable)
+        var zt = z.to_tile_tensor()
+        var xt = x.to_tile_tensor[Z.dtype]().as_imm()
 
-        foreach(func, z, ctx)
+        @inline(.always)
+        def func[width: Int, alignment: Int = 1](idx: Coord) {var zt, var xt}:
+            var v = xt.load[width=width](idx)
+            comptime if Self.flip:
+                v = -v
+            zt.store[width=width](idx, v)
+
+        elementwise[1](func, z.shape(), ctx)
 
 
 @extensibility.register_shape_function("imposter_add_struct_param")
@@ -1799,9 +1849,7 @@ def _matmul[
 @extensibility.register("imposter_matmul")
 struct ImposterMatmul:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         c: OutputTensor,
         a: InputTensor,
         b: InputTensor,
@@ -1823,9 +1871,7 @@ def imposter_matmul_shape(
 @extensibility.register("print_tensor_spec")
 struct PrintTensorSpecOp:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, x: InputTensor, ctx: DeviceContext) raises:
+    def execute(outp: OutputTensor, x: InputTensor, ctx: DeviceContext) raises:
         print("x.shape =", x._static_shape_tuple)
         print("x.strides =", x._static_strides_tuple)
         print("x.alignment =", x.alignment)
@@ -1846,9 +1892,9 @@ def print_tensor_spec_shape(x: Some[Tensor]) -> IndexList[type_of(x).rank]:
 @extensibility.register("print_tensor")
 struct PrintTensor:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, input: InputTensor, ctx: DeviceContext) raises:
+    def execute(
+        outp: OutputTensor, input: InputTensor, ctx: DeviceContext
+    ) raises:
         print(input)
 
         @inline(.always)
@@ -1856,63 +1902,6 @@ struct PrintTensor:
             return rebind[SIMD[outp.dtype, width]](input.load[width](idx))
 
         foreach(func, outp, ctx)
-
-
-@extensibility.register("print_tensor_spec_fused")
-struct PrintTensorSpecFusedOp:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContext,) raises:
-        print("x.shape =", x._static_shape_tuple)
-        print("x.strides =", x._static_strides_tuple)
-        print("x.alignment =", x.alignment)
-        print("x.address_space =", x.address_space)
-
-        @inline(.always)
-        def func[width: Int](idx: Coord) {var} -> SIMD[outp.dtype, width]:
-            return rebind[SIMD[outp.dtype, width]](x._fused_load[width](idx))
-
-        foreach(func, outp, ctx)
-
-
-@extensibility.register_shape_function("print_tensor_spec_fused")
-def print_tensor_spec_fused_shape(
-    x: Some[Tensor],
-) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
-
-
-@extensibility.register("print_output_shape_strides_fused")
-struct PrintOutputShapeStridesFusedOp:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: FusedOutputTensor,
-        x: FusedInputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        print("output._static_shape_tuple = ", output._static_shape_tuple)
-        print("output._static_strides_tuple = ", output._static_strides_tuple)
-        print("output._runtime_shape = ", output.shape())
-        print("output._runtime_strides = ", output.strides())
-
-        @inline(.always)
-        def func[width: Int](idx: Coord) {var} -> SIMD[output.dtype, width]:
-            return (
-                rebind[SIMD[output.dtype, width]](x._fused_load[width](idx))
-                * 2.0
-            )
-
-        foreach(func, output, ctx)
-
-
-@extensibility.register_shape_function("print_output_shape_strides_fused")
-def print_output_shape_strides_fused_shape(
-    x: Some[Tensor],
-) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
 
 
 @extensibility.register("test_monoid_mixed_fields")
@@ -2029,9 +2018,7 @@ struct AddElementwise:
 @extensibility.register("imposter_add_lhs")
 struct AddFuseLHS:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: FusedInputTensor,
         y: InputTensor,
@@ -2049,9 +2036,7 @@ struct AddFuseLHS:
 @extensibility.register("imposter_add_fuse_inputs")
 struct AddFuseInputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: FusedInputTensor,
         y: FusedInputTensor,
@@ -2071,7 +2056,6 @@ struct AddComputeFusion:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
     ](
         z: _FusedComputeOutputTensor[dtype=dtype, rank=2, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
@@ -2096,7 +2080,7 @@ struct AddComputeFusion:
             else:
                 z._fused_store[element_alignment=alignment](idx, val)
 
-        elementwise[1, target=target](func, z.shape_coord(), ctx)
+        elementwise[1](func, z.shape_coord(), ctx)
 
 
 @extensibility.register_shape_function("imposter_add_compute_fusion")
@@ -2109,9 +2093,7 @@ def imposter_add_compute_fusion_shape(
 @extensibility.register("imposter_add_fuse_output")
 struct AddFuseOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: FusedOutputTensor,
         x: InputTensor,
         y: InputTensor,
@@ -2123,7 +2105,7 @@ struct AddFuseOutput:
                 SIMD[z.dtype, width]
             ](y.load[width](idx))
 
-        foreach[target=target](func, z, ctx)
+        foreach(func, z, ctx)
 
 
 # c = a @ b, should support CPU and GPU
@@ -2131,7 +2113,6 @@ struct AddFuseOutput:
 struct MatmulFuseOut:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         c: FusedOutputTensor,
@@ -2155,6 +2136,33 @@ struct MatmulFuseOut:
         _matmul[c.dtype](a, b, out_func)
 
 
+# A naive matmul under a `matmul.` class name, the form custom matmul ops are
+# registered with.
+@extensibility.register("matmul.fuse_out", extensibility.CPU)
+struct MatmulClassFuseOut:
+    @staticmethod
+    def execute(
+        c: Some[Output & Fused & StoreAccess],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert ctx.target.is_cpu()
+        comptime assert conforms_to(type_of(c), Storable)
+        comptime dtype = type_of(c).dtype
+        var at = a.to_tile_tensor[dtype]()
+        var bt = b.to_tile_tensor[dtype]()
+        var m = Int(a.shape()[0].value())
+        var k = Int(a.shape()[1].value())
+        var n = Int(b.shape()[1].value())
+        for i in range(m):
+            for j in range(n):
+                var acc = Scalar[dtype](0)
+                for l in range(k):
+                    acc += at.load[width=1]((i, l)) * bt.load[width=1]((l, j))
+                c.store[1]((i, j), acc)
+
+
 @extensibility.register_shape_function("matmul_fuse_out")
 def matmul_fuse_out_shape(
     a: Some[Tensor],
@@ -2173,7 +2181,6 @@ struct VariadicInputToOutput:
     def execute[
         dtype: DType,
         size: Int,
-        target: StaticString,
     ](
         output: OutputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
@@ -2233,7 +2240,6 @@ struct VariadicAdd:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -2260,7 +2266,6 @@ struct FusedVariadicInputs:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
         axis: Int,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
@@ -2273,9 +2278,11 @@ struct FusedVariadicInputs:
 @extensibility.register("print_shape_fused")
 struct ElementwisePrintShape:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        ctx: DeviceContext,
+    ) raises:
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
             return rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
@@ -2295,9 +2302,11 @@ def print_shape_fused_shape(x: Some[Tensor]) -> IndexList[type_of(x).rank]:
 @extensibility.register("custom_op_that_raises")
 struct CustomOpThatRaises:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: OutputTensor, x: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        z: OutputTensor,
+        x: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         if x.shape()[0] == 10:
             raise ("input_shape[0] == 10")
 
@@ -2319,7 +2328,7 @@ def custom_op_that_raises_shape(
     return rebind[IndexList[type_of(x).rank]](out_shape)
 
 
-@extensibility.register("mo.test.failing_constraint")
+@extensibility.register("test.failing_constraint")
 struct OpThatAlwaysFailsConstraint:
     @staticmethod
     def execute[
@@ -2333,7 +2342,7 @@ struct OpThatAlwaysFailsConstraint:
         ), "Expected constraint failure for error message testing"
 
 
-@extensibility.register("mo.test.return_error")
+@extensibility.register("test.return_error")
 struct OpThatAlwaysRaises:
     @staticmethod
     def execute[
@@ -2462,12 +2471,13 @@ struct KernelWithNoTarget:
 struct BasicTarget:
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString
+        dtype: DType
     ](
         outp: OutputTensor[dtype=dtype, ...],
         x: InputTensor[dtype=dtype, ...],
+        ctx: DeviceContext,
     ) raises:
-        print("hello from kernel on", target)
+        print("hello from kernel on", ctx.target.device_kind_label())
 
 
 struct MyCustomScalarReg[dtype: DType](ImplicitlyCopyable, RegisterPassable):
@@ -2485,20 +2495,16 @@ struct MyCustomScalarReg[dtype: DType](ImplicitlyCopyable, RegisterPassable):
 @extensibility.register("buff_to_my_custom_scalar_reg")
 struct BuffToMyCustomScalarReg:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](x: InputTensor[dtype=.int32, rank=1, ...]) -> MyCustomScalarReg[
-        DType.int32
-    ]:
+    def execute(
+        x: InputTensor[dtype=.int32, rank=1, ...]
+    ) -> MyCustomScalarReg[DType.int32]:
         return MyCustomScalarReg(x[0])
 
 
 @extensibility.register("my_custom_scalar_reg_to_buff")
 struct CustomScalarRegToBuff:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         input: OutputTensor[dtype=.int32, rank=1, ...],
         x: MyCustomScalarReg[.int32],
     ):
@@ -2509,7 +2515,7 @@ struct CustomScalarRegToBuff:
 struct TestCustomOp:
     @staticmethod
     def execute[
-        target: StaticString, dtype: DType, rank: Int
+        dtype: DType, rank: Int
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -2535,7 +2541,7 @@ def test_custom_op_shape(input: Some[Tensor]) -> IndexList[type_of(input).rank]:
 struct TraitMetadataShapeOp:
     @staticmethod
     def execute[
-        target: StaticString, dtype: DType, rank: Int
+        dtype: DType, rank: Int
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -2565,7 +2571,7 @@ def trait_metadata_shape_op_shape[
 struct TraitTensorShapeOp:
     @staticmethod
     def execute[
-        target: StaticString, dtype: DType, rank: Int
+        dtype: DType, rank: Int
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -2595,7 +2601,7 @@ def trait_tensor_shape_op_shape[T: Tensor](input: T) -> IndexList[T.rank]:
 struct TraitReshapeShapeOp:
     @staticmethod
     def execute[
-        target: StaticString, dtype: DType
+        dtype: DType
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         data: InputTensor[dtype=dtype, rank=2, ...],
@@ -2630,13 +2636,12 @@ struct TraitTensorTupleShapeOp:
     def execute[
         Ins: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         output: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        comptime if not is_cpu[target]():
+        comptime if not ctx.target.is_cpu():
             raise Error("trait_tensor_tuple_shape_op only runs on the CPU")
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(inputs[0]), TileTensorable)
@@ -2706,11 +2711,10 @@ struct VariadicDeviceContext:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString = "gpu",
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
-        dev_ctxs: DeviceContextArray,
+        dev_ctxs: DeviceContextArray[_, _],
     ) raises:
         for i in range(len(dev_ctxs)):
             print("dev_ctxs[", i, "].id() =", dev_ctxs[i].device().id)
@@ -2753,39 +2757,13 @@ struct PrintVectorSize:
 @extensibility.register("tensor_opaque_tensor_kernel")
 struct TensorOpaqueTensorKernel:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output1: OutputTensor,
         output2: OutputTensor,
         opaque: MyCustomScalarSI32,
         input: InputTensor,
     ) raises:
         pass
-
-
-@extensibility.register("test_same_rank_dtype")
-struct TestSameRankDtype:
-    @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-    ):
-        output[0] = input[0]
-
-
-@extensibility.register("test_fix_rank")
-struct TestFixRank:
-    @staticmethod
-    def execute[
-        dtype: DType
-    ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        input: InputTensor[dtype=dtype, rank=2, ...],
-    ):
-        output[0] = input[0]
 
 
 @extensibility.register("test_simd_input_size_1")
@@ -2847,9 +2825,7 @@ def custom_op_with_custom_parameter_shape_func_shape[
 @extensibility.register("custom_op_with_mixed_bound_shape_func")
 struct CustomOpWithMixedBoundShapeFunc:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: OutputTensor[rank=2, ...],
         metadata_only: InputTensor[rank=2, ...],
         value_read: InputTensor[rank=1, ...],
@@ -2870,15 +2846,7 @@ def custom_op_with_mixed_bound_shape_func_shape(
     return IndexList[2](Int(num_rows), cols[1])
 
 
-@extensibility.register("custom_op_with_static_string_params")
-struct CustomOpWithStaticStringParams:
-    @staticmethod
-    def execute[target: StaticString, foo: StaticString]():
-        print(target)
-        print(foo)
-
-
-comptime _WrapperLayout = TileLayout[
+comptime _WrapperLayout = Layout[
     shape_types=Coord[Int64, Int64].element_types,
     stride_types=Coord[Int64, Int64].element_types,
 ]
@@ -2928,7 +2896,6 @@ struct TensorWrapperPrinter:
 struct MutableStore:
     @staticmethod
     def execute[
-        target: StaticString,
         _trace_name: StaticString,
     ](
         tw: TensorWrapper,
@@ -2949,9 +2916,7 @@ struct MutableStore:
             idx[1] += 1
             buffer.store[width=width](Coord(idx), val)
 
-        foreach_out_func[target=target, _trace_name=_trace_name](
-            out_func, tensor, ctx
-        )
+        foreach_out_func[_trace_name=_trace_name](out_func, tensor, ctx)
 
 
 @extensibility.register("my_square_compute_out_fusion")
@@ -3074,7 +3039,6 @@ struct UniqueParameters:
         num_heads: Int,
         head_dim: Int,
         page_size: Int,
-        target: StaticString,
     ](
         blocks: InputTensor[dtype=dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3279,7 +3243,7 @@ struct DeviceGraphFill:
                 idx, SIMD[dtype, width](Self._fill_value)
             )
 
-        elementwise[1, target="gpu"](func, output.shape_coord(), ctx)
+        elementwise[1](func, output.shape_coord(), ctx)
 
     @staticmethod
     def build_graph[
@@ -3412,7 +3376,7 @@ struct DeviceGraphIncrement:
             )
             output._fused_store[element_alignment=alignment](idx, val)
 
-        elementwise[1, target="gpu"](func, output.shape_coord(), ctx)
+        elementwise[1](func, output.shape_coord(), ctx)
 
     @staticmethod
     def build_graph[
@@ -3448,12 +3412,14 @@ struct DeviceGraphIncrement:
         )
 
 
-@extensibility.register("add_one", type="cpu")
+@extensibility.register("add_one", extensibility.CPU)
 struct AddOneCPU:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, x: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        outp: OutputTensor,
+        x: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         print("AddOne CPU kernel")
 
         @inline(.always)
@@ -3461,24 +3427,28 @@ struct AddOneCPU:
             var val = rebind[SIMD[outp.dtype, width]](x.load[width](idx)) + 1
             outp._fused_store[element_alignment=alignment](idx, val)
 
-        elementwise[1, target="cpu"](func, outp.shape_coord(), ctx)
+        elementwise[1](func, outp.shape_coord(), ctx)
 
 
-@extensibility.register("gpu_only_kernel", type="gpu")
+@extensibility.register("gpu_only_kernel", extensibility.ACCELERATOR)
 struct GpuOnlyKernel:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, x: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        outp: OutputTensor,
+        x: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         pass
 
 
-@extensibility.register("add_one", type="gpu")
+@extensibility.register("add_one", extensibility.ACCELERATOR)
 struct AddOneGPU:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](outp: OutputTensor, x: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        outp: OutputTensor,
+        x: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         print("AddOne GPU kernel")
 
         @inline(.always)
@@ -3486,7 +3456,7 @@ struct AddOneGPU:
             var val = rebind[SIMD[outp.dtype, width]](x.load[width](idx)) + 1
             outp._fused_store[element_alignment=alignment](idx, val)
 
-        elementwise[1, target="gpu"](func, outp.shape_coord(), ctx)
+        elementwise[1](func, outp.shape_coord(), ctx)
 
 
 # Mixed-lane e2e proof: a trait-bound dense output alongside two legacy
@@ -3496,9 +3466,7 @@ struct AddOneGPU:
 @extensibility.register("trait_mixed_legacy_add")
 struct TraitMixedLegacyAdd:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: InputTensor,
         y: InputTensor,
@@ -3521,9 +3489,7 @@ struct TraitMixedLegacyAdd:
 @extensibility.register("trait_mixed_legacy_out_add")
 struct TraitMixedLegacyOutAdd:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: Some[Input & TileTensorable],
         y: Some[Input & TileTensorable],
@@ -3552,9 +3518,7 @@ struct TraitMixedLegacyOutAdd:
 @extensibility.register("trait_dual_lane_add")
 struct TraitDualLaneAdd:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: OutputTensor,
         x: Some[Input & TileTensorable],
         y: InputTensor,
@@ -3583,7 +3547,6 @@ struct TraitDualLaneAdd:
 struct MapLowerOneFusedOutput:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](res: FusedOutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
         pass
@@ -3592,27 +3555,28 @@ struct MapLowerOneFusedOutput:
 @extensibility.register("map_lower_one_plain_output")
 struct MapLowerOnePlainOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](res: OutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        res: OutputTensor,
+        a: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         pass
 
 
 @extensibility.register("map_lower_generic_context")
 struct MapLowerGenericContext:
     @staticmethod
-    def execute(
-        res: OutputTensor, a: InputTensor, ctx: DeviceContext.Generic
-    ) raises:
+    def execute(res: OutputTensor, a: InputTensor, ctx: DeviceContext) raises:
         comptime assert type_of(ctx).target.is_cpu()
 
 
 @extensibility.register("map_lower_no_context")
 struct MapLowerNoContext:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](res: OutputTensor, a: InputTensor,) raises:
+    def execute(
+        res: OutputTensor,
+        a: InputTensor,
+    ) raises:
         pass
 
 
@@ -3647,6 +3611,79 @@ struct MapLowerDeclarative:
         pass
 
 
+# A declarative kernel with two inputs, so that a graph blob's member can read
+# both an earlier member's result and a tensor from outside the blob.
+@extensibility.register("map_lower_declarative_binary")
+struct MapLowerDeclarativeBinary:
+    @staticmethod
+    def execute_configuration(
+        res: Some[Tensor], a: Some[Tensor], b: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(4))
+
+    @staticmethod
+    def execute_device(
+        res: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+    ):
+        pass
+
+
+# A declarative kernel that also updates a buffer in place, as a KV cache store
+# does: `cache` is a mutable input, which the op's chain sequences.
+@extensibility.register("map_lower_declarative_inplace")
+struct MapLowerDeclarativeInplace:
+    @staticmethod
+    def execute_configuration(
+        res: Some[Tensor], a: Some[Tensor], cache: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(4))
+
+    @staticmethod
+    def execute_device(
+        res: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        cache: Some[MutableInput & TileTensorable],
+    ):
+        pass
+
+
+# Declarative kernels with a fused output and a fused input. The launch passes
+# a fused operand as itself, which the device kernel receives as the fused
+# tensor's device type.
+@extensibility.register("map_lower_declarative_fused_store")
+struct MapLowerDeclarativeFusedStore:
+    @staticmethod
+    def execute_configuration(
+        res: Some[Tensor], a: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(4))
+
+    @staticmethod
+    def execute_device(
+        res: Some[Output & Fused & Storable],
+        a: Some[Input & TileTensorable],
+    ):
+        pass
+
+
+@extensibility.register("map_lower_declarative_fused_load")
+struct MapLowerDeclarativeFusedLoad:
+    @staticmethod
+    def execute_configuration(
+        res: Some[Tensor], a: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(4))
+
+    @staticmethod
+    def execute_device(
+        res: Some[Output & TileTensorable],
+        a: Some[Input & Fused & Loadable],
+    ):
+        pass
+
+
 # A signature-only in-place kernel with a mutable destination and a plain
 # (non-fused) immutable input, mirroring `InplaceMemcpy`. Used to check that
 # `FuseMutableLoads` fusing a `mo.mutable.load` into the immutable `src` operand
@@ -3654,9 +3691,11 @@ struct MapLowerDeclarative:
 @extensibility.register("map_lower_inplace_copy")
 struct MapLowerInplaceCopy:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](dst: MutableInputTensor, src: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        dst: MutableInputTensor,
+        src: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         pass
 
 
@@ -3664,7 +3703,6 @@ struct MapLowerInplaceCopy:
 struct MapLowerTwoFusedOutputs:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         res0: FusedOutputTensor,
@@ -3685,7 +3723,6 @@ struct MapLowerVariadicFusedOutput:
         dtype: DType,
         rank: Int,
         size: Int,
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         outputs: FusedOutputVariadicTensors[
@@ -3700,9 +3737,7 @@ struct MapLowerVariadicFusedOutput:
 @extensibility.register("map_lower_two_plain_outputs")
 struct MapLowerTwoPlainOutputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res0: OutputTensor,
         res1: OutputTensor,
         a: InputTensor,
@@ -3715,7 +3750,6 @@ struct MapLowerTwoPlainOutputs:
 struct MapLowerPartialFusedOutputs:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         res0: FusedOutputTensor,
@@ -3733,7 +3767,6 @@ struct MapLowerPartialFusedOutputs:
 struct MapLowerTwoInputsOneFusedOutput:
     @staticmethod
     def execute[
-        target: StaticString,
         has_epilogue_fusion: Bool,
     ](
         res: FusedOutputTensor,
@@ -3749,7 +3782,6 @@ struct MapLowerScalar:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
     ](
         res: OutputTensor,
         a: InputTensor,
@@ -3765,7 +3797,6 @@ struct MapLowerVariadic:
     def execute[
         dtype: DType,
         size: Int,
-        target: StaticString,
     ](
         res: OutputTensor,
         inputs: InputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
@@ -3780,14 +3811,16 @@ struct MapLowerVariadic:
 @extensibility.register("map_lower_add_one")
 struct MapLowerAddOne:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](res: OutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        res: OutputTensor,
+        a: InputTensor,
+        ctx: DeviceContext,
+    ) raises:
         @inline(.always)
         def func[width: Int](idx: Coord) {var} -> SIMD[res.dtype, width]:
             return rebind[SIMD[res.dtype, width]](a.load[width](idx)) + 1
 
-        foreach[target=target](func, res, ctx)
+        foreach(func, res, ctx)
 
 
 # Real-body plain-output kernels below broaden the advanced-fusion MAP-ABI
@@ -3802,9 +3835,7 @@ struct MapLowerAddOne:
 @extensibility.register("map_lower_add3")
 struct MapLowerAdd3:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res: OutputTensor,
         a: InputTensor,
         b: InputTensor,
@@ -3819,7 +3850,7 @@ struct MapLowerAdd3:
                 + rebind[SIMD[res.dtype, width]](c.load[width](idx))
             )
 
-        foreach[target=target](func, res, ctx)
+        foreach(func, res, ctx)
 
 
 # 1 input / 2 outputs: `res0 = a + 1`, `res1 = a * 2` (two plain outputs, two
@@ -3827,9 +3858,7 @@ struct MapLowerAdd3:
 @extensibility.register("map_lower_two_outputs")
 struct MapLowerTwoOutputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res0: OutputTensor,
         res1: OutputTensor,
         a: InputTensor,
@@ -3852,9 +3881,7 @@ struct MapLowerTwoOutputs:
 @extensibility.register("map_lower_add_sub")
 struct MapLowerAddSub:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res0: OutputTensor,
         res1: OutputTensor,
         a: InputTensor,
@@ -3867,7 +3894,7 @@ struct MapLowerAddSub:
                 SIMD[res0.dtype, width]
             ](b.load[width](idx))
 
-        foreach[target=target](add, res0, ctx)
+        foreach(add, res0, ctx)
 
         @inline(.always)
         def sub[width: Int](idx: Coord) {var} -> SIMD[res1.dtype, width]:
@@ -3875,7 +3902,7 @@ struct MapLowerAddSub:
                 SIMD[res1.dtype, width]
             ](b.load[width](idx))
 
-        foreach[target=target](sub, res1, ctx)
+        foreach(sub, res1, ctx)
 
 
 # Scalar operand: `res = a * s` where `s: Scalar[dtype]`. Exercises the MAP
@@ -3885,7 +3912,6 @@ struct MapLowerScale:
     @staticmethod
     def execute[
         dtype: DType,
-        target: StaticString,
     ](
         res: OutputTensor[dtype=dtype, ...],
         a: InputTensor[dtype=dtype, ...],
@@ -3910,7 +3936,6 @@ struct MapLowerVarSum:
     def execute[
         dtype: DType,
         size: Int,
-        target: StaticString,
     ](
         res: OutputTensor[dtype=dtype, rank=1, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
@@ -3933,9 +3958,7 @@ struct MapLowerVarSum:
 @extensibility.register("map_lower_two_fused_inputs")
 struct MapLowerTwoFusedInputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res: OutputTensor,
         a: FusedInputTensor,
         b: FusedInputTensor,
@@ -3947,9 +3970,7 @@ struct MapLowerTwoFusedInputs:
 @extensibility.register("map_lower_partial_fused_inputs")
 struct MapLowerPartialFusedInputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         res: OutputTensor,
         a: FusedInputTensor,
         b: InputTensor,
@@ -3970,13 +3991,12 @@ struct TraitTensorTupleFusedConcatUnifiedClosure:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             raise Error(
                 "trait_tensor_tuple_fused_concat_unified_closure only runs on"
                 " the GPU"
@@ -4026,9 +4046,7 @@ struct TraitTensorTupleFusedConcatUnifiedClosure:
 @extensibility.register("trait_unfused_execute")
 struct TraitUnfusedExecute:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & StoreAccess],
         w: Some[Output & Fused & StoreAccess],
         x: Some[Input & Tensor],
@@ -4039,7 +4057,7 @@ struct TraitUnfusedExecute:
             and type_of(z).rank == 1
             and type_of(w).rank == 1
         )
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             comptime assert conforms_to(type_of(z), Storable)
             comptime assert conforms_to(type_of(w), Storable)
@@ -4052,9 +4070,7 @@ struct TraitUnfusedExecute:
             raise Error("trait_unfused_execute is CPU-only")
 
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Tensor],
         w: Some[Output & Tensor],
         x: Some[Input & Tensor],
@@ -4065,7 +4081,7 @@ struct TraitUnfusedExecute:
             and type_of(z).rank == 1
             and type_of(w).rank == 1
         )
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert conforms_to(type_of(x), TileTensorable)
             comptime assert conforms_to(type_of(z), TileTensorable)
             comptime assert conforms_to(type_of(w), TileTensorable)

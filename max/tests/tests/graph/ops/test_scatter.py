@@ -24,11 +24,19 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 input_types = tensor_types(shapes=st.lists(dims, min_size=1))
 
 
+def _indices_like(key: str) -> st.SearchStrategy[TensorType]:
+    """Indices shaped like the shared input, as scatter requires."""
+    return st.builds(
+        TensorType,
+        st.sampled_from([DType.int32, DType.int64]),
+        st.shared(input_types, key=key).map(lambda t: t.shape),
+        st.just(DeviceRef.CPU()),
+    )
+
+
 @given(
     input_type=st.shared(input_types, key="input"),
-    indices_type=tensor_types(
-        dtypes=st.sampled_from([DType.int32, DType.int64])
-    ),
+    indices_type=_indices_like("input"),
     axis=axes(st.shared(input_types, key="input")),
 )
 def test_scatter(
@@ -327,9 +335,7 @@ _REDUCTION_OPS = [
 
 @given(
     input_type=st.shared(input_types, key="input_red"),
-    indices_type=tensor_types(
-        dtypes=st.sampled_from([DType.int32, DType.int64])
-    ),
+    indices_type=_indices_like("input_red"),
     axis=axes(st.shared(input_types, key="input_red")),
 )
 @pytest.mark.parametrize("op", _REDUCTION_OPS)

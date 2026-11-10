@@ -33,11 +33,12 @@ import numpy as np
 import pytest
 from dspark_test_support import TESTDATA
 from max import functional as F
+from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.deepseekV41_modulev3 import (
     model as model_module,
@@ -96,7 +97,8 @@ from max.pipelines.speculative import spec_adapters as registry
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
-    spec_decode_tail_input_types,
+    declared_spec_decode_inputs,
+    spec_decode_input_tree,
 )
 
 BLOCK = 5
@@ -352,15 +354,27 @@ def test_the_modulev3_trunk_serves_stochastic_acceptance_and_grammar() -> None:
             registry.check(TARGET, speculative, structured_output)
 
     device = DeviceRef.CPU()
-    plain = spec_decode_tail_input_types(
-        SpecDecodeInputTypeSpec(devices=[device], distributed=False), device
+    kv_params = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=64,
+        num_layers=1,
+        devices=[device],
+        n_kv_heads=1,
     )
-    grammar = spec_decode_tail_input_types(
-        SpecDecodeInputTypeSpec(
-            devices=[device], distributed=False, enable_structured_output=True
-        ),
-        device,
-    )
+
+    def tail(structured_output: bool) -> list[Any]:
+        spec = SpecDecodeInputTypeSpec(
+            devices=[device],
+            distributed=False,
+            enable_structured_output=structured_output,
+        )
+        named = spec_decode_input_tree(
+            spec, declared_spec_decode_inputs(spec, kv_params=kv_params)
+        )
+        return tree.leaves([named["spec"], named.get("bitmask", ())])
+
+    plain = tail(structured_output=False)
+    grammar = tail(structured_output=True)
     # draft_tokens, seed, temperature, top_k, max_k, top_p, min_top_p.
     assert len(plain) == 7
     assert grammar[:7] == plain

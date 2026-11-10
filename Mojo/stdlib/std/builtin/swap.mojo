@@ -18,14 +18,26 @@ These are Mojo built-ins, so you don't need to import them.
 
 @inline(.always)
 def swap[T: Movable](mut lhs: T, mut rhs: T):
-    """Swaps the two given arguments.
+    """Swaps the values of the two arguments.
+
+    The values are exchanged with moves, so no copies are made.
 
     Parameters:
-       T: Constrained to Movable types.
+        T: The type of the values. Must conform to `Movable`.
 
     Args:
-        lhs: Argument value swapped with rhs.
-        rhs: Argument value swapped with lhs.
+        lhs: The value swapped with `rhs`.
+        rhs: The value swapped with `lhs`.
+
+    For example:
+
+    ```mojo
+    var a = 1
+    var b = 2
+    swap(a, b)
+    print(a)  # 2
+    print(b)  # 1
+    ```
     """
     var tmp = lhs^
     lhs = rhs^

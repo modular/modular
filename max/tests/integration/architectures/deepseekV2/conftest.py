@@ -26,14 +26,12 @@ from max.driver import Accelerator, Buffer, accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn.kv_cache import MLAKVCacheParams
 from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
 )
-from max.nn.legacy.kv_cache import MLAKVCacheParams
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -143,13 +141,6 @@ def _generate_latent_attention_max_outputs(
     )
     latent_attention.load_state_dict(attention_weights)
 
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     hidden_state_type = TensorType(
         DType.bfloat16, ["total_seq_len", config.hidden_size], DeviceRef.GPU()
     )
@@ -184,6 +175,12 @@ def _generate_latent_attention_max_outputs(
 
     g = construct()
     compiled = session.load(g, weights_registry=latent_attention.state_dict())
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
     batch_size = 1
     total_tokens = input_tensor.shape[1]
     prompt_lens = [total_tokens] if use_prefill else [1]

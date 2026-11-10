@@ -715,6 +715,23 @@ Value RoutineOp::getOutputChain() {
   return isa<MO::ChainType>(last.getType()) ? last : Value();
 }
 
+// The layout `verify` checks: a handle per input and tensor-like output, then
+// the dims, then the contexts.
+RoutineOp::BodyArgs RoutineOp::getBodyArgs() {
+  Block::BlockArgListType args = getBody().front().getArguments();
+  size_t numInputs = getInputs().size();
+  size_t numOutputs = llvm::count_if(getOutputs().getTypes(), [](Type type) {
+    return static_cast<bool>(MO::dynCastFromTensorLike(type));
+  });
+  Block::BlockArgListType rest = args.drop_front(numInputs + numOutputs);
+  size_t numDims =
+      llvm::find_if_not(
+          rest, [](BlockArgument arg) { return isa<DimType>(arg.getType()); }) -
+      rest.begin();
+  return {args.take_front(numInputs), args.slice(numInputs, numOutputs),
+          rest.take_front(numDims), rest.drop_front(numDims)};
+}
+
 // Lowers a `mogg.routine` into a `mogg.routine.async` around its
 // already-outlined stub: materialize the region operands (input buffers, new
 // output buffers, dims, device context), unpack + cast each async block arg to
@@ -1599,11 +1616,11 @@ LogicalResult TensorCreateSliceOp::emitMojo(EmitMojoState &state) {
                     << TensorCreateSliceOp::getOperationName());
   MojoValue primitive(primitiveMojoName(sliceCreatePrimDecl));
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue staticStarts = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getStaticStart()));
+      EmitMojoState::getAsCoordMojoValue(getStaticStart()));
   MojoValue staticSteps = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getStaticStep()));
+      EmitMojoState::getAsCoordMojoValue(getStaticStep()));
   MojoValue result = state.builder.var(primitive(
       {MojoValue(kParameterOutputStaticShape).equal(outputStaticShape),
        MojoValue(kParameterStaticStarts).equal(staticStarts),
@@ -1625,7 +1642,7 @@ LogicalResult TensorCreateBroadcastOp::emitMojo(EmitMojoState &state) {
                     << TensorCreateBroadcastOp::getOperationName());
   MojoValue primitive(primitiveMojoName(broadcastCreatePrimDecl));
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue result = state.builder.var(primitive(
       {MojoValue(kParameterOutputStaticShape).equal(outputStaticShape)},
       {state.getMojoValueFor(getInput())}));
@@ -1645,7 +1662,7 @@ LogicalResult TensorCreateReshapeOp::emitMojo(EmitMojoState &state) {
                     << TensorCreateReshapeOp::getOperationName());
   MojoValue primitive(primitiveMojoName(reshapeCreatePrimDecl));
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue outputShapeValue = state.builder.var(
       MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getShape())}));
   MojoValue result = state.builder.var(primitive(
@@ -1659,10 +1676,10 @@ LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
   // Per-index reshape (store side, inside an epilogue functor): convert the
   // `Coord` index to an `IndexList`, remap it to the output shape preserving
   // the row-major offset via `mogg.index.reshape`, and wrap it back into a
-  // `Coord` for `mogg.tensor.store`. Static dims are comptime `IntTuple`s;
-  // dynamic inner dims' from/to shapes arrive as epilogue shape captures
-  // (`$dynamicShapes`), read only where the static shape is dynamic.
-  bool isDynamic = !getDynamicShapes().empty();
+  // `Coord` for `mogg.tensor.store`. The from/to shapes ride as runtime
+  // `Coord` args: static dims as `Idx[N]` components, dynamic dims' real
+  // values as epilogue shape captures (`$dynamicShapes`), or an all-static
+  // `Coord` built here when the shape is static.
   auto primDecl =
       state.registry.lookupPrimitive(IndexReshapeOp::getOperationName());
   ASSERT_STREAM(primDecl, "Primitive not found for "
@@ -1677,35 +1694,34 @@ LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
       "IndexReshapeOp::emitMojo reached without currentLambdaInfo set");
   MojoBuilder &builder = *lambdaInfo.lambdaBuilder;
 
-  // A rank-0 shape is emitted as rank-1 extent-1, here as everywhere else, so
-  // the ranks must follow: a `to_rank` of 0 contradicts its own static shape.
-  MojoValue fromStaticShape = builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getFromShape().getIntDims()));
-  MojoValue toStaticShape = builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getToShape().getIntDims()));
-
+  // The index carries the store method's abstract rank param, which can't
+  // unify with the primitive's concrete from-rank; rebind it (equal at
+  // every instantiation).
   MojoValue idxList = builder.var(
-      MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getIndex())}));
+      MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getIndex())})
+          .rebind(MojoValue(kStructIndexList)[MojoValue(
+              uint64_t(getFromShape().getRankNonZero()))]));
 
-  SmallVector<MojoValue> primParams = {
-      MojoValue("to_rank").equal(
-          MojoValue(uint64_t(getToShape().getRankNonZero()))),
-      MojoValue("from_static_shape").equal(fromStaticShape),
-      MojoValue("to_static_shape").equal(toStaticShape)};
   SmallVector<MojoValue> primArgs = {idxList};
-  if (isDynamic) {
-    // The index carries the store method's abstract rank param, which can't
-    // unify with the concrete-rank runtime `from_shape`, so rebind it to the
-    // concrete from-rank first (equal at every instantiation).
-    // `$dynamicShapes` is [from-shape, to-shape] (see the MAPToMOGG lowering).
-    primArgs[0] =
-        builder.var(idxList.rebind(MojoValue(kStructIndexList)[MojoValue(
-            uint64_t(getFromShape().getRankNonZero()))]));
+  if (getDynamicShapes().empty()) {
+    // A rank-0 shape is emitted as rank-1 extent-1, here as everywhere else,
+    // so the ranks must follow: a `to_rank` of 0 contradicts its own shape.
+    primArgs.push_back(
+        builder.var(state.getShapeAsCoordMojoValue(getFromShape(), {})));
+    primArgs.push_back(
+        builder.var(state.getShapeAsCoordMojoValue(getToShape(), {})));
+  } else {
+    // `$dynamicShapes` is [from-shape, to-shape] (see the MAPToMOGG
+    // lowering): functor shape-capture fields or kernel-scope `!mogg.shape`
+    // Coords, both already `Coord` values.
     primArgs.push_back(state.getMojoValueFor(getDynamicShapes()[0]));
     primArgs.push_back(state.getMojoValueFor(getDynamicShapes()[1]));
   }
 
-  MojoValue newIdxList = builder.var(primitive(primParams, primArgs));
+  MojoValue newIdxList =
+      builder.var(primitive({MojoValue("to_rank").equal(MojoValue(
+                                uint64_t(getToShape().getRankNonZero())))},
+                            primArgs));
   MojoValue newCoord = builder.var(MojoValue(kStructCoord)({}, {newIdxList}));
   state.setMojoValueFor(getResult(), newCoord);
   return success();
@@ -1713,13 +1729,13 @@ LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
 
 LogicalResult IndexSliceSelectOp::emitMojo(EmitMojoState &state) {
   // Store-side and per index, like `IndexReshapeOp` above, whose conventions
-  // this follows: statements go through the functor's own builder, and the
-  // static bounds and shapes ride as comptime `IntTuple`s so the primitive
-  // folds every unsliced dim. Runtime shapes, when either shape is dynamic,
-  // are the functor's shape-capture fields, or in a foreach the kernel-scope
-  // shapes its closure captures. The body is emitted where the
-  // primitive's in-slice bit is set, with its argument bound to the output
-  // index.
+  // this follows: statements go through the functor's own builder. The static
+  // bounds ride as comptime `Coord` params so the primitive folds every
+  // unsliced dim; the in/out shapes ride as runtime `Coord` args -- the
+  // functor's shape-capture fields, or in a foreach the kernel-scope shapes
+  // its closure captures, or an all-static `Coord` built here. The body is
+  // emitted where the primitive's in-slice bit is set, with its argument
+  // bound to the output index.
   auto primDecl =
       state.registry.lookupPrimitive(IndexSliceSelectOp::getOperationName());
   ASSERT_STREAM(primDecl, "Primitive not found for "
@@ -1732,34 +1748,32 @@ LogicalResult IndexSliceSelectOp::emitMojo(EmitMojoState &state) {
       "IndexSliceSelectOp::emitMojo reached without currentLambdaInfo set");
   MojoBuilder &builder = *lambdaInfo.lambdaBuilder;
 
-  // The index carries the store method's abstract rank, which would not unify
-  // with the concrete-rank runtime shapes; the two are equal at every
-  // instantiation.
-  MojoValue rank(uint64_t(getInShape().getRankNonZero()));
+  // The index carries the store method's abstract rank param, which can't
+  // unify with the primitive's concrete rank; rebind it (equal at every
+  // instantiation).
   MojoValue idxList = builder.var(
       MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(getIndex())})
-          .rebind(MojoValue(kStructIndexList)[rank]));
+          .rebind(MojoValue(kStructIndexList)[MojoValue(
+              uint64_t(getInShape().getRankNonZero()))]));
   SmallVector<MojoValue> args = {idxList};
-  // A functor's shape capture is already an `IndexList` field; a kernel-scope
-  // `!mogg.shape` is still a `Coord`.
-  for (Value shape : getDynamicShapes()) {
-    MojoValue value = state.getMojoValueFor(shape);
+  // The shapes are already `Coord` values: functor shape-capture fields, or
+  // kernel-scope `!mogg.shape` Coords a foreach closure captures. A static
+  // shape (no captures) is built here.
+  if (getDynamicShapes().empty()) {
     args.push_back(
-        isa<BlockArgument>(shape)
-            ? value
-            : builder.var(MojoValue(kFnCoordToIndexList)({}, {value})));
+        builder.var(state.getShapeAsCoordMojoValue(getInShape(), {})));
+    args.push_back(
+        builder.var(state.getShapeAsCoordMojoValue(getOutShape(), {})));
   }
+  for (Value shape : getDynamicShapes())
+    args.push_back(state.getMojoValueFor(shape));
 
   auto comptimeTuple = [&](ArrayRef<int64_t> values) {
-    return builder.comptime(EmitMojoState::getAsIntTupleMojoValue(values));
+    return builder.comptime(EmitMojoState::getAsCoordMojoValue(values));
   };
   MojoValue inverse = builder.var(primitive(
       {MojoValue(kParameterStaticStarts).equal(comptimeTuple(getStaticStart())),
-       MojoValue(kParameterStaticSteps).equal(comptimeTuple(getStaticStep())),
-       MojoValue("in_static_shape")
-           .equal(comptimeTuple(getInShape().getIntDims())),
-       MojoValue("out_static_shape")
-           .equal(comptimeTuple(getOutShape().getIntDims()))},
+       MojoValue(kParameterStaticSteps).equal(comptimeTuple(getStaticStep()))},
       args));
   Block &body = getBody().front();
   state.setMojoValueFor(body.getArgument(0),
@@ -1793,9 +1807,9 @@ LogicalResult TensorCreateTransposeOp::emitMojo(EmitMojoState &state) {
                     << TensorCreateTransposeOp::getOperationName());
   MojoValue primitive(primitiveMojoName(transposeCreatePrimDecl));
   MojoValue outputStaticShape = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getOutShape().getIntDims()));
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue staticPermutations = state.builder.comptime(
-      EmitMojoState::getAsIntTupleMojoValue(getStaticPermutations()));
+      EmitMojoState::getAsCoordMojoValue(getStaticPermutations()));
   MojoValue result = state.builder.var(primitive(
       {MojoValue(kParameterOutputStaticShape).equal(outputStaticShape),
        MojoValue(kParameterStaticPermutations).equal(staticPermutations)},
@@ -1824,6 +1838,19 @@ bool CallOpaqueOp::isThrows() {
 }
 
 namespace {
+// How the kernel receives an operand, which the launch passes as itself and
+// encodes as its device type. See `emitDeviceKernel`.
+enum class DeviceArgKind {
+  // As is.
+  Scalar,
+  // As its `TileTensor` projection, which the kernel rebuilds the tensor or
+  // buffer from.
+  Tile,
+  // As the access-enabled view on which its fusion runs, which the kernel uses
+  // as is.
+  Fused,
+};
+
 // Holds state for emitting a call to a device-side entry point.
 struct DeclarativeCall {
   using Callee = std::function<MojoValue(ArrayRef<MojoValue>)>;
@@ -1836,45 +1863,48 @@ struct DeclarativeCall {
   SmallVector<Value> values;
   // List of operands for both calls.
   SmallVector<MojoValue> operands;
-  // Tracks whether operands[i] is a Tensor, which needs to be re-constructed
-  // on the device side.
-  SmallVector<bool> isTensor;
+  // How the kernel receives each of `operands`.
+  SmallVector<DeviceArgKind> kinds;
 };
 
 // The arguments of a device kernel, and the values the launch passes for them:
-// a tensor as its `TileTensor` projection, a scalar as is. See
-// `emitDeviceKernel` for why. Each vector holds one entry per argument, at the
+// each operand as itself, which the launch encodes as its device type. See
+// `emitDeviceKernel`. Each vector holds one entry per argument, at the
 // argument's index.
 struct DeviceKernelArgs {
   SmallVector<NamedMojoDef> parameters;
   SmallVector<MojoValue> launchArgs;
   SmallVector<MojoValue> types;
-  SmallVector<bool> isTensor;
+  SmallVector<DeviceArgKind> kinds;
   // Maps an operand's IR value to the index of the argument that carries it, so
   // an operand shared by several calls crosses the launch once.
   llvm::DenseMap<Value, unsigned> indexOf;
 
   // Adds `call`'s operands as arguments and returns their indices. Emits each
   // operand's type, and records the kernel argument for it and the value the
-  // launch passes. For a tensor `operand0` and a scalar `operand1`:
+  // launch passes. For a tensor `operand0`, a scalar `operand1` and a fused
+  // tensor `operand2`:
   //
-  //   comptime T0 = type_of(operand0)  # argument a0: T0.TileTensorType,
-  //                                    # passed operand0.to_tile_tensor()
+  //   comptime T0 = type_of(operand0)  # argument a0: T0.device_type,
+  //                                    # passed operand0
   //   comptime T1 = type_of(operand1)  # argument a1: T1, passed operand1
+  //   comptime T2 = type_of(operand2)  # argument a2: T2.device_type,
+  //                                    # passed operand2
   SmallVector<unsigned> add(MojoBuilder &builder, const DeclarativeCall &call) {
     SmallVector<unsigned> indices;
-    for (auto [value, operand, tensor] :
-         llvm::zip_equal(call.values, call.operands, call.isTensor)) {
+    for (auto [value, operand, kind] :
+         llvm::zip_equal(call.values, call.operands, call.kinds)) {
       auto [it, inserted] = indexOf.try_emplace(value, parameters.size());
       indices.push_back(it->second);
       if (!inserted)
         continue;
       MojoValue type = builder.comptime(MojoValue("type_of")({}, {operand}));
       types.push_back(type);
-      isTensor.push_back(tensor);
-      parameters.emplace_back("operand",
-                              tensor ? type.get("TileTensorType") : type);
-      launchArgs.push_back(tensor ? operand.get("to_tile_tensor")() : operand);
+      kinds.push_back(kind);
+      parameters.emplace_back("operand", kind == DeviceArgKind::Scalar
+                                             ? type
+                                             : type.get("device_type"));
+      launchArgs.push_back(operand);
     }
     return indices;
   }
@@ -1883,22 +1913,23 @@ struct DeviceKernelArgs {
   // returns its index.
   unsigned addScalar(const MojoValue &value, const MojoValue &type) {
     types.push_back(type);
-    isTensor.push_back(false);
+    kinds.push_back(DeviceArgKind::Scalar);
     parameters.emplace_back("operand", type);
     launchArgs.push_back(value);
     return parameters.size() - 1;
   }
 
   // Rebuilds, inside the kernel, the operands at `indices`: a tensor from its
-  // `TileTensor` argument, a scalar as is. For the operands above:
+  // device type, a scalar or a fused tensor as is. For the operands above:
   //
-  //   T0(a0), a1
+  //   T0(a0), a1, a2
   SmallVector<MojoValue> rebuild(const FunctionBody &body,
                                  ArrayRef<unsigned> indices) const {
     SmallVector<MojoValue> operands;
     for (unsigned i : indices)
-      operands.push_back(isTensor[i] ? types[i]({}, {body.arguments[i]})
-                                     : body.arguments[i]);
+      operands.push_back(kinds[i] == DeviceArgKind::Tile
+                             ? types[i]({}, {body.arguments[i]})
+                             : body.arguments[i]);
     return operands;
   }
 };
@@ -1918,14 +1949,37 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
   SmallVector<Value> operandValues(outputs.begin(), outputs.end());
   llvm::append_range(operandValues, inputs);
   for (Value value : operandValues) {
-    if (!isa<MOGG::TensorType, MOGG::ScalarType>(value.getType())) {
+    if (!isa<MOGG::TensorType, MOGG::BufferType, MOGG::ScalarType>(
+            value.getType())) {
       op->emitOpError()
-          << "a declarative launch passes only tensors and scalars to the "
-             "device, but got "
+          << "a declarative launch passes only tensors, buffers and scalars "
+             "to the device, but got "
           << value.getType();
       return failure();
     }
-    call.isTensor.push_back(isa<MOGG::TensorType>(value.getType()));
+    if (isa<MOGG::ScalarType>(value.getType())) {
+      call.kinds.push_back(DeviceArgKind::Scalar);
+      continue;
+    }
+    // A fused operand against a trait bound carries the contract that makes
+    // its create op build a device-passable trait tensor.
+    Operation *def = value.getDefiningOp();
+    bool traitFused = false;
+    if (auto epilogue = dyn_cast_or_null<TensorCreateEpilogueOp>(def))
+      traitFused = static_cast<bool>(epilogue.getContract());
+    else if (auto prologue = dyn_cast_or_null<TensorCreatePrologueOp>(def))
+      traitFused = static_cast<bool>(prologue.getContract());
+    if (traitFused) {
+      call.kinds.push_back(DeviceArgKind::Fused);
+      continue;
+    }
+    if (isa_and_nonnull<TensorCreateEpilogueOp, TensorCreatePrologueOp,
+                        TileCreateEpilogueOp>(def)) {
+      op->emitOpError("a declarative launch passes a fused tensor only to a "
+                      "trait-bound operand");
+      return failure();
+    }
+    call.kinds.push_back(DeviceArgKind::Tile);
   }
   call.values = std::move(operandValues);
 
@@ -1963,17 +2017,18 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
   return call;
 }
 
-// Emits a wrapper for `execute_device` (named `execute_device_N` below). We
-// wrap instead of launching directly because the launch cannot pass the
-// operands the host built: it passes kernel arguments, not closure captures,
-// and some accelerators marshal a struct kernel argument correctly only if it
-// is a `TileTensor` (HWB-657). So each tensor operand crosses as its
-// `TileTensor` projection, and the wrapper rebuilds the operand on the device.
-// `execute_device` then sees the operand types and `Input`/`Output` roles the
-// host built. `body` emits the kernel's statements:
+// Emits a wrapper for `execute_device` (named `execute_device_N` below). The
+// launch passes each operand the host built, and encodes it as its device type.
+// A tensor's device type is its `TileTensor` projection, which carries no
+// `Input`/`Output` role, so the wrapper rebuilds the operand from it and
+// `execute_device` sees the operand types and roles the host built. A fused
+// tensor has no single buffer to project: it holds a fusion functor over the
+// tensors it captures. Its device type is the access-enabled view on which the
+// fusion runs, which `execute_device` takes as is. `body` emits the kernel's
+// statements:
 //
-//   def execute_device_N(a0: T0.TileTensorType, a1: T1):
-//       Kernel[...].execute_device[...](T0(a0), a1)
+//   def execute_device_N(a0: T0.device_type, a1: T1, a2: T2.device_type):
+//       Kernel[...].execute_device[...](T0(a0), a1, a2)
 static MojoValue
 emitDeviceKernel(MojoBuilder &builder, const DeviceKernelArgs &args,
                  std::function<void(const FunctionBody &)> &&body) {
@@ -1987,9 +2042,7 @@ emitDeviceKernel(MojoBuilder &builder, const DeviceKernelArgs &args,
 // Emits the launch of `kernel` on `ctx`. `mogg_launch_declarative` compiles
 // it and enqueues it with `config`'s grid and block dims:
 //
-//   mogg_launch_declarative[execute_device_N](ctx, config,
-//                                             operand0.to_tile_tensor(),
-//                                             operand1)
+//   mogg_launch_declarative[execute_device_N](ctx, config, operand0, operand1)
 static void emitLaunch(EmitMojoState &state, const MojoValue &ctx,
                        const MojoValue &kernel, const DeviceKernelArgs &args,
                        const MojoValue &config) {
@@ -2004,10 +2057,9 @@ static void emitLaunch(EmitMojoState &state, const MojoValue &ctx,
 //
 //   var config = Kernel[...].execute_configuration[...](operands...)
 //   comptime T0 = type_of(operand0)  # one per operand
-//   def execute_device_N(a0: T0.TileTensorType, a1: T1, ...):
+//   def execute_device_N(a0: T0.device_type, a1: T1, ...):
 //       Kernel[...].execute_device[...](T0(a0), a1, ...)
-//   mogg_launch_declarative[execute_device_N](ctx, config,
-//                                             operand0.to_tile_tensor(),
+//   mogg_launch_declarative[execute_device_N](ctx, config, operand0,
 //                                             operand1, ...)
 static LogicalResult emitDeclarativeLaunch(
     CallOpaqueOp op, EmitMojoState &state, KernelDeclAdaptor &adaptor,
@@ -2047,24 +2099,8 @@ static LogicalResult emitExecuteCall(
     const std::function<ErrorOr<MojoValue>(StringRef)> &inferParam) {
   const KernelDeclFunctionAdaptor &execFnAdaptor = *adaptor.executeFunction;
 
-  // The stub's contexts are all typed as the default accelerator's, even on the
-  // CPU. A callee generic over the context's target is handed the CPU target
-  // it will run on instead.
-  //
-  // TODO(MSTDL-3265): Once every context is generic over its target, this
-  // cast belongs in `FuncOp::emitMojo`, where the stub's contexts are bound,
-  // rather than here: it makes `CallOpaqueOp` look at its parent op.
-  bool isCpuStub = op->getParentOfType<FuncOp>().getDevice() == kCPULabel;
-  bool hasGenericTargetContext = llvm::any_of(
-      execFnAdaptor.inputArguments, [](const KernelDeclOperandAdaptor &arg) {
-        return arg.isGenericTargetContextType();
-      });
-  for (Value ctx : op.getDeviceContexts()) {
-    MojoValue ctxValue = state.getMojoValueFor(ctx);
-    if (isCpuStub && hasGenericTargetContext)
-      ctxValue = state.builder.var(ctxValue.get(kFnAssertCpuTarget)({}, {}));
-    operands.push_back(ctxValue);
-  }
+  for (Value ctx : op.getDeviceContexts())
+    operands.push_back(state.getMojoValueFor(ctx));
 
   auto maybeParams = inferKernelParameters(
       adaptor, KernelFunctionKind::Execute,
@@ -2202,6 +2238,13 @@ LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
 // GraphBlobOp
 //===----------------------------------------------------------------------===//
 
+void GraphBlobOp::build(OpBuilder &builder, OperationState &state,
+                        function_ref<void(OpBuilder &, Location)> bodyBuilder) {
+  OpBuilder::InsertionGuard guard(builder);
+  builder.createBlock(state.addRegion());
+  bodyBuilder(builder, state.location);
+}
+
 bool GraphBlobOp::isThrows() { return true; }
 
 // Each `mogg.call.execute_device` checks its own callee, so this needs no
@@ -2226,29 +2269,29 @@ LogicalResult GraphBlobOp::verifyRegions() {
   return success();
 }
 
-// Emits the body's declarative calls as one launch. Each configuration is a
-// `GraphBlobExecutionConfig`: the blob launches the configurations' `merge`,
-// passes each call's `active_threads`, and runs each `execute_device` only on
-// the threads it names:
+// Emits the body's declarative calls as one launch on every core and thread of
+// the device, the `all_cores` of the first call's configuration type. Each call
+// runs its `execute_device` only on the first blocks of the launch, as many as
+// its own grid has:
 //
 //   var config0 = Kernel0[...].execute_configuration[...](operands0...)
 //   var config1 = Kernel1[...].execute_configuration[...](operands1...)
 //   comptime T0 = type_of(operand0)  # one per distinct operand
 //   comptime C = type_of(config0)
-//   var config = config0.merge(config1)
-//   def execute_device_N(a0: T0.TileTensorType, ..., a5: C.ActiveThreads,
-//                        a6: C.ActiveThreads):
-//       if C.is_thread_active(a5):
+//   var launch = C.all_cores()
+//   def execute_device_N(a0: T0.device_type, ..., a5: Int32, a6: Int32):
+//       if _graph_blob.is_thread_active(a5):
 //           Kernel0[...].execute_device[...](T0(a0), ...)
-//       C.barrier()
-//       if C.is_thread_active(a6):
+//       _graph_blob.barrier()
+//       if _graph_blob.is_thread_active(a6):
 //           Kernel1[...].execute_device[...](...)
-//   mogg_launch_declarative[execute_device_N](ctx, config,
-//                                             operand0.to_tile_tensor(), ...,
-//                                             config0.active_threads(),
-//                                             config1.active_threads())
+//   mogg_launch_declarative[execute_device_N](
+//       ctx, launch, operand0, ...,
+//       _graph_blob.active_threads(config0.get_grid_dim(),
+//                                  config0.get_block_dim(),
+//                                  launch.get_grid_dim(),
+//                                  launch.get_block_dim()), ...)
 //
-// `merge` takes `Self`, so the calls must return the same configuration type.
 // Every thread reaches every barrier, so a barrier sits outside the guards.
 LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
   // Each body op emits through `lowerOpToMojo`, which passes it only the state,
@@ -2265,23 +2308,27 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
   assert(!blob.members.empty() && "the verifier requires a call");
 
   MojoBuilder &builder = state.builder;
-  MojoValue config = blob.members.front().config;
-  MojoValue configType = builder.comptime(MojoValue("type_of")({}, {config}));
-  for (const GraphBlobEmission::Member &member : llvm::drop_begin(blob.members))
-    config = builder.var(config.get("merge")({}, {member.config}),
-                         /*cache=*/false);
+  MojoValue graphBlob(kGraphBlobModuleAlias);
+  MojoValue configType =
+      builder.comptime(MojoValue("type_of")({}, {blob.members.front().config}));
+  MojoValue launch =
+      builder.var(configType.get("all_cores")(), /*cache=*/false);
 
   SmallVector<unsigned> active;
-  for (const GraphBlobEmission::Member &member : blob.members)
-    active.push_back(blob.args.addScalar(member.config.get("active_threads")(),
-                                         configType.get("ActiveThreads")));
+  for (const GraphBlobEmission::Member &member : blob.members) {
+    MojoValue threads = graphBlob.get("active_threads")(
+        {}, {member.config.get("get_grid_dim")(),
+             member.config.get("get_block_dim")(), launch.get("get_grid_dim")(),
+             launch.get("get_block_dim")()});
+    active.push_back(blob.args.addScalar(threads, MojoValue("Int32")));
+  }
 
   MojoValue kernel =
       emitDeviceKernel(builder, blob.args, [&](const FunctionBody &body) {
         for (auto [i, member] : llvm::enumerate(blob.members)) {
           if (i > 0)
-            builder.call(configType.get("barrier"));
-          MojoValue isActive = configType.get("is_thread_active")(
+            builder.call(graphBlob.get("barrier"));
+          MojoValue isActive = graphBlob.get("is_thread_active")(
               {}, {body.arguments[active[i]]});
           builder.if_(isActive, [&] {
             builder.verbatim(member.call.executeDevice(
@@ -2289,7 +2336,7 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
           });
         }
       });
-  emitLaunch(state, state.getMojoValueFor(blob.ctx), kernel, blob.args, config);
+  emitLaunch(state, state.getMojoValueFor(blob.ctx), kernel, blob.args, launch);
   return success();
 }
 
@@ -2361,9 +2408,9 @@ MojoValue emitVariadicTensorPack(EmitMojoState &state,
     StaticTensorSpecRef spec = staticSpecOf(reboundInput);
     staticSpecInternals.push_back(spec.getInternals());
     staticSpecShapes.push_back(
-        MojoValue(kFnToIndexList)({rank}, {spec.shapeTuple()}));
+        MojoValue(kFnCoordToIndexList)({}, {spec.shapeTuple()}));
     staticSpecStrides.push_back(
-        MojoValue(kFnToIndexList)({rank}, {spec.stridesTuple()}));
+        MojoValue(kFnCoordToIndexList)({}, {spec.stridesTuple()}));
   }
   MojoValue inputSpecsInternalsComptime =
       state.builder.comptime(ParameterListRef::of(staticSpecInternals));
@@ -2417,22 +2464,31 @@ LogicalResult TupleCreateOp::emitMojo(EmitMojoState &state) {
     SmallVector<MojoValue> params;
     for (const MojoValue &val : inputValues)
       params.push_back(MojoValue("type_of")({}, {val}));
-    state.setMojoValueFor(getTuple(),
-                          state.builder.var(MojoValue(
-                              kStructTensorTuple)[params]({}, inputValues)));
+    state.setMojoValueFor(
+        getTuple(),
+        state.builder.var(MojoValue(kStructTensorTuple)(params, inputValues)));
     return success();
   }
 
-  // Contexts pack into a `DeviceContextArray[N]` instead, via its variadic
-  // constructor -- the per-device contexts of a distributed kernel. Mirrors the
-  // `AsTupleOp::emitMojo` context branch.
+  // Contexts pack into a `DeviceContextArray[N, _]` instead, via its variadic
+  // constructor -- the per-device contexts of a distributed kernel. The `_`
+  // infers the `target` parameter from the first context so contexts with a
+  // non-default target are accepted. Each stub context is generic over its own
+  // `target`, so the rest are rebound to the first's type for the variadic
+  // constructor to unify them. Mirrors the `AsTupleOp::emitMojo` context
+  // branch.
   if (isa<MOGG::ContextType>(getElements().front().getType())) {
-    MojoValue deviceContextArrayConstructor = MojoValue(
-        kStructDeviceContextArray)[{
-        MojoValue(kParameterLength).equal(std::to_string(inputValues.size()))}];
+    MojoValue deviceContextArrayConstructor =
+        MojoValue(kStructDeviceContextArray)[{MojoValue(inputValues.size()),
+                                              MojoValue("_")}];
+    MojoValue firstContextType =
+        MojoValue("type_of")({}, {inputValues.front()});
+    SmallVector<MojoValue> contexts = {inputValues.front()};
+    for (const MojoValue &ctx : llvm::drop_begin(inputValues))
+      contexts.push_back(ctx.rebind(firstContextType));
     state.setMojoValueFor(
         getTuple(),
-        state.builder.var(deviceContextArrayConstructor({}, inputValues)));
+        state.builder.var(deviceContextArrayConstructor({}, contexts)));
     return success();
   }
 
@@ -2679,6 +2735,31 @@ static FailureOr<unsigned> fusedRegionRank(Operation *op, Value shape) {
   return rank == 0 ? 1 : rank;
 }
 
+/// The `Coord` type a fused-region op's `$shape` operand has, spelled from
+/// the feeding `shape.create`'s static/dynamic split: static dims as
+/// `layout.ComptimeInt[n]`, dynamic ones as `Int`. The functor's shape-
+/// capture fields carry it so the reshape/slice-select primitives the body
+/// calls see the split in the field's own type.
+static FailureOr<MojoValue> fusedRegionShapeCoordType(Operation *op,
+                                                      Value shape) {
+  auto shapeCreate = shape.getDefiningOp<ShapeCreateOp>();
+  if (!shapeCreate)
+    return op->emitOpError("shape operand must come from a mogg.shape.create");
+  SmallVector<MojoValue> elementTypes;
+  for (TypedAttr dim : shapeCreate.getShape().getValues()) {
+    if (auto staticDim = MOSH::ShapeAttr::getStaticDim(dim))
+      elementTypes.push_back(
+          MojoValue("layout.ComptimeInt")[MojoValue(*staticDim)]);
+    else
+      elementTypes.push_back(MojoValue(kStructInt));
+  }
+  // Rank-0 shapes are represented as rank-1 extent-1, as everywhere else.
+  if (elementTypes.empty())
+    elementTypes.push_back(
+        MojoValue("layout.ComptimeInt")[MojoValue(int64_t(1))]);
+  return MojoValue(kStructCoord)[ArrayRef<MojoValue>(elementTypes)];
+}
+
 namespace {
 
 /// One MOGG-ABI fusion-lambda flavor. The load side (`map.iter.prologue`) and
@@ -2715,10 +2796,10 @@ static FailureOr<MojoValue>
 emitMapFusionFunctor(EmitMojoState &state, Region &region,
                      SmallVectorImpl<FusedCaptureInfo> &captureInfos,
                      const FusionLambdaInfo &lane, MojoValue valueDtype,
-                     ArrayRef<unsigned> shapeCaptureRanks = {},
+                     ArrayRef<MojoValue> shapeCaptureTypes = {},
                      ArrayRef<MojoValue> shapeCaptureArgs = {}) {
   unsigned numCaptures = captureInfos.size();
-  unsigned numShapeCaptures = shapeCaptureRanks.size();
+  unsigned numShapeCaptures = shapeCaptureTypes.size();
   MojoValue structNameVal = state.structDefsBuilder.newVar(
       state.structDefsBuilder.getIdentifier(lane.structName.str()));
   // One comptime `StaticTensorSpec` param per capture with a concrete dtype
@@ -2733,8 +2814,8 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
                                 captureInfos[j].dtype.text)
                       .str())));
 
-  // Shape captures (dynamic reshape runtime shapes) become trailing
-  // `IndexList[rank]` fields; their literal rank needs no struct param.
+  // Shape captures (dynamic reshape/slice runtime shapes) become trailing
+  // `Coord` fields, typed by each capture's static/dynamic split.
   SmallVector<MojoValue> shapeCaptureFields(numShapeCaptures);
 
   // Functor-side names per capture: the (ptr, shape, strides) fields and the
@@ -2770,9 +2851,8 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
           selfStridesFields[j] = state.structDefsBuilder.varDecl(indexListType);
         }
         for (unsigned k = 0; k < numShapeCaptures; ++k)
-          shapeCaptureFields[k] = state.structDefsBuilder.varDecl(
-              MojoValue(kStructIndexList)[MojoValue(
-                  static_cast<uint64_t>(shapeCaptureRanks[k]))]);
+          shapeCaptureFields[k] =
+              state.structDefsBuilder.varDecl(shapeCaptureTypes[k]);
 
         // The method must match the conformed trait (managed_tensor_slice.mojo)
         // for `_bind_to_fused_*` to accept it. Parameters match positionally;
@@ -3453,48 +3533,67 @@ monoidType(EmitMojoState &state, RowwiseReduceOp fold, const MojoValue &width) {
   return MojoValue(fold.getMonoid())[params];
 }
 
-// The rowwise-body ops `fold` reads, in program order: canonicalization hoists
-// a constant the fold uses out of it, into the body.
-static SmallVector<Operation *> outerOpsReadBy(RowwiseReduceOp fold,
-                                               Block &body) {
-  llvm::SetVector<Operation *> ops;
-  SmallVector<Value> worklist;
-  fold.getBody().walk(
-      [&](Operation *op) { llvm::append_range(worklist, op->getOperands()); });
-  while (!worklist.empty()) {
-    Operation *def = worklist.pop_back_val().getDefiningOp();
-    if (def && def->getBlock() == &body && ops.insert(def))
-      llvm::append_range(worklist, def->getOperands());
+// Binds the rowwise-body values `region` reads to their value inside a lambda
+// of width `width`: a constant splats again at that width, and any other value,
+// computed once per row at `params.simd_width`, reads its first `width` lanes.
+// Runs inside the lambda's `ValueScope`.
+static LogicalResult bindRowValues(EmitMojoState &state, Region &region,
+                                   const MojoValue &width) {
+  llvm::SetVector<Value> values;
+  region.walk([&](Operation *op) {
+    for (Value operand : op->getOperands())
+      if (Operation *def = operand.getDefiningOp();
+          def && def->getBlock() == state.rowwiseBody->body)
+        values.insert(operand);
+  });
+  for (Value value : values) {
+    if (auto constant = value.getDefiningOp<ConstantScalarOp>()) {
+      if (failed(state.lowerOpToMojo(constant)))
+        return failure();
+      continue;
+    }
+    // <value>.slice[width]()
+    state.setMojoValueFor(
+        value, state.getMojoValueFor(value).get("slice")[width]({}, {}));
   }
-  SmallVector<Operation *> sorted = ops.takeVector();
-  llvm::sort(sorted,
-             [](Operation *a, Operation *b) { return a->isBeforeInBlock(b); });
-  return sorted;
+  return success();
+}
+
+// Lowers the body of `phase` inside a phase lambda of width `width`, at the
+// element index `idx`, reading the row's cache as `tile`.
+static LogicalResult lowerPhaseBody(EmitMojoState &state,
+                                    RowwisePhaseOpInterface phase,
+                                    const MojoValue &width,
+                                    const MojoValue &alignment,
+                                    const MojoValue &tile) {
+  EmitMojoState::LambdaInfosGuard guard(state,
+                                        {&state.builder, width, alignment});
+  state.setMojoValueFor(phase.getIndexArg(), MojoValue("idx"));
+  if (failed(bindRowValues(state, phase->getRegion(0), width)))
+    return failure();
+  state.rowwiseBody->tile = tile;
+  for (Operation &op : phase->getRegion(0).front().without_terminator())
+    if (failed(state.lowerOpToMojo(&op)))
+      return failure();
+  return success();
 }
 
 // Prints the kernel as a Row API body and launches it:
 //
 //   def body[params](row_coords, mut row_ctx) {var}:                    (1)
-//     def load[width, alignment](idx) -> SIMD[dtype, width]:            (2)
-//       return <primary capture>[idx.coord]
-//     var row = Row[params, accum, dtype, axis, rank, is_cached](       (3)
-//         row_coords, Idx[cols], row_ctx, load)
-//     def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:   (4)
-//       <fold body, reading `tile` for the primary value>
-//     var acc = row.reduce[Monoid[..., W = params.simd_width]](
-//         contribute, load)
-//     def write(oc):                                                    (5)
-//       <row-level ops on acc.<field>, and the emit's stores at oc>
-//     row.emit(write)
-//   mogg.call.rowwise[SimdMonoid, dtype, accum, axis = ..., ...](       (6)
+//     <each op of the body, in order: the cache prints the `load`       (2)
+//      closure and the Row; folds, map phases, per-row loads and the
+//      emit print themselves; any other row-level op runs once per row,
+//      at params.simd_width>
+//   mogg.call.rowwise[SimdMonoid, dtype, accum, axis = ..., ...](       (3)
 //       body, shape, ctx)
-//
-// (4) repeats per fold.
 LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
-  if (!getPrimary() || !getDtype() || !getAccum() || !getNumPhases() ||
-      !getDtypeSize() || !getSimdMonoid())
+  RowwiseCacheOp cache = getCache();
+  if (!cache || !getAccum() || !getNumPhases() || !getDtypeSize() ||
+      !getSimdMonoid())
     return emitOpError("isn't legalized for the Row API");
-  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(*getDtype());
+  ErrorOr<DType> dtypeOr =
+      M::MO::fromMLIRType(cache.getType().getElementType());
   ErrorOr<DType> accumOr = M::MO::fromMLIRType(*getAccum());
   if (dtypeOr.isError() || accumOr.isError())
     return emitOpError("has a non-dtype `dtype` or `accum`");
@@ -3513,7 +3612,6 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   for (auto [arg, info] : llvm::zip(args, *captureInfosOr))
     state.setFusedTensorArgFor(arg,
                                {info.ptr, info.shape, info.strides, info.spec});
-  const FusedCaptureInfo &primary = (*captureInfosOr)[*getPrimary()];
 
   SmallVector<RowwiseReduceOp> folds =
       llvm::to_vector(body.getOps<RowwiseReduceOp>());
@@ -3542,14 +3640,6 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
       "row_ctx", MojoValue(kStructRowwiseContext)[MojoValue("params")]);
   rowCtxArg.argConvention = "mut";
   bool failedToLower = false;
-  auto lowerOne = [&](Operation &op) {
-    if (!failedToLower && failed(state.lowerOpToMojo(&op)))
-      failedToLower = true;
-  };
-  auto lowerAll = [&](auto &&ops) {
-    for (Operation &op : ops)
-      lowerOne(op);
-  };
 
   // (1) def body[params](row_coords, mut row_ctx) {var}:
   MojoValue bodyFn = state.builder.lambda(
@@ -3559,139 +3649,277 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
       /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAutomatic,
       /*isAsync=*/false, /*raises=*/false,
       /*captureConvention=*/"var", [&](const FunctionBody &) {
+        EmitMojoState::ValueScope bodyScope(state);
         MojoValue params("params");
+        // comptime rank = row_coords.rank
         MojoValue rank =
             state.builder.comptime(MojoValue("row_coords").get("rank"));
-        MojoValue rowCoord = MojoValue(kStructRowwiseRowCoord)[rank];
+        MojoValue rowCoord = MojoValue(kAliasDynamicCoord)[{
+            MojoValue(kStructDType).get(kEnumDTypeInt), rank}];
 
-        // (2) def load[width, alignment](idx) -> SIMD[dtype, width]:
-        MojoValue load = state.builder.lambda(
-            "load_",
-            {NamedMojoDef::asVerbatim(kParameterWidth, kStructInt),
-             NamedMojoDef::asVerbatim("alignment", kStructInt)},
-            {NamedMojoDef::asVerbatim("idx", rowCoord)},
-            MojoValue(kStructSIMD)[{dtype, MojoValue(kParameterWidth)}],
-            MojoBuilder::LambdaInline::kAutomatic, false, false, "var",
-            [&](const FunctionBody &fb) {
-              state.builder.returnsValue(simdLoadFromCapture(
-                  {primary.ptr, primary.shape, primary.strides, primary.spec},
-                  fb.parameters[0], fb.parameters[1],
-                  MojoValue("idx").get("coord")));
-            });
+        EmitMojoState::RowwiseBodyInfo info{&body,      params,      rank,
+                                            rowCoord,   axisSize,    dtype,
+                                            accum,      /*load=*/{}, /*row=*/{},
+                                            /*tile=*/{}};
+        EmitMojoState::RowwiseBodyGuard bodyGuard(state, info);
 
-        // (3) var row = Row[params, accum, dtype, axis, rank, is_cached](...)
-        MojoValue row = state.builder.var(
-            MojoValue(kStructRowwiseRow)[{
-                params, accum, dtype, MojoValue(axis), rank,
-                MojoValue("is_cached").equal(MojoValue(getIsCached()))}](
-                {}, {MojoValue("row_coords"), axisSize, MojoValue("row_ctx"),
-                     load}),
-            /*cache=*/false);
-
-        MojoValue emitWidth = params.get("emit_tile_width");
-        for (RowwiseReduceOp fold : folds) {
-          Block &foldBody = fold.getBody().front();
-          auto yield = cast<YieldOp>(foldBody.getTerminator());
-          auto contribution =
-              yield.getNumOperands() == 1
-                  ? dyn_cast<SimdType>(yield.getOperand(0).getType())
-                  : SimdType();
-          if (!contribution || contribution.getElementType() != *getAccum()) {
-            fold.emitOpError("must yield one contribution of the accum type");
+        // (2) The body's ops, in order.
+        EmitMojoState::LambdaInfosGuard rowLevel(
+            state,
+            {&state.builder, params.get(kParameterSimdWidth), MojoValue(1)});
+        for (Operation &op : body)
+          if (failed(state.lowerOpToMojo(&op))) {
             failedToLower = true;
             return;
           }
-          if (!fold.getFieldsAttr()) {
-            fold.emitOpError("has no bound fields");
-            failedToLower = true;
-            return;
-          }
-          // (4) def contribute[w](tile, idx) -> SIMD[accum, w]:
-          MojoValue contribute = state.builder.lambda(
-              "contribute_", {NamedMojoDef::asVerbatim("w", kStructInt)},
-              {NamedMojoDef::asVerbatim(
-                   "tile", MojoValue(kStructSIMD)[{dtype, MojoValue("w")}]),
-               NamedMojoDef::asVerbatim("idx", rowCoord)},
-              MojoValue(kStructSIMD)[{accum, MojoValue("w")}],
-              MojoBuilder::LambdaInline::kAutomatic, false, false, "var",
-              [&](const FunctionBody &fb) {
-                EmitMojoState::LambdaInfosGuard guard(
-                    state, {&state.builder, fb.parameters[0], MojoValue(1)});
-                EmitMojoState::ValueScope scope(state);
-                state.setMojoValueFor(foldBody.getArgument(0),
-                                      MojoValue("idx").get("coord"));
-                for (Operation *op : outerOpsReadBy(fold, body))
-                  lowerOne(*op);
-                for (Operation &op : foldBody.without_terminator()) {
-                  if (auto primaryOp = dyn_cast<RowwisePrimaryOp>(op)) {
-                    state.setMojoValueFor(primaryOp.getResult(),
-                                          fb.arguments[0]);
-                    continue;
-                  }
-                  lowerOne(op);
-                }
-                if (!failedToLower)
-                  state.builder.returnsValue(
-                      state.getMojoValueFor(yield.getOperand(0)));
-              });
-          if (failedToLower)
-            return;
-          // var acc = row.reduce[Monoid[..., W = params.simd_width]](...)
-          FailureOr<MojoValue> monoid =
-              monoidType(state, fold, params.get(kParameterSimdWidth));
-          if (failed(monoid)) {
-            failedToLower = true;
-            return;
-          }
-          MojoValue folded = state.builder.var(
-              row.get("reduce")[*monoid]({}, {contribute, load}),
-              /*cache=*/false);
-          // Each lane of a field belongs to a different output on tiled
-          // tiers, so per-row ops read the emit's slice.
-          for (auto [result, field] :
-               llvm::zip(fold.getResults(), fold.getFieldsAttr()))
-            state.setMojoValueFor(result,
-                                  folded.get(cast<StringAttr>(field).getValue())
-                                      .get("slice")[emitWidth]({}, {}));
-        }
-        if (failedToLower)
-          return;
-
-        // (5) def write(oc): ...; row.emit(write)
-        MojoValue write = state.builder.lambda(
-            "write_", {}, {NamedMojoDef::asVerbatim("oc", rowCoord)},
-            /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAutomatic,
-            false, false, "var", [&](const FunctionBody &) {
-              EmitMojoState::LambdaInfosGuard guard(
-                  state, {&state.builder, emitWidth, MojoValue(1)});
-              EmitMojoState::ValueScope scope(state);
-              state.setMojoValueFor(args.back(), MojoValue("oc").get("coord"));
-              for (Operation &op : body) {
-                if (isa<RowwiseReduceOp>(op))
-                  continue;
-                if (auto emit = dyn_cast<RowwiseEmitOp>(op))
-                  lowerAll(emit.getBody().front());
-                else
-                  lowerOne(op);
-              }
-            });
-        state.builder.call(row.get("emit"), {}, {write});
       });
   if (failedToLower)
     return failure();
 
-  // (6) mogg.call.rowwise[SimdMonoid, dtype, accum, ...](body, shape, ctx)
+  // (3) mogg.call.rowwise[SimdMonoid, dtype, accum, ...](body, shape, ctx)
   PrimitiveDeclOp launch = state.registry.lookupPrimitive(getOperationName());
   state.builder.call(
       MojoValue(primitiveMojoName(launch)),
       {*simdMonoid, dtype, accum, MojoValue("axis").equal(MojoValue(axis)),
-       MojoValue(kMoggTargetParameterName)
-           .equal(MojoValue(("\"" + getDevice() + "\"").str())),
        MojoValue("num_phases").equal(MojoValue(*getNumPhases())),
        MojoValue("computationally_expensive")
            .equal(MojoValue(getComputationallyExpensive())),
        MojoValue("dtype_size").equal(MojoValue(*getDtypeSize()))},
       {bodyFn, shape, context});
+  return success();
+}
+
+RowwiseCacheOp CallRowwiseOp::getCache() {
+  auto loads = getBody().front().getOps<RowwiseCacheOp>();
+  return loads.empty() ? RowwiseCacheOp() : *loads.begin();
+}
+
+LogicalResult CallRowwiseOp::verify() {
+  Block &body = getBody().front();
+  bool afterMap = false;
+  for (Operation &op : body) {
+    if (auto store = dyn_cast<TensorStoreOp>(op);
+        store && store.getIndex() != body.getArguments().back())
+      return emitOpError("stores outside its row index, its emit and its map "
+                         "phases");
+    // A fold after a map phase would need a Row API pass per phase.
+    if (afterMap && isa<RowwiseReduceOp>(op))
+      return emitOpError("has a fold after a map phase");
+    afterMap |= isa<RowwiseMapOp>(op);
+  }
+  // `Row.emit` isn't phase-aware, so it can't run in a body that writes
+  // every element.
+  if (afterMap && !body.getOps<RowwiseEmitOp>().empty())
+    return emitOpError("has both per-row stores and a map phase");
+  return success();
+}
+
+// Prints the cache as the Row's `load` closure, and the Row, which reads the
+// row through it:
+//
+//   def load[width, alignment](idx) -> SIMD[dtype, width]:              (1)
+//     <body at idx, each load at width and alignment>
+//     return <the yielded value>                                        (2)
+//   var row = Row[params, accum, dtype, axis, rank, is_cached](         (3)
+//       row_coords, Idx[cols], row_ctx, load)
+LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
+  EmitMojoState::RowwiseBodyInfo &info = *state.rowwiseBody;
+  auto call = cast<CallRowwiseOp>(getOperation()->getParentOp());
+  Block &body = getBody().front();
+
+  // (1) def load[width, alignment](idx) -> SIMD[dtype, width]:
+  bool failedToLower = false;
+  info.load = state.builder.lambda(
+      "load_",
+      {NamedMojoDef::asVerbatim(kParameterWidth, kStructInt),
+       NamedMojoDef::asVerbatim("alignment", kStructInt)},
+      {NamedMojoDef::asVerbatim("idx", info.rowCoord)},
+      MojoValue(kStructSIMD)[{info.dtype, MojoValue(kParameterWidth)}],
+      MojoBuilder::LambdaInline::kAutomatic, false, false, "var",
+      [&](const FunctionBody &fb) {
+        EmitMojoState::LambdaInfosGuard guard(
+            state, {&state.builder, fb.parameters[0], fb.parameters[1]});
+        EmitMojoState::ValueScope scope(state);
+        state.setMojoValueFor(body.getArgument(0), MojoValue("idx"));
+        if (failed(bindRowValues(state, getBody(), fb.parameters[0]))) {
+          failedToLower = true;
+          return;
+        }
+        for (Operation &op : body.without_terminator())
+          if (failed(state.lowerOpToMojo(&op))) {
+            failedToLower = true;
+            return;
+          }
+        // (2) return <the yielded value>
+        state.builder.returnsValue(state.getMojoValueFor(
+            cast<YieldOp>(body.getTerminator()).getOperand(0)));
+      });
+  if (failedToLower)
+    return failure();
+
+  // (3) var row = Row[params, accum, dtype, axis, rank, is_cached](...)
+  MojoValue axis(call.getAxis());
+  info.row = state.builder.var(
+      MojoValue(kStructRowwiseRow)[{
+          info.params, info.accum, info.dtype, axis, info.rank,
+          MojoValue("is_cached").equal(MojoValue(call.getIsCached()))}](
+          {}, {MojoValue("row_coords"), info.axisSize, MojoValue("row_ctx"),
+               info.load}),
+      /*cache=*/false);
+
+  // Row-level ops index the row with the reduced coordinate pinned to 0, as
+  // `emit` does: at_axis[axis](row.row_coord, 0)
+  state.setMojoValueFor(info.body->getArguments().back(),
+                        MojoValue(kFuncRowwiseAtAxis)[axis](
+                            {}, {info.row.get("row_coord"), MojoValue(0)}));
+  return success();
+}
+
+// Prints the load of each row's lane:
+//
+//   var v = <tensor>[row index] at params.emit_tile_width
+LogicalResult RowwiseLoadLaneOp::emitMojo(EmitMojoState &state) {
+  const EmitMojoState::RowwiseBodyInfo &info = *state.rowwiseBody;
+  state.setMojoValueFor(getResult(),
+                        state.builder.var(simdLoadFromCapture(
+                            state.getFusedTensorArgFor(getTensor()),
+                            info.params.get("emit_tile_width"), MojoValue(1),
+                            state.getMojoValueFor(getIndex()))));
+  return success();
+}
+
+// Prints the lane spread over the folds' width with the op's primitive:
+//
+//   var vw = _rowwise_splat_lane(row, v)
+LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
+  PrimitiveDeclOp splat = state.registry.lookupPrimitive(getOperationName());
+  ASSERT_STREAM(splat, "Primitive not found for " << getOperationName());
+  state.setMojoValueFor(
+      getResult(),
+      state.builder.var(MojoValue(primitiveMojoName(splat))(
+          {}, {state.rowwiseBody->row, state.getMojoValueFor(getInput())})));
+  return success();
+}
+
+// Prints the fold:
+//
+//   def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:     (1)
+//     <fold body, reading `tile` for the cached value>
+//   var acc = row.reduce[Monoid[..., W = params.simd_width]](           (2)
+//       contribute, load)
+LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
+  if (!getFieldsAttr())
+    return emitOpError("has no bound fields");
+  const EmitMojoState::RowwiseBodyInfo &info = *state.rowwiseBody;
+  auto yield = cast<YieldOp>(getBody().front().getTerminator());
+
+  // (1) def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:
+  bool failedToLower = false;
+  MojoValue contribute = state.builder.lambda(
+      "contribute_", {NamedMojoDef::asVerbatim("w", kStructInt)},
+      {NamedMojoDef::asVerbatim(
+           "tile", MojoValue(kStructSIMD)[{info.dtype, MojoValue("w")}]),
+       NamedMojoDef::asVerbatim("idx", info.rowCoord)},
+      MojoValue(kStructSIMD)[{info.accum, MojoValue("w")}],
+      MojoBuilder::LambdaInline::kAutomatic, false, false, "var",
+      [&](const FunctionBody &fb) {
+        EmitMojoState::ValueScope scope(state);
+        if (failed(lowerPhaseBody(state, *this, fb.parameters[0], MojoValue(1),
+                                  fb.arguments[0]))) {
+          failedToLower = true;
+          return;
+        }
+        // return <contribution>
+        state.builder.returnsValue(state.getMojoValueFor(yield.getOperand(0)));
+      });
+  if (failedToLower)
+    return failure();
+
+  // (2) var acc = row.reduce[Monoid[..., W = params.simd_width]](...)
+  FailureOr<MojoValue> monoid =
+      monoidType(state, *this, info.params.get(kParameterSimdWidth));
+  if (failed(monoid))
+    return failure();
+  MojoValue folded = state.builder.var(
+      info.row.get("reduce")[*monoid]({}, {contribute, info.load}),
+      /*cache=*/false);
+  // acc.<field>
+  for (auto [result, field] : llvm::zip(getResults(), getFieldsAttr()))
+    state.setMojoValueFor(result,
+                          folded.get(cast<StringAttr>(field).getValue()));
+  return success();
+}
+
+// Prints the map phase:
+//
+//   def elementwise[w](tile: SIMD[dtype, w], idx):                      (1)
+//     comptime al = Context[params].element_alignment[dtype, w]()
+//     <map body, reading row values as .slice[w]()>
+//   row.elementwise(elementwise, load)                                  (2)
+LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
+  const EmitMojoState::RowwiseBodyInfo &info = *state.rowwiseBody;
+
+  // (1) def elementwise[w](tile: SIMD[dtype, w], idx):
+  bool failedToLower = false;
+  MojoValue elementwise = state.builder.lambda(
+      "elementwise_", {NamedMojoDef::asVerbatim("w", kStructInt)},
+      {NamedMojoDef::asVerbatim(
+           "tile", MojoValue(kStructSIMD)[{info.dtype, MojoValue("w")}]),
+       NamedMojoDef::asVerbatim("idx", info.rowCoord)},
+      /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAutomatic, false,
+      false, "var", [&](const FunctionBody &fb) {
+        EmitMojoState::ValueScope scope(state);
+        // comptime al = Context[params].element_alignment[dtype, w]()
+        MojoValue alignment = state.builder.comptime(
+            MojoValue(kStructRowwiseContext)[info.params].get(
+                "element_alignment")[{info.dtype, fb.parameters[0]}]({}, {}));
+        failedToLower = failed(lowerPhaseBody(state, *this, fb.parameters[0],
+                                              alignment, fb.arguments[0]));
+      });
+  if (failedToLower)
+    return failure();
+
+  // (2) row.elementwise(elementwise, load)
+  state.builder.call(info.row.get("elementwise"), {}, {elementwise, info.load});
+  return success();
+}
+
+// Prints the per-row stores:
+//
+//   def write(oc):                                                      (1)
+//     <the emit's ops at oc, reading row values as
+//      .slice[params.emit_tile_width]()>
+//   row.emit(write)                                                     (2)
+LogicalResult RowwiseEmitOp::emitMojo(EmitMojoState &state) {
+  const EmitMojoState::RowwiseBodyInfo &info = *state.rowwiseBody;
+  MojoValue emitWidth = info.params.get("emit_tile_width");
+
+  // (1) def write(oc):
+  bool failedToLower = false;
+  MojoValue write = state.builder.lambda(
+      "write_", {}, {NamedMojoDef::asVerbatim("oc", info.rowCoord)},
+      /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAutomatic, false,
+      false, "var", [&](const FunctionBody &) {
+        EmitMojoState::LambdaInfosGuard guard(
+            state, {&state.builder, emitWidth, MojoValue(1)});
+        EmitMojoState::ValueScope scope(state);
+        state.setMojoValueFor(info.body->getArguments().back(),
+                              MojoValue("oc"));
+        if (failed(bindRowValues(state, getBody(), emitWidth))) {
+          failedToLower = true;
+          return;
+        }
+        for (Operation &op : getBody().front())
+          if (failed(state.lowerOpToMojo(&op))) {
+            failedToLower = true;
+            return;
+          }
+      });
+  if (failedToLower)
+    return failure();
+
+  // (2) row.emit(write)
+  state.builder.call(info.row.get("emit"), {}, {write});
   return success();
 }
 
@@ -3734,12 +3962,94 @@ LogicalResult RowwiseReduceOp::verify() {
   if (body.getNumArguments() != 1)
     return emitOpError("body takes exactly one argument, the index");
   auto yield = body.empty() ? YieldOp() : dyn_cast<YieldOp>(body.back());
-  if (!yield || yield.getNumOperands() == 0)
-    return emitOpError("body must yield at least one contribution");
-  for (Type type : yield.getOperandTypes())
-    if (!isa<SimdType>(type))
-      return emitOpError("body must yield !mogg.simd contributions, got ")
-             << type;
+  if (!yield || yield.getNumOperands() != 1)
+    return emitOpError("body must yield one contribution");
+  if (!isa<SimdType>(yield.getOperand(0).getType()))
+    return emitOpError("body must yield a !mogg.simd contribution, got ")
+           << yield.getOperand(0).getType();
+  if (getBody()
+          .walk([](TensorStoreOp) { return WalkResult::interrupt(); })
+          .wasInterrupted())
+    return emitOpError("stores; only the emit and the map phases store");
+  return success();
+}
+
+ParseResult RowwiseCacheOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::Argument> entryArgs;
+  if (parseLeadingArgs(parser, entryArgs) ||
+      parser.parseArrowTypeList(result.types) ||
+      parser.parseRegion(*result.addRegion(), entryArgs))
+    return failure();
+  return parser.parseOptionalAttrDict(result.attributes);
+}
+
+void RowwiseCacheOp::print(OpAsmPrinter &p) {
+  p << " ";
+  printLeadingArgs(p, getBody().front().getArguments());
+  p.printArrowTypeList(getOperation()->getResultTypes());
+  p << " ";
+  p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
+  p.printOptionalAttrDict((*this)->getAttrs());
+}
+
+void RowwiseCacheOp::getAsmBlockArgumentNames(Region &region,
+                                              OpAsmSetValueNameFn setNameFn) {
+  if (region.empty())
+    return;
+  nameLeadingArgs(region.front().getArguments(), {"i"}, setNameFn);
+}
+
+LogicalResult RowwiseCacheOp::verify() {
+  Block &body = getBody().front();
+  if (body.getNumArguments() != 1)
+    return emitOpError("body takes exactly one argument, the index");
+  auto yield = body.empty() ? YieldOp() : dyn_cast<YieldOp>(body.back());
+  if (!yield || yield.getNumOperands() != 1 ||
+      yield.getOperand(0).getType() != getType())
+    return emitOpError("body must yield one value of the result type");
+  if (body.walk([](TensorStoreOp) { return WalkResult::interrupt(); })
+          .wasInterrupted())
+    return emitOpError("must not store; it only reads the row");
+  for (Operation *op = getOperation()->getPrevNode(); op;
+       op = op->getPrevNode())
+    if (!isa<ConstantScalarOp>(op))
+      return emitOpError("must come first in the row, after constants only");
+  return success();
+}
+
+// The phase's closure gets the cached tile as its argument; the read prints
+// nothing: tile
+LogicalResult RowwiseCacheLoadOp::emitMojo(EmitMojoState &state) {
+  state.setMojoValueFor(getResult(), state.rowwiseBody->tile);
+  return success();
+}
+
+ParseResult RowwiseMapOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::Argument> entryArgs;
+  if (parseLeadingArgs(parser, entryArgs) ||
+      parser.parseRegion(*result.addRegion(), entryArgs))
+    return failure();
+  return parser.parseOptionalAttrDict(result.attributes);
+}
+
+void RowwiseMapOp::print(OpAsmPrinter &p) {
+  p << " ";
+  printLeadingArgs(p, getBody().front().getArguments());
+  p << " ";
+  p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
+  p.printOptionalAttrDict((*this)->getAttrs());
+}
+
+void RowwiseMapOp::getAsmBlockArgumentNames(Region &region,
+                                            OpAsmSetValueNameFn setNameFn) {
+  if (region.empty())
+    return;
+  nameLeadingArgs(region.front().getArguments(), {"i"}, setNameFn);
+}
+
+LogicalResult RowwiseMapOp::verify() {
+  if (getBody().front().getNumArguments() != 1)
+    return emitOpError("body takes exactly one argument, the index");
   return success();
 }
 
@@ -3808,12 +4118,29 @@ static bool isPassThroughEpilogueBody(Block &body) {
          store.getTensor() == body.getArgument(kStoreTargetArg);
 }
 
+/// The tile counterpart of `isPassThroughEpilogueBody`.
+static bool isPassThroughTileBody(Block &body) {
+  constexpr unsigned kValueArg = 0;
+  constexpr unsigned kCoordArg = 1;
+  constexpr unsigned kStoreTargetArg = 2;
+  if (!llvm::hasSingleElement(body))
+    return false;
+  Value value = body.getArgument(kValueArg);
+  if (auto yield = dyn_cast<YieldOp>(body.front()))
+    return yield.getNumOperands() == 1 && yield.getOperand(0) == value;
+  auto store = dyn_cast<TileStoreOp>(body.front());
+  return store && store.getValue() == value &&
+         store.getCoord() == body.getArgument(kCoordArg) &&
+         body.getNumArguments() > kStoreTargetArg &&
+         store.getTensor() == body.getArgument(kStoreTargetArg);
+}
+
 bool TensorCreateEpilogueOp::recomputesValue() {
   return !isPassThroughEpilogueBody(getBody().front());
 }
 
 bool TileCreateEpilogueOp::recomputesValue() {
-  return !isPassThroughEpilogueBody(getBody().front());
+  return !isPassThroughTileBody(getBody().front());
 }
 
 /// Whether `value` is one of `body`'s capture arguments, which start at
@@ -3825,14 +4152,16 @@ static bool isCaptureArgOf(Block &body, unsigned firstCapture, Value value) {
 
 /// A tile body addresses whole tiles at its own index, so every load reads a
 /// capture at `index`, and there is no index transform to read through.
-/// Interim: bodies are SIMD-typed (`tensor.load` / `tensor.store`) until the
-/// tile vocabulary lands.
 static LogicalResult verifyTileBodyLoads(Block &body, unsigned firstCapture,
                                          Value index, StringRef container) {
   for (Operation &op : body) {
-    if (auto load = dyn_cast<TensorLoadOp>(op)) {
+    if (isa<TensorLoadOp, TensorStoreOp>(op))
+      return op.emitOpError() << "in a " << container
+                              << " must move a tile, with tile.load or "
+                                 "tile.store";
+    if (auto load = dyn_cast<TileLoadOp>(op)) {
       if (!isCaptureArgOf(body, firstCapture, load.getTensor()) ||
-          load.getIndex() != index)
+          load.getCoord() != index)
         return load.emitOpError() << "in a " << container
                                   << " must read a capture at the loop index";
     } else if (isa<IndexReshapeOp, IndexSliceSelectOp>(op)) {
@@ -3856,6 +4185,10 @@ LogicalResult TileCreateEpilogueOp::verify() {
   Value storeTarget = body.getArgument(kFirstCapture);
   if (failed(verifyTileBodyLoads(body, kFirstCapture, index, "tile epilogue")))
     return failure();
+  Type tileType = TileType::get(getElementType());
+  Value value = body.getArgument(0);
+  if (value.getType() != tileType)
+    return emitOpError("the kernel's tile is a ") << tileType;
 
   // The lane fixes the body shape, so the two are cross-checked.
   Operation &last = body.back();
@@ -3863,12 +4196,14 @@ LogicalResult TileCreateEpilogueOp::verify() {
     auto yield = dyn_cast<YieldOp>(last);
     if (!yield || yield.getNumOperands() != 1)
       return emitOpError("a compute lane ends in a yield of one value");
+    if (yield.getOperand(0).getType() != tileType)
+      return emitOpError("a compute lane yields a ") << tileType;
     return success();
   }
   if (!body.getOps<YieldOp>().empty())
     return emitOpError("a store lane does not yield");
-  auto store = dyn_cast<TensorStoreOp>(last);
-  if (!store || store.getTensor() != storeTarget || store.getIndex() != index)
+  auto store = dyn_cast<TileStoreOp>(last);
+  if (!store || store.getTensor() != storeTarget || store.getCoord() != index)
     return emitOpError("a store lane ends in a store to the store-target "
                        "capture at the loop index");
   return success();
@@ -3887,15 +4222,474 @@ LogicalResult CallForeachTileOp::verify() {
           verifyTileBodyLoads(body, /*firstCapture=*/0, index, "tile foreach")))
     return failure();
   unsigned numStores = 0;
-  for (auto store : body.getOps<TensorStoreOp>()) {
+  for (auto store : body.getOps<TileStoreOp>()) {
     ++numStores;
     if (!isCaptureArgOf(body, /*firstCapture=*/0, store.getTensor()) ||
-        store.getIndex() != index)
+        store.getCoord() != index)
       return store.emitOpError(
           "in a tile foreach must write a capture at the loop index");
   }
   if (numStores != 1)
     return emitOpError("body stores exactly once, got ") << numStores;
+  return success();
+}
+
+bool CallForeachTileOp::isThrows() { return true; }
+
+static std::optional<MojoValue> scalarConstantAttrToMojoLiteral(TypedAttr attr);
+
+/// The call expression for `op`'s elementwise kernel on `inputs`, through the
+/// kernel's `kind` function. `extraParams` follow the inferred parameters.
+static FailureOr<MojoValue>
+emitElementwiseCallExpr(EmitMojoState &state, CallElementwiseOp op,
+                        KernelFunctionKind kind, ArrayRef<MojoValue> inputs,
+                        ArrayRef<MojoValue> extraParams = {}) {
+  KernelDeclAdaptor ewAdaptor(
+      state.registry.lookupKernelBySymName(op.getCallee()));
+  const KernelDeclFunctionAdaptor *ewFnAdaptor = ewAdaptor.getFunction(kind);
+  if (!ewFnAdaptor)
+    return op.emitOpError("kernel has no ")
+           << stringifyKernelFunctionKind(kind) << " function";
+
+  auto outputs = op.getOutputs();
+  if (outputs.size() != 1)
+    return op.emitError(
+        "elementwise with outputs size != 1 not supported for EmitMojo");
+  Value outputVal = outputs.front();
+
+  std::optional<StringRef> maybeDtypeParamName =
+      EmitMojoState::getResultParamNameFor(*ewFnAdaptor, kParameterDType);
+  auto inferParam = [&](StringRef paramName) -> ErrorOr<MojoValue> {
+    if (maybeDtypeParamName.has_value() && paramName == *maybeDtypeParamName) {
+      ErrorOr<DType> resultTyOr = M::MO::fromMLIRType(
+          cast<ElementTypeInterface>(outputVal.getType()).getElementType());
+      if (resultTyOr.isError())
+        return Error("invalid output type can't be converted to mojo dtype");
+      return state.mlirDTypeToMojoType(*resultTyOr);
+    }
+    return state.inferDefaultKernelParamValue(op, paramName);
+  };
+  auto maybeParams = inferKernelParameters(ewAdaptor, kind, inferParam);
+  if (maybeParams.isError())
+    return op.emitError() << "Failed to infer all the kernel parameters: "
+                          << maybeParams.takeError();
+
+  SmallVector<MojoValue> params(maybeParams->functionParameters);
+  params.append(extraParams.begin(), extraParams.end());
+  return MojoValue(ewFnAdaptor->fullyResolvedName.strref())(params, inputs);
+}
+
+/// A capture's static shape, from its `mogg.tensor.create*` op.
+static MOSH::ShapeAttr captureShape(Value tensor) {
+  Operation *def = tensor.getDefiningOp();
+  if (auto op = dyn_cast_or_null<TensorCreateOp>(def))
+    return op.getShapeAttr();
+  if (auto op = dyn_cast_or_null<TensorCreateSliceOp>(def))
+    return op.getOutShape();
+  if (auto op = dyn_cast_or_null<TensorCreateBroadcastOp>(def))
+    return op.getOutShape();
+  if (auto op = dyn_cast_or_null<TensorCreateTransposeOp>(def))
+    return op.getOutShape();
+  if (auto op = dyn_cast_or_null<TensorCreateReshapeOp>(def))
+    return op.getOutShape();
+  return {};
+}
+
+namespace {
+
+/// The tile fusion-struct flavors, one per trait in managed_tensor_slice.mojo.
+enum class TileFusionKind {
+  /// `ComputeOutputFusionTile`: returns the tile for the kernel to store.
+  Compute,
+  /// `OutputFusionTile`: owns the store.
+  Store,
+  /// `ElementwiseFusionTile`: a standalone body, whose driver stores the tile.
+  Elementwise,
+};
+
+struct TileCapture {
+  /// A `mogg.tensor.create*` result, and the body argument standing for it.
+  Value tensor;
+  BlockArgument arg;
+  DType dtype;
+  SmallVector<int64_t> dims;
+  /// The `N` of the struct's `spec_N` / `tile_N` names.
+  unsigned idx;
+
+  unsigned rank() const { return dims.empty() ? 1 : dims.size(); }
+};
+
+} // namespace
+
+static FailureOr<TileCapture> makeTileCapture(Operation *op, Value tensor,
+                                              BlockArgument arg, unsigned idx) {
+  auto create = tensor.getDefiningOp<TensorCreateInterface>();
+  MOSH::ShapeAttr shape = captureShape(tensor);
+  if (!create || !shape)
+    return op->emitOpError("capture must be a mogg.tensor.create(.slice|"
+                           ".broadcast|.transpose|.reshape) result");
+  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(create.getElementType());
+  if (dtypeOr.isError())
+    return op->emitOpError("failed to convert capture dtype to Mojo");
+  return TileCapture{tensor, arg, *dtypeOr, shape.getIntDims(), idx};
+}
+
+/// The tile of `field` at `tile_coords`, `get_kernel_tile_shape` big. The
+/// kernel must use the same shape (TODO(GEX-3905)).
+static MojoValue emitCaptureTileAt(MojoBuilder &sdb, const MojoValue &field,
+                                   unsigned rank, StringRef device) {
+  MojoValue tileShape = sdb.comptime(MojoValue(kFnGetKernelTileShape)[{
+      MojoValue(kParameterDType), MojoValue(device.str()).quote()}]());
+  SmallVector<MojoValue> tileDims;
+  SmallVector<MojoValue> coordArgs;
+  for (unsigned d = 0; d < rank; ++d) {
+    tileDims.push_back(tileShape[d]);
+    coordArgs.push_back(
+        MojoValue(kStructInt)({}, {MojoValue(kParameterTileCoords)[d]}));
+  }
+  MojoValue coord = MojoValue(kStructCoord)({}, coordArgs);
+  return sdb.var(field.get("tile")[tileDims]({}, {coord}), /*cache=*/false);
+}
+
+/// Stages the tile of `field` into storage shaped like `layoutSrc` with the
+/// method's load copier. `cache=false`: each load needs its own storage.
+static MojoValue emitTileCopierLoad(MojoBuilder &sdb, const MojoValue &field,
+                                    unsigned rank, llvm::StringRef layoutSrc,
+                                    StringRef device) {
+  TileTensorRef dstTile{MojoValue(layoutSrc.str())};
+  MojoValue storage = sdb.var(TileTensorRef::makeStorage(), /*cache=*/false);
+  MojoValue dst =
+      sdb.var(TileTensorRef::fromMutStorage(storage, dstTile.layout()),
+              /*cache=*/false);
+  MojoValue src = emitCaptureTileAt(sdb, field, rank, device);
+  sdb.call(MojoValue(kParameterCopier).get("copy"), {},
+           {dst, TileTensorRef(src).castToSrcAddressSpace()});
+  return sdb.var(TileTensorRef::fromGenericStorage(storage, dstTile.layout()),
+                 /*cache=*/false);
+}
+
+/// The trait method's signature for `lane`, which must match the trait
+/// (managed_tensor_slice.mojo).
+static void
+emitTileFusionMethodSignature(TileFusionKind lane,
+                              SmallVectorImpl<NamedMojoDef> &methodParameters,
+                              SmallVectorImpl<NamedMojoDef> &methodArgs,
+                              std::optional<MojoValue> &returnType) {
+  bool isStore = lane == TileFusionKind::Store;
+  MojoValue tileTensorType = MojoValue(kStructTileTensor)[{
+      kParameterDType, kParameterLayoutType, kComptimeMutAnyOrigin}];
+
+  methodParameters.assign({
+      NamedMojoDef::asVerbatim(kParameterDType, kStructDType),
+      NamedMojoDef::asVerbatim(kParameterRank, kStructInt),
+      NamedMojoDef::asVerbatim(kParameterLayoutType, kStructTensorLayout),
+      // The runtime arg below is `copier: Copier`; the names must differ.
+      NamedMojoDef::asVerbatim(kParameterCopierType, kStructTileCopier),
+  });
+  if (isStore)
+    methodParameters.push_back(
+        NamedMojoDef::asVerbatim(kParameterStoreCopierType, kStructTileCopier));
+
+  methodArgs.push_back(NamedMojoDef::asVerbatim(kParameterSelf));
+  methodArgs.push_back(NamedMojoDef::asVerbatim(
+      kParameterTileCoords, MojoValue(kStructIndexList)[kParameterRank]));
+  methodArgs.push_back(
+      NamedMojoDef::asVerbatim(kParameterCopier, kParameterCopierType));
+  if (isStore)
+    methodArgs.push_back(NamedMojoDef::asVerbatim(kParameterStoreCopier,
+                                                  kParameterStoreCopierType));
+  methodArgs.push_back(NamedMojoDef::asVerbatim(
+      lane == TileFusionKind::Elementwise ? kParameterDst : kParameterVal,
+      tileTensorType));
+  if (!isStore)
+    returnType = tileTensorType;
+}
+
+/// Declares a tile fusion struct for `lane`'s trait and translates `body` into
+/// its method, returning the struct's name. `value` is the kernel's incoming
+/// tile (epilogue lanes), and `storeTarget` the argument the body stores to.
+static FailureOr<MojoValue>
+emitTileFusionStruct(Operation *op, EmitMojoState &state, TileFusionKind lane,
+                     Block &body, ArrayRef<TileCapture> captures, Value index,
+                     Value value, Value storeTarget, DType dtype,
+                     StringRef device) {
+  bool isStore = lane == TileFusionKind::Store;
+  bool isElementwise = lane == TileFusionKind::Elementwise;
+  StringRef dstArg = isElementwise ? kParameterDst : kParameterVal;
+
+  // Local staging tiles are allocated with the method's `dtype`.
+  for (const TileCapture &cap : captures)
+    if (cap.dtype != dtype)
+      return op->emitOpError("a tile fusion requires every captured operand "
+                             "to share one dtype");
+
+  // The rank is inferred: a view's spec (a broadcast, say) carries a symbolic
+  // one.
+  SmallVector<std::pair<MojoValue, MojoValue>> parameters;
+  SmallVector<std::pair<MojoValue, MojoValue>> fields;
+  DenseMap<Value, MojoValue> fieldFor;
+  DenseMap<Value, const TileCapture *> captureFor;
+  for (const TileCapture &cap : captures) {
+    std::string ci = std::to_string(cap.idx);
+    std::string dtypeText = state.mlirDTypeToMojoType(cap.dtype).text;
+    parameters.push_back(
+        {MojoValue("spec_" + ci),
+         MojoValue(llvm::formatv("{0}[{1}, _, ...]", kStructStaticTensorSpec,
+                                 dtypeText)
+                       .str())});
+    fields.push_back(
+        {MojoValue("tile_" + ci),
+         TileTensorRef::captureFieldType(dtypeText, "Self.spec_" + ci)});
+    fieldFor[cap.arg] = MojoValue(kParameterSelf).get("tile_" + ci);
+    captureFor[cap.arg] = &cap;
+  }
+
+  StringRef traitName = isStore         ? kTraitOutputFusionTile
+                        : isElementwise ? kTraitElementwiseFusionTile
+                                        : kTraitComputeOutputFusionTile;
+
+  MojoBuilder &sdb = state.structDefsBuilder;
+  MojoValue name = sdb.newVar(sdb.getIdentifier("FusionStruct"));
+  bool errOccurred = false;
+  sdb.structDecl(name, parameters, {MojoValue(traitName)}, fields, [&]() {
+    SmallVector<NamedMojoDef> methodParams;
+    SmallVector<NamedMojoDef> methodArgs;
+    std::optional<MojoValue> returnType;
+    emitTileFusionMethodSignature(lane, methodParams, methodArgs, returnType);
+
+    sdb.def(
+        MojoValue(isStore ? "store" : "compute"), methodParams, methodArgs,
+        returnType, /*exported=*/false, /*raises=*/false,
+        /*isAlwaysInline=*/true, [&](const FunctionBody &) {
+          DenseMap<Value, MojoValue> tileFor;
+          DenseMap<Value, MojoValue> scalarFor;
+          if (value)
+            tileFor[value] = MojoValue(kParameterVal);
+
+          auto unsupported = [&](Operation *bodyOp, StringRef why) {
+            bodyOp->emitOpError() << "in a tile fusion: " << why;
+            errOccurred = true;
+          };
+          MojoValue result;
+          for (Operation &bodyOp : body) {
+            if (auto load = dyn_cast<TileLoadOp>(bodyOp)) {
+              auto fieldIt = fieldFor.find(load.getTensor());
+              if (load.getCoord() != index || fieldIt == fieldFor.end())
+                return unsupported(load, "a load must read a capture at "
+                                         "the loop index");
+              tileFor[load.getResult()] = emitTileCopierLoad(
+                  sdb, fieldIt->second, captureFor[load.getTensor()]->rank(),
+                  dstArg, device);
+              continue;
+            }
+            if (auto constant = dyn_cast<ConstantScalarOp>(bodyOp)) {
+              std::optional<MojoValue> literal =
+                  scalarConstantAttrToMojoLiteral(constant.getValue());
+              if (!literal)
+                return unsupported(constant, "unsupported scalar type");
+              scalarFor[constant.getResult()] = *literal;
+              continue;
+            }
+            if (auto call = dyn_cast<CallElementwiseOp>(bodyOp)) {
+              KernelDeclAdaptor ewAdaptor(
+                  state.registry.lookupKernelBySymName(call.getCallee()));
+              if (!ewAdaptor.isTileElementwise())
+                return unsupported(call, "the kernel has no TileTensor "
+                                         "elementwise overload");
+              // One tile argument more than the op's operands is a
+              // destination to fill (`mo.cast`).
+              bool takesDestination =
+                  ewAdaptor.tileElementwiseFunction->inputArguments.size() ==
+                  call.getInputs().size() + 1;
+              SmallVector<MojoValue> inputs;
+              // A constant operand is a comptime parameter of the overload.
+              SmallVector<MojoValue> scalarParams;
+              for (Value in : call.getInputs()) {
+                if (auto scalarIt = scalarFor.find(in);
+                    scalarIt != scalarFor.end()) {
+                  // A bare literal would default to Float64.
+                  scalarParams.push_back(MojoValue("scalar").equal(
+                      MojoValue(kStructScalar)[{MojoValue(kParameterDType)}](
+                          {}, {scalarIt->second})));
+                  continue;
+                }
+                auto it = tileFor.find(in);
+                if (it == tileFor.end())
+                  return unsupported(call, "every elementwise operand must "
+                                           "be a tile or a constant");
+                inputs.push_back(it->second);
+              }
+              if (takesDestination && isElementwise)
+                inputs.insert(inputs.begin(), MojoValue(kParameterDst));
+              FailureOr<MojoValue> expr = emitElementwiseCallExpr(
+                  state, call, KernelFunctionKind::TileElementwise, inputs,
+                  scalarParams);
+              if (failed(expr)) {
+                errOccurred = true;
+                return;
+              }
+              tileFor[call.getOutputs().front()] = sdb.var(*expr);
+              continue;
+            }
+            if (auto store = dyn_cast<TileStoreOp>(bodyOp)) {
+              if (lane == TileFusionKind::Compute ||
+                  store.getCoord() != index ||
+                  store.getTensor() != storeTarget ||
+                  !tileFor.count(store.getValue()))
+                return unsupported(store, "a store must write a tile to "
+                                          "the output at the loop index");
+              result = tileFor[store.getValue()];
+              continue;
+            }
+            if (auto yieldOp = dyn_cast<YieldOp>(bodyOp)) {
+              auto it = tileFor.find(yieldOp.getOperand(0));
+              if (it == tileFor.end())
+                return unsupported(yieldOp, "must yield a tile");
+              result = it->second;
+              continue;
+            }
+            return unsupported(&bodyOp, "unsupported op");
+          }
+          if (errOccurred)
+            return;
+
+          if (isStore) {
+            MojoValue outTile =
+                emitCaptureTileAt(sdb, fieldFor[storeTarget],
+                                  captureFor[storeTarget]->rank(), device);
+            MojoValue dstSpace = MojoValue(kParameterStoreCopierType)
+                                     .get(TileTensorRef::kDstAddressSpace);
+            MojoValue srcSpace = MojoValue(kParameterStoreCopierType)
+                                     .get(TileTensorRef::kSrcAddressSpace);
+            sdb.call(
+                MojoValue(kParameterStoreCopier).get("copy"), {},
+                {outTile.get(TileTensorRef::kAddressSpaceCast)[dstSpace](),
+                 result.get(TileTensorRef::kAddressSpaceCast)[srcSpace]()});
+            return;
+          }
+          sdb.returnsValue(result.rebind(MojoValue(kStructTileTensor)[{
+              kParameterDType, kParameterLayoutType, kComptimeMutAnyOrigin}]));
+        });
+  });
+  if (errOccurred)
+    return failure();
+  return name;
+}
+
+/// Instantiates the struct from each capture's spec and `to_tile_tensor()`.
+static MojoValue instantiateTileFusionStruct(EmitMojoState &state,
+                                             const MojoValue &name,
+                                             ArrayRef<TileCapture> captures) {
+  SmallVector<MojoValue> comptimeArgs;
+  SmallVector<MojoValue> instanceArgs;
+  for (const TileCapture &cap : captures) {
+    ManagedTensorSliceRef mts(state.getMojoValueFor(cap.tensor));
+    comptimeArgs.push_back(mts.staticSpec());
+    instanceArgs.push_back(state.builder.var(mts.toTileTensor()));
+  }
+  return state.builder.var(name(comptimeArgs, instanceArgs));
+}
+
+/// Binds a tile fused output (`_FusedComputeOutputTileTensor` /
+/// `_FusedOutputTileTensor`) onto a slice over `$outputPtr`. A pass-through
+/// body binds the "no fusion" sentinel, so the kernel stores by itself.
+LogicalResult TileCreateEpilogueOp::emitMojo(EmitMojoState &state) {
+  // Shared with the SIMD store fusions.
+  state.emitOutputStoreFusionDefsOnce();
+  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(getElementType());
+  if (dtypeOr.isError())
+    return emitOpError("failed to convert epilogue element type to Mojo");
+  Block &body = getBody().front();
+  FailureOr<unsigned> rank = fusedRegionRank(*this, getShape());
+  if (failed(rank))
+    return failure();
+  TileFusionKind lane = getLane() == TileFusionLane::Compute
+                            ? TileFusionKind::Compute
+                            : TileFusionKind::Store;
+
+  MojoValue fusion;
+  if (isPassThroughTileBody(body)) {
+    fusion = MojoValue(lane == TileFusionKind::Compute
+                           ? kStructMsNoComputeFusionTile
+                           : kStructMsNoOutputFusionTile)();
+  } else {
+    // Body args are (value, index, captures...); capture 0 is the store
+    // target.
+    SmallVector<TileCapture> captures;
+    for (auto [i, cap] : llvm::enumerate(getCaptures())) {
+      FailureOr<TileCapture> capture =
+          makeTileCapture(*this, cap, body.getArgument(2 + i), i);
+      if (failed(capture))
+        return failure();
+      captures.push_back(*capture);
+    }
+    FailureOr<MojoValue> name = emitTileFusionStruct(
+        *this, state, lane, body, captures, /*index=*/body.getArgument(1),
+        /*value=*/body.getArgument(0), /*storeTarget=*/body.getArgument(2),
+        *dtypeOr, getDevice());
+    if (failed(name))
+      return failure();
+    fusion = instantiateTileFusionStruct(state, *name, captures);
+  }
+
+  MojoValue layout = state.builder.var(
+      MojoValue(kFnRowMajor)({}, {state.getMojoValueFor(getShape())}));
+  ManagedTensorSliceRef baseSlice(emitBaseSliceFromPtr(
+      state, state.mlirDTypeToMojoType(*dtypeOr), *rank, layout,
+      MojoValue(static_cast<uint64_t>(
+          M::Driver::getPreferredAlignment(getDevice().str()))),
+      state.getMojoValueFor(getOutputPtr())));
+  MojoValue bind = lane == TileFusionKind::Compute
+                       ? baseSlice.bindToFusedComputeOutputTile()
+                       : baseSlice.bindToFusedOutputTile();
+  state.setMojoValueFor(getTensor(), state.builder.var(bind({}, {fusion})));
+  return success();
+}
+
+/// Drives a standalone elementwise body through an `ElementwiseFusionTile`
+/// struct with `foreach_fusion_tile`, which stores each tile `compute` returns
+/// into the output.
+LogicalResult CallForeachTileOp::emitMojo(EmitMojoState &state) {
+  Block &body = getBody().front();
+  ValueRange capturing = getCapturing();
+  auto storeArg = dyn_cast<BlockArgument>(
+      (*body.getOps<TileStoreOp>().begin()).getTensor());
+  // Body args are (captures..., index); the verifier checked the one store.
+  Value output = capturing[storeArg.getArgNumber()];
+  FailureOr<TileCapture> outCapture =
+      makeTileCapture(*this, output, storeArg, /*idx=*/0);
+  if (failed(outCapture))
+    return failure();
+
+  SmallVector<TileCapture> inputs;
+  for (auto [i, cap] : llvm::enumerate(capturing)) {
+    if (i == storeArg.getArgNumber())
+      continue;
+    FailureOr<TileCapture> input =
+        makeTileCapture(*this, cap, body.getArgument(i), inputs.size());
+    if (failed(input))
+      return failure();
+    inputs.push_back(*input);
+  }
+
+  FailureOr<MojoValue> name = emitTileFusionStruct(
+      *this, state, TileFusionKind::Elementwise, body, inputs,
+      /*index=*/body.getArguments().back(), /*value=*/Value(),
+      /*storeTarget=*/storeArg, outCapture->dtype, getDevice());
+  if (failed(name))
+    return failure();
+  MojoValue functor = instantiateTileFusionStruct(state, *name, inputs);
+
+  auto driverDecl =
+      state.registry.lookupPrimitive(kMoggForeachTileRegistration);
+  ASSERT_STREAM(driverDecl,
+                "Primitive not found for " << kMoggForeachTileRegistration);
+  state.builder.call(
+      MojoValue(primitiveMojoName(driverDecl)), {},
+      {MojoValue(kParameterForeachTensor).equal(state.getMojoValueFor(output)),
+       MojoValue(kParameterForeachElem).equal(functor),
+       MojoValue(kParameterForeachCtx)
+           .equal(state.getMojoValueFor(getContext()))});
   return success();
 }
 
@@ -4001,18 +4795,16 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
   }
 
   // Inner-dynamic store-index reshapes carry their runtime from/to shapes as
-  // trailing shape captures. Convert each `!mogg.shape` Coord to the
-  // `IndexList` the reshape primitive wants, and pass its rank so the functor
-  // can declare the matching field.
-  SmallVector<unsigned> shapeCaptureRanks;
+  // trailing shape captures: each `!mogg.shape` Coord is passed whole, and
+  // the functor's field carries its static/dynamic split as its own type.
+  SmallVector<MojoValue> shapeCaptureTypes;
   SmallVector<MojoValue> shapeCaptureArgs;
   for (Value shapeCap : getShapeCaptures()) {
-    FailureOr<unsigned> rankOr = fusedRegionRank(*this, shapeCap);
-    if (failed(rankOr))
+    FailureOr<MojoValue> typeOr = fusedRegionShapeCoordType(*this, shapeCap);
+    if (failed(typeOr))
       return failure();
-    shapeCaptureRanks.push_back(*rankOr);
-    shapeCaptureArgs.push_back(state.builder.var(
-        MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(shapeCap)})));
+    shapeCaptureTypes.push_back(*typeOr);
+    shapeCaptureArgs.push_back(state.getMojoValueFor(shapeCap));
   }
 
   FailureOr<MojoValue> functorOr = emitMapFusionFunctor(
@@ -4020,7 +4812,7 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
       wrapTransform ? traitTransformLane
       : wrapStore   ? traitStoreLane
                     : (isCompute ? computeLane : storeLane),
-      inputDtypeParam, shapeCaptureRanks, shapeCaptureArgs);
+      inputDtypeParam, shapeCaptureTypes, shapeCaptureArgs);
   if (failed(functorOr))
     return failure();
   MojoValue functorInstance = *functorOr;
@@ -4168,21 +4960,20 @@ LogicalResult TensorCreatePrologueOp::emitMojo(EmitMojoState &state) {
   }
 
   // Inner-dynamic load-index reshapes carry runtime shapes as trailing shape
-  // captures, as in the epilogue.
-  SmallVector<unsigned> shapeCaptureRanks;
+  // captures, as in the epilogue: each `!mogg.shape` Coord is passed whole.
+  SmallVector<MojoValue> shapeCaptureTypes;
   SmallVector<MojoValue> shapeCaptureArgs;
   for (Value shapeCap : getShapeCaptures()) {
-    FailureOr<unsigned> rankOr = fusedRegionRank(*this, shapeCap);
-    if (failed(rankOr))
+    FailureOr<MojoValue> typeOr = fusedRegionShapeCoordType(*this, shapeCap);
+    if (failed(typeOr))
       return failure();
-    shapeCaptureRanks.push_back(*rankOr);
-    shapeCaptureArgs.push_back(state.builder.var(
-        MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(shapeCap)})));
+    shapeCaptureTypes.push_back(*typeOr);
+    shapeCaptureArgs.push_back(state.getMojoValueFor(shapeCap));
   }
 
   FailureOr<MojoValue> functorOr = emitMapFusionFunctor(
       state, getBody(), captureInfos, traitFused ? traitLoadLane : bindLoadLane,
-      /*valueDtype=*/dtypeParam, shapeCaptureRanks, shapeCaptureArgs);
+      /*valueDtype=*/dtypeParam, shapeCaptureTypes, shapeCaptureArgs);
   if (failed(functorOr))
     return failure();
   MojoValue functorInstance = *functorOr;
@@ -4277,14 +5068,12 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
     return failure();
   SmallVector<FusedCaptureInfo> captureInfos = *captureInfosOr;
 
-  MojoValue targetStr = MojoValue(("\"" + getDevice() + "\"").str());
-
   // Infer simd_width from all dtypes touched anywhere in the closure body.
   FailureOr<MojoValue> dtypesTuple = collectDtypesTuple(state, getBody());
   if (failed(dtypesTuple))
     return emitOpError("mogg.call.foreach: could not determine capture dtype");
-  MojoValue simdWidth =
-      MojoValue(kFnGetSimdWidthForDtypes)[{*dtypesTuple, targetStr}]({}, {});
+  MojoValue simdWidth = MojoValue(
+      kFnGetSimdWidthForDtypes)[{*dtypesTuple, context.get("target")}]({}, {});
 
   bool errOccurred = false;
   // Blanket `{var}` capture -- see the capture-convention note above.
@@ -4322,8 +5111,7 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
     return failure();
 
   state.builder.call(MojoValue(getCallee()),
-                     {MojoValue(kParameterSimdWidth).equal(simdWidth),
-                      MojoValue(kMoggTargetParameterName).equal(targetStr)},
+                     {MojoValue(kParameterSimdWidth).equal(simdWidth)},
                      {shape, lambdaVal, context});
   return success();
 }
@@ -4839,10 +5627,14 @@ LogicalResult AsyncUnpackOp::emitMojo(EmitMojoState &state) {
     MojoValue asyncUnpackFunc{kFnUnpackBufferRef};
     unpackedValue = asyncUnpackFunc({}, {state.getMojoValueFor(input)});
 
-  } else if (isa<MGP::DeviceContextType>(inputType)) {
+  } else if (auto context = dyn_cast<MGP::DeviceContextType>(inputType)) {
 
+    // The graph's device is static, so type the context by it instead of
+    // leaving every consumer to cast.
     MojoValue asyncUnpackFunc{kFnUnpackDeviceCtx};
-    unpackedValue = asyncUnpackFunc({}, {state.getMojoValueFor((input))});
+    MojoValue deviceKind = MojoValue(context.getDevice().getLabel()).quote();
+    unpackedValue =
+        asyncUnpackFunc({deviceKind}, {state.getMojoValueFor((input))});
 
   } else if (isa<MGP::ContextType>(inputType)) {
 
@@ -5019,182 +5811,6 @@ LogicalResult TensorInitOp::emitMojo(EmitMojoState &state) {
 // TensorArgInitOp
 //===----------------------------------------------------------------------===//
 
-// Inline Mojo definitions for the trait tensor-argument struct, emitted once
-// per module (guarded by `EmitMojoState::emittedTensorArgDefs`). One struct
-// serves every execute lane. `_Engine` names how the storage is referenced: a
-// raw pointer under `DefaultEngine`, a stable address slot under
-// `StableAddrEngine`. `_is_device_passable` selects whether it crosses to the
-// device (as the projected `TileTensor`, itself `DevicePassable`). The
-// `_MoggDenseTensorArg` and `_MoggStableTensorArg`
-// aliases bind the engine, so a stub names the lane rather than the engine.
-static constexpr llvm::StringLiteral kTensorArgDefs = R"mojo(
-from layout import Coord, DefaultEngine, TensorEngine, TensorLayout, TileTensor
-from extensibility import (
-    Input,
-    MutableInput,
-    Output,
-    Stable,
-    StableAddrEngine,
-    StableStorage,
-    TileTensorable,
-)
-from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.memory import AddressSpace
-
-
-@fieldwise_init("implicit")
-struct _MoggTensorIO(Equatable, ImplicitlyCopyable, TrivialRegisterPassable):
-    var value: Int
-
-    comptime INPUT = _MoggTensorIO(0)
-    comptime OUTPUT = _MoggTensorIO(1)
-    comptime MUTABLE_INPUT = _MoggTensorIO(2)
-
-    @always_inline("builtin")
-    def __eq__(self, other: Self) -> Bool:
-        return self.value == other.value
-
-    @always_inline("builtin")
-    def __ne__(self, other: Self) -> Bool:
-        return self.value != other.value
-
-    @always_inline("builtin")
-    def is_input(self) -> Bool:
-        return self == _MoggTensorIO.INPUT or self == _MoggTensorIO.MUTABLE_INPUT
-
-    @always_inline("builtin")
-    def is_mut(self) -> Bool:
-        return self == _MoggTensorIO.OUTPUT or self == _MoggTensorIO.MUTABLE_INPUT
-
-
-struct _MoggTensorArg[
-    _dtype: DType,
-    _LayoutType: TensorLayout,
-    _alignment: Int,
-    _io: _MoggTensorIO,
-    _is_device_passable: Bool,
-    _Engine: TensorEngine = DefaultEngine[element_width=1],
-](
-    # A storage handle and a layout, so copies alias the same buffer, as
-    # `TileTensor` copies do. `TensorTuple` holds its elements by value.
-    Copyable,
-    DevicePassable where _is_device_passable,
-    Input where _io == _MoggTensorIO.INPUT,
-    MutableInput where _io == _MoggTensorIO.MUTABLE_INPUT,
-    Movable,
-    # An output is written through a live pointer, never through a slot.
-    Output where _io == _MoggTensorIO.OUTPUT
-    and _Engine == DefaultEngine[element_width=1],
-    Stable where _Engine == StableAddrEngine[element_width=1],
-    TileTensorable,
-):
-    comptime mut = Self._io.is_mut()
-    comptime dtype = Self._dtype
-    comptime LayoutType = Self._LayoutType
-    comptime _shape_types = Self.LayoutType._shape_types
-    comptime __shape_types = Self.LayoutType.__shape_types
-    comptime rank = Self.LayoutType.rank
-    comptime alignment = Self._alignment
-    comptime Engine = Self._Engine
-    comptime Origin = UntrackedOrigin[mut = Self.mut]
-    # The projection names its engine explicitly instead of inheriting the
-    # pointer-backed default, so the arg's engine stays a per-target choice.
-    comptime TileTensorType = TileTensor[
-        dtype = Self.dtype,
-        LayoutType = Self.LayoutType,
-        origin = Self.Origin,
-        Engine = Self.Engine,
-    ]
-    var _storage: Self.Engine.StorageType[
-        Self.dtype, Self.Origin, AddressSpace.GENERIC
-    ]
-    var _layout: Self.LayoutType
-
-    # `ptr` is whatever the stub received as the buffer's data pointer, and the
-    # engine decides what that is: the data itself under `DefaultEngine`, the
-    # slot's address under `StableAddrEngine` (the same reinterpretation
-    # `mogg_stable_tensor_init` performs for the legacy lane). The storage
-    # field's type is opaque behind the `TensorEngine` bound, hence the
-    # `rebind` once the engine is pinned.
-    @inline(.always)
-    def __init__(
-        out self,
-        ptr: Pointer[NoneType, MutAnyOrigin],
-        layout: Self.LayoutType,
-    ) where Self.Engine == DefaultEngine[element_width=1]:
-        self._storage = rebind[type_of(self._storage)](
-            ptr.unsafe_bitcast[Scalar[Self.dtype]]()
-            .unsafe_mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.Origin]()
-        )
-        self._layout = layout
-
-    @inline(.always)
-    def __init__(
-        out self,
-        ptr: Pointer[NoneType, MutAnyOrigin],
-        layout: Self.LayoutType,
-    ) where Self.Engine == StableAddrEngine[element_width=1]:
-        self._storage = rebind[type_of(self._storage)](
-            StableStorage[Self.dtype, Self.Origin, AddressSpace.GENERIC](ptr)
-        )
-        self._layout = layout
-
-    # A declarative launch passes the argument to the device as its projection,
-    # and the device rebuilds it here.
-    @inline(.always)
-    def __init__(out self, tile: Self.TileTensorType):
-        self._storage = tile._storage
-        self._layout = tile.layout
-
-    # The device representation is the projected `TileTensor`: the device
-    # kernel receives a real tile (Coord-indexed load/store), not this arg. The
-    # encoder copies the storage handle bit-for-bit, so the graph must have
-    # transferred the buffer to the device (see the GPU e2e tests'
-    # `mo.transfer`) for a pointer handle to be a valid device address. A slot
-    # handle's two pointer layers are device addresses already.
-    comptime device_type: AnyType = Self.TileTensorType
-
-    @inline(.always)
-    def _to_device_type(
-        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
-    ) where Self._is_device_passable:
-        encoder.encode(Self.TileTensorType(self._storage, self._layout), target)
-
-    @staticmethod
-    def get_type_name() -> String where Self._is_device_passable:
-        var name = String("_MoggTensorArg[Engine=")
-        Self.Engine.write_type_name_to(name)
-        name += "]"
-        return name^
-
-    @inline(.always)
-    def shape(self) -> Coord[*Self._shape_types]:
-        return self._layout.shape_coord()
-
-    @inline(.always)
-    def layout(self) -> Self.LayoutType:
-        return self._layout
-
-    @inline(.always)
-    def _to_tile_tensor(
-        self,
-    ) -> Self.TileTensorType:
-        return {self._storage, self._layout}
-
-
-comptime _MoggDenseTensorArg = _MoggTensorArg[
-    _Engine=DefaultEngine[element_width=1], ...
-]
-
-# A `Stable` argument is GPU only, so the alias pins it device-passable.
-comptime _MoggStableTensorArg = _MoggTensorArg[
-    _is_device_passable=True,
-    _Engine=StableAddrEngine[element_width=1],
-    ...,
-]
-)mojo";
-
 static constexpr llvm::StringLiteral kDenseTensorArgAlias =
     "_MoggDenseTensorArg";
 static constexpr llvm::StringLiteral kStableTensorArgAlias =
@@ -5207,68 +5823,6 @@ static constexpr llvm::StringLiteral kStableTensorArgAlias =
 // `EmitMojoState::emittedShapeTensorArgDefs`.
 static constexpr llvm::StringLiteral kShapeTensorArgStructName =
     "_MoggShapeTensorArg";
-static constexpr llvm::StringLiteral kShapeTensorArgDefs = R"mojo(
-from layout import Coord, TensorLayout, TileTensor
-from extensibility import Tensor, TileTensorable
-
-
-struct _MoggShapeTensorArg[
-    _dtype: DType,
-    _LayoutType: TensorLayout,
-    _alignment: Int,
-    _data_visible: Bool,
-](
-    Copyable,
-    Movable,
-    Tensor,
-    # `_data_visible` gates `TileTensorable` off for a bare `Tensor` bound, so
-    # such an argument cannot reach element values and AddFallbackShapeFuncs
-    # leaves it on its device.
-    TileTensorable where _data_visible,
-):
-    comptime mut = False
-    comptime dtype = Self._dtype
-    comptime LayoutType = Self._LayoutType
-    comptime _shape_types = Self.LayoutType._shape_types
-    comptime __shape_types = Self.LayoutType.__shape_types
-    comptime rank = Self.LayoutType.rank
-    comptime alignment = Self._alignment
-    var handle: Pointer[Scalar[Self.dtype], UntrackedOrigin[mut = Self.mut]]
-    var _layout: Self.LayoutType
-
-    @inline(.always)
-    def __init__(
-        out self,
-        ptr: Pointer[NoneType, MutAnyOrigin],
-        layout: Self.LayoutType,
-    ):
-        self.handle = ptr.unsafe_bitcast[Scalar[Self.dtype]]().unsafe_mut_cast[
-            Self.mut
-        ]().unsafe_origin_cast[UntrackedOrigin[mut = Self.mut]]()
-        self._layout = layout
-
-    @inline(.always)
-    def shape(self) -> Coord[*Self._shape_types]:
-        return self.layout().shape_coord()
-
-    @inline(.always)
-    def layout(self) -> Self.LayoutType:
-        return self._layout
-
-    @inline(.always)
-    def _to_tile_tensor(
-        self,
-    ) -> TileTensor[
-        dtype = Self.dtype,
-        LayoutType = Self.LayoutType,
-        origin = UntrackedOrigin[mut = Self.mut],
-    ]:
-        return TileTensor[
-            dtype = Self.dtype,
-            LayoutType = Self.LayoutType,
-            origin = UntrackedOrigin[mut = Self.mut],
-        ](ptr=self.handle, layout=self.layout())
-)mojo";
 
 /// Emit `_MoggShapeTensorArg[dtype, layoutType, alignment, dataVisible](ptr,
 /// layout)`, the host-only shape-lane counterpart, defined once per module.
@@ -5762,42 +6316,17 @@ LogicalResult CallElementwiseOp::emitMojo(EmitMojoState &state) {
     inputs.push_back(
         MojoValue(kFnCoordToIndexList)({}, {state.getMojoValueFor(index)}));
 
-  KernelDeclOp ewKernelDecl = state.registry.lookupKernelBySymName(getCallee());
-  KernelDeclAdaptor ewAdaptor(ewKernelDecl);
-  const KernelDeclFunctionAdaptor &ewFnAdaptor =
-      ewAdaptor.isElementwise() ? *ewAdaptor.elementwiseFunction
-                                : *ewAdaptor.executeFunction;
-
-  auto outputs = getOutputs();
-  if (outputs.size() != 1)
-    return emitError(
-        "elementwise with outputs size != 1 not supported for EmitMojo");
-  Value outputVal = outputs.front();
-
-  std::optional<StringRef> maybeDtypeParamName =
-      EmitMojoState::getResultParamNameFor(ewFnAdaptor, kParameterDType);
-  auto inferParam = [&](StringRef paramName) -> ErrorOr<MojoValue> {
-    if (maybeDtypeParamName.has_value() && paramName == *maybeDtypeParamName) {
-      ErrorOr<DType> resultTyOr = M::MO::fromMLIRType(
-          cast<ElementTypeInterface>(outputVal.getType()).getElementType());
-      if (resultTyOr.isError())
-        return Error("invalid output type can't be converted to mojo dtype");
-      return state.mlirDTypeToMojoType(*resultTyOr);
-    }
-    return state.inferDefaultKernelParamValue(*this, paramName);
-  };
-  KernelFunctionKind ewKind = ewAdaptor.isElementwise()
-                                  ? KernelFunctionKind::Elementwise
-                                  : KernelFunctionKind::Execute;
-  auto maybeParams = inferKernelParameters(ewAdaptor, ewKind, inferParam);
-  if (maybeParams.isError())
-    return emitError() << "Failed to infer all the kernel parameters: "
-                       << maybeParams.takeError();
-
-  MojoValue mojoSymbolName(ewFnAdaptor.fullyResolvedName.strref());
-  state.setMojoValueFor(
-      outputVal, lambdaInfo.lambdaBuilder->var(
-                     mojoSymbolName(maybeParams->functionParameters, inputs)));
+  KernelDeclAdaptor ewAdaptor(
+      state.registry.lookupKernelBySymName(getCallee()));
+  FailureOr<MojoValue> call = emitElementwiseCallExpr(
+      state, *this,
+      ewAdaptor.isElementwise() ? KernelFunctionKind::Elementwise
+                                : KernelFunctionKind::Execute,
+      inputs);
+  if (failed(call))
+    return failure();
+  state.setMojoValueFor(getOutputs().front(),
+                        lambdaInfo.lambdaBuilder->var(*call));
   return success();
 }
 

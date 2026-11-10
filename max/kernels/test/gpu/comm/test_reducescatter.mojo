@@ -65,7 +65,7 @@ def reducescatter_test[
     axis: Int,
     use_custom_epilogue: Bool = False,
     use_multimem: Bool = False,
-](list_of_ctx: List[DeviceContext], shape: Coord) raises where (
+](list_of_ctx: List[DeviceContext[]], shape: Coord) raises where (
     shape.flat_rank == rank and shape.rank == rank
 ):
     """Test reduce-scatter operation (1D and 2D)."""
@@ -406,7 +406,7 @@ def grouped_reducescatter_test[
     rows_second: Int = 3,
     D: Int = 128,
     with_residual: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Test grouped reduce-scatter with group-local ranks and shapes.
 
     With exactly two groups this also exercises the relay-assisted path, which
@@ -625,7 +625,7 @@ def grouped_reducescatter_test[
 
 def run_reducescatter_sweep[use_multimem: Bool]() raises:
     """Run reduce-scatter tests across 1D and 2D configurations."""
-    var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
+    var list_of_ctx = List[DeviceContext[]](capacity=MAX_GPUS)
     for i in range(DeviceContext.number_of_devices()):
         list_of_ctx.append(DeviceContext(i))
 
@@ -713,7 +713,7 @@ def main() raises:
     # Standard (non-multimem) sweep
     run_reducescatter_sweep[use_multimem=False]()
     if DeviceContext.number_of_devices() >= 4:
-        var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
+        var list_of_ctx = List[DeviceContext[]](capacity=MAX_GPUS)
         for i in range(DeviceContext.number_of_devices()):
             list_of_ctx.append(DeviceContext(i))
         # Two groups of two: ragged between the groups (5 vs 3 rows) and
@@ -752,7 +752,7 @@ def main() raises:
         ](list_of_ctx)
 
     if DeviceContext.number_of_devices() == 8:
-        var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
+        var list_of_ctx = List[DeviceContext[]](capacity=MAX_GPUS)
         for i in range(8):
             list_of_ctx.append(DeviceContext(i))
         # Two groups of four: the shape the relay recipe targets, and the one

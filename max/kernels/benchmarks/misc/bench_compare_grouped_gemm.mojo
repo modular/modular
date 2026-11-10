@@ -70,7 +70,7 @@ def bench_cublas_per_group[
     scales_dtype: DType,
     num_groups: Int,
     sf_vector_size: Int = MXFP8_SF_VECTOR_SIZE,
-](ctx: DeviceContext, mut bench: Bench, m: MType, n: NType, k: KType) raises:
+](ctx: DeviceContext[], mut bench: Bench, m: MType, n: NType, k: KType) raises:
     """Benchmark cuBLAS called once per group (sequential baseline).
 
     This represents the naive approach without a grouped/persistent kernel:
@@ -167,7 +167,7 @@ def bench_cublas_per_group[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             # Call cuBLAS once per group (sequential)
             for _g in range(num_groups):
                 vendor_blas.matmul(
@@ -224,7 +224,7 @@ def bench_structured_kernel[
     k_grp_size: Int = 1,
     scaling_kind: UMMAKind = UMMAKind.KIND_MXF8F6F4,
     sf_vector_size: Int = MXFP8_SF_VECTOR_SIZE,
-](ctx: DeviceContext, mut bench: Bench, m: MType, n: NType, k: KType) raises:
+](ctx: DeviceContext[], mut bench: Bench, m: MType, n: NType, k: KType) raises:
     """Benchmark structured grouped_block_scaled_matmul."""
 
     comptime SF_VECTOR_SIZE = sf_vector_size
@@ -419,7 +419,7 @@ def bench_structured_kernel[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,

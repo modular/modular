@@ -21,7 +21,7 @@ switches to TF32 tensor cores, so those rows are checked against an fp64 host
 reference instead.
 
 Shapes mirror MiniMax-M3's router gate (`N = 128`, `K = 6144`) with runtime
-`M`, as the `mo.router.gate.mixed.gemv` custom op calls it. An odd `N`
+`M`, as the `moe.router.gate.mixed.gemv` custom op calls it. An odd `N`
 exercises the `check_bounds_n` guard of the `tile_n = 2` buckets.
 """
 
@@ -88,7 +88,7 @@ def _run_case[static_N: Int](ctx: DeviceContext, m: Int) raises:
     var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(m, Idx[K]))
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major[static_N, K]())
 
-    router_gate_mixed_gemv[static_N](
+    router_gate_mixed_gemv[.float32, static_N](
         c_tt, a_tt.as_imm(), b_tt.as_imm(), m, static_N, K, ctx
     )
 
@@ -99,7 +99,7 @@ def _run_case[static_N: Int](ctx: DeviceContext, m: Int) raises:
             c_ref_dev.unsafe_ptr(), row_major(m, Idx[static_N])
         )
         var a_f32_tt = TileTensor(a_f32_dev.unsafe_ptr(), row_major(m, Idx[K]))
-        matmul[transpose_b=True, target="gpu"](
+        matmul[transpose_b=True](
             c_ref_tt, a_f32_tt.as_imm(), b_tt.as_imm(), ctx
         )
 

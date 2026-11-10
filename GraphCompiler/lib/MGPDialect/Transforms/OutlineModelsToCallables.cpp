@@ -453,7 +453,6 @@ class OutlineModelsToCallablesPass
       mlir::FunctionType execFnType = execCallable.getFunctionType();
 
       auto devices = model.getDevices();
-      auto frameworkName = model.getFrameworkName();
 
       // Read before erasing the model.
       auto initialModelFnType = model.getInputOutputTypes();
@@ -487,8 +486,9 @@ class OutlineModelsToCallablesPass
           resultNamesAttr = names;
       }
 
+      // MAX is the only supported runtime framework.
       auto mefModel = MEF::ModelOp::create(
-          builder, loc, devices, frameworkName, initFnType, execFnType,
+          builder, loc, devices, "mof", initFnType, execFnType,
           initialModelFnType, argumentDeviceIndicesAttr,
           resultDeviceIndicesAttr, argumentNamesAttr, resultNamesAttr,
           modelName, /*sym_visibility=*/nullptr);

@@ -75,14 +75,14 @@ def test_repack_gptq[
         var perm_tensor = TileTensor(
             perm_device.unsafe_ptr(), row_major(Int(K))
         )
-        gpu_qint4_repack_GPTQ[group_size, "gpu"](
+        gpu_qint4_repack_GPTQ[group_size](
             input_tensor.as_imm(),
             result_tensor,
             perm_tensor.as_imm().as_unsafe_any_origin(),
-            ctx,
+            ctx=ctx,
         )
     else:
-        gpu_qint4_repack_GPTQ[group_size, "gpu"](
+        gpu_qint4_repack_GPTQ[group_size](
             input_tensor.as_imm(), result_tensor, ctx=ctx
         )
     ctx.enqueue_copy(output_host, output_device)

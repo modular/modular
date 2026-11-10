@@ -30,10 +30,10 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
+from max.nn._graph_ops.moe_quant import Fp8Strategy
 from max.nn.legacy.moe import MoEQuantized
-from max.nn.legacy.moe.quant_strategy import Fp8Strategy
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

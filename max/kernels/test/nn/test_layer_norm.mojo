@@ -65,7 +65,7 @@ def run_layer_norm_cpu[
             coords, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm[dtype, rank, target="cpu"](
+    layer_norm[dtype, rank](
         input_fn,
         output_fn,
         Coord(shape),

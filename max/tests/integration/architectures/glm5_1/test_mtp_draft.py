@@ -23,13 +23,17 @@ import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import Weights
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.glm5_1_modulev3 import mtp
 from max.pipelines.architectures.glm5_1_modulev3.arch import (
     glm5_1_modulev3_arch,
     glm5_1_mtp_draft_arch,
 )
 from max.pipelines.architectures.glm5_1_modulev3.spec_adapters import ADAPTER
+from max.pipelines.architectures.glm5_1_modulev3.weight_adapters import (
+    glm5_1_mtp_weight_rules,
+)
+from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _SpecDecodeModuleV3PipelineModel,
     spec_decode_architecture,
@@ -97,30 +101,28 @@ def _weight(dtype: DType = DType.bfloat16) -> Any:
 
 def test_the_draft_takes_only_the_nextn_layer_under_its_own_names() -> None:
     nextn = f"model.layers.{_LAYERS}"
-    final_norm = _weight()
-    converted = mtp.convert_mtp_state_dict(
+    transform = WeightTransform(
+        glm5_1_mtp_weight_rules(DeepseekV3Config(num_hidden_layers=_LAYERS))
+    )
+    converted = transform(
         {
-            "model.norm.weight": final_norm,
+            "model.norm.weight": _weight(),
             "model.layers.0.input_layernorm.weight": _weight(),
+            "lm_head.weight": _weight(),
             f"{nextn}.enorm.weight": _weight(),
             f"{nextn}.hnorm.weight": _weight(),
             f"{nextn}.eh_proj.weight": _weight(),
+            f"{nextn}.shared_head.norm.weight": _weight(),
             f"{nextn}.input_layernorm.weight": _weight(),
-            f"{nextn}.embed_tokens.weight": _weight(),
-            f"{nextn}.shared_head.head.weight": _weight(),
-        },
-        DeepseekV3Config(num_hidden_layers=_LAYERS),
+        }
     )
     assert set(converted) == {
         "enorm.weight",
         "hnorm.weight",
         "eh_proj.weight",
-        "decoder_layer.input_layernorm.weight",
-        # The checkpoint has no head norm of its own, so it takes the
-        # target's final one.
         "shared_head_norm.weight",
+        "decoder_layer.input_layernorm.weight",
     }
-    assert converted["shared_head_norm.weight"] is final_norm.data()
 
 
 @dataclass(frozen=True)

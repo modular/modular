@@ -53,7 +53,7 @@ from max.gpu import (
 from max.gpu.host import DeviceContext
 
 from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
@@ -372,7 +372,7 @@ def blockwise_scaled_fp8_grouped_matmul_amd[
             unchanged: a caller wiring this up passes the cap device
             graph capture is bounded to (e.g. the recipe's max decode batch
             size), mirroring `decode_grid_m_cap` on the AMD MXFP4 grouped
-            path (`max/python/max/nn/legacy/kernels.py`).
+            path (`max/python/max/nn/_graph_ops/__init__.py`).
     """
     comptime assert transpose_b, "transpose_b must be True"
     comptime assert b.flat_rank == 3, "b must be [num_experts, N, K]"

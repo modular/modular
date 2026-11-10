@@ -172,9 +172,7 @@ EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 //===----------------------------------------------------------------------===//
 
 bool QuoteAttr::isConstant() const {
-  // Should we consider enclosed index ref constant within quoted attr? probably
-  // does not matter.
-  return ParameterAttr::isSimpleConstant(getQuotedParam());
+  return !EscapingReferenceFinder::check(*this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1269,6 +1267,23 @@ inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
   return specializedType;
 }
 
+/// Returns true if the result of `bindParams` is a partially specialized
+/// version of its body generator (in contrast to a nested generator).
+static bool isCurriedBinding(BindParamsAttr bindParams) {
+  auto genType = sugarCast<GeneratorType>(bindParams.getGenerator().getType());
+  ArrayRef<TypedAttr> values = bindParams.getParamValues();
+  if (values.size() != genType.getInputParamTypes().size() ||
+      llvm::any_of(values, llvm::IsaPred<UnboundAttr>))
+    return true;
+
+  PogListAttr metadata = genType.getParamListAttrs();
+  size_t numConstraints = metadata ? metadata.getBodyConstraints().size() : 0;
+  DenseBoolArrayAttr discharged = bindParams.getDischarged();
+  size_t numDischarged =
+      discharged ? llvm::count(discharged.asArrayRef(), true) : 0;
+  return numDischarged != numConstraints || !isEagerlyInstantiatable(genType);
+}
+
 Type BindParamsAttr::inferResultType(
     TypedAttr generator, ArrayRef<TypedAttr> paramValues,
     DenseBoolArrayAttr discharged,
@@ -1301,9 +1316,11 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       isEqualCanon(generator.getType(), type))
     return generator;
 
-  // If the generator is itself a BindParamsAttr, flatten the new bindings into
-  // the existing ones.
-  if (auto bindParams = sugarDynCast<BindParamsAttr>(generator)) {
+  // If the generator is a curried BindParamsAttr, flatten the new bindings into
+  // the existing ones. A non-curried one has instantiated its body, so the
+  // new bindings belong to that body instead.
+  auto bindParams = sugarDynCast<BindParamsAttr>(generator);
+  if (bindParams && isCurriedBinding(bindParams)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
     DenseBoolArrayAttr innerMask = bindParams.getDischarged();
@@ -1893,56 +1910,37 @@ FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
       GeneratorAttr::get(inputParamTypes, funcSymbol, metadata));
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
-                                             FuncType type,
-                                             Attribute metadata) {
+FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
+  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  assert(type.getInputParamTypes().empty());
+  return getParamLess(FlatSymbolRefAttr::get(func.getSymNameAttr()),
+                      type.getBody(), type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::getParamLess(SymbolRefAttr symbol,
+                                                      FuncType type,
+                                                      Attribute metadata) {
   auto funcSymbol = FuncSymbolAttr::get(symbol, type, /*paramValues=*/{});
   return get(/*inputParamTypes=*/{}, funcSymbol, metadata);
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
-  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
-  assert(type.getInputParamTypes().empty());
-  return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
+FuncSymbolGenerator
+FuncSymbolGenerator::getUnbound(SymbolRefAttr symbol,
+                                FuncTypeGeneratorType type) {
+  // Simply forward the parameters.
+  ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
+  SmallVector<TypedAttr> bodyValues;
+  for (auto [i, paramType] : llvm::enumerate(inputParamTypes))
+    bodyValues.push_back(ParamIndexRefAttr::get(i, paramType));
+
+  return get(inputParamTypes,
+             FuncSymbolAttr::get(symbol, type.getBody(), bodyValues),
              type.getParamListAttrs());
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
-                                             FuncTypeGeneratorType type,
-                                             ArrayRef<TypedAttr> paramValues) {
-  ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
-
-  // The body binds every parameter of the callee. A parameter left unbound
-  // refers to the generator's next input parameter, so specializing the
-  // generator binds it; a bound value moves one scope deeper, into the body.
-  SmallVector<TypedAttr> bodyValues;
-  IndexDepthAdjuster adjuster(1);
-  unsigned nextInput = 0;
-  auto selfRef = [&]() -> TypedAttr {
-    TypedAttr ref =
-        ParamIndexRefAttr::get(nextInput, inputParamTypes[nextInput]);
-    ++nextInput;
-    return ref;
-  };
-  for (TypedAttr value : paramValues) {
-    if (sugarIsa<UnboundAttr>(value)) {
-      if (nextInput == inputParamTypes.size())
-        return {};
-      bodyValues.push_back(selfRef());
-    } else {
-      bodyValues.push_back(cast<TypedAttr>(adjuster.replace(value)));
-    }
-  }
-  while (nextInput < inputParamTypes.size())
-    bodyValues.push_back(selfRef());
-  auto funcSymbol = FuncSymbolAttr::get(symbol, type.getBody(), bodyValues);
-  return get(inputParamTypes, funcSymbol, type.getParamListAttrs());
-}
-
-FuncSymbolGenerator FuncSymbolGenerator::get(StringAttr name,
-                                             FuncTypeGeneratorType type,
-                                             ArrayRef<TypedAttr> paramValues) {
-  return get(FlatSymbolRefAttr::get(name), type, paramValues);
+FuncSymbolGenerator
+FuncSymbolGenerator::getUnbound(StringAttr name, FuncTypeGeneratorType type) {
+  return getUnbound(FlatSymbolRefAttr::get(name), type);
 }
 
 FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
@@ -5589,14 +5587,26 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     // Walking is repeated for the same value many times; cache across calls.
     using Base =
         std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
-    ShardedCache<const void *> *cache = getCache(value.getContext());
-    if (cache) {
-      if (const void *hit = cache->lookup(value.getAsOpaquePointer()))
-        return Base::getFromOpaquePointer(hit);
-    }
+    MLIRContext *context = value.getContext();
+    return Base::getFromOpaquePointer(CompilerCaches::getOrCompute(
+        context, &CompilerCaches::canonical, value.getAsOpaquePointer(), [&] {
+          Base result = rebuildUncached(value, depth);
+          // A canonical form is its own canonical form.
+          if (result != Base(value))
+            CompilerCaches::insert(context, &CompilerCaches::canonical,
+                                   result.getAsOpaquePointer(),
+                                   result.getAsOpaquePointer());
+          return result.getAsOpaquePointer();
+        }));
+  }
 
-    // Otherwise, recursively walk and rebuild the attribute with
-    // canonicalized subelements.
+  /// Recursively walks `value` and rebuilds it with canonicalized subelements.
+  /// Does not consult the cache; only `doReplace` calls it.
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  rebuildUncached(T value, size_t depth) {
+    using Base =
+        std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;
     bool changed = false;
@@ -5608,20 +5618,8 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     value.walkImmediateSubElements(
         [&](Attribute attr) { walkFn(attr, newAttrs); },
         [&](Type type) { walkFn(type, newTypes); });
-    Base result =
-        changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
-                : Base(value);
-    if (cache && result) {
-      cache->insert(value.getAsOpaquePointer(), result.getAsOpaquePointer());
-      if (changed)
-        cache->insert(result.getAsOpaquePointer(), result.getAsOpaquePointer());
-    }
-    return result;
-  }
-
-  static ShardedCache<const void *> *getCache(MLIRContext *context) {
-    CompilerCaches *caches = CompilerCaches::get(context);
-    return caches ? &caches->canonical : nullptr;
+    return changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
+                   : Base(value);
   }
 
   friend class ParameterReplacer<Canonicalizer>;

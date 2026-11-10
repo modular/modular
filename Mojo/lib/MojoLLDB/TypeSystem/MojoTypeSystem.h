@@ -41,6 +41,7 @@ class ASTDecl;
 class ASTType;
 class DefASTDecl;
 class MojoParserContext;
+class MojoREPLContext;
 class SharedState;
 class StructASTDecl;
 } // namespace M::KGEN::LIT
@@ -72,6 +73,7 @@ public:
 
   /// Return the Mojo parser context attached to this type system.
   LIT::MojoParserContext &getParserContext();
+  LIT::MojoREPLContext &getREPLContext();
 
   /// Return the target info that corresponds to the current LLDB target, it
   /// might be invalid if it couldn't be computed.
@@ -552,6 +554,12 @@ public:
 
   lldb_private::CompilerType
   GetPointerType(lldb::opaque_compiler_type_t type) override;
+
+  /// Returns the type unchanged: Mojo pointer types carry their address
+  /// space themselves, and the base implementation returns an invalid type.
+  lldb_private::CompilerType
+  AddAddressSpaceModifier(lldb::opaque_compiler_type_t type,
+                          uint32_t addressSpace) override;
 
   //===--------------------------------------------------------------------===//
   // Type Navigation

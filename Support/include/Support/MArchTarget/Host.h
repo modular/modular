@@ -20,6 +20,7 @@
 
 #include "Support/DeviceSpecs.h"
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 #include "llvm/Support/JSON.h"
 
 #include "llvm/Support/raw_ostream.h"
@@ -37,10 +38,6 @@ namespace llvm::json {
 // Forward declare.
 class OStream;
 } // namespace llvm::json
-
-#if defined(__APPLE__) && (defined(__arm64__) || defined(__aarch64__))
-#define HOST_IS_APPLE_SILICON_PROCESSOR
-#endif
 
 namespace M {
 //===----------------------------------------------------------------------===//
@@ -71,7 +68,7 @@ enum class HostProperty {
 };
 
 /// Information of host machine.
-struct HostMachineInfo {
+struct MODULAR_CXX_EXPORT HostMachineInfo {
   std::string triple;
   std::string osName;
   std::string cpuArch;
@@ -116,13 +113,13 @@ struct HostMachineInfo {
 ///
 /// CAUTION: Use getHostTargetInfo from MArchTarget if you only need a
 /// triple, cpu and features.
-ErrorOr<HostMachineInfo> getHostMachineInfo();
+MODULAR_CXX_EXPORT ErrorOr<HostMachineInfo> getHostMachineInfo();
 
 /// Get a flag indicating whether the host machine is running in a container
-ErrorOr<bool> getHostIsInContainer();
+MODULAR_CXX_EXPORT ErrorOr<bool> getHostIsInContainer();
 
 /// Get the host machine total memory in kB
-ErrorOr<std::string> getHostTotalMemoryKB();
+MODULAR_CXX_EXPORT ErrorOr<std::string> getHostTotalMemoryKB();
 
 /// Get the host machine OS version
 ErrorOr<std::string> getHostOSVersion();

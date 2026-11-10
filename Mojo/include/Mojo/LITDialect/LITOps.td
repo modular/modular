@@ -546,7 +546,20 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     ArrayAttr getSelectedAnnotations(int64_t fieldIndex);
 
     /// Get a bound reference to the struct type.
-    StructType bindReference(ArrayRef<TypedAttr> paramValues = {});
+    /// FIXME: this function is the major source of unbound attr in struct type,
+    /// which will be removed soonish.
+    StructType legacyBindReference(ArrayRef<TypedAttr> paramValues = {});
+
+    /// Get a type expression after binding the parameter value to the struct
+    /// decl.
+    TypedAttr bindReference(ParameterEvaluationContext *evalCtx,
+                            ArrayRef<TypedAttr> paramValues = {});
+
+    /// Get a fully bound struct type with the given parameter values.
+    /// The method assume that the provided parameter values will lead to a
+    /// fully bound struct type.
+    StructType bindAllReferences(ParameterEvaluationContext *evalCtx,
+                                 ArrayRef<TypedAttr> paramValues = {});
 
     /// Get whether this struct is compiler generated.
     bool isSynthetic();
@@ -1120,7 +1133,8 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
                    "StringRef":$originName,
-                   "VarDeclKind":$kind)>
+                   "VarDeclKind":$kind,
+                   CArg<"TypedAttr", "{}">:$addressSpace)>
   ];
   let extraClassDeclaration = [{
     bool isSynthetic();

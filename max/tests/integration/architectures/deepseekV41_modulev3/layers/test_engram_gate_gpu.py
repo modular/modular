@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GPU tests for the Engram signed-sqrt gate on main's ``mo.engram.gate_masked``.
+"""GPU tests for the Engram signed-sqrt gate on main's ``engram.gate_masked``.
 
 They pin the gate the hash feeds: the per-copy key/value split, the Hadamard
 ``q*k`` weight, the per-(token, copy) RMS normalization, the ``< 0`` (not

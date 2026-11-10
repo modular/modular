@@ -315,11 +315,11 @@ def test_index_tensor_CLIPVIT() raises:
     var output_dyn = output_data_buffer.make_dynamic[.int64]()
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
-    gather_nd[batch_dims, target="cpu"](
+    gather_nd[batch_dims](
         input_dyn,
         indices_dyn,
         output_dyn,
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     for i in range(dim_0):
@@ -399,7 +399,7 @@ def test_index_tensor_llama2_mistral() raises:
         output_dyn,
         input_dyn,
         index_a_dyn,
-        context=DeviceContext(api="cpu"),
+        context=DeviceContext.cpu(),
     )
 
     for i in range(index_dim_0):

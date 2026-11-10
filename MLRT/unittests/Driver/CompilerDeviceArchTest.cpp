@@ -17,9 +17,9 @@
 // `MODULAR_DRIVER_PLUGINS` lists the CPU plugin ahead of the accelerator's, so
 // the query has to skip the CPU entry, by its name or, for a bare path, by the
 // api the plugin reports.
-// `EXPECTED_ARCH_PREFIX` names the vendor-prefixed arch the accelerator should
-// report; without it, no arch is expected, as for a plugin whose api has no
-// Mojo vendor.
+// `EXPECTED_ARCH` names the exact arch the accelerator should report, and
+// `EXPECTED_ARCH_PREFIX` its vendor prefix; without either, no arch is
+// expected, as for a bare-path plugin whose api has no Mojo vendor.
 //
 //===----------------------------------------------------------------------===//
 
@@ -36,6 +36,10 @@ using M::Driver::Device;
 
 TEST(CompilerDeviceArchTest, ReadsTheAcceleratorPluginArch) {
   const std::string &arch = Device::getAcceleratorArchOrEmpty();
+  if (const char *expected = std::getenv("EXPECTED_ARCH")) {
+    EXPECT_EQ(arch, expected);
+    return;
+  }
   const char *expectedPrefix = std::getenv("EXPECTED_ARCH_PREFIX");
   if (!expectedPrefix) {
     EXPECT_EQ(arch, "");

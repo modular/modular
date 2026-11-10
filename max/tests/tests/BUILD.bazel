@@ -30,6 +30,7 @@ modular_py_test(
             "test_mojo_runtime_background_thread_import.py",
             "test_mojo_runtime_foreign_thread.py",
             "test_nn_legacy_deprecation.py",
+            "test_realization_context.py",
         ],
     ),
     # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
@@ -88,7 +89,8 @@ modular_eager_py_test(
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -275,6 +277,8 @@ modular_eager_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
+    # `max.tensor` imports `max.nn.legacy` lazily to allocate signal buffers
+    # for two or more devices, so no source here imports it.
     ignore_extra_deps = [
         "//max/python/max/nn/legacy",
     ],
@@ -331,6 +335,37 @@ modular_py_test(
     ],
 )
 
+# MXF-927: slow in CI. Standalone and manual rather than a member of max_tests,
+# because a test_suite expands its members whatever their tags, and
+# cpu_local_tests lists max_tests.
+modular_py_test(
+    name = "test_realization_context",
+    srcs = [
+        "conftest.py",
+        "test_realization_context.py",
+    ],
+    # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    ignore_extra_deps = [
+        # Unsure why, test_tensor slows down if this doesn't exist.
+        "//max/python/max/_interpreter_ops",
+    ],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:_mlir_context",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+    ],
+)
+
 # Keep this suite fast and broadly runnable. New CPU-safe tests with no special
 # local prerequisites should prefer to join this target.
 test_suite(
@@ -371,7 +406,6 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
         "//max/python/max/nn/legacy/hooks",
     ],
 )

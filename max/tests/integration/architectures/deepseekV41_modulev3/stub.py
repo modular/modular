@@ -35,7 +35,7 @@ from max.nn import Module
 from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
 )
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     ExpertForm,
@@ -205,7 +205,7 @@ class DecoderLayer(Module[..., Any]):
         for proj in ("w1", "w3", "w2"):
             for rank in range(self.n_devices):
                 local = [
-                    getattr(experts[e], proj).weight
+                    getattr(experts[e], proj)
                     for e in range(rank * per, (rank + 1) * per)
                 ]
                 # The per-rank stack of local experts, as the grouped matmul

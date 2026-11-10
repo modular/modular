@@ -29,10 +29,10 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn._graph_ops import rope_split_store_ragged
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kernels import rope_split_store_ragged
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, Linear
 

@@ -47,12 +47,10 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceAttribute, DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.primitives import block
-from layout._utils import idx2crd
 from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    Layout,
     DefaultEngine,
     RowMajorLayout,
     TensorLayout,
@@ -62,12 +60,12 @@ from layout import (
     row_major,
     stack_allocation as tt_stack_allocation,
 )
-from layout.tile_layout import Layout as InternalLayout
+from layout.layout import Layout as InternalLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import IndexList
-from std.utils.coord import ComptimeInt, Coord, DynamicCoord
+from std.utils.coord import ComptimeInt, Coord, DynamicCoord, coord
 from std.utils.index import product
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
@@ -1048,7 +1046,6 @@ def softmax_inline[
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[_simd_width: Int](Coord) -> SIMD[dtype, _simd_width],
-    target: StaticString = "cpu",
     logsoftmax: Bool = False,
     has_prologue_fusion: Bool = True,
 ](
@@ -1056,7 +1053,7 @@ def softmax_inline[
     shape: Coord,
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Dispatches softmax (or logsoftmax) to the CPU or GPU target.
 
@@ -1068,7 +1065,6 @@ def softmax_inline[
         simd_width: The simd_width to use in vectorization.
         rank: The rank of the input and output tensors.
         InputFnType: The type of `input_fn` (inferred).
-        target: The target device ("cpu" or "gpu").
         logsoftmax: Enable to apply elementwise log() to outputs after softmax.
         has_prologue_fusion: Whether the input lambda supports prologue fusion.
 
@@ -1085,19 +1081,19 @@ def softmax_inline[
     def trace_information() {imm} -> String:
         return trace_arg("input", shape_il, dtype)
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.T.target.device_kind_label()](
         "softmax",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
     ):
         # Exit early if the tensors are empty.
         if shape_il.flattened_length() == 0:
             return
-        comptime if is_cpu[target]():
+        comptime if context.T.target.is_cpu():
             var cpu_ctx = DeviceContext._map_assert_cpu_target(context)
             _softmax_cpu[dtype, simd_width, rank, logsoftmax=logsoftmax](
                 input_fn, shape, output, axis, cpu_ctx
             )
-        elif is_gpu[target]():
+        elif context.T.target.is_gpu():
             _softmax_gpu[
                 dtype,
                 simd_width,
@@ -1112,7 +1108,9 @@ def softmax_inline[
                 context.value(),
             )
         else:
-            comptime assert False, String("unsupported target ", target)
+            comptime assert False, String(
+                "unsupported target ", context.T.target.device_kind_label()
+            )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1503,14 +1501,13 @@ def _softmax_split_combine_kernel[
 @inline(.always)
 def _online_softmax_iter_for_mma_output[
     dtype: DType,
-    score_layout_by_mma_unit: Layout,
-    block_layout_by_warp: Layout,
-    warp_layout: Layout,
+    score_shape_by_mma_unit: Coord,
+    block_shape_by_warp: Coord,
+    warp_shape: Coord,
     use_exp2: Bool = False,
     warp_split_k: Bool = False,
-    fragment_layout: Layout = Layout.row_major(
-        1, 2
-    ) if is_nvidia_gpu() else Layout.row_major(4, 1),
+    frag_rows: Int = 1 if is_nvidia_gpu() else 4,
+    frag_cols: Int = 2 if is_nvidia_gpu() else 1,
 ](
     output_reg_tile: TileTensor[mut=True, dtype, ...],
     score_reg_tile: TileTensor[mut=True, dtype, ...],
@@ -1525,9 +1522,9 @@ def _online_softmax_iter_for_mma_output[
     comptime assert output_reg_tile.static_shape[1] == 1
     comptime assert score_reg_tile.static_shape[1] == 1
     comptime assert output_reg_tile.element_size == score_reg_tile.element_size
-    comptime assert score_reg_tile.element_size == fragment_layout.size()
-    comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
-    comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
+    comptime assert score_reg_tile.element_size == frag_rows * frag_cols
+    comptime num_colwise_warps = Int(block_shape_by_warp[0])
+    comptime num_rowwise_warps = Int(block_shape_by_warp[1])
 
     var lane_id = lane_id()
     var warp_x = umod(warp_id[broadcast=True](), num_rowwise_warps)
@@ -1536,18 +1533,18 @@ def _online_softmax_iter_for_mma_output[
     # represents number elements per thread in a row or column
     # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
 
-    # TODO: fragment_layout should ideally be inferred from the shape of output_reg_tile or score_reg_tile
+    # TODO: fragment_shape should ideally be inferred from the shape of output_reg_tile or score_reg_tile
     comptime frag_type = score_reg_tile.ElementType
-    comptime frag_num_rows = fragment_layout.shape[0].value()
-    comptime frag_num_cols = fragment_layout.shape[1].value()
+    comptime frag_num_rows = frag_rows
+    comptime frag_num_cols = frag_cols
 
     comptime frag_is_row_vector = frag_num_rows == 1
 
     # Number of mma unit tiles in the score matrix.
     # 2*num_m_mmas
-    comptime num_colwise_tiles = score_layout_by_mma_unit.shape[0].value()
+    comptime num_colwise_tiles = Int(score_shape_by_mma_unit[0])
     # num_n_mmas
-    comptime num_rowwise_tiles = score_layout_by_mma_unit.shape[1].value()
+    comptime num_rowwise_tiles = Int(score_shape_by_mma_unit[1])
     # The online softmax attributes for each thread's elements (fragments).
     comptime num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
@@ -1574,11 +1571,12 @@ def _online_softmax_iter_for_mma_output[
             score_frag_rowmax[col_tile, row] = rowmax_tensor[col_tile, row]
             score_frag_rowsum[col_tile, row] = 0
 
-    comptime num_shuffles_per_row = log2_floor(warp_layout.shape[1].value())
+    comptime num_shuffles_per_row = log2_floor(Int(warp_shape[1]))
 
-    comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
-    comptime num_colwise_lanes = UInt32(warp_layout.shape[0].value())
-    comptime rowwise_lanes_stride = UInt32(warp_layout.stride[1].value())
+    comptime num_rowwise_lanes = UInt32(warp_shape[1])
+    comptime num_colwise_lanes = UInt32(warp_shape[0])
+    # The warp layout is row-major, so the rowwise lane stride is one.
+    comptime rowwise_lanes_stride = UInt32(1)
 
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
@@ -1609,9 +1607,10 @@ def _online_softmax_iter_for_mma_output[
                 Int(num_rowwise_lanes), stride=Int(rowwise_lanes_stride)
             ](score_frag_rowmax[col_tile, row])
 
-    var coords = idx2crd[warp_layout](lane_id)
-    var lane_contains_first_column = Int(coords[1]) == 0
-    var lane_row = Int(coords[0])
+    # Row-major inverse of the warp layout's linear lane index.
+    comptime lanes_per_row = Int(warp_shape[1])
+    var lane_contains_first_column = Int(lane_id) % lanes_per_row == 0
+    var lane_row = Int(lane_id) // lanes_per_row
 
     # If a row is split across multiple warps, communicate via shared memory
     # to achieve the rowwise max.
@@ -1835,9 +1834,9 @@ def _online_softmax_iter_for_mma_output[
 @inline(.always)
 def _online_softmax_iter_for_mma_output_split_warp_reduce[
     dtype: DType,
-    score_layout_by_mma_unit: Layout,
-    block_layout_by_warp: Layout,
-    warp_layout: Layout,
+    score_shape_by_mma_unit: Coord,
+    block_shape_by_warp: Coord,
+    warp_shape: Coord,
     WM: Int,
     WN: Int,
     /,
@@ -1850,12 +1849,12 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     comptime assert output_reg_tile.rank == output_reg_tile.flat_rank == 2
     comptime assert output_reg_tile.static_shape[0] > 0
     # Here, we use naming conventions aligning with MHA's
-    comptime num_m_mmas = score_layout_by_mma_unit.shape[0].value()
-    comptime num_n_mmas = score_layout_by_mma_unit.shape[1].value()
-    comptime num_warps_m = block_layout_by_warp.shape[0].value()
-    comptime num_warps_n = block_layout_by_warp.shape[1].value()
-    comptime num_lanes_m = UInt32(warp_layout.shape[0].value())
-    comptime num_lanes_n = UInt32(warp_layout.shape[1].value())
+    comptime num_m_mmas = Int(score_shape_by_mma_unit[0])
+    comptime num_n_mmas = Int(score_shape_by_mma_unit[1])
+    comptime num_warps_m = Int(block_shape_by_warp[0])
+    comptime num_warps_n = Int(block_shape_by_warp[1])
+    comptime num_lanes_m = UInt32(warp_shape[0])
+    comptime num_lanes_n = UInt32(warp_shape[1])
 
     comptime if num_warps_n == 1:
         return
@@ -1876,10 +1875,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     var lane = UInt32(lane_id())
     var warp_y, warp_x = udivmod(ufloordiv(tid, WARP_SIZE), num_warps_n)
 
-    comptime fragment_layout = Layout.row_major(
-        1, 2
-    ) if is_nvidia_gpu() else Layout.row_major(4, 1)
-    comptime frag_num_rows = fragment_layout.shape[0].value()
+    comptime frag_num_rows = 1 if is_nvidia_gpu() else 4
 
     # Write output reg to smem
     # Each warp has `num_warps_n` output register tiles
@@ -2155,7 +2151,7 @@ def _rowmax_online_softmax[
     //,
     score_element_size: Int,
     num_rowwise_warps: Int,
-    warp_layout: Layout,
+    warp_shape: Coord,
     use_exp2: Bool,
     fold_scale_fma: Bool = False,
 ](
@@ -2218,7 +2214,7 @@ def _rowmax_online_softmax[
         )
     )
 
-    comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
+    comptime num_rowwise_lanes = UInt32(warp_shape[1])
 
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
@@ -2293,7 +2289,7 @@ def _rowsum[
     //,
     RowAccumLayoutType: TensorLayout,
     score_element_size: Int,
-    warp_layout: Layout,
+    warp_shape: Coord,
     packed_reduce: Bool = False,
 ](
     score_reg_tile: TileTensor[
@@ -2338,7 +2334,7 @@ def _rowsum[
     )
     score_frag_rowsum = rebind[type_of(score_frag_rowsum)](rowsum_scratch)
 
-    comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
+    comptime num_rowwise_lanes = UInt32(warp_shape[1])
 
     # packed_reduce keeps one f32x2 partial per row, chaining the row_tiles via
     # `add.ftz.f32x2` (one FADD2 each), then folds the pair once -- matching the

@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from max.config import ConfigFileModel
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache.cache_params import (
     HostStagingAlloc,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 _KV_CACHE_FORMAT_TO_DTYPE: dict[str, DType] = {
     "float32": DType.float32,
     "bfloat16": DType.bfloat16,
+    "float16": DType.float16,
     "float8_e4m3fn": DType.float8_e4m3fn,
     "float4_e2m1fn": DType.uint8,
     "float4_e2m1": DType.uint8,
@@ -110,8 +111,8 @@ def cache_dtype_for_encoding(
         if dtype is None:
             raise ValueError(
                 f"Unrecognized kv_cache_format override: '{kv_cache_format}'. "
-                "Supported values are 'float32', 'bfloat16', 'float8_e4m3fn',"
-                " and 'float4_e2m1fn'."
+                "Supported values are 'float32', 'bfloat16', 'float16',"
+                " 'float8_e4m3fn', and 'float4_e2m1fn'."
             )
         return dtype
     if not quantization_encoding:
@@ -346,8 +347,9 @@ class KVCacheConfig(ConfigFileModel):
         default=None,
         description=(
             "Override the default data type for the KV cache. "
-            "Supported values: ``float32``, ``bfloat16``, ``float8_e4m3fn``, "
-            "``float4_e2m1fn`` (alias ``float4_e2m1``). ``float4_e2m1fn`` "
+            "Supported values: ``float32``, ``bfloat16``, ``float16``, "
+            "``float8_e4m3fn``, ``float4_e2m1fn`` (alias ``float4_e2m1``). "
+            "``float4_e2m1fn`` "
             "is NVFP4: two E2M1 values per byte with an E4M3 scale per 16 "
             "values. It is supported only by architectures that implement "
             "it (MiniMax-M3 sparse attention on NVIDIA SM100 and AMD "
@@ -441,12 +443,12 @@ class KVCacheConfig(ConfigFileModel):
         scratch: bool = False,
         v_head_dim: int | None = None,
     ) -> KVCacheParams:
-        """Returns :class:`~max.nn.legacy.kv_cache.cache_params.KVCacheParams` built from this config.
+        """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
         Selects the attention-type-specific subclass: a
-        :class:`~max.nn.legacy.kv_cache.cache_params.MLAKVCacheParams` when ``is_mla``
+        :class:`~max.nn.kv_cache.cache_params.MLAKVCacheParams` when ``is_mla``
         is set, otherwise a
-        :class:`~max.nn.legacy.kv_cache.cache_params.MHAKVCacheParams`.
+        :class:`~max.nn.kv_cache.cache_params.MHAKVCacheParams`.
 
         Args:
             dtype: Data type for KV cache storage.
@@ -480,13 +482,13 @@ class KVCacheConfig(ConfigFileModel):
             stride_alignment: The page stride alignment the cache's kernels
                 honor, letting the pool pad its pages, or ``None`` to keep
                 them packed. See
-                :attr:`~max.nn.legacy.kv_cache.cache_params.KVLeafRegion.stride_alignment`.
+                :attr:`~max.nn.kv_cache.cache_params.KVLeafRegion.stride_alignment`.
             scratch: Whether the cache is per-request scratch: one block a
                 request, never published (see
-                :attr:`~max.nn.legacy.kv_cache.cache_params.KVCacheParams.scratch`).
+                :attr:`~max.nn.kv_cache.cache_params.KVCacheParams.scratch`).
             v_head_dim: Dimension of each value head, when it differs from
                 ``head_dim``. Defaults to ``None``, the same as ``head_dim``.
-                See :attr:`~max.nn.legacy.kv_cache.cache_params.KVCacheParams.v_head_dim`.
+                See :attr:`~max.nn.kv_cache.cache_params.KVCacheParams.v_head_dim`.
 
         Returns:
             The constructed KV cache parameters.

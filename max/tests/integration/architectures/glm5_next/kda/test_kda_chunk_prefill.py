@@ -37,7 +37,7 @@ from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import kda_chunk, kda_decode
+from max.nn._graph_ops.state_space import kda_chunk, kda_decode
 from max.pipelines.architectures.glm5_next_modulev3.layers import (
     kda as modulev3_kda,
 )
@@ -122,15 +122,9 @@ def _load(
 
 
 def _run(
-    session: InferenceSession,
-    chunked: bool,
-    inputs: list[np.ndarray],
-    pool: np.ndarray,
+    model: Model, inputs: list[np.ndarray], pool: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """Runs one op over ``inputs``, returning its output and the mutated pool."""
-    model = _load(
-        session, chunked, inputs[0].shape[0], inputs[-1].shape[0], pool.shape
-    )
     device = model.input_devices[0]
     pool_buf = md.Buffer.from_numpy(pool.copy()).to(device)
     args = [md.Buffer.from_numpy(a).to(device) for a in inputs]
@@ -189,8 +183,12 @@ def test_chunk_matches_decode(seq_lens: list[int]) -> None:
         cu_seqlens,
         state_indices,
     ]
-    chunk_out, chunk_pool = _run(session, True, inputs, pool)
-    decode_out, decode_pool = _run(session, False, inputs, pool)
+    chunk_model, decode_model = [
+        _load(session, chunked, total_t, batch, pool.shape)
+        for chunked in (True, False)
+    ]
+    chunk_out, chunk_pool = _run(chunk_model, inputs, pool)
+    decode_out, decode_pool = _run(decode_model, inputs, pool)
 
     assert np.all(np.isfinite(chunk_out))
     for b in range(batch):
@@ -761,9 +759,9 @@ def _load_modulev3_core(session: InferenceSession, routed: bool) -> Model:
             i = graph.inputs
             graph.output(
                 modulev3_kda._kda_core_graph(
-                    q=i[0].tensor,
-                    k=i[1].tensor,
-                    v=i[2].tensor,
+                    qkv=ops.concat(
+                        [i[0].tensor, i[1].tensor, i[2].tensor], axis=-1
+                    ),
                     q_conv=i[3].tensor,
                     k_conv=i[4].tensor,
                     v_conv=i[5].tensor,

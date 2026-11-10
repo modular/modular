@@ -1110,6 +1110,11 @@ def HLCF_UnreachableOp : HLCFTerminatorOp<"unreachable"> {
     the previous operations cannot continue control flow.  This is used after
     infinite loops and no-return functions to simplify dataflow analysis.
 
+    `fallthroughError` makes the operation a semantic assertion that control
+    must not reach this point. LowerSemanticCF emits its message if preceding
+    control flow falls through to the operation. An empty message disables the
+    assertion.
+
     Example:
 
     ```mlir
@@ -1121,8 +1126,10 @@ def HLCF_UnreachableOp : HLCFTerminatorOp<"unreachable"> {
     ```
   }];
 
-  let arguments =
-   (ins DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall);
+  let arguments = (ins
+    DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall,
+    DefaultValuedOptionalAttr<StrAttr, "\"\"">:$fallthroughError
+  );
 
   let assemblyFormat = "attr-dict";
 }

@@ -10,27 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The DSpark drafter's heads and stage attention (ModuleV3).
-
-A drafter stage attends over a window of context records plus the draft
-block's own records, all in the trunk's sliding-window leaf (its own layer
-slot; the planner already reserves stages 40-42) and through the trunk's
-CSA2 attention kernel. The block is non-causal, so every block query names
-the whole window and every block record. The context records are projected
-from the drafter's combined taps, not from the block's tokens, and are stored
-once per verified token. The block's own records are stored at the block's
-positions; the next forward's context store overwrites them, so rejected
-drafts never enter a window.
-
-The drafter's projection split follows the reference, not the trunk: the
-MTP stages do not activation-quantize ``wq_a``/``wq_b``/``wkv``/``wo_a``
-(the torch oracle's ``MAX_QUANTIZED`` excludes them), so those run as plain
-bf16 matmuls on host-dequantized weights; ``wo_b`` keeps the MXFP8
-block-scaled path, as do ``main_proj`` and the shared expert.
-
-Mirrors ``DeepseekV41DSparkAttention`` of the V2 architecture and the torch
-oracle ``dspark_v41_reference.py`` (``RefDSparkStage.attn``).
-"""
+"""DeepSeek-V4.1 DSpark heads and stage attention."""
 
 from __future__ import annotations
 
@@ -53,14 +33,22 @@ from ..layer_resolver import LayerInfo
 from ..model_config import DeepseekV41Config
 from .attention import (
     _csa2_attend_op,
+    _GroupedWoA,
     _leaf_slots_op,
+    _norm_quantize_store_op,
     _store_window_op,
     position_rope_table,
     ragged_rows,
     window_store_slots,
 )
 from .block import _on_each_device
-from .mxfp8_linear import MXFP8Linear
+from .mxfp8_linear import (
+    MXFP8Linear,
+    Mxfp8Rows,
+    _dense_op,
+    block_diagonal_woa_supported,
+    norm_quantize_store_supported,
+)
 from .norm import RMSNorm
 from .rope import RopeParams, apply_rope_tail, rope_for_layer
 
@@ -76,15 +64,6 @@ _block_index_lists_op = F.functional(dspark_block_index_lists)
 
 
 class _DenseLinear(Module[[Tensor], Tensor]):
-    """A plain projection with no activation quantization.
-
-    The weight is stored ``[out_dim, in_dim]`` like every other projection.
-    Used where the reference runs plain GEMMs on host-dequantized weights
-    (the drafter's ``wq_a``/``wq_b``/``wkv``/``wo_a`` and both heads), which
-    is why it takes the dtype explicitly: the confidence head's projection
-    is float32 while the attention projections are bf16.
-    """
-
     weight: Tensor
 
     def __init__(self, out_dim: int, in_dim: int, dtype: DType) -> None:
@@ -126,19 +105,7 @@ class DSparkMarkovHead(Module[..., tuple[Tensor, Tensor]]):
         self.head = _DenseLinear(draft_vocab_size, markov_rank, DType.bfloat16)
 
     def forward(self, prev_tokens: Tensor) -> tuple[Tensor, Tensor]:
-        """Embeds ``prev_tokens`` and projects the embedding to a bias.
-
-        Args:
-            prev_tokens: int32 token ids, any leading shape (``[b]`` for one
-                serial step).
-
-        Returns:
-            ``(markov_embed, bias)``: the embedding and the projected bias,
-            ``prev_tokens.shape + [dim]``, both bf16.
-
-        Raises:
-            ValueError: If ``prev_tokens`` is not int32.
-        """
+        """Return the token embedding and its projected bias."""
         if prev_tokens.dtype != DType.int32:
             raise ValueError(
                 "DSparkMarkovHead expects int32 token ids, got "
@@ -148,15 +115,7 @@ class DSparkMarkovHead(Module[..., tuple[Tensor, Tensor]]):
         return markov_embed, self.head(markov_embed)
 
     def bias_float32(self, prev_tokens: Tensor) -> Tensor:
-        """Computes ``head(embed(prev_tokens))`` widened to float32.
-
-        The draft logits are float32; adding a bf16-rounded bias would move
-        every step's argmax near ties, so the bf16 weights are widened in
-        the graph and the whole bias is computed in float32.
-
-        Raises:
-            ValueError: If ``prev_tokens`` is not int32.
-        """
+        """Compute the draft bias in float32 to preserve near-tie argmaxes."""
         if prev_tokens.dtype != DType.int32:
             raise ValueError(
                 "DSparkMarkovHead expects int32 token ids, got "
@@ -261,6 +220,7 @@ class DSparkAttention(Module[..., Tensor]):
         self.softmax_scale = d**-0.5
         self.rope_head_dim = rope.rope_head_dim
         self.max_position = max_position
+        self.max_rows = config.max_batch_rows
         # Each block query names its window and its block, in whole tiles of
         # 64 list entries.
         self.list_entries = -(-(self.window + self.block_size) // 64) * 64
@@ -274,21 +234,20 @@ class DSparkAttention(Module[..., Tensor]):
         # replica's rows, so a mesh-axis weight split would need an
         # all-reduce that sums across unrelated replicas.
         self._data_parallel = data_parallel
+        self._tp = 1 if data_parallel else mesh.num_devices
 
         self.attn_sink = Tensor.zeros([heads], dtype=DType.float32)
-        # bf16 host-dequantized weights (see the module docstring): the
-        # checkpoint stores these MXFP8 and the loader dequantizes.
-        self.wq_a = _DenseLinear(
-            config.q_lora_rank, config.hidden_size, DType.bfloat16
-        )
-        self.q_norm = RMSNorm(config.q_lora_rank)
-        self.wq_b = _DenseLinear(heads * d, config.q_lora_rank, DType.bfloat16)
-        self.wkv = _DenseLinear(d, config.hidden_size, DType.bfloat16)
-        self.kv_norm = RMSNorm(d)
-        self.wo_a = _DenseLinear(
+        # ``wq_a`` and ``wkv`` read the same input, so the adapter stacks
+        # them into one projection, as in the trunk's attention.
+        self.q_lora_rank = config.q_lora_rank
+        self.wqa_wkv = MXFP8Linear(config.hidden_size, config.q_lora_rank + d)
+        self.q_norm = RMSNorm(config.q_lora_rank, eps=config.rms_norm_eps)
+        self.wq_b = MXFP8Linear(config.q_lora_rank, heads * d)
+        self.kv_norm = RMSNorm(d, eps=config.rms_norm_eps)
+        self.wo_a = _GroupedWoA(
             self.o_groups * self.o_lora_rank,
             heads * d // self.o_groups,
-            DType.bfloat16,
+            self.o_lora_rank,
         )
         self.wo_b = MXFP8Linear(
             self.o_groups * self.o_lora_rank, config.hidden_size
@@ -301,8 +260,8 @@ class DSparkAttention(Module[..., Tensor]):
 
         ``wq_b`` rows and ``attn_sink`` by heads, ``wo_a`` by group, ``wo_b``
         column-parallel with the all-reduce after it; the latent side
-        (``wq_a``, ``wkv``, the norms) stays whole, so every rank computes
-        the whole context KV.
+        (``wqa_wkv``, the norms) stays whole, so every rank computes the
+        whole context KV.
 
         Under data parallelism every weight replicates instead: the
         mesh's one axis is the replica axis, so there is no partial-sum
@@ -311,14 +270,24 @@ class DSparkAttention(Module[..., Tensor]):
         if mesh.num_devices <= 1 or self._data_parallel:
             return
         by_rows = DeviceMapping(mesh, (Sharded(0),))
-        self.wq_b.weight = self.wq_b.weight.to(by_rows)
+        self.wq_b.shard(0, mesh)
         self.wo_a.weight = self.wo_a.weight.to(by_rows)
+        self.wo_a.scale = self.wo_a.scale.to(by_rows)
         self.attn_sink = self.attn_sink.to(by_rows)
         self.wo_b.shard(1, mesh)
 
     def _layer_slot(self) -> Tensor:
         """This stage's leaf index in the sliding-window cache."""
         return F.constant(self.layer_id, DType.uint32, device=CPU())
+
+    def _kv_latent(self, x: Tensor) -> Tensor:
+        """``wkv(x)``: the KV rows of the stacked projection's weights."""
+        q, d = self.q_lora_rank, self.head_dim
+        return _dense_op(
+            x,
+            self.wqa_wkv.weight[q : q + d, :],
+            self.wqa_wkv.scale[q // 32 : (q + d) // 32, :],
+        )
 
     def store_context(
         self,
@@ -330,7 +299,7 @@ class DSparkAttention(Module[..., Tensor]):
         """Stores this stage's context KV for every token of a target forward.
 
         The trunk's own window store writes the rows: the normed,
-        unrotated latent goes to ``mo.csa.window_kv_store``, which owns
+        unrotated latent goes to ``attention.csa.window_kv_store``, which owns
         the tail rotation, the MXFP8 quantize and the paged insert into
         the sliding-window leaf's 528-byte records -- the same store, the
         same record bytes and the same slots the trunk layers use, so
@@ -357,12 +326,12 @@ class DSparkAttention(Module[..., Tensor]):
         rows = ragged_rows(row_offsets, swa.cache_lengths, total)
         _store_window_op(
             swa.kv_blocks,
-            self.kv_norm(self.wkv(main_x)),
+            self.kv_norm(self._kv_latent(main_x)),
             rows.positions,
             position_rope_table(
                 self.rope.inv_freqs(),
                 self.max_position,
-                total,
+                self.max_rows,
                 rows.positions,
             ),
             window_store_slots(swa, rows, self._layer_slot()),
@@ -425,10 +394,6 @@ class DSparkAttention(Module[..., Tensor]):
         b = window.slots.shape[0]
         cos_sin = self.rope.cos_sin(positions)
 
-        qr = self.q_norm(self.wq_a(h_normed))
-        q = F.reshape(self.wq_b(qr), [t, self.n_heads, self.head_dim])
-        q = apply_rope_tail(q, cos_sin, self.rope_head_dim)
-
         # The block is whole requests of ``k`` rows each.
         request = (
             F.range(
@@ -439,16 +404,54 @@ class DSparkAttention(Module[..., Tensor]):
         block_slots = _leaf_slots_op(
             swa, request, positions, self._layer_slot()
         ).rebind_mapping(positions.mapping)
-        _store_window_op(
-            swa.kv_blocks,
-            self.kv_norm(self.wkv(h_normed)),
+        rope_table = position_rope_table(
+            self.rope.inv_freqs(),
+            self.max_position,
+            self.max_rows,
             positions,
-            position_rope_table(
-                self.rope.inv_freqs(), self.max_position, t, positions
-            ),
-            block_slots,
-            block_stride=swa.page_stride,
         )
+        projected = self.wqa_wkv(h_normed)
+        if norm_quantize_store_supported(
+            projected.mesh.devices[0], self.q_lora_rank, self.head_dim
+        ):
+            # One launch norms both latents, quantizes ``q`` and stores the
+            # block's window records (the trunk layer's fused query).
+            codes, scales = _norm_quantize_store_op(
+                projected,
+                self.q_norm.weight,
+                self.kv_norm.weight,
+                swa.kv_blocks,
+                positions,
+                rope_table,
+                block_slots,
+                swa.page_stride,
+                self.q_norm.eps,
+                self.q_lora_rank,
+            )
+            q = self.wq_b.forward_quantized_rope_tail(
+                Mxfp8Rows(
+                    codes.rebind_mapping(projected.mapping),
+                    scales.rebind_mapping(projected.mapping),
+                ),
+                cos_sin,
+                self.head_dim,
+            )
+        else:
+            width = int(projected.shape[-1])
+            q = self.wq_b.forward_rope_tail(
+                self.q_norm(projected[:, : self.q_lora_rank]),
+                cos_sin,
+                self.head_dim,
+            )
+            _store_window_op(
+                swa.kv_blocks,
+                self.kv_norm(projected[:, self.q_lora_rank : width]),
+                positions,
+                rope_table,
+                block_slots,
+                block_stride=swa.page_stride,
+            )
+        q = F.reshape(q, [t, self.n_heads, self.head_dim])
         # ``t`` is the trace's ragged dim; ``b * k`` is its factored form.
         block_slots = F.reshape(F.rebind(block_slots, [b * k]), [b, k])
         idx = _block_index_lists_op(
@@ -467,27 +470,32 @@ class DSparkAttention(Module[..., Tensor]):
         # The rule-less op leaves its output Unknown-placed; every rank
         # computed its own heads' rows, which belong on the queries' mapping.
         out = out.rebind_mapping(q.mapping)
-        out = apply_rope_tail(out, cos_sin, self.rope_head_dim, inverse=True)
-
-        # wo_a: a block-diagonal bf16 projection over groups -- one batched
-        # matmul, not a broadcast (a [t, g, 1, d] @ [1, g, d, r] broadcast
-        # materializes a constant the graph then keeps).
-        group_width = self.n_heads * self.head_dim // self.o_groups
-        grouped = F.permute(
-            F.reshape(out, [t, self.o_groups, group_width]), [1, 0, 2]
-        )
-        wo_a = F.reshape(
-            self.wo_a.weight, [self.o_groups, self.o_lora_rank, group_width]
-        )
-        projected = grouped @ F.permute(wo_a, [0, 2, 1])
-        flattened = F.reshape(
-            F.permute(projected, [1, 0, 2]),
-            [t, self.o_groups * self.o_lora_rank],
-        )
-        result = self.wo_b(flattened)
+        # ``wo_a`` takes the block's output un-rotated and rotates it back
+        # in its quantize where the block-diagonal launch applies.
+        rope = None
+        if self._folds_inverse_rope(out):
+            rope = (cos_sin, self.head_dim)
+        else:
+            out = apply_rope_tail(
+                out, cos_sin, self.rope_head_dim, inverse=True
+            )
+        flat = F.reshape(out, [t, self.n_heads * self.head_dim])
+        result = self.wo_b(self.wo_a(flat, rope))
         # Column-parallel partial sums: one all-reduce completes it. Under
         # data parallelism the weights replicate and the result carries the
         # rows each rank owns, so no reduction runs anywhere.
         if result.is_distributed and not self._data_parallel:
             result = F.allreduce_sum(result)
         return result
+
+    def _folds_inverse_rope(self, out: Tensor) -> bool:
+        """Whether ``wo_a`` can take ``out`` un-rotated and rotate it back.
+
+        The fold rides the block-diagonal launch, which a shard running a
+        single group never takes.
+        """
+        return self.o_groups // self._tp >= 2 and block_diagonal_woa_supported(
+            out.mesh.devices[0],
+            self.n_heads * self.head_dim // self.o_groups,
+            self.o_lora_rank,
+        )

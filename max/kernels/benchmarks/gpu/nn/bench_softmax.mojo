@@ -28,7 +28,7 @@ from std.utils.index import IndexList
 
 def bench_softmax_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank]
-](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
     comptime cols = shape[rank - 1]
     comptime total = shape.flattened_length()
 
@@ -51,12 +51,11 @@ def bench_softmax_gpu[
         return data_buf.load[width=_simd_width, alignment=1](coords)
 
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {mut out_buf, imm}:
+    def kernel_launch(ctx: DeviceContext[]) raises {mut out_buf, imm}:
         softmax_inline[
             dtype,
             simd_width_of[dtype, target=ctx.target](),
             rank,
-            target="gpu",
         ](
             input_fn,
             Coord(shape),
@@ -77,14 +76,14 @@ def bench_softmax_gpu[
     # The `algorithm.rowwise` overload — what `mo.reduce.softmax` launches.
     # Benched in the same process so both arms see identical clocks.
     @inline(.always)
-    def kernel_launch_rowwise(ctx: DeviceContext) raises {mut out_buf, imm}:
+    def kernel_launch_rowwise(ctx: DeviceContext[]) raises {mut out_buf, imm}:
         @inline(.always)
         def rowwise_input_fn[
             width: Int, alignment: Int
         ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
             return data_buf.load[width=width](coords)
 
-        softmax[dtype, rank, target="gpu", reduce_dim=rank - 1](
+        softmax[dtype, rank, reduce_dim=rank - 1](
             rowwise_input_fn,
             Coord(shape),
             ComptimeInt[cols](),

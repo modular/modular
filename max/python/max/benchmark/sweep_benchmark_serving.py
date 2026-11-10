@@ -155,8 +155,12 @@ def persist_sweep(
     output lengths, a per-concurrency result JSON, a CSV row, and the
     optional upload, then invokes ``report_result``. An iteration that
     failed validation ends the process with exit code 1 after it is
-    persisted and reported. ``iterations`` is closed whenever the sweep
-    stops early, so a generator's ``with`` blocks unwind before the exit.
+    persisted and reported. A ``report_result`` exception (e.g. a BigQuery
+    insert failure) is logged and the sweep continues — each level is a
+    long benchmark run, and one level's publication failure must not cost
+    the remaining levels — but the process still exits 1 at the end so the
+    loss is never silent. ``iterations`` is closed whenever the sweep stops
+    early, so a generator's ``with`` blocks unwind before the exit.
 
     Args:
         config: The sweep's configuration. A missing ``log_dir`` is created
@@ -173,7 +177,8 @@ def persist_sweep(
         Every iteration's result.
 
     Raises:
-        SystemExit: If an iteration did not pass validation.
+        SystemExit: If an iteration did not pass validation, or if any
+            iteration's ``report_result`` raised.
     """
     if config.upload_results and config.cluster_information_path is None:
         logger.warning("Warning: uploading results without cluster information")
@@ -209,6 +214,7 @@ def persist_sweep(
     # ``utils/benchmarking/results_publication`` (live BigQuery rows during
     # the run + partial results surviving a mid-sweep crash).
     results: list[BenchmarkRunResult] = []
+    publication_failed = False
     with contextlib.ExitStack() as stack:
         if isinstance(iterations, Generator):
             stack.enter_context(contextlib.closing(iterations))
@@ -250,7 +256,18 @@ def persist_sweep(
             # wired one in — so a crash mid-sweep still leaves rows 1..N-1
             # published downstream.
             if report_result is not None:
-                report_result(run)
+                try:
+                    report_result(run)
+                except Exception:
+                    publication_failed = True
+                    logger.error(
+                        "Result publication failed for iteration"
+                        " (max_concurrency=%s, request_rate=%s);"
+                        " continuing the sweep.",
+                        run.max_concurrency,
+                        run.request_rate,
+                        exc_info=True,
+                    )
             if run.status != "pass":
                 sys.exit(1)
 
@@ -259,6 +276,8 @@ def persist_sweep(
         logger.info(
             f"All concurrency sweep results have been written to: {result_file_path}"
         )
+    if publication_failed:
+        sys.exit(1)
     return results
 
 

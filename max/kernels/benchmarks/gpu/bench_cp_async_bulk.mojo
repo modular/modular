@@ -234,7 +234,7 @@ def main() raises:
         @inline(.always)
         def bench_func(mut b: Bencher) {imm}:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext) raises {imm}:
+            def kernel_launch(ctx: DeviceContext[]) raises {imm}:
                 ctx.enqueue_function[
                     bulk_memcpy_kernel[NUM_THREADS, BYTES_PER_COPY, S, PREFETCH]
                 ](

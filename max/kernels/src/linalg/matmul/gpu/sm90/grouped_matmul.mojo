@@ -21,7 +21,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import TileTensor, coord, flatten_leading
 from layout.tma_async import create_tensor_tile
@@ -31,7 +31,7 @@ from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from .matmul_kernels import HopperMatmulSM90Kernel
-from .matmul import _get_c_smem_layout
+from .matmul import _get_c_smem_shape
 
 from ....utils import (
     ElementwiseComputeFn,
@@ -147,7 +147,7 @@ def grouped_matmul_sm90[
 
     comptime cluster_shape = config.cluster_shape
 
-    comptime c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_shape[
         config.block_tile_shape,
         a_type,
         b_type,
@@ -155,9 +155,7 @@ def grouped_matmul_sm90[
         config.num_pipeline_stages,
         config.k_group_size,
     ]()
-    comptime c_smem_tile = coord[
-        c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
-    ]
+    comptime c_smem_tile = coord[c_smem_layout[0], c_smem_layout[1]]
 
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -186,8 +184,9 @@ def grouped_matmul_sm90[
     var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
     var c_desc_ptr = c.ptr.as_unsafe_any_origin()
     comptime if epilogue_owns_stores:
-        c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
-        c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
+        var scratch = ctx.enqueue_create_buffer[c_type](1)
+        c_desc_ptr = scratch.unsafe_ptr().as_unsafe_any_origin()
+        c_desc_scratch = scratch^
     var c_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=c_swizzle](
         ctx, TileTensor(c_desc_ptr, c.layout)
     )
@@ -197,7 +196,7 @@ def grouped_matmul_sm90[
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()
         + (size_of[Int64]() * 2)
-    ) + c_smem_layout.size() * size_of[c_type]()
+    ) + c_smem_layout[0] * c_smem_layout[1] * size_of[c_type]()
 
     comptime kernel = HopperMatmulSM90Kernel[
         a_type,
@@ -206,7 +205,8 @@ def grouped_matmul_sm90[
         type_of(a).LayoutType,
         type_of(b_flat).LayoutType,
         type_of(c).LayoutType,
-        c_smem_layout,
+        c_smem_layout[0],
+        c_smem_layout[1],
         config.block_tile_shape,
         wgmma_shape,
         cluster_shape,
@@ -255,8 +255,5 @@ def grouped_matmul_sm90[
         ),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
     _ = c_desc_scratch^

@@ -47,12 +47,11 @@ from std.sys import inlined_assembly
 from layout import (
     Coord,
     ComptimeInt,
-    Layout,
     RowMajorLayout,
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import _IntToComptimeInt
+from layout.layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
     tma_desc_layout_3d,
@@ -63,9 +62,7 @@ from layout.tma_async import (
     TMATensorTileArray,
 )
 from layout.tensor_core_async import (
-    tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
-    tile_sf_layout_k_major,
+    tile_sf_layout_k_major_typed,
 )
 
 from std.utils.index import IndexList
@@ -132,17 +129,6 @@ comptime _ProblemSizesTile[
 ] = TileTensor[
     .int32, _ProblemSizesLayout[max_groups], MutAnyOrigin, Engine=Engine
 ]
-
-
-# =============================================================================
-# Constants
-# =============================================================================
-
-# TMA descriptor size in bytes (128 bytes per descriptor)
-comptime TMA_DESCRIPTOR_SIZE = 128
-
-# Number of tensormaps for grouped GEMM (A, B, SFA, SFB, C)
-comptime NUM_TENSORMAPS = 5
 
 
 # =============================================================================
@@ -509,136 +495,6 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
 
 # =============================================================================
-# Validation Utilities (matching NVIDIA CuTe DSL constraints)
-# =============================================================================
-
-
-def is_valid_dtypes_and_scale_factor_vec_size(
-    ab_dtype: DType,
-    sf_dtype: DType,
-    sf_vec_size: Int,
-    c_dtype: DType,
-) -> Bool:
-    """Check if dtypes and sf_vec_size are valid combinations.
-
-    Valid combinations (from NVIDIA CuTe DSL grouped_blockscaled_gemm.py):
-    - MXF8: Float8E5M2/Float8E4M3FN + Float8E8M0FNU + sf_vec_size=32
-    - MXF4: Float4E2M1FN + Float8E8M0FNU + sf_vec_size=32
-    - NVF4: Float4E2M1FN + Float8E8M0FNU/Float8E4M3FN + sf_vec_size=16
-
-    Args:
-        ab_dtype: The data type of A and B matrices.
-        sf_dtype: The data type of scale factors.
-        sf_vec_size: The vector size of scale factors (16 or 32).
-        c_dtype: The data type of the output matrix.
-
-    Returns:
-        True if the combination is valid.
-    """
-    # Check valid ab_dtype (FP8 or FP4 types)
-    var valid_ab = ab_dtype in (
-        DType.float4_e2m1fn,  # NVF4, MXF4
-        DType.float8_e5m2,  # MXF8
-        DType.float8_e4m3fn,  # MXF8
-    )
-    if not valid_ab:
-        return False
-
-    # Check valid sf_vec_size (16 for NVF4, 32 for MXF8/MXF4)
-    if sf_vec_size not in (16, 32):
-        return False
-
-    # Check valid sf_dtype
-    var valid_sf = sf_dtype in (
-        DType.float8_e8m0fnu,  # MXF8, MXF4, NVF4
-        DType.float8_e4m3fn,  # NVF4 only
-    )
-    if not valid_sf:
-        return False
-
-    # Check sf_dtype and sf_vec_size combinations
-    # Float8E4M3FN scale factors only valid with sf_vec_size=16 (NVF4)
-    if sf_dtype == .float8_e4m3fn and sf_vec_size == 32:
-        return False
-
-    # MXF8 (Float8) requires sf_vec_size=32
-    if (
-        ab_dtype in (DType.float8_e5m2, DType.float8_e4m3fn)
-        and sf_vec_size == 16
-    ):
-        return False
-
-    # Check valid c_dtype
-    var valid_c = c_dtype in (
-        DType.float32,
-        DType.float16,
-        DType.bfloat16,
-        DType.float8_e5m2,
-        DType.float8_e4m3fn,
-    )
-    if not valid_c:
-        return False
-
-    return True
-
-
-def is_valid_mma_tiler_and_cluster_shape(
-    mma_tiler_m: Int,
-    mma_tiler_n: Int,
-    cluster_m: Int,
-    cluster_n: Int,
-) -> Bool:
-    """Check if MMA tiler and cluster shape are valid.
-
-    Constraints (from NVIDIA CuTe DSL):
-    - MMA tiler M: 128 or 256
-    - MMA tiler N: 128 or 256
-    - Cluster M must be multiple of 2 if MMA tiler M is 256
-    - Cluster M/N: Power of 2, <=4 per axis (for SF multicast)
-    - Total cluster size: <=16
-
-    Args:
-        mma_tiler_m: MMA tile height in the M dimension; must be 128
-            or 256.
-        mma_tiler_n: MMA tile width in the N dimension; must be 128
-            or 256.
-        cluster_m: Number of CTAs in the cluster along the M dimension;
-            must be a power of 2 and at most 4, and a multiple of 2 when
-            `mma_tiler_m` is 256.
-        cluster_n: Number of CTAs in the cluster along the N dimension;
-            must be a power of 2 and at most 4.
-
-    Returns:
-        True if the combination is valid.
-    """
-    # Check MMA tiler
-    if mma_tiler_m not in (128, 256):
-        return False
-    if mma_tiler_n not in (128, 256):
-        return False
-
-    # Check cluster constraints
-    if mma_tiler_m == 256 and cluster_m % 2 != 0:
-        return False
-
-    def is_power_of_2(x: Int) -> Bool:
-        return x > 0 and (x & (x - 1)) == 0
-
-    if not is_power_of_2(cluster_m) or not is_power_of_2(cluster_n):
-        return False
-
-    # SF multicast constraint
-    if cluster_m > 4 or cluster_n > 4:
-        return False
-
-    # Total cluster size
-    if cluster_m * cluster_n > 16:
-        return False
-
-    return True
-
-
-# =============================================================================
 # GroupedBlockScaledMatmulKernel - Main kernel struct
 # =============================================================================
 
@@ -848,32 +704,20 @@ struct GroupedBlockScaledMatmulKernel[
 
     # ========== Shared Memory Layout Types ==========
 
-    comptime a_smem_layout = tile_layout_k_major_typed[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
-    ].to_layout()
-
-    comptime b_smem_layout = tile_layout_k_major_typed[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ].to_layout() if Self.transpose_b else tile_layout_mn_major_typed[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ].to_layout()
-
-    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
-
     # SF_K_GROUP_SIZE = SF_ATOM_K * vec_sf_size
     comptime SF_K_GROUP_SIZE = SF_ATOM_K * Self.config.vec_sf_size
 
-    comptime sfa_smem_layout = tile_sf_layout_k_major[
+    comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         Self.BM,
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
-    ]()
+    ]
 
-    comptime sfb_smem_layout = tile_sf_layout_k_major[
+    comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
         Self.SFB_N_ALIGNED,
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
-    ]()
+    ]
 
     # ========== Shared Memory Type ==========
     # Use GroupedBlockScaledSmem which includes SMEM storage for TMA descriptors.
@@ -1022,10 +866,10 @@ struct GroupedBlockScaledMatmulKernel[
 
     comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
     comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
-    comptime sfa_expected_bytes = Self.sfa_smem_layout.size() * size_of[
+    comptime sfa_expected_bytes = Self.sfa_smem_layout.static_product * size_of[
         Self.sfa_dtype
     ]()
-    comptime sfb_expected_bytes = Self.sfb_smem_layout.size() * size_of[
+    comptime sfb_expected_bytes = Self.sfb_smem_layout.static_product * size_of[
         Self.sfb_dtype
     ]()
 

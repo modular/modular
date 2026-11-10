@@ -16,13 +16,13 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from . import weight_adapters
 from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
 from .memory_planner import KimiK25MemoryPlanner
 from .model import KimiK2_5Model
 from .model_config import KimiK2_5Config
 from .tokenizer import KimiK2_5VLTokenizer
+from .weight_adapters import kimik2_5_weight_rules
 
 kimik2_5_arch = SupportedArchitecture(
     name="KimiK25ForConditionalGeneration",
@@ -41,9 +41,8 @@ kimik2_5_arch = SupportedArchitecture(
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
-    },
+    weight_rules=kimik2_5_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
@@ -84,9 +83,8 @@ kimivl_arch = SupportedArchitecture(
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_kimivl_safetensor_state_dict,
-    },
+    weight_rules=kimik2_5_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,

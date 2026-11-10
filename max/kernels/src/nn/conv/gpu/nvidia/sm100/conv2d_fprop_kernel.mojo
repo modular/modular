@@ -43,14 +43,13 @@ from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from max.gpu.primitives.grid_controls import (
     PDL,
-    PDLLevel,
-    pdl_launch_attributes,
 )
 from max.gpu.memory import external_memory, fence_mbarrier_init
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.tcgen05 import *
-from layout import Coord, Layout as LegacyLayout
+from layout import Coord
+from layout.layout import row_major as tt_row_major
 from layout.tma_async import TMATensorTile
 from structured_kernels.tile_types import (
     TmaOpType,
@@ -58,7 +57,7 @@ from structured_kernels.tile_types import (
     static_row_major,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
@@ -362,9 +361,12 @@ struct Conv2dFpropKernel[
 
     # ========== Tensor Memory Type ==========
     comptime Tmem = TmemAllocation[Self.opc.cta_group]
-    comptime accum_layout = LegacyLayout.row_major(Self.MMA_M, Self.MMA_N)
+    comptime accum_layout = tt_row_major[Self.MMA_M, Self.MMA_N]()
     comptime AccumTensor = TmemTensor[
-        Self.accum_type, Self.accum_layout, cta_group=Self.cta_group
+        Self.accum_type,
+        type_of(Self.accum_layout),
+        Self.accum_layout,
+        cta_group=Self.cta_group,
     ]
 
     # ========== Output Pipeline Type ==========
@@ -474,7 +476,9 @@ struct Conv2dFpropKernel[
             k_start: K-dimension tile index at which accumulation begins,
                 used to initialize the accumulator on the first tile.
         """
-        var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
+        var accum = tmem_stage.tensor[
+            Self.accum_type, type_of(Self.accum_layout), Self.accum_layout
+        ]()
 
         if elect_one_sync():
             comptime for j in range(Self.config.k_group_size):

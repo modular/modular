@@ -19,8 +19,8 @@ needs no special-case branch and encode saturates rather than propagating a
 non-finite input.
 
 Both encodings share the MX block structure with MXFP4 -- 32 consecutive
-elements along K share one E8M0 scale -- so `MXFP6_SF_VECTOR_SIZE` and
-`MXFP6_SF_DTYPE` match their MXFP4 counterparts exactly.
+elements along K share one E8M0 scale -- so `MXFP6_SF_VECTOR_SIZE` matches
+its MXFP4 counterpart exactly.
 """
 
 from std.os import abort
@@ -28,10 +28,6 @@ from std.utils.numerics import FPUtils
 from std.memory import bitcast
 
 comptime MXFP6_SF_VECTOR_SIZE = 32
-comptime MXFP6_SF_DTYPE = DType.float8_e8m0fnu
-
-comptime FP6_ELEMENTS_PER_GROUP = 4
-comptime FP6_BYTES_PER_GROUP = 3
 
 
 @fieldwise_init

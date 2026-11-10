@@ -591,7 +591,7 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
     return buildEnumCheckList(builder, subject, path, out);
 
   IREmitter emitter = builder.getParamEmitter();
-  ASTType patternType = emitter.emitExprType(callee);
+  ASTType patternType = emitter.emitExprType(callee, TypeStrictness::kConcrete);
   if (!patternType)
     return failure();
 
@@ -723,7 +723,8 @@ static TriBool getEnumIsExhaustive(IREmitter &emitter, ASTType subjectType,
 static LogicalResult checkEnumCaseTypeBase(IREmitter &emitter, CValue subject,
                                            const ExprNode *typeBase,
                                            const ExprNode *expr) {
-  ASTType baseType = emitter.emitExprType(typeBase, /*allowUnbound=*/true);
+  ASTType baseType =
+      emitter.emitExprType(typeBase, TypeStrictness::kIncomplete);
   if (!baseType)
     return failure();
   ASTType baseNominal = baseType.getWithoutParameters(emitter.shared);
@@ -1214,6 +1215,7 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
       rootType.getParamBindings().size() == 2
           ? sugarDynCastIfPresent<ParamListAttr>(rootType.getParamBindings()[0])
           : ParamListAttr();
+  SmallVector<CValue, 4> ownedChildren;
   if (tupleElements) {
     // Wildcards do not have binding paths, but they still need to be projected
     // and owned so that their destructors run after the tuple is disarmed.
@@ -1225,6 +1227,9 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
       child.index = index;
       children.push_back(child);
     }
+    if (failed(TupleNode::getConsumedElements(rootSubject, expr, emitter,
+                                              ownedChildren)))
+      return failure();
   } else {
     auto payload = llvm::find_if(bindings, [](const PatternBoundName &binding) {
       return binding.bindingKind == PatternDeclKind::kVar && binding.path &&
@@ -1239,23 +1244,22 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
   if (!rootRef)
     return success();
   Location loc = expr->getLocation(emitter);
-  SmallVector<CValue, 4> ownedChildren;
-  for (const PatternPath &childPath : children) {
-    CValue child = getPathValue(emitter, &childPath, expr);
-    auto childRef = child.getMValueReference();
-    if (!childRef)
-      return failure();
-    Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
-    Value owned = RefFromPointerOp::create(
-        *emitter.builder, loc, pointer,
-        cast<RefType>(rootRef.getType()).getOrigin(),
-        StringAttr::get(emitter.getContext(), "(pattern child)"),
-        /*startsUninit=*/false, /*endsUninit=*/true);
-    ownedChildren.push_back(MRValue(owned));
+  if (!tupleElements) {
+    for (const PatternPath &childPath : children) {
+      CValue child = getPathValue(emitter, &childPath, expr);
+      auto childRef = child.getMValueReference();
+      if (!childRef)
+        return failure();
+      Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
+      Value owned = RefFromPointerOp::create(
+          *emitter.builder, loc, pointer,
+          cast<RefType>(rootRef.getType()).getOrigin(),
+          StringAttr::get(emitter.getContext(), "(pattern child)"),
+          /*startsUninit=*/false, /*endsUninit=*/true);
+      ownedChildren.push_back(MRValue(owned));
+    }
+    OwnershipMarkDestroyedOp::create(*emitter.builder, loc, rootRef);
   }
-  // Every child now has its own owning reference, so it is safe to suppress
-  // the aggregate destructor without invalidating later sibling projections.
-  OwnershipMarkDestroyedOp::create(*emitter.builder, loc, rootRef);
 
   for (auto [childIndex, childPath] : llvm::enumerate(children)) {
     auto binding =
@@ -1889,8 +1893,8 @@ struct CoveredLiteralNode {
 /// `False,False` as total. Applies to tuples and structs of EnumLike fields.
 ///
 /// LiteralSet tracks root Equal spellings (`4`, `"foo"`) for duplicate /
-/// unreachability only — the domain is open, so covering literals never
-/// proves exhaustivity (only a catch-all closes the space).
+/// unreachability. The domain is open, so covering literals never proves
+/// exhaustivity; only a catch-all closes the space.
 struct MatchCoveringSpace {
   enum class Kind : uint8_t {
     Opaque,
@@ -2128,7 +2132,8 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
   }
 
   // Everything else: open Equal-literal universe (Int, String, …). Track
-  // covered spellings for duplicate / unreachability; never prove exhaustivity.
+  // covered spellings for duplicate / unreachability; only a catch-all can
+  // prove exhaustivity.
   space->kind = MatchCoveringSpace::Kind::LiteralSet;
   return space;
 }
@@ -2668,11 +2673,12 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     SMLoc matchLoc, bool offerMissingCases) {
   // Covering model (see MatchCoveringSpace):
   //   - Closed EnumLike root → FiniteCtors bitset.
-  //   - Open EnumLike root → OpenCtors bitset for duplicate detection.
+  //   - Open EnumLike root → OpenCtors bitset for duplicate detection and
+  //     require a catch-all because additional constructors may exist.
   //   - Tuple/struct of EnumLike leaves → flattened Product cell bitset.
   //   - Product larger than kMaxProductCells → TooComplex (needs `_`).
-  //   - Else LiteralSet: track root Equal spellings for duplicates only
-  //     (no exhaustivity — Int/String/… are open universes).
+  //   - Else LiteralSet: track root Equal spellings for duplicates and require
+  //     a catch-all because Int/String/… are open universes.
   //   - Irrefutable unguarded cases close the space.
   //   - Or patterns expand to a union of alternatives; each is covered
   //     independently (guards never shrink the remaining space).
@@ -2754,6 +2760,15 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     // A catch-all would have closed the space via alwaysMatches().
     emitWarning(matchLoc, "'match' is too complex to check for exhaustivity; "
                           "add a '_' case");
+    return {};
+  }
+
+  if (space->kind == MatchCoveringSpace::Kind::OpenCtors ||
+      space->kind == MatchCoveringSpace::Kind::LiteralSet) {
+    emitWarning(matchLoc, "'match' is not exhaustive; add a '_' case");
+    if (offerMissingCases)
+      return formatCaseArms({"_"}, caseEntries.back().caseIndent,
+                            caseEntries.back().bodyIndent);
     return {};
   }
 

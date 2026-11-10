@@ -19,6 +19,11 @@ from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, ops
 
 
+def _range_len(start: int, stop: int, step: int) -> int:
+    """Number of values in ``[start, stop)`` spaced by ``step``: ceiling division."""
+    return -((start - stop) // step)
+
+
 @pytest.mark.parametrize(
     "start, stop, step",
     [
@@ -36,7 +41,7 @@ from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, ops
 def test_range(start: int, stop: int, step: int) -> None:
     """Tests ops.range cases that should pass."""
     with Graph("range", input_types=()) as graph:
-        dim = (stop - start) // step
+        dim = _range_len(start, stop, step)
         start_val = ops.constant(start, DType.int64, device=DeviceRef.CPU())
         stop_val = ops.constant(stop, DType.int64, device=DeviceRef.CPU())
         step_val = ops.constant(step, DType.int64, device=DeviceRef.CPU())
@@ -186,12 +191,69 @@ def test_range_exceptions(start: int, stop: int, step: int) -> None:
 def test_range_numeric(start: int, stop: int, step: int) -> None:
     """Tests ops.range cases that should pass."""
     with Graph("range", input_types=()) as graph:
-        dim = (stop - start) // step if step != 0 else 0
+        dim = _range_len(start, stop, step)
         out = ops.range(
             start, stop, step, dtype=DType.int64, device=DeviceRef.CPU()
         )
         graph.output(out)
         assert out.shape == [dim]
+
+
+@pytest.mark.parametrize(
+    "start, stop, step, expected",
+    [
+        (0.0, 1.0, 0.3, 4),  # [0.0, 0.3, 0.6, 0.9]
+        (0.0, 5.0, 2.0, 3),
+        (1.5, 0.0, -0.5, 3),
+        (0.0, 1.0, 0.25, 4),
+    ],
+)
+def test_range_float_literals(
+    start: float, stop: float, step: float, expected: int
+) -> None:
+    """Tests that float literals count the values a step short of stop."""
+    with Graph("range_float", input_types=()) as graph:
+        out = ops.range(
+            start, stop, step, dtype=DType.float32, device=DeviceRef.CPU()
+        )
+        graph.output(out)
+        assert out.shape == [expected]
+
+
+@pytest.mark.parametrize(
+    "start, stop, step, dtype",
+    [(0, 5, 2, DType.int64), (0.0, 5.0, 2.0, DType.float32)],
+)
+def test_range_static_out_dim_mismatch(
+    start: float, stop: float, step: float, dtype: DType
+) -> None:
+    """Tests that a static out_dim must agree with the literal range length."""
+    with Graph("range_mismatch", input_types=()):
+        with pytest.raises(
+            ValueError, match="produces 3 values, but out_dim is 2"
+        ):
+            ops.range(
+                start,
+                stop,
+                step,
+                out_dim=2,
+                dtype=dtype,
+                device=DeviceRef.CPU(),
+            )
+        out = ops.range(
+            start, stop, step, out_dim=3, dtype=dtype, device=DeviceRef.CPU()
+        )
+        assert out.shape == [3]
+
+
+def test_range_symbolic_out_dim_with_literals() -> None:
+    """Tests that a symbolic out_dim is kept for a literal range."""
+    with Graph("range_symbolic", input_types=()) as graph:
+        out = ops.range(
+            0, 5, 2, out_dim="n", dtype=DType.int64, device=DeviceRef.CPU()
+        )
+        graph.output(out)
+        assert out.shape == [Dim("n")]
 
 
 @pytest.mark.parametrize(

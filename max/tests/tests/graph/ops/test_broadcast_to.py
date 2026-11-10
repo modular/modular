@@ -75,7 +75,7 @@ def test_broadcast_to_tensor_value(
             TensorType(DType.int64, (to_rank,), device=DeviceRef.CPU()),
         ],
     )
-    assert "rmo.mo.broadcast_to" in str(graph)
+    assert "mo.broadcast_to" in str(graph)
     expected_type = TensorType(DType.bfloat16, out_dims, device=DeviceRef.CPU())
     assert graph.output_types == [expected_type]
 

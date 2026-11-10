@@ -121,7 +121,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     if (failed(getCTypeForType(func, array.getElementType(), types)))
       return failure();
     // Size-1 arrays are ABI-compatible with the scalar element type,
-    // so omit the [1] suffix (e.g. Optional[UnsafePointer] lowers
+    // so omit the [1] suffix (e.g. Optional[Pointer] lowers
     // to array<1, pointer> but should emit as `void *` in the C header).
     if (*array.getResolvedSize() != 1)
       types.back() += ("[" + Twine(*array.getResolvedSize()) + "]").str();
@@ -163,7 +163,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
 }
 
 /// Collapse a chain of single-field structs to the field they wrap. A pointer
-/// wrapper such as `UnsafePointer` arrives here nested several deep, and one C
+/// wrapper such as `Pointer` arrives here nested several deep, and one C
 /// parameter of the innermost field is ABI-identical to the whole chain.
 static Type collapseSingleFieldStructs(Type t) {
   while (auto structType = dyn_cast<StructType>(t)) {

@@ -252,7 +252,8 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
   Type compatibleVariadicPackType =
       cast<StructASTDecl>(expectedPackType.getDecl(emitter.shared))
           ->getOp()
-          .bindReference(paramBindings);
+          .bindAllReferences(&emitter.shared.getEvaluationContext(),
+                             paramBindings);
   auto compatibleRefType =
       actualRefType.getWithElement(compatibleVariadicPackType);
 
@@ -830,7 +831,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   auto refOrigin = sugarCast<RefType>(destBuffer.getType()).getOrigin();
   processOriginUnionElts(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
     // AnyOrigin is assumed to be ok since it is used for
-    // UnsafePointer etc.  We don't want to track it.
+    // Pointer etc.  We don't want to track it.
     if (sugarIsa<AnyOriginAttr>(origin))
       return;
     // We want to track the fully field sensitive origin, and
@@ -1390,12 +1391,11 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
   // local references. When an access to "x.y" happens we'll see both "x" and
   // "x.y" here.
   for (const auto &[origin, info] : originAccesses) {
+    assert(!isa<UnboundAttr>(origin)); // should not see any unbound origin
     // Static origins and subfields are ignorable.  Fields will have their bases
     // included.
     if (isa<StaticOriginAttr, OriginFieldAttr, ComptimeOriginAttr,
-            InteriorOriginAttr, OriginSubtreeAttr>(origin) ||
-        // FIXME: Why are we getting UnboundAttr's here?
-        isa<UnboundAttr>(origin))
+            InteriorOriginAttr, OriginSubtreeAttr>(origin))
       continue;
 
     // Scan up our decl hierarchy to see if this parameter is defined on a
@@ -1403,7 +1403,7 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
     // This seems unfortunate, there should be a better way to do this.
     auto paramDecl = dyn_cast<ParamDeclRefAttr>(origin);
     if (!paramDecl)
-      origin.dump();
+      llvm::errs() << origin << "\n";
     assert(paramDecl && "Unknown origin in mayAccessCallerStack");
     if (!isParamDeclOutsideFunction(paramDecl))
       return true;
@@ -1733,7 +1733,7 @@ static bool shouldEmitParameterCall(RValue callee,
                                     SharedState &shared) {
   auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
 
-  // If this returns something like an UnsafePointer with an unusual origin,
+  // If this returns something like a Pointer with an unusual origin,
   // materialization will fail, so we can't emit it as a parameter call.
   if (ASTType(calleeSig.getUserResultType())
           .containsUnmaterializableOrigins(shared))

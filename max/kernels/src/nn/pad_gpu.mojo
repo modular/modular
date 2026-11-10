@@ -27,7 +27,7 @@ from layout import (
     TileTensor,
 )
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.math import align_down, ceildiv
 from std.sys.info import align_of
 from std.collections import Array

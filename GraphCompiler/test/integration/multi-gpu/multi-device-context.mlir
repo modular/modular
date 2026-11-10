@@ -1,4 +1,4 @@
-// RUN: mo-opt --gc-pipeline="compiled-framework-label=mof kernel-library-paths=%kernel_api_test_lib" %s -o %t
+// RUN: mo-opt --gc-pipeline="kernel-library-paths=%kernel_api_test_lib" %s -o %t
 // RUN: mt --execute --default-device-label=gpu --model-inputs=ones --result-output-style=compact %t | FileCheck %s
 
 // CHECK-LABEL: --- Running 'multi_variadic_device_context':

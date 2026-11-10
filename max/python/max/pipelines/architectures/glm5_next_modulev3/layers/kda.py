@@ -23,32 +23,39 @@ and are concatenated per device, not sharded as one.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Generic, TypeVar
+
 from max import functional as F
 from max import tree
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import BufferValue, DimLike, TensorType, TensorValue, ops
 from max.nn import Linear, Module, RMSNorm
-from max.nn.common_layers.linear import col_parallel, row_parallel
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_fwd,
+    gated_delta_conv1d_verify_fwd,
     kda_chunk,
     kda_decode,
 )
-from max.nn.legacy.state_space.kimi_delta import (
+from max.nn._graph_ops.state_space.kimi_delta import (
     STATE_LAYOUT,
     KdaGateMode,
     kda_chunk_predicate,
     kda_chunk_servable,
     kda_gate_mode,
+    kda_verify_ring,
 )
+from max.nn.common_layers.linear import col_parallel, row_parallel
+from max.nn.common_layers.mesh_axis import TP
+from max.pipelines.architectures.glm5_next.layers.kda import KdaReplayInputs
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
+from max.tensor.sharding.action import PerShard
 
 from ..model_config import Glm5NextConfig
 
-__all__ = ["KdaStateAccess", "KimiDeltaAttention"]
+__all__ = ["CaptureSink", "KdaStateAccess", "KdaVerify", "KimiDeltaAttention"]
 
 
 @tree.dataclass(frozen=True)
@@ -68,15 +75,70 @@ class KdaStateAccess:
     """int64 CPU scalar: this layer's position among the KDA layers."""
 
 
+_Captured = TypeVar("_Captured")
+
+
+class CaptureSink(Generic[_Captured]):
+    """One device's list of a verify's replay inputs.
+
+    Handed to a per-device graph function, which appends to it. A list would
+    be rebuilt on the way in, so the appends would land in a copy.
+    """
+
+    __slots__ = ("items",)
+
+    def __init__(self, items: list[_Captured]) -> None:
+        self.items = items
+
+
+@dataclass(frozen=True)
+class KdaVerify:
+    """A speculative verify's view of one KDA layer.
+
+    Set on the layer around the target's verify only. The verify records each
+    token's state update into the ring instead of writing the recurrent pool,
+    and leaves the conv window unwritten; the rollback lands both on the
+    accepted prefix from what :attr:`captures` collects.
+    """
+
+    ring_pool: Tensor
+    """The verify ring, every layer's rows, head-split like the state."""
+    ring_rows: Tensor
+    """``[num_kda_layers, batch_size]`` ring rows."""
+    verify_width: TensorValue
+    """The speculative graph's
+    :func:`~max.nn._graph_ops.state_space.verify_width_operand`."""
+    captures: list[list[KdaReplayInputs]]
+    """Per-device sink every KDA layer appends its replay inputs to, in
+    schedule order."""
+
+
 def _layer_rows(rows: TensorValue, layer: TensorValue) -> TensorValue:
     """Row ``layer`` of a ``[num_layers, batch_size]`` table, as ``[batch]``."""
     return ops.squeeze(rows[(slice(layer, layer + 1), 1), :], 0)
 
 
+def _qkv_projection_graph(
+    x: TensorValue,
+    q_weight: TensorValue,
+    k_weight: TensorValue,
+    v_weight: TensorValue,
+) -> TensorValue:
+    """Projects one device's q, k and v heads with one matmul.
+
+    Returns ``[total_tokens, 3 * local_heads * head_dim]`` in the conv's
+    channel order. Each weight holds only this device's head rows, so the
+    stack keeps the per-rank order.
+    """
+    weight = ops.concat([q_weight, k_weight, v_weight])
+    return ops.matmul(x.cast(weight.dtype), weight.T)
+
+
+_qkv_projection = F.functional(_qkv_projection_graph)
+
+
 def _kda_core_graph(
-    q: TensorValue,
-    k: TensorValue,
-    v: TensorValue,
+    qkv: TensorValue,
     q_conv: TensorValue,
     k_conv: TensorValue,
     v_conv: TensorValue,
@@ -95,30 +157,53 @@ def _kda_core_graph(
     head_dim: int,
     norm_eps: float,
     gate_mode: KdaGateMode,
+    ring_pool: BufferValue | None = None,
+    ring_rows: TensorValue | None = None,
+    verify_width: TensorValue | None = None,
+    capture: CaptureSink[KdaReplayInputs] | None = None,
+    pin_decode_fma: bool = False,
 ) -> TensorValue:
     """Runs one device's heads: conv, recurrence, gated norm.
 
-    Returns ``[total_tokens, local_heads * head_dim]`` in ``q``'s dtype, the
-    input of the row-parallel ``o_proj``. Both pools are mutated in place.
+    Returns ``[total_tokens, local_heads * head_dim]`` in ``qkv``'s dtype, the
+    input of the row-parallel ``o_proj``. Both pools are mutated in place,
+    except under a verify (``verify_width`` set), which records the
+    recurrence into ``ring_pool`` and appends its replay inputs to
+    ``capture`` for the rollback. ``pin_decode_fma`` pins the decode
+    kernel's fused multiply-adds, which only a test of decode against the
+    verify ring needs: a speculative graph never takes the decode branch.
     """
-    dtype = q.dtype
-    qkv_dim = q.shape[-1]
-    head_shape = [-1, int(qkv_dim) // head_dim, head_dim]
+    dtype = qkv.dtype
+    qkv_dim = int(qkv.shape[-1]) // 3
+    head_shape = [-1, qkv_dim // head_dim, head_dim]
 
-    # q, k, v in that order: the conv's channel layout.
-    qkv = ops.concat([q, k, v], axis=-1).cast(DType.float32)
-    conv_weight = ops.concat([q_conv, k_conv, v_conv], axis=0).cast(
-        DType.float32
-    )
-    conv_out = ops.silu(
-        gated_delta_conv1d_fwd(
+    qkv = qkv.cast(DType.float32)
+    # The module holds each conv weight as the checkpoint's depthwise
+    # `[channels, 1, kernel]`.
+    conv_weight = ops.reshape(
+        ops.concat([q_conv, k_conv, v_conv], axis=0), [-1, q_conv.shape[-1]]
+    ).cast(DType.float32)
+    conv_slots = _layer_rows(conv_rows, layer).cast(DType.uint32)
+    qkv_window: TensorValue | None = None
+    if verify_width is None:
+        conv_out = gated_delta_conv1d_fwd(
             qkv_input_ragged=qkv,
             conv_weight=conv_weight,
             conv_state=conv_pool,
-            slot_idx=_layer_rows(conv_rows, layer).cast(DType.uint32),
+            slot_idx=conv_slots,
             input_row_offsets=input_row_offsets.cast(DType.uint32),
         )
-    )
+    else:
+        conv_out, qkv_window = gated_delta_conv1d_verify_fwd(
+            qkv_input_ragged=qkv,
+            conv_weight=conv_weight,
+            conv_state=conv_pool,
+            slot_idx=conv_slots,
+            input_row_offsets=input_row_offsets.cast(DType.uint32),
+            verify_width=verify_width,
+            rollback=False,
+        )
+    conv_out = ops.silu(conv_out)
     q, k, v = (
         ops.reshape(part, head_shape)
         for part in ops.split(conv_out, [qkv_dim] * 3, axis=-1)
@@ -130,6 +215,16 @@ def _kda_core_graph(
     cu_seqlens = input_row_offsets.cast(DType.int32)
     state_indices = _layer_rows(recurrent_rows, layer).cast(DType.int32)
     out_shape: list[DimLike] = [q.shape[0], *head_shape[1:]]
+    if capture is not None:
+        capture.items.append(
+            KdaReplayInputs(
+                qkv=qkv,
+                conv_weight=conv_weight,
+                raw_gate=raw_gate,
+                beta_logits=beta_logits,
+                qkv_window=qkv_window,
+            )
+        )
 
     def decode() -> TensorValue:
         return kda_decode(
@@ -147,16 +242,24 @@ def _kda_core_graph(
             gate_mode=gate_mode,
             beta_mode="logits",
             state_layout=STATE_LAYOUT,
+            pin_fma=pin_decode_fma,
         )
 
-    def chunk() -> TensorValue:
+    def chunk(
+        qkv_io: tuple[TensorValue, TensorValue, TensorValue] | None = None,
+    ) -> TensorValue:
         # The gfx950 chunk kernels take only bf16 q/k/v and output, so this
         # branch rounds at the op boundary and nowhere else; the state stays
         # float32 because eligibility requires a float32 pool.
-        out = kda_chunk(
+        q_io, k_io, v_io = qkv_io or (
             q.cast(DType.bfloat16),
             k.cast(DType.bfloat16),
             v.cast(DType.bfloat16),
+        )
+        out = kda_chunk(
+            q_io,
+            k_io,
+            v_io,
             raw_gate,
             beta_logits,
             a_log,
@@ -171,18 +274,47 @@ def _kda_core_graph(
         ).cast(DType.float32)
         return ops.rebind(out, out_shape, "kda chunk output rebind")
 
-    # Only gfx950 takes the chunk op here: this graph has no speculative
-    # verify or state replay, but its NVIDIA chunk path has no numerics
-    # coverage yet, so NVIDIA prefill keeps the sequential recurrence. A
-    # decode batch (one token per sequence) stays on float32 `kda_decode`, and
-    # so does the device graph captured for it: `ops.cond` branches are
-    # separate regions. A mixed prefill+decode batch takes the chunk branch
-    # whole, decode rows included.
-    if accelerator_api() == "hip" and kda_chunk_servable(
+    # Sliced here rather than in the branch: mo-symbolic-optimize merges the
+    # layers' slices of one row table into a single split, which must not sit
+    # in one layer's branch.
+    ring_indices = None if ring_rows is None else _layer_rows(ring_rows, layer)
+
+    def verify_ring() -> TensorValue:
+        assert verify_width is not None
+        assert ring_pool is not None and ring_indices is not None
+        out = kda_verify_ring(
+            q,
+            k,
+            v,
+            raw_gate,
+            beta_logits,
+            a_log,
+            dt_bias,
+            cu_seqlens,
+            recurrent_pool,
+            state_indices,
+            ring_pool,
+            ring_indices,
+            verify_width,
+            output_dtype=DType.float32,
+            gate_mode=gate_mode,
+            beta_mode="logits",
+            state_layout=STATE_LAYOUT,
+        )
+        return ops.rebind(out, out_shape, "kda verify output rebind")
+
+    # Only gfx950 takes the chunk op here: its NVIDIA chunk path has no
+    # numerics coverage yet, so NVIDIA prefill keeps the sequential
+    # recurrence. A decode batch (one token per sequence) stays on float32
+    # `kda_decode`, and so does the device graph captured for it: `ops.cond`
+    # branches are separate regions. A mixed prefill+decode batch takes the
+    # chunk branch whole, decode rows included.
+    chunked = accelerator_api() == "hip" and kda_chunk_servable(
         head_dim, gate_mode, recurrent_pool.dtype
-    ):
-        total_tokens = ops.shape_to_tensor(q.shape)[0]
-        batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+    )
+    total_tokens = ops.shape_to_tensor(q.shape)[0]
+    batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+    if verify_width is None and chunked:
         core = ops.cond(
             kda_chunk_predicate(
                 total_tokens, batch_size, head_shape[1], head_dim
@@ -191,11 +323,43 @@ def _kda_core_graph(
             chunk,
             lambda: ops.rebind(decode(), out_shape, "kda decode output rebind"),
         )[0]
-    else:
+    elif verify_width is None:
         core = decode()
+    elif chunked:
+        # A draft-free prefill has nothing to roll back, so it takes the
+        # forward's chunked kernel. A verify stays on the sequential
+        # recurrence, whose arithmetic the ring records and the fold replays.
+        no_drafts = ops.equal(ops.shape_to_tensor(verify_width.shape)[0], 0)
+        # TODO(KERN-3879): the bf16 casts are made outside the cond because,
+        # made inside this branch, mo-hoist-param-exprs leaves the first
+        # cast's result on the outer token dim and the graph fails to verify.
+        # Every verify computes them and drops them; a 2xMI355 trace shows no
+        # standalone cast kernel, so they cost at most ~0.5% of kernel time.
+        # Move them back once the pass is fixed.
+        qkv_io = (
+            q.cast(DType.bfloat16),
+            k.cast(DType.bfloat16),
+            v.cast(DType.bfloat16),
+        )
+        core = ops.cond(
+            ops.logical_and(
+                no_drafts,
+                kda_chunk_predicate(
+                    total_tokens, batch_size, head_shape[1], head_dim
+                ),
+            ),
+            [TensorType(DType.float32, out_shape, q.device)],
+            lambda: chunk(qkv_io),
+            verify_ring,
+        )[0]
+    else:
+        core = verify_ring()
     # Normalize, scale, and only then gate.
     normed = ops.rms_norm(
-        core, norm_weight, norm_eps, multiply_before_cast=False
+        core,
+        norm_weight.cast(DType.float32),
+        norm_eps,
+        multiply_before_cast=False,
     ) * ops.sigmoid(ops.reshape(output_gate.cast(DType.float32), head_shape))
     return ops.reshape(normed.cast(dtype), [-1, qkv_dim])
 
@@ -224,9 +388,9 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         self.q_proj = head_rows(hidden, qkv_dim)
         self.k_proj = head_rows(hidden, qkv_dim)
         self.v_proj = head_rows(hidden, qkv_dim)
-        self.q_conv1d = _shard_rows(Tensor.zeros([qkv_dim, kernel]))
-        self.k_conv1d = _shard_rows(Tensor.zeros([qkv_dim, kernel]))
-        self.v_conv1d = _shard_rows(Tensor.zeros([qkv_dim, kernel]))
+        self.q_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
+        self.k_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
+        self.v_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
 
         # The low-rank gate projections bottom out at `head_dim`, which is not
         # a head axis, so their down halves are replicated.
@@ -242,20 +406,26 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         )
         # The reference's gated norm multiplies by the weight, not 1 + weight,
         # and holds everything in float32. It runs inside the per-device core
-        # below, which reads only its weight.
+        # below, which reads only its weight and widens it to float32.
         self.o_norm = RMSNorm(self.head_dim, eps=self.norm_eps)
-        self.o_norm.weight = Tensor.ones([self.head_dim], dtype=DType.float32)
         self.o_proj = row_parallel(Linear(qkv_dim, hidden, bias=False))
+        self.verify: KdaVerify | None = None
+        """Set by the speculative target around its verify, else ``None``."""
+        self.pin_decode_fma = False
+        """Whether decode pins its fused multiply-adds so its state matches a
+        verify ring's bit for bit; the pinned kernel is slower on AMD."""
 
     def forward(
         self, x: Tensor, state: KdaStateAccess, input_row_offsets: Tensor
     ) -> Tensor:
         """Runs the delta attention over ``x`` and advances ``state``."""
         head_split = NamedMapping(x.mesh, (None, TP))
+        verify = self.verify
+        qkv = _qkv_projection(
+            x, self.q_proj.weight, self.k_proj.weight, self.v_proj.weight
+        ).rebind_mapping(head_split)
         normed = _kda_core(
-            self.q_proj(x),
-            self.k_proj(x),
-            self.v_proj(x),
+            qkv,
             self.q_conv1d,
             self.k_conv1d,
             self.v_conv1d,
@@ -274,6 +444,15 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
             self.head_dim,
             self.norm_eps,
             self.gate_mode,
+            ring_pool=None if verify is None else verify.ring_pool,
+            ring_rows=None if verify is None else verify.ring_rows,
+            verify_width=None if verify is None else verify.verify_width,
+            capture=(
+                None
+                if verify is None
+                else PerShard(CaptureSink(c) for c in verify.captures)
+            ),
+            pin_decode_fma=self.pin_decode_fma,
         ).rebind_mapping(head_split)
         return self.o_proj(normed)
 

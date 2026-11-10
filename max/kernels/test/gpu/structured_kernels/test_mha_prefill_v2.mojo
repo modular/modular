@@ -37,7 +37,7 @@ from std.testing import assert_almost_equal
 
 from layout import TileTensor
 from layout.coord import Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     MhaConfigV2,

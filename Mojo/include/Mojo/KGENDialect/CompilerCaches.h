@@ -24,29 +24,44 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <tuple>
+#include <utility>
 
 namespace M::KGEN {
 
-/// Thread-safe cache from `KeyT` to the opaque pointer of an attribute or type.
-/// Entries are pure functions of uniqued values, so they never go stale.
-template <typename KeyT>
+/// Thread-safe cache from `KeyT` to `ValueT`, by default the opaque pointer of
+/// an attribute or type. Entries are pure functions of uniqued values, so they
+/// never go stale.
+template <typename KeyT, typename ValueT = const void *>
 class ShardedCache {
 public:
-  /// Returns null on a miss.
-  const void *lookup(const KeyT &key) {
+  std::optional<ValueT> lookup(const KeyT &key) {
     Shard &shard = getShard(key);
     std::shared_lock<std::shared_mutex> lock(shard.mutex);
     auto it = shard.map.find(key);
-    return it == shard.map.end() ? nullptr : it->second;
+    if (it == shard.map.end())
+      return std::nullopt;
+    return it->second;
   }
 
-  /// Records `value` for `key`; the first entry wins when threads race.
-  void insert(const KeyT &key, const void *value) {
+  /// Records `value` for `key` and returns the stored value; the first entry
+  /// wins when threads race.
+  ValueT insert(const KeyT &key, ValueT value) {
     Shard &shard = getShard(key);
     std::unique_lock<std::shared_mutex> lock(shard.mutex);
-    shard.map.try_emplace(key, value);
+    return shard.map.try_emplace(key, value).first->second;
+  }
+
+  /// Returns the value for `key`, computing and recording it on a miss.
+  /// `compute` runs without a lock held, so it may look up and insert entries
+  /// in this cache, including `key`; the entry stored first is returned.
+  template <typename ComputeFn>
+  ValueT getOrCompute(const KeyT &key, ComputeFn &&compute) {
+    if (std::optional<ValueT> hit = lookup(key))
+      return *hit;
+    return insert(key, std::forward<ComputeFn>(compute)());
   }
 
 private:
@@ -54,7 +69,7 @@ private:
   static constexpr size_t numShards = 64;
   struct Shard {
     std::shared_mutex mutex;
-    llvm::DenseMap<KeyT, const void *> map;
+    llvm::DenseMap<KeyT, ValueT> map;
   };
 
   Shard &getShard(const KeyT &key) {
@@ -63,11 +78,6 @@ private:
 
   std::array<Shard, numShards> shards;
 };
-
-/// `IndexDepthAdjuster` results, keyed by the value, `adjustDepth` and
-/// `onlyAdjustIndexRef`.
-using DepthAdjustCache =
-    ShardedCache<std::tuple<const void *, int64_t, unsigned>>;
 
 /// Caches for pure helpers of the parameter machinery. Every parser state on an
 /// `MLIRContext` shares one instance, owned through the `shared_ptr` that
@@ -84,9 +94,34 @@ public:
   static std::shared_ptr<CompilerCaches>
   getOrCreate(mlir::MLIRContext *context);
 
+  /// Returns `compute()`, memoized in the `cache` member of the caches of
+  /// `context`. Computes without caching when no owner is alive.
+  template <typename CacheT, typename KeyT, typename ComputeFn>
+  static auto getOrCompute(mlir::MLIRContext *context,
+                           CacheT CompilerCaches::*cache, const KeyT &key,
+                           ComputeFn &&compute) {
+    if (CompilerCaches *caches = get(context))
+      return (caches->*cache)
+          .getOrCompute(key, std::forward<ComputeFn>(compute));
+    return std::forward<ComputeFn>(compute)();
+  }
+
+  /// Records `value` for `key` in the `cache` member of the caches of
+  /// `context`. Does nothing when no owner is alive.
+  template <typename CacheT, typename KeyT, typename ValueT>
+  static void insert(mlir::MLIRContext *context, CacheT CompilerCaches::*cache,
+                     const KeyT &key, const ValueT &value) {
+    if (CompilerCaches *caches = get(context))
+      (caches->*cache).insert(key, value);
+  }
+
   /// Canonical forms, keyed by the value's opaque pointer.
   ShardedCache<const void *> canonical;
-  DepthAdjustCache depthAdjust;
+  /// `IndexDepthAdjuster` results, keyed by the value, `adjustDepth` and
+  /// `onlyAdjustIndexRef`.
+  ShardedCache<std::tuple<const void *, int64_t, unsigned>> depthAdjust;
+  /// `KGEN::isParameterizedType` results, keyed by the type's opaque pointer.
+  ShardedCache<const void *, bool> parameterized;
 
 private:
   CompilerCaches() = default;

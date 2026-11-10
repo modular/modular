@@ -17,6 +17,7 @@
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/MojoParser/EntryPoint.h"
+#include "Mojo/MojoREPL/REPL.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/tools/mojo-lsp-server/LSPTelemetryContext.h"
@@ -114,6 +115,7 @@ public:
 
   /// Return the parser context for this document.
   MojoParserContext &getParserContext() const;
+  MojoREPLContext &getREPLContext() const;
 
   /// Invalidate this document.
   void invalidate();
@@ -494,11 +496,11 @@ public:
 
     /// Attempt to perform code completion at the given location.
     std::vector<KGEN::Mojo::CodeCompletionResult>
-    onCodeCompletion(llvm::SMLoc loc, MojoParserContext &ctx);
+    onCodeCompletion(llvm::SMLoc loc, MojoREPLContext &replContext);
 
     /// Attempt to compute signature help at the given location.
     std::optional<KGEN::Mojo::SignatureHelpResult>
-    onSignatureHelp(llvm::SMLoc loc, MojoParserContext &ctx);
+    onSignatureHelp(llvm::SMLoc loc, MojoREPLContext &replContext);
 
     /// The contents of the code block.
     StringRef contents;

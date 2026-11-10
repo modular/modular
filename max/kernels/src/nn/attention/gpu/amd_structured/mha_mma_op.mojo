@@ -37,7 +37,7 @@ from std.utils import IndexList
 
 from layout import Coord, TensorLayout
 from layout.coord import crd2idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from structured_kernels.amd_tile_io import (
     RegTile,

@@ -86,7 +86,7 @@ def bench_matmul[
     transpose_b: Bool = False,
     epilogue: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     shape_c: Coord,
     shape_a: Coord,
@@ -125,7 +125,7 @@ def bench_matmul[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
             )
@@ -246,7 +246,7 @@ def create_matmul_bench[
     use_vendor_blas: Bool,
     epilogue: Bool,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     m: MType,
     n: NType,

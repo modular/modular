@@ -6,6 +6,7 @@ package(default_visibility = ["//max:consumers"])
 _LIT_TESTS = [
     "test_amd_asan_oob.mojo",
     "test_amd_block_sync_lds.mojo",
+    "test_attribute_launch_config_target.mojo",
     "test_compile_via_param.mojo",
     "test_elementwise_trace_description.mojo",
 ]
@@ -38,6 +39,19 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # FIXME: KERN-2360 - external_memory is not supported on Apple silicon
 }
+
+# Tests that only compile for a GPU target and never launch a kernel: they run
+# the compiler from whatever host they are scheduled on, so they do not need a
+# GPU executor (see "GPU test cost" in AGENTS.md). They are incompatible with
+# ASan, as in ../comm/BUILD.bazel: the instrumented compiler's AMDGPU backend
+# overruns the 900 s compile timeout, and the tests check codegen, not host
+# memory.
+_CPU_TESTS = [
+    "test_amd_gfx1250_sync.mojo",
+    "test_amd_gfx1250_tdm.mojo",
+    "test_amd_gfx1250_tdm_pack.mojo",
+    "test_amd_gfx1250_wmma.mojo",
+]
 
 [
     mojo_filecheck_test(
@@ -76,8 +90,26 @@ _EXTRA_CONSTRAINTS = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _LIT_TESTS + _FILECHECK_TESTS,
+        exclude = _LIT_TESTS + _FILECHECK_TESTS + _CPU_TESTS,
     )
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + _EXTRA_COPTS.get(src, []),
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "//max:max_mojo",
+            "@mojo//:std",
+        ],
+    )
+    for src in _CPU_TESTS
 ]
 
 lit_tests(

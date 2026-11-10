@@ -14,6 +14,7 @@
 #ifndef SUPPORT_REFERENCECOUNTED_H
 #define SUPPORT_REFERENCECOUNTED_H
 
+#include "Support/SymbolExport.h"
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -88,12 +89,14 @@ private:
 /// In debug builds we keep track of the number of reference counted objects,
 /// which enables clients to check that none are alive at key moments.  This is
 /// a low-tech way to find certain classes of memory leaks.
-extern std::atomic<std::size_t> currentReferenceCountedObjects;
+extern MODULAR_CXX_EXPORT std::atomic<std::size_t>
+    currentReferenceCountedObjects;
 #endif // MODULAR_DEBUG
 
 /// Verify that there are no live ReferenceCounted objects that are currently
 /// alive and print the specified message and abort if there are.
-void verifyNoLiveReferenceCountedObjects(const char *errorMessage);
+MODULAR_CXX_EXPORT void
+verifyNoLiveReferenceCountedObjects(const char *errorMessage);
 
 template <typename SubClass>
 inline ReferenceCounted<SubClass>::ReferenceCounted() : refCount(1) {

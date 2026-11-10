@@ -22,6 +22,7 @@ from std.sys import CompilationTarget, align_of, size_of
 from std.math import align_up
 
 from std.builtin.device_passable import DevicePassable
+from std.reflection import reflect
 
 
 struct DenseArgs[addrs_origin: Origin, length: Int]:
@@ -89,6 +90,138 @@ struct _IdentityWrapper(DeviceFunctionWrapper):
     ]: Self.Entry[f] = f
 
 
+@fieldwise_init
+struct SlotLayout(TrivialRegisterPassable):
+    """The size and alignment, in bytes, of a kernel argument slot."""
+
+    var size: Int
+    var align: Int
+
+    @staticmethod
+    def of[T: AnyType, target: CompilationTarget]() -> Self:
+        """Returns `T`'s layout per `size_of` and `align_of`."""
+        return Self(size_of[T, target=target](), align_of[T, target=target]())
+
+
+trait DeviceArgAcceptor:
+    """A kernel argument type that can be filled by a host value of another
+    type, because that value already encodes to the bytes this type expects.
+
+    Lets a device-only argument type, which the host can't build, take a host
+    value directly.
+    """
+
+    @staticmethod
+    def _accepts_device_arg[ActualT: DevicePassable]() -> Bool:
+        """Returns whether an `ActualT` may fill an argument of this type.
+
+        Parameters:
+            ActualT: The type passed for the argument.
+
+        Returns:
+            True if an `ActualT` may fill an argument declared as this type.
+        """
+        ...
+
+    @staticmethod
+    def _device_arg_slot[
+        ActualT: DevicePassable, target: CompilationTarget
+    ]() -> SlotLayout:
+        """Returns the argument slot an accepted `ActualT` fills.
+
+        The launcher still checks it against `ActualT.device_type`.
+
+        Parameters:
+            ActualT: The type passed for the argument.
+            target: The compilation target of the kernel.
+
+        Returns:
+            The slot's size and alignment.
+        """
+        ...
+
+
+def _declared_slot[
+    Actual: AnyType, Declared: AnyType, target: CompilationTarget
+]() -> Optional[SlotLayout]:
+    """Returns the slot a `Declared` argument filled from a host `Actual`
+    occupies, or `None` if `Actual` may not fill it.
+
+    `Actual` must encode to `Declared`, be accepted by it, or match it field by
+    field under this rule. Acceptors supply layouts the host cannot compute."""
+    comptime if Actual == Declared:
+        return SlotLayout.of[Declared, target]()
+    elif conforms_to(Actual, DevicePassable):
+        comptime accepted = _acceptor_slot[Declared, Actual, target]()
+        comptime if Actual._is_implicitly_encodable_to[Declared]():
+            return SlotLayout.of[Declared, target]()
+        elif accepted:
+            return accepted
+        else:
+            return _fields_slot[Actual.device_type, Declared, target]()
+    elif conforms_to(Actual, RegisterPassable):
+        return _fields_slot[Actual, Declared, target]()
+    else:
+        return None
+
+
+def _acceptor_slot[
+    Declared: AnyType, Actual: DevicePassable, target: CompilationTarget
+]() -> Optional[SlotLayout]:
+    comptime if conforms_to(Declared, DeviceArgAcceptor):
+        comptime if Declared._accepts_device_arg[Actual]():
+            return Declared._device_arg_slot[Actual, target]()
+    return None
+
+
+def _fields_slot[
+    Actual: AnyType, Declared: AnyType, target: CompilationTarget
+]() -> Optional[SlotLayout]:
+    # Ignores `@align(N)` on `Declared`; the launcher's assert against the
+    # encoded type catches the mismatch.
+    comptime if _walkable_pair[Declared, Actual]():
+        comptime a_fields = reflect[Actual].field_types()
+        comptime d_fields = reflect[Declared].field_types()
+        var size = 0
+        var align = 1
+        comptime for i in range(a_fields.length):
+            comptime field = _declared_slot[a_fields[i], d_fields[i], target]()
+            comptime if case .Some(slot) = field:
+                size = align_up(size, slot.align) + slot.size
+                align = max(align, slot.align)
+            else:
+                return None
+        return SlotLayout(align_up(size, align), align)
+    else:
+        return None
+
+
+def _walkable_pair[Declared: AnyType, Actual: AnyType]() -> Bool:
+    # Only the structs `encode_fields` walks; a leaf's MLIR-typed storage does
+    # not reflect.
+    comptime if not (
+        conforms_to(Declared, DevicePassable)
+        or conforms_to(Declared, RegisterPassable)
+    ) or not (
+        conforms_to(Actual, DevicePassable)
+        or conforms_to(Actual, RegisterPassable)
+    ):
+        return False
+    else:
+        comptime d = reflect[Declared]
+        comptime a = reflect[Actual]
+        comptime if not d.is_struct() or not a.is_struct():
+            return False
+        # Reflected as structs but not walkable; see
+        # `_contains_device_passable_field`.
+        elif d.base_name() == "_RegTuple" or d.base_name() == "Bool":
+            return False
+        elif a.base_name() == "_RegTuple" or a.base_name() == "Bool":
+            return False
+        else:
+            return d.field_count() == a.field_count() and d.field_count() != 0
+
+
 # TODO(MSTDL-3307): Move this back to being a method on DeviceFunction
 @inline(.always)
 def _validate_encodable_arguments[
@@ -130,11 +263,11 @@ def _validate_encodable_arguments[
 
         # Check that the given argument can occupy the kernel's declared
         # argument slot after device encoding.
-        comptime is_convertible: Bool = actual_arg_type._is_implicitly_encodable_to[
-            declared_arg_type
+        comptime declared_slot = _declared_slot[
+            actual_arg_type, declared_arg_type, target
         ]()
 
-        comptime assert is_convertible, String(
+        comptime assert declared_slot, String(
             "argument #",
             i,
             " of type '",
@@ -147,45 +280,41 @@ def _validate_encodable_arguments[
         # The kernel reads the slot as `declared_arg_type`, but the bytes
         # written are `actual_arg_type.device_type`. Field-wise encodability
         # compares field types, not layouts, so check the layouts agree.
-        comptime host_args_hint = (
-            ". If the argument's host bytes are already valid on the device,"
-            " pass it via `host_args=` to skip encoding"
-        )
-        comptime declared_size = size_of[declared_arg_type, target=target]()
-        comptime device_size = size_of[
-            actual_arg_type.device_type, target=target
-        ]()
-        comptime assert declared_size == device_size, String(
-            "argument #",
-            i,
-            " of type '",
-            actual_arg_type.get_type_name(),
-            "' encodes to ",
-            device_size,
-            " bytes but the declared function argument type '",
-            declared_arg_type_name(),
-            "' is ",
-            declared_size,
-            " bytes",
-            host_args_hint,
-        )
-        comptime declared_align = align_of[declared_arg_type, target=target]()
-        comptime device_align = align_of[
-            actual_arg_type.device_type, target=target
-        ]()
-        comptime assert declared_align == device_align, String(
-            "argument #",
-            i,
-            " of type '",
-            actual_arg_type.get_type_name(),
-            "' encodes with alignment ",
-            device_align,
-            " but the declared function argument type '",
-            declared_arg_type_name(),
-            "' has alignment ",
-            declared_align,
-            host_args_hint,
-        )
+        comptime if case .Some(declared) = declared_slot:
+            comptime host_args_hint = (
+                ". If the argument's host bytes are already valid on the"
+                " device, pass it via `host_args=` to skip encoding"
+            )
+            comptime device = SlotLayout.of[
+                actual_arg_type.device_type, target
+            ]()
+            comptime assert declared.size == device.size, String(
+                "argument #",
+                i,
+                " of type '",
+                actual_arg_type.get_type_name(),
+                "' encodes to ",
+                device.size,
+                " bytes but the declared function argument type '",
+                declared_arg_type_name(),
+                "' is ",
+                declared.size,
+                " bytes",
+                host_args_hint,
+            )
+            comptime assert declared.align == device.align, String(
+                "argument #",
+                i,
+                " of type '",
+                actual_arg_type.get_type_name(),
+                "' encodes with alignment ",
+                device.align,
+                " but the declared function argument type '",
+                declared_arg_type_name(),
+                "' has alignment ",
+                declared.align,
+                host_args_hint,
+            )
 
         var aligned_type_size = align_up(
             size_of[actual_arg_type.device_type, target=target](), 8

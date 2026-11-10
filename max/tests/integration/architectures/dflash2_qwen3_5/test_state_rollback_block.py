@@ -34,7 +34,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     GatedDeltaReplayInputs,
     gated_delta_conv1d_fwd,
     gated_delta_recurrence_fwd,
@@ -47,16 +47,16 @@ from max.pipelines.architectures.qwen3_5.state_cache import (
     ring_len_for_window,
 )
 from max.pipelines.speculative.gated_delta_rollback import (
-    accepted_lengths,
-    accepted_row_plan,
     fold_state_pools,
     replay_conv_pools,
+    window_row_plan,
 )
 
 BLOCK = 8
 """DFlash2 verifies an anchor plus seven drafts in one window."""
 
 NUM_DRAFTS = BLOCK - 1
+RING_LEN = ring_len_for_window(BLOCK)
 # The recurrence kernel is only compiled for 128 x 128 heads, and conv_dim is
 # the layout the projections produce: 2 x num_key_heads x key_head_dim for
 # Q/K plus num_value_heads x value_head_dim for V.
@@ -85,7 +85,7 @@ def _ring_row_shape() -> tuple[int, ...]:
             conv_kernel_dim=CONV_KERNEL,
             dtype=DType.float32,
             num_devices=1,
-            ring_len=ring_len_for_window(BLOCK),
+            ring_len=RING_LEN,
         )
         if region.leaf_id == RING_LEAF_ID
     )
@@ -192,10 +192,16 @@ def _model(
             verify_width=verify_width,
         )
 
-        rows, replay_offsets = accepted_row_plan(
-            offsets_v, accepted_v, k_v, total_rows, gpu
+        rows, replay_offsets = window_row_plan(
+            offsets_v,
+            accepted_v,
+            k_v,
+            total_rows,
+            gpu,
         )
-        fold_accepted = accepted_lengths(offsets_v, accepted_v, k_v)
+        # Telling the fold every draft was accepted folds a whole window,
+        # the stale-count bug the full-window replay exists to plant.
+        fold_num_accepted = accepted_v
         if replay_full_window:
             rows = ops.range(
                 start=0,
@@ -205,7 +211,7 @@ def _model(
                 dtype=DType.int64,
             )
             replay_offsets = offsets_v.cast(DType.int64)
-            fold_accepted = accepted_v * 0 + BLOCK
+            fold_num_accepted = accepted_v * 0 + NUM_DRAFTS
         replay_conv_pools(
             [
                 [
@@ -231,7 +237,9 @@ def _model(
             [live_rows],
             [ring],
             [live_rows],
-            fold_accepted,
+            offsets_v,
+            fold_num_accepted,
+            k_v,
             [],
             verify_width,
         )
@@ -268,7 +276,7 @@ def _run(
 
     Returns the live and reference pools. ``live`` is what the rollback
     produced; ``reference`` is what the forward kernels produce over a
-    host-sliced accepted prefix, built without ``accepted_row_plan``, so the
+    host-sliced accepted prefix, built without ``window_row_plan``, so the
     two agreeing is not a tautology.
 
     Args:
@@ -337,7 +345,16 @@ def _assert_rolled_back(pools: dict[str, np.ndarray]) -> None:
     np.testing.assert_array_equal(pools["live_rec"], pools["ref_rec"])
 
 
-@pytest.mark.parametrize("accepted", [0, 1, 2, 3, NUM_DRAFTS])
+@pytest.mark.parametrize(
+    "accepted",
+    [
+        pytest.param(0, id="nothing-accepted-carries-window-slots"),
+        pytest.param(1, id="one-accepted-carries-window-slots"),
+        pytest.param(2, id="two-accepted-is-the-carry-boundary"),
+        pytest.param(3, id="three-accepted-rebuilds-the-window"),
+        pytest.param(NUM_DRAFTS, id="every-draft-accepted"),
+    ],
+)
 def test_the_block_rollback_lands_on_the_accepted_prefix(
     accepted: int,
 ) -> None:
@@ -354,7 +371,15 @@ def test_each_request_rolls_back_to_its_own_length() -> None:
     _assert_rolled_back(_run([NUM_DRAFTS, 3, 1, 0]))
 
 
-@pytest.mark.parametrize("accepted", [0, 1, 3, NUM_DRAFTS])
+@pytest.mark.parametrize(
+    "accepted",
+    [
+        pytest.param(0, id="nothing-accepted-carries-window-slots"),
+        pytest.param(1, id="one-accepted-carries-window-slots"),
+        pytest.param(3, id="three-accepted-rebuilds-the-window"),
+        pytest.param(NUM_DRAFTS, id="every-draft-accepted"),
+    ],
+)
 def test_a_verify_that_writes_the_conv_window_is_detectable(
     accepted: int,
 ) -> None:

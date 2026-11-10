@@ -39,7 +39,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import NullMask
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -91,7 +91,7 @@ def run_test_blockwise_fp8[
     num_heads: Int,
     page_size: Int,
     quant_granularity: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[],) raises:
     comptime head_dim_gran = ceildiv(DEPTH, quant_granularity)
 
     var batch_size = len(cache_lengths)
@@ -417,6 +417,7 @@ def run_test_blockwise_fp8[
         rank=3,
         config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -605,7 +606,7 @@ def run_bench_blockwise_fp8[
     num_heads: Int,
     page_size: Int,
     quant_granularity: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[]) raises:
     comptime head_dim_gran = ceildiv(DEPTH, quant_granularity)
 
     var batch_size = len(cache_lengths)
@@ -846,7 +847,7 @@ def run_bench_blockwise_fp8[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var out_tt,
         var q_tt,
@@ -859,6 +860,7 @@ def run_bench_blockwise_fp8[
             rank=3,
             config=MHAConfig[q_type](num_heads, DEPTH),
             ragged=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -921,7 +923,7 @@ def run_bench_uniform[
     config_name: StringLiteral,
     count: Int,
     value: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Run blockwise FP8 benchmark with uniform cache lengths."""
     run_bench_blockwise_fp8[

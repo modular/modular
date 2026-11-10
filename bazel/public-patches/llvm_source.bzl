@@ -2,9 +2,9 @@
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "6941494e2ae550d753728ba13454311b344d82cf"
+LLVM_COMMIT = "fa8c67382e4fa68010fce98bbd267f91b397f80e"
 
-LLVM_SHA = "fd9814a9c57f7340cd3b4b2c60777214eb2d193458e434afc131de2c96a61a2c"
+LLVM_SHA = "b4ab9e2d62be5eb4c0d90bc0cf4bffce8819560f77a7fa480073bd40fbb0f4ad"
 # END_GENERATED
 
 PATCHES = [
@@ -12,8 +12,6 @@ PATCHES = [
     # https://github.com/llvm/llvm-project/pull/153352
     # https://linear.app/modularml/issue/MOCO-2322/llvm-upstream-change-conflicting-with-internal-code-that-addresses
     "//bazel/public-patches:llvm-machinefunction-sti-ref-to-ptr.patch",
-    # https://github.com/llvm/llvm-project/pull/175650
-    "//bazel/public-patches:llvm-fix-lldb-dap-console.patch",
     # Fix heap corruption in ObjectFileELF::GetModuleSpecifications: use a
     # local DataExtractor copy instead of mutating the shared extractor_sp,
     # which invalidated other DataExtractors sharing the same buffer and
@@ -31,6 +29,12 @@ PATCHES = [
     # ConstString is still enough to avoid the crash.
     # TODO(MOTO-1590): drop once the ownership is sound across DSO boundaries.
     "//bazel/public-patches:llvm-revert-lldb-elf-section-name-string.patch",
+    # The overlay's lldb:HostMacOSXObjCXX lists the objcxx headers in
+    # non_arc_srcs, but Bazel's objc_library rejects header files there
+    # ("source file ... is misplaced here") because that attribute is only
+    # for .m/.mm sources compiled without ARC. The headers are just inputs
+    # for the .mm files, so list them in srcs instead.
+    "//bazel/public-patches:llvm-lldb-macosx-objcxx-headers.patch",
     # llvm/llvm-project#225158 gives the llvm_libxml2_enabled config_setting
     # group visibility to clang, lld/test and lldb, but leaves its match_any
     # members private. Bazel checks the members' visibility from the consuming
@@ -41,6 +45,28 @@ PATCHES = [
     # flag names an @llvm-project label. Parsing such a flag fetches the LLVM
     # source before analysis can start.
     "//bazel/public-patches:llvm-flag-defaults.patch",
+    # Soft-promoted half (bf16/f16) SCALAR_TO_VECTOR operands hit the
+    # "Do not know how to soft promote this operator's operand!" fatal error
+    # in SoftPromoteHalfOperand, which has no case for SCALAR_TO_VECTOR. The
+    # X86 backend forms v8bf16 = scalar_to_vector for soft-promoted bf16
+    # selects (llvm/llvm-project bec73b4b5c2f), so host code that vectorizes
+    # bf16 math crashes at DAG->DAG ISel. Promote the scalar operand to i16,
+    # build the integer vector, and bitcast back, mirroring BUILD_VECTOR.
+    "//bazel/public-patches:llvm-softpromote-scalar-to-vector.patch",
+    # llvm/llvm-project 3fdac7de5496 ("[X86] Expand f32-to-bf16 conversions
+    # without libcalls") keeps v8bf16 legal on every AVX target, but the only
+    # v8bf16/v16bf16 X86ISD::VBROADCAST selection patterns are guarded by
+    # [HasBWI, HasVLX] in X86InstrAVX512.td. On AVX2-only targets (e.g.
+    # x86-64-v3) combineBroadcasts' broadcast(bitcast(src)) ->
+    # bitcast(broadcast(src)) rewrite turns a v8i16 broadcast of a bitcast
+    # v8bf16 operand into a v8bf16-typed X86ISD::VBROADCAST, and ISel aborts
+    # with "Cannot select: v8bf16 = X86ISD::VBROADCAST". Mirror the v8f16/
+    # v16f16 patterns: select v8bf16/v16bf16 broadcasts to VPBROADCASTW(Y)
+    # under [HasAVX2, NoVLX_Or_NoBWI].
+    "//bazel/public-patches:llvm-avx2-bf16-broadcast.patch",
+    # Provides targets to enable use of `libLLVM.so` and related changes.
+    # TODO: Upstream
+    "//bazel/public-patches:llvm-shared.patch",
 ]
 
 # Upstream lit test inputs that no target reads: about three quarters of the
@@ -51,7 +77,6 @@ _EXCLUDED_DIRS = [
     "clang/test",
     "compiler-rt/test",
     "libcxx/test",
-    "lldb/test",
     "llvm/test",
 ]
 

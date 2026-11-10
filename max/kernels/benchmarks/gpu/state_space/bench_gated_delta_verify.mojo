@@ -55,7 +55,7 @@ def _median(times: List[Float64]) -> Float64:
 def _bench[
     state_dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     batch: Int,
     window: Int,
     value_heads: Int,
@@ -143,12 +143,13 @@ def _bench[
     var output = TileTensor(output_d, row_major(total_tokens, value_dim))
 
     def launch(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm batch,
         imm HV,
         imm HK,
         imm key_dim,
+        imm window,
         imm output,
         imm pool,
         imm slots,
@@ -177,12 +178,17 @@ def _bench[
                 ring.LayoutType,
                 ring_slots.LayoutType,
                 output.Engine,
+                # The op's decode verify launch: every row fits the ring.
+                True,
             ]
         ](
             Int32(batch),
             Int32(HV),
             Int32(HK),
             Int32(key_dim),
+            # A decode verify window is its anchor plus drafts; only a
+            # past-ring row reads the width.
+            Int32(window - 1),
             output,
             pool,
             slots,
@@ -197,7 +203,7 @@ def _bench[
         )
 
     def restore(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {imm pool_d, imm pool_initial_d, imm ring_d, imm ring_initial_d,}:
         lctx.enqueue_copy(pool_d, pool_initial_d)
         lctx.enqueue_copy(ring_d, ring_initial_d)

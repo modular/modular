@@ -21,8 +21,9 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.identity import Identity
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.pipelines.speculative import block_driver
 from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockBatch,
@@ -110,16 +111,26 @@ def _unused_verify(batch: BlockBatch) -> Verified[None]:
     raise NotImplementedError
 
 
-@pytest.fixture(scope="module")
-def accept() -> Model:
-    """Compiles the driver's greedy accept phase on its own, once.
+@pytest.fixture(scope="module", params=[False, True], ids=["default", "amd"])
+def accept(request: pytest.FixtureRequest) -> Model:
+    """Compiles the driver's greedy accept phase on its own, once per branch.
 
     Returns ``(num_accepted, next_tokens, commit_lengths)`` for a batch of
     tokens, row offsets, drafts ``[batch, num_steps]`` and target logits
     ``[batch * (num_steps + 1), vocab]``. ``num_steps`` stays symbolic, as
     in the fused graphs, so prefill (zero drafts) and decode run the same
     compiled graph.
+
+    The ``amd`` case builds the AMD gather that drops the prefill select,
+    which CI's CPU workers never reach on their own, so both branches have
+    to produce the same results here.
     """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(block_driver, "_is_amd_gpu", lambda: request.param)
+        return _compile_accept()
+
+
+def _compile_accept() -> Model:
     cpu = DeviceRef.CPU()
     driver: BlockDriver[None, None] = BlockDriver(
         _unused_verify,

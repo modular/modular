@@ -92,7 +92,7 @@ def _input_value(alt: Bool, root: Int, j: Int) -> Scalar[dtype]:
 
 
 def _check_outputs(
-    ctxs: List[DeviceContext],
+    ctxs: List[DeviceContext[]],
     out_dev: List[DeviceBuffer[dtype]],
     length: Int,
     alt: Bool,
@@ -119,7 +119,7 @@ def _check_outputs(
 
 def stable_broadcast_test[
     ngpus: Int, *, force_2stage: Bool, in_place: Bool
-](ctxs: List[DeviceContext], length: Int, root: Int) raises:
+](ctxs: List[DeviceContext[]], length: Int, root: Int) raises:
     var root_ctx = ctxs[root]
 
     var in_dev = root_ctx.enqueue_create_buffer[dtype](length)
@@ -233,7 +233,7 @@ def main() raises:
         if DeviceContext.number_of_devices() < ngpus:
             continue
 
-        var ctxs = List[DeviceContext]()
+        var ctxs = List[DeviceContext[]]()
         for i in range(ngpus):
             ctxs.append(DeviceContext(device_id=i))
 

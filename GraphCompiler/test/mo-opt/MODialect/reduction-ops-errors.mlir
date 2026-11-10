@@ -63,3 +63,11 @@ mo.graph @mixed_dtypes_float_to_float(%input: !mo.tensor<[?, ?, 5], f32>) -> !mo
   %output = mo.reduce.max(%input) : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f16>
   mo.output %output : !mo.tensor<[?, ?, 1], f16>
 }
+
+// -----
+
+mo.graph @rms_norm_weight_rank(%x: !mo.tensor<[8, 128], f32>, %w: !mo.tensor<[1, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  // expected-error @below {{'mo.composite.reduce.rms_norm' op weight must be rank 1}}
+  %y = mo.composite.reduce.rms_norm(%x, %w) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[8, 128], f32>, !mo.tensor<[1, 128], f32>) -> !mo.tensor<[8, 128], f32>
+  mo.output %y : !mo.tensor<[8, 128], f32>
+}

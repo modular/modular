@@ -189,6 +189,28 @@ std::string M::getHostCPUFeatures() {
   return encodeFeatures(*targetInfoOr);
 }
 
+/// Expands an AArch64 `-march` (base architecture plus `+ext`/`+noext`
+/// modifiers) into LLVM target features, as the clang driver's
+/// getAArch64ArchFeaturesFromMarch does, and appends them to `features`.
+/// Does nothing if the base is not an AArch64 architecture.
+static void
+getAArch64ArchFeaturesFromMarch(StringRef march,
+                                std::vector<std::string> &features) {
+  auto [base, mods] = march.split('+');
+  const llvm::AArch64::ArchInfo *archInfo = llvm::AArch64::parseArch(base);
+  if (!archInfo)
+    return;
+  llvm::AArch64::ExtensionSet exts;
+  exts.addArchDefaults(*archInfo);
+  SmallVector<StringRef> modList;
+  mods.split(modList, '+', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  // Unknown modifiers are ignored here; processExts forwards them through the
+  // FeatureMap.
+  for (StringRef mod : modList)
+    exts.parseModifier(mod);
+  exts.toLLVMFeatureList(features);
+}
+
 ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
                                           StringRef march, StringRef mcpu,
                                           StringRef mtune) {
@@ -215,6 +237,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
         opts->FeatureMap[ext] = true;
     }
   };
+  StringRef marchAsWritten = march;
   processExts(march);
   processExts(mcpu);
 
@@ -255,6 +278,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
                  AArch64::parseCpu(mcpu)) {
     triple.setArch(Triple::aarch64, triple.getSubArch());
     opts->CPU = mcpu;
+    getAArch64ArchFeaturesFromMarch(marchAsWritten, opts->FeaturesAsWritten);
 
     // Check for an ARM CPU.
   } else if (ARM::ArchKind armArch = ARM::parseCPUArch(mcpu);
@@ -264,8 +288,9 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
 
     // Check for an AArch64 arch.
   } else if (AArch64::parseArch(march)) {
-    triple.setArchName(march);
+    triple.setArch(Triple::aarch64, triple.getSubArch());
     opts->CPU = "generic";
+    getAArch64ArchFeaturesFromMarch(marchAsWritten, opts->FeaturesAsWritten);
 
     // Check for an ARM arch.
   } else if (ARM::ArchKind armArch = ARM::parseArch(march);
@@ -307,7 +332,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
 
   // Reset the vendor name if it's not one known to LLVM. This can occur when
   // the triple arch name is set to a value containing hyphens, such as
-  // "armv8.2-a". In this case, the vendor is set to "a", which is unknown.
+  // "armv7-a". In this case, the vendor is set to "a", which is unknown.
   if (triple.getVendor() == Triple::UnknownVendor)
     triple.setVendor(Triple::VendorType::UnknownVendor);
 

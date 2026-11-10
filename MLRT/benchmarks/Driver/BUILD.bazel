@@ -26,8 +26,16 @@ modular_cc_binary(
 modular_cc_binary(
     name = "bench_gpu_kernel_enqueue_devicecontext",
     srcs = ["bench_gpu_kernel_enqueue_devicecontext.cpp"],
-    deps = [
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    deps = [
+        "//MLRT:Driver/DeviceContext.static",
         "//Support:MicroBenchmark",
         "@llvm-project//llvm:Support",
     ],

@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Tests the fused mHC steps at the sublayers that used to run unfused.
 
-The first sublayer's identical embedding copies (``first_streams``) and an
-Engram layer's gated copies (``_replace_copies``) are held as a pending
-identity write-back, so the next sublayer runs the fused step. It must leave
+The first sublayer's identical embedding copies (``first_streams``, what the
+trunk and the DSpark drafter build) and an Engram layer's gated copies
+(``_replace_copies``) are held as a pending identity write-back, so the next
+sublayer runs the fused step. It must leave
 the copies unchanged and give the gates the unfused ``_hc_pre`` gives, up to
 the fused step's TF32 projection. Both paths' normalized inputs must round
 the float64 RMSNorm of the carried collapse once. The write-back before the
@@ -38,9 +39,9 @@ from max.graph.weights import WeightData
 from max.nn.legacy.hyper_connection import HyperConnection
 from max.nn.legacy.layer import Module
 from max.nn.legacy.norm.rms_norm import RMSNorm
-from max.pipelines.architectures.deepseekV4.layers import (
-    expand_copies,
-    hc_post,
+from max.pipelines.architectures.deepseekV4.layers import expand_copies
+from max.pipelines.architectures.deepseekV4.layers.hyper_connection import (
+    _hc_post_reference,
 )
 from max.pipelines.architectures.deepseekV41.deepseekV41 import (
     HCStreams,
@@ -117,7 +118,10 @@ class _FusedAndUnfused(Module):
         )
         outs += [h_ref, h, *_gates(ref), *_gates(new)]
         # The write-back: graph ops, then mhc_post.
-        outs += [hc_post(x, copies, post, comb), pending.materialize()]
+        outs += [
+            _hc_post_reference(x, copies, post, comb),
+            pending.materialize(),
+        ]
         # The DSpark tap and the final collapse.
         outs += [_hc_mean(copies), final_collapse(copies, pre)]
         return tuple(outs)
@@ -287,7 +291,7 @@ def model(session: InferenceSession, device: DeviceRef) -> Model:
     return _build(session, device, None)
 
 
-@pytest.mark.parametrize("t", [1, 6, 7, 48, 144, 577, 1031, 8168])
+@pytest.mark.parametrize("t", [1, 5, 6, 7, 40, 48, 144, 577, 1031, 8168])
 def test_fused_entries_match_unfused(
     model: Model, accel: Accelerator, t: int
 ) -> None:

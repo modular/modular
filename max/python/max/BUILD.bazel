@@ -90,6 +90,16 @@ modular_py_test(
 modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["//max/python/max/_core/max_license:_core.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/DeviceContext",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+        "//max/lib/max_license:max",
+    ],
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [

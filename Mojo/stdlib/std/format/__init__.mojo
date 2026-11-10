@@ -94,7 +94,7 @@ trait Writer:
     as strings, files, or network sockets. Types implementing `Writable` write
     their output to a `Writer`.
 
-    The core method is `write_string()`, which accepts a `StringSlice` for
+    The core method is `write_string()`, which accepts a `StringSpan` for
     efficient, allocation-free output. The convenience method `write()` accepts
     multiple `Writable` arguments.
 
@@ -105,7 +105,7 @@ trait Writer:
     struct StringBuilder(Writer):
         var s: String
 
-        def write_string(mut self, string: StringSlice):
+        def write_string(mut self, string: StringSpan):
             self.s += string
 
     var builder = StringBuilder("")
@@ -114,9 +114,9 @@ trait Writer:
     ```
     """
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         """
-        Write a `StringSlice` to this `Writer`.
+        Write a `StringSpan` to this `Writer`.
 
         Args:
             string: The string slice to write to this Writer.

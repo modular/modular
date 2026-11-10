@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Iteration traits and utilities: Iterable, IterableOwned, Iterator,
-enumerate, zip, map.
+enumerate, zip, map, filter.
 
 This package defines the core iteration protocol for Mojo through the
 `Iterable`, `IterableOwned`, and `Iterator` traits. Types that conform to
 these traits can be used with `for` loops and iteration utilities like
-`enumerate()`, `zip()`, and `map()`.
+`enumerate()`, `zip()`, `map()`, and `filter()`.
 
 The iteration protocol consists of three key traits:
 
@@ -646,10 +646,14 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: def(var InnerIteratorType.Element) thin -> OutputType,
+    Function: def(var InnerIteratorType.Element) -> OutputType,
 ](
-    Copyable where conforms_to(InnerIteratorType, Copyable),
-    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Copyable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    Iterable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
     IterableOwned,
     Iterator,
 ):
@@ -660,12 +664,13 @@ struct _MapIterator[
     comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
+    var _function: Self.Function
 
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
         Self.InnerIteratorType, Copyable
-    ):
+    ) and conforms_to(Self.Function, Copyable):
         return self.copy()
 
     @inline(.always)
@@ -673,7 +678,7 @@ struct _MapIterator[
         return self^
 
     def __next__(mut self) raises StopIteration -> Self.Element:
-        return Self.function(next(self._inner))
+        return self._function(next(self._inner))
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
@@ -685,10 +690,10 @@ def map[
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: def(
-        var IterableType.IteratorType[origin].Element
-    ) thin -> ResultType,
-](ref[origin] iterable: IterableType) -> _MapIterator[function]:
+    Function: def(var IterableType.IteratorType[origin].Element) -> ResultType,
+](ref[origin] iterable: IterableType, var function: Function) -> _MapIterator[
+    Function
+]:
     """Returns an iterator that applies `function` to each element of the input
     iterable.
 
@@ -696,10 +701,11 @@ def map[
         origin: The origin of the iterable.
         IterableType: The type of the iterable.
         ResultType: The return type of the function.
-        function: The function to apply to each element.
+        Function: The type of the function to apply to each element.
 
     Args:
         iterable: The iterable to map over.
+        function: The function to apply to each element.
 
     Returns:
         A map iterator that yields the results of applying `function` to each
@@ -709,7 +715,7 @@ def map[
 
     ```mojo
     var l = [1, 2, 3]
-    var m = map[lambda (x: Int) -> Int: x + 1](l)
+    var m = map(l, lambda (x: Int) -> Int: x + 1)
 
     # outputs:
     # 2
@@ -719,10 +725,11 @@ def map[
         print(elem)
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't ve needed, something isn't getting
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
     # substituted through associated types right.
     return {
-        rebind_var[_MapIterator[function].InnerIteratorType](iter(iterable))
+        rebind_var[_MapIterator[Function].InnerIteratorType](iter(iterable)),
+        function^,
     }
 
 
@@ -731,30 +738,147 @@ def map[
     IterableType: IterableOwned,
     ResultType: Copyable,
     //,
-    function: def(
-        var IterableType.IteratorOwnedType.Element
-    ) thin -> ResultType,
-](var iterable: IterableType) -> _MapIterator[function]:
+    Function: def(var IterableType.IteratorOwnedType.Element) -> ResultType,
+](var iterable: IterableType, var function: Function) -> _MapIterator[Function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable, consuming the iterable.
 
     Parameters:
         IterableType: The type of the iterable.
         ResultType: The return type of the function.
-        function: The function to apply to each element.
+        Function: The type of the function to apply to each element.
 
     Args:
         iterable: The iterable to consume and map over.
+        function: The function to apply to each element.
 
     Returns:
         A map iterator that yields the results of applying `function` to each
         element.
     """
+    return {iter(iterable^), function^}
+
+
+# ===-----------------------------------------------------------------------===#
+# filter
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _FilterIterator[
+    InnerIteratorType: Iterator,
+    //,
+    Function: def(InnerIteratorType.Element) -> Bool,
+](
+    Copyable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    Iterable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    IterableOwned,
+    Iterator,
+) where conforms_to(
+    InnerIteratorType.Element, Deinitable
+):
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _function: Self.Function
+
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ) and conforms_to(Self.Function, Copyable):
+        return self.copy()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        while True:
+            var element = next(self._inner)
+            if self._function(element):
+                return element^
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return (0, self._inner.bounds()[1])
+
+
+@inline(.always)
+def filter[
+    origin: ImmOrigin,
+    IterableType: Iterable,
+    //,
+    Function: def(IterableType.IteratorType[origin].Element) -> Bool,
+](
+    ref[origin] iterable: IterableType, var function: Function
+) -> _FilterIterator[Function] where conforms_to(
+    IterableType.IteratorType[origin].Element, Deinitable
+):
+    """Returns an iterator that yields the elements of the input iterable for
+    which `function` returns `True`.
+
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+        Function: The type of the predicate.
+
+    Args:
+        iterable: The iterable to filter.
+        function: The predicate that decides whether to keep each element.
+
+    Returns:
+        A filter iterator that yields the elements `function` accepts.
+
+    Examples:
+
+    ```mojo
+    var l = [1, 2, 3, 4]
+
+    # outputs:
+    # 2
+    # 4
+    for elem in filter(l, lambda (x: Int) -> Bool: x % 2 == 0):
+        print(elem)
+    ```
+    """
     # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
     # substituted through associated types right.
     return {
-        rebind_var[_MapIterator[function].InnerIteratorType](iter(iterable^))
+        rebind_var[_FilterIterator[Function].InnerIteratorType](iter(iterable)),
+        function^,
     }
+
+
+@inline(.always)
+def filter[
+    IterableType: IterableOwned,
+    //,
+    Function: def(IterableType.IteratorOwnedType.Element) -> Bool,
+](var iterable: IterableType, var function: Function) -> _FilterIterator[
+    Function
+] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable):
+    """Returns an iterator that yields the elements of the input iterable for
+    which `function` returns `True`, consuming the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+        Function: The type of the predicate.
+
+    Args:
+        iterable: The iterable to consume and filter.
+        function: The predicate that decides whether to keep each element.
+
+    Returns:
+        A filter iterator that yields the elements `function` accepts.
+    """
+    return {iter(iterable^), function^}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -925,12 +1049,11 @@ struct _ChainedIterator[*Ts: Iterator](
 
             var lb, ub = self._iterators[i].bounds()
             final_lb = final_lb + min(lb, Int.MAX - final_lb)
-            if final_ub and ub:
-                final_ub = final_ub.unsafe_value() + min(
-                    ub.unsafe_value(), Int.MAX - final_ub.unsafe_value()
-                )
-            else:
-                final_ub = None
+            match (final_ub, ub):
+                case (.Some(total), .Some(upper)):
+                    final_ub = total + min(upper, Int.MAX - total)
+                case _:
+                    final_ub = None
         return final_lb, final_ub
 
 

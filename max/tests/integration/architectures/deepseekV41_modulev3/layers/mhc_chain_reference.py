@@ -14,14 +14,14 @@
 """Shared reference machinery for the V4.1 mHC GPU tests.
 
 The gate oracle is an independent NumPy transcription of the
-``mo.hyper_connection.gates`` math, and the chain helpers build and
+``hyper_connection.gates`` math, and the chain helpers build and
 simulate the trunk's shifted schedule (initial identity -> default
 (fresh-``pre``) site -> identity site -> final collapse) over one device
 or a two-way mesh.
 
 
 The gate oracle is an independent NumPy transcription of the
-``mo.hyper_connection.gates`` math: ``pre = sigmoid(proj * s_pre + b) +
+``hyper_connection.gates`` math: ``pre = sigmoid(proj * s_pre + b) +
 hc_eps``, ``post = 2 * sigmoid(proj * s_post + b)``, and ``comb`` a
 row-softmax over the row-major ``[input, output]`` mixer followed by
 Sinkhorn passes that end on a column normalization.
@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from max import functional as F
 from max.driver import Accelerator, Device, DLPackArray, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -125,7 +126,9 @@ def site_params(
 
 
 def param(array: np.ndarray, device: Device | DeviceMesh) -> Tensor:
-    return Tensor.from_dlpack(np.ascontiguousarray(array)).to(device)
+    # A constant rather than a copy: a copy moves eagerly even under
+    # ``F.lazy()``, so a module built lazily would still need the device.
+    return Tensor(np.ascontiguousarray(array), device=device)
 
 
 def to_f32_device(t: np.ndarray) -> Tensor:
@@ -277,7 +280,10 @@ def run_chain(
     stream = round_bf16(
         (rng.standard_normal((ROWS, HC, hidden)) * 0.3).astype(np.float32)
     )
-    chain = Chain(hidden, mesh)
+    # The chain compiles with its host weights, so its device parameters
+    # stay unrealized and the compile needs no device.
+    with F.lazy():
+        chain = Chain(hidden, mesh)
     want = chain_oracle(chain, stream)
 
     input_type: TensorType | TensorLayout
@@ -409,7 +415,8 @@ def run_prod_chain(
     stream = round_bf16(
         (rng.standard_normal((ROWS, HC, hidden)) * 0.3).astype(np.float32)
     )
-    chain = ProdChain(hidden, mesh)
+    with F.lazy():
+        chain = ProdChain(hidden, mesh)
     want = prod_chain_oracle(chain, stream)
 
     input_type: TensorType | TensorLayout

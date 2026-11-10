@@ -19,8 +19,8 @@ model](/develop/serve-custom-model-architectures/) with hardware-optimized
 kernels, production batching, KV cache management, and multi-GPU distribution.
 
 Writing a custom architecture means choosing a reference
-implementation, adapting its configuration and weights, and extending its
-modules where your model differs.
+implementation, copying the parts your model needs into a new package, and
+adapting its configuration and weights.
 
 :::note
 
@@ -29,6 +29,16 @@ focuses on transformer-based text generation models, as they share common,
 established implementation patterns in MAX.
 
 :::
+
+Keep a model directory self-contained: it imports its own files and the shared
+MAX libraries (`max.nn`, `max.graph`, `max.pipelines.lib`,
+`max.pipelines.kv_cache`, `max.serve`), and no other model. A model that
+imports from another model breaks when that model changes; a self-contained one
+is deleted by removing its directory and its registry entry.
+
+A symbol several models need belongs in the shared libraries: move it there and
+let every model import it from the library. Code that only this model needs
+stays in the package.
 
 ## Architecture directory structure
 
@@ -71,10 +81,9 @@ Each file serves a distinct role:
   [input preparation for a batch processor](/develop/pipelines/#delegate-input-preparation-to-a-batch-processor).
 - `model_config.py`: translates Hugging Face `config.json` fields into a typed
   configuration object that your modules read when MAX builds them.
-- `model.py`: the pipeline model class registered in `arch.py`. It subclasses
-  [`ModuleV3PipelineModelWithKVCache`](/api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/),
-  or the reference architecture's pipeline model when you build on one, and
-  overrides the parts that differ.
+- `model.py`: the pipeline model class registered in `arch.py`. Start from the
+  [ModuleV3 pipeline model base][m3-base] or a copy of the reference
+  architecture's pipeline model, and override the parts that differ.
 - `{model_name}.py`: defines the root module and the transformer stack. Most
   models with unique sub-layers, an encoder, or a structure that differs from
   the generic transformer require this file.
@@ -188,16 +197,17 @@ implementation.
 
 Most large language models are variations on a small set of transformer
 blueprints. The attention mechanism, normalization placement, and residual
-structure in your model usually match an existing reference.
-Starting from the closest one means you inherit its modules, KV cache wiring,
-and kernel choices for everything you share.
+structure in your model usually match an existing reference. Copying the
+closest one brings its modules, KV cache wiring, and kernel choices into your
+package, and the copy keeps no import edge back to the model it came from.
 
 Your implementation files define only what differs. `model_config.py` bridges
 the Hugging Face config fields to MAX's representation. `weight_adapters.py`
-remaps checkpoint keys to match MAX's naming. `model.py` subclasses the
-reference pipeline model, and `arch.py` registers the quantization encodings
-your checkpoint supports. If your model's structure is identical to a reference
-and only those surface details differ, those files are all you need.
+remaps checkpoint keys to match MAX's naming. `model.py` holds a copy of the
+reference pipeline model adapted to your model, and `arch.py` registers the
+quantization encodings your checkpoint supports. If your model's structure is
+identical to a reference and only those surface details differ, those files are
+all you need.
 
 Choose a reference by its structural features:
 
@@ -267,20 +277,29 @@ correspond to:
 A config class reads raw Hugging Face fields in its `initialize()` class
 method, which receives the pipeline config and a required keyword-only
 `max_seq_len`. Later, `finalize()` sets the fields that depend on the
-checkpoint, such as whether the embeddings are tied. To extend a reference
-config, call `super().initialize()` so the parent maps every field it knows,
-then set the fields that differ.
+checkpoint, such as whether the embeddings are tied. Copy the closest
+reference config into your package and subclass the copy. Call
+`super().initialize()` so the parent maps every field it knows, then set the
+fields that differ.
 
-The following example extends `Llama3Config` from `llama3_modulev3`. That
-config already has a `logits_scaling` field, which the Llama 3 module divides
-the logits by. This checkpoint stores the reciprocal as `logit_scale`:
+The following example subclasses a copy of `Llama3Config` from
+`llama3_modulev3`, saved as `llama3_config.py` in your package. That config
+already has a `logits_scaling` field, which the Llama 3 module divides the
+logits by. This checkpoint stores the reciprocal as `logit_scale`:
+
+<!-- invisible-code-block: python
+from max.pipelines.architectures.llama3_modulev3.model_config import (
+    Llama3Config as _CopiedLlama3Config,
+)
+fake_module("yourpkg")
+fake_module("yourpkg.llama3_config", Llama3Config=_CopiedLlama3Config)
+__name__, __package__ = "yourpkg.model_config", "yourpkg"
+-->
 
 ```python title="model_config.py"
 from dataclasses import dataclass
 
-from max.pipelines.architectures.llama3_modulev3.model_config import (
-    Llama3Config,
-)
+from .llama3_config import Llama3Config
 
 
 @dataclass(kw_only=True)
@@ -296,40 +315,9 @@ class YourConfig(Llama3Config):
         return config
 ```
 
-The pipeline model decides which config class to build. The `llama3_modulev3`
-pipeline model reads it from a `config_class` attribute, and sizes the KV cache
-with the class in `model_config_cls`, so your `model.py` points both
-attributes at the new class:
-
-<!-- invisible-code-block: python
-fake_module("yourpkg")
-fake_module("yourpkg.model_config", YourConfig=YourConfig)
-__name__, __package__ = "yourpkg.model", "yourpkg"
--->
-
-```python title="model.py"
-from typing import Any, ClassVar
-
-from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
-
-from .model_config import YourConfig
-
-
-class YourModel(Llama3Model):
-    model_config_cls: ClassVar[type[Any]] = YourConfig
-    config_class = YourConfig
-```
-
-<!-- invisible-code-block: python
-fake_module("yourpkg.model", YourModel=YourModel)
-assert YourModel.config_class is YourConfig
-assert YourModel.model_config_cls is YourConfig
--->
-
-Other reference pipeline models, such as `olmo3`, name their config class
-directly inside `_create_model_config()`. To extend one of those, override
-`_create_model_config()` in your subclass and call `YourConfig.initialize()`
-there.
+Your pipeline model names `YourConfig` in `model_config_cls` and builds it in
+`_create_model_config()`, the way the `model.py` example earlier on this page
+does.
 
 ## Map checkpoint weights
 
@@ -439,7 +427,7 @@ implementation:
 <!-- invisible-code-block: python
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 -->
@@ -468,12 +456,12 @@ def construct_kv_params(
 ```
 
 Most architectures return a flat
-[`KVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParams/).
+[`KVCacheParams`](/api/python/generated/max.nn.kv_cache.KVCacheParams/).
 Architectures with multiple or hybrid KV caches (for example, separate
 sliding-window and full-attention caches) return a
-[`MultiKVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.MultiKVCacheParams/)
+[`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
 tree, which the cache manager consumes through the shared
-[`KVCacheParamInterface`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParamInterface/).
+[`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
 
 ### Pass the cache into the module
 
@@ -488,7 +476,7 @@ each cache in `PagedCacheValues` from
 <!-- invisible-code-block: python
 from max.nn import Module
 from max.tensor import Tensor
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.architectures.olmo3.model_config import Olmo3Config
 from max.pipelines.architectures.olmo3.olmo3 import (
     Olmo3TextModel,
@@ -529,37 +517,39 @@ class Olmo3(Module[[Tensor, Tensor, Tensor], ModuleV3Outputs]):
 
 Each attention layer stores its layer index and receives a `PagedCacheValues`.
 It calls fused kernels from
-`max.nn.common_layers.functional_kernels`:
+`max.nn.kernels`:
 `rope_split_store_ragged()` applies RoPE and writes keys and values to the
 cache, and `flash_attention_ragged()` reads them back. MAX manages the paged
 memory behind the cache, using the settings in
 [`KVCacheConfig`](/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
 
-## Override model components
+## Reuse model components
 
-A `model.py` that subclasses the reference pipeline model overrides only the
-components that differ. Hugging Face model implementations follow the same
-pattern: in the `transformers` library, many model classes subclass a family
-base and override only what changed.
+Copy the closest model's classes into your package and adapt the copy. Record
+the model and commit each copied file came from in a comment at the top of the
+file.
 
-### Subclass the reference model
+Hugging Face follows the same pattern: many model classes in `transformers`
+subclass a family base and override only what changed. Adapt the copy the same
+way.
 
-`model.py` imports and subclasses the reference pipeline model. Override only
-the class attributes or methods that differ from the reference. The
-`llama3_modulev3` pipeline model exposes `config_class`, `norm_method`, and
-`attention_bias` as class attributes. For example, a model that matches Llama
-3 except for bias on the attention projections needs a single class
-attribute:
+### Adapt the copied pipeline model
+
+Your `model.py` holds a copy of the reference pipeline model. Override only the
+class attributes or methods that differ. The Llama 3 pipeline model exposes
+`config_class`, `norm_method`, and `attention_bias` as class attributes. For
+example, a model that matches Llama 3 except for bias on the attention
+projections needs a single class attribute:
 
 ```python title="model.py"
-from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
+from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 
 
-class YourModel(Llama3Model):
+class YourModel(ModuleV3PipelineModelWithKVCache):
     attention_bias: bool = True
 ```
 
-The subclass inherits `_create_model_config()`, `_instantiate_module()`, and
+The copied file defines `_create_model_config()`, `_instantiate_module()`, and
 the compile step from the reference architecture. Each new parameter needs a
 checkpoint entry, or `compile()` raises a `KeyError`. `compile()` leaves out a
 checkpoint key with no parameter and raises no error, so compare your adapter's
@@ -723,7 +713,7 @@ more. Set `name` to the `architectures[0]` value from your model's
 `config.json`:
 
 <!-- invisible-code-block: python
-from max.pipelines.architectures.olmo3 import weight_adapters
+from max.pipelines.architectures.llama3_modulev3 import weight_adapters
 fake_module("yourpkg.weight_adapters", **vars(weight_adapters))
 __name__ = "yourpkg.arch"
 -->
@@ -787,6 +777,15 @@ ARCHITECTURES = [your_model_arch]
 assert ARCHITECTURES[0].name == "YourModelForCausalLM"
 -->
 
+The `ARCHITECTURES` list is what MAX reads from a package you load with
+`--custom-architectures`: that flag imports the module and registers every entry
+it finds. A package that ships inside the repository also needs a `_LazyArch`
+entry in
+`max/python/max/pipelines/architectures/__init__.py` and an entry in
+`max/python/max/pipelines/architectures/all_arches.bzl`. `register_all_models()`
+registers the `lazy_architectures` entries lazily, and `ALL_ARCHITECTURES` fills
+the `deps` of the entrypoints and test targets.
+
 Most packages expose a single architecture, but you can list more than one
 when:
 
@@ -822,3 +821,5 @@ full benchmark with the
 [`eval-model`](https://github.com/modular/skills/blob/main/eval-model/SKILL.md)
 skill. It runs standard datasets against the served model and compares the
 scores against the original model.
+
+[m3-base]: /api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/

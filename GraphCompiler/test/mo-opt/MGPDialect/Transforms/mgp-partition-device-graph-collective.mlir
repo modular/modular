@@ -43,7 +43,7 @@
 // CHECK:         mgp.device_graph.collective.yield
 // CHECK:       }
 
-mgp.model @multi_device_stable device_graph : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+mgp.model @multi_device_stable device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
@@ -161,7 +161,7 @@ mgp.model @multi_device_stable device_graph : mof devices [#M.device_ref<"gpu", 
 // CHECK:         mgp.device_graph.collective.yield %{{.*}} : !mgp.tensor<2x3xf32, <"gpu", 1>>
 // CHECK:       } : !mgp.tensor<2x3xf32, <"gpu", 1>>
 
-mgp.model @consumer_only_device device_graph : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+mgp.model @consumer_only_device device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
@@ -240,7 +240,7 @@ mgp.model @consumer_only_device device_graph : mof devices [#M.device_ref<"gpu",
 // CHECK:         mgp.device_graph.collective.yield
 // CHECK:       }
 
-mgp.model @host_wrapper_follows_its_device device_graph : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+mgp.model @host_wrapper_follows_its_device device_graph devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 3
@@ -322,7 +322,7 @@ mgp.model @host_wrapper_follows_its_device device_graph : mof devices [#M.device
 // CHECK:         mgp.device_graph.stable.tensor %[[G0]], %[[S0]]
 // CHECK:         mgp.device_graph.collective.yield
 
-mgp.model @dynamic_stable_crosses_devices device_graph : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+mgp.model @dynamic_stable_crosses_devices device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
@@ -390,7 +390,7 @@ mgp.model @dynamic_stable_crosses_devices device_graph : mof devices [#M.device_
 // CHECK:       }
 // CHECK:       mef.output %{{[a-z0-9_]+}}, %[[C]]#0, %[[C]]#1, %[[C]]#3
 
-mgp.model @host_yield_in_every_region device_graph : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+mgp.model @host_yield_in_every_region device_graph devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 3
@@ -473,7 +473,7 @@ mgp.model @host_yield_in_every_region device_graph : mof devices [#M.device_ref<
 // CHECK-NOT:     mogg.chain.dummy
 // CHECK:         mgp.device_graph.collective.yield
 // CHECK:       }
-mgp.model @remote_chain_is_dropped device_graph : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+mgp.model @remote_chain_is_dropped device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2

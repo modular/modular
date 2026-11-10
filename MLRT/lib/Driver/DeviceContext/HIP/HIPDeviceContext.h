@@ -24,6 +24,7 @@
 #include "Support/PlatformUtils.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringMap.h"
 
 #include <chrono>
@@ -45,12 +46,10 @@ class HIPDeviceStream;
 class HIPDeviceTimer;
 class HIPModuleFunction;
 
-using HIPDeviceRef = RCRef<HIPDevice>;
 using HIPDeviceContextRef = RCRef<HIPDeviceContext>;
 using HIPStreamPoolRef = RCRef<HIPStreamPool>;
 using HIPDeviceEventRef = RCRef<HIPDeviceEvent>;
 using HIPDeviceFunctionRef = RCRef<HIPDeviceFunction>;
-using HIPDeviceFunctionArgumentsRef = RCRef<const HIPDeviceFunctionArguments>;
 using HIPDeviceGraphRef = RCRef<HIPDeviceGraph>;
 using HIPDeviceStreamRef = RCRef<HIPDeviceStream>;
 using HIPDeviceTimerRef = RCRef<HIPDeviceTimer>;
@@ -209,7 +208,7 @@ private:
   hipGraphExec_t exec_ = nullptr; // non-null after instantiate() succeeds
 };
 
-class HIPDeviceStream : public DeviceStream {
+class MODULAR_CXX_EXPORT HIPDeviceStream : public DeviceStream {
 public:
   HIPDeviceStream(HIPDeviceContext &ctx, hipStream_t stream);
 
@@ -224,8 +223,8 @@ public:
   ErrorOrSuccess enqueueHostFunc(void (*fn)(void *),
                                  void *userData) const override;
 
-  ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const override;
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const override;
 
   virtual ErrorOrSuccess enqueueFunctionExecDirect(
       const DeviceFunction &func, uint32_t gridX, uint32_t gridY,
@@ -273,7 +272,7 @@ private:
   hipFunction_t function_;
 };
 
-class HIPDeviceFunction : public DeviceFunction {
+class MODULAR_CXX_EXPORT HIPDeviceFunction : public DeviceFunction {
 public:
   HIPDeviceFunction(HIPDeviceContext &context, HIPModuleFunctionRef modFunc);
   ~HIPDeviceFunction() override;
@@ -353,7 +352,7 @@ private:
   std::vector<hipStream_t> streams_;
 };
 
-class HIPDeviceContext : public DeviceContext {
+class MODULAR_CXX_EXPORT HIPDeviceContext : public DeviceContext {
 public:
   HIPDeviceContext(HIPDevice &device, hipStream_t stream);
   ~HIPDeviceContext() override;

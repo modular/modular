@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 
 from ..dim import StaticDim
@@ -137,7 +137,7 @@ def band_part(
         )
 
     return Graph.current._add_op_generated(
-        rmo.MoLinalgBandPartOp,
+        mo.LinalgBandPartOp,
         x.type,
         x,
         constant(num_lower, DType.int64, DeviceRef.CPU()),

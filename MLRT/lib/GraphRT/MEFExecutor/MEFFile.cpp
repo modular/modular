@@ -255,27 +255,6 @@ MEFInvokable *MEFFileImpl::getInvokableByID(size_t number) const {
 // MEFFile implementation
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// A fake 'model' used by MEFInvokable::walkPrimitives to determine the value
-/// of the mgp.model's frameworkName attribute.
-class MGPModel final {
-public:
-  explicit MGPModel(std::string frameworkName)
-      : frameworkName(std::move(frameworkName)) {}
-
-  static StringLiteral getEntityName() { return "mgp.model"; }
-
-  static ErrorOr<std::unique_ptr<MGPModel>>
-  getFromDescriptor(const PrimitiveDescriptor &descriptor) {
-    StringRef frameworkName = *descriptor.getAttr<StringRef>(1);
-    return std::make_unique<MGPModel>(frameworkName.str());
-  }
-
-  std::string frameworkName;
-};
-
-} // namespace
-
 /// Return true if the specified file contents look like it is a MEF file, by
 /// checking the magic number.
 bool M::isMEFFile(llvm::StringRef contents) {
@@ -287,40 +266,19 @@ MEFFile::~MEFFile() = default;
 
 /// This method inspects the contents of the MEF file to make an educated
 /// guess of what it contains, allowing for better QoI and usability of tools.
-CompiledFrameworkLabel MEFFile::sniffFileContents() const {
-  bool isMopModel = false;
-  CompiledFrameworkLabel result{CompiledFrameworkLabel::kUnknown};
+const char *MEFFile::sniffFileContents() const {
+  bool hasModel = false;
 
-  // Method 1: Look for a distinguished model constructor op name.
   (void)((MEFFileImpl *)const_cast<MEFFile *>(this))
       ->enumeratePrimitiveNames([&](StringRef primitiveName) -> ErrorOrSuccess {
-        if (primitiveName == "mgp.model") {
-          // We'll need to use method 2 below.
-          isMopModel = true;
-        } else if (CompiledFrameworkLabel::isValidOpName(primitiveName)) {
-          result = CompiledFrameworkLabel::getLabelForOpName(primitiveName);
-        } else {
-          // Keep looking.
+        if (primitiveName != "mgp.model")
           return success();
-        }
+        hasModel = true;
         // Stop iteration early (we'll ignore the outer error).
         return Error("done");
       });
 
-  if (isMopModel) {
-    // Method 2: Look at the name of the mgp.model's frameworkName attribute.
-    SmallVector<std::unique_ptr<MGPModel>> models;
-    ErrorOrSuccess err = getTopLevelInvokable()->walkPrimitives<MGPModel>(
-        [&models](std::unique_ptr<MGPModel> &&model) {
-          models.emplace_back(std::move(model));
-          return success();
-        });
-    if (!err.isError() && !models.empty())
-      result = CompiledFrameworkLabel::getLabelForOpName(
-          "mgp.model", models.front()->frameworkName);
-  }
-
-  return result;
+  return hasModel ? "compiled Modular model" : "unknown";
 }
 
 ErrorOr<RCRef<MEFFile>> MEFFile::open(BufferRef buffer) {

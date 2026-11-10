@@ -681,11 +681,24 @@ struct Array[T: AnyType, length: Int](
     def __getitem__(ref self, idx: Int, /) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
 
+        Subscripting calls this method: `arr[3]` invokes `arr.__getitem__(3)`.
+
         Args:
             idx: The index to access (0 to len-1).
 
         Returns:
             A reference to the element at the specified index.
+
+        Examples:
+
+        ```mojo
+        var arr = [10, 20, 30]
+        var total = 0
+        # The index can be computed at run time.
+        for i in range(len(arr)):
+            total += arr[i]
+        print(total)  # 60
+        ```
 
         Notes:
             This method provides array-style indexing access to elements in the
@@ -697,6 +710,8 @@ struct Array[T: AnyType, length: Int](
     @inline(.always)
     def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
+
+        Subscripting calls this method: `arr[3]` invokes `arr.__getitem__(3)`.
 
         Args:
             idx: The index to access (0 to len-1).
@@ -726,8 +741,12 @@ struct Array[T: AnyType, length: Int](
     ) -> Span[Self.T, origin_of(self)]:
         """Gets a span over the elements at the specified slice positions.
 
+        Subscripting calls this method: `arr[1:5]` is `arr.__getitem__()`.
+
         Aborts if `slc`'s start or end index is out of bounds (valid range is
-        `0` to `len(self)`, inclusive).
+        `0` to `len(self)`, inclusive). Negative indices are not supported:
+        they abort when bounds checking is enabled (the default on CPU) and
+        cause undefined behavior otherwise.
 
         Args:
             slc: The slice specifying the range of elements.

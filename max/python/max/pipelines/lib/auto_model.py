@@ -345,7 +345,7 @@ class AutoModel:
         max_batch_size: int = 1,
         devices: str | None = None,
         device_graph_capture: bool = False,
-        prefer_module_v3: bool = False,
+        prefer_module_v3: bool = True,
         **config_overrides: object,
     ) -> None:
         self._load(

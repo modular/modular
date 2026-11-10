@@ -22,8 +22,8 @@ batch axes into one (a zero-copy view) and every input compiles as rank 3.
 kernel takes them as tensors, not comptime params
 (``builtin_kernels/linalg.mojo``) -- so one graph serves every mask, and the
 cache key does not grow with their values. The public ``ops.band_part`` folds
-them into graph constants instead, hence the direct ``rmo`` emission below (the
-same reason ``shape_rearrange_gc`` emits ``rmo.MoTileOp`` by hand).
+them into graph constants instead, hence the direct emission below (the
+same reason ``shape_rearrange_gc`` emits ``mo.TileOp`` by hand).
 
 band_part only ever copies an element or writes a zero, so a tensor is masked by
 bit width: the handler bit-casts every dtype to the same-width unsigned int (see
@@ -35,7 +35,7 @@ kernel.
 from dataclasses import dataclass
 
 from max import engine
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max._interpreter_ops import gc_compile
 from max.driver import Device
 from max.dtype import DType
@@ -85,7 +85,7 @@ def _band_part_graph(module: Module, target: CompilationTarget) -> None:
     with graph:
         data, num_lower, num_upper, exclude = (v.tensor for v in graph.inputs)
         masked = Graph.current._add_op_generated(
-            rmo.MoLinalgBandPartOp,
+            mo.LinalgBandPartOp,
             x_type,
             data,
             num_lower,

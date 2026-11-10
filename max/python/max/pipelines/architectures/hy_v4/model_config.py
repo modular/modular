@@ -14,29 +14,56 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import ClassVar
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
     MultiKVCacheParams,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ModelOutputConfig,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.registration_runtime import (
+    DeploymentConfig,
+    ModuleRuntime,
+)
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+
+def check_parallelism(pipeline_config: PipelineConfig, n_devices: int) -> None:
+    """Raises unless several devices run tensor-parallel attention.
+
+    The routed experts split over the devices either way: each device runs
+    its own on every token and the outputs are summed, with no expert
+    dispatch, so ``ep_size`` may be 1 or the device count.
+    """
+    dp_degree = pipeline_config.model.data_parallel_degree
+    ep_size = pipeline_config.runtime.ep_size
+    if n_devices > 1 and (dp_degree != 1 or ep_size not in (1, n_devices)):
+        raise ValueError(
+            f"Hy4 on {n_devices} devices runs tensor-parallel attention with"
+            " its experts split over the devices: it needs"
+            f" data_parallel_degree 1 and ep_size 1 or {n_devices}, got"
+            f" {dp_degree} and {ep_size}"
+        )
 
 
 def full_indexer_layers(indexer_types: list[str]) -> list[int]:
@@ -45,8 +72,11 @@ def full_indexer_layers(indexer_types: list[str]) -> list[int]:
 
 
 @dataclass(kw_only=True)
-class HYV4Config(ArchConfigWithKVCache):
+class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
     """Configuration for Hy4 models (ModuleV3)."""
+
+    takes_batch_context_lengths: ClassVar[bool] = True
+    expert_parallel_communication: ClassVar[bool] = False
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"float8_e4m3fn"}
@@ -90,6 +120,40 @@ class HYV4Config(ArchConfigWithKVCache):
     rope_theta: float
     max_position_embeddings: int
     num_nextn_predict_layers: int
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Completes checkpoint quantization before the decoder is built."""
+        del outputs
+        return replace(
+            self,
+            quant_config=parse_quant_config(
+                huggingface_config, dict(state_dict), self.dtype
+            ),
+        )
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Validates local expert sharding and applies the planned token size."""
+        n_devices = runtime.mesh.num_devices
+        if runtime.data_parallel_degree != 1 or runtime.ep_size not in (
+            1,
+            n_devices,
+        ):
+            raise ValueError(
+                "Hy4 requires tensor-parallel attention and local expert "
+                "sharding: data_parallel_degree must be 1 and ep_size must "
+                "be 1 or the device count"
+            )
+        return replace(
+            self,
+            max_batch_context_length=(
+                runtime.max_batch_total_tokens or self.max_batch_context_length
+            ),
+        )
 
     def __post_init__(self) -> None:
         n = self.num_hidden_layers
@@ -209,6 +273,9 @@ class HYV4Config(ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        check_parallelism(
+            pipeline_config, len(pipeline_config.model.device_specs)
+        )
         model_config = model_config or pipeline_config.model
         config = model_config.huggingface_config
         if config is None:

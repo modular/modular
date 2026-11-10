@@ -18,12 +18,13 @@ working example. The package's `include/` and `lib/` files are exported to
 `//plugins/...` so a replacement can be generated from its base file.
 
 The macros in `//bazel:api.bzl` that take source paths (`modular_cc_library`,
-`td_library`, `gentbl_cc_library`, `gentbl_filegroup`) route each path through
-a per-file `<path>.overlay` target. It forwards the base file untouched unless
-the layer replaces it, in which case the replacement is staged at
-`overlay_tree/<path>`. Include directories get a matching `overlay_tree/<dir>`
-entry placed ahead of the original, so `#include` and TableGen `include` resolve
-the replacement first, also from targets that don't list the file.
+`modular_shared_library`, `td_library`, `gentbl_cc_library`,
+`gentbl_filegroup`) route each path through a per-file `<path>.overlay`
+target. It forwards the base file untouched unless the layer replaces it, in
+which case the replacement is staged at `overlay_tree/<path>`. Include
+directories get a matching `overlay_tree/<dir>` entry placed ahead of the
+original, so `#include` and TableGen `include` resolve the replacement first,
+also from targets that don't list the file.
 
 Only replacing existing files is supported. A layer entry naming a path that
 no wrapped macro routes (a typo, a removed file, or a file only reachable
@@ -36,6 +37,8 @@ load(":overlay_layer.bzl", "OverlayLayerInfo", "overlay_layer")
 # Packages whose source files can be overlaid.
 OVERLAY_PACKAGES = [
     "GraphCompiler",
+    "max/lib/max_license",
+    "max/python/max/_core/max_license",
 ]
 
 _FLAG = "overlay"

@@ -27,25 +27,19 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops.state_space import verify_width_operand
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.state_space import verify_width_operand
+from max.nn.legacy.comm import Signals
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.qwen3_5 import (
     Qwen3_5,
     Qwen3_5LinearAttentionBlock,
 )
 from max.pipelines.architectures.qwen3_5.spec_adapters import (
-    LIVE_CONV_POOLS,
-    LIVE_CONV_ROW_IDS,
-    LIVE_RECURRENT_POOLS,
-    LIVE_RECURRENT_ROW_IDS,
-    RING_POOLS,
-    RING_ROW_IDS,
     Qwen3_5RecurrentState,
 )
 from max.pipelines.architectures.qwen3_5.state_cache import (
@@ -178,8 +172,8 @@ class _Harness:
             signals, conv, rec, base_conv, base_rec, ring = (
                 v.buffer for v in graph.inputs[5:]
             )
-            # Any rows the ring holds work, and request ``r`` at row ``r`` is
-            # one.
+            # Any rows the ring buffer holds work, and request ``r`` at row
+            # ``r`` is one.
             ring_rows = ops.range(
                 start=0,
                 stop=Dim("batch_size"),
@@ -188,24 +182,23 @@ class _Harness:
                 dtype=DType.uint32,
             ).reshape([1, "batch_size"])
             state = Qwen3_5RecurrentState(target, regions)
-            extra: dict[str, Any] = {
-                LIVE_CONV_POOLS: [conv],
-                LIVE_RECURRENT_POOLS: [rec],
-                LIVE_CONV_ROW_IDS: [conv_rows],
-                LIVE_RECURRENT_ROW_IDS: [rec_rows],
-                RING_POOLS: [ring],
-                RING_ROW_IDS: [ring_rows],
-            }
-            leaves = state.verify_state(extra, 1)
+            leaves = [
+                RecurrentStateInputsPerDevice(
+                    leaves=(
+                        RecurrentLeafInputs(pool=conv, live_row_ids=conv_rows),
+                        RecurrentLeafInputs(pool=rec, live_row_ids=rec_rows),
+                        RecurrentLeafInputs(pool=ring, live_row_ids=ring_rows),
+                    )
+                )
+            ]
             with state.capturing(1, Dim(forward_width)):
                 spec_out = block(
                     [x], [signals], layer_state_access(leaves, 0), [offsets]
                 )
             if rollback_width != forward_width:
-                state.num_draft_tokens = Dim(rollback_width)
                 state.verify_width = verify_width_operand(rollback_width)
             state.roll_forward(
-                extra,
+                leaves,
                 merged_offsets=offsets,
                 num_accepted=accepted,
                 num_draft_tokens=ops.constant(0, DType.int64, device=gpu),
@@ -315,17 +308,17 @@ def _run(
 
 
 _CASES = [
-    [[1]],
-    [[2]],
-    [[3]],
-    [[4]],
-    [[5]],
-    [[64]],
-    [[564]],
+    pytest.param([[1]], id="one-token-row"),
+    pytest.param([[2]], id="row-past-the-one-token-clamp"),
+    pytest.param([[3]], id="three-token-row-commits"),
+    pytest.param([[4]], id="row-at-the-ring"),
+    pytest.param([[5]], id="row-past-the-ring"),
+    pytest.param([[64]], id="long-prompt-row"),
+    pytest.param([[564]], id="longer-prompt-row"),
     # One prompt prefilled in two chunks.
-    [[300], [264]],
+    pytest.param([[300], [264]], id="prompt-in-two-chunks"),
     # A one-token decode row riding a prompt's launch.
-    [[1, 564]],
+    pytest.param([[1, 564]], id="decode-row-riding-a-prompt"),
 ]
 
 
@@ -340,13 +333,33 @@ def test_a_committed_step_matches_the_base_forward(
     np.testing.assert_array_equal(out["readout"], out["base_readout"])
 
 
-# A width-one plan holds two rows per request, so longer prompts would replay
-# past it.
-@pytest.mark.parametrize("length", [1, 2])
-def test_rolling_back_a_committed_step_is_detectable(length: int) -> None:
+# A one-token row is the only one the rollback's clamp lets through at the
+# step's width; a longer committed row replays and folds nothing.
+def test_rolling_back_a_committed_step_is_detectable() -> None:
     """Checks a rollback left enabled at width zero corrupts the pools."""
-    out = _run([[length]], forward_width=0, rollback_width=1)
+    out = _run([[1]], forward_width=0, rollback_width=1)
     assert not (
         np.array_equal(out["conv"], out["base_conv"])
         and np.array_equal(out["recurrent"], out["base_recurrent"])
     )
+
+
+@pytest.mark.parametrize(
+    "length",
+    [
+        pytest.param(2, id="row-past-the-one-token-clamp"),
+        pytest.param(4, id="row-at-the-ring"),
+    ],
+)
+def test_a_left_enabled_rollback_holds_a_committed_row(length: int) -> None:
+    """Checks the rollback's clamp holds a committed row on the forward."""
+    out = _run([[length]], forward_width=0, rollback_width=1)
+    np.testing.assert_array_equal(out["conv"], out["base_conv"])
+    np.testing.assert_array_equal(out["recurrent"], out["base_recurrent"])
+
+
+def test_a_left_enabled_rollback_leaves_a_long_rows_pools_correct() -> None:
+    """Checks the rollback's ring clamp holds a long row's committed state."""
+    out = _run([[564]], forward_width=0, rollback_width=1)
+    np.testing.assert_array_equal(out["conv"], out["base_conv"])
+    np.testing.assert_array_equal(out["recurrent"], out["base_recurrent"])

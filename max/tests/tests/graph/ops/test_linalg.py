@@ -367,7 +367,7 @@ def test_band_part() -> None:
         ),
     )
 
-    assert "rmo.mo.linalg.band_part" in str(graph._mlir_op)
+    assert "mo.linalg.band_part" in str(graph._mlir_op)
 
 
 def test_matmul_mismatched_devices() -> None:

@@ -24,7 +24,7 @@ from max.gpu import (
     grid_dim,
     thread_idx,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.compile import _compile_code
 from max.gpu.intrinsics import lop
 from max.gpu.primitives.grid_controls import (
@@ -220,7 +220,7 @@ struct _block_Q4_0:
 
 def test_repack_Q4_0_for_sm8x[
     NType: CoordLike, KType: CoordLike, //
-](ctx: DeviceContext, n: NType, k: KType) raises:
+](ctx: DeviceContext[], n: NType, k: KType) raises:
     print("test repack_Q4_0_for_sm8x")
 
     def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
@@ -302,9 +302,6 @@ def test_repack_Q4_0_for_sm8x[
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_usage)
-        ),
     )
 
     comptime dequan = create_ref_b[
@@ -324,9 +321,6 @@ def test_repack_Q4_0_for_sm8x[
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_usage)
-        ),
     )
 
     ctx.enqueue_copy(repacked_b_host_ptr, repacked_b_device)
@@ -437,7 +431,7 @@ def test_quantized[
     use_ragged_epilogue: Bool = False,
     join_pdl_chain: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
-](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+](ctx: DeviceContext[], m: MType, n: NType, k: KType) raises:
     # quantization configs
     comptime group_size = 128
     comptime has_zero_point = False
@@ -562,7 +556,7 @@ def test_quantized[
         comptime nwarmup = 2
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
+        def run_func(ctx: DeviceContext[]) raises {imm}:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
             ](
@@ -609,7 +603,7 @@ def test_quantized[
             c_dev_tt.store[alignment=alignment](idx, value.cast[a_type]())
 
         # The helper supplies a null output view; only the epilogue may write.
-        _qmatmul_common[group_size=group_size, target="gpu"](
+        _qmatmul_common[group_size=group_size](
             a_dev_tt.as_imm(),
             b_dev_tt.bitcast[.uint8]().as_imm(),
             ctx,
@@ -617,7 +611,7 @@ def test_quantized[
         )
     elif use_dispatch:
         comptime assert dtype == .uint8
-        matmul_gpu_qint4[group_size, "gpu"](
+        matmul_gpu_qint4[group_size](
             c_dev_tt, a_dev_tt, b_dev_tt.bitcast[.uint8](), ctx
         )
     else:

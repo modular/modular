@@ -32,10 +32,7 @@ from std.utils.index import IndexList
 @extensibility.register("add_one")
 struct AddOne:
     @staticmethod
-    def execute[
-        # The kind of device this will be run on: "cpu" or "gpu"
-        target: StaticString,
-    ](
+    def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
@@ -47,7 +44,7 @@ struct AddOne:
         ](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[target=target](elementwise_add_one, output, ctx)
+        foreach(elementwise_add_one, output, ctx)
 
 
 # You only need to implement this if you do not manually annotate

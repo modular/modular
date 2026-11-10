@@ -19,6 +19,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/StringExtras.h"
 #include "Support/max_license/Tracy/Tracy.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -36,6 +37,7 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <tuple>
 
 // Helpers for logging.
 #define TWINE(val) (llvm::Twine(val))
@@ -125,6 +127,7 @@ public:
     owner_ = nullptr;
     nextMap_ = nullptr;
     allocatedBy_ = nullptr;
+    retired_ = false;
   }
 
   MemoryManagerFreeList *owner() const { return owner_; }
@@ -178,6 +181,11 @@ private:
   // (set in allocateDesc(), cleared in reset()). Used by free() to detect when
   // a stale DeviceBuffer frees an address now owned by a different free list.
   MemoryManagerFreeList *allocatedBy_;
+
+  // An old range of a stream-ordered remap (MemoryManager::remapOwnFreeBlocks)
+  // waiting for its stream to run past it: in use, so nothing allocates or
+  // reclaims it, but holding no physical a live allocation does not also map.
+  bool retired_;
 };
 
 MemoryManager::DescMap::DescMap(int mapSizeLog2)
@@ -554,6 +562,18 @@ void MemoryManager::waitForPendingFrees(const MemoryManagerFreeList *fl) {
 
 ErrorOrSuccess
 MemoryManager::drainCompletedFrees(const MemoryManagerFreeList *only) {
+  // Retiring remapped ranges rides the same flush path. It is not limited to
+  // `only`: a range belongs to no free list, and the check is one atomic load
+  // when nothing is retiring.
+  ErrorOrSuccess retired = retireCompletedRanges(/*wait=*/false);
+  ErrorOrSuccess drained = drainPendingFrees(only);
+  if (drained.isError())
+    return drained;
+  return retired;
+}
+
+ErrorOrSuccess
+MemoryManager::drainPendingFrees(const MemoryManagerFreeList *only) {
   if (!pendingFrees_.mayHaveRecords())
     return success();
 
@@ -1002,6 +1022,8 @@ static const char *vmmOomCategoryTag(VmmOomCategory c) {
     return "out of memory";
   case VmmOomCategory::Avoidable:
     return "avoidable";
+  case VmmOomCategory::Retained:
+    return "retained by graph capture";
   case VmmOomCategory::Unaccounted:
     return "unaccounted";
   case VmmOomCategory::VaFragmentation:
@@ -1264,6 +1286,22 @@ void MemoryManagerFreeList::dumpFragmentationDiagnostic(
       }
     }
     cur = cur->parent_;
+  }
+
+  // Every holder of pending memory, not just the chain above: the list the
+  // allocation missed on is often empty while a sibling holds the budget, and
+  // the chain walk cannot reach a sibling. Uncapped here, unlike the surfaced
+  // message, because the long tail is free to print in the log.
+  if (snapshot != nullptr) {
+    for (const VmmPendingOwner &owner : snapshot->pendingOwners) {
+      std::string s;
+      llvm::raw_string_ostream os(s);
+      os << "oom log pending_owner=[" << owner.label
+         << "] bytes=" << humanMemorySize(owner.bytes)
+         << " blocks=" << owner.blocks
+         << " retained=" << (owner.neverFlushes ? 1 : 0);
+      logLine(os.str());
+    }
   }
 
   // Per-chunk layout. The killer fragmentation signal: if largest_free per
@@ -1569,7 +1607,9 @@ void MemoryManager::computeInUseGranules(const Chunk *c,
   const char *base = static_cast<char *>(c->base_);
   const size_t ps = c->pageSize_;
   for (const Desc *d = c->descs_; d != nullptr; d = d->next_) {
-    if (d->isFree())
+    // A retired range's pages are mapped under the live remapped range too,
+    // where they are counted.
+    if (d->isFree() || d->retired_)
       continue;
     const size_t first = (static_cast<char *>(d->ptr_) - base) / ps;
     const size_t last =
@@ -1649,13 +1689,21 @@ VmmOomSnapshot MemoryManager::computeVmmOomSnapshot(size_t needed) const {
   }
 
   // One desc walk: mark per-granule occupancy (in-use / pending, the latter
-  // split by whether a queued record will drain it), sum pending bytes, and
-  // track the largest contiguous root-free region (the VA a request is carved
-  // from). State comes from descs; backing comes from the bitvector.
+  // split by whether a queued record will drain it and by whether its holder
+  // ever releases), sum pending bytes, group them by holder, and track the
+  // largest contiguous root-free region (the VA a request is carved from).
+  // State comes from descs; backing comes from the bitvector.
   llvm::BitVector inUse(n, false);
   llvm::BitVector freeing(n, false);
   llvm::BitVector stuck(n, false);
+  llvm::BitVector retained(n, false);
+  llvm::SmallDenseMap<const MemoryManagerFreeList *, size_t> ownerIndex;
   for (const Desc *d = c->descs_; d != nullptr; d = d->next_) {
+    // A retired range is neither used nor free: its pages are counted under
+    // the remapped range that maps them too, and its VA returns to the root
+    // once its stream runs past it.
+    if (d->retired_)
+      continue;
     const bool descInUse = d->isInUse();
     const bool descPending = d->isFree() && d->owner() != freeList_.get();
     const size_t descSize = d->size_;
@@ -1669,6 +1717,29 @@ VmmOomSnapshot MemoryManager::computeVmmOomSnapshot(size_t needed) const {
       s.largestRootFreeVA = descSize; // root-free
     if (!descInUse && !descPending)
       continue;
+    const MemoryManagerFreeList *owner = d->owner();
+    // `disableFlush` is the structural fact: this list never migrates to its
+    // parent, so nothing it holds returns while it lives. Today the only such
+    // lists are the graph-capture pools, which is why the message phrases the
+    // hold as a captured graph and the advice as capturing fewer shapes. A
+    // second no-flush list built for some other reason would keep the figures
+    // right and make that prose wrong, so it needs revisiting here. No flag
+    // distinguishes the two cases yet.
+    const bool descRetained = descPending && owner->disableFlush_;
+    if (descPending) {
+      // Reachable from a live desc, so the pointer is good: a freelist's
+      // destructor migrates its blocks to the parent, which re-owns them.
+      auto [it, inserted] =
+          ownerIndex.try_emplace(owner, s.pendingOwners.size());
+      if (inserted)
+        s.pendingOwners.push_back(
+            VmmPendingOwner{owner->label_, 0, 0, descRetained});
+      VmmPendingOwner &entry = s.pendingOwners[it->second];
+      entry.bytes += descSize;
+      ++entry.blocks;
+      if (descRetained)
+        s.retainedBytes += descSize;
+    }
     const size_t first = (static_cast<const char *>(d->ptr_) - base) / ps;
     const size_t last =
         (static_cast<const char *>(d->ptr_) + descSize - 1 - base) / ps;
@@ -1681,13 +1752,28 @@ VmmOomSnapshot MemoryManager::computeVmmOomSnapshot(size_t needed) const {
       freeing.set(first, end);
     else
       stuck.set(first, end);
+    if (descRetained)
+      retained.set(first, end);
   }
+  // Label breaks a tie so two equal holders print in the same order every
+  // time. Desc order would otherwise decide it, and a diagnostic that reorders
+  // between runs is one nobody can diff.
+  llvm::sort(s.pendingOwners,
+             [](const VmmPendingOwner &a, const VmmPendingOwner &b) {
+               return std::tie(b.bytes, a.label) < std::tie(a.bytes, b.label);
+             });
 
   // Classify each backed granule by strongest occupant (in-use > pending >
   // root-free). Unbacked granules are pooled or uncommitted, tracked by count.
+  // Old slots of retiring ranges alias a handle another slot maps, so each
+  // page is counted once, under its live slot.
+  llvm::BitVector aliasedOld(n, false);
+  for (const RetiringRange &range : retiring_)
+    for (size_t g : range.granules)
+      aliasedOld.set(g);
   size_t mapped = 0;
   for (size_t g = 0; g < n; ++g) {
-    if (!c->granuleBacked_[g])
+    if (!c->granuleBacked_[g] || aliasedOld[g])
       continue;
     ++mapped;
     if (inUse[g])
@@ -1701,6 +1787,38 @@ VmmOomSnapshot MemoryManager::computeVmmOomSnapshot(size_t needed) const {
     // A single straggler pins it just as an in-use desc would.
     if (freeing[g] && !inUse[g] && !stuck[g])
       ++s.drainableGranules;
+    // Another subset, counted the other way round: one desc from a list that
+    // never releases is enough to keep the granule out of a synchronize's
+    // reach, whatever else shares it. Spelled as a subset of the pending test
+    // above rather than relying on `retained` implying `stuck`, so
+    // `recoverableBySync()` cannot be handed a difference it has to clamp.
+    if (retained[g] && !inUse[g] && (freeing[g] || stuck[g]))
+      ++s.retainedGranules;
+  }
+
+  // Second pass, over the retained descs only: how much of each lies on a
+  // granule a live allocation also occupies. Needs `inUse` complete, which it
+  // is not until the walk above finishes, and needs the overlap in bytes
+  // rather than granules, so it clips each desc to each granule it spans.
+  // `trapped()` subtracts the total; without that those bytes keep the
+  // page-size advice they cannot act on.
+  for (const Desc *d = c->descs_; d != nullptr; d = d->next_) {
+    if (!d->isFree() || d->owner() == freeList_.get() ||
+        !d->owner()->disableFlush_)
+      continue;
+    const char *lo = static_cast<const char *>(d->ptr_);
+    const char *hi = lo + d->size_;
+    const size_t first = (lo - base) / ps;
+    const size_t last = (hi - 1 - base) / ps;
+    for (size_t g = first; g <= last && g < n; ++g) {
+      if (!inUse[g])
+        continue;
+      const char *granuleLo = base + g * ps;
+      const char *overlapLo = std::max(lo, granuleLo);
+      const char *overlapHi = std::min(hi, granuleLo + ps);
+      if (overlapHi > overlapLo)
+        s.retainedTrappedBytes += overlapHi - overlapLo;
+    }
   }
 
   const size_t budgetGranules = maxCacheSize_ / ps;
@@ -1773,7 +1891,47 @@ VmmOomCategory classifyVmmOom(const VmmOomSnapshot &s,
   // apply), so callers phrase them as suggestions.
   if (s.available() + s.recoverableBySync() + s.trapped() >= s.needed)
     return VmmOomCategory::Avoidable;
+  // Tested after the working levers, so a miss that a wait would have fixed
+  // keeps the advice that fixes it. Reaching here means waiting and repaging
+  // both fall short and the retained pool is what covers the rest.
+  if (s.available() + s.recoverableBySync() + s.trapped() + s.retained() >=
+      s.needed)
+    return VmmOomCategory::Retained;
   return VmmOomCategory::Genuine;
+}
+
+// The largest holder that never releases, for the message to name. Null when
+// no retained bytes were seen.
+static const VmmPendingOwner *largestRetainedOwner(const VmmOomSnapshot &s) {
+  for (const VmmPendingOwner &owner : s.pendingOwners)
+    if (owner.neverFlushes)
+      return &owner; // sorted by bytes, so the first match is the largest
+  return nullptr;
+}
+
+// Names the pool holding the retained bytes and what moves it, appended to
+// any category whose figures would otherwise leave them unexplained. Leads
+// with the bytes rather than `retained()`, because a pool whose every block
+// shares a page with a live allocation has whole-page figure zero and is the
+// case most worth naming.
+static void describeRetained(llvm::raw_ostream &os, const VmmOomSnapshot &s) {
+  os << humanMemorySize(s.retainedBytes)
+     << " is held by a free list that never "
+        "releases it";
+  if (const VmmPendingOwner *owner = largestRetainedOwner(s))
+    os << " (largest: " << owner->label << " with "
+       << humanMemorySize(owner->bytes) << " in " << owner->blocks
+       << " blocks)";
+  // The difference is bytes on pages a live allocation pins, which releasing
+  // the graphs does not hand back. Printed only when there is one, so the
+  // common case stays short.
+  if (s.retained() < s.retainedBytes)
+    os << ", of which " << humanMemorySize(s.retained())
+       << " is whole pages a release returns";
+  os << ". No synchronize recovers that memory: a captured graph may still "
+        "read it, so it comes back only when the graphs holding it are "
+        "released. Capture fewer shapes, or capture them largest first so a "
+        "later capture reuses a retained block instead of carving a new one";
 }
 
 std::string describeVmmOom(const VmmOomSnapshot &s, VmmOomCategory category) {
@@ -1794,19 +1952,38 @@ std::string describeVmmOom(const VmmOomSnapshot &s, VmmOomCategory category) {
   case VmmOomCategory::Genuine:
     os << " (out of memory: no combination of synchronizing and reducing the "
           "page size closes the gap)";
+    // Short of the request on its own, but large enough to be the reason the
+    // budget ran out. Saying nothing here reads as "the model needs this much
+    // memory", which is the wrong conclusion to hand a reader.
+    if (s.retainedBytes > 0) {
+      os << ". Of the budget, ";
+      describeRetained(os, s);
+    }
+    break;
+  case VmmOomCategory::Retained:
+    os << ". Not an exhaustion, and not something waiting fixes: ";
+    describeRetained(os, s);
     break;
   case VmmOomCategory::Avoidable:
     os << ". Not an exhaustion: the shortfall is covered by";
     if (s.recoverableBySync() > 0)
       os << " up to " << humanMemorySize(s.recoverableBySync())
          << " that synchronizing would free ("
-         << humanMemorySize(s.pendingTotalBytes) << " pending in total)";
+         << humanMemorySize(s.syncPendingBytes())
+         << " waiting on stream frees in total)";
     if (s.recoverableBySync() > 0 && s.trapped() > 0)
       os << " and";
     if (s.trapped() > 0)
       os << " up to " << humanMemorySize(s.trapped())
          << " trapped in partially-used " << humanMemorySize(s.pageSize)
          << " pages, which lowering memory_manager_vmm_page_mb may recover";
+    // A wait closes this particular gap, so the retained pool is not the
+    // headline. It is still why the gap was there, so it is still worth a
+    // clause.
+    if (s.retainedBytes > 0) {
+      os << ". Separately, ";
+      describeRetained(os, s);
+    }
     break;
   case VmmOomCategory::Unaccounted:
     if (s.available() >= s.neededPhysicalBytes())
@@ -1849,6 +2026,9 @@ std::string dumpVmmOom(const VmmOomSnapshot &s) {
      << " recoverable_by_sync=" << humanMemorySize(s.recoverableBySync())
      << " drainable=" << humanMemorySize(s.drainableGranules * s.pageSize)
      << " drainable_bytes=" << humanMemorySize(s.drainableBytes)
+     << " retained=" << humanMemorySize(s.retained())
+     << " retained_bytes=" << humanMemorySize(s.retainedBytes)
+     << " retained_trapped=" << humanMemorySize(s.retainedTrappedBytes)
      << " trapped=" << humanMemorySize(s.trapped())
      << " pending_total=" << humanMemorySize(s.pendingTotalBytes)
      << " largest_root_free_va=" << humanMemorySize(s.largestRootFreeVA)
@@ -1860,6 +2040,25 @@ std::string dumpVmmOom(const VmmOomSnapshot &s) {
      << " reclaimable=" << s.reclaimableGranules
      << " pooled=" << s.pooledGranules
      << " uncommitted=" << s.uncommittedGranules << "]";
+  // The holders, largest first. The allocating free list the error names is
+  // routinely not one of them, so without this the pending figure points at
+  // nobody. Capped: a long tail of small holders would push the fields above
+  // off the end of a log line, and the tail is never the answer.
+  if (!s.pendingOwners.empty()) {
+    os << " pending_by_owner[";
+    constexpr size_t kMaxOwners = 3;
+    const size_t shown = std::min(kMaxOwners, s.pendingOwners.size());
+    for (size_t i = 0; i < shown; ++i) {
+      const VmmPendingOwner &owner = s.pendingOwners[i];
+      if (i != 0)
+        os << " ";
+      os << owner.label << "=" << humanMemorySize(owner.bytes) << "/"
+         << owner.blocks << (owner.neverFlushes ? "(retained)" : "");
+    }
+    if (s.pendingOwners.size() > shown)
+      os << " +" << (s.pendingOwners.size() - shown) << " more";
+    os << "]";
+  }
   return out;
 }
 
@@ -1893,6 +2092,346 @@ size_t MemoryManager::reclaimMappedGranules(Chunk *c, size_t count) {
   return reclaimed;
 }
 
+size_t MemoryManager::createdPhysicalBytes() const {
+  return cacheSize_ - aliasedBytes_ + freeGranulePool_.size() * pageSize_;
+}
+
+size_t MemoryManager::createdPhysicalBytesForTesting() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  return createdPhysicalBytes();
+}
+
+size_t MemoryManager::retiringRangesForTesting() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  return retiring_.size();
+}
+
+MemoryManager::Desc *
+MemoryManager::remapOwnFreeBlocks(MemoryManagerFreeList *fl, size_t size) {
+  const auto startTime = std::chrono::steady_clock::now();
+  Chunk *c = chunks_.get();
+  if (!vmmEnabled_ || c == nullptr || !c->vmmBacked_ || fl->ctx_ == nullptr ||
+      fl->parent_ == nullptr || size == 0)
+    return nullptr;
+  const size_t ps = c->pageSize_;
+  char *base = static_cast<char *>(c->base_);
+  const size_t n = c->granuleBacked_.size();
+  const size_t need = (size + ps - 1) / ps;
+
+  // The pages `fl` can reuse: for each of its free blocks, the granules lying
+  // wholly inside it. A granule shared with anything else (an in-use block,
+  // another stream's block, root free space) stays where it is.
+  struct Run {
+    Desc *desc;
+    size_t first;
+    size_t end;
+    size_t backed;
+  };
+  llvm::SmallVector<Run, 8> runs;
+  size_t ownBacked = 0;
+  for (int i = 0; i < MemoryManagerFreeList::kNumFreeBufferLists; ++i) {
+    for (Desc *d = fl->freeBuffers_[i]; d != nullptr; d = d->nextFree_) {
+      const size_t lo = static_cast<size_t>(d->ptr_ - base);
+      const size_t first = (lo + ps - 1) / ps;
+      const size_t end = std::min((lo + d->size_) / ps, n);
+      size_t backed = 0;
+      for (size_t g = first; g < end; ++g)
+        backed += c->granuleBacked_[g] ? 1 : 0;
+      if (backed == 0)
+        continue;
+      runs.push_back({d, first, end, backed});
+      ownBacked += backed;
+    }
+  }
+  if (ownBacked == 0)
+    return nullptr;
+  // Largest first, so the fewest blocks are split.
+  llvm::sort(runs,
+             [](const Run &a, const Run &b) { return a.backed > b.backed; });
+
+  // Covered at all? Reused pages, then the pool, new pages within the budget,
+  // and root pages ensureRegionBacked may reclaim. Checked up front so a miss
+  // this cannot serve changes nothing.
+  const size_t reuse = std::min(ownBacked, need);
+  const size_t created = createdPhysicalBytes();
+  const size_t canCreate =
+      maxCacheSize_ > created ? (maxCacheSize_ - created) / ps : 0;
+  llvm::BitVector unreclaimable;
+  computeUnreclaimableGranules(c, unreclaimable);
+  size_t reclaimable = 0;
+  for (size_t g = 0; g < n; ++g)
+    reclaimable += (c->granuleBacked_[g] && !unreclaimable[g]) ? 1 : 0;
+  if (reuse + freeGranulePool_.size() + canCreate + reclaimable < need)
+    return nullptr;
+
+  // A fresh range: `size` bytes of root free VA from a granule boundary, from
+  // the largest root block that has room (the arena reserves several times
+  // the budget in VA, so that is normally the frontier). Granules in it that
+  // are already backed are root free pages and stay; the reused handles go
+  // into the unbacked ones.
+  Desc *host = nullptr;
+  size_t headPad = 0;
+  for (int i = 0; i < MemoryManagerFreeList::kNumFreeBufferLists; ++i) {
+    for (Desc *d = freeList_->freeBuffers_[i]; d != nullptr; d = d->nextFree_) {
+      const size_t lo = static_cast<size_t>(d->ptr_ - base);
+      const size_t start = llvm::alignTo(lo, ps);
+      if (start + size > lo + d->size_ ||
+          (host != nullptr && d->size_ <= host->size_))
+        continue;
+      host = d;
+      headPad = start - lo;
+    }
+  }
+  if (host == nullptr)
+    return nullptr;
+  const size_t g0 = (static_cast<size_t>(host->ptr_ - base) + headPad) / ps;
+  const size_t g1 = std::min(g0 + need, n);
+  size_t unbackedSlots = 0;
+  for (size_t g = g0; g < g1; ++g)
+    unbackedSlots += c->granuleBacked_[g] ? 0 : 1;
+  // Retire only handles that will be mapped again: one retired and not
+  // remapped would be unmapped at retirement and lost.
+  const size_t want = std::min(ownBacked, unbackedSlots);
+  if (want == 0)
+    return nullptr;
+
+  // Retire the old ranges: carve each run's needed granules out of its block
+  // into a retired desc, and collect the handles mapped there.
+  RetiringRange range;
+  llvm::SmallVector<uint64_t, 16> handles;
+  for (const Run &r : runs) {
+    if (handles.size() >= want)
+      break;
+    size_t end = r.first;
+    size_t take = 0;
+    while (end < r.end && handles.size() + take < want) {
+      take += c->granuleBacked_[end] ? 1 : 0;
+      ++end;
+    }
+    Desc *d = r.desc;
+    const size_t headBytes = r.first * ps - static_cast<size_t>(d->ptr_ - base);
+    if (headBytes != 0)
+      fl->addToFreeList(c->splitFreeDesc(d, headBytes));
+    const size_t midBytes = (end - r.first) * ps;
+    Desc *old = d;
+    if (d->size_ == midBytes)
+      fl->removeFromFreeList(d);
+    else
+      old = c->splitFreeDesc(d, midBytes);
+    old->retired_ = true;
+    range.descs.push_back(old);
+    for (size_t g = r.first; g < end; ++g) {
+      if (!c->granuleBacked_[g])
+        continue;
+      range.granules.push_back(g);
+      handles.push_back(c->vmmHandles_[g]);
+    }
+  }
+  assert(handles.size() == want);
+
+  // Carve the fresh range from the root and map the reused handles into its
+  // unbacked granules.
+  if (headPad != 0)
+    freeList_->addToFreeList(c->splitFreeDesc(host, headPad));
+  Desc *desc = host;
+  if (host->size_ == size)
+    freeList_->removeFromFreeList(host);
+  else
+    desc = c->splitFreeDesc(host, size);
+  assert(static_cast<size_t>(desc->ptr_ - base) == g0 * ps);
+  llvm::SmallVector<size_t, 16> aliasedSlots;
+  auto rollback = [&]() {
+    for (size_t g : aliasedSlots) {
+      if (ErrorOrSuccess e = device().vmmUnmap(base + g * ps, ps); e.isError())
+        logErr("remapOwnFreeBlocks rollback vmmUnmap failed: " +
+               llvm::Twine(e.getError()));
+      c->vmmHandles_[g] = 0;
+      c->granuleBacked_.reset(g);
+      cacheSize_ -= ps;
+      aliasedBytes_ -= ps;
+    }
+    freeList_->freeDesc(desc);
+    for (Desc *old : range.descs) {
+      old->retired_ = false;
+      fl->freeDesc(old);
+    }
+  };
+  size_t next = 0;
+  for (size_t g = g0; g < g1 && next < handles.size(); ++g) {
+    if (c->granuleBacked_[g])
+      continue;
+    const uint64_t handle = handles[next];
+    if (ErrorOrSuccess e = device().vmmMap(base + g * ps, ps, handle);
+        e.isError()) {
+      tlsBackingFailure = VmmBackingFailure::MapRefused;
+      LOG_ERR("remapOwnFreeBlocks vmmMapAndSetAccess failed: " +
+              llvm::Twine(e.getError()));
+      rollback();
+      return nullptr;
+    }
+    c->vmmHandles_[g] = handle;
+    c->granuleBacked_.set(g);
+    cacheSize_ += ps;
+    aliasedBytes_ += ps;
+    aliasedSlots.push_back(g);
+    ++next;
+  }
+  assert(next == handles.size());
+  // Grant access once per contiguous run of remapped slots rather than once
+  // per granule: with peers in the access list it costs as much as the map.
+  for (size_t i = 0; i < aliasedSlots.size();) {
+    size_t j = i + 1;
+    while (j < aliasedSlots.size() &&
+           aliasedSlots[j] == aliasedSlots[j - 1] + 1)
+      ++j;
+    if (ErrorOrSuccess e =
+            device().vmmSetAccess(base + aliasedSlots[i] * ps, (j - i) * ps);
+        e.isError()) {
+      tlsBackingFailure = VmmBackingFailure::MapRefused;
+      LOG_ERR("remapOwnFreeBlocks vmmSetAccess failed: " +
+              llvm::Twine(e.getError()));
+      rollback();
+      return nullptr;
+    }
+    i = j;
+  }
+  // The rest from the pool, new pages or reclaimed root pages. Reclaim never
+  // touches the retired ranges: they are in use.
+  if (descHasUnbackedRegion(desc)) {
+    if (ErrorOrSuccess e = ensureRegionBacked(desc); e.isError()) {
+      LOG_ERR("remapOwnFreeBlocks ensureRegionBacked failed: " +
+              llvm::Twine(e.getError()));
+      rollback();
+      return nullptr;
+    }
+  }
+
+  // Order the reuse. The stream's own earlier work on the pages runs before
+  // its later work by stream order. A side-stream view's frees may still be
+  // read by its base stream, so the view waits on the base stream, on the
+  // device. Retirement waits for both.
+  DeviceContext &ctx = *fl->ctx_;
+  ErrorOr<DeviceEventRef> event = ctx.enqueueEvent();
+  ErrorOr<DeviceEventRef> baseEvent =
+      event.isError() ? DeviceEventRef() : ctx.enqueueBaseStreamEvent();
+  if (event.isError() || baseEvent.isError()) {
+    LOG_ERR("remapOwnFreeBlocks: could not record the gating events");
+    rollback();
+    return nullptr;
+  }
+  DeviceEventRef baseRef = baseEvent.takeValue();
+  if (baseRef) {
+    if (ErrorOrSuccess w = ctx.enqueueWaitFor(*baseRef); w.isError()) {
+      LOG_ERR("remapOwnFreeBlocks: base-stream wait failed: " +
+              llvm::Twine(w.getError()));
+      rollback();
+      return nullptr;
+    }
+  }
+  range.seq = ++nextRetiringSeq_;
+  range.events.push_back(event.takeValue());
+  if (baseRef)
+    range.events.push_back(std::move(baseRef));
+  retiring_.push_back(std::move(range));
+  retiringCount_.store(retiring_.size(), std::memory_order_relaxed);
+
+  allocatedMap_.add(desc);
+  desc->allocatedBy_ = fl;
+  const size_t reusedBytes = handles.size() * ps;
+  streamRemaps_.fetch_add(1, std::memory_order_relaxed);
+  streamRemapReusedBytes_.fetch_add(reusedBytes, std::memory_order_relaxed);
+  // One line per remap. Steady state reuses blocks in place, so these appear
+  // when a stream's largest request grows, not per step.
+  logErr("[mm_remap] [" + fl->label_ + "] request " + humanMemorySize(size) +
+         ": reused " + humanMemorySize(reusedBytes) +
+         " of the stream's free pages, " +
+         humanMemorySize(need * ps - reusedBytes) + " from the root; " +
+         llvm::Twine(retiring_.size()) + " range(s) retiring, " +
+         llvm::Twine(streamRemaps_.load(std::memory_order_relaxed)) +
+         " remap(s) so far, retiring has taken " +
+         llvm::Twine(retireMicros_.load(std::memory_order_relaxed)) +
+         " us in all; this remap took " +
+         llvm::Twine(std::chrono::duration_cast<std::chrono::microseconds>(
+                         std::chrono::steady_clock::now() - startTime)
+                         .count()) +
+         " us");
+  return desc;
+}
+
+void MemoryManager::retireRange(RetiringRange &range) {
+  Chunk *c = chunks_.get();
+  const size_t ps = c->pageSize_;
+  char *base = static_cast<char *>(c->base_);
+  for (size_t g : range.granules) {
+    // Unmaps only this address; the handle stays mapped (and alive) under the
+    // remapped range, or in the pool if that range was reclaimed since.
+    if (ErrorOrSuccess e = device().vmmUnmap(base + g * ps, ps); e.isError())
+      logErr("retireRange vmmUnmap failed: " + llvm::Twine(e.getError()));
+    c->vmmHandles_[g] = 0;
+    c->granuleBacked_.reset(g);
+    cacheSize_ -= ps;
+    aliasedBytes_ -= ps;
+  }
+  for (Desc *d : range.descs) {
+    d->retired_ = false;
+    freeList_->freeDesc(d);
+  }
+}
+
+ErrorOrSuccess MemoryManager::retireCompletedRanges(bool wait) {
+  if (retiringCount_.load(std::memory_order_relaxed) == 0)
+    return success();
+
+  // Query (or wait on) the events with `mu_` released, as drainPendingFrees
+  // does: they are driver calls.
+  llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>> candidates;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    for (const RetiringRange &range : retiring_)
+      for (const DeviceEventRef &event : range.events)
+        candidates.emplace_back(range.seq, event);
+  }
+  llvm::SmallDenseSet<uint64_t> blocked;
+  llvm::SmallDenseSet<uint64_t> seen;
+  ErrorOrSuccess firstError = success();
+  for (auto &[seq, event] : candidates) {
+    seen.insert(seq);
+    if (wait) {
+      if (ErrorOrSuccess r = event->synchronize(); r.isError()) {
+        // Teardown: the pages are released next whatever this says.
+        logErr("retireCompletedRanges: event synchronize failed: " +
+               llvm::Twine(r.getError()));
+      }
+      continue;
+    }
+    ErrorOr<bool> ready = event->isReady();
+    if (ready.isError()) {
+      if (!firstError.isError())
+        firstError = ready.takeError();
+      blocked.insert(seq);
+    } else if (!*ready) {
+      blocked.insert(seq);
+    }
+  }
+
+  std::lock_guard<std::mutex> lock(mu_);
+  const auto retireStart = std::chrono::steady_clock::now();
+  for (auto it = retiring_.begin(); it != retiring_.end();) {
+    if (seen.contains(it->seq) && !blocked.contains(it->seq)) {
+      retireRange(*it);
+      it = retiring_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  retiringCount_.store(retiring_.size(), std::memory_order_relaxed);
+  retireMicros_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::steady_clock::now() - retireStart)
+                              .count(),
+                          std::memory_order_relaxed);
+  return firstError;
+}
+
 ErrorOrSuccess MemoryManager::ensureRegionBacked(Desc *desc) {
   Chunk *c = desc->chunk_;
   if (!c->vmmBacked_ || c->granuleBacked_.empty())
@@ -1922,7 +2461,7 @@ ErrorOrSuccess MemoryManager::ensureRegionBacked(Desc *desc) {
   const size_t poolAvail = freeGranulePool_.size();
   // Physical already created (mapped granules + pooled unmapped handles) counts
   // against the budget; new physical may only be created up to the remainder.
-  const size_t createdPhysical = cacheSize_ + poolAvail * ps;
+  const size_t createdPhysical = createdPhysicalBytes();
   const size_t canCreate = maxCacheSize_ > createdPhysical
                                ? (maxCacheSize_ - createdPhysical) / ps
                                : 0;
@@ -2011,7 +2550,7 @@ ErrorOrSuccess MemoryManager::preBackForCapture() {
   // fast with the real cause, rather than proceeding into a guaranteed -- and
   // more cryptic -- mid-capture mapping failure.
   for (size_t i = 0; i < c->granuleBacked_.size(); ++i) {
-    if (cacheSize_ >= maxCacheSize_)
+    if (cacheSize_ - aliasedBytes_ >= maxCacheSize_)
       break;
     if (c->granuleBacked_[i])
       continue;
@@ -2021,7 +2560,7 @@ ErrorOrSuccess MemoryManager::preBackForCapture() {
       freeGranulePool_.pop_back();
     } else {
       // Respect the budget: created physical == mapped + pooled handles.
-      if (cacheSize_ + freeGranulePool_.size() * ps + ps > maxCacheSize_)
+      if (createdPhysicalBytes() + ps > maxCacheSize_)
         break;
       ErrorOr<uint64_t> h = device().vmmCreate(ps);
       if (h.isError())
@@ -2157,6 +2696,13 @@ void MemoryManager::clear() {
   if (chunks_ == nullptr) {
     return;
   }
+
+  // Teardown: wait out every remapped stream so each page is mapped once
+  // before the handles are released below.
+  if (ErrorOrSuccess retired = retireCompletedRanges(/*wait=*/true);
+      retired.isError())
+    logErr("clear: retiring remapped ranges failed: " +
+           llvm::Twine(retired.getError()));
 
   selfCheck();
 
@@ -2437,6 +2983,17 @@ ErrorOr<void *> MemoryManagerFreeList::allocate(size_t size,
         std::lock_guard<std::mutex> lock(memoryManager_.mu_);
         desc = allocateDesc(wrappedSize);
       }
+      // Still nothing: the stream's own free blocks may cover the request
+      // together with what the root can supply, just not contiguously. Remap
+      // them into a fresh range (stream-ordered, no host wait); see
+      // MemoryManager::remapOwnFreeBlocks. Not while the base stream captures:
+      // the events gating the old ranges would be graph nodes.
+      if (desc == nullptr && parent_ != nullptr &&
+          !ctx_->isBaseStreamCapturing() &&
+          wrappedSize <= memoryManager_.chunkSize_) {
+        std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+        desc = memoryManager_.remapOwnFreeBlocks(this, wrappedSize);
+      }
       // The steps above only poll once: they recover frees whose gating event
       // has already fired. A free still gated on in-flight work is invisible to
       // them by construction, and that is exactly what the snapshot counts as
@@ -2684,6 +3241,23 @@ MemoryManagerFreeList::allocateDescAligned(size_t size, size_t startAlign) {
         break;
       desc = desc->nextFree_;
       ++iterations;
+    }
+    // Keep a stream's large free blocks whole. A small request that would
+    // split one goes to the root first when the root can serve it: a small
+    // buffer that outlives its layer pins the block, so the next large pool
+    // on this stream misses it and has to be remapped (MAX-1123). Falls back
+    // to the split when the root cannot serve it. Not for a list that never
+    // flushes (a graph-capture pool), which must reuse its own blocks or
+    // grow for good, nor during a capture.
+    if (desc != nullptr && parent_ != nullptr && memoryManager_.vmmEnabled_ &&
+        !disableFlush_ && ctx_ != nullptr && !ctx_->isGraphCapturing() &&
+        desc->size_ >= kKeepWholeMinBytes &&
+        size + headPad <= desc->size_ / kKeepWholeRatio) {
+      if (MemoryManager::Desc *fromParent =
+              parent_->allocateDescAligned(size, startAlign)) {
+        fromParent->allocatedBy_ = this;
+        return fromParent;
+      }
     }
     if (desc != nullptr) {
       assert(desc->isFree());

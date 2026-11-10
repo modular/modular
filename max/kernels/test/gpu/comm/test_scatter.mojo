@@ -64,7 +64,7 @@ def _test_pull[
         if len(expected[dp]) > max_chunk_size:
             max_chunk_size = len(expected[dp])
 
-    var ctxs = List[DeviceContext]()
+    var ctxs = List[DeviceContext[]]()
     for i in range(ngpus):
         ctxs.append(DeviceContext(device_id=i))
 

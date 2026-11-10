@@ -88,7 +88,7 @@ def _reference(
 
 def run_case[
     squeeze: Bool, rank: Int, num_indices: Int, indices_type: DType
-](mut m: Bench, ctx: DeviceContext, nsys: Bool) raises:
+](mut m: Bench, ctx: DeviceContext[], nsys: Bool) raises:
     comptime out_rank = rank - num_indices if squeeze else rank + num_indices
     comptime index_rank = rank if squeeze else out_rank
     var name = _case_name[squeeze, rank, num_indices, indices_type]()
@@ -120,7 +120,7 @@ def run_case[
     var output = out_dev.unsafe_ptr().as_unsafe_any_origin()
 
     @inline(.always)
-    def launch(ctx: DeviceContext) raises {imm}:
+    def launch(ctx: DeviceContext[]) raises {imm}:
         comptime if squeeze:
             squeeze_shape_gpu(
                 output, 1, input, 1, shape_indices, 1, rank, num_indices, ctx
@@ -163,7 +163,7 @@ def run_case[
 
 def run_op[
     squeeze: Bool, indices_type: DType
-](mut m: Bench, ctx: DeviceContext, nsys: Bool) raises:
+](mut m: Bench, ctx: DeviceContext[], nsys: Bool) raises:
     run_case[squeeze, 2, 1, indices_type](m, ctx, nsys)
     run_case[squeeze, 4, 1, indices_type](m, ctx, nsys)
     run_case[squeeze, 4, 2, indices_type](m, ctx, nsys)

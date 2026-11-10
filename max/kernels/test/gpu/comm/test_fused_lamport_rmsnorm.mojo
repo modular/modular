@@ -118,7 +118,7 @@ def rmsnorm_test[
     seed_neg_zero: Bool = False,
     interleave_zero_rows: Bool = False,
 ](
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     M: Int,
     K: Int,
     iters: Int = NUM_ITERS,
@@ -348,7 +348,7 @@ def rmsnorm_test[
 
 def unsynced_skew_test[
     ngpus: Int
-](list_of_ctx: List[DeviceContext], M: Int, K: Int) raises:
+](list_of_ctx: List[DeviceContext[]], M: Int, K: Int) raises:
     """Enqueue NUM_UNSYNCED_ITERS fused calls back-to-back with NO cross-rank
     sync between calls, then verify every call's slice in a single final pass.
 
@@ -559,7 +559,7 @@ def main() raises:
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     comptime ngpus = 2
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(ngpus):
         ctx.append(DeviceContext(device_id=i))
 

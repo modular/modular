@@ -831,7 +831,6 @@ def non_max_suppression_gpu[
 
 def non_max_suppression[
     dtype: DType,
-    target: StaticString,
     BoxesLayout: TensorLayout,
     ScoresLayout: TensorLayout,
     OutputLayout: TensorLayout,
@@ -861,7 +860,6 @@ def non_max_suppression[
 
     Parameters:
         dtype: The data type for box coordinates and scores.
-        target: Compilation target string.
         BoxesLayout: Layout type of the boxes tensor.
         ScoresLayout: Layout type of the scores tensor.
         OutputLayout: Layout type of the output tensor.
@@ -888,7 +886,7 @@ def non_max_suppression[
 
     var num_boxes = Int(boxes.dim[1]())
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         # Host tensors: run the CPU kernel directly, no copies.
         non_max_suppression[dtype](
             boxes,

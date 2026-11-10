@@ -153,7 +153,7 @@ def _order_sensitive_term(rank: Int) -> Float64:
 
 def allreduce_determinism_test[
     dtype: DType, ngpus: Int, naive: Bool = False
-](list_of_ctx: List[DeviceContext], length: Int) raises -> None:
+](list_of_ctx: List[DeviceContext[]], length: Int) raises -> None:
     """Runs `allreduce` `NUM_RERUNS` times on fixed inputs; asserts bit-stable.
 
     Parameters:
@@ -242,7 +242,7 @@ def allreduce_determinism_test[
 
     # Report which algorithm regime this (ngpus, dtype, length) selects, so the
     # log documents that both the one-stage and two-stage regimes are covered.
-    comptime sm_version = DeviceContext.default_device_info.version
+    comptime sm_version = DeviceContext[].default_device_info.version
     var num_bytes = length * size_of[dtype]()
     var cfg = dispatch_select_comm_config[
         ngpus, sm_version, allreduce_tuning_table
@@ -375,20 +375,22 @@ def _bit_stable[
     if run == 0:
         run0_hash = rank0_hash
         return True
-    if not run0_hash:
-        return False
-    if rank0_hash.value() != run0_hash.value():
-        print(
-            t"RUN-TO-RUN DIVERGENCE in {what} at run {run} hash"
-            t" {rank0_hash.value()} != run0 hash {run0_hash.value()}"
-        )
-        return False
-    return True
+    match (rank0_hash, run0_hash):
+        case (.Some(got), .Some(want)):
+            if got != want:
+                print(
+                    t"RUN-TO-RUN DIVERGENCE in {what} at run {run} hash"
+                    t" {got} != run0 hash {want}"
+                )
+                return False
+            return True
+        case _:
+            return False
 
 
 def fused_rmsnorm_determinism_test[
     ngpus: Int, rows: Int, cols: Int
-](list_of_ctx: List[DeviceContext]) raises -> None:
+](list_of_ctx: List[DeviceContext[]]) raises -> None:
     """Checks the fused allreduce+RMSNorm kernels are bit-stable across runs.
 
     Covers `lamport_allreduce_rmsnorm` and `allreduce_rmsnorm` without
@@ -548,7 +550,7 @@ def fused_rmsnorm_determinism_test[
 
 def fused_fp8_residual_determinism_test[
     ngpus: Int, rows: Int, cols: Int
-](list_of_ctx: List[DeviceContext]) raises -> None:
+](list_of_ctx: List[DeviceContext[]]) raises -> None:
     """Checks `allreduce_residual_rmsnorm` FP8 output is bit-stable across runs.
 
     Small per-rank payloads take the fused warp-tiling kernel. Payloads past
@@ -703,7 +705,7 @@ def run_determinism_sweep() raises -> None:
             comptime ngpus = gpu_counts[g]
             if DeviceContext.number_of_devices() < ngpus:
                 continue
-            var ctx = List[DeviceContext]()
+            var ctx = List[DeviceContext[]]()
             for i in range(ngpus):
                 ctx.append(DeviceContext(device_id=i))
             comptime for li in range(len(lengths)):
@@ -730,7 +732,7 @@ def run_determinism_sweep() raises -> None:
                 # allreduce is left out on purpose: 2-stage agrees across
                 # ranks by construction, because one rank reduces each slice,
                 # and the plain sweep still covers it.
-                comptime if DeviceContext.target.is_amd_gpu():
+                comptime if DeviceContext[].target.is_amd_gpu():
                     fused_fp8_residual_determinism_test[ngpus, 2, 57344](ctx)
                 elif ngpus == 8:
                     fused_fp8_residual_determinism_test[ngpus, 128, 4096](ctx)

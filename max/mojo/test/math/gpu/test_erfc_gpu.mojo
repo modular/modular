@@ -114,7 +114,7 @@ def _run_erfc[
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, erfc(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var gpu_worst = 0
     var cpu_worst = 0
@@ -179,7 +179,7 @@ def test_erfc_f64_hard_cases() raises:
                 idx, erfc(val)
             )
 
-        elementwise[pack_size, target="gpu"](func, Coord(padded), ctx)
+        elementwise[pack_size](func, Coord(padded), ctx)
 
         with out_device.map_to_host() as out_host:
             for i in range(n):

@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 
 
@@ -102,6 +102,82 @@ def test_kv_cache_metrics_add_sums_the_dkv_orphan_fields() -> None:
     assert total.dkv_orphan_cleanups_refused == 44
     assert total.dkv_orphan_cleanups_expired == 55
     assert total.dkv_orphan_queue_depth == 66
+
+
+def test_kv_cache_metrics_add_sums_the_dkv_hint_loss_fields() -> None:
+    """The hint denominator and the blocks lost to hints and short pulls sum
+    across replicas, the per-reason blocks label by label."""
+    first = KVCacheMetrics(
+        dkv_hints_received=3,
+        dkv_hint_blocks_forgone_by_reason={"chain_mismatch": 10},
+        dkv_own_run_blocks_short_of_hint=1,
+        dkv_peer_blocks_short_of_hint=2,
+        dkv_hint_blocks_unserved=3,
+    )
+    second = KVCacheMetrics(
+        dkv_hints_received=30,
+        dkv_hint_blocks_forgone_by_reason={"chain_mismatch": 5, "gapped": 4},
+        dkv_own_run_blocks_short_of_hint=10,
+        dkv_peer_blocks_short_of_hint=20,
+        dkv_hint_blocks_unserved=30,
+    )
+
+    total = first + second
+
+    assert total.dkv_hints_received == 33
+    assert total.dkv_hint_blocks_forgone_by_reason == {
+        "chain_mismatch": 15,
+        "gapped": 4,
+    }
+    assert total.dkv_own_run_blocks_short_of_hint == 11
+    assert total.dkv_peer_blocks_short_of_hint == 22
+    assert total.dkv_hint_blocks_unserved == 33
+
+
+def test_kv_cache_metrics_add_sums_the_connector_lookup_drop_fields() -> None:
+    """Dropped lookups and the samples behind their histograms sum across
+    replicas, key by key."""
+    first = KVCacheMetrics(
+        connector_lookup_drops={
+            ("release", "offered", False): 1,
+            ("timeout", "unseen", True): 2,
+        },
+        connector_lookup_dropped_blocks={("release", False): 7},
+        connector_lookup_shrink_depths={1: 2},
+        connector_lookup_shrink_cap_blocks=3,
+        connector_lookup_reasks_per_request={2: 1},
+        connector_lookup_hand_backs_per_request={1: 4},
+    )
+    second = KVCacheMetrics(
+        connector_lookup_drops={
+            ("release", "offered", False): 10,
+            ("release", "offered", True): 3,
+        },
+        connector_lookup_dropped_blocks={
+            ("release", False): 5,
+            ("release", True): 9,
+        },
+        connector_lookup_shrink_depths={1: 1, 6: 1},
+        connector_lookup_shrink_cap_blocks=30,
+        connector_lookup_reasks_per_request={1: 2},
+        connector_lookup_hand_backs_per_request={1: 1},
+    )
+
+    total = first + second
+
+    assert total.connector_lookup_drops == {
+        ("release", "offered", False): 11,
+        ("timeout", "unseen", True): 2,
+        ("release", "offered", True): 3,
+    }
+    assert total.connector_lookup_dropped_blocks == {
+        ("release", False): 12,
+        ("release", True): 9,
+    }
+    assert total.connector_lookup_shrink_depths == {1: 3, 6: 1}
+    assert total.connector_lookup_shrink_cap_blocks == 33
+    assert total.connector_lookup_reasks_per_request == {2: 1, 1: 2}
+    assert total.connector_lookup_hand_backs_per_request == {1: 5}
 
 
 def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:

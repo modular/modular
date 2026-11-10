@@ -59,7 +59,6 @@ from layout import (
     DefaultEngine,
     ComptimeInt,
     Coord,
-    Layout,
     RowMajorLayout,
     TensorEngine,
     TensorLayout,
@@ -67,7 +66,7 @@ from layout import (
     coord,
     row_major,
 )
-from layout.tile_layout import Layout as _NewLayout
+from layout.layout import Layout as _NewLayout
 from structured_kernels.tile_types import (
     SMemTile as TTSMemTile,
     SMemTileArray2DRowMajor,
@@ -76,14 +75,14 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_3d_explicit_inner,
 )
-from layout.tile_layout import _IntToComptimeInt
+from layout.layout import _IntToComptimeInt
+from layout.layout import row_major as tt_row_major
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
 )
 from layout.tma_async import SharedMemBarrier
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -502,16 +501,6 @@ struct BlackwellMatmulSM100Kernel[
 
     # ========== Shared Memory Layout Types ==========
 
-    comptime a_smem_layout = tile_layout_k_major_typed[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
-    ].to_layout()
-
-    comptime b_smem_layout = tile_layout_k_major_typed[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ].to_layout() if Self.transpose_b else tile_layout_mn_major_typed[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ].to_layout()
-
     comptime SmemType = B200MatmulSmem[
         Self.a_type,
         Self.b_type,
@@ -706,9 +695,12 @@ struct BlackwellMatmulSM100Kernel[
     comptime Tmem = TmemAllocation[Self.opc.cta_group]
 
     # Layout-parameterized TMEM tensor for type-safe accumulator access
-    comptime accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
+    comptime accum_layout = tt_row_major[Self.MMA_M, Self.MMA_N]()
     comptime AccumTensor = TmemTensor[
-        Self.accum_type, Self.accum_layout, cta_group=Self.cta_group
+        Self.accum_type,
+        type_of(Self.accum_layout),
+        Self.accum_layout,
+        cta_group=Self.cta_group,
     ]
 
     # ========== Output Tile Pipeline Type ==========
@@ -1018,7 +1010,9 @@ struct BlackwellMatmulSM100Kernel[
             k_start: Starting K iteration (for init_c determination).
         """
         # Get typed accumulator tensor from TMEM stage
-        var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
+        var accum = tmem_stage.tensor[
+            Self.accum_type, type_of(Self.accum_layout), Self.accum_layout
+        ]()
 
         if elect_one_sync():
             # Build the A/B MMA SMEM descriptors once from the j=0 tile, then
@@ -1870,10 +1864,11 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(epilogue_load_tma_op, `nvvm.grid_constant`)
     @__name(
         StaticString(Self.config.get_kernel_name())
-        + StaticString("_compute_fn")
+        + StaticString("_compute_fn" if has_compute_fn else "")
     )
     def run_with_compute_fn[
-        ComputeFnType: ElementwiseComputeFn
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool = True,
     ](
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -1895,10 +1890,12 @@ struct BlackwellMatmulSM100Kernel[
         """Kernel entry point for SM100 matmul with a compute epilogue value.
 
         Same as `run`, with `compute_fn` applied to each output value before
-        the store.
+        the store. With `has_compute_fn=False` it matches `run` and ignores
+        `compute_fn`, so one `enqueue_function` call site can launch either.
 
         Parameters:
             ComputeFnType: Type of the compute epilogue closure.
+            has_compute_fn: Whether to apply `compute_fn`.
 
         Args:
             a_tma_op: 3D TMA descriptor for the A input matrix.
@@ -1916,10 +1913,10 @@ struct BlackwellMatmulSM100Kernel[
             my_rank_dev: Rank index of this GPU for multi-GPU reduce-scatter.
             compute_fn: Element-wise epilogue applied to each output value.
         """
-        comptime assert (
-            not Self.config.use_tma_epilogue_load
+        comptime assert not (
+            has_compute_fn and Self.config.use_tma_epilogue_load
         ), "use_tma_epilogue_load is mutually exclusive with a compute epilogue"
-        Self._run_impl[has_epilogue_fn=False, has_compute_fn=True](
+        Self._run_impl[has_epilogue_fn=False, has_compute_fn=has_compute_fn](
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -2918,7 +2915,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
     ]
 
-    # Typed layouts (new Layout from tile_layout.mojo).
+    # Typed layouts (new Layout from layout.mojo).
     # MmaOpSM100_SS requires transpose_b=True, so B is always K-major.
     comptime a_smem_layout_typed = tile_layout_k_major_typed[
         Self.a_type, Self.BM, Self.BK, Self.a_swizzle

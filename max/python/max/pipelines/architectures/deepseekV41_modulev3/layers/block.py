@@ -22,7 +22,7 @@ from __future__ import annotations
 import bisect
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from max import functional as F
 from max.driver import CPU
@@ -35,17 +35,16 @@ from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from ..interface import block_group
 from ..layer_resolver import LayerInfo
+from ..model_config import DeepseekV41Config
 from .attention import Attention, RaggedRows
 from .compressor import Compressor
 from .indexer import Indexer
 from .mhc import mhc_fused_post_pre
 from .moe import RoutedExperts, StackedSharedExpert
+from .mxfp8_linear import Mxfp8Rows
 from .norm import RMSNorm
 from .rope import RopeParams
 from .router import Router
-
-if TYPE_CHECKING:
-    from ..model_config import DeepseekV41Config
 
 __all__ = [
     "DecoderLayer",
@@ -56,10 +55,6 @@ __all__ = [
     "leaf_values",
     "slot_constants",
 ]
-
-# The routed experts and the shared expert clamp SwiGLU at the training value
-# (config ``swiglu_limit``).
-_SWIGLU_LIMIT = 10.0
 
 
 @dataclass(frozen=True)
@@ -213,7 +208,7 @@ class FeedForward(Module[..., Tensor]):
             h,
             ffn,
             mesh=mesh,
-            swiglu_limit=_SWIGLU_LIMIT,
+            swiglu_limit=config.swiglu_limit,
             data_parallel=data_parallel,
         )
         # Name-transparent: the experts' leaves stay ``ffn.experts.E.wN``.
@@ -222,8 +217,9 @@ class FeedForward(Module[..., Tensor]):
             ffn,
             config.n_routed_experts,
             mesh=mesh,
-            swiglu_limit=_SWIGLU_LIMIT,
+            swiglu_limit=config.swiglu_limit,
             ep_batch_manager=ep_batch_manager,
+            expert_format=config.routed_expert_format,
         )
 
     def forward(
@@ -232,15 +228,9 @@ class FeedForward(Module[..., Tensor]):
         image_token_mask: Tensor,
         comm_buffers: EPCommBuffers | None = None,
         total_rows: Tensor | None = None,
+        x_rows: Mxfp8Rows | None = None,
     ) -> Tensor:
-        """The mixture of experts, reduced per the parallelism layout.
-
-        Under expert parallelism the routed experts dispatch/combine
-        through ``comm_buffers`` and the output is complete per rank
-        (bf16), with ``total_rows`` the host-resident batch row count the
-        grouped kernels' tile-regime estimate reads (``None`` on the
-        tensor-parallel path, which never runs it).
-        """
+        """Run the routed and shared experts under the configured parallelism."""
         ids, weights = _on_each_device(
             self.mesh,
             lambda gate, x, mask: gate(x, mask),
@@ -268,7 +258,7 @@ class FeedForward(Module[..., Tensor]):
             routed = self.routed.ep_forward(
                 x, ids, weights, comm_buffers, total_rows
             )
-            shared = self.shared_experts.partial(x)
+            shared = self.shared_experts.partial(x, x_rows)
             # The combine rounds the routed sum to bf16 (combine_dtype);
             # add the shared expert in float32 and round once, as the TP
             # path does after its all-reduce.
@@ -280,7 +270,7 @@ class FeedForward(Module[..., Tensor]):
             )
             return total
         routed = self.routed.partial(x, ids, weights)
-        shared = self.shared_experts.partial(x)
+        shared = self.shared_experts.partial(x, x_rows)
         # Both are Partial; adding them locally keeps the generic add from
         # reducing each one before the sum.
         total = F.call_on_mesh(F.add, self.mesh, out_specs=routed.mapping)(
@@ -289,21 +279,31 @@ class FeedForward(Module[..., Tensor]):
         return F.allreduce_sum(total).cast(DType.bfloat16)
 
 
+_RowTensors = tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor | None]
+
+
+def _row_tensors(rows: RaggedRows) -> _RowTensors:
+    return (
+        rows.offsets,
+        rows.bid,
+        rows.local,
+        rows.positions,
+        rows.lengths,
+        rows.live_positions,
+    )
+
+
 def _attend(
     attn: Attention,
     x: Tensor,
     kv: tuple[PagedCacheValues, PagedCacheValues | None],
-    rows: tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
+    rows: _RowTensors,
     layer_idx: tuple[Tensor, Tensor],
     swa_begin: Tensor,
     comp_indices: Tensor | None,
-    projected: tuple[Tensor, Tensor] | None,
+    projected: Tensor,
+    query: Tensor | None,
 ) -> Tensor:
-    """One attention body on one rank's own rows (see ``_attention``).
-
-    ``rows`` crosses the mesh boundary as its five tensors -- a plain
-    dataclass is a tree leaf, so it would pass through unsharded.
-    """
     return attn(
         x,
         kv,
@@ -312,7 +312,19 @@ def _attend(
         swa_begin,
         comp_indices,
         projected=projected,
+        query=query,
     )
+
+
+def _fused_query(
+    attn: Attention,
+    projected: Tensor,
+    swa: PagedCacheValues,
+    rows: _RowTensors,
+    layer_swa: Tensor,
+) -> tuple[Tensor, Tensor, Tensor]:
+    qr, q = attn.fused_query(projected, swa, RaggedRows(*rows), layer_swa)
+    return qr.codes, qr.scales, q
 
 
 def _select(
@@ -321,25 +333,22 @@ def _select(
     indexer: Indexer,
     x: Tensor,
     qr: Tensor,
-    rows: tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
+    qr_scales: Tensor | None,
+    rows: _RowTensors,
     kv: dict[str, PagedCacheValues],
     slots: dict[str, Tensor],
     pool: Tensor | None,
     global_write_floor: Tensor,
 ) -> tuple[Tensor, Tensor | None]:
-    """One layer's compressor and indexer on one device (see ``_index``).
-
-    ``rows`` crosses the mesh boundary as its five tensors -- a plain
-    dataclass is a tree leaf, so it would pass through unsharded.
-    """
     row_data = RaggedRows(*rows)
+    qr_in = qr if qr_scales is None else Mxfp8Rows(qr, qr_scales)
     if group == "reindex_r1":
         # No compressor here: the layer rescoring the candidate source's
         # blocks reads its index leaf and its compressed leaf.
         assert pool is not None
         return indexer(
             x,
-            qr,
+            qr_in,
             None,
             None,
             row_data,
@@ -357,7 +366,7 @@ def _select(
         )
         return indexer(
             x,
-            qr,
+            qr_in,
             latent,
             valid,
             row_data,
@@ -369,7 +378,7 @@ def _select(
     latent, valid = compressor(raw, row_data)
     return indexer(
         x,
-        qr,
+        qr_in,
         latent,
         valid,
         row_data,
@@ -387,8 +396,8 @@ class DecoderLayer(Module[..., Any]):
         info: This layer's resolved facts.
         mesh: The tensor-parallel mesh.
         rope: The checkpoint-wide RoPE settings.
-        max_position: The context bound; sizes the indexer's RoPE table
-            and entry cap.
+        max_position: The position capacity -- the context bound plus the
+            speculative slack; sizes the indexer's RoPE table and entry cap.
         candidate_block_size: The candidate pool's block size in entries.
         engram: The layer's Engram module on ``engram_layer_ids``.
         data_parallel: Whether the mesh axis is a data-parallel axis (the
@@ -487,23 +496,43 @@ class DecoderLayer(Module[..., Any]):
             self.engram = engram
 
     def _attention(
-        self, x: Tensor, s: SiteInputs
+        self, x: Tensor, s: SiteInputs, x_rows: Mxfp8Rows | None = None
     ) -> tuple[Tensor, list[Tensor]]:
-        """Selects compressed entries where this layer does, then attends."""
+        """Select compressed entries when needed, then run attention."""
         attn = self.attn
         group = self.group
         comp_indices: Tensor | None = None
         produced: list[Tensor] = []
         plan = self.plan
-        projected: tuple[Tensor, Tensor] | None = None
-        if group in ("full_r2", "full_r1_cand", "reindex_r1"):
-            # One stacked projection for the whole site: the q-lora slice
-            # feeds the indexer's qr here, and the exact pair passes to
-            # ``attn`` below, so the layer traces exactly one project
-            # call -- the attention's own q path never re-projects.
-            projected = attn.project(x)
-            qr = attn.q_norm(projected[0])
-            comp_indices, pool = self._index(x, qr, s)
+        selects = group in ("full_r2", "full_r1_cand", "reindex_r1")
+        # One stacked projection for the whole site: the query path and,
+        # where this layer selects, the indexer's qr both read it, so the
+        # layer traces exactly one project call.
+        projected = attn.project(x, x_rows)
+        query: Tensor | None = None
+        qr: Tensor | None = None
+        qr_scales: Tensor | None = None
+        if attn.fuses_query(projected):
+            # The query path runs ahead of the indexer so that its
+            # quantized q-lora serves both ``wq_b`` projections.
+            args = (
+                attn,
+                projected,
+                s.kv["swa"],
+                _row_tensors(s.rows),
+                s.slots["swa"],
+            )
+            if self.data_parallel:
+                qr, qr_scales, query = _on_each_device(
+                    self.mesh, _fused_query, *args, mapping=x.mapping
+                )
+            else:
+                qr, qr_scales, query = _fused_query(*args)
+        elif selects:
+            qr = attn.q_norm(attn.split_projection(projected)[0])
+        if selects:
+            assert qr is not None
+            comp_indices, pool = self._index(x, qr, qr_scales, s)
             produced = [comp_indices]
             if pool is not None:
                 produced.append(pool)
@@ -521,17 +550,12 @@ class DecoderLayer(Module[..., Any]):
                 attn,
                 x,
                 (s.kv["swa"], s.kv[plan.comp]),
-                (
-                    s.rows.offsets,
-                    s.rows.bid,
-                    s.rows.local,
-                    s.rows.positions,
-                    s.rows.lengths,
-                ),
+                _row_tensors(s.rows),
                 (s.slots["swa"], s.slots[plan.comp]),
                 s.swa_begin,
                 comp_indices,
                 projected,
+                query,
                 mapping=x.mapping,
             )
         else:
@@ -543,13 +567,14 @@ class DecoderLayer(Module[..., Any]):
                 s.swa_begin,
                 comp_indices,
                 projected=projected,
+                query=query,
             )
         return y, produced
 
     def _index(
-        self, x: Tensor, qr: Tensor, s: SiteInputs
+        self, x: Tensor, qr: Tensor, qr_scales: Tensor | None, s: SiteInputs
     ) -> tuple[Tensor, Tensor | None]:
-        """Compressor and indexer: store the new entries, pick the top-k."""
+        """Store compressed entries and select the top-k."""
         attn = self.attn
         kv, slots = s.kv, s.slots
         # The modules a group does not own are ``None`` (not tensors, so
@@ -563,13 +588,8 @@ class DecoderLayer(Module[..., Any]):
             attn.indexer,
             x,
             qr,
-            (
-                s.rows.offsets,
-                s.rows.bid,
-                s.rows.local,
-                s.rows.positions,
-                s.rows.lengths,
-            ),
+            qr_scales,
+            _row_tensors(s.rows),
             kv,
             slots,
             s.routed,
@@ -593,29 +613,8 @@ class DecoderLayer(Module[..., Any]):
         routed: list[Tensor],
         comm_buffers: EPCommBuffers | None = None,
         total_rows: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, list[Tensor]]:
-        """One layer: the subgraph body its block group shares.
-
-        ``stream`` is the stream *before* the previous layer's feed-forward
-        write-back, which ``y`` (that output), ``post`` and ``comb`` (its
-        row-major ``[rows, hc_mult**2]`` gates) describe;
-        :func:`~.mhc.mhc_identity_writeback` stands in where the stream is
-        already written back. ``kv`` and ``slots`` follow
-        ``layer_plan(...).leaves``; every index is a graph operand, never a
-        constant baked into the shared body. ``routed`` holds the selection
-        a reuse or reindex layer reads and is empty elsewhere.
-        ``comm_buffers`` and ``total_rows`` reach the EP feed-forward (the
-        P2P dispatch/combine buffers and the host-resident batch row count)
-        and are ``None`` on the tensor-parallel path.
-
-        Returns:
-            ``(stream, pre, y, post, comb, produced)``: the stream before
-            this layer's feed-forward write-back, the feed-forward's
-            ``pre`` (the next layer's carried ``pre_mix``), the
-            feed-forward output and its ``post`` and ``comb``, and what a
-            source layer hands down -- its selection, plus the candidate
-            pool at the candidate source.
-        """
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, list[Tensor]]:
+        """Run one shared layer body and return its stream, gates, and selections."""
         names = self.plan.leaves
         s = SiteInputs(
             rows,
@@ -629,7 +628,7 @@ class DecoderLayer(Module[..., Any]):
         # Write the previous layer's feed-forward output back onto the
         # stream and start the attention site, collapsing with the
         # carried ``pre_mix``.
-        stream, post, comb, pre, x = mhc_fused_post_pre(
+        entry, post, comb, pre, x, x_rows = mhc_fused_post_pre(
             stream,
             y,
             post,
@@ -640,12 +639,13 @@ class DecoderLayer(Module[..., Any]):
             self.hc_attn_base,
             self.attn_norm,
             norm_eps=self.norm_eps,
+            mxfp8=True,
         )
-        y, produced = self._attention(x, s)
+        y, produced = self._attention(x, s, x_rows)
         # Write the attention output back and start the feed-forward
         # site, collapsing with the attention site's ``pre``.
-        stream, post, comb, pre, x = mhc_fused_post_pre(
-            stream,
+        stream, post, comb, pre, x, x_rows = mhc_fused_post_pre(
+            entry,
             y,
             post,
             comb,
@@ -655,9 +655,10 @@ class DecoderLayer(Module[..., Any]):
             self.hc_ffn_base,
             self.ffn_norm,
             norm_eps=self.norm_eps,
+            mxfp8=True,
         )
-        y = self.ffn(x, s.image_token_mask, comm_buffers, total_rows)
-        return stream, pre, y, post, comb, produced
+        y = self.ffn(x, s.image_token_mask, comm_buffers, total_rows, x_rows)
+        return stream, pre, y, post, comb, entry, produced
 
 
 def slot_constants(plan: LayerPlan) -> list[Tensor]:

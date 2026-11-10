@@ -109,7 +109,7 @@ namespace {
 #define ASYNCRT_PRINT_WORKER_STATS(X)
 #endif
 /// Tracks the overall shutdown progress for the work queue.
-enum WorkQueueState : uint8_t { kReady = 0, kShuttingDown = 1, kShutdown = 2 };
+enum WorkQueueState : uint8_t { kReady = 0, kShutdown = 2 };
 enum WorkType : uint8_t { kLocal = 0, kAffinity = 1, kGlobal = 2 };
 
 /// Provides the state needed to synchronize the workers in the thread pool.

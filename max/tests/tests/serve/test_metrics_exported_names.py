@@ -72,6 +72,21 @@ _ADMISSION_MEASUREMENTS: tuple[tuple[str, float, dict[str, str]], ...] = (
         125.0,
         {"prompt_length": "8k-32k"},
     ),
+    # The lookup answers the block manager drops, which share the prefix.
+    (
+        "max.cache.connector_lookup_drops",
+        1,
+        {"reason": "shrink_cap", "answer": "offered", "hinted": "false"},
+    ),
+    (
+        "max.cache.connector_lookup_dropped_blocks",
+        4,
+        {"reason": "shrink_cap", "hinted": "false"},
+    ),
+    ("max.cache.connector_lookup_shrink_cap_blocks", 5, {}),
+    ("max.cache.connector_lookup_shrink_depth", 1, {}),
+    ("max.cache.connector_lookup_reasks_per_request", 2, {}),
+    ("max.cache.connector_lookup_hand_backs_per_request", 1, {}),
 )
 
 # Exactly what a scrape must show. Every name published in
@@ -98,6 +113,12 @@ _EXPECTED_ADMISSION_LINES = frozenset(
         "max_cache_connector_cordon_passes",
         "max_cache_connector_lookup_admission_stops_total",
         "max_time_to_first_token_by_prompt_length_milliseconds",
+        "max_cache_connector_lookup_drops_total",
+        "max_cache_connector_lookup_dropped_blocks_total",
+        "max_cache_connector_lookup_shrink_cap_blocks_total",
+        "max_cache_connector_lookup_shrink_depth",
+        "max_cache_connector_lookup_reasks_per_request",
+        "max_cache_connector_lookup_hand_backs_per_request",
     }
 )
 

@@ -1,0 +1,264 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "k3_dspark_reference",
+    testonly = True,
+    srcs = [
+        "torch_reference.py",
+    ],
+    # safetensors.torch imports numpy in its save/load path without the wheel
+    # declaring it.
+    ignore_extra_deps = [requirement("numpy")],
+    imports = ["."],
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "dspark_test_data",
+    testonly = True,
+    srcs = ["_dspark_test_data.py"],
+    imports = ["."],
+)
+
+modular_py_library(
+    name = "dspark_test_utils",
+    testonly = True,
+    srcs = ["_dspark_test_utils.py"],
+    imports = ["."],
+    deps = [
+        ":dspark_test_data",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+modular_py_test(
+    name = "config_tests_cpu",
+    srcs = ["test_config.py"],
+    deps = [
+        ":dspark_test_data",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/support",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "weight_adapters_tests_cpu",
+    srcs = ["test_weight_adapters.py"],
+    deps = [
+        ":dspark_test_data",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+    ],
+)
+
+modular_py_test(
+    name = "arch_registration_tests_cpu",
+    srcs = ["test_arch_registration.py"],
+    ignore_extra_deps = [
+        # The architecture the pairing resolves to is imported by the
+        # registry, not the test.
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_eager_py_test(
+    name = "reference_numerics_tests_gpu",
+    size = "enormous",
+    srcs = [
+        "test_reference_numerics.py",
+    ],
+    args = [
+        "-k",
+        "'not tp2 and (anchor100 and fp8_fold or fp8_dropped_store or far)'",
+    ],
+    data = [
+        "testdata/golden_reference.safetensors",
+        "testdata/golden_reference_config.json",
+    ],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    # MI355-only: the tiny fixture's 4 MLA heads are not bound in the
+    # NVIDIA SM100 dispatch table (compute_mla_dispatch_scalars_runtime).
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":dspark_test_data",
+        ":dspark_test_utils",
+        ":k3_dspark_reference",
+        "//max/python/max/nn",
+        "//max/tests/integration/architectures/kimi_k3_modulev3:tp_model_test_utils",
+        "//max/tests/integration/architectures/kimi_k3_modulev3/tools:make_tiny_drafter_lib",
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+# The one-GPU cases the presubmit target above leaves out: the bf16
+# prefill arm at both anchors, the fp8 fold at the near anchor, the
+# three RED controls beyond the dropped-store one, and the near golden
+# replay -- every case of the file minus the presubmit selection. A
+# postsubmit job runs this sibling alongside the untagged presubmit
+# target, so every one-GPU case runs exactly once.
+modular_eager_py_test(
+    name = "reference_numerics_rest_postsubmit_tests_gpu",
+    size = "enormous",
+    srcs = [
+        "test_reference_numerics.py",
+    ],
+    args = [
+        "-k",
+        "'not tp2 and not (anchor100 and fp8_fold or fp8_dropped_store or far)'",
+    ],
+    data = [
+        "testdata/golden_reference.safetensors",
+        "testdata/golden_reference_config.json",
+    ],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-memory": "16",
+    },
+    # MI355-only, like the presubmit target above.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":dspark_test_data",
+        ":dspark_test_utils",
+        ":k3_dspark_reference",
+        "//max/python/max/nn",
+        "//max/tests/integration/architectures/kimi_k3_modulev3:tp_model_test_utils",
+        "//max/tests/integration/architectures/kimi_k3_modulev3/tools:make_tiny_drafter_lib",
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+# The drafter against the same fp32 reference across a TP2 mesh: the
+# reference oracle is stronger than a TP1-vs-TP2 self-comparison. The
+# one spec-path TP2 suite kept in presubmit (~183 s on two MI355s, and
+# MI355-only): it is the cheapest TP2 target measured, and the only
+# one graded against an absolute reference. It smokes the drafter's
+# TP2 sharding, not the target model's spec path, so B200 presubmit
+# runs no spec-path TP2 at all; the taps/KDA/verify8 TP2
+# self-comparisons all run postsubmit.
+modular_eager_py_test(
+    name = "reference_numerics_tp2_tests_2gpu",
+    size = "enormous",
+    srcs = [
+        "test_reference_numerics.py",
+    ],
+    args = [
+        "-k",
+        "tp2",
+    ],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "24",
+    },
+    # MI355-only: the tiny fixture's 2 MLA heads are not bound in the
+    # NVIDIA SM100 dispatch table (compute_mla_dispatch_scalars_runtime).
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        requirement("safetensors"),
+        ":dspark_test_data",
+        ":dspark_test_utils",
+        ":k3_dspark_reference",
+        "//max/tests/integration/architectures/kimi_k3_modulev3:tp_model_test_utils",
+        "//max/tests/integration/architectures/kimi_k3_modulev3/tools:make_tiny_drafter_lib",
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)

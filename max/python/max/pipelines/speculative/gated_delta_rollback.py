@@ -22,14 +22,17 @@ roll back by different mechanisms:
   records to the live pool in one launch per device.
 - **Conv.** The window is the last ``kernel_size - 1`` raw inputs, so the
   verify leaves it unwritten and :func:`replay_conv_pools` re-runs the conv
-  kernel over the accepted rows of the copy the verify keeps of its input.
+  kernel over the accepted rows of the copy the verify keeps of its input,
+  one verify-window (``K + 1``) slot per row.
   Every op feeding it is causal or pointwise, so those rows are bit-identical
   to what a forward over the accepted prefix alone would have produced.
 
 A window with no drafts has nothing to roll back, so at a verify width of zero
 the verify's forward lands both leaves on the live pools and every rollback op
-launches nothing. A window with drafts is ``K + 1`` tokens, which the ring is
-sized to hold.
+launches nothing. A decode's window is ``K + 1`` tokens; a prompt mixed
+into the batch runs longer than the verify window, and the verify commits
+both leaves of such a row itself at its last real token, so it neither
+replays nor folds anything and takes no slot of the copy.
 
 Every pool is addressed as one buffer per leaf plus a
 ``[num_layers, batch_size]`` tensor of the rows each layer occupies, and the
@@ -43,7 +46,7 @@ from typing import Protocol
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_verify_fwd,
     gated_delta_state_fold,
 )
@@ -56,6 +59,8 @@ __all__ = [
     "accepted_row_plan",
     "fold_state_pools",
     "replay_conv_pools",
+    "ring_accepted_lengths",
+    "window_row_plan",
 ]
 
 
@@ -77,6 +82,14 @@ class ConvReplayInputs(Protocol):
         ...
 
 
+def _window_lengths(merged_offsets: TensorValue) -> TensorValue:
+    """Returns the ``[batch]`` row lengths of the verified sequence."""
+    offsets = merged_offsets.cast(DType.int64)
+    return ops.rebind(offsets[1:], ["batch_size"]) - ops.rebind(
+        offsets[:-1], ["batch_size"]
+    )
+
+
 def accepted_lengths(
     merged_offsets: TensorValue,
     num_accepted: TensorValue,
@@ -95,12 +108,43 @@ def accepted_lengths(
     Returns:
         ``[batch]`` int64 accepted row counts.
     """
-    offsets = merged_offsets.cast(DType.int64)
     return (
-        ops.rebind(offsets[1:], ["batch_size"])
-        - ops.rebind(offsets[:-1], ["batch_size"])
+        _window_lengths(merged_offsets)
         - num_draft_tokens
         + num_accepted.cast(DType.int64).rebind(["batch_size"])
+    )
+
+
+def ring_accepted_lengths(
+    window_lengths: TensorValue,
+    num_accepted: TensorValue,
+    num_draft_tokens: TensorValue,
+) -> TensorValue:
+    """Returns :func:`accepted_lengths`, zero for a row the verify committed.
+
+    A row longer than the verify window was committed by the verify itself
+    at its last real token, so the rollback neither replays nor folds any
+    of it.
+
+    Args:
+        window_lengths: ``[batch]`` row lengths of the verified sequence,
+            from :func:`_window_lengths`.
+        num_accepted: ``[batch]`` accepted draft tokens per request.
+        num_draft_tokens: Scalar ``K``, zero on a prefill.
+
+    Returns:
+        ``[batch]`` int64 row counts the rollback applies.
+    """
+    # ``window_lengths - 1 > K`` is ``window_lengths > K + 1`` without a
+    # ``[1]``-sized add, which would launch its own kernel.
+    return ops.where(
+        window_lengths - 1 > num_draft_tokens,
+        ops.constant(0, DType.int64, device=window_lengths.device).broadcast_to(
+            ["batch_size"]
+        ),
+        window_lengths
+        - num_draft_tokens
+        + num_accepted.cast(DType.int64).rebind(["batch_size"]),
     )
 
 
@@ -117,8 +161,9 @@ def accepted_row_plan(
 
     A row's accepted length is its merged length minus the drafts it did not
     accept, which is the prompt length during prefill (where there are no
-    drafts) and ``1 + num_accepted`` during decode -- one expression, no phase
-    branch.
+    drafts) and ``1 + num_accepted`` during decode. One expression, no phase
+    branch. Rows are captured row for row; a row longer than the verify
+    window replays through :func:`window_row_plan`.
 
     The gather is deliberately *not* trimmed to the accepted total: that
     length is only known on the device, and materializing it as a shape would
@@ -143,7 +188,60 @@ def accepted_row_plan(
     """
     starts = ops.rebind(merged_offsets.cast(DType.int64)[:-1], ["batch_size"])
     accepted = accepted_lengths(merged_offsets, num_accepted, num_draft_tokens)
+    return _row_plan(
+        starts,
+        None,
+        accepted,
+        total_rows,
+        plan_rows if plan_rows is not None else total_rows,
+        device,
+    )
 
+
+def window_row_plan(
+    merged_offsets: TensorValue,
+    num_accepted: TensorValue,
+    num_draft_tokens: TensorValue,
+    total_rows: Dim,
+    device: DeviceRef,
+) -> tuple[TensorValue, TensorValue]:
+    """Plans the replay over the verify's per-row window copy.
+
+    The verify copies each row of at most ``K + 1`` tokens into one
+    ``K + 1`` slot, so request ``r``'s rows start at ``r * (K + 1)`` and
+    a row longer than the window, which the verify committed itself,
+    replays nothing (:func:`ring_accepted_lengths`).
+
+    Args:
+        merged_offsets: ``[batch + 1]`` offsets of the verified sequence.
+        num_accepted: ``[batch]`` accepted draft tokens per request.
+        num_draft_tokens: Scalar ``K`` on ``device``.
+        total_rows: Row count of the window copy the replay gathers from.
+        device: Device the plan is built on.
+
+    Returns:
+        ``(row_indices, replay_offsets)``: which row of the window copy
+        feeds each replay row, and the ragged offsets over them.
+    """
+    accepted = ring_accepted_lengths(
+        _window_lengths(merged_offsets),
+        num_accepted,
+        num_draft_tokens,
+    )
+    return _row_plan(
+        None, num_draft_tokens, accepted, total_rows, total_rows, device
+    )
+
+
+def _row_plan(
+    starts: TensorValue | None,
+    stride: TensorValue | None,
+    accepted: TensorValue,
+    total_rows: Dim,
+    out_rows: Dim,
+    device: DeviceRef,
+) -> tuple[TensorValue, TensorValue]:
+    """Returns the replay rows of ``accepted`` and their ragged offsets."""
     replay_offsets = ops.concat(
         [
             ops.constant(0, DType.int64, device=device).reshape([1]),
@@ -151,38 +249,77 @@ def accepted_row_plan(
         ],
         axis=0,
     )
+    return (
+        _ragged_source_rows(
+            starts, stride, replay_offsets, total_rows, out_rows, device
+        ),
+        replay_offsets,
+    )
 
-    if plan_rows is None:
-        plan_rows = total_rows
-    # A replay row's request is the number of request ends at or before it.
-    # Ends at or past ``plan_rows`` land in an extra sink position.
+
+def _ragged_source_rows(
+    starts: TensorValue | None,
+    stride: TensorValue | None,
+    offsets: TensorValue,
+    total_rows: Dim,
+    out_rows: Dim,
+    device: DeviceRef,
+) -> TensorValue:
+    """Returns the source row of each of ``out_rows`` ragged output rows.
+
+    Request ``r`` owns output rows ``[offsets[r], offsets[r + 1])`` and reads
+    them from source rows ``starts[r]`` on. Output rows past
+    ``offsets[-1]`` repeat a clamped row; callers stop at that total.
+
+    Args:
+        starts: ``[batch_size]`` int64 first source row of each request.
+        offsets: ``[batch_size + 1]`` int64 ragged offsets over the output.
+        total_rows: Source row bound of the gather.
+        out_rows: Output row count.
+        device: Device the indices are built on.
+        stride: When given, each request's rows are one ``stride + 1``
+            slot apart, so request ``r`` starts at ``r * (stride + 1)``
+            and ``starts`` must be ``None``.
+
+    Returns:
+        ``[out_rows]`` int64 source rows.
+    """
+    assert (starts is None) != (stride is None), (
+        "exactly one of starts and stride must be given"
+    )
+    # An output row's request is the number of request ends at or before it.
+    # Ends at or past ``out_rows`` land in an extra sink position.
     pos = ops.range(
         start=0,
-        stop=Dim(plan_rows) + 1,
-        out_dim=Dim(plan_rows) + 1,
+        stop=Dim(out_rows) + 1,
+        out_dim=Dim(out_rows) + 1,
         device=device,
         dtype=DType.int64,
     )
-    out_pos = ops.rebind(pos[:-1], [plan_rows])
-    ends = ops.min(replay_offsets[1:], pos[-1])
+    out_pos = ops.rebind(pos[:-1], [out_rows])
+    ends = ops.min(offsets[1:], pos[-1])
     ones = ops.broadcast_to(
         ops.constant(1, DType.int64, device=device), ends.shape
     )
     ends_per_pos = ops.scatter_add(pos * 0, ones, ends, axis=0)
     last_row = _shape_to_scalar(Dim("batch_size"), device) - 1
     row_of_pos = ops.min(
-        ops.rebind(ops.cumsum(ends_per_pos, axis=0)[:-1], [plan_rows]),
+        ops.rebind(ops.cumsum(ends_per_pos, axis=0)[:-1], [out_rows]),
         last_row,
     )
-    row_indices = ops.gather(starts, row_of_pos, axis=0) + (
-        out_pos - ops.gather(replay_offsets[:-1], row_of_pos, axis=0)
+    if stride is not None:
+        # ``row_of_pos * K + row_of_pos`` is ``row_of_pos * (K + 1)`` with
+        # the + 1 folded in, so no ``[1]``-sized add breaks the fusion.
+        row_base = row_of_pos * stride + row_of_pos
+    else:
+        assert starts is not None
+        row_base = ops.gather(starts, row_of_pos, axis=0)
+    row_indices = row_base + (
+        out_pos - ops.gather(offsets[:-1], row_of_pos, axis=0)
     )
-    # Rows past the accepted total are never read; clamp them so the gather
-    # itself stays in bounds.
-    return (
-        ops.min(row_indices, _shape_to_scalar(total_rows, device) - 1),
-        replay_offsets,
-    )
+    # Rows past the total are never read; clamp them so the gather itself
+    # stays in bounds.
+    return ops.min(row_indices, _shape_to_scalar(total_rows, device) - 1)
 
 
 def replay_conv_pools(
@@ -245,7 +382,9 @@ def fold_state_pools(
     recurrent_row_ids: Sequence[TensorValue],
     ring_pools: Sequence[BufferValue],
     ring_row_ids: Sequence[TensorValue],
-    fold_accepted: TensorValue,
+    merged_offsets: TensorValue,
+    num_accepted: TensorValue,
+    num_draft_tokens: TensorValue,
     signal_buffers: Sequence[BufferValue],
     verify_width: TensorValue,
 ) -> None:
@@ -254,17 +393,27 @@ def fold_state_pools(
     One launch per device covers every layer, and none at a verify width of
     zero.
 
+    A row longer than the verify window was committed by the verify itself,
+    so its records were never written and it folds nothing
+    (:func:`ring_accepted_lengths`).
+
     Args:
         live_recurrent_pools: Per-device recurrent pool, still pre-verify.
         recurrent_row_ids: Per-device ``[num_layers, batch_size]`` state rows.
         ring_pools: Per-device ring pool.
         ring_row_ids: Per-device ``[num_layers, batch_size]`` ring rows.
-        fold_accepted: ``[batch]`` records to fold.
-        signal_buffers: Used only to place ``fold_accepted`` on each device.
+        merged_offsets: ``[batch + 1]`` offsets of the verified sequence.
+        num_accepted: ``[batch]`` accepted draft tokens per request.
+        num_draft_tokens: Scalar ``K`` on the batch's device.
+        signal_buffers: Used only to place the fold counts on each device.
         verify_width: The verify's width operand.
     """
     n_devs = len(live_recurrent_pools)
-    fold_accepted = fold_accepted.cast(DType.uint32)
+    fold_accepted = ring_accepted_lengths(
+        _window_lengths(merged_offsets),
+        num_accepted,
+        num_draft_tokens,
+    ).cast(DType.uint32)
     accepted_per_dev = (
         ops.distributed_broadcast(fold_accepted, list(signal_buffers))
         if n_devs > 1

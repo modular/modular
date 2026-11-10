@@ -40,7 +40,7 @@ from max.graph import DeviceRef, TensorValue, ops
 
 @functools.lru_cache(maxsize=8)
 def _hadamard_matrix(dim: int) -> np.ndarray:
-    """Orthonormal Sylvester Hadamard matrix, ``[dim, dim]``.
+    """Unnormalized (``±1``) Sylvester Hadamard matrix, ``[dim, dim]``.
 
     Sylvester's construction needs a power of two, which every width this is
     used at satisfies (``index_head_dim`` is 128).
@@ -52,7 +52,7 @@ def _hadamard_matrix(dim: int) -> np.ndarray:
     h = np.ones((1, 1), dtype=np.float32)
     while h.shape[0] < dim:
         h = np.block([[h, h], [h, -h]])
-    return (h * dim**-0.5).astype(np.float32)
+    return h
 
 
 def hadamard_rotate(x: TensorValue) -> TensorValue:
@@ -63,5 +63,10 @@ def hadamard_rotate(x: TensorValue) -> TensorValue:
         DType.float32,
         x.device if isinstance(x.device, DeviceRef) else DeviceRef.CPU(),
     )
-    rotated = ops.matmul(ops.cast(x, DType.float32), matrix)
+    # Folding the leading axes keeps this on the 2D GEMM path; a rank>2
+    # matmul against the 2D constant lowers to the naive batched kernel. The
+    # GEMM may run fp32 as TF32, but the ``±1`` entries and bf16 inputs are
+    # exact in TF32, so scaling after it keeps the fp32 result.
+    rows = ops.reshape(ops.cast(x, DType.float32), [-1, dim])
+    rotated = ops.reshape(ops.matmul(rows, matrix), x.shape) * dim**-0.5
     return ops.cast(rotated, x.dtype)

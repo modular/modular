@@ -18,7 +18,7 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.idefics3.vision_model.attention import (
     Idefics3VisionAttention,
@@ -56,7 +56,6 @@ def create_config_object(config_dict: dict) -> SimpleNamespace:  # type: ignore
 def create_idefics3_attention_weights(
     hidden_size: int,
     dtype: torch.dtype = torch.bfloat16,
-    device: str = "cuda",
 ) -> dict[str, torch.Tensor]:
     """Create shared attention weights and biases for both PyTorch and MAX models."""
     torch.manual_seed(42)
@@ -66,33 +65,25 @@ def create_idefics3_attention_weights(
 
     # Create separate Q, K, V weights using HuggingFace parameter names.
     weights["q_proj.weight"] = std * torch.randn(
-        hidden_size, hidden_size, dtype=dtype, device=device
+        hidden_size, hidden_size, dtype=dtype
     )
     weights["k_proj.weight"] = std * torch.randn(
-        hidden_size, hidden_size, dtype=dtype, device=device
+        hidden_size, hidden_size, dtype=dtype
     )
     weights["v_proj.weight"] = std * torch.randn(
-        hidden_size, hidden_size, dtype=dtype, device=device
+        hidden_size, hidden_size, dtype=dtype
     )
 
     # Create separate Q, K, V biases.
-    weights["q_proj.bias"] = std * torch.randn(
-        hidden_size, dtype=dtype, device=device
-    )
-    weights["k_proj.bias"] = std * torch.randn(
-        hidden_size, dtype=dtype, device=device
-    )
-    weights["v_proj.bias"] = std * torch.randn(
-        hidden_size, dtype=dtype, device=device
-    )
+    weights["q_proj.bias"] = std * torch.randn(hidden_size, dtype=dtype)
+    weights["k_proj.bias"] = std * torch.randn(hidden_size, dtype=dtype)
+    weights["v_proj.bias"] = std * torch.randn(hidden_size, dtype=dtype)
 
     # Output projection weight and bias.
     weights["out_proj.weight"] = std * torch.randn(
-        hidden_size, hidden_size, dtype=dtype, device=device
+        hidden_size, hidden_size, dtype=dtype
     )
-    weights["out_proj.bias"] = std * torch.randn(
-        hidden_size, dtype=dtype, device=device
-    )
+    weights["out_proj.bias"] = std * torch.randn(hidden_size, dtype=dtype)
 
     return weights
 
@@ -124,15 +115,14 @@ def generate_pytorch_outputs(
     return torch_attention(input_tensor, output_attentions=output_attentions)
 
 
-def generate_max_outputs(
+def load_max_attention(
     config: dict,  # type: ignore
     attention_weights: dict[str, torch.Tensor],
-    input_tensor: torch.Tensor,
+    input_shape: tuple[int, int, int],
     dtype: DType = DType.bfloat16,
-) -> torch.Tensor:
-    """Generate outputs using MAX Idefics3VisionAttention."""
-    cuda = Accelerator()
-    session = InferenceSession(devices=[cuda])
+) -> Model:
+    """Compiles the MAX Idefics3VisionAttention."""
+    session = InferenceSession(devices=[Accelerator()])
 
     attention = Idefics3VisionAttention(
         hidden_size=config["hidden_size"],
@@ -148,7 +138,7 @@ def generate_max_outputs(
 
     attention.load_state_dict(state_dict)
 
-    batch_size, seq_len, hidden_size = input_tensor.shape
+    batch_size, seq_len, hidden_size = input_shape
 
     def build_attention_model() -> Graph:
         with Graph(
@@ -167,12 +157,13 @@ def generate_max_outputs(
         return graph
 
     graph = build_attention_model()
-    model = session.load(graph, weights_registry=attention.state_dict())
+    return session.load(graph, weights_registry=attention.state_dict())
 
-    x_tensor = Buffer.from_dlpack(input_tensor).to(cuda)
-    max_output = model.execute(x_tensor)[0]
 
-    return max_output
+def generate_max_outputs(model: Model, input_tensor: torch.Tensor) -> Buffer:
+    """Generate outputs using MAX Idefics3VisionAttention."""
+    x_tensor = Buffer.from_dlpack(input_tensor).to(model.input_devices[0])
+    return model.execute(x_tensor)[0]
 
 
 @pytest.mark.parametrize(
@@ -194,14 +185,20 @@ def test_idefics3_attention_basic(
 
     config = IDEFICS3_VISION_CONFIG
     hidden_size = config["hidden_size"]  # 1152
+    assert isinstance(hidden_size, int)
 
     torch_dtype = torch.bfloat16 if dtype == DType.bfloat16 else torch.float32
 
     # Create shared weights
     attention_weights = create_idefics3_attention_weights(
-        hidden_size=hidden_size,  # type: ignore[arg-type]
+        hidden_size=hidden_size,
         dtype=torch_dtype,
-        device="cuda",
+    )
+    model = load_max_attention(
+        config=config,
+        attention_weights=attention_weights,
+        input_shape=(batch_size, seq_len, hidden_size),
+        dtype=dtype,
     )
 
     # Create input tensor
@@ -213,17 +210,12 @@ def test_idefics3_attention_basic(
     # Generate outputs
     torch_output, _ = generate_pytorch_outputs(
         config=config,
-        attention_weights=attention_weights,
+        attention_weights={k: v.cuda() for k, v in attention_weights.items()},
         input_tensor=input_tensor,
         output_attentions=False,
     )
 
-    max_output = generate_max_outputs(
-        config=config,
-        attention_weights=attention_weights,
-        input_tensor=input_tensor,
-        dtype=dtype,
-    )
+    max_output = generate_max_outputs(model, input_tensor)
 
     # Compare outputs
     max_output_torch = from_dlpack(max_output)

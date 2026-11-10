@@ -282,7 +282,7 @@ def test_from_to_bits_roundtrip_property_test() raises:
     var prop_test = PropTest()
 
     comptime for dtype, size in product(dtypes, sizes):
-        prop_test.test[properties[dtype, size]](SIMD[dtype, size].strategy())
+        prop_test.test(SIMD[dtype, size].strategy(), properties[dtype, size])
 
 
 def test_simd_variadic() raises:
@@ -1940,6 +1940,28 @@ def test_powf_large_whole_exponent() raises:
     assert_equal(String(Float64(neg_zero) ** Float64(4294967296.0)), "0.0")
     assert_equal(Float64(neg_zero) ** Float64(-4294967297.0), -inf)
     assert_equal(Float64(neg_zero) ** Float64(-4294967296.0), inf)
+
+
+def test_pow_large_integer_exponent() raises:
+    # Integer exponents too large for an Int32, and each type's `MIN`.
+    comptime inf = FloatLiteral.infinity
+    assert_equal(Float64(2.0) ** Int64(4294967296), inf)
+    assert_equal(Float64(0.5) ** Int64(4294967296), 0.0)
+    assert_equal(Float64(-2.0) ** Int64(4294967297), -inf)
+    assert_equal(Float64(2.0) ** Int64(-4294967295), 0.0)
+    assert_equal(Float64(2.0) ** Int64(-2147483649), 0.0)
+    assert_equal(Float64(2.0) ** Int32.MIN, 0.0)
+    assert_equal(Float64(2.0) ** Int64.MIN, 0.0)
+    assert_equal(Float64(-1.0) ** Int64.MIN, 1.0)
+    assert_equal(Float64(-1.0) ** Int64.MAX, -1.0)
+    assert_equal(Float64(1.0) ** UInt64.MAX, 1.0)
+    assert_equal(Float64(2.0) ** Int8.MIN, 2.938735877055719e-39)
+
+    # Integer results wrap modulo 2^64, as for any other `Int64` product.
+    assert_equal(Int64(3) ** Int64(4294967296), 2491309678558969857)
+    assert_equal(Int64(7) ** Int64(4294967297), -5799782102597631993)
+    assert_equal(Int64(-3) ** Int64.MAX, 6148914691236517205)
+    assert_equal(UInt64(3) ** UInt64.MAX, 12297829382473034411)
 
 
 def test_rpow() raises:

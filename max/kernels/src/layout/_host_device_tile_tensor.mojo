@@ -15,7 +15,7 @@ from std.memory import Allocation, Layout, dealloc
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 
-from .tile_layout import TensorLayout
+from .layout import TensorLayout
 from .tile_tensor import TileTensor
 
 
@@ -34,7 +34,7 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
     var _layout: Self.LayoutType
     var _host: Allocation[Scalar[Self.dtype]]
     var _device: Optional[DeviceBuffer[Self.dtype]]
-    var _ctx: Optional[DeviceContext]
+    var _ctx: Optional[DeviceContext[]]
 
     def __init__(out self, layout: Self.LayoutType):
         """Allocates host memory only.
@@ -59,7 +59,7 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
         self._layout = layout
         self._host = alloc(Layout[Scalar[Self.dtype]](length=size))
         self._device = device
-        self._ctx = ctx
+        self._ctx = ctx.assert_default_target()
 
     def __deinit__(deinit self):
         dealloc(self._host^)
@@ -88,15 +88,16 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
         Raises:
             If the tensor was created without a `DeviceContext`.
         """
-        if not self._device:
-            raise Error("HostDeviceTileTensor has no device buffer")
-        return TileTensor[Self.dtype, Self.LayoutType, origin_of(self)](
-            ptr=self._device.value()
-            .unsafe_ptr()
-            .unsafe_mut_cast[origin_of(self).mut]()
-            .unsafe_origin_cast[origin_of(self)](),
-            layout=self._layout,
-        )
+        match self._device:
+            case .Some(device):
+                return TileTensor[Self.dtype, Self.LayoutType, origin_of(self)](
+                    ptr=device.unsafe_ptr()
+                    .unsafe_mut_cast[origin_of(self).mut]()
+                    .unsafe_origin_cast[origin_of(self)](),
+                    layout=self._layout,
+                )
+            case .None:
+                raise Error("HostDeviceTileTensor has no device buffer")
 
     def to_device(self) raises:
         """Copies host memory to the device buffer and waits for the copy.

@@ -39,7 +39,7 @@ from .value_types import (
 
 VISION_CONFIG_FILE_NAME = "vision_config.json"
 
-# TODO(DISTINF-523): The resize rules are a closed set of three, mirrored in
+# TODO(DISTINF-523): The resize rules are a closed set, mirrored in
 # Mach's `multimodal::ResizeStrategy`; a model that sizes media by another rule
 # needs a new variant on both sides.
 
@@ -94,8 +94,22 @@ class VideoSmartResize:
     max_pixels: int
 
 
+@dataclass(frozen=True)
+class InklingPatchRows:
+    """Grows the long edge without shrinking and pads to whole patch rows.
+
+    Args:
+        max_upscale: The largest factor by which either side grows.
+        upscale_long_edge: The long edge up to which images grow.
+    """
+
+    rule: ClassVar[str] = "inkling_patch_rows"
+    max_upscale: int = 2
+    upscale_long_edge: int = 2048
+
+
 ResizeStrategy: TypeAlias = (
-    SmartResize | AspectRatioPreserving | VideoSmartResize
+    SmartResize | AspectRatioPreserving | VideoSmartResize | InklingPatchRows
 )
 
 

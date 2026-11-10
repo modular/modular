@@ -19,11 +19,19 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.quant_config import (
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
+from max.nn.outputs import ReturnLogits
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -31,7 +39,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -47,6 +54,31 @@ from max.pipelines.modeling.config_enums import (
 from transformers.models.auto.configuration_auto import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
+
+ATTN_CACHE_KEY = "attn"
+STATE_CACHE_KEY = "state"
+"""The two children of a Nemotron-H cache tree."""
+
+CONV_LEAF_ID = "mamba/conv"
+SSM_LEAF_ID = "mamba/ssm"
+"""The two leaves one Mamba-2 state spans, in declaration order."""
+
+
+def _ssm_state_dtype() -> DType:
+    """SSM state-pool STORAGE dtype: bf16 on Apple GPUs, fp32 elsewhere.
+
+    The Mamba-2 SSD scan always accumulates its recurrence in fp32 registers;
+    this only selects the storage dtype of the persistent state pool. On
+    Apple silicon the pool read+write dominates the decode-step traffic, and
+    only the Apple GPU kernel implements the bf16 load -> fp32-accumulate ->
+    round-on-store path, so bf16 is gated to Apple (matching the kernel-side
+    guard in ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``).
+    """
+    try:
+        is_apple = accelerator_api() == "metal"
+    except Exception:
+        is_apple = False
+    return DType.bfloat16 if is_apple else DType.float32
 
 
 def build_fp8_quant_config(
@@ -209,8 +241,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     mamba_proj_bias: bool = False
     time_step_limit: tuple[float, float] = (0.0, float("inf"))
 
-    # KV cache (full-attention layers only)
-    kv_params: KVCacheParams
+    kv_params: MultiKVCacheParams
+    """The cache tree: the attention layers' KV beside the Mamba state."""
 
     # FP8: set of (kind, layer_idx) modules quantized to FP8 per-tensor static.
     # ``fp8_mamba_layers``: mamba layers whose in/out_proj are FP8.
@@ -234,6 +266,11 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     checkpoint (:meth:`finalize`)."""
 
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+
+    @property
+    def attn_kv_params(self) -> KVCacheParams:
+        """The attention child of :attr:`kv_params`."""
+        return self.kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -362,11 +399,13 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-    ) -> KVCacheParams:
-        """Allocate KV cache only for the (4) full-attention layers.
+    ) -> MultiKVCacheParams:
+        """Returns the attention leaf beside the Mamba state.
 
-        The forward pass maps each attention layer to a sequential KV cache
-        index (0, 1, 2, ...), independent of the absolute layer index.
+        KV is allocated only for the full-attention layers. The forward pass
+        maps each attention layer to a sequential KV cache index (0, 1, 2,
+        ...), independent of the absolute layer index; the Mamba layers do
+        the same in the state leaves.
 
         The reference configuration uses an FP8 KV cache for this checkpoint.
         Select the same default while preserving explicit cache-format
@@ -380,16 +419,51 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             and kv_cache_config.kv_cache_format is None
         ):
             cache_dtype = DType.float8_e4m3fn
-        kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
+        hf = huggingface_config
+        kinds = parse_hybrid_pattern(hf.hybrid_override_pattern)
         num_attention_layers = sum(1 for k in kinds if k == "attention")
-        return kv_cache_config.to_params(
+        num_mamba_layers = sum(1 for k in kinds if k == "mamba")
+        attn = kv_cache_config.to_params(
             allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=resolve_attention_head_dim(huggingface_config),
+            n_kv_heads=hf.num_key_value_heads,
+            head_dim=resolve_attention_head_dim(hf),
             num_layers=num_attention_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        )
+        regions = (
+            # Separate leaves because the conv and SSM kernels each index
+            # their own uniformly strided pool, at different dtypes. The model
+            # dtype is always bf16 (see from_hf), so the conv state is too.
+            RecurrentStateRegion(
+                leaf_id=CONV_LEAF_ID,
+                num_layers=num_mamba_layers,
+                row_shape=(
+                    hf.mamba_num_heads * hf.mamba_head_dim
+                    + 2 * hf.n_groups * hf.ssm_state_size,
+                    hf.conv_kernel - 1,
+                ),
+                dtype=DType.bfloat16,
+            ),
+            RecurrentStateRegion(
+                leaf_id=SSM_LEAF_ID,
+                num_layers=num_mamba_layers,
+                row_shape=(
+                    hf.mamba_num_heads,
+                    hf.mamba_head_dim,
+                    hf.ssm_state_size,
+                ),
+                dtype=_ssm_state_dtype(),
+            ),
+        )
+        state = RecurrentStateParams(
+            regions=regions,
+            devices=attn.devices,
+            data_parallel_degree=attn.data_parallel_degree,
+        )
+        return MultiKVCacheParams.from_params(
+            {ATTN_CACHE_KEY: attn, STATE_CACHE_KEY: state}
         )
 
     @classmethod
@@ -448,7 +522,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         dtype: DType,
-        kv_params: KVCacheParams,
+        kv_params: MultiKVCacheParams,
         devices: list[DeviceRef],
         *,
         max_seq_len: int,

@@ -35,10 +35,7 @@ from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue, ops
 from max.nn import Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.common_layers.quant_linear import QuantizedLinear
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     mla_fp8_index_top_k,
     mla_kpool_compress,
     mla_kpool_expand_topk,
@@ -49,22 +46,28 @@ from max.nn.legacy.kernels import (
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.nn.legacy.kv_cache import PagedCacheValues as GraphPagedCacheValues
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_linear import QuantizedLinear
+from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
 from max.nn.norm import LayerNorm
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
+    KpoolTailReplayInputs,
     exclusive_prefix_sum,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
+from max.tensor.sharding.action import PerShard
 
 from ...deepseekV3_2_modulev3.layers.indexer import (
     act_quant,
     indexer_act_quant_config,
 )
 from ..model_config import Glm5NextConfig
+from .kda import CaptureSink
 
-__all__ = ["KPoolTail", "PooledIndexer"]
+__all__ = ["KPoolTail", "PooledIndexer", "TailDeferral"]
 
 
 @tree.dataclass(frozen=True)
@@ -77,6 +80,24 @@ class KPoolTail:
     """``[num_sparse_layers, batch_size]`` ring rows."""
     layer: Tensor
     """int64 CPU scalar: this layer's position in the indexer cache."""
+
+
+@dataclasses.dataclass(frozen=True)
+class TailDeferral:
+    """Defers one sparse layer's tail-ring seed to a speculative rollback.
+
+    Set on the indexer around a verify, and around the MTP draft's first
+    step, which runs its own indexer over the same window. The ring is
+    slot-indexed modulo ``index_kpool``, so a rejected draft's seed could
+    overwrite a member the next step closes its pool with; the rollback seeds
+    the accepted rows instead, from what :attr:`captures` collects.
+    """
+
+    seed_row_offsets: Tensor
+    """Row offsets the seed reads in place of the call's own: the offsets
+    without drafts, so the forward lands the ring, and all zeros with them."""
+    captures: list[list[KpoolTailReplayInputs]]
+    """Per-device sink each deferred layer appends its seed inputs to."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -194,8 +215,14 @@ def _select_pooled_graph(
     tail_rows: TensorValue,
     tail_layer: TensorValue,
     pooling: _Pooling,
+    seed_row_offsets: TensorValue | None = None,
+    capture: CaptureSink[KpoolTailReplayInputs] | None = None,
 ) -> TensorValue:
-    """Returns ``[total_tokens, index_topk + index_kpool - 1]`` positions."""
+    """Returns ``[total_tokens, index_topk + index_kpool - 1]`` positions.
+
+    ``seed_row_offsets`` replaces the tail seed's row offsets, and
+    ``capture`` collects the seed's inputs; see :class:`TailDeferral`.
+    """
     p = pooling
     kpool = p.kpool
     device = k.device
@@ -238,8 +265,25 @@ def _select_pooled_graph(
         k, gate, ape, input_row_offsets, pool_row_offsets, cache_lengths, kpool
     )
     mla_kpool_seed_tail(
-        tail, k, gate, input_row_offsets, cache_lengths, slot_idx, kpool
+        tail,
+        k,
+        gate,
+        input_row_offsets if seed_row_offsets is None else seed_row_offsets,
+        cache_lengths,
+        slot_idx,
+        kpool,
     )
+    if capture is not None:
+        capture.items.append(
+            KpoolTailReplayInputs(
+                k=k,
+                gate=gate,
+                tail=tail,
+                slot_idx=slot_idx,
+                cache_lengths=cache_lengths,
+                kpool=kpool,
+            )
+        )
     # `compress` owns the rows from the next pool boundary on; the ring
     # close above owns the floor row.
     _store_pools(
@@ -321,6 +365,8 @@ class PooledIndexer(Module[..., Tensor]):
         self.index_kpool_compress_ape = Tensor.zeros(
             [self.kpool, self.head_dim]
         )
+        self.tail_deferral: TailDeferral | None = None
+        """Set around a speculative verify or MTP draft step, else ``None``."""
 
     @property
     def selection_width(self) -> int:
@@ -349,6 +395,7 @@ class PooledIndexer(Module[..., Tensor]):
             F.cast(x, DType.float32) @ F.cast(proj, DType.float32).T
         ) * self.n_heads**-0.5
         weights = F.unsqueeze(weights, axis=-1) * q_scale * self.softmax_scale
+        deferral = self.tail_deferral
         selection = _select_pooled(
             k,
             self.index_kpool_compress_gate(x),
@@ -367,6 +414,14 @@ class PooledIndexer(Module[..., Tensor]):
                 pools_selected=self.pools_selected,
                 always_select_tail=self.always_select_tail,
                 quant_config=self.quant_config,
+            ),
+            seed_row_offsets=(
+                None if deferral is None else deferral.seed_row_offsets
+            ),
+            capture=(
+                None
+                if deferral is None
+                else PerShard(CaptureSink(c) for c in deferral.captures)
             ),
         )
         return selection.rebind_mapping(DeviceMapping.replicated(x.mesh))

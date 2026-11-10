@@ -14,10 +14,15 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import (
+    SupportedArchitecture,
+    TextTokenizer,
+    WeightTransform,
+)
 from max.pipelines.modeling.types import PipelineTask
 
 from ..qwen3_5.model_config import Qwen3_5Config
+from ..qwen3_5.weight_adapters import QWEN3_5_MTP_WEIGHT_RULES
 from .model import MTPQwen3_5DraftArchConfig
 
 __all__ = ["mtp_qwen3_5_draft_arch"]
@@ -37,6 +42,9 @@ mtp_qwen3_5_draft_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: WeightTransform(QWEN3_5_MTP_WEIGHT_RULES),
+    },
     config=MTPQwen3_5DraftArchConfig,
     supports_device_graph_capture=False,
 )

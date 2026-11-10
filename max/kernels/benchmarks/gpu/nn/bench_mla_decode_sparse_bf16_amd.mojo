@@ -41,7 +41,7 @@ from max.gpu.host import (
 )
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_bf16_num_partitions,
 )
@@ -132,7 +132,7 @@ struct Bench:
     var scalar_args: DeviceBuffer[.int64]
     var flush: DeviceBuffer[.uint8]
 
-    def __init__(out self, ctx: DeviceContext) raises:
+    def __init__(out self, ctx: DeviceContext[]) raises:
         comptime block_rows = num_phys_pages * page_size
         comptime block_elems = block_rows * k_cache_dim
         var bh = ctx.enqueue_create_host_buffer[dtype](block_elems)
@@ -210,7 +210,7 @@ struct ArmBuffers(Movable):
 
 
 def _make_case(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     seq_len: Int,
     hole_period: Int,
     q_host_out: HostBuffer[dtype],
@@ -291,7 +291,7 @@ def _collection(b: Bench) -> Collection:
     )
 
 
-def stage_compact(ctx: DeviceContext, a: ArmBuffers) raises:
+def stage_compact(ctx: DeviceContext[], a: ArmBuffers) raises:
     ctx.enqueue_function[
         _amd_sparse_mla_compact_indices[
             _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS
@@ -309,7 +309,7 @@ def stage_compact(ctx: DeviceContext, a: ArmBuffers) raises:
     )
 
 
-def stage_arm(ctx: DeviceContext, b: Bench, a: ArmBuffers) raises:
+def stage_arm(ctx: DeviceContext[], b: Bench, a: ArmBuffers) raises:
     var kv_collection = _collection(b)
     _amd_sparse_mla_bf16_rows[num_heads, k_cache_dim, kv_latent_dim](
         TileTensor(
@@ -331,13 +331,13 @@ def stage_arm(ctx: DeviceContext, b: Bench, a: ArmBuffers) raises:
     )
 
 
-def _flush(ctx: DeviceContext, b: Bench, warm: Bool) raises:
+def _flush(ctx: DeviceContext[], b: Bench, warm: Bool) raises:
     if not warm:
         ctx.enqueue_memset(b.flush, UInt8(1))
 
 
 def _time(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     b: Bench,
     a: ArmBuffers,
     compact_only: Bool,
@@ -345,7 +345,7 @@ def _time(
     warm: Bool,
 ) raises -> List[Float64]:
     @always_inline
-    def body(c: DeviceContext) raises {imm}:
+    def body(c: DeviceContext[]) raises {imm}:
         if compact_only:
             stage_compact(c, a)
         else:
@@ -360,7 +360,7 @@ def _time(
     return _sorted(us^)
 
 
-def bench_case(ctx: DeviceContext, b: Bench, seq_len: Int, opts: Opts) raises:
+def bench_case(ctx: DeviceContext[], b: Bench, seq_len: Int, opts: Opts) raises:
     var q_host = ctx.enqueue_create_host_buffer[dtype](
         seq_len * num_heads * k_cache_dim
     )
@@ -442,7 +442,7 @@ def main() raises:
                 if opts.which_case == "prefill" or opts.which_case == "all":
                     ts.append(16384)
                 if opts.which_case == "decode" or opts.which_case == "all":
-                    for t in [1, 8, 32, 64, 128]:
+                    for t in [1, 8, 32, 48, 64, 96, 128]:
                         ts.append(t)
             for t in ts:
                 bench_case(ctx, b, t, opts)

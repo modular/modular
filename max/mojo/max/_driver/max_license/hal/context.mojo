@@ -24,14 +24,13 @@ from .plugin import (
     M_driver_bundle_compilation_options,
     M_driver_dlpack_device,
 )
-from ._plugin._overlay import HAL_PLUGINS
+from ._plugin._impl import HalPluginForTarget
 
 from .buffer import Buffer, BufferView
 from .device import DeviceSpec
-from .extensions.traits import SupportsPeerAccessV1
 from .stream import Stream
 
-from .status import STATUS_SUCCESS, STATUS_UNKNOWN_SYMBOL, HALError
+from .status import STATUS_SUCCESS, HALError
 
 from std.atomic import Atomic
 from std.collections import Dict
@@ -82,7 +81,18 @@ struct _CachedFunction(Movable):
     var bundle: RuntimeBundle
 
 
-def _code_digest[origin: ImmOrigin](code: StringSlice[origin=origin]) -> UInt64:
+@fieldwise_init
+struct _FunctionAlias(Equatable, Hashable, TrivialRegisterPassable):
+    """Names a loaded function by where its static code and linkage name live,
+    so a launch finds it without building or hashing a string."""
+
+    var asm_addr: Int
+    var asm_len: Int
+    var name_addr: Int
+    var name_len: Int
+
+
+def _code_digest[origin: ImmOrigin](code: StringSpan[origin=origin]) -> UInt64:
     """Hashes `code`'s bytes, identifying a code image by content."""
     return hash_bytes(code.as_bytes())
 
@@ -113,9 +123,9 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     var _raw: ArcPointer[RawDriver]
     var _self_ref: WeakPointer[Self]
 
-    comptime HALExtensions = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.device_spec]()
-    ].HookFor[DeviceSpec.target[Self.device_spec]()].extensions
+    comptime HALExtensions = HalPluginForTarget[
+        DeviceSpec.target[Self.device_spec]()
+    ].extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
 
@@ -123,10 +133,11 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     # across the separate buffers it arrives in (one per MEF kernel archive).
     # Entries own their handle and bundle, released at context teardown.
     var _function_cache: Dict[String, _CachedFunction]
-    # Address-keyed aliases into `_function_cache`, keeping the per-launch path
-    # off the content hash. Sound only because a cached buffer is never freed
-    # while this context lives, so an address cannot come to hold other bytes.
-    var _function_alias: Dict[String, String]
+    # Address-keyed aliases to `_function_cache` handles, keeping the per-launch
+    # path off the content hash and off building a key. Sound only because the
+    # code and name are static and a cached handle stays loaded until teardown,
+    # so an address cannot come to name another function.
+    var _function_alias: Dict[_FunctionAlias, FunctionHandle]
     var _function_cache_lock: Pointer[Int64, MutUntrackedOrigin]
 
     comptime _device_spec_target = DeviceSpec.target[Self.device_spec]()
@@ -236,34 +247,22 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     # Queries
     # ===-------------------------------------------------------------------===#
 
-    def get_driver_name(self) raises HALError -> String:
+    def driver_name(self) raises HALError -> String:
         """Returns the API name reported by the plugin backing this context.
 
         This is the plugin's own identity (e.g. "CUDA", "Metal", "HIP"),
         not the loader label from the plugin spec, so it is stable however
         the plugin was loaded.
         """
-        return self._raw[].get_api_name()
+        return self._raw[].api_name()
 
-    def get_device_id(self) -> Int64:
+    def device_id(self) -> Int64:
         """Returns the id of the device this context is bound to."""
         return self._device[].id
 
-    def enable_peer_access(
-        self, peer: Context[Self.device_spec]
-    ) raises HALError where conforms_to(
-        Device[Self.device_spec].Extensions, SupportsPeerAccessV1
-    ):
-        """Makes `peer`'s memory addressable from this context. Idempotent."""
-        var peer_access = self._device[].extensions().peer_access()
-        if not peer_access:
-            raise HALError(
-                STATUS_UNKNOWN_SYMBOL,
-                message="plugin does not export peer access",
-            )
-        peer_access.value().enable_peer_access(
-            self._raw[], self._handle, peer._handle
-        )
+    def raw_driver(self) -> ArcPointer[RawDriver]:
+        """Returns the raw driver backing this context, for extension calls."""
+        return self._raw
 
     def get_dlpack_device(
         self, pinned: Bool
@@ -364,7 +363,7 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     def load_bundle[
         asm_origin: ImmOrigin
     ](
-        self, asm: StringSlice[origin=asm_origin]
+        self, asm: StringSpan[origin=asm_origin]
     ) raises HALError -> RuntimeBundle:
         """Loads a runtime bundle from pre-compiled binary bytes."""
         # Each plugin expects a specific file_type string. PTX text is
@@ -601,27 +600,25 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         return result
 
     def _function_alias_find(
-        mut self, addr_key: String
+        mut self, alias: _FunctionAlias
     ) -> OptionalReg[FunctionHandle]:
-        """Hot-path lookup: address key -> content key -> handle, resolved under
-        a single lock acquisition."""
+        """Hot-path lookup; acquires and releases the cache lock."""
         self._function_cache_lock_acquire()
         var result = OptionalReg[FunctionHandle]()
         try:
-            ref content_key = self._function_alias._find_ref(addr_key)
-            result = self._function_cache._find_ref(content_key).handle
+            result = self._function_alias._find_ref(alias)
         except e:
             pass
         self._function_cache_lock_release()
         return result
 
     def _function_alias_insert(
-        mut self, var addr_key: String, var content_key: String
+        mut self, alias: _FunctionAlias, func: FunctionHandle
     ):
-        """Points `addr_key` at an existing `_function_cache` entry so later
+        """Points `alias` at a `_function_cache` entry's handle so later
         launches from the same buffer skip hashing the code."""
         self._function_cache_lock_acquire()
-        self._function_alias[addr_key^] = content_key^
+        self._function_alias[alias] = func
         self._function_cache_lock_release()
 
     def _function_cache_insert(
@@ -662,7 +659,7 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         asm_origin: ImmOrigin
     ](
         mut self,
-        asm: StringSlice[origin=asm_origin],
+        asm: StringSpan[origin=asm_origin],
         name: String,
         content_key: String,
     ) raises HALError -> FunctionHandle:
@@ -689,34 +686,40 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     def get_or_load_function(
         mut self,
         asm: StaticString,
-        name: String,
+        name: StaticString,
     ) raises HALError -> FunctionHandle:
         """Returns the loaded function for `name`, loading `asm` on first use.
 
-        The per-launch entry point: looks `asm` up by buffer address and only
-        hashes the code image on a miss. `asm` must be `StaticString` for that
-        alias to be sound. Callers holding code with a narrower lifetime want
-        `get_or_load_function_dynamic`.
+        The per-launch entry point: looks `asm` and `name` up by address and
+        only hashes the code image on a miss. Both must be `StaticString` for
+        that alias to be sound. Callers holding code or a name with a narrower
+        lifetime want `get_or_load_function_dynamic`.
         """
-        var addr_key = Self._function_cache_key(
-            UInt64(Int(asm.unsafe_ptr())), asm.byte_length(), name
+        var alias = _FunctionAlias(
+            asm_addr=Int(asm.unsafe_ptr()),
+            asm_len=asm.byte_length(),
+            name_addr=Int(name.unsafe_ptr()),
+            name_len=name.byte_length(),
         )
-        var found = self._function_alias_find(addr_key)
+        var found = self._function_alias_find(alias)
         if case .Some(found) = found:
             return found
 
+        var owned_name = String(name)
         var content_key = Self._function_cache_key(
-            _code_digest(asm), asm.byte_length(), name
+            _code_digest(asm), asm.byte_length(), owned_name
         )
-        var func = self._get_or_load_function_keyed(asm, name, content_key)
-        self._function_alias_insert(addr_key^, content_key^)
+        var func = self._get_or_load_function_keyed(
+            asm, owned_name, content_key
+        )
+        self._function_alias_insert(alias, func)
         return func
 
     def get_or_load_function_dynamic[
         asm_origin: ImmOrigin
     ](
         mut self,
-        asm: StringSlice[origin=asm_origin],
+        asm: StringSpan[origin=asm_origin],
         name: String,
     ) raises HALError -> FunctionHandle:
         """Returns the loaded function for `name`, loading `asm` on first use.

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from typing import Any
+from unittest.mock import Mock
 
 import numpy as np
 import numpy.typing as npt
@@ -32,7 +33,7 @@ from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
 from max.nn import Module
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )
@@ -41,22 +42,20 @@ from max.pipelines.architectures.nemotron_h_modulev3.layers.mamba2 import (
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
     NemotronHMoE,
+    NemotronHRouter,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
     RowGroupedLinear,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
     ATTN_CACHE_KEY,
+    LayerKind,
     NemotronHConfig,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
     ModuleFormat,
+    NemotronHQuantScheme,
     parse_quant_scheme,
-)
-from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
-    cast_router_gates,
-    stack_bf16_experts,
-    stack_nvfp4_experts,
 )
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.realization_context import ensure_context
@@ -83,12 +82,6 @@ def _raw(weight: WeightData) -> npt.NDArray[np.uint8]:
     return raw.reshape(rows, -1)
 
 
-def _values(weight: WeightData) -> npt.NDArray[np.float32]:
-    assert weight.dtype == DType.bfloat16
-    bits = np.from_dlpack(weight.to_buffer().view(DType.uint16))
-    return (bits.astype(np.uint32) << 16).view(np.float32)
-
-
 def _mesh(n: int) -> DeviceMesh:
     return DeviceMesh((CPU(),) * n, (n,), ("tp",))
 
@@ -103,9 +96,9 @@ def _assign(module: Module[..., Any], values: Mapping[str, WeightData]) -> None:
     """Sets the module's parameters by path, placed as it declares them."""
     for path, value in values.items():
         *parents, attr = path.split(".")
-        owner = module
+        owner: Any = module
         for part in parents:
-            owner = getattr(owner, part)
+            owner = owner[int(part)] if part.isdigit() else getattr(owner, part)
         param = getattr(owner, attr)
         tensor = Tensor.from_dlpack(value.to_buffer())
         assert tensor.dtype == param.dtype, path
@@ -189,81 +182,106 @@ def test_a_uniform_algorithm_is_refused() -> None:
         parse_quant_scheme({"quant_method": "modelopt", "quant_algo": "NVFP4"})
 
 
-def test_stacking_keeps_the_routed_experts_in_nvfp4() -> None:
+def test_the_graph_stacks_the_nvfp4_routed_experts() -> None:
+    """Each mixer's per-expert tensors become the grouped matmul's
+    operands: the packed weights, the block scales and the global scales,
+    each with one leading expert axis."""
     rng = np.random.default_rng(0)
     mixer = "backbone.layers.1.mixer"
-    state_dict = {}
-    for e in range(2):
-        for proj in ("up_proj", "down_proj"):
-            module = f"{mixer}.experts.{e}.{proj}"
-            state_dict[f"{module}.weight"] = _weight(
-                rng.integers(0, 256, (128, 32), dtype=np.uint8), DType.uint8
+    # NVFP4 shapes, so each projection's block scales span whole atoms.
+    config = model_config(TINY_LAYERS, NVFP4_DIMS)
+    e = config.num_experts
+    hidden, channels = config.hidden_size, config.moe_intermediate_size
+
+    values: dict[str, WeightData] = {}
+    stored: dict[str, list[npt.NDArray[np.generic]]] = {}
+    shapes: dict[str, tuple[int, ...]] = {}
+    for proj, out_dim, in_dim in (
+        ("up", channels, hidden),
+        ("down", hidden, channels),
+    ):
+        shapes[proj] = (out_dim, in_dim // 2)
+        stored[proj] = []
+        for expert in range(e):
+            module = f"experts.{expert}.{proj}_proj"
+            values[f"{module}.weight"] = _weight(
+                rng.integers(0, 256, (out_dim, in_dim // 2), dtype=np.uint8),
+                DType.uint8,
             )
-            state_dict[f"{module}.weight_scale"] = _weight(
-                np.full((128, 4), _E4M3[1.0], dtype=np.uint8),
+            values[f"{module}.weight_scale"] = _weight(
+                np.full((out_dim, in_dim // 16), _E4M3[1.0], dtype=np.uint8),
                 DType.float8_e4m3fn,
             )
-            state_dict[f"{module}.weight_scale_2"] = _scalar(0.25)
+            values[f"{module}.weight_scale_2"] = _scalar(0.25)
+            stored[proj].append(_raw(values[f"{module}.weight"]))
 
-    out = stack_nvfp4_experts(state_dict, 2, {mixer})
-
-    assert sorted(out) == [
-        f"{mixer}.{p}_{s}"
-        for p in ("down", "up")
-        for s in ("block_scale", "scale", "weight")
-    ]
-    up = out[f"{mixer}.up_weight"]
-    assert up.dtype == DType.uint8 and tuple(up.shape) == (2, 128, 32)
-    np.testing.assert_array_equal(
-        np.from_dlpack(up.to_buffer())[1],
-        np.from_dlpack(
-            state_dict[f"{mixer}.experts.1.up_proj.weight"].to_buffer()
-        ),
-    )
-    block = out[f"{mixer}.up_block_scale"]
-    assert block.dtype == DType.float8_e4m3fn
-    assert tuple(block.shape) == (2, 128, 4)
-    scale = out[f"{mixer}.up_scale"]
-    np.testing.assert_array_equal(
-        np.from_dlpack(scale.to_buffer()), [0.25, 0.25]
-    )
-
-
-def test_bf16_stacking_copies_each_expert_as_stored() -> None:
-    mixer = "backbone.layers.1.mixer"
-    state_dict = {
-        f"{mixer}.experts.{e}.{proj}.weight": _random((4, 32), seed=e)
-        for e in range(2)
-        for proj in ("up_proj", "down_proj")
-    }
-
-    out = stack_bf16_experts(state_dict, 2, {mixer})
-
-    assert sorted(out) == [f"{mixer}.down_weight", f"{mixer}.up_weight"]
-    for proj in ("up", "down"):
-        stack = out[f"{mixer}.{proj}_weight"]
-        assert stack.dtype == DType.bfloat16
-        assert tuple(stack.shape) == (2, 4, 32)
-        for e in range(2):
-            np.testing.assert_array_equal(
-                _raw(stack)[e],
-                _raw(
-                    state_dict[f"{mixer}.experts.{e}.{proj}_proj.weight"]
-                ).reshape(-1),
+    with ensure_context():
+        moe = _build(1, lambda: NemotronHMoE(config, mixer, w4a4_experts=True))
+        assert isinstance(moe, NemotronHMoE)
+        _assign(moe, values)
+        placed = {}
+        for proj in stored:
+            weight, block_scale, global_scale = moe.placed_params(
+                proj, _mesh(1)
             )
+            # An x86 host compiles no float8_e4m3fn op, so the block scales
+            # are never realized: only their type is checked.
+            assert block_scale.dtype == DType.float8_e4m3fn
+            del block_scale
+            placed[proj] = (weight, global_scale)
 
-
-def test_bf16_stacking_refuses_a_quantized_expert() -> None:
-    mixer = "backbone.layers.1.mixer"
-    state_dict = {
-        f"{mixer}.experts.{e}.{proj}.weight": _weight(
-            np.zeros((4, 16), dtype=np.uint8), DType.uint8
+    for proj, (weight, global_scale) in placed.items():
+        assert weight.dtype == DType.uint8
+        assert tuple(int(d) for d in weight.shape) == (
+            e,
+            *shapes[proj],
         )
-        for e in range(2)
-        for proj in ("up_proj", "down_proj")
-    }
-    with pytest.raises(ValueError, match=r"experts\.0\.up_proj"):
-        stack_bf16_experts(state_dict, 2, {mixer})
+        np.testing.assert_array_equal(
+            _bytes(weight.local_shards[0]),
+            np.stack(stored[proj]).reshape(-1),
+        )
+        assert global_scale.dtype == DType.float32
+        np.testing.assert_array_equal(
+            _bytes(global_scale.local_shards[0]),
+            np.full(e, 0.25, dtype=np.float32).view(np.uint8),
+        )
+
+
+def test_the_graph_stacks_the_bf16_routed_experts_as_stored() -> None:
+    """Each mixer's per-expert BF16 weights become one stack, expert by
+    expert in router order."""
+    mixer = "backbone.layers.1.mixer"
+    config = model_config(TINY_LAYERS, TINY)
+    e = config.num_experts
+    hidden, channels = config.hidden_size, config.moe_intermediate_size
+
+    values: dict[str, WeightData] = {}
+    stored: dict[str, list[npt.NDArray[np.generic]]] = {}
+    shapes: dict[str, tuple[int, ...]] = {}
+    for proj, shape in (
+        ("up", (channels, hidden)),
+        ("down", (hidden, channels)),
+    ):
+        shapes[proj] = shape
+        stored[proj] = []
+        for expert in range(e):
+            weight = _random(shape, seed=expert)
+            values[f"experts.{expert}.{proj}_proj.weight"] = weight
+            stored[proj].append(_raw(weight))
+
+    with ensure_context():
+        moe = _build(1, lambda: NemotronHMoE(config, mixer))
+        assert isinstance(moe, NemotronHMoE)
+        _assign(moe, values)
+        placed = {proj: moe.placed_params(proj, _mesh(1)) for proj in stored}
+
+    for proj, (stack,) in placed.items():
+        assert stack.dtype == DType.bfloat16
+        assert tuple(int(d) for d in stack.shape) == (e, *shapes[proj])
+        np.testing.assert_array_equal(
+            _bytes(stack.local_shards[0]),
+            np.stack(stored[proj]).reshape(-1),
+        )
 
 
 def _device_block(
@@ -294,27 +312,19 @@ def test_each_device_gets_its_padded_share_of_every_expert() -> None:
     padded = config.moe_intermediate_size_per_device
 
     shapes = {"up": (inner, hidden), "down": (hidden, inner)}
-    state_dict: dict[str, WeightData] = {}
+    values: dict[str, WeightData] = {}
     stored: dict[str, list[npt.NDArray[np.uint8]]] = {}
     for proj, shape in shapes.items():
         stored[proj] = []
         for e in range(config.num_experts):
             weight = _random(shape, seed=e)
-            state_dict[f"{mixer}.experts.{e}.{proj}_proj.weight"] = weight
+            values[f"experts.{e}.{proj}_proj.weight"] = weight
             stored[proj].append(_raw(weight))
-    state_dict = stack_bf16_experts(state_dict, config.num_experts, {mixer})
     # One realization, so the test compiles one graph.
     with ensure_context():
         moe = _build(n, lambda: NemotronHMoE(config, mixer))
         assert isinstance(moe, NemotronHMoE)
-        _assign(
-            moe,
-            {
-                name.removeprefix(f"{mixer}."): value
-                for name, value in state_dict.items()
-                if name.startswith(f"{mixer}.")
-            },
-        )
+        _assign(moe, values)
         placed = {proj: moe.placed_params(proj, _mesh(n)) for proj in shapes}
 
     for proj in shapes:
@@ -407,19 +417,52 @@ def test_each_device_gets_a_copy_of_its_kv_head() -> None:
         )
 
 
-def test_only_the_router_gates_are_cast() -> None:
-    gate = "backbone.layers.1.mixer.gate.weight"
-    bias = "backbone.layers.1.mixer.gate.e_score_correction_bias"
-    weights = cast_router_gates(
-        {
-            gate: _weight(
-                np.array([[1.0, 1.0 + 2.0**-10, -3.0]], np.float32),
-                DType.float32,
-            ),
-            bias: _weight(np.ones(3, np.float32), DType.float32),
-        },
-        DType.bfloat16,
+@pytest.mark.parametrize("quantized", [False, True])
+def test_the_router_loads_the_gate_as_stored(quantized: bool) -> None:
+    """The gate weight loads in the dtype its checkpoint stores it in, and
+    the router casts it to its own dtype in the graph.
+
+    The BF16 checkpoint stores the gate in BF16 and the modelopt-quantized
+    one in float32; the score bias is float32 in both.
+    """
+    config = model_config(TINY_LAYERS, TINY)
+    if quantized:
+        config.quant_scheme = NemotronHQuantScheme(
+            {"lm_head": ModuleFormat.NVFP4_WEIGHT_ONLY}
+        )
+    router = _build(1, lambda: NemotronHRouter(config))
+    assert isinstance(router, NemotronHRouter)
+    assert router.weight.dtype == config.router_gate_stored_dtype
+    assert router.weight.dtype == (
+        DType.float32 if quantized else DType.bfloat16
     )
-    # 1 + 2^-10 is below bfloat16's resolution at 1 and rounds to 1.
-    np.testing.assert_array_equal(_values(weights[gate]), [[1.0, 1.0, -3.0]])
-    assert weights[bias].dtype == DType.float32
+    assert router.e_score_correction_bias.dtype == DType.float32
+    # The router's own dtype, which the graph casts the gate to.
+    assert router.gate_dtype == config.router_gate_dtype
+
+
+@pytest.mark.parametrize("stored", [DType.bfloat16, DType.float32])
+def test_finalize_reads_the_gate_dtype_from_the_checkpoint(
+    stored: DType,
+) -> None:
+    """A quantized checkpoint can store its gate in BF16, as one that
+    quantizes only ``lm_head`` may. The router declares the gate as the
+    checkpoint stores it, so a loader that reads the bytes as stored, with
+    no cast, loads it."""
+    config = model_config(TINY_LAYERS, TINY)
+    config.quant_scheme = NemotronHQuantScheme(
+        {"lm_head": ModuleFormat.NVFP4_WEIGHT_ONLY}
+    )
+    lm_head = (
+        "lm_head.weight",
+        "lm_head.weight_scale",
+        "lm_head.weight_scale_2",
+    )
+    state_dict = {name: Mock(spec=WeightData) for name in lm_head}
+    for mixer in config.mixers(LayerKind.MOE):
+        state_dict[f"{mixer}.gate.weight"] = Mock(spec=WeightData, dtype=stored)
+    config.finalize(Mock(), state_dict)
+    assert config.router_gate_stored_dtype == stored
+    router = _build(1, lambda: NemotronHRouter(config))
+    assert isinstance(router, NemotronHRouter)
+    assert router.weight.dtype == stored

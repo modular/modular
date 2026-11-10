@@ -557,15 +557,15 @@ def test_tuned_stages() raises:
         Optional(DECODE_DEFAULT_STAGES),
     )
     assert_equal(
-        _tuned_stages[4096, 7168, DECODE_AVG_M]().value(),
+        _tuned_stages[4096, 7168, DECODE_AVG_M](),
         DECODE_K_GROUP_STAGES,
     )
     assert_equal(
-        _tuned_stages[7168, 2048, DECODE_AVG_M]().value(),
+        _tuned_stages[7168, 2048, DECODE_AVG_M](),
         DECODE_K_GROUP_STAGES,
     )
     assert_equal(
-        _tuned_stages[2048, 4096, DECODE_AVG_M]().value(),
+        _tuned_stages[2048, 4096, DECODE_AVG_M](),
         DECODE_K_GROUP_STAGES,
     )
     # Tuned prefill rows, and auto stages for untuned prefill.

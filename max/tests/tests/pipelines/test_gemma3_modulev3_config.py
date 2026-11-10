@@ -21,7 +21,7 @@ from unittest.mock import NonCallableMock
 import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.model_config import (
     Gemma3Config,
 )

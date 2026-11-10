@@ -36,7 +36,7 @@ from max.graph import (
 )
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.tensor import Tensor
 from max.tensor.sharding import (
     DeviceMapping,
@@ -52,17 +52,25 @@ from ...deepseekV41.layers.csa2 import (
     INDEX_WIDTH,
     MAX_COMPRESSED,
     PREFILL_ROWS,
+    ROPE_Q_HEADS,
     WINDOW_ENTRIES,
+    WindowStore,
     csa2_attention,
+    csa2_attention_mxfp8,
     leaf_slots,
+    norm_quantize_q_store_kv,
     records_per_page,
     store_window_kv,
 )
 from ..layer_resolver import LayerInfo
+from ..model_config import position_capacity
 from .mxfp8_linear import (
     MXFP8Linear,
+    Mxfp8Rows,
     block_diagonal_woa_supported,
     grouped_dense_op,
+    grouped_dense_quantized_op,
+    norm_quantize_store_supported,
 )
 from .norm import RMSNorm
 from .rope import RopeParams, apply_rope_tail, rope_for_layer
@@ -76,6 +84,7 @@ __all__ = [
     "Attention",
     "RaggedRows",
     "absolute_positions",
+    "mask_padded_positions",
     "position_rope_table",
     "ragged_rows",
     "row_ids",
@@ -84,7 +93,7 @@ __all__ = [
 # A forward whose requests each bring at most this many query tokens runs
 # the decode attention, which reads the records in place; a longer one
 # dequantizes the records it names once, first (the registered V2 model's
-# split, host-flag driven inside ``mo.csa2.attention``).
+# split, host-flag driven inside ``attention.csa2``).
 _DECODE_MAX_QUERY_TOKENS = 8
 
 # The V2 CSA2 graph ops, bridged into the experimental-tensor world: the
@@ -127,7 +136,7 @@ def _csa2_index_list(
 ) -> TensorValue:
     """Each query's ``[T, 640]`` absolute-slot list, built in one launch.
 
-    Main's ``mo.csa2.index_list`` (V2's ``index_list``, whose layer
+    Main's ``attention.csa2.index_list`` (V2's ``index_list``, whose layer
     arguments are baked constants): the window slots of positions
     ``p, p - 1, ..., p - 127`` first, then the compressed slots of the
     selected groups, ``-1`` for none. A position below 0 or ``valid_from``
@@ -149,10 +158,10 @@ def _csa2_index_list(
         "window_layers": int(window_blocks.shape[2]),
         "has_floor": True,
     }
-    name = "mo.csa2.index_list.window_only"
+    name = "attention.csa2.index_list.window_only"
     if selected is not None:
         assert comp is not None
-        name = "mo.csa2.index_list"
+        name = "attention.csa2.index_list"
         parameters["comp_page"] = records_per_page(comp.kv_blocks)
         parameters["comp_layers"] = int(comp.kv_blocks.shape[2])
         parameters["ratio"] = ratio
@@ -176,7 +185,30 @@ def _csa2_index_list(
 
 _index_list_op = F.functional(_csa2_index_list)
 _store_window_op = F.functional(store_window_kv)
+
+
+def _norm_quantize_store(
+    x: TensorValue,
+    q_weight: TensorValue,
+    kv_weight: TensorValue,
+    cache: BufferValue,
+    positions: TensorValue,
+    rope_table: TensorValue,
+    slots: TensorValue,
+    block_stride: TensorValue,
+    epsilon: float,
+    q_cols: int,
+) -> tuple[TensorValue, TensorValue]:
+    # ``WindowStore`` is reboxed here because ``F.functional`` accepts flat operands.
+    window = WindowStore(cache, positions, rope_table, slots, block_stride)
+    return norm_quantize_q_store_kv(
+        x, q_weight, kv_weight, epsilon, q_cols, window
+    )
+
+
+_norm_quantize_store_op = F.functional(_norm_quantize_store)
 _csa2_attend_op = F.functional(csa2_attention)
+_csa2_attend_mxfp8_op = F.functional(csa2_attention_mxfp8)
 
 
 def row_ids(rows: Tensor, total: int | Dim) -> tuple[Tensor, Tensor]:
@@ -269,6 +301,9 @@ class RaggedRows:
     """``[T]`` int32 absolute positions."""
     lengths: Tensor
     """``[B]`` int32 rows each request brings this step."""
+    live_positions: Tensor | None = None
+    """:func:`mask_padded_positions` of ``positions``, when the trunk staged
+    it once for the step; ``None`` has each layer derive it."""
 
     @property
     def batch(self) -> int | Dim:
@@ -294,27 +329,29 @@ def live_rows(row_offsets: Tensor, total: int | Dim) -> Tensor:
     return row_index < F.cast(row_offsets[-1], DType.int32)
 
 
+def mask_padded_positions(row_offsets: Tensor, positions: Tensor) -> Tensor:
+    """``[total]`` int32 positions, capture-padding rows set to ``-1``."""
+    live = live_rows(row_offsets, positions.shape[0])
+    return F.where(
+        live, positions, F.constant(-1, DType.int32, positions.mapping)
+    )
+
+
+def live_positions(rows: RaggedRows) -> Tensor:
+    """``rows.positions`` with the padded rows at ``-1``, once per step if staged."""
+    if rows.live_positions is not None:
+        return rows.live_positions
+    return mask_padded_positions(rows.offsets, rows.positions)
+
+
 def window_store_slots(
     swa: PagedCacheValues, rows: RaggedRows, layer_swa: Tensor
 ) -> Tensor:
-    """The window store's ``[T]`` slots, padded rows masked to ``-1``.
+    """Use slot ``-1`` for padding; the store has no offsets guard.
 
-    The store op has no row-offsets guard of its own: it launches over
-    the physical row count and only skips negative slots, so an
-    unmasked padded row would write its record through its synthesized
-    position -- possibly onto a page the request does not own. The
-    padded rows' entries drop to ``-1`` first, and ``leaf_slots`` maps
-    them to ``-1`` slots; the store then skips them. The row's own
-    position still reaches the store op (its RoPE-table read must stay
-    in bounds), only the destination slot masks.
+    Row positions still reach the store for RoPE when a slot is masked.
     """
-    live = live_rows(rows.offsets, rows.positions.shape[0])
-    entries = F.where(
-        live,
-        rows.positions,
-        F.constant(-1, DType.int32, rows.positions.mapping),
-    )
-    return _leaf_slots_op(swa, rows.bid, entries, layer_swa)
+    return _leaf_slots_op(swa, rows.bid, live_positions(rows), layer_swa)
 
 
 def ragged_rows(
@@ -332,48 +369,24 @@ def ragged_rows(
 
 
 def position_rope_table(
-    inv_freqs: np.ndarray, max_position: int, rows: int | Dim, ref: Tensor
+    inv_freqs: np.ndarray,
+    max_position: int,
+    max_rows: int,
+    ref: Tensor,
 ) -> Tensor:
-    """``[max_position + rows, 64]`` fp32 cosines then sines per position.
-
-    The V2 store and attention kernels index the table by absolute
-    position, so it spans every position the graph can carry -- plus
-    ``rows``: a captured decode pads the row axis past
-    ``row_offsets[-1]``, and the padded rows synthesize positions past
-    the last request's start by their local row index, so the tail keeps
-    their table reads in bounds. A pure function of constants, built
-    in-graph like V2's ``freqs_cis_base``.
-
-    Args:
-        inv_freqs: The layer regime's fp32 inverse frequencies (host
-            values, from :class:`~.rope.V41RotaryEmbedding`).
-        max_position: The context bound.
-        rows: The forward's token rows ``T``.
-        ref: Any tensor of the forward, for the position axis' device
-            and the constants' replicated mapping.
-    """
+    """Build the static RoPE table, including speculative and padded rows."""
     where = DeviceMapping.replicated(ref.mapping.mesh)
     inv = F.constant(inv_freqs, DType.float32, device=where)
-    width = max_position + rows
-    pos = F.range(
-        0,
-        width,
-        1,
-        out_dim=width,
-        dtype=DType.int32,
-        device=DeviceMapping.replicated(ref.mapping.mesh),
-    )
+    width = max_position + max_rows
+    pos = F.range(0, width, 1, out_dim=width, dtype=DType.int32, device=where)
     angles = F.outer(F.cast(pos, DType.float32), inv)
     return F.concat([F.cos(angles), F.sin(angles)], axis=-1)
 
 
 class _GroupedWoA(Module[..., Tensor]):
-    """``wo_a``: FP8 weight and compact E8M0 scales, grouped per output rows.
+    """One block-diagonal quantized ``[T, g*d] -> [T, g*r]`` launch.
 
-    ``[T, g * d] -> [T, g * r]``, group ``j`` applying rows ``j * r`` onward.
-    The groups run as one block-diagonal MXFP8 launch on the FP8 weight,
-    so decode neither dequantizes the weight nor reads it back at bf16:
-    the checkpoint's own codes and scale bytes are the graph's operands.
+    Group ``j`` writes rows from ``j*r`` onward without dequantizing weights.
     """
 
     weight: Tensor
@@ -396,6 +409,12 @@ class _GroupedWoA(Module[..., Tensor]):
             self.scale,
             self.group_rank,
             rope=rope,
+        )
+
+    def forward_quantized(self, o: Mxfp8Rows) -> Tensor:
+        """:meth:`forward` on rows the attention quantized and rotated back."""
+        return grouped_dense_quantized_op(
+            o.codes, o.scales, self.weight, self.scale, self.group_rank
         )
 
 
@@ -454,7 +473,12 @@ class Attention(Module[..., Tensor]):
                 f"CSA2 attends at most {MAX_COMPRESSED} compressed entries, "
                 f"got index_topk={self.index_topk}"
             )
-        self.max_position = config.max_seq_len
+        # The table spans the positions a speculative verify can name --
+        # max_seq_len plus the KV pool's speculative slack -- plus the
+        # padded captured rows' tail (max_rows), as the graph-API model's
+        # position_capacity sizes its own tables.
+        self.max_position = position_capacity(config)
+        self.max_rows = config.max_batch_rows
 
         # Per-head sink, sharded by heads (8 per rank at TP8).
         self.attn_sink = Tensor.zeros([h], dtype=DType.float32)
@@ -466,6 +490,8 @@ class Attention(Module[..., Tensor]):
         self.wqa_wkv = MXFP8Linear(config.hidden_size, config.q_lora_rank + d)
         self.q_norm = RMSNorm(config.q_lora_rank, eps=config.rms_norm_eps)
         self.wq_b = MXFP8Linear(config.q_lora_rank, h * d)
+        # The fused q/kv norm launch takes one epsilon, so both norms read
+        # the config's.
         self.kv_norm = RMSNorm(d, eps=config.rms_norm_eps)
         # ``wo_a`` keeps the checkpoint's own E4M3 codes and compact
         # E8M0 block scales -- the adapter never converts a byte -- and
@@ -511,11 +537,63 @@ class Attention(Module[..., Tensor]):
         self.wo_a.weight = self.wo_a.weight.to(by_rows)
         self.wo_a.scale = self.wo_a.scale.to(by_rows)
 
+    def ropes_query_in_attention(self, x: Tensor) -> bool:
+        """Only 64 Q heads match the fused kernel's fixed RoPE tile."""
+        return self.n_heads == ROPE_Q_HEADS and self._attends_to_mxfp8(x)
+
     def _q_path(self, q_a: Tensor, cos_sin: Tensor) -> Tensor:
         """``wq_b(q_norm(q_a))`` reshaped to heads, RoPE on the tail."""
         qr = self.q_norm(q_a)
-        q = self.wq_b.forward_rope_tail(qr, cos_sin, self.head_dim)
+        if self.ropes_query_in_attention(q_a):
+            q = self.wq_b(qr)
+        else:
+            q = self.wq_b.forward_rope_tail(qr, cos_sin, self.head_dim)
         return F.reshape(q, [-1, self.n_heads, self.head_dim])
+
+    def fuses_query(self, projected: Tensor) -> bool:
+        """Whether :meth:`fused_query` applies to this stacked projection."""
+        return norm_quantize_store_supported(
+            projected.mesh.devices[0], self.q_lora_rank, self.head_dim
+        )
+
+    def fused_query(
+        self,
+        projected: Tensor,
+        swa: PagedCacheValues,
+        rows: RaggedRows,
+        layer_swa: Tensor,
+    ) -> tuple[Mxfp8Rows, Tensor]:
+        """Fuse q-lora norm, quantization, and KV window storage."""
+        # The memory planner does not charge these table bytes to the KV budget.
+        rope_table = position_rope_table(
+            self.rope.inv_freqs(),
+            self.max_position,
+            self.max_rows,
+            rows.positions,
+        )
+        codes, scales = _norm_quantize_store_op(
+            projected,
+            self.q_norm.weight,
+            self.kv_norm.weight,
+            swa.kv_blocks,
+            rows.positions,
+            rope_table,
+            window_store_slots(swa, rows, layer_swa),
+            swa.page_stride,
+            self.q_norm.eps,
+            self.q_lora_rank,
+        )
+        qr = Mxfp8Rows(
+            codes.rebind_mapping(projected.mapping),
+            scales.rebind_mapping(projected.mapping),
+        )
+        if self.ropes_query_in_attention(projected):
+            q = self.wq_b.forward_quantized(qr)
+        else:
+            q = self.wq_b.forward_quantized_rope_tail(
+                qr, self.rope.cos_sin(rows.positions), self.head_dim
+            )
+        return qr, F.reshape(q, [-1, self.n_heads, self.head_dim])
 
     def _use_prefill(
         self,
@@ -524,14 +602,7 @@ class Attention(Module[..., Tensor]):
         total: int | Dim,
         batch: int | Dim,
     ) -> Tensor:
-        """The host prefill/decode flag, exactly as the V2 model picks it.
-
-        A forward where some request brings more than
-        ``_DECODE_MAX_QUERY_TOKENS`` query tokens runs the prefill
-        attention if its lists cannot name more than ``PREFILL_ROWS``
-        distinct slots; every other forward runs the decode attention.
-        The op reads the flag at run time, so one graph serves both.
-        """
+        """Prefill needs a long prompt and bounded rows; one graph reads this flag at runtime."""
         host = DeviceRef.CPU()
         tokens = F.reshape(F.shape_to_tensor([total]), [])
         batch_t = F.reshape(F.shape_to_tensor([batch]), [])
@@ -569,25 +640,13 @@ class Attention(Module[..., Tensor]):
         swa_begin: Tensor,
         comp_indices: Tensor | None,
     ) -> Tensor:
-        """Each row's ``[T, 640]`` absolute-slot list.
-
-        The window slots of positions ``p, p - 1, ..., p - 127`` come
-        first (``-1`` below the request's ``swa_begin`` floor), then the
-        compressed slots of the selected entries. Padded capture rows drop
-        to ``-1`` entirely, so no list can gather a foreign page.
-        ``comp_indices`` holds entry (group) ids, ascending, ``-1``-padded
-        -- the indexer's one contract; the op takes the closing token's
-        position and floor-divides it back to the group, so an entry maps to
-        ``entry * ratio + ratio - 1``.
-        """
-        live = live_rows(rows.offsets, rows.positions.shape[0])
+        positions = live_positions(rows)
         none = F.constant(-1, DType.int32, rows.positions.mapping)
-        positions = F.where(live, rows.positions, none)
         selected = None
         if comp is not None and comp_indices is not None:
             ratio = self.compress_ratio
             selected = F.where(
-                F.unsqueeze(live, -1) & (comp_indices >= 0),
+                F.unsqueeze(positions >= 0, -1) & (comp_indices >= 0),
                 comp_indices * ratio + (ratio - 1),
                 none,
             )
@@ -604,11 +663,7 @@ class Attention(Module[..., Tensor]):
         )
 
     def _folds_inverse_rope(self, o: Tensor) -> bool:
-        """Whether ``wo_a`` can take ``o`` un-rotated and rotate it back.
-
-        The fold rides the block-diagonal launch, which a shard running a
-        single group (TP8) never takes.
-        """
+        """Whether inverse RoPE can be folded into the grouped projection."""
         tp = 1 if self.data_parallel else self.mesh.num_devices
         return self.o_groups // tp >= 2 and block_diagonal_woa_supported(
             o.mesh.devices[0],
@@ -616,25 +671,21 @@ class Attention(Module[..., Tensor]):
             self.o_lora_rank,
         )
 
+    def _attends_to_mxfp8(self, q: Tensor) -> bool:
+        """Whether attention can produce ``wo_a``'s MXFP8 input directly."""
+        return (
+            self.data_parallel or self.mesh.num_devices == 1
+        ) and self._folds_inverse_rope(q)
+
     def _output_projection(
         self, o: Tensor, rope: tuple[Tensor, int] | None = None
     ) -> Tensor:
-        """``[T, heads, head_dim]`` -> ``[T, hidden]``: the grouped path.
-
-        ``rope`` -- ``(cos_sin, head_dim)`` -- carries the inverse rotation
-        into the ``wo_a`` quantize: ``o`` then arrives un-rotated and one
-        launch rotates each head's tail and quantizes every group.
-        Otherwise the caller rotated first and ``wo_a`` quantizes the
-        rotated rows like every dense FP8 site. ``wo_a`` projects each group
-        on its own rows through the grouped MXFP8 op -- one block-diagonal
-        launch on SM100, whose sharding rule pairs each rank's K-slice with
-        its weight shard; ``wo_b`` quantizes its own input. Row-parallel
-        partial sums: one all-reduce completes it. Under data parallelism
-        the projection is whole per rank and its output carries the rows'
-        own placement -- nothing to reduce.
-        """
+        """Run grouped ``wo_a`` and ``wo_b``, folding inverse RoPE when supported."""
         flat = o.reshape([o.shape[0], self.n_heads * self.head_dim])
-        grouped = self.wo_a(flat, rope)
+        return self._project_grouped(self.wo_a(flat, rope))
+
+    def _project_grouped(self, grouped: Tensor) -> Tensor:
+        """``wo_b`` over ``wo_a``'s output, completing the output projection."""
         out = self.wo_b(grouped)
         if out.is_distributed and any(
             isinstance(p, Partial) for p in out.placements
@@ -642,17 +693,22 @@ class Attention(Module[..., Tensor]):
             out = F.allreduce_sum(out)
         return out
 
-    def project(self, h_normed: Tensor) -> tuple[Tensor, Tensor]:
-        """``(wq_a(x), wkv(x))``, sliced out of the one stacked projection.
-
-        Positive bounds only (the note in ``rope.py`` and ISSUES Issue 34):
-        the upper bound is the stacked width, never a negative index.
-        """
-        out = self.wqa_wkv(h_normed)
-        width = int(out.shape[-1])
+    def project(
+        self, h_normed: Tensor, h_rows: Mxfp8Rows | None = None
+    ) -> Tensor:
+        """Project the normalized state through the stacked q/kv weights."""
         return (
-            out[:, : self.q_lora_rank],
-            out[:, self.q_lora_rank : width],
+            self.wqa_wkv(h_normed)
+            if h_rows is None
+            else self.wqa_wkv.forward_quantized(h_rows)
+        )
+
+    def split_projection(self, projected: Tensor) -> tuple[Tensor, Tensor]:
+        """Split the stacked projection into q-lora and KV latents."""
+        width = int(projected.shape[-1])
+        return (
+            projected[:, : self.q_lora_rank],
+            projected[:, self.q_lora_rank : width],
         )
 
     def forward(
@@ -665,33 +721,10 @@ class Attention(Module[..., Tensor]):
         comp_indices: Tensor | None = None,
         *,
         rope_table: Tensor | None = None,
-        projected: tuple[Tensor, Tensor] | None = None,
+        projected: Tensor | None = None,
+        query: Tensor | None = None,
     ) -> Tensor:
-        """One attention forward over a ragged batch of ``T`` tokens.
-
-        Args:
-            h_normed: ``[T, hidden]`` bf16, already ``attn_norm``-ed.
-            kv: This batch's ``(swa, comp)`` paged leaves.
-            rows: The forward's ragged bookkeeping.
-            layer_idx: This layer's slots ``(layer_swa, layer_comp)`` in
-                the two leaves, uint32 host scalars as graph values,
-                never constants baked into a shared body.
-            swa_begin: ``[batch]`` int32 per-request window lower bounds
-                in absolute positions; zeros without one.
-            comp_indices: ``[T, index_topk]`` int32 compressed-entry
-                selection, ascending, ``-1`` padded. ``None`` marks a
-                window-only layer.
-            rope_table: The stores' position-indexed cos/sin table; the
-                caller stages one per regime per step. ``None`` builds
-                it here.
-            projected: The stacked projection's ``(q_a, kv_a)`` pair,
-                when the caller already ran :meth:`project` (the block's
-                selection layers, which slice the q-lora out for the
-                indexer). The exact pair is consumed verbatim.
-
-        Returns:
-            ``[T, hidden]`` bf16, all-reduced across the TP mesh.
-        """
+        """Run attention over ragged rows, reusing staged projections when provided."""
         swa, comp = kv
         layer_swa, layer_comp = layer_idx
         total = h_normed.shape[0]
@@ -699,31 +732,33 @@ class Attention(Module[..., Tensor]):
         # One cos/sin for the query and the inverse rotation.
         cos_sin = self.rope.cos_sin(rows.positions)
 
-        if projected is None:
-            projected = self.project(h_normed)
-        q_a, kv_a = projected
-        q = self._q_path(q_a, cos_sin)
-        if rope_table is None:
-            rope_table = position_rope_table(
-                self.rope.inv_freqs(),
-                self.max_position,
-                total,
+        if query is not None:
+            # ``fused_query`` already stored KV; this path skips that write.
+            q = query
+        else:
+            if projected is None:
+                projected = self.project(h_normed)
+            q_a, kv_a = self.split_projection(projected)
+            q = self._q_path(q_a, cos_sin)
+            if rope_table is None:
+                rope_table = position_rope_table(
+                    self.rope.inv_freqs(),
+                    self.max_position,
+                    self.max_rows,
+                    rows.positions,
+                )
+            # The window record: the store op owns the tail rotation, the
+            # MXFP8 quantize and the paged insert; the latent arrives
+            # normed and unrotated. Every layer, including window-only,
+            # owns its sliding-window slot.
+            _store_window_op(
+                swa.kv_blocks,
+                self.kv_norm(kv_a),
                 rows.positions,
+                rope_table,
+                window_store_slots(swa, rows, layer_swa),
+                block_stride=swa.page_stride,
             )
-        # The flag reads the leaves' own metadata; batch is the row
-        # offsets' request count.
-        # The window record: the store op owns the tail rotation, the
-        # MXFP8 quantize and the paged insert; the latent arrives normed
-        # and unrotated. Every layer, including window-only, owns its
-        # sliding-window slot.
-        _store_window_op(
-            swa.kv_blocks,
-            self.kv_norm(kv_a),
-            rows.positions,
-            rope_table,
-            window_store_slots(swa, rows, layer_swa),
-            block_stride=swa.page_stride,
-        )
         idx = self._index_list(
             swa,
             comp,
@@ -733,17 +768,47 @@ class Attention(Module[..., Tensor]):
             swa_begin,
             comp_indices,
         )
+        kv_comp = None if comp is None else comp.kv_blocks
+        comp_stride = None if comp is None else comp.page_stride
+        prefill = self._use_prefill(swa, comp, total, rows.batch)
+        if self._attends_to_mxfp8(q):
+            # The attention kernel writes ``wo_a``'s input itself: rotated
+            # back and quantized, the bytes the separate rope-quantize
+            # launch below would produce from its bf16 output.
+            x_q, x_scales = _csa2_attend_mxfp8_op(
+                q,
+                idx,
+                self.attn_sink,
+                swa.kv_blocks,
+                kv_comp,
+                cos_sin,
+                scale=self.softmax_scale,
+                window_stride=swa.page_stride,
+                comp_stride=comp_stride,
+                compressed_rows=self.index_topk,
+                prefill=prefill,
+                max_distinct_rows=PREFILL_ROWS,
+                rope_q=self.ropes_query_in_attention(q),
+            )
+            return self._project_grouped(
+                self.wo_a.forward_quantized(
+                    Mxfp8Rows(
+                        x_q.rebind_mapping(q.mapping),
+                        x_scales.rebind_mapping(q.mapping),
+                    )
+                )
+            )
         o = _csa2_attend_op(
             q,
             idx,
             self.attn_sink,
             swa.kv_blocks,
-            None if comp is None else comp.kv_blocks,
+            kv_comp,
             scale=self.softmax_scale,
             window_stride=swa.page_stride,
-            comp_stride=None if comp is None else comp.page_stride,
+            comp_stride=comp_stride,
             compressed_rows=self.index_topk,
-            prefill=self._use_prefill(swa, comp, total, rows.batch),
+            prefill=prefill,
             max_distinct_rows=PREFILL_ROWS,
         )
         # The rule-less ``F.functional`` wrapper leaves the attention's

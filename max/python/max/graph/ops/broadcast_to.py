@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo, rmo
 
 from ..dim import DimLike
 from ..graph import Graph
@@ -87,7 +87,7 @@ def broadcast_to(
             raise ValueError(message)
 
         return Graph.current._add_op_generated(
-            rmo.MoBroadcastToOp,
+            mo.BroadcastToOp,
             TensorType(x.dtype, shape=out_dims, device=x.device),
             x,
             shape._mlir_value,

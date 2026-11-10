@@ -17,6 +17,7 @@ from pathlib import Path
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
@@ -34,9 +35,9 @@ from ..qwen3_5.tool_parser import (
     Qwen3_5ToolParser,  # noqa: F401
 )
 from .memory_planner import NemotronHMemoryPlanner
-from .model import NemotronHModel
 from .model_config import NemotronHConfig
-from .weight_adapters import convert_nemotron_h_state_dict
+from .nemotron_h import NemotronH
+from .weight_adapters import nemotron_h_weight_rules
 
 
 def nemotron_format_spec(repo: HuggingFaceRepo) -> Path | None:
@@ -68,17 +69,15 @@ nemotron_h_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=NemotronHConfig.DEFAULT_ENCODING,
     supported_encodings=NemotronHConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=NemotronHModel,
+    modules={GraphRole.DECODER: NemotronH},
     tokenizer=ReasoningTextTokenizer,
     context_type=TextContext,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_nemotron_h_state_dict,
-    },
+    weight_rules=nemotron_h_weight_rules,
+    use_weight_rules=True,
     checkpoints_recurrent_state=True,
     # The name Mach finds the fused DSpark graph by.
     spec_decode_graph_names={"dspark": "UnifiedDSparkNemotronHModule"},
     config=NemotronHConfig,
-    batching=NemotronHModel.batch_processor_cls,
     memory_planner=NemotronHMemoryPlanner,
     multi_gpu_supported=True,
     reasoning_parser="qwen3_5",

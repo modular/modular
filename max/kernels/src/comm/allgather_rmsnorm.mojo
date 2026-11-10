@@ -25,7 +25,7 @@ row's `block.sum` runs parallel across blocks, not `ngpus` serial within one.
 
 from std.collections import Array
 from std.math.uutils import ualign_down
-from std.math import rsqrt
+from std.math import exp, max, min, rsqrt, sqrt
 from std.sys import (
     align_of,
     simd_width_of,
@@ -69,6 +69,10 @@ comptime AG_NORM_FUSE_THRESHOLD = (
     128 * AG_NORM_CALIBRATED_COLS * size_of[DType.bfloat16]()
 )
 
+comptime AG_QUANT_ONLY_THRESHOLD = (
+    1024 * AG_NORM_CALIBRATED_COLS * size_of[DType.bfloat16]()
+)
+
 
 # --- GPU Kernel ---
 
@@ -98,6 +102,8 @@ def _allgather_rmsnorm_kernel[
     & def[width: Int](row: Int, col: Int, val: SIMD[in_dtype, width]) -> None,
     domain_id: Int = 0,
     pdl_level: PDLLevel = PDLLevel(),
+    gather_cols: Bool = False,
+    round_offset_gamma: Bool = False,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     in_lengths: StaticTuple[Int32, ngpus],
@@ -115,8 +121,10 @@ def _allgather_rmsnorm_kernel[
 
     `src_ptrs[g]` is peer `g`'s `[in_lengths[g], cols]` shard at global rows
     `[prefix(g), prefix(g)+in_lengths[g])`; `normed_out`/`sum_out` are the full
-    replicated outputs, indexed by GLOBAL row. `quant_epilogue` is a trailing
-    host-layout argument, called only when `has_quant_epilogue`.
+    replicated outputs, indexed by GLOBAL row. With `gather_cols`, peer `g`
+    instead holds columns `[g * cols / ngpus, (g + 1) * cols / ngpus)` of every
+    row. `quant_epilogue` is a trailing host-layout argument, called only when
+    `has_quant_epilogue`.
     """
     var cols = Int(cols_dev)
     var my_rank = Int(my_rank_dev)
@@ -132,12 +140,16 @@ def _allgather_rmsnorm_kernel[
     var is_valid = col_idx < cols
     var num_blocks = grid_dim.x
 
-    # Shard row counts -> global row starts (natural peer/concat order).
+    var rows: Int
     var row_starts = StaticTuple[Int, ngpus](0)
-    var rows = 0
-    comptime for g in range(ngpus):
-        row_starts[g] = rows
-        rows += Int(in_lengths[g])
+    comptime if gather_cols:
+        rows = Int(in_lengths[0])
+    else:
+        # Shard row counts -> global row starts (natural peer/concat order).
+        rows = 0
+        comptime for g in range(ngpus):
+            row_starts[g] = rows
+            rows += Int(in_lengths[g])
 
     # Only host-provided values are read above. The wait precedes the start
     # barrier, not just the first shard read: the barrier writes this rank's
@@ -155,12 +167,11 @@ def _allgather_rmsnorm_kernel[
     # still be writing it. The load still overlaps the start barrier below.
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
-        gamma_vec = (
-            gamma.load[width=simd_width, alignment=align]((col_idx,)).cast[
-                accum_type
-            ]()
-            + weight_offset.cast[accum_type]()
-        )
+        var g = gamma.load[width=simd_width, alignment=align]((col_idx,))
+        comptime if round_offset_gamma:
+            gamma_vec = (g + weight_offset).cast[accum_type]()
+        else:
+            gamma_vec = g.cast[accum_type]() + weight_offset.cast[accum_type]()
 
     # Start barrier: we P2P-read peers' shards, so all ranks must be ready.
     _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
@@ -168,13 +179,19 @@ def _allgather_rmsnorm_kernel[
     )
 
     for grow in range(block_idx.x, rows, num_blocks):
-        # Owning peer = last shard with start <= grow; grow < rows always lands
-        # in a non-empty shard (trailing empties skipped).
         var g = 0
-        comptime for gg in range(ngpus):
-            if grow >= row_starts[gg]:
-                g = gg
-        var src_elem = (grow - row_starts[g]) * cols + col_idx
+        var src_elem: Int
+        comptime if gather_cols:
+            var shard_cols = cols // ngpus
+            g = col_idx // shard_cols
+            src_elem = grow * shard_cols + col_idx - g * shard_cols
+        else:
+            # Owning peer = last shard with start <= grow; grow < rows always
+            # lands in a non-empty shard (trailing empties skipped).
+            comptime for gg in range(ngpus):
+                if grow >= row_starts[gg]:
+                    g = gg
+            src_elem = (grow - row_starts[g]) * cols + col_idx
 
         # Gathered bf16 IS the residual (verbatim copy). Cast to f32 only for
         # the mean-square.
@@ -241,6 +258,8 @@ def _allgather_rmsnorm_launch[
     & def[width: Int](row: Int, col: Int, val: SIMD[in_dtype, width]) -> None,
     domain_id: Int = 0,
     pdl_level: PDLLevel = PDLLevel(),
+    gather_cols: Bool = False,
+    round_offset_gamma: Bool = False,
 ](
     rows: Int,
     cols: Int,
@@ -298,6 +317,8 @@ def _allgather_rmsnorm_launch[
         QuantEpilogueType=QuantEpilogueType,
         domain_id=domain_id,
         pdl_level=pdl_level,
+        gather_cols=gather_cols,
+        round_offset_gamma=round_offset_gamma,
     ]
     var in_lengths_dev = StaticTuple[Int32, ngpus](0)
     comptime for i in range(ngpus):
@@ -331,6 +352,8 @@ def allgather_rmsnorm[
     //,
     group_size: Int = ngpus,
     pdl_level: PDLLevel = PDLLevel(),
+    gather_cols: Bool = False,
+    round_offset_gamma: Bool = False,
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -362,6 +385,10 @@ def allgather_rmsnorm[
             to write this kernel's inputs before its own PDL wait, because
             peers may still be reading them. `ON` is the level that is safe
             against a dependent that does.
+        gather_cols: Whether the shards split the columns; see
+            `_allgather_rmsnorm_impl`.
+        round_offset_gamma: Whether `gamma + weight_offset` is rounded to
+            `in_dtype`; see `_allgather_rmsnorm_impl`.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors,
@@ -385,7 +412,11 @@ def allgather_rmsnorm[
         pass
 
     _allgather_rmsnorm_impl[
-        has_quant_epilogue=False, group_size=group_size, pdl_level=pdl_level
+        has_quant_epilogue=False,
+        group_size=group_size,
+        gather_cols=gather_cols,
+        round_offset_gamma=round_offset_gamma,
+        pdl_level=pdl_level,
     ](
         input_buffers,
         normed_out,
@@ -412,6 +443,8 @@ def _allgather_rmsnorm_impl[
     has_quant_epilogue: Bool,
     group_size: Int = ngpus,
     pdl_level: PDLLevel = PDLLevel(),
+    gather_cols: Bool = False,
+    round_offset_gamma: Bool = False,
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -430,7 +463,10 @@ def _allgather_rmsnorm_impl[
     rows into the full replicated `[rows, cols]` stream and RMSNorm-normalizes
     every gathered row. Writes the full (replicated) outputs on this GPU: the
     gathered residual to `sum_out` and its RMSNorm to `normed_out`.
-    `weight_offset` (1.0 for M3, Gemma-style) is folded into gamma in f32.
+    `weight_offset` (1.0 for M3, Gemma-style) is folded into gamma in f32, or
+    in `in_dtype` with `round_offset_gamma`, as a norm that scales by a stored
+    `1 + w` does. With `gather_cols`, every shard is `[rows, cols / group_size]`
+    and holds a contiguous block of columns, in rank order.
 
     World view vs. group: `ngpus` is the total number of devices in the
     world; `input_buffers` and `rank_sigs` carry every device's data,
@@ -459,6 +495,10 @@ def _allgather_rmsnorm_impl[
             to write this kernel's inputs before its own PDL wait, because
             peers may still be reading them. `ON` is the level that is safe
             against a dependent that does.
+        gather_cols: Whether the shards split the columns instead of the
+            rows.
+        round_offset_gamma: Whether `gamma + weight_offset` is rounded to
+            `in_dtype` before the f32 multiply.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors
@@ -520,7 +560,8 @@ def _allgather_rmsnorm_impl[
     # cols = shard last dim; per-peer row counts (may be ragged/0); `rows` is
     # THIS DEVICE'S GROUP's gathered total.
     comptime last_dim_idx = in_layout.rank - 1
-    var cols = Int(input_buffers[group_start].dim[last_dim_idx]())
+    var shard_cols = Int(input_buffers[group_start].dim[last_dim_idx]())
+    var cols = shard_cols * group_size if gather_cols else shard_cols
 
     comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
     var src_ptrs = Array[_, group_size](
@@ -531,9 +572,16 @@ def _allgather_rmsnorm_impl[
     var in_lengths = StaticTuple[Int, group_size](0)
     var rows = 0
     comptime for i in range(group_size):
-        var len_i = input_buffers[group_start + i].num_elements() // cols
+        var len_i = input_buffers[group_start + i].num_elements() // shard_cols
         in_lengths[i] = len_i
         rows += len_i
+    comptime if gather_cols:
+        rows = in_lengths[0]
+        comptime for i in range(1, group_size):
+            if in_lengths[i] != rows:
+                raise Error(
+                    "allgather_rmsnorm: column shards must have equal rows"
+                )
 
     # Each thread owns `simd_width` cols; H=6144 fits the base width
     # (64*8*16=8192). Assert fit + divisibility below.
@@ -554,11 +602,12 @@ def _allgather_rmsnorm_impl[
                 ") for the warp-tiling kernel",
             )
         )
-    if cols % simd_width != 0:
+    # A thread's vector must not straddle two column shards.
+    if shard_cols % simd_width != 0:
         raise Error(
             String(
                 "allgather_rmsnorm: cols (",
-                cols,
+                shard_cols,
                 ") must be a multiple of simd_width (",
                 simd_width,
                 ")",
@@ -618,6 +667,8 @@ def _allgather_rmsnorm_impl[
         has_quant_epilogue=has_quant_epilogue,
         domain_id=domain_id,
         pdl_level=pdl_level,
+        gather_cols=gather_cols,
+        round_offset_gamma=round_offset_gamma,
     ](
         rows,
         cols,
@@ -974,3 +1025,284 @@ def _dispatch_ag_norm_quant[
         )
     else:
         two_launch_with_quant()
+
+
+# --- Gathered gated residual boundary ---
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(threads_per_block)
+    )
+)
+@__name(t"allgather_gated_residual_rmsnorm_{dtype}_{ngpus}")
+def _allgather_gated_residual_rmsnorm_kernel[
+    dtype: DType,
+    gate_dtype: DType,
+    ngpus: Int,
+    simd_width: Int,
+    threads_per_block: Int,
+    scale_branch: Bool,
+](
+    src_ptrs: Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
+    residual: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    post_weight: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    gate: ImmPointer[Scalar[gate_dtype], ImmutAnyOrigin],
+    norm_weight: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    stream_out: MutPointer[Scalar[dtype], MutAnyOrigin],
+    normed_out: MutPointer[Scalar[dtype], MutAnyOrigin],
+    rows_dev: Int32,
+    cols_dev: Int32,
+    post_eps: Float32,
+    norm_eps: Float32,
+    temperature: Float32,
+    gate_eps: Float32,
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    my_rank_dev: Int32,
+):
+    """Gathers each row's branch columns and joins them to the residual stream.
+
+    One block per row, the whole row in registers: the branch's post-norm,
+    the gate's mix with `residual` and the next pre-norm, rounding where the
+    unfused graph does (see `allgather_gated_residual_rmsnorm`).
+    """
+    comptime accum = get_accum_type[dtype]()
+    comptime assert accum.is_floating_point(), "accum must be floating point"
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    var rows = Int(rows_dev)
+    var cols = Int(cols_dev)
+    var my_rank = Int(my_rank_dev)
+    var shard_cols = cols // ngpus
+    var col_idx = thread_idx.x * simd_width
+    var is_valid = col_idx < cols
+    var g = min(col_idx // shard_cols, ngpus - 1)
+    var src_col = col_idx - g * shard_cols
+
+    # Per-column factors, loaded before the barrier.
+    var post_scale = SIMD[dtype, simd_width](1)
+    var alpha = SIMD[accum, simd_width](0)
+    var beta = SIMD[accum, simd_width](0)
+    var norm_gamma = SIMD[accum, simd_width](0)
+    if is_valid:
+        comptime if scale_branch:
+            post_scale = 1 + post_weight.unsafe_load[
+                width=simd_width, alignment=align
+            ](col_idx)
+        # The graph folds `gate / T` into a reciprocal multiply.
+        var w = (
+            gate.unsafe_load[width=simd_width](col_idx).cast[accum]()
+            * (1 / temperature).cast[accum]()
+        )
+        beta = 1 / (1 + exp(-w))
+        alpha = sqrt(
+            max(
+                (1 / (1 + exp(w))) * (1 + beta),
+                SIMD[accum, simd_width](gate_eps.cast[accum]()),
+            )
+        )
+        norm_gamma = (
+            1
+            + norm_weight.unsafe_load[width=simd_width, alignment=align](
+                col_idx
+            )
+        ).cast[accum]()
+
+    _multi_gpu_barrier[ngpus, is_start=True](
+        rank_sigs, rank_sigs[my_rank], my_rank
+    )
+
+    for row in range(block_idx.x, rows, grid_dim.x):
+        var x = SIMD[dtype, simd_width](0)
+        var r = SIMD[dtype, simd_width](0)
+        if is_valid:
+            x = (
+                src_ptrs[g]
+                .unsafe_address_space_cast[_target_address_space]()
+                .unsafe_load[width=simd_width, alignment=align, invariant=True](
+                    row * shard_cols + src_col
+                )
+            )
+            comptime if scale_branch:
+                x = x * post_scale
+            r = residual.unsafe_load[width=simd_width, alignment=align](
+                row * cols + col_idx
+            )
+        # Invalid lanes hold 0 in both sums.
+        var xf = x.cast[accum]()
+        var ssq1 = block.sum[block_size=threads_per_block, broadcast=True](
+            (xf * xf).reduce_add()
+        )
+        var inv1 = rsqrt(ssq1 / Scalar[accum](cols) + post_eps.cast[accum]())
+        var n = (xf * inv1).cast[dtype]()
+        var h = (alpha * r.cast[accum]() + beta * n.cast[accum]()).cast[dtype]()
+        var hf = h.cast[accum]()
+        var ssq2 = block.sum[block_size=threads_per_block, broadcast=True](
+            (hf * hf).reduce_add()
+        )
+        var inv2 = rsqrt(ssq2 / Scalar[accum](cols) + norm_eps.cast[accum]())
+        if is_valid:
+            stream_out.unsafe_store[width=simd_width, alignment=align](
+                row * cols + col_idx, h
+            )
+            normed_out.unsafe_store[width=simd_width, alignment=align](
+                row * cols + col_idx, (hf * inv2 * norm_gamma).cast[dtype]()
+            )
+
+    # Peers read this rank's shard until they pass here.
+    _multi_gpu_barrier[ngpus, is_start=False](
+        rank_sigs, rank_sigs[my_rank], my_rank
+    )
+
+
+def allgather_gated_residual_rmsnorm[
+    dtype: DType,
+    gate_dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    //,
+    scale_branch: Bool,
+](
+    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
+    residual: TileTensor[dtype, ...],
+    post_weight: TileTensor[dtype, ...],
+    gate: TileTensor[gate_dtype, ...],
+    norm_weight: TileTensor[dtype, ...],
+    stream_out: TileTensor[mut=True, dtype, ...],
+    normed_out: TileTensor[mut=True, dtype, ...],
+    post_eps: Float32,
+    norm_eps: Float32,
+    temperature: Float32,
+    gate_eps: Float32,
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    ctx: DeviceContext,
+    my_rank: Int,
+) raises:
+    """All-gathers a branch's column shards and joins it to the residual stream.
+
+    Per gathered row `b`, as Muse Spark's unfused residual boundary computes
+    it:
+
+        n = rms_norm(b * (1 + post_weight))          # weightless norm
+        stream = alpha * residual + beta * n         # fp32, rounded once
+        normed = rms_norm(stream) * (1 + norm_weight)
+
+    with `beta = sigmoid(gate / T)` and
+    `alpha = sqrt(max(sigmoid(-gate / T) * (1 + beta), gate_eps))`. Each step
+    rounds to `dtype` where the graph does; the row sums reduce in a different
+    order than `rms_norm`'s, so the outputs agree to its rounding.
+
+    Parameters:
+        dtype: Element type of the activations and norm weights.
+        gate_dtype: Element type of the gate's logits.
+        ngpus: Number of devices, all in one group.
+        in_layout: Layout of the branch shards.
+        in_origin: Origin of the branch shards.
+        scale_branch: Whether the branch is scaled by `1 + post_weight`
+            before its norm; otherwise `post_weight` is not read.
+
+    Args:
+        input_buffers: Every device's `[rows, cols / ngpus]` branch shard,
+            holding a contiguous block of columns in rank order.
+        residual: This device's residual stream `[rows, cols]`.
+        post_weight: The branch's input scale weight `[cols]`.
+        gate: The residual gate's logits `[cols]`.
+        norm_weight: The next pre-norm's weight `[cols]`.
+        stream_out: The new residual stream `[rows, cols]`.
+        normed_out: Its next pre-norm `[rows, cols]`.
+        post_eps: The branch norm's epsilon.
+        norm_eps: The next pre-norm's epsilon.
+        temperature: The gate's temperature.
+        gate_eps: The floor under the residual coefficient's root.
+        rank_sigs: Every device's Signal pointer, by rank.
+        ctx: Device context for this GPU.
+        my_rank: This device's rank.
+    """
+    comptime assert ngpus >= 2, "needs at least 2 GPUs"
+    if not is_p2p_enabled():
+        raise Error(
+            "allgather_gated_residual_rmsnorm requires P2P access between GPUs"
+        )
+    comptime last_dim_idx = in_layout.rank - 1
+    var shard_cols = Int(input_buffers[0].dim[last_dim_idx]())
+    var cols = shard_cols * ngpus
+    var rows = input_buffers[0].num_elements() // shard_cols
+
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime threads_per_block = max_warps_per_block * warp_size
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
+    if cols > threads_per_block * simd_width or shard_cols % simd_width != 0:
+        raise Error(
+            String(
+                "allgather_gated_residual_rmsnorm: ",
+                cols,
+                " columns in shards of ",
+                shard_cols,
+                " need at most ",
+                threads_per_block * simd_width,
+                " columns and shards a multiple of ",
+                simd_width,
+            )
+        )
+    var expected = rows * cols
+    if (
+        residual.num_elements() != expected
+        or stream_out.num_elements() != expected
+        or normed_out.num_elements() != expected
+    ):
+        raise Error(
+            String(
+                (
+                    "allgather_gated_residual_rmsnorm: the residual and outputs"
+                    " must hold "
+                ),
+                rows,
+                " x ",
+                cols,
+                " elements",
+            )
+        )
+    if rows == 0:
+        return
+
+    comptime PtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
+    var src_ptrs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: input_buffers[i]
+        ._storage.as_imm()
+        .as_unsafe_any_origin()
+    )
+    comptime sm_version = get_sm_version()
+    var max_blocks = dispatch_select_comm_config[
+        ngpus, sm_version, allgather_tuning_table
+    ](rows * cols * size_of[dtype]()).get_num_blocks()
+
+    comptime kernel = _allgather_gated_residual_rmsnorm_kernel[
+        dtype,
+        gate_dtype,
+        ngpus,
+        simd_width,
+        threads_per_block,
+        scale_branch,
+    ]
+    ctx.enqueue_function[kernel](
+        src_ptrs,
+        residual.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+        post_weight.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+        gate.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+        norm_weight.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+        stream_out.unsafe_ptr().as_unsafe_any_origin(),
+        normed_out.unsafe_ptr().as_unsafe_any_origin(),
+        Int32(rows),
+        Int32(cols),
+        post_eps,
+        norm_eps,
+        temperature,
+        gate_eps,
+        rank_sigs,
+        Int32(my_rank),
+        grid_dim=min(rows, max_blocks),
+        block_dim=threads_per_block,
+    )

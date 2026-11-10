@@ -646,11 +646,12 @@ def async_copy[
         not fill or size_of[dtype]() <= size_of[Int32]()
     ), "if the fill value is specified, then the dtype must be 32bit or less"
     comptime assert size in (4, 8, 16)
-    comptime assert not l2_prefetch or l2_prefetch.value() in (
-        64,
-        128,
-        256,
-    ), "the l2 prefetch size must be in bounds"
+    comptime if case .Some(prefetch_size) = l2_prefetch:
+        comptime assert prefetch_size in (
+            64,
+            128,
+            256,
+        ), "the l2 prefetch size must be in bounds"
 
     comptime if is_amd_gpu() or is_apple_gpu():
         # Use sync load and stores for now
@@ -700,7 +701,7 @@ def async_copy[
             inlined_assembly[asm + ", $4;", NoneType, constraints="r,l,n,r,l"](
                 Int32(Int(dst)), src, Int32(size), Int32(src_size), cache_policy
             )
-    elif fill:
+    elif case .Some(fill_value) = fill:
         comptime assert (
             size == 16
         ), "Non zero filling is supported only for 16B access."
@@ -719,7 +720,7 @@ def async_copy[
 
             return 0
 
-        var fill_val = _i32_repr[fill.value()]()
+        var fill_val = _i32_repr[fill_value]()
         comptime header_asm = "{\n.reg .pred p;\nsetp.ne.b32 p, $0, 0;\n"
         comptime footer_asm = (
             "@!p st.shared.v4.b32 [$1], {$4, $5, $6, $7};\n}\n"
@@ -3641,8 +3642,8 @@ def _get_type_mnemonic[dtype: DType]() -> StaticString:
             return "e4m3"
         case .float8_e5m2:
             return "e5m2"
-
-    return "unknown dtype mnemonic"
+        case _:
+            return "unknown dtype mnemonic"
 
 
 def _int_to_str[val: Int]() -> StaticString:

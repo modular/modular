@@ -28,7 +28,7 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 from .sampling import (
     apply_masked_penalties_to_logits,
@@ -48,6 +48,7 @@ from .topk_fi_cluster import (
     topk_topp_masked_probs_cluster,
     topk_topp_sampling_from_prob_cluster,
 )
+from .dspark_draft import dspark_draft_sample_gpu
 
 
 def topk_topp_masked_probs[

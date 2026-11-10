@@ -35,6 +35,7 @@ family.
    pipelines.architectures.dspark_deepseekV41
    pipelines.architectures.dspark_draft
    pipelines.architectures.dspark_gemma4
+   pipelines.architectures.dspark_muse_spark
    pipelines.architectures.dspark_qwen3
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
@@ -114,6 +115,7 @@ Text generation
    ~max.pipelines.architectures.dspark_deepseekV41
    ~max.pipelines.architectures.dspark_draft
    ~max.pipelines.architectures.dspark_gemma4
+   ~max.pipelines.architectures.dspark_muse_spark
    ~max.pipelines.architectures.dspark_qwen3
    ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3

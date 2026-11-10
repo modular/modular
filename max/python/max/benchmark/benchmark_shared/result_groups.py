@@ -58,6 +58,14 @@ class SummaryGroup(BaseModel):
     completed: int | None = None
     failures: int | None = None
     request_throughput: float | None = None
+    # Set only when the run was given ``--goodput`` targets, which the
+    # ``goodput_*_ms`` fields record; the rates are over the same requests
+    # and window as ``request_throughput``.
+    request_goodput: float | None = None
+    goodput_attainment: float | None = None
+    goodput_ttft_ms: float | None = None
+    goodput_tpot_ms: float | None = None
+    goodput_e2el_ms: float | None = None
     aggregate_tokens_per_minute: float | None = None
     mean_ttft_ms: float | None = None
     mean_tpot_ms: float | None = None

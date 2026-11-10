@@ -50,9 +50,9 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, Dim, TensorType, TensorValue, Value, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     read_engram_lookback,
     record_engram_lookback,
@@ -89,6 +89,7 @@ from .inputs import DeepseekV41Inputs
 from .interface import V41Config, extra_input_names
 from .layers.attention import absolute_positions
 from .model_config import DeepseekV41Config
+from .registration import RegisteredDeepseekV41Inputs
 
 __all__ = [
     "ADAPTER",
@@ -776,7 +777,9 @@ def trailing_input_types(
 
 def batch_trailing_buffers(target_inputs: object) -> list[Buffer]:
     """Returns the extras the trunk's batch processor prepared."""
-    assert isinstance(target_inputs, DeepseekV41Inputs)
+    assert isinstance(
+        target_inputs, (DeepseekV41Inputs, RegisteredDeepseekV41Inputs)
+    )
     return list(target_inputs.extras)
 
 

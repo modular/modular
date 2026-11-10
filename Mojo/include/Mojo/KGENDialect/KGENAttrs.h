@@ -26,6 +26,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -59,7 +60,7 @@ namespace M::KGEN {
 /// This class stores a value of a particular dtype. It supports containing
 /// integer, index, float, and bool dtype values only. Index values are treated
 /// as signed.
-class DTypeValue {
+class MODULAR_CXX_EXPORT DTypeValue {
 public:
   /// Get an integer value. Signedness is taken from `dtype`, not `value`.
   DTypeValue(APSInt value, KGENDType dtype);
@@ -130,7 +131,9 @@ void printDTypeValues(llvm::raw_ostream &os, llvm::ArrayRef<DTypeValue> values,
 //===----------------------------------------------------------------------===//
 
 #define GET_ATTRDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENAttrs.h.inc"
+#pragma GCC visibility pop
 
 //===----------------------------------------------------------------------===//
 // EmitAsAttr
@@ -159,8 +162,8 @@ public:
 /// Given an attribute or type, return the "canonical" version of the attribute
 /// with all type sugar removed.
 Attribute getCanonicalAttr(Attribute src);
-TypedAttr getCanonicalAttr(TypedAttr src);
-Type getCanonicalType(Type type);
+MODULAR_CXX_EXPORT TypedAttr getCanonicalAttr(TypedAttr src);
+MODULAR_CXX_EXPORT Type getCanonicalType(Type type);
 
 /// Return true if the specified types are canonically equal.
 bool isEqualCanon(Type t1, Type t2);
@@ -225,7 +228,7 @@ TypedAttr stripIdentityWrappers(TypedAttr attr);
 //===----------------------------------------------------------------------===//
 
 /// A view of a `GeneratorAttr` whose body is a `FuncSymbolAttr`.
-class FuncSymbolGenerator {
+class MODULAR_CXX_EXPORT FuncSymbolGenerator {
 public:
   FuncSymbolGenerator() = default;
   /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a
@@ -237,22 +240,20 @@ public:
                                  FuncSymbolAttr funcSymbol,
                                  Attribute metadata = {});
 
-  /// Returns a fully bound generator referencing the non-parametric function
-  /// `symbol` of type `type`.
-  static FuncSymbolGenerator get(SymbolRefAttr symbol, FuncType type,
-                                 Attribute metadata = {});
-
   /// Returns a fully bound generator referencing `func`.
   static FuncSymbolGenerator get(FuncOp func);
 
-  /// Returns a generator of type `type` referencing `symbol` with
-  /// `paramValues` bound. An `UnboundAttr` value, or a parameter left off the
-  /// end, binds to the generator's next input parameter.
-  static FuncSymbolGenerator get(SymbolRefAttr symbol,
-                                 FuncTypeGeneratorType type,
-                                 ArrayRef<TypedAttr> paramValues = {});
-  static FuncSymbolGenerator get(StringAttr name, FuncTypeGeneratorType type,
-                                 ArrayRef<TypedAttr> paramValues = {});
+  /// Returns a generator of `type` referencing `symbol` with an empty
+  /// parameter list.
+  static FuncSymbolGenerator getParamLess(SymbolRefAttr symbol, FuncType type,
+                                          Attribute metadata = {});
+
+  /// Returns a generator of `type` referencing `symbol`, with each of the
+  /// callee's parameters bound to a depth-0 index reference for that position.
+  static FuncSymbolGenerator getUnbound(SymbolRefAttr symbol,
+                                        FuncTypeGeneratorType type);
+  static FuncSymbolGenerator getUnbound(StringAttr name,
+                                        FuncTypeGeneratorType type);
 
   /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr`.
   static FuncSymbolGenerator dynCast(Attribute attr);
@@ -303,7 +304,7 @@ struct PointerLikeTypeTraits<M::KGEN::ParamDeclRefAttr>
 
 namespace M::KGEN {
 /// Emit an MLIR operation call in a parameter context.
-TypedAttr emitMLIROperationCall(
+MODULAR_CXX_EXPORT TypedAttr emitMLIROperationCall(
     StringRef opName,
     ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
     ArrayRef<TypedAttr> operands, Type resultType);

@@ -47,6 +47,7 @@ from kv_cache.types import (
 from layout import Idx, row_major
 from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
+from extensibility import TensorTuple
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 from nn.kv_cache_ragged import generic_flash_attention_kv_cache_ragged
 from nn.attention.mha_mask import CausalMask
@@ -172,15 +173,12 @@ def execute_sink_prefill_repro[
     )
 
     # Route through the exact MOGG-level entry point used by
-    # `mo.mha.ragged.paged`. `_flash_attention_dispatch` inside runs
+    # `attention.mha.ragged.paged`. `_flash_attention_dispatch` inside runs
     # `unswitch[call_flash_attention](Bool(sink_weights))`, forcing BOTH
     # sink=True and sink=False specializations to compile — which is the
     # distinguishing property of the gemma4 graph compile.
     var ctx_ptr = ctx
-    generic_flash_attention_kv_cache_ragged[
-        target="gpu",
-        mask_str="causal",
-    ](
+    generic_flash_attention_kv_cache_ragged[mask_str="causal",](
         q_ragged.device_tensor(),
         input_row_offsets.device_tensor(),
         kv_collection_paged_device,
@@ -189,6 +187,7 @@ def execute_sink_prefill_repro[
         test_output.device_tensor(),
         ctx_ptr,
         decode_dispatch_metadata,
+        TensorTuple(),
     )
     ctx.synchronize()
 

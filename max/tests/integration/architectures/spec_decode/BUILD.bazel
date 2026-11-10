@@ -1,4 +1,8 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load(
+    "//max/python/max/pipelines/architectures:all_arches.bzl",
+    "ALL_ARCHITECTURES",
+)
 
 package(default_visibility = [
     "//:__pkg__",
@@ -18,18 +22,31 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/eagle_llama3",
         "//max/python/max/pipelines/architectures/llama3",
-        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
-        "//max/tests/integration/test_common:context_utils",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_variable_rows_per_replica",
+    srcs = ["test_variable_rows_per_replica.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/speculative",
     ],
 )
 
@@ -74,12 +91,26 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_spec_adapter_long_rows",
+    size = "small",
+    srcs = ["test_spec_adapter_long_rows.py"],
+    ignore_extra_deps = ALL_ARCHITECTURES,
+    deps = [
+        # The registry imports each architecture's module and adapter by name.
+        "//max/python/max/pipelines/architectures",
+        # The guard test materializes every registered architecture.
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ] + ALL_ARCHITECTURES,
+)
+
+modular_py_test(
     name = "test_spec_decode_kv_tree",
     srcs = ["test_spec_decode_kv_tree.py"],
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -94,6 +125,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/deepseekV4",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/qwen3_5",
@@ -104,6 +136,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/deepseekV4",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/qwen3_5",
@@ -152,10 +185,12 @@ modular_py_test(
     name = "test_registered_target",
     srcs = ["test_registered_target.py"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",

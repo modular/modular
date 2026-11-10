@@ -5,6 +5,10 @@ package(default_visibility = ["//Mojo:consumers"])
 modular_cc_binary(
     name = "llvm-module-split",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     internal_deps = select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
@@ -20,7 +24,7 @@ modular_cc_binary(
         "//Mojo:ObjectCompiler",
         "//Mojo:ToolCommon",
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//llvm:Support",
     ],
 )

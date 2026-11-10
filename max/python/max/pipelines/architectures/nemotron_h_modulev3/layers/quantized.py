@@ -20,14 +20,14 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Linear, Module
+from max.nn import _graph_ops as kernels
 from max.nn.common_layers.linear import (
     col_parallel,
     row_parallel,
 )
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy import kernels
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.linear import _float8_matmul_op, _matmul_mapping
+from max.nn.quant_config import QuantConfig
 from max.support.math import ceildiv
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context

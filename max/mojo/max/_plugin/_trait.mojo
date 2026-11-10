@@ -374,7 +374,7 @@ trait MaxPluginHooks:
     def enqueue_function_fn[
         *Ts: DevicePassable
     ](
-        ctx: _LegacyDeviceContext.Generic[Self.hooks_target],
+        ctx: _LegacyDeviceContext[Self.hooks_target],
         f: DeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
@@ -477,6 +477,34 @@ trait MaxPluginHooks:
 
     comptime _supports_external_function: Bool = True
     """Whether a `DeviceExternalFunction` can launch on this target."""
+
+    @staticmethod
+    def graph_blob_is_thread_active(active: Int32) -> Bool:
+        """Per-target plugin hook for `max._graph_blob.is_thread_active`.
+
+        Args:
+            active: The number of blocks a member runs on, from the start of
+                the launch's grid.
+
+        Returns:
+            Whether the calling thread's block is one of those.
+
+        Only invoked when `_handles_graph_blobs` is `True`; the default is
+        never called.
+        """
+        return False
+
+    @staticmethod
+    def graph_blob_barrier():
+        """Per-target plugin hook for `max._graph_blob.barrier`.
+
+        Only invoked when `_handles_graph_blobs` is `True`; the default is
+        never called and is a no-op.
+        """
+        pass
+
+    comptime _handles_graph_blobs: Bool = False
+    """Whether this plugin implements the hooks a graph blob's kernel calls."""
 
 
 struct DefaultMaxPlugin(MaxPlugin):

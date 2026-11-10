@@ -1526,9 +1526,14 @@ class Graph:
             ) from None
 
     def _erase_output_if_present(self) -> None:
-        terminator = self._body.operations[-1]
-        if isinstance(terminator, mo.OutputOp):
-            terminator.erase()
+        """Erases the terminator, if ``output()`` already added one.
+
+        Failure paths call this to make the graph extendable again, so it must
+        not raise where it would replace the caller's exception.
+        """
+        operations = self._body.operations
+        if operations and isinstance(operations[-1], mo.OutputOp):
+            operations[-1].erase()
 
     @property
     def output_types(self) -> list[Type[Any]]:
@@ -1786,6 +1791,13 @@ class GraphBlock:
         with _location() as loc:
             arg_locs = [loc for _ in mlir_arg_types]
             self._scratch_module = builtin.ModuleOp(location=loc)
+            # The scratch module stands in for the graph's module while ops
+            # are built here, and some checks read module attributes, such as
+            # `ops.custom`'s check against the graph's device info.
+            graph_attrs = self._graph._module.discardable_attributes
+            scratch_attrs = self._scratch_module.discardable_attributes
+            for name in graph_attrs:
+                scratch_attrs[name] = graph_attrs[name]
             scratch_builder = OpBuilder(self._scratch_module.body.end)
             self._scratch_graph_op = _mo.GraphOp(
                 scratch_builder,

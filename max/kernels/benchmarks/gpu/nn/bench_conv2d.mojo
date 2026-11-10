@@ -84,7 +84,6 @@ from internal_utils import arg_parse
 from layout import (
     Coord,
     Idx,
-    Layout,
     TileTensor,
     row_major,
 )
@@ -152,7 +151,7 @@ def bench_conv2d[
     pad_h_static: Int = 1,
     pad_w_static: Int = 1,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     label: String,
     verify: Bool,
@@ -165,15 +164,8 @@ def bench_conv2d[
     var h_out = (in_height + 2 * pad_h - filter_r) // stride_h + 1
     var w_out = (in_width + 2 * pad_w - filter_s) // stride_w + 1
 
-    comptime input_layout = Layout.row_major(
-        batch, in_height, in_width, in_channels
-    )
-    comptime filter_rscf_layout = Layout.row_major(
-        filter_r, filter_s, in_channels, out_channels
-    )
-
-    var input_size = comptime (input_layout.size())
-    var filter_size = comptime (filter_rscf_layout.size())
+    var input_size = batch * in_height * in_width * in_channels
+    var filter_size = filter_r * filter_s * in_channels * out_channels
     var output_size = batch * h_out * w_out * out_channels
 
     var flops = compute_conv2d_flops(
@@ -311,7 +303,7 @@ def bench_conv2d[
     comptime if resolved == "im2col":
 
         @inline(.always)
-        def im2col_kernel(ctx: DeviceContext) raises {imm}:
+        def im2col_kernel(ctx: DeviceContext[]) raises {imm}:
             # `chain` back-to-back convs with no host drain in between, which
             # is what a VAE forward looks like. The dispatcher must let the
             # host run ahead of the queue for these to overlap.
@@ -345,7 +337,7 @@ def bench_conv2d[
         )
 
         @inline(.always)
-        def cudnn_kernel(ctx: DeviceContext) raises {imm}:
+        def cudnn_kernel(ctx: DeviceContext[]) raises {imm}:
             conv_cudnn[dtype, dtype, dtype](
                 input_tt,
                 filter_fcrs_tt,
@@ -481,7 +473,7 @@ def bench_conv2d[
         )
 
         @inline(.always)
-        def amd_4wave_kernel(ctx: DeviceContext) raises {imm}:
+        def amd_4wave_kernel(ctx: DeviceContext[]) raises {imm}:
             amd_4wave_conv[
                 H=in_height,
                 W=in_width,
@@ -525,7 +517,7 @@ def bench_conv2d[
         var grid_dim_y = batch
 
         @inline(.always)
-        def naive_conv_kernel(ctx: DeviceContext) raises {imm}:
+        def naive_conv_kernel(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[naive_kernel](
                 input_tt,
                 filter_rscf_tt,

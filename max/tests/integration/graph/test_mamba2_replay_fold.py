@@ -29,10 +29,11 @@ from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     causal_conv1d_varlen_fwd,
     mamba2_replay_fold,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
+    verify_width_operand,
 )
 
 _LAYERS = 3
@@ -46,6 +47,7 @@ _CONV_DIM = _INTERMEDIATE + 2 * _NGROUPS * _DSTATE
 _PROJECTED = _INTERMEDIATE + _CONV_DIM + _NHEADS
 _BATCH = 3
 _WINDOW = 8
+_K = _WINDOW - 1
 _SLOTS = 2 * _LAYERS * _BATCH
 
 
@@ -69,7 +71,7 @@ def _build_graph(device: DeviceRef) -> Graph:
             rows,
             TensorType(DType.int32, [2 * _BATCH], device=device),
             TensorType(DType.int64, ["kept"], device=device),
-            TensorType(DType.int32, [_BATCH + 1], device=device),
+            TensorType(DType.uint32, [_BATCH + 1], device=device),
             *[
                 TensorType(DType.bfloat16, [rows_total, _PROJECTED], device)
                 for _ in range(_LAYERS)
@@ -109,6 +111,8 @@ def _build_graph(device: DeviceRef) -> Graph:
             conv_rows.tensor,
             ssm_rows.tensor,
             bounds.tensor,
+            offsets.tensor,
+            verify_width_operand(_K),
             projected,
             convolved,
             A,
@@ -123,6 +127,9 @@ def _build_graph(device: DeviceRef) -> Graph:
         empty = ops.constant(
             np.zeros(0, dtype=np.float32), DType.float32, device
         ).cast(DType.bfloat16)
+        # The reference ops take int32 offsets; the fold takes them as the
+        # driver produces them.
+        ref_offsets = offsets.tensor.cast(DType.int32)
         for layer in range(_LAYERS):
             accepted = ops.gather(projected[layer], kept_rows.tensor, axis=0)
             conv_input = accepted[:, _INTERMEDIATE : _INTERMEDIATE + _CONV_DIM]
@@ -137,7 +144,7 @@ def _build_graph(device: DeviceRef) -> Graph:
                 conv_weight,
                 empty,
                 ref_conv.buffer,
-                offsets.tensor,
+                ref_offsets,
                 conv_rows.tensor[layer],
                 always,
                 channels_last=True,
@@ -151,7 +158,7 @@ def _build_graph(device: DeviceRef) -> Graph:
                 D=empty,
                 dt_bias=dt_bias[layer],
                 ssm_pool=ref_ssm.buffer,
-                query_start_loc=offsets.tensor,
+                query_start_loc=ref_offsets,
                 has_initial_state=always,
                 cache_indices=ssm_rows.tensor[layer],
             )
@@ -177,6 +184,7 @@ def _build_fold_graph(device: DeviceRef) -> Graph:
             rows,
             rows,
             TensorType(DType.int32, ["bounds"], device=device),
+            TensorType(DType.uint32, ["offsets"], device=device),
             *[
                 TensorType(DType.bfloat16, [rows_total, _PROJECTED], device)
                 for _ in range(_LAYERS)
@@ -191,7 +199,9 @@ def _build_fold_graph(device: DeviceRef) -> Graph:
             ],
         ],
     ) as graph:
-        conv_pool, ssm_pool, conv_rows, ssm_rows, bounds, *rest = graph.inputs
+        conv_pool, ssm_pool, conv_rows, ssm_rows, bounds, merged, *rest = (
+            graph.inputs
+        )
         layers = [v.tensor for v in rest]
         mamba2_replay_fold(
             conv_pool.buffer,
@@ -199,6 +209,8 @@ def _build_fold_graph(device: DeviceRef) -> Graph:
             conv_rows.tensor,
             ssm_rows.tensor,
             bounds.tensor,
+            merged.tensor,
+            verify_width_operand(_K),
             layers[:_LAYERS],
             layers[_LAYERS : 2 * _LAYERS],
             layers[2 * _LAYERS : 3 * _LAYERS],
@@ -255,7 +267,7 @@ def test_replay_fold_matches_the_per_layer_replay(
         [b * _WINDOW + i for b, n in enumerate(kept) for i in range(n)],
         dtype=np.int64,
     )
-    offsets = np.cumsum([0, *kept]).astype(np.int32)
+    offsets = np.cumsum([0, *kept]).astype(np.uint32)
     rows_total = _BATCH * _WINDOW
     projected = [
         rng.standard_normal((rows_total, _PROJECTED)).astype(np.float32)
@@ -329,6 +341,7 @@ def test_replay_fold_launches_past_the_grid_z_limit(
         ],
         dtype=np.int32,
     )
+    merged_offsets = np.cumsum([0, *(_WINDOW for _ in kept)], dtype=np.uint32)
     rows_total = _BATCH * _WINDOW
     layers = [
         _bf16(a, device)
@@ -363,6 +376,12 @@ def test_replay_fold_launches_past_the_grid_z_limit(
             md.Buffer.from_numpy(padded_rows[1].copy()).to(device),
             md.Buffer.from_numpy(
                 np.concatenate([np.zeros(2 * leading, np.int32), bounds])
+            ).to(device),
+            md.Buffer.from_numpy(
+                # One offset per request plus one: `leading` idle rows
+                # ahead of the 3 real ones, so `leading` zeros then the
+                # 4-entry array.
+                np.concatenate([np.zeros(leading, np.uint32), merged_offsets])
             ).to(device),
             *layers,
         )

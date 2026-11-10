@@ -18,9 +18,9 @@ using namespace M;
 using namespace M::KGEN;
 
 TEST(DeclSignaturePrinterTest, StripImplicitArgParamsDropsMemberAccess) {
-  EXPECT_EQ(stripImplicitArgParams(
-                "UnsafePointer[Scalar[dtype], output.origin]", "output"),
-            "UnsafePointer[Scalar[dtype]]");
+  EXPECT_EQ(
+      stripImplicitArgParams("Pointer[Scalar[dtype], output.origin]", "output"),
+      "Pointer[Scalar[dtype]]");
 }
 
 TEST(DeclSignaturePrinterTest, StripImplicitArgParamsDropsBracketsWhenEmpty) {

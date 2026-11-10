@@ -14,6 +14,7 @@
 #ifndef KGEN_KGENDIALECT_COMPILATIONCONTEXT_H
 #define KGEN_KGENDIALECT_COMPILATIONCONTEXT_H
 
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/raw_ostream.h"
 #include <variant>
@@ -22,7 +23,7 @@ namespace M::KGEN {
 
 /// Represents kernel compilation options that is used to set mojo parameters
 /// during JITing.
-struct CompilationContext {
+struct MODULAR_CXX_EXPORT CompilationContext {
   llvm::DenseMap<llvm::StringRef, std::variant<bool, int, std::string>>
       mojoDefines;
 

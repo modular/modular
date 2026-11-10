@@ -317,7 +317,7 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  param.dump();
+  llvm::errs() << param << "\n";
   llvm_unreachable("unknown origin parameter");
 }
 
@@ -1061,11 +1061,7 @@ TriBool LIT::isPropositionImplied(ConstraintAttr proposition,
   return isPropositionImplied(reboundProposition, canonAssumptions);
 }
 
-/// Visit each TypeConformsToTraitAttr found in a constraint proposition.
-/// Canonical AND is already flattened to a single n-ary node, so a single
-/// top-level loop over its operands is sufficient. OR / NOT are not visited
-/// since they are not definite knowledge.
-static void forEachConformsToInProposition(
+void LIT::forEachConformsToInProposition(
     TypedAttr proposition,
     llvm::function_ref<void(TypeConformsToTraitAttr)> callback) {
   proposition = getCanonicalAttr(proposition);

@@ -95,6 +95,59 @@ def _advance_indices[rank: Int](mut idx: StaticTuple[Int, rank], shape: Coord):
             idx[d - 1] += 1
 
 
+@inline(.always)
+def _uneven_vector_alignment[
+    rank: Int, shape_types: TypeList[Trait=CoordLike, ...], simd_width: Int
+]() -> Int:
+    """The alignment, in elements, of a vector that stays inside its row when
+    `simd_width` doesn't divide the innermost extent.
+
+    Vectors start at multiples of `simd_width` in the flat row-major index,
+    so a vector's column, `k * simd_width - row * n`, and its row's offset,
+    `row * n`, are both multiples of `gcd(simd_width, n)`. That needs the
+    innermost extent `n` at compile time; without it, or with rank 1 where
+    the flat index is the column, only the trivial answer is known. Each
+    load still bounds this by its own tensor's alignment, so a view with
+    odd strides stays safe. A row shorter than `simd_width` holds no
+    vector, so the answer is unused there; it stays 1, as before, because
+    the aligned branch it compiles changes how the lane-by-lane path that
+    does run is scheduled.
+    """
+    comptime if rank == 1:
+        return simd_width
+    comptime if shape_types[rank - 1].is_static_value:
+        comptime extent = shape_types[rank - 1].static_value
+        comptime if extent < simd_width:
+            return 1
+        return min(simd_width, extent & -extent)
+    return 1
+
+
+@inline(.always)
+def _row_bounded_simd_width[
+    rank: Int, shape_types: TypeList[Trait=CoordLike, ...], simd_width: Int
+]() -> Int:
+    """The width to run a loop of rank 2 or more with when its static rows
+    are shorter than two vectors and not a multiple of `simd_width`: the
+    largest power of two dividing both, but at least 4. Any other loop keeps
+    `simd_width`.
+
+    In rows that short most vectors cross a row end, and the uneven path runs
+    each of those as single-lane calls in one thread. `extent & -extent` is
+    the largest power of two dividing the row, so a width it bounds keeps
+    every vector inside its row; that part follows from the indexing. The
+    4-lane floor is empirical: 4 lanes measured faster than main's full
+    width on odd and 2-mod-4 rows from 1M elements up, but floors of 1 and 2
+    were not measured. A 1-D loop has no row ends, so it keeps the width.
+    """
+    comptime if rank < 2 or not shape_types[rank - 1].is_static_value:
+        return simd_width
+    comptime extent = shape_types[rank - 1].static_value
+    comptime if extent % simd_width == 0 or extent >= 2 * simd_width:
+        return simd_width
+    return max(min(4, simd_width), min(simd_width, extent & -extent))
+
+
 # ===-----------------------------------------------------------------------===#
 # Work-stealing elementwise (SM100+ CLC)
 # ===-----------------------------------------------------------------------===#
@@ -189,12 +242,9 @@ struct _ClcKernel[
                             Self.rank, Self.shape_types, Self.use_32bit
                         ](global_packed_idx * Self.simd_width, self.shape)
                         comptime if Self.handle_uneven_simd:
-                            # Even when simd_width doesn't evenly divide the shape, we can still guarantee alignment when rank == 1.
-                            # TODO(GEX-3960): for N-D tensors, `alignment = gcd(simd_width, shape[-1])`.
-                            # This needs the static shape propagated via the `Coord` type.
-                            comptime alignment = (
-                                Self.simd_width if Self.rank == 1 else 1
-                            )
+                            comptime alignment = _uneven_vector_alignment[
+                                Self.rank, Self.shape_types, Self.simd_width
+                            ]()
                             if flat[Self.rank - 1] + Self.simd_width > Int(
                                 self.shape[Self.rank - 1]
                             ):
@@ -406,12 +456,9 @@ struct _GridStrideKernel[
                             Self.rank, Self.shape_types, Self.use_32bit
                         ](idx * Self.simd_width, self.shape)
                         comptime if Self.handle_uneven_simd:
-                            # Even when simd_width doesn't evenly divide the shape, we can still guarantee alignment when rank == 1.
-                            # TODO(GEX-3960): for N-D tensors, `alignment = gcd(simd_width, shape[-1])`.
-                            # This needs the static shape propagated via the `Coord` type.
-                            comptime alignment = (
-                                Self.simd_width if Self.rank == 1 else 1
-                            )
+                            comptime alignment = _uneven_vector_alignment[
+                                Self.rank, Self.shape_types, Self.simd_width
+                            ]()
                             if flat[Self.rank - 1] + Self.simd_width > Int(
                                 self.shape[Self.rank - 1]
                             ):
@@ -790,7 +837,8 @@ def _elementwise_impl_gpu[
     combination of width and indices so as to cover shape on the GPU.
 
     Parameters:
-        simd_width: The SIMD vector width to use.
+        simd_width: The widest SIMD vector to use; a loop with short static
+            rows may run narrower (see `_row_bounded_simd_width`).
         FuncType: The body function type.
         trace_description: Description of the trace.
 
@@ -803,6 +851,9 @@ def _elementwise_impl_gpu[
         If the GPU kernel launch fails.
     """
     comptime rank = shape.rank
+    comptime width = _row_bounded_simd_width[
+        rank, type_of(shape).ParamListType, simd_width
+    ]()
 
     comptime hw_info = ctx.default_device_info
 
@@ -845,7 +896,7 @@ def _elementwise_impl_gpu[
     var shape_idx = rebind[DynamicCoord[.int64, rank]](
         shape.make_dynamic[.int64]()
     )
-    var packed_elems_per_row = ufloordiv(Int(shape[rank - 1]), simd_width)
+    var packed_elems_per_row = ufloordiv(Int(shape[rank - 1]), width)
 
     var length = Int(shape.product())
     var use_32bit = length <= Int(UInt32.MAX)
@@ -858,7 +909,7 @@ def _elementwise_impl_gpu[
     # actually enabled. This avoids per-instantiation comptime cost in the
     # common case where `_USE_CLC_WORK_STEALING` is off.
     comptime if _USE_CLC_WORK_STEALING and ctx.target._is_sm_100x_or_newer():
-        var num_packed = ufloordiv(length, simd_width)
+        var num_packed = ufloordiv(length, width)
         var num_tiles = uceildiv(num_packed, block_size * elems_per_thread)
 
         if packed_elems_per_row < clc_min_packed_per_row or num_tiles <= 1:
@@ -870,7 +921,7 @@ def _elementwise_impl_gpu[
                     rank=rank,
                     shape_types=shape_types,
                     use_32bit=True,
-                    simd_width=simd_width,
+                    simd_width=width,
                     block_size=short_row_block_size,
                     num_waves=num_waves,
                     sm_count=sm_count,
@@ -883,7 +934,7 @@ def _elementwise_impl_gpu[
                     rank=rank,
                     shape_types=shape_types,
                     use_32bit=False,
-                    simd_width=simd_width,
+                    simd_width=width,
                     block_size=short_row_block_size,
                     num_waves=num_waves,
                     sm_count=sm_count,
@@ -897,7 +948,7 @@ def _elementwise_impl_gpu[
                     rank=rank,
                     shape_types=shape_types,
                     use_32bit=True,
-                    simd_width=simd_width,
+                    simd_width=width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
@@ -907,7 +958,7 @@ def _elementwise_impl_gpu[
                     rank=rank,
                     shape_types=shape_types,
                     use_32bit=False,
-                    simd_width=simd_width,
+                    simd_width=width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
@@ -918,7 +969,7 @@ def _elementwise_impl_gpu[
                 rank=rank,
                 shape_types=shape_types,
                 use_32bit=True,
-                simd_width=simd_width,
+                simd_width=width,
                 block_size=block_size,
                 num_waves=num_waves,
                 sm_count=sm_count,
@@ -931,7 +982,7 @@ def _elementwise_impl_gpu[
                 rank=rank,
                 shape_types=shape_types,
                 use_32bit=False,
-                simd_width=simd_width,
+                simd_width=width,
                 block_size=block_size,
                 num_waves=num_waves,
                 sm_count=sm_count,

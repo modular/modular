@@ -12,16 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/MojoTooling/DocGen.h"
-#include "MojoToolingInternals.h"
+#include "DocGenSerialization.h"
 
 #include "Config/Version.h"
-#include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
-#include "Mojo/ToolCommon/FrontendOptions.h"
-#include "Support/Driver/DiagnosticFormat.h"
 
-#include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/SourceMgr.h"
@@ -53,7 +49,7 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
     return false;
 
   std::optional<llvm::json::Object> serializedDecl =
-      serializeDocDecl(*moduleDecl, parserContext);
+      serializeDocDecl(*moduleDecl, parserContext.getSharedState());
   if (!serializedDecl)
     return false;
 

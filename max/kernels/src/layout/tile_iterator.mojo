@@ -20,7 +20,7 @@ and the masked global-memory tiles whose valid row count is only known at run
 time.
 """
 
-from .tile_layout import TensorLayout
+from .layout import TensorLayout
 from .tile_tensor import TileTensor, _get_index_type
 
 

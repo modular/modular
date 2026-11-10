@@ -26,7 +26,8 @@ from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
-from layout.int_tuple import product, to_index_list
+from std.utils import IndexList
+from layout import coord_to_index_list
 from extensibility import (
     IOSpec,
     ManagedTensorSlice,
@@ -44,7 +45,7 @@ struct Tensor[
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank, _],
 ](ImplicitlyCopyable):
-    comptime size = product(Self.static_spec.shape_tuple)
+    comptime size = Self.static_spec.static_size
 
     var slice: ManagedTensorSlice[
         io_spec=Self.io_spec, static_spec=Self.static_spec
@@ -58,8 +59,12 @@ struct Tensor[
             io_spec=Self.io_spec, static_spec=Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
-            to_index_list[Self.rank](Self.static_spec.shape_tuple),
-            to_index_list[Self.rank](Self.static_spec.strides_tuple),
+            rebind[IndexList[Self.rank]](
+                coord_to_index_list(Self.static_spec.shape_tuple)
+            ),
+            rebind[IndexList[Self.rank]](
+                coord_to_index_list(Self.static_spec.strides_tuple)
+            ),
         )
 
     def rand(self) raises -> Self:
@@ -109,7 +114,7 @@ def top_k() raises:
         idx_dtype, rank, batch_size, K
     ]()
 
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
 
     var in_vals = Tensor[IOSpec.Input, val_spec](cpu_ctx).rand()
     var out_vals = Tensor[IOSpec.Output, val_spec](cpu_ctx).rand()
@@ -121,7 +126,7 @@ def top_k() raises:
     var metrics: List = [flops, elements]
 
     def top_k_cpu() raises {imm}:
-        TopK.execute[K=K, target="cpu"](
+        TopK.execute[K=K](
             out_vals.slice, out_idxs.slice, in_vals.slice, cpu_ctx
         )
 
@@ -135,7 +140,7 @@ def top_k() raises:
         var in_vals_dev = Tensor[IOSpec.Input, val_spec](gpu_ctx).rand()
 
         def top_k_gpu() raises {imm}:
-            TopK.execute[K=K, target="gpu"](
+            TopK.execute[K=K](
                 out_vals_dev.slice,
                 out_idxs_dev.slice,
                 in_vals_dev.slice,
@@ -162,7 +167,7 @@ def matmul() raises:
     comptime b_spec = get_row_major_tensor_spec_static[dtype, rank, K, N]()
     comptime c_spec = get_row_major_tensor_spec_static[dtype, rank, M, N]()
 
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
 
     var a = Tensor[IOSpec.Input, a_spec](cpu_ctx).rand()
     var b = Tensor[IOSpec.Input, b_spec](cpu_ctx).rand()
@@ -174,7 +179,7 @@ def matmul() raises:
     var metrics: List = [flops, elements]
 
     def matmul_cpu() raises {imm}:
-        MatrixMultiplication["naive"].execute[target="cpu"](
+        MatrixMultiplication["naive"].execute(
             c.slice, a.slice, b.slice, cpu_ctx
         )
 
@@ -193,7 +198,7 @@ def matmul() raises:
 
         def bench_matmul_kernel[impl: StaticString]() raises {mut bench, imm}:
             def bench_gpu() raises {imm}:
-                MatrixMultiplication[impl].execute[target="gpu"](
+                MatrixMultiplication[impl].execute(
                     c_dev.slice, a_dev.slice, b_dev.slice, gpu_ctx
                 )
 
@@ -232,7 +237,7 @@ def tensor_core_mma() raises:
         DType.float32, rank, M, N
     ]()
 
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
 
     var a = Tensor[IOSpec.Input, a_spec](cpu_ctx).rand()
     var b = Tensor[IOSpec.Input, b_spec](cpu_ctx).rand()
@@ -259,7 +264,7 @@ def tensor_core_mma() raises:
 
         def bench_matmul_kernel[impl: StaticString]() raises {mut bench, imm}:
             def bench_gpu() raises {imm}:
-                TensorCoreMMA[impl].execute[target="gpu", M=M, N=N, K=K](
+                TensorCoreMMA[impl].execute[M=M, N=N, K=K](
                     c_dev.slice,
                     a_dev.slice,
                     b_dev.slice,

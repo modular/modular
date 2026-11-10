@@ -29,10 +29,11 @@
 #include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/Lexer.h"
+#include "Mojo/MojoREPL/REPL.h"
+#include "Mojo/MojoREPL/REPLPythonExprUtils.h"
 #include "Mojo/MojoTooling/CodeComplete.h"
 #include "Mojo/MojoTooling/DeclRendering.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/REPLPythonExprUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
@@ -702,7 +703,7 @@ void LSPParserListener::onMatchMissingCases(llvm::SMRange matchRange,
 namespace {
 /// This class implements a parser listener that communicates between the Mojo
 /// parser and the LSP.
-class LSPMojoREPLListener : public MojoParserREPLListener {
+class LSPMojoREPLListener : public MojoREPLListener {
 public:
   LSPMojoREPLListener(
       llvm::SourceMgr &sourceMgr,
@@ -727,7 +728,7 @@ public:
 
   bool shouldPersistVariable(StringRef name, Type type) override {
     // Ignore non-user variables.
-    if (MojoParserContext::isHiddenPersistentVariable(name))
+    if (MojoREPLContext::isHiddenPersistentVariable(name))
       return false;
 
     auto [it, inserted] =
@@ -765,9 +766,11 @@ struct MojoDocument::Context {
     DialectRegistry registry;
     registerAllKGENDialects(registry);
     mlirContext.appendDialectRegistry(registry);
+    configureKGENContext(&mlirContext);
 
     parserContext = std::make_unique<MojoParserContext>(
         mainDoc.sourceMgr, &mlirContext, compilationOptions, frontendOptions);
+    replContext = std::make_unique<MojoREPLContext>(*parserContext);
   }
 
   KGEN::CompilationOptions compilationOptions;
@@ -776,6 +779,7 @@ struct MojoDocument::Context {
   SymbolIndex symbolIndex;
   LSPParserListener parserListener;
   std::unique_ptr<MojoParserContext> parserContext;
+  std::unique_ptr<MojoREPLContext> replContext;
 };
 
 //===----------------------------------------------------------------------===//
@@ -926,6 +930,10 @@ const KGEN::CompilationOptions &MojoDocument::getCompilationOptions() const {
 
 MojoParserContext &MojoDocument::getParserContext() const {
   return *context->parserContext;
+}
+
+MojoREPLContext &MojoDocument::getREPLContext() const {
+  return *context->replContext;
 }
 
 void MojoDocument::invalidate() {
@@ -1751,7 +1759,7 @@ static std::optional<int64_t> findAddressSpace(Type type) {
 
 /// Return the address space of the given symbol, if it has one. This is the
 /// address space of the reference that holds the value or the address space
-/// parameter of its type (e.g. `UnsafePointer[..., address_space=SHARED]`),
+/// parameter of its type (e.g. `Pointer[..., address_space=SHARED]`),
 /// including one nested in a type parameter such as an array's element type.
 static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
   if (!symbol.decl->isArgumentDecl() && !symbol.decl->isParameterDecl() &&
@@ -2029,7 +2037,7 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, ASTDecl *decl,
 
   // Process the code blocks in the doc string.
   SmallVector<std::pair<StringRef, Type>> persistentVariables;
-  MojoParserContext &ctx = mainDoc.getParserContext();
+  MojoREPLContext &replContext = mainDoc.getREPLContext();
   ASTDecl *prevDecl = curReplDecl;
   LSPMojoREPLListener listener(sourceMgr, persistentVariables);
   for (const auto &block : docString->getCodeBlocks()) {
@@ -2056,7 +2064,7 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, ASTDecl *decl,
             mainDocContents, persistentVariables, block.getRawIndentLevel()));
 
     // Parse the code block.
-    auto [moduleDecl, exprFnDecl] = ctx.parseREPLExpression(
+    auto [moduleDecl, exprFnDecl] = replContext.parseExpression(
         listener, bufferId, contents, "__mojo_repl_lsp_main",
         persistentVariables, prevDecl,
         /*parseForLSP=*/true);
@@ -2090,18 +2098,17 @@ void MojoDocStrings::getFoldingRanges(SourceMgr &sourceMgr,
 
 std::vector<KGEN::Mojo::CodeCompletionResult>
 MojoDocStrings::CodeBlock::onCodeCompletion(llvm::SMLoc completeLoc,
-                                            MojoParserContext &ctx) {
+                                            MojoREPLContext &replContext) {
   uint64_t rawCompletePos = completeLoc.getPointer() - contents.data();
-  return ctx.codeCompleteREPLExpression(contents, rawCompletePos,
-                                        persistentVariables, decl);
+  return replContext.codeComplete(contents, rawCompletePos, persistentVariables,
+                                  decl);
 }
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
 MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
-                                           MojoParserContext &ctx) {
+                                           MojoREPLContext &replContext) {
   uint64_t rawPos = loc.getPointer() - contents.data();
-  return ctx.signatureHelpREPLExpression(contents, rawPos, persistentVariables,
-                                         decl);
+  return replContext.signatureHelp(contents, rawPos, persistentVariables, decl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2152,7 +2159,7 @@ SMLoc MojoTextDocument::translateParserLoc(SMLoc loc) {
 
   // If the location isn't in the main document, try to map it (e.g. in the case
   // of a location within a doc string code block).
-  auto newLoc = getParserContext().getREPLLocMapper().mapLocation(loc);
+  auto newLoc = getREPLContext().getLocMapper().mapLocation(loc);
   return newLoc.isValid() ? newLoc : loc;
 }
 
@@ -2174,7 +2181,7 @@ std::vector<KGEN::Mojo::CodeCompletionResult>
 MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   // Check for code completion within a code block.
   if (auto *codeBlock = docStrings.findContainingCodeBlock(completeLoc))
-    return codeBlock->onCodeCompletion(completeLoc, getParserContext());
+    return codeBlock->onCodeCompletion(completeLoc, getREPLContext());
 
   // Otherwise, perform completion using the main doc.
   llvm::SourceMgr &sourceMgr = getSourceMgr();
@@ -2185,6 +2192,7 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   uint64_t rawCompletePos =
       completeLoc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
+  configureKGENContext(&mlirContext);
   return KGEN::Mojo::codeComplete(*buffer, rawCompletePos, &mlirContext,
                                   getCompilationOptions());
 }
@@ -2223,7 +2231,7 @@ std::optional<KGEN::Mojo::SignatureHelpResult>
 MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   // Check for signature help within a code block.
   if (auto *codeBlock = docStrings.findContainingCodeBlock(loc))
-    return codeBlock->onSignatureHelp(loc, getParserContext());
+    return codeBlock->onSignatureHelp(loc, getREPLContext());
 
   // Otherwise, perform signature help using the main doc.
   llvm::SourceMgr &sourceMgr = getSourceMgr();
@@ -2233,6 +2241,7 @@ MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   // Query the mojo parser for potential help results.
   uint64_t rawPos = loc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
+  configureKGENContext(&mlirContext);
   return KGEN::Mojo::signatureHelp(*buffer, rawPos, &mlirContext,
                                    getCompilationOptions());
 }
@@ -2270,14 +2279,14 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
   size_t size = 0;
 
   // Parse each of the cells in the notebook.
-  MojoParserContext &ctx = getParserContext();
+  MojoREPLContext &replContext = getREPLContext();
   ASTDecl *prevDecl = nullptr;
   for (Cell &cell : getCells()) {
     // If the cell isn't a python expression, parse it as normal.
     StringRef contents(cell.contents);
     if (!contents.consume_front("%%python")) {
       cell.persistentVariables = persistentVariables;
-      MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
+      MojoREPLContext::ParsedExpression result = replContext.parseExpression(
           listener, cell.bufferId, cell.contents, "__mojo_repl_lsp_main",
           persistentVariables, prevDecl,
           /*parseForLSP=*/false);
@@ -2312,7 +2321,7 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
         llvm::MemoryBuffer::getMemBuffer(pythonCell,
                                          (cell.uri.file() + "_py").str()),
         SMLoc());
-    MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
+    MojoREPLContext::ParsedExpression result = replContext.parseExpression(
         listener, pythonCellId, pythonCell, "__mojo_repl_lsp_main",
         persistentVariables, prevDecl, /*parseForLSP=*/false);
     prevDecl = result.moduleDecl;
@@ -2337,7 +2346,7 @@ bool MojoNotebookDocument::containsLocation(SMLoc loc) {
 }
 
 SMLoc MojoNotebookDocument::translateParserLoc(SMLoc loc) {
-  auto newLoc = getParserContext().getREPLLocMapper().mapLocation(loc);
+  auto newLoc = getREPLContext().getLocMapper().mapLocation(loc);
   if (!newLoc.isValid())
     return loc;
 
@@ -2345,7 +2354,7 @@ SMLoc MojoNotebookDocument::translateParserLoc(SMLoc loc) {
   // the location is in a doc string.
   if (containsLocation(newLoc))
     return newLoc;
-  newLoc = getParserContext().getREPLLocMapper().mapLocation(newLoc);
+  newLoc = getREPLContext().getLocMapper().mapLocation(newLoc);
   return newLoc.isValid() ? newLoc : loc;
 }
 
@@ -2376,12 +2385,12 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
 
   // Check for code completion within a code block.
   if (auto *codeBlock = cell.docStrings.findContainingCodeBlock(completeLoc))
-    return codeBlock->onCodeCompletion(completeLoc, getParserContext());
+    return codeBlock->onCodeCompletion(completeLoc, getREPLContext());
 
   // Query the mojo parser for potential completion results.
   uint64_t rawCompletePos = completeLoc.getPointer() - cell.contents.data();
-  return getParserContext().codeCompleteREPLExpression(
-      cell.contents, rawCompletePos, cell.persistentVariables, cell.decl);
+  return getREPLContext().codeComplete(cell.contents, rawCompletePos,
+                                       cell.persistentVariables, cell.decl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2430,12 +2439,12 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 
   // Check for signature help within a code block.
   if (auto *codeBlock = cell.docStrings.findContainingCodeBlock(loc))
-    return codeBlock->onSignatureHelp(loc, getParserContext());
+    return codeBlock->onSignatureHelp(loc, getREPLContext());
 
   // Query the mojo parser for potential help results.
   uint64_t rawPos = loc.getPointer() - cell.contents.data();
-  return getParserContext().signatureHelpREPLExpression(
-      cell.contents, rawPos, cell.persistentVariables, cell.decl);
+  return getREPLContext().signatureHelp(cell.contents, rawPos,
+                                        cell.persistentVariables, cell.decl);
 }
 
 //===----------------------------------------------------------------------===//

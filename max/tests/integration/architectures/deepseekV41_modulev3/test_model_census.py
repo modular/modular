@@ -42,7 +42,6 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     STACKED_PROJECTIONS,
     V41Config,
     build_kv_params,
-    to_checkpoint_name,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
@@ -92,8 +91,8 @@ def _census_sources(name: str) -> tuple[str, ...]:
     """The checkpoint tensors ``name`` loads from, one or a stacked pair.
 
     A stacked leaf folds its pair's rows into one GEMM operand at load
-    (bytes concatenated, never converted); every other leaf maps through
-    the interface's rename table onto exactly one checkpoint tensor.
+    (bytes concatenated, never converted); every other leaf is the
+    checkpoint tensor of the same name.
     """
     for first, second, stacked, _ in STACKED_PROJECTIONS:
         for leaf in ("weight", "scale"):
@@ -104,7 +103,7 @@ def _census_sources(name: str) -> tuple[str, ...]:
                     f"{prefix}{first}.{leaf}",
                     f"{prefix}{second}.{leaf}",
                 )
-    return (to_checkpoint_name(name),)
+    return (name,)
 
 
 def _extent(dtype: DType, shape: tuple[int, ...]) -> int:

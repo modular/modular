@@ -25,7 +25,7 @@ from max.gpu.host.info import get_gpu_info
 from max.gpu.primitives.warp import vote
 from std.testing import assert_equal, TestSuite
 
-comptime _WARP_SIZE = DeviceContext.default_device_info.warp_size
+comptime _WARP_SIZE = DeviceContext[].default_device_info.warp_size
 
 # Warp-size-appropriate mask type: NVIDIA/Apple SIMD-groups are 32 lanes
 # (`uint32`), AMD wavefronts are 64 lanes (`uint64`). Matches the `match_any`

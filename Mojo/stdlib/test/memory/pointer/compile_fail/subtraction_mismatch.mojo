@@ -33,5 +33,5 @@ def main():
     var u = alloc[Int]({length = 1}).unsafe_leak()
     var u_float = alloc[Float64]({length = 1}).unsafe_leak()
 
-    # CHECK: no matching method in call to '__sub__'
+    # CHECK: invalid call to '__sub__'
     _ = u - u_float

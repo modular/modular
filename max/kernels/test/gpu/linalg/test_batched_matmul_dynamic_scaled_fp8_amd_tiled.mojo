@@ -150,7 +150,6 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
         n_scale_granularity=n_scale,
         k_scale_granularity=k_scale,
         transpose_b=transpose_b,
-        target="gpu",
     ](c_disp_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
 
     # Explicit naive per-batch reference (always the naive kernel); returns the

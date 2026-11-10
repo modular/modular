@@ -14,10 +14,10 @@
 
 from .arch import mtp_inkling_draft_arch
 from .model_config import MTPInklingDraftArchConfig
-from .weight_adapters import convert_inkling_mtp_state_dict
+from .weight_adapters import inkling_mtp_weight_rules
 
 __all__ = [
     "MTPInklingDraftArchConfig",
-    "convert_inkling_mtp_state_dict",
+    "inkling_mtp_weight_rules",
     "mtp_inkling_draft_arch",
 ]

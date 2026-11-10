@@ -23,6 +23,7 @@ from collections.abc import Set as AbstractSet
 from itertools import pairwise
 from typing import TYPE_CHECKING, TypeGuard
 
+from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     PixelGenAggregates,
@@ -319,6 +320,7 @@ def calculate_metrics(
     reject_outliers: bool = False,
     record_request_text: bool = False,
     all_outputs: Sequence[RequestFuncOutput] | None = None,
+    goodput_targets: GoodputTargets | None = None,
 ) -> BenchmarkResult:
     """Computes serving metrics from the finished requests."""
     actual_output_lens: list[int] = []
@@ -345,6 +347,7 @@ def calculate_metrics(
     tool_call_responses = 0
     image_requests = 0
     lora_requests = 0
+    good_requests = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -419,6 +422,14 @@ def calculate_metrics(
         )
         if tpot is not None:
             tpots.append(tpot)
+        # ``ttft`` stays 0.0 when the endpoint reports no per-request TTFT;
+        # treat that as missing so a TTFT target is not met for free.
+        if goodput_targets is not None and goodput_targets.is_met(
+            ttft_s=o.ttft if o.ttft > 0 else None,
+            tpot_s=tpot,
+            latency_s=o.latency,
+        ):
+            good_requests += 1
         step_tpots += o.tpot
         itls += o.itl
         ttfts.append(o.ttft)
@@ -594,6 +605,18 @@ def calculate_metrics(
         failures=failures,
         request_throughput=measured_count / measured_duration,
         excluded_successful=total_successful - measured_count,
+        # Over the same requests and window as ``request_throughput``, so
+        # the two rates compare directly. Taken before outlier rejection,
+        # which drops samples from the latency series, not requests.
+        goodput_ttft_ms=goodput_targets.ttft_ms if goodput_targets else None,
+        goodput_tpot_ms=goodput_targets.tpot_ms if goodput_targets else None,
+        goodput_e2el_ms=goodput_targets.e2el_ms if goodput_targets else None,
+        request_goodput=good_requests / measured_duration
+        if goodput_targets and measured
+        else None,
+        goodput_attainment=good_requests / measured_count
+        if goodput_targets and measured
+        else None,
         # A metric is ``None`` when it has no samples (empty data list),
         # rather than a NaN-filled placeholder: NaN serializes to JSON
         # ``null`` (both via ``model_dump_json`` and BigQuery ingest),
@@ -851,21 +874,29 @@ def build_text_generation_result(
     record_request_text: bool = False,
     gpu_device_groups: Mapping[str, str] | None = None,
     outputs_by_session: Mapping[str, Sequence[RequestFuncOutput]] | None = None,
+    steady_state_filtering: bool = True,
+    goodput_targets: GoodputTargets | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result for text-generation tasks.
 
     Uses a single reported metric set selected by the following strategy:
 
-    - Run MAD-based steady-state detection (``detect_steady_state``).
+    - Exclude failed requests from the metrics when at least one request
+      succeeded. They stay in ``request_records``. A run where nothing
+      succeeded keeps them, so it still reports and fails on its failures.
+    - Run MAD-based steady-state detection (``detect_steady_state``),
+      unless ``steady_state_filtering`` is ``False``.
     - If detection succeeds: compute metrics over the detected steady-state
       window with ``skip_first=0``, ``skip_last=0``, and per-request
       outlier rejection via the Iglewicz-Hoaglin modified z-score
       (``reject_outliers=True``). Duration is the wall-clock span of the
       window (first submit to last complete of the window requests).
-    - If detection is skipped (concurrency==1) or fails: fall back to the
-      full-run path with the caller-supplied head/tail trim and no outlier
-      rejection. This guarantees identical behavior to the previous
-      implementation for non-steady-state runs.
+    - If detection is disabled, skipped (concurrency==1) or fails: fall back
+      to the full-run path with the caller-supplied head/tail trim and no
+      outlier rejection. This guarantees identical behavior to the previous
+      implementation for non-steady-state runs. When disabled,
+      ``steady_state_mode`` is ``"disabled"`` and the other detection
+      diagnostics are ``None``.
 
     Lightweight detection diagnostics (``steady_state_detected``,
     ``steady_state_window_count``, ``steady_state_mode``,
@@ -876,6 +907,10 @@ def build_text_generation_result(
     Per-request server token stats are attached grouped by session (numeric
     session ids in integer order) when ``outputs_by_session`` is given, else
     as one flat list in output order.
+
+    With ``goodput_targets``, the result also reports ``request_goodput`` and
+    ``goodput_attainment`` over the same requests and duration as
+    ``request_throughput``.
     """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
@@ -883,23 +918,45 @@ def build_text_generation_result(
             " in text-generation benchmark flow."
         )
 
-    steady = detect_steady_state(outputs, max_concurrency=max_concurrency)
+    # FIXME (CENG-1381): Failed requests are excluded so that replies the server
+    # ends without any text don't fail the run. Remove this once those replies
+    # stop being reported as failures, so real failures count again.
+    failed = [o for o in outputs if not o.success and not o.cancelled]
+    metric_outputs: Sequence[RequestFuncOutput] = outputs
+    if failed and any(o.success and not o.cancelled for o in outputs):
+        logger.warning(
+            "Excluding %d failed requests from metrics; they remain in"
+            " request_records.",
+            len(failed),
+        )
+        metric_outputs = [o for o in outputs if o.success or o.cancelled]
+
+    steady = (
+        detect_steady_state(metric_outputs, max_concurrency=max_concurrency)
+        if steady_state_filtering
+        else None
+    )
 
     # Persist detection mode for downstream consumers; None when detection
     # was skipped (concurrency=1) so the default "full" isn't mistaken for
     # a real result.
-    mode: str | None = (
-        steady.mode if (steady.detected or steady.warning is not None) else None
-    )
+    mode: str | None
+    if steady is None:
+        mode = "disabled"
+    elif steady.detected or steady.warning is not None:
+        mode = steady.mode
+    else:
+        mode = None
 
-    num_outliers_rejected = 0
+    num_outliers_rejected: int | None = 0 if steady is not None else None
 
-    if steady.detected:
+    if steady is not None and steady.detected:
         # Build the steady-state sub-list and compute its wall-clock span.
+        # The window's indices are positions in the list the detector saw.
         ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
             out
-            for i, out in enumerate(outputs)
+            for i, out in enumerate(metric_outputs)
             if i in ss_index_set and out.success and not out.cancelled
         ]
         ss_valid = [
@@ -958,6 +1015,7 @@ def build_text_generation_result(
             reject_outliers=True,
             record_request_text=record_request_text,
             all_outputs=outputs,
+            goodput_targets=goodput_targets,
         )
 
         # Diagnostic: number of per-request TTFT outliers rejected in the
@@ -973,25 +1031,28 @@ def build_text_generation_result(
         )
 
     else:
-        # Detection did not run or did not converge. Only surface this at
-        # WARNING level when the run actually produced successful requests.
-        # When there are none (a serving/run failure, e.g. the "0 of 10000
-        # valid" case in PERF-2615), the steady-state detector is the wrong
-        # messenger: the failure is already reflected in the failure count and
-        # the reported metrics, so a "too few valid requests" warning is
-        # misleading noise on top of an already-failed run. Genuine cases with
-        # some successful-but-unusable requests still warn.
-        n_success = sum(1 for o in outputs if o.success and not o.cancelled)
-        if steady.warning and n_success > 0:
-            logger.warning(f"Steady-state detection: {steady.warning}")
-        elif n_success == 0:
-            logger.info(
-                "Steady-state detection skipped: run produced no successful"
-                " requests; reporting full-run metrics over all outputs."
-            )
+        # Detection was disabled, did not run, or did not converge. Only
+        # surface a failed detection at WARNING level when the run actually
+        # produced successful requests. When there are none (a serving/run
+        # failure, e.g. the "0 of 10000 valid" case in PERF-2615), the
+        # steady-state detector is the wrong messenger: the failure is already
+        # reflected in the failure count and the reported metrics, so a "too
+        # few valid requests" warning is misleading noise on top of an
+        # already-failed run. Genuine cases with some successful-but-unusable
+        # requests still warn.
+        if steady is not None:
+            n_success = sum(1 for o in outputs if o.success and not o.cancelled)
+            if steady.warning and n_success > 0:
+                logger.warning(f"Steady-state detection: {steady.warning}")
+            elif n_success == 0:
+                logger.info(
+                    "Steady-state detection skipped: run produced no"
+                    " successful requests; reporting full-run metrics over"
+                    " all outputs."
+                )
 
         text_metrics = calculate_metrics(
-            outputs=outputs,
+            outputs=metric_outputs,
             dur_s=benchmark_duration,
             tokenizer=tokenizer,
             gpu_metrics=gpu_metrics,
@@ -1006,6 +1067,8 @@ def build_text_generation_result(
             kv_block_size=kv_block_size,
             reject_outliers=False,
             record_request_text=record_request_text,
+            all_outputs=outputs,
+            goodput_targets=goodput_targets,
         )
 
     for warn in text_metrics.confidence_warnings():
@@ -1028,10 +1091,12 @@ def build_text_generation_result(
         update={
             "session_server_stats": session_server_stats,
             "aggregate_server_stats": aggregate_server_stats,
-            "steady_state_detected": steady.detected,
-            "steady_state_window_count": steady.steady_state_count,
+            "steady_state_detected": steady.detected if steady else None,
+            "steady_state_window_count": (
+                steady.steady_state_count if steady else None
+            ),
             "steady_state_mode": mode,
-            "steady_state_warning": steady.warning,
+            "steady_state_warning": steady.warning if steady else None,
             "num_outliers_rejected": num_outliers_rejected,
             "spec_decode_stats": spec_decode_stats,
             "task_type": "text",

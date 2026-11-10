@@ -58,7 +58,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.kernels import indexer_score_ragged, top_k_per_row
+from max.nn._graph_ops import indexer_score_ragged, top_k_per_row
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 

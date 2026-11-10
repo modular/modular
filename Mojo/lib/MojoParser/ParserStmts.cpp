@@ -571,6 +571,45 @@ void StmtParser::pushChildScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard,
                                                          loc, curDeclScope);
 }
 
+/// Shadow each type parameter that a `conforms_to(T, Trait)` component of
+/// `assumptions` refines with its downcasted type value in `scope`.
+static void shadowRefinedTypeParams(ArrayRef<ConstraintAttr> assumptions,
+                                    ASTDecl &scope) {
+  SmallVector<ParamDeclRefAttr, 2> paramRefs;
+  for (ConstraintAttr assumption : assumptions) {
+    LIT::forEachConformsToInProposition(
+        assumption.getProposition(), [&](TypeConformsToTraitAttr conformsTo) {
+          TypedAttr typeValue = getCanonicalAttr(conformsTo.getTypeValue());
+          if (ParamDeclRefAttr paramRef = LIT::extractParamDeclRef(typeValue);
+              paramRef && !llvm::is_contained(paramRefs, paramRef))
+            paramRefs.push_back(paramRef);
+        });
+  }
+
+  for (ParamDeclRefAttr paramRef : paramRefs) {
+    auto name = StringAttr::get(
+        scope.getContext(),
+        demangleParameterName(paramRef.getName(), /*forUser=*/true));
+    ArrayRef<ASTDecl *> found = scope.lookup(name);
+    if (found.size() != 1)
+      continue;
+    auto *irDecl = dyn_cast<IRASTDecl>(found.front());
+    if (!irDecl)
+      continue;
+    TypedAttr typeValue = irDecl->getIfIRValue().getIfPValue().get();
+    // Ensure the decl is not an unrelated declaration that shares the same
+    // name.
+    if (LIT::extractParamDeclRef(typeValue) != paramRef)
+      continue;
+    TypedAttr refined = maybeRefineTypeValueWithAssumptions(typeValue, scope);
+    if (refined == typeValue)
+      continue;
+    // Keep the parameter's own location so tooling still points at it.
+    scope.getShared().getDeclResolver().addFullyResolvedDecl(
+        PValue(refined), name, irDecl->getLoc(), &scope);
+  }
+}
+
 /// Parse a "suite" body pushed under a local scope so any vardecls inside of
 /// it are popped at the end.
 ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent) {
@@ -696,6 +735,74 @@ static FromImportDecorators parseFromImportDecorators(SharedState &shared,
                                                       LexerCursor startCursor,
                                                       size_t stmtIndent);
 
+static constexpr StringLiteral kAddressSpaceDecorator = "__address_space";
+
+/// Attach an `@__address_space` operand to the 'var' pattern of a statement
+/// declaring a single name: `var x = e`, `var x: T = e` or `var x: T`.
+/// Diagnoses any other statement shape.
+static void attachVarAddressSpace(SharedState &shared, ExprNode *stmt,
+                                  ExprNode *addressSpace) {
+  ExprNode *pattern = stmt;
+  if (auto *assign = dyn_cast<BinOpNode>(pattern);
+      assign && assign->kind == ExprNode::kAssign)
+    pattern = assign->lhs;
+  // A statement-level `var x: T` parses as `(var x): T`.
+  if (auto *typed = dyn_cast<BinOpNode>(pattern);
+      typed && typed->kind == ExprNode::kTypePattern)
+    pattern = typed->lhs;
+
+  auto *varPattern = dyn_cast<UnaryOpNode>(pattern);
+  if (varPattern && varPattern->kind == ExprNode::kVarPat &&
+      isa<DeclRefNode>(varPattern->subExpr)) {
+    varPattern->addressSpace = addressSpace;
+    return;
+  }
+
+  shared.emitError(stmt->getLoc(),
+                   "@__address_space only applies to a 'var' that declares a "
+                   "single name")
+      << stmt->getRange();
+}
+
+/// Re-lex the decorators before a 'var' statement in a function body
+static void parseVarStmtDecorators(SharedState &shared, LexerCursor startCursor,
+                                   size_t stmtIndent, ExprNode *stmt,
+                                   function_ref<void()> rejectUnsupported) {
+  Lexer decorLexer(shared.diags, startCursor);
+  ParserBase decorParser(shared, decorLexer);
+  auto decorators = decorParser.parseDecorators((ssize_t)stmtIndent);
+  ExprNode *addressSpace = nullptr;
+  bool allSupported = true;
+  // Walk in source order so a duplicate is reported where it is written.
+  for (auto [expr, cursor] : llvm::reverse(decorators)) {
+    auto *call = dyn_cast<CallNode>(expr);
+    auto *declRef = dyn_cast<DeclRefNode>(call ? call->callee : expr);
+    if (!declRef || declRef->spelling != kAddressSpaceDecorator) {
+      allSupported = false;
+      continue;
+    }
+    if (!call || call->operands.size() != 1 ||
+        !call->operands.front().isPositional()) {
+      shared.emitError(expr->getLoc(),
+                       "@__address_space takes a single positional "
+                       "'AddressSpace' argument")
+          << expr->getRange();
+      continue;
+    }
+    if (addressSpace) {
+      shared.emitError(expr->getLoc(), "@__address_space is specified more "
+                                       "than once; remove the duplicate")
+          << expr->getRange();
+      continue;
+    }
+    addressSpace = call->operands.front().expr;
+  }
+  if (!allSupported)
+    rejectUnsupported();
+  if (addressSpace)
+    attachVarAddressSpace(shared, stmt, addressSpace);
+}
+
 ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                                   size_t stmtIndent) {
   // Generate pretty stack traces if a crash happens in this scope.
@@ -766,13 +873,13 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // This emits an error message if we parsed a decorator, because this
   // statement doesn't support them.
   bool hadDecorators = (startCursor != getLexer().getCursor());
-  auto rejectDecorator = [&](bool inFunctionBody = false,
-                             bool printToken = true) {
+  auto rejectDecorator = [&, stmtTok = getToken()](bool inFunctionBody = false,
+                                                   bool printToken = true) {
     if (!hadDecorators)
       return;
-    auto diag = emitTokenError();
+    auto diag = emitError(stmtTok.getLoc());
     if (printToken)
-      diag << "'" << getToken().getSpelling() << "' ";
+      diag << "'" << stmtTok.getSpelling() << "' ";
     diag << "statement " << (inFunctionBody ? "in function body " : "")
          << "does not support decorators; remove the decorator";
   };
@@ -902,10 +1009,14 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // statement.
   ExprNode *expr = nullptr;
   bool isVarStatement = getToken().is(Token::kw_var);
-  rejectDecorator(/*inFunctionBody=*/isVarStatement,
-                  /*printToken=*/isVarStatement);
   if (parseSimpleStmtExprs(expr, stmtIndent))
     return failure();
+  if (isVarStatement && hadDecorators) {
+    parseVarStmtDecorators(shared, startCursor, stmtIndent, expr,
+                           [&] { rejectDecorator(/*inFunctionBody=*/true); });
+  } else {
+    rejectDecorator(/*inFunctionBody=*/false, /*printToken=*/false);
+  }
 
   // We cannot emit general statements unless we're in a function body.
   auto *otherParent = dyn_cast<OtherOpASTDecl>(&getParentDecl());
@@ -1174,8 +1285,10 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
   // not a checked constraint, so it carries no failure message: an assumption
   // is never the subject of a violation diagnostic. The assert's own message
   // lives on the `ParamAssertOp` above and surfaces if the assert fails.
-  curDeclScope->insertKnownAssumptions(
-      {ConstraintAttr::get(deShortCircuitCond, loc, /*message=*/StringAttr())});
+  ConstraintAttr assumption =
+      ConstraintAttr::get(deShortCircuitCond, loc, /*message=*/StringAttr());
+  curDeclScope->insertKnownAssumptions(assumption);
+  shadowRefinedTypeParams(assumption, *curDeclScope);
   return success();
 }
 
@@ -4052,6 +4165,7 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
           return failure();
       }
       curDeclScope->insertKnownAssumptions(assumptions);
+      shadowRefinedTypeParams(assumptions, *curDeclScope);
       return parseSuite(curIndent);
     };
 
@@ -5117,7 +5231,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     ExprNode *typeExpr = nullptr;
     if (parseExpression(typeExpr, stmtIndent))
       return declParseError();
-    parsedType = emitter.emitExprType(typeExpr);
+    parsedType = emitter.emitExprType(typeExpr, TypeStrictness::kConcrete);
     if (!parsedType)
       return declParseError();
   }
@@ -5532,7 +5646,8 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
           parseToken(Token::colon, "expected ':' after region argument") ||
           parseExpression(typeExpr))
         return failure();
-      ASTType type = getEmitter().emitExprType(typeExpr);
+      ASTType type =
+          getEmitter().emitExprType(typeExpr, TypeStrictness::kConcrete);
       if (!type)
         return failure();
       argTypes.push_back(type);
@@ -5699,7 +5814,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node, ExprDest &dest,
                                 : ArrayRef<Operand>(subscriptOperand[0]),
                             loc);
     return stmtEmitter.getParamEmitter(EC_CollectionCompElt)
-        .emitExprType(&subscript);
+        .emitExprType(&subscript, TypeStrictness::kConcrete);
   };
 
   // Dummy node with the correct location.

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Verify that mojoPointerSummaryProvider displays the dereferenced value
-# COM: for UnsafePointer variables of different types: Int, Bool, and Float64.
+# COM: for Pointer variables of different types: Int, Bool, and Float64.
 # COM:
 # COM: Four breakpoints exercise:
 # COM:   bp1 - Int pointer: summary shows signed decimal (42)

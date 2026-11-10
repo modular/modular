@@ -48,7 +48,6 @@ from max.gpu.memory import (
 from layout import (
     Coord,
     Idx,
-    Layout,
     MixedLayout,
     DefaultEngine,
     TensorLayout,
@@ -58,7 +57,6 @@ from layout import (
 )
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    tile_layout_k_major,
     warpgroup_fence,
 )
 from layout.tma_async import (
@@ -84,7 +82,7 @@ from structured_kernels.tile_types import (
     SMemTileArrayWithLayout,
     SMemTileArray2DRowMajor,
 )
-from layout.tile_layout import Layout as _Layout
+from layout.layout import Layout as _Layout
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
@@ -239,7 +237,8 @@ struct HopperMatmulSM90Kernel[
     a_layout: TensorLayout,
     b_layout: TensorLayout,
     c_layout: TensorLayout,
-    c_smem_layout: Layout,
+    c_smem_rows: Int,
+    c_smem_cols: Int,
     block_tile_shape: Tuple[Int, Int, Int],
     wgmma_shape: Tuple[Int, Int, Int],
     cluster_shape: Tuple[Int, Int, Int],
@@ -273,7 +272,8 @@ struct HopperMatmulSM90Kernel[
         a_layout: Memory layout of the A matrix.
         b_layout: Memory layout of the B matrix.
         c_layout: Memory layout of the C matrix.
-        c_smem_layout: Shared memory layout for the output tile.
+        c_smem_rows: Row count of the output tile's shared memory layout.
+        c_smem_cols: Column count of the output tile's shared memory layout.
         block_tile_shape: Tile dimensions `[M, N, K]` processed by each
             thread block.
         wgmma_shape: Dimensions for each WGMMA instruction `[M, N, K]`.
@@ -331,13 +331,6 @@ struct HopperMatmulSM90Kernel[
         Int(Self.wgmma_shape[0]) * Int(Self.wgmma_shape[1]) // 128
     )
 
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, Self.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, Self.b_swizzle
-    ]()
-
     comptime adjusted_num_pipeline_stages = Self.num_pipeline_stages // Self.k_group_size
 
     # TMA expected bytes per pipeline stage (combined A + B tiles)
@@ -367,8 +360,8 @@ struct HopperMatmulSM90Kernel[
         Self.BM,
         Self.BN,
         Self.BK,
-        Self.c_smem_layout.shape[0].value(),  # WG_BM
-        Self.c_smem_layout.shape[1].value(),  # WG_BN
+        Self.c_smem_rows,  # WG_BM
+        Self.c_smem_cols,  # WG_BN
         Self.num_pipeline_stages,
         Self.k_group_size,
         128,  # swizzle_bytes (matches TensorMapSwizzle.SWIZZLE_128B default)

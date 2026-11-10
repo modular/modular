@@ -149,7 +149,8 @@ def FuseReductions : Pass<"map-fuse-reductions", "MO::GraphOp"> {
     Runs the reduction fuser alone. A producer only a `map.iter.rowwise`
     reads is cloned at each load of its result. A consumer over the per-row
     shape that reads a per-row result at its own index becomes row-level
-    ops, and its result a rowwise output.
+    ops, and its result a rowwise output. A consumer over the rowwise shape
+    that reads per-row results at its own row becomes a map phase.
   }];
 
   let dependentDialects = [
@@ -159,6 +160,37 @@ def FuseReductions : Pass<"map-fuse-reductions", "MO::GraphOp"> {
 
   let statistics = [
     Statistic<"numKernelsFused", "num-kernels-fused", "Number of kernels fused">
+  ];
+}
+
+def ReductionLoopInvariantCodeMotion : Pass<"map-rlicm", "MO::GraphOp"> {
+  let summary = "Hoist row-invariant work out of rowwise map phases.";
+  let description = [{
+    Runs after fusion. Moves the ops of each `map.iter.map` in a
+    `map.iter.rowwise` that compute the same value for the whole row before
+    the phase, so they run once per row: a constant, a load whose index
+    ignores the reduced axis (re-indexed by the row), and an elementwise call
+    on row values that doesn't read its position.
+  }];
+
+  let dependentDialects = [
+    "M::MAP::MAPDialect",
+  ];
+}
+
+def ReductionCSE : Pass<"map-rcse", "MO::GraphOp"> {
+  let summary = "Compute once what every phase of a rowwise kernel computes.";
+  let description = [{
+    Runs after fusion. Common subexpression elimination across the phases
+    of each `map.iter.rowwise`: of the values every phase computes from the
+    input the first fold reduces, wherever it reads that input, it takes
+    the narrowest, then the largest, and computes it once per element in a
+    `map.iter.cache`, which the Row caches. Each phase's copy becomes a
+    `map.iter.cache.load`.
+  }];
+
+  let dependentDialects = [
+    "M::MAP::MAPDialect",
   ];
 }
 

@@ -16,8 +16,6 @@ from std.sys import align_of
 from max.gpu.intrinsics import AMDBufferResource, readfirstlane
 from layout import *
 
-from std.utils.coord import DynamicCoord
-
 
 @inline(.always)
 def load_to_simd(
@@ -72,17 +70,3 @@ def make_amd_buffer_resource(
     """
     var size = _get_bounds(tensor)
     return AMDBufferResource(readfirstlane(tensor.ptr), readfirstlane(size))
-
-
-@inline(.always)
-def idx2crd[layout: Layout](idx: Int) -> DynamicCoord[.int, layout.rank()]:
-    comptime assert layout.all_dims_known(), "Layout must be known for idx2crd"
-    var res = DynamicCoord[.int, layout.rank()]()
-
-    comptime for i in range(layout.rank()):
-        comptime stride = layout.stride[i].value()
-        comptime shape = layout.shape[i].value()
-        Pointer(to=res[i]).write(
-            rebind[type_of(res[i])](Scalar[DType.int]((idx // stride) % shape))
-        )
-    return res

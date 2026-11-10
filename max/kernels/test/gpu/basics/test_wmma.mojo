@@ -243,7 +243,7 @@ def run_mma_fp32_tf32(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     print("== run_matmul fp32.tf32 tensor core kernel")
 
@@ -293,7 +293,7 @@ def run_mma_fp32_tf32(
     ]
 
     @inline(.always)
-    def run_func_mma(ctx: DeviceContext) raises {imm}:
+    def run_func_mma(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[mma_kernel](
             c_dev_ptr,
             a_dev_ptr,
@@ -343,7 +343,7 @@ def run_mma_fp32_tf32(
     )
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -420,7 +420,7 @@ def run_mma_fp32_bf16(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     print("== run_matmul fp32.bf16 1688 tensor core kernel")
 
@@ -470,7 +470,7 @@ def run_mma_fp32_bf16(
     ]
 
     @inline(.always)
-    def run_func_mma(ctx: DeviceContext) raises {imm}:
+    def run_func_mma(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[mma_kernel](
             c_dev_ptr,
             a_dev_ptr,
@@ -517,7 +517,7 @@ def run_mma_fp32_bf16(
     )
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -593,7 +593,7 @@ def run_mma_fp32_bf16_2(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     print("== run_matmul fp32.bf16 16816 tensor core kernel")
 
@@ -643,7 +643,7 @@ def run_mma_fp32_bf16_2(
     ]
 
     @inline(.always)
-    def run_func_mma(ctx: DeviceContext) raises {imm}:
+    def run_func_mma(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[mma_kernel](
             c_dev_ptr,
             a_dev_ptr,
@@ -690,7 +690,7 @@ def run_mma_fp32_bf16_2(
     )
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -766,7 +766,7 @@ def run_mma_fp32_fp16(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     print("== run_matmul fp32.fp16 tensor core kernel")
 
@@ -816,7 +816,7 @@ def run_mma_fp32_fp16(
     ]
 
     @inline(.always)
-    def run_func_mma(ctx: DeviceContext) raises {imm}:
+    def run_func_mma(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[mma_kernel](
             c_dev_ptr,
             a_dev_ptr,
@@ -863,7 +863,7 @@ def run_mma_fp32_fp16(
     )
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -939,7 +939,7 @@ def run_mma_fp16_fp16(
     rand_max: Int64,
     iterations: Int,
     errorTolerance: Float32,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     print("== run_matmul fp16.fp16 tensor core kernel")
 
@@ -989,7 +989,7 @@ def run_mma_fp16_fp16(
     ]
 
     @inline(.always)
-    def run_func_mma(ctx: DeviceContext) raises {imm}:
+    def run_func_mma(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[mma_kernel](
             c_dev_ptr,
             a_dev_ptr,
@@ -1036,7 +1036,7 @@ def run_mma_fp16_fp16(
     )
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,

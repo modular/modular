@@ -592,10 +592,11 @@ struct TestSuite(
     def _should_skip(self, test: _Test) -> Bool:
         if test.name in self.skip_list:
             return True
-        if not self.allow_list:
-            return False
-        # SAFETY: We know that `self.allow_list` is not `None` here.
-        return test.name not in self.allow_list.unsafe_value()
+        match self.allow_list:
+            case .Some(allow_list):
+                return test.name not in allow_list
+            case .None:
+                return False
 
     def _validate_skip_list(self) raises:
         # TODO: _Test doesn't conform to Equatable, so we can't use

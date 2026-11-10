@@ -10,22 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""CPU tests of the DSpark weight adapter.
-
-The checkpoint's ``mtp.*`` half mapped onto the drafter's parameter tree.
-The audit discipline is the strict load: every converted tensor must be a
-leaf the module declares, every declared leaf must be fed, and every
-checkpoint tensor is either consumed or one of the two counted drops --
-``gate.bias_vl`` (the drafter routes text only) and the confidence head's
-projection (dropped by default because the reference never runs adaptive
-verification; ``load_confidence_head`` flips the drop into a loud load).
-The dequantized
-projections and the packed experts are checked bit-exactly against a numpy
-decode of the same bytes, and the ModuleV3 draft's binding -- the
-adapter's output as the drafter's own tree -- is checked from a real
-safetensors checkpoint, through ``load_weights`` and the drafter's
-``load_state_dict``.
-"""
+"""CPU tests for DSpark checkpoint weight adaptation."""
 
 from __future__ import annotations
 
@@ -45,11 +30,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, load_weights
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.pipelines.architectures.deepseekV41.weight_adapters import (
-    e4m3_to_float32,
-    e8m0_to_float32,
-)
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     DSparkDrafter,
 )
@@ -69,6 +50,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.weight_adapters import (
     as_uint8,
     convert_dspark_state_dict,
     rewire_dspark_state_dict,
+    stack_projections,
     with_dtype,
 )
 from max.pipelines.architectures.dspark_deepseekV41_modulev3 import (
@@ -183,6 +165,42 @@ def _fp8_linear(base: str, out_dim: int, in_dim: int) -> dict[str, WeightData]:
     }
 
 
+def test_trunk_stacked_projection_rows_match_norm_widths() -> None:
+    state = {
+        **_fp8_linear("layers.0.attn.wq_a", 32, HIDDEN),
+        **_fp8_linear("layers.0.attn.wkv", 32, HIDDEN),
+    }
+    state["layers.0.attn.q_norm.weight"] = _tensor(
+        "layers.0.attn.q_norm.weight", DType.bfloat16, (64,)
+    )
+    state["layers.0.attn.kv_norm.weight"] = _tensor(
+        "layers.0.attn.kv_norm.weight", DType.bfloat16, (32,)
+    )
+
+    with pytest.raises(
+        ValueError, match=r"wq_a\.weight.*q_norm\.weight width 64"
+    ):
+        stack_projections(state)
+
+
+def test_trunk_kv_projection_rows_match_norm_width() -> None:
+    state = {
+        **_fp8_linear("layers.0.attn.wq_a", 64, HIDDEN),
+        **_fp8_linear("layers.0.attn.wkv", 64, HIDDEN),
+    }
+    state["layers.0.attn.q_norm.weight"] = _tensor(
+        "layers.0.attn.q_norm.weight", DType.bfloat16, (64,)
+    )
+    state["layers.0.attn.kv_norm.weight"] = _tensor(
+        "layers.0.attn.kv_norm.weight", DType.bfloat16, (32,)
+    )
+
+    with pytest.raises(
+        ValueError, match=r"wkv\.weight.*kv_norm\.weight width 32"
+    ):
+        stack_projections(state)
+
+
 def mtp_checkpoint() -> dict[str, WeightData]:
     """The checkpoint's ``mtp.*`` tensors at this module's widths.
 
@@ -276,14 +294,6 @@ def _as_bfloat16_f32(data: WeightData) -> np.ndarray:
     """A bf16 ``WeightData``'s values, widened to float32."""
     bits = np.from_dlpack(_buffer(data).view(DType.uint16)).astype(np.uint32)
     return (bits << 16).view(np.float32)
-
-
-def _dequant_oracle(weight: WeightData, scale: WeightData) -> np.ndarray:
-    """``e4m3 * expanded e8m0`` in float32 -- the decode the adapter must
-    reproduce, computed from the raw bytes."""
-    values = e4m3_to_float32(as_uint8(weight.data))
-    blocks = e8m0_to_float32(as_uint8(scale.data))
-    return values * np.repeat(np.repeat(blocks, 32, axis=0), 32, axis=1)
 
 
 # --------------------------------------------------------------------------- #
@@ -455,12 +465,13 @@ def test_the_draft_checkpoint_weights_bind_the_adapter_s_output(
         got.view(torch.uint8).numpy(),
         as_uint8(converted[f"{d}.main_proj.weight"].data),
     )
-    # A stage's dequantized projection, and its fp32 sink.
+    # A stage's projection keeps the checkpoint's e4m3 bytes, and its fp32
+    # sink loads as is.
     params = dict(drafter.parameters)
     got = torch.from_dlpack(params["stages.1.attn.wq_b.weight"].to(CPU()))
     np.testing.assert_array_equal(
-        got.to(torch.float32).numpy(),
-        _as_bfloat16_f32(converted[f"{d}.stages.1.attn.wq_b.weight"]),
+        got.view(torch.uint8).numpy(),
+        as_uint8(converted[f"{d}.stages.1.attn.wq_b.weight"].data),
     )
     np.testing.assert_array_equal(
         params["stages.0.attn.attn_sink"].to_numpy(),
@@ -473,34 +484,44 @@ def test_the_draft_checkpoint_weights_bind_the_adapter_s_output(
 # --------------------------------------------------------------------------- #
 
 
-def test_dequantized_projections_match_the_decode_oracle() -> None:
-    """The bf16 projections are exactly ``e4m3 * expanded scale``."""
+def test_attention_projections_keep_the_checkpoint_bytes() -> None:
     sd = mtp_checkpoint()
     rng = np.random.default_rng(0)
-    # Distinct, finite e4m3 codes (excluding the 0x7F/0xFF NaNs) and
-    # scales, so every dequantized value carries a real scale factor.
-    for base in ("mtp.1.attn.wq_a", "mtp.1.attn.wo_a"):
-        shape = tuple(int(d) for d in sd[f"{base}.weight"].shape)
-        sd[f"{base}.weight"] = with_dtype(
-            rng.integers(0, 0x7E, size=shape, dtype=np.uint8),
-            DType.float8_e4m3fn,
-            f"{base}.weight",
-        )
-        sshape = tuple(int(d) for d in sd[f"{base}.scale"].shape)
-        sd[f"{base}.scale"] = with_dtype(
-            rng.integers(120, 130, size=sshape, dtype=np.uint8),
-            DType.float8_e8m0fnu,
-            f"{base}.scale",
+    # Distinct, finite e4m3 codes (excluding the 0x7F/0xFF NaNs) and scales,
+    # so a misplaced row or block changes bytes.
+    for name in [n for n in sd if n.startswith("mtp.1.attn.w")]:
+        shape = tuple(int(d) for d in sd[name].shape)
+        high = 0x7E if name.endswith(".weight") else 130
+        low = 0 if name.endswith(".weight") else 120
+        sd[name] = with_dtype(
+            rng.integers(low, high, size=shape, dtype=np.uint8),
+            sd[name].dtype,
+            name,
         )
     converted = _convert(sd)
-    for proj in ("wq_a", "wo_a"):
-        got = _as_bfloat16_f32(
-            converted[f"{DSPARK_MODULE_PREFIX}.stages.1.attn.{proj}.weight"]
+    stage = f"{DSPARK_MODULE_PREFIX}.stages.1.attn"
+    for leaf in ("weight", "scale"):
+        np.testing.assert_array_equal(
+            as_uint8(converted[f"{stage}.wqa_wkv.{leaf}"].data),
+            np.concatenate(
+                [
+                    as_uint8(sd[f"mtp.1.attn.{proj}.{leaf}"].data)
+                    for proj in ("wq_a", "wkv")
+                ]
+            ),
         )
-        expected = _dequant_oracle(
-            sd[f"mtp.1.attn.{proj}.weight"], sd[f"mtp.1.attn.{proj}.scale"]
+        for proj in ("wq_b", "wo_a", "wo_b"):
+            np.testing.assert_array_equal(
+                as_uint8(converted[f"{stage}.{proj}.{leaf}"].data),
+                as_uint8(sd[f"mtp.1.attn.{proj}.{leaf}"].data),
+            )
+    assert converted[f"{stage}.wqa_wkv.scale"].dtype == DType.float8_e8m0fnu
+    assert not any(
+        name.endswith(
+            (".wq_a.weight", ".wkv.weight", ".wq_a.scale", ".wkv.scale")
         )
-        np.testing.assert_array_equal(got, expected)
+        for name in converted
+    )
 
 
 def test_expert_stacking_keeps_expert_order_and_gate_rows_first() -> None:
@@ -620,10 +641,61 @@ def test_a_hoisted_tensor_under_the_wrong_stage_fails_loud() -> None:
         _convert(sd)
 
 
-def test_a_dequant_weight_without_its_scale_fails_loud() -> None:
+def test_a_projection_without_its_scale_fails_loud() -> None:
     sd = mtp_checkpoint()
     del sd["mtp.0.attn.wkv.scale"]
     with pytest.raises(ValueError, match=r"wkv\.scale"):
+        _convert(sd)
+
+
+def test_stack_scales_off_their_own_rows_fail_loud() -> None:
+    sd = mtp_checkpoint()
+    shapes = {
+        part: [int(d) for d in sd[f"mtp.0.attn.{part}.scale"].shape]
+        for part in ("wq_a", "wkv")
+    }
+    shapes["wq_a"][0] += 1
+    shapes["wkv"][0] -= 1
+    for part, shape in shapes.items():
+        name = f"mtp.0.attn.{part}.scale"
+        sd[name] = _tensor(name, sd[name].dtype, tuple(shape))
+    with pytest.raises(ValueError, match=r"wq_a\.scale: must be the compact"):
+        _convert(sd)
+
+
+def test_stacked_attention_parts_match_their_norm_widths() -> None:
+    sd = mtp_checkpoint()
+    sd["mtp.0.attn.wq_a.weight"] = _tensor(
+        "mtp.0.attn.wq_a.weight", DType.float8_e4m3fn, (32, HIDDEN)
+    )
+    sd["mtp.0.attn.wq_a.scale"] = _tensor(
+        "mtp.0.attn.wq_a.scale", DType.float8_e8m0fnu, (1, HIDDEN // 32)
+    )
+    sd["mtp.0.attn.wkv.weight"] = _tensor(
+        "mtp.0.attn.wkv.weight", DType.float8_e4m3fn, (HEAD_DIM, HIDDEN)
+    )
+    sd["mtp.0.attn.wkv.scale"] = _tensor(
+        "mtp.0.attn.wkv.scale",
+        DType.float8_e8m0fnu,
+        (HEAD_DIM // 32, HIDDEN // 32),
+    )
+    with pytest.raises(
+        ValueError, match=r"wq_a rows 32 do not match.*width 64"
+    ):
+        _convert(sd)
+
+
+def test_drafter_kv_projection_rows_match_norm_width() -> None:
+    sd = mtp_checkpoint()
+    sd["mtp.0.attn.wkv.weight"] = _tensor(
+        "mtp.0.attn.wkv.weight", DType.float8_e4m3fn, (HEAD_DIM + 32, HIDDEN)
+    )
+    sd["mtp.0.attn.wkv.scale"] = _tensor(
+        "mtp.0.attn.wkv.scale",
+        DType.float8_e8m0fnu,
+        ((HEAD_DIM + 32) // 32, HIDDEN // 32),
+    )
+    with pytest.raises(ValueError, match=r"wkv rows 96 do not match.*width 64"):
         _convert(sd)
 
 

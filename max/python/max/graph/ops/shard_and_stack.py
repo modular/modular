@@ -137,7 +137,7 @@ def shard_and_stack(
 
     # Call the custom kernel operation
     results = custom(
-        "mo.shard_and_stack",
+        "gather_scatter.shard_and_stack",
         input_tensors[0].device,
         input_tensors,
         out_types=output_types,

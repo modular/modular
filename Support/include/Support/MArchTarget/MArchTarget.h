@@ -25,6 +25,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTargetMinimal.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/SymbolExport.h"
 #include "llvm/Support/CodeGen.h"
 #include <memory>
 
@@ -36,7 +37,8 @@ class TargetMachine;
 namespace M {
 
 /// Returns a TargetMachine for the current host.
-ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
+MODULAR_CXX_EXPORT ErrorOr<std::unique_ptr<llvm::TargetMachine>>
+getTargetMachineForHost(
     bool isJIT = true,
     llvm::CodeGenOptLevel optLevel = llvm::CodeGenOptLevel::Aggressive);
 
@@ -46,7 +48,7 @@ ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
 ///
 /// TODO: Split into separate MLIR-dependent library. All other functions
 /// depend only on LLVMTarget and (unfortunately) clang.
-ErrorOr<TargetInfoAttr>
+MODULAR_CXX_EXPORT ErrorOr<TargetInfoAttr>
 getMArchFeatures(MLIRContext *ctx, StringRef targetTriple, StringRef march,
                  StringRef mcpu, StringRef mtune, StringRef acceleratorArch,
                  llvm::Reloc::Model relocModel, StringRef abi = "");

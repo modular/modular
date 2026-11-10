@@ -14,9 +14,10 @@
 
 Precision is only observable on a device whose queue can be stalled from the
 host. Each test gates the default queue with a host-signalled
-``CompletionFlag`` and places the producing write *ahead* of that gate, so the
-producer finishes on its own: a read that returns while the gate is held was
-scoped to that producer, and one that blocks drained the device instead.
+``CompletionFlag`` and places the producing write *ahead* of that gate, and
+lets it finish before the gate engages: a read that returns while the gate is
+held was scoped to that producer, and one that blocks drained the device
+instead.
 
 Each test carries a positive control -- a full ``device.synchronize()`` on a
 second thread, required to stay blocked -- so a gate that stopped engaging
@@ -107,6 +108,10 @@ def _read_ahead_of_a_gate(
     control_completed_while_gated = True
     try:
         enqueue_write()
+        # CI GPUs are shared, so the producer can take longer than the hold.
+        # Let it land first: a scoped read then returns at once, and a read
+        # that drains the device still blocks on the gate.
+        queue.record_event().synchronize()
         queue.wait_for_host_value(flag, 1)
         unrelated_dst.inplace_copy_from(unrelated_src)
         worker_thread.start()

@@ -112,7 +112,7 @@ def _check[
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, atanh(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     comptime name = "atanh"
     var worst_gpu = 0
@@ -246,7 +246,7 @@ def _check_frexp_bits[
         frac_ptr.unsafe_store[width=simd_width](idx, fe[0])
         exp_ptr.unsafe_store[width=simd_width](idx, fe[1])
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     with frac_device.map_to_host() as frac_host:
         with exp_device.map_to_host() as exp_host:
@@ -334,7 +334,7 @@ def _check_subnormals[
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, atanh(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(length):

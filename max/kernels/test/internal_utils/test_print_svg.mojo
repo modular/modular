@@ -16,13 +16,13 @@ from std.sys import size_of
 from std.testing import assert_equal
 
 from layout import Coord, Idx, TileTensor, col_major, coord, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout._print_svg import print_svg
 from layout.swizzle import Swizzle
 
 
 def assert_fragment_addresses[
-    element_layout: TileLayout = TileLayout(coord[1, 1], coord[0, 0]),
+    element_layout: Layout = Layout(coord[1, 1], coord[0, 0]),
 ](
     tensor: TileTensor[mut=False, ...],
     base: TileTensor[mut=False, ...],
@@ -84,7 +84,7 @@ def test_svg_nvidia_shape() raises:
                         + 8 * column
                         + element
                     )
-        assert_fragment_addresses[TileLayout(coord[1, 2], coord[0, 1])](
+        assert_fragment_addresses[Layout(coord[1, 2], coord[0, 1])](
             tensor_list[lane], tensor.as_imm(), expected
         )
 
@@ -104,7 +104,7 @@ def test_svg_nvidia_shape() raises:
         ]
         return String(colors[t // 4])
 
-    print_svg[element_layout=TileLayout(coord[1, 2], coord[0, 1])](
+    print_svg[element_layout=Layout(coord[1, 2], coord[0, 1])](
         tensor.as_imm(),
         tensor_list,
         color_map,
@@ -126,10 +126,10 @@ def test_svg_nvidia_tile() raises:
                     expected.append(
                         8 + 32 * row + 2 * column + 16 * erow + ecolumn
                     )
-    assert_fragment_addresses[TileLayout(coord[2, 2], coord[16, 1])](
+    assert_fragment_addresses[Layout(coord[2, 2], coord[16, 1])](
         tensor_dist.as_imm(), tensor.as_imm(), expected
     )
-    print_svg[element_layout=TileLayout(coord[2, 2], coord[16, 1])](
+    print_svg[element_layout=Layout(coord[2, 2], coord[16, 1])](
         tensor.as_imm(),
         [tensor_dist.as_imm()],
         file_path=Path("./test_svg_nvidia_tile.svg"),
@@ -150,12 +150,12 @@ def test_svg_nvidia_tile_memory_bank() raises:
                     expected.append(
                         8 + 32 * row + 2 * column + 16 * erow + ecolumn
                     )
-    assert_fragment_addresses[TileLayout(coord[2, 2], coord[16, 1])](
+    assert_fragment_addresses[Layout(coord[2, 2], coord[16, 1])](
         tensor_dist.as_imm(), tensor.as_imm(), expected
     )
     print_svg[
         memory_bank=(4, 32),
-        element_layout=TileLayout(coord[2, 2], coord[16, 1]),
+        element_layout=Layout(coord[2, 2], coord[16, 1]),
     ](
         tensor.as_imm(),
         [tensor_dist.as_imm()],
@@ -206,13 +206,13 @@ def test_svg_amd_shape_d() raises:
     var tensor_dist2 = tensor.vectorize[4, 1]().distribute[row_major[4, 16]()](
         11
     )
-    assert_fragment_addresses[TileLayout(coord[4, 1], coord[16, 0])](
+    assert_fragment_addresses[Layout(coord[4, 1], coord[16, 0])](
         tensor_dist.as_imm(), tensor.as_imm(), [10, 26, 42, 58]
     )
-    assert_fragment_addresses[TileLayout(coord[4, 1], coord[16, 0])](
+    assert_fragment_addresses[Layout(coord[4, 1], coord[16, 0])](
         tensor_dist2.as_imm(), tensor.as_imm(), [11, 27, 43, 59]
     )
-    print_svg[element_layout=TileLayout(coord[4, 1], coord[16, 0])](
+    print_svg[element_layout=Layout(coord[4, 1], coord[16, 0])](
         tensor.as_imm(),
         [tensor_dist.as_imm(), tensor_dist2.as_imm()],
         file_path=Path("./test_svg_amd_shape_d.svg"),
@@ -221,13 +221,13 @@ def test_svg_amd_shape_d() raises:
 
 def test_svg_wgmma_shape() raises:
     # wgmma tensor core a matrix fragment
-    comptime layout = TileLayout(
+    comptime layout = Layout(
         Coord(coord[8, 8], coord[8, 2]),
         Coord(coord[8, 64], coord[1, 512]),
     )
     var stack = Array[Float32, layout.static_product](fill={})
     var tensor = TileTensor(stack, layout)
-    comptime fragment_layout = TileLayout(
+    comptime fragment_layout = Layout(
         Coord(Idx[8], coord[2, 2]), Coord(Idx[64], coord[4, 512])
     )
     var tensor_dist = tensor.reshape(fragment_layout)

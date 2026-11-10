@@ -24,6 +24,7 @@
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENEnums.h"
+#include "Mojo/Support/FileUtils.h"
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/SmallVector.h"
@@ -38,16 +39,6 @@ namespace M::KGEN {
 //===----------------------------------------------------------------------===//
 // Save-temps helpers
 //===----------------------------------------------------------------------===//
-
-/// Write \p buf to a content-addressed file at
-/// <saveTempsPrefix>.<xxh128><postfix>.  No-op when saveTempsPrefix is empty.
-mlir::LogicalResult writeBytesToTempWithHash(const std::string &saveTempsPrefix,
-                                             const std::string &postfix,
-                                             llvm::StringRef buf);
-
-mlir::LogicalResult writeBytesToTempWithHash(const std::string &saveTempsPrefix,
-                                             const std::string &postfix,
-                                             llvm::MemoryBufferRef buf);
 
 /// Serialize \p module to a string and save it via writeBytesToTempWithHash.
 /// The output path is <saveTempsPrefix><phase>.<hash><fileExt>.

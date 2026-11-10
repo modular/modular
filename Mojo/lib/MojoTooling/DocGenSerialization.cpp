@@ -11,6 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+#include "DocGenSerialization.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
@@ -19,15 +20,13 @@
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/LITDialect/SpecialFunctions.h"
-#include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoParser/DocString.h"
+#include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/MojoParser/StabilityMarkers.h"
 #include "Mojo/MojoTooling/DeclRendering.h"
-#include "Mojo/MojoTooling/ParserDriver.h"
-#include "MojoToolingInternals.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -37,7 +36,6 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
 #include <algorithm>
-#include <cctype>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -45,7 +43,6 @@
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
-using namespace M::KGEN::Mojo;
 
 namespace {
 
@@ -507,11 +504,11 @@ extractChildFunctions(const ASTDecl &decl,
 }
 
 template <typename ASTDeclRange>
-static llvm::json::Array toPublicDeclJSONArray(MojoParserContext &ctx,
+static llvm::json::Array toPublicDeclJSONArray(SharedState &shared,
                                                const ASTDeclRange &decls) {
   llvm::json::Array result;
   for (ASTDecl *decl : decls) {
-    auto serialized = serializeDocDecl(*decl, ctx);
+    auto serialized = serializeDocDecl(*decl, shared);
     assert(serialized && "expected a serializable public declaration");
     result.push_back(std::move(*serialized));
   }
@@ -637,7 +634,7 @@ std::string M::KGEN::LIT::getDeclFullMarkdownString(ASTDecl &decl) {
 }
 
 static llvm::json::Object serializeParameterDecl(ASTDecl &decl,
-                                                 MojoParserContext &ctx) {
+                                                 SharedState &shared) {
   PogMetadataAttr pog = decl.getPogMetadata();
   std::string type = getParameterTypeString(decl);
   std::string description = getPogMarkdownDocString(decl);
@@ -670,13 +667,12 @@ static llvm::json::Object serializeParameterDecl(ASTDecl &decl,
   }
 
   if (TypedAttr defaultValue = getReboundPogDefault(decl))
-    object["default"] =
-        getDefaultValueString(defaultValue, ctx.getSharedState());
+    object["default"] = getDefaultValueString(defaultValue, shared);
   return object;
 }
 
 static llvm::json::Object serializeArgumentDecl(ASTDecl &decl,
-                                                MojoParserContext &ctx) {
+                                                SharedState &shared) {
   PogMetadataAttr pog = decl.getPogMetadata();
   std::string type = getArgumentTypeString(decl);
   std::string description = getPogMarkdownDocString(decl);
@@ -710,8 +706,7 @@ static llvm::json::Object serializeArgumentDecl(ASTDecl &decl,
   }
 
   if (TypedAttr defaultValue = getReboundPogDefault(decl))
-    object["default"] =
-        getDefaultValueString(defaultValue, ctx.getSharedState());
+    object["default"] = getDefaultValueString(defaultValue, shared);
   return object;
 }
 
@@ -765,7 +760,7 @@ static std::string getAliasMarkdownDocString(AliasASTDecl &decl) {
 }
 
 static llvm::json::Object serializeAliasDecl(AliasASTDecl &decl,
-                                             MojoParserContext &ctx) {
+                                             SharedState &shared) {
   ParameterEvaluator evaluator = getAliasParameterEvaluator(decl);
   std::string type;
   if (auto generatorType = dyn_cast<GeneratorType>(decl.getOp().getType()))
@@ -801,7 +796,7 @@ static llvm::json::Object serializeAliasDecl(AliasASTDecl &decl,
 
   llvm::json::Array parameters;
   for (ASTDecl *parameter : decl.getUserParamDecls())
-    parameters.push_back(serializeParameterDecl(*parameter, ctx));
+    parameters.push_back(serializeParameterDecl(*parameter, shared));
 
   StableInfo stableInfo = computeStableInfo(decl.getOp());
   llvm::json::Object object{
@@ -1016,17 +1011,17 @@ static std::string getFunctionMarkdownDocString(DefASTDecl &decl) {
 }
 
 static llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
-                                                MojoParserContext &ctx) {
+                                                SharedState &shared) {
   FunctionDocumentation documentation = getFunctionDocumentation(decl);
   FnOp funcOp = decl.getOp();
   FnTypeGeneratorType signature = decl.getSignature();
   StableInfo stableInfo = computeStableInfo(funcOp);
   llvm::json::Array arguments;
   for (ASTDecl *argument : decl.getUserArgDecls())
-    arguments.push_back(serializeArgumentDecl(*argument, ctx));
+    arguments.push_back(serializeArgumentDecl(*argument, shared));
   llvm::json::Array parameters;
   for (ASTDecl *parameter : decl.getUserParamDecls())
-    parameters.push_back(serializeParameterDecl(*parameter, ctx));
+    parameters.push_back(serializeParameterDecl(*parameter, shared));
   llvm::json::Object result{
       {"args", std::move(arguments)},
       {"async", signature.isAsync()},
@@ -1049,7 +1044,7 @@ static llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
   };
   if (std::optional<std::string> returnType = getFunctionReturnType(decl)) {
     llvm::json::Object returnObject =
-        extractLibraryInfo(*returnType, &decl, &ctx.getSharedState());
+        extractLibraryInfo(*returnType, &decl, &shared);
     if (!documentation.returnsDoc.empty())
       returnObject["doc"] = documentation.returnsDoc;
     result["returns"] = std::move(returnObject);
@@ -1060,14 +1055,14 @@ static llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
 /// Serialize name-sorted functions as one entry per overload set.
 static llvm::json::Array
 serializeFunctionOverloadSets(ArrayRef<DefASTDecl *> functions,
-                              MojoParserContext &ctx) {
+                              SharedState &shared) {
   llvm::json::Array result;
   for (size_t first = 0; first < functions.size();) {
     StringRef name = functions[first]->getName().value_or(StringRef{});
     llvm::json::Array overloads;
     size_t next = first;
     do {
-      overloads.push_back(serializeFunctionDecl(*functions[next], ctx));
+      overloads.push_back(serializeFunctionDecl(*functions[next], shared));
       ++next;
     } while (next < functions.size() &&
              functions[next]->getName().value_or(StringRef{}) == name);
@@ -1237,7 +1232,7 @@ collectParentTraitsWithMetadata(ASTDecl *self, TraitType canonicalTrait,
 }
 
 static llvm::json::Object serializeTraitDecl(TraitASTDecl &decl,
-                                             MojoParserContext &ctx) {
+                                             SharedState &shared) {
   // Ignore some inherited functions.
   auto shouldHideFn = [](FnOp decl, StringRef name) {
     return decl.getInheritedFrom() &&
@@ -1255,11 +1250,11 @@ static llvm::json::Object serializeTraitDecl(TraitASTDecl &decl,
   StableInfo stableInfo = computeStableInfo(decl.getOp());
 
   return llvm::json::Object{
-      {"aliases", toPublicDeclJSONArray(ctx, aliases)},
+      {"aliases", toPublicDeclJSONArray(shared, aliases)},
       {"deprecated", decl.getDeprecationWarning().value_or(StringRef())},
       {"description", decl.getDocumentationDescription()},
       {"fields", llvm::json::Array()},
-      {"functions", serializeFunctionOverloadSets(functions, ctx)},
+      {"functions", serializeFunctionOverloadSets(functions, shared)},
       {"kind", "trait"},
       {"name", decl.getName().value_or(StringRef())},
       {"parentTraits", std::move(parentTraitsWithMetadata)},
@@ -1377,7 +1372,7 @@ static StringRef toString(TypeConvention convention) {
 }
 
 static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
-                                              MojoParserContext &ctx) {
+                                              SharedState &shared) {
   StructDocumentation documentation = getStructDocumentation(decl);
   StructDeclOp structOp = decl.getOp();
   StableInfo stableInfo = computeStableInfo(structOp);
@@ -1391,15 +1386,15 @@ static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
       &decl, structOp.getCanonicalTrait(), &conformanceConditions);
   llvm::json::Array parameterInfos;
   for (ASTDecl *parameter : decl.getUserParamDecls())
-    parameterInfos.push_back(serializeParameterDecl(*parameter, ctx));
+    parameterInfos.push_back(serializeParameterDecl(*parameter, shared));
 
   return llvm::json::Object{
-      {"aliases", toPublicDeclJSONArray(ctx, aliases)},
+      {"aliases", toPublicDeclJSONArray(shared, aliases)},
       {"constraints", documentation.constraints},
       {"deprecated", decl.getDeprecationWarning().value_or(StringRef())},
       {"description", documentation.description},
-      {"fields", toPublicDeclJSONArray(ctx, fields)},
-      {"functions", serializeFunctionOverloadSets(functions, ctx)},
+      {"fields", toPublicDeclJSONArray(shared, fields)},
+      {"functions", serializeFunctionOverloadSets(functions, shared)},
       {"kind", "struct"},
       {"name", decl.getName().value_or(StringRef())},
       {"parameters", std::move(parameterInfos)},
@@ -1418,25 +1413,25 @@ static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
 //===----------------------------------------------------------------------===//
 
 static llvm::json::Object serializeModuleDecl(ASTDecl &decl,
-                                              MojoParserContext &ctx) {
+                                              SharedState &shared) {
   auto aliases = extractChildDecls<AliasASTDecl, AliasDeclOp>(decl);
   auto structs = extractChildDecls<StructASTDecl, StructDeclOp>(decl);
   auto traits = extractChildDecls<TraitASTDecl, TraitDeclOp>(decl);
   auto functions = extractChildFunctions<FnOp>(decl);
 
   return llvm::json::Object{
-      {"aliases", toPublicDeclJSONArray(ctx, aliases)},
+      {"aliases", toPublicDeclJSONArray(shared, aliases)},
       {"description", decl.getDocumentationDescription()},
-      {"functions", serializeFunctionOverloadSets(functions, ctx)},
+      {"functions", serializeFunctionOverloadSets(functions, shared)},
       {"kind", "module"},
       {"name", decl.getName().value_or(StringRef{})},
-      {"structs", toPublicDeclJSONArray(ctx, structs)},
-      {"traits", toPublicDeclJSONArray(ctx, traits)},
+      {"structs", toPublicDeclJSONArray(shared, structs)},
+      {"traits", toPublicDeclJSONArray(shared, traits)},
       {"summary", decl.getDocumentationSummary()}};
 }
 
 static llvm::json::Object serializeVariableDecl(ASTDecl &decl,
-                                                MojoParserContext &ctx) {
+                                                SharedState &shared) {
   std::string type = getVariableType(decl);
   llvm::json::Object result{
       {"deprecated", decl.getDeprecationWarning().value_or(StringRef())},
@@ -1446,16 +1441,14 @@ static llvm::json::Object serializeVariableDecl(ASTDecl &decl,
 
   SmallVector<std::string> traitNames = parseCompoundTraitType(type);
   if (traitNames.size() == 1) {
-    llvm::json::Object metadata =
-        extractLibraryInfo(type, nullptr, &ctx.getSharedState());
+    llvm::json::Object metadata = extractLibraryInfo(type, nullptr, &shared);
     for (auto &pair : metadata)
       result[pair.first] = std::move(pair.second);
   } else {
     result["type"] = type;
     llvm::json::Array traits;
     for (const std::string &traitName : traitNames)
-      traits.push_back(
-          extractLibraryInfo(traitName, nullptr, &ctx.getSharedState()));
+      traits.push_back(extractLibraryInfo(traitName, nullptr, &shared));
     result["traits"] = std::move(traits);
   }
 
@@ -1472,19 +1465,19 @@ static llvm::json::Object serializeStructFieldDecl(StructFieldASTDecl &decl) {
   };
 }
 
-static llvm::json::Array serializePublicDecls(MojoParserContext &ctx,
+static llvm::json::Array serializePublicDecls(SharedState &shared,
                                               ArrayRef<ASTDecl *> decls) {
   llvm::json::Array result;
   for (ASTDecl *decl : decls)
     if (auto *function = dyn_cast<DefASTDecl>(decl))
-      result.push_back(serializeFunctionDecl(*function, ctx));
-    else if (auto serialized = serializeDocDecl(*decl, ctx))
+      result.push_back(serializeFunctionDecl(*function, shared));
+    else if (auto serialized = serializeDocDecl(*decl, shared))
       result.push_back(std::move(*serialized));
   return result;
 }
 
 static llvm::json::Object serializePackageDecl(PackageASTDecl &packageDecl,
-                                               MojoParserContext &ctx) {
+                                               SharedState &shared) {
   // A package's child modules and sub-packages are unlisted: they live in the
   // module-state cache (ModuleState::nestedModules) and the package IR, not in
   // declsInScope (which extractChildDecls iterates). Enumerate them from the
@@ -1495,7 +1488,7 @@ static llvm::json::Object serializePackageDecl(PackageASTDecl &packageDecl,
   SmallVector<ASTDecl *> modules;
   SmallVector<ASTDecl *> packages;
   for (ModuleASTDecl *child :
-       ctx.getSharedState().getNestedModuleDecls(packageDecl.getOp())) {
+       shared.getNestedModuleDecls(packageDecl.getOp())) {
     StringRef name = child->getName().value_or(StringRef());
     if (shouldHideDeclInDocGen(*child, name) ||
         child->getParentDecl() != &packageDecl)
@@ -1518,44 +1511,44 @@ static llvm::json::Object serializePackageDecl(PackageASTDecl &packageDecl,
       {"kind", "package"},
       {"name", packageDecl.getName().value_or(StringRef{})},
       {"summary", packageDecl.getDocumentationSummary()},
-      {"modules", serializePublicDecls(ctx, modules)},
-      {"packages", serializePublicDecls(ctx, packages)},
+      {"modules", serializePublicDecls(shared, modules)},
+      {"packages", serializePublicDecls(shared, packages)},
   };
 }
 
 std::optional<llvm::json::Object>
-M::KGEN::LIT::serializeDocDecl(ASTDecl &decl, MojoParserContext &ctx) {
+M::KGEN::LIT::serializeDocDecl(ASTDecl &decl, SharedState &shared) {
   if (auto *variable = dyn_cast<VarASTDecl>(&decl)) {
     if (variable->isArgument()) {
       if (decl.isUserArgument())
-        return serializeArgumentDecl(decl, ctx);
+        return serializeArgumentDecl(decl, shared);
       return llvm::json::Object();
     }
-    return serializeVariableDecl(decl, ctx);
+    return serializeVariableDecl(decl, shared);
   }
 
   if (Operation *declOp = decl.getIfOperation()) {
     if (isa<AliasDeclOp>(declOp))
-      return serializeAliasDecl(cast<AliasASTDecl>(decl), ctx);
+      return serializeAliasDecl(cast<AliasASTDecl>(decl), shared);
     if (isa<FileModuleOp, ImportOp>(declOp))
-      return serializeModuleDecl(decl, ctx);
+      return serializeModuleDecl(decl, shared);
     if (isa<StructDeclOp>(declOp))
-      return serializeStructDecl(cast<StructASTDecl>(decl), ctx);
+      return serializeStructDecl(cast<StructASTDecl>(decl), shared);
     if (isa<StructFieldOp>(declOp))
       return serializeStructFieldDecl(cast<StructFieldASTDecl>(decl));
     if (isa<PackageOp>(declOp))
-      return serializePackageDecl(cast<PackageASTDecl>(decl), ctx);
+      return serializePackageDecl(cast<PackageASTDecl>(decl), shared);
     if (isa<TraitDeclOp>(declOp))
-      return serializeTraitDecl(cast<TraitASTDecl>(decl), ctx);
+      return serializeTraitDecl(cast<TraitASTDecl>(decl), shared);
   }
 
   if (decl.isArgumentDecl()) {
     if (decl.isUserArgument())
-      return serializeArgumentDecl(decl, ctx);
+      return serializeArgumentDecl(decl, shared);
     return llvm::json::Object();
   }
   if (decl.isUserParameterDecl())
-    return serializeParameterDecl(decl, ctx);
+    return serializeParameterDecl(decl, shared);
   return std::nullopt;
 }
 

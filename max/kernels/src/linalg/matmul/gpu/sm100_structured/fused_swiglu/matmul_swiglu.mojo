@@ -19,12 +19,11 @@ to half SMEM, TMA store to GMEM.
 
 from std.math import align_up, ceildiv
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
-    Coord,
     coord,
     DefaultEngine,
     RowMajorLayout,
@@ -103,8 +102,6 @@ def _blackwell_matmul_swiglu[
     var M = Int(a_device.dim[0]())
     var K = Int(a_device.dim[1]())
     var N = Int(b_device.dim[0]())
-
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     # Compile-time constants: TMA layouts, smem sizes, thread count.
     comptime KernelType = SwiGLUKernelConstants[
@@ -212,7 +209,13 @@ def _blackwell_matmul_swiglu[
         pdl_level=pdl_level,
     ]
 
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=KernelType.NUM_THREADS,
+            shared_mem_bytes=KernelType.total_smem_bytes,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -222,11 +225,4 @@ def _blackwell_matmul_swiglu[
         cluster_dim,
         mnk,
         workspace,
-        grid_dim=grid_dim,
-        block_dim=KernelType.NUM_THREADS,
-        shared_mem_bytes=KernelType.total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-        attributes=pdl_launch_attributes(pdl_level),
     )

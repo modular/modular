@@ -45,7 +45,6 @@ from max.gpu import (
     WARP_SIZE,
     block_idx,
     grid_dim,
-    lane_id,
     thread_idx,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -64,7 +63,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import (
     TMADescriptor,
     TensorMapSwizzle,
@@ -584,11 +583,10 @@ def ssd_state_sm100(
     )
     var items = slots * (nheads // HP)
     ctx.enqueue_function[ssd_state_sm100_kernel](
-        params,
-        grid_dim=min(SMS, items),
-        block_dim=THREADS,
-        shared_mem_bytes=SMEM_BYTES,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(SMEM_BYTES)
+        GridBlockLaunchConfig(
+            grid_dim=min(SMS, items),
+            block_dim=THREADS,
+            shared_mem_bytes=SMEM_BYTES,
         ),
+        params,
     )

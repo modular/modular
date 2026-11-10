@@ -81,7 +81,7 @@ def run_layer_norm_gpu[
             coords, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm[dtype, rank, target="gpu"](
+    layer_norm[dtype, rank](
         input_fn,
         output_fn,
         Coord(shape),

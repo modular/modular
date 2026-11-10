@@ -359,7 +359,7 @@ static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
   std::memcpy(*dstAddrOr, *srcAddrOr, lenOr.get());
 
   // Propagate pointer/symbol region markings so that pointer fields copied
-  // as raw bytes (e.g. UnsafePointer inside a struct) remain tracked for
+  // as raw bytes (e.g. Pointer inside a struct) remain tracked for
   // correct materialization from comptime to runtime.
   ErrorOrSuccess cpyResult =
       state.copyMarkedRegions(srcPtr.getAddr(), dstPtr.getAddr(), lenOr.get());

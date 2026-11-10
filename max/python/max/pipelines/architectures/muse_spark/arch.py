@@ -18,31 +18,37 @@ from max.pipelines.architectures.muse_glimmer.tokenizer import (
 )
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .batch_processor import MuseSparkBatchProcessor
 from .memory_planner import MuseSparkMemoryPlanner
 from .model_config import MuseSparkConfig
-from .modules import MuseSparkDecoder
+from .modules import MuseSparkDecoder, MuseSparkVision
 
 muse_spark_arch = SupportedArchitecture(
     name="MuseSparkForConditionalGeneration_ModuleV3",
     example_repo_ids=["meta-models/Muse-Spark-Open-816B-A42B-NVFP4"],
     default_encoding=MuseSparkConfig.DEFAULT_ENCODING,
     supported_encodings=MuseSparkConfig.SUPPORTED_ENCODINGS,
-    modules={GraphRole.DECODER: MuseSparkDecoder},
+    modules={
+        GraphRole.DECODER: MuseSparkDecoder,
+        GraphRole.VISION: MuseSparkVision,
+    },
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=MuseGlimmerTokenizer,
     context_type=TextAndVisionContext,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_language_state_dict,
+        WeightsFormat.safetensors: weight_adapters.convert_registered_state_dict,
     },
     config=MuseSparkConfig,
     batching=MuseSparkBatchProcessor,
     memory_planner=MuseSparkMemoryPlanner,
     supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
+    # The name Mach finds the fused DSpark graph by.
+    spec_decode_graph_names={"dspark": "UnifiedDSparkMuseSparkModule"},
 )

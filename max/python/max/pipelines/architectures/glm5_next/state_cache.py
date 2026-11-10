@@ -48,8 +48,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from max.dtype import DType
-from max.nn.legacy.kv_cache import RecurrentStateRegion
-from max.nn.legacy.state_space import kda_ring_record_elements
+from max.nn._graph_ops.state_space.kimi_delta import kda_ring_record_elements
+from max.nn.kv_cache import RecurrentStateRegion
 
 from ..qwen3_5.state_cache import (
     COMPILED_RING_LENS,
@@ -90,11 +90,14 @@ it is never published.
 """
 
 
+SPEC_STATE_LEAF_ORDER = (*STATE_LEAF_ORDER, VERIFY_RING_LEAF_ID)
+"""Leaf ids a speculative cache declares, in order, as
+:func:`with_verify_ring` appends them."""
+
+
 def leaf_inputs(device: Any, leaf_id: str) -> Any:
     """Returns one device's inputs for ``leaf_id``."""
-    return device.leaves[
-        (*STATE_LEAF_ORDER, VERIFY_RING_LEAF_ID).index(leaf_id)
-    ]
+    return device.leaves[SPEC_STATE_LEAF_ORDER.index(leaf_id)]
 
 
 def has_verify_ring(device: Any) -> bool:
@@ -203,7 +206,7 @@ def with_verify_ring(
     """Appends the speculative verify's ring to the live state leaves.
 
     A ring row holds one record per value head and window position, laid out
-    as :func:`~max.nn.legacy.state_space.kda_ring_record_elements` counts it. The
+    as :func:`~max.nn._graph_ops.state_space.kda_ring_record_elements` counts it. The
     record stride is padded so the ring's page divides the live leaves' least
     common multiple, which is the pool's block, so declaring the ring never
     widens it.

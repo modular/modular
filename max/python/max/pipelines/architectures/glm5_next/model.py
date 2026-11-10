@@ -34,18 +34,23 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.layer import Module
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3_2.model import DeepseekV3_2Model
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
 )
 from max.pipelines.context import ImageMetadata
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import (
+    CheckpointRole,
+    PipelineConfig,
+    WeightEntry,
+    WeightTransform,
+)
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -58,7 +63,12 @@ from .context import Glm5NextTextAndVisionContext
 from .glm5_next import Glm5Next
 from .model_config import SPARSE_ATTENTION, Glm5NextConfig
 from .nn.visual_transformer import Glm5NextVisionTransformer
-from .weight_adapters import VISION_CHECKPOINT_PREFIX, VISION_WEIGHT_PREFIX
+from .weight_adapters import (
+    VISION_CHECKPOINT_PREFIX,
+    VISION_WEIGHT_PREFIX,
+    glm5_next_decoder_weight_rules,
+    glm5_next_vision_weight_rules,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -87,31 +97,24 @@ def _mla_cache_dtype(config: Glm5NextConfig) -> DType:
     return leaf.dtype
 
 
-class _VisionTowers(Module):
-    """The vision tower, its output rows returned once per device.
+class _VisionTower(Module):
+    """The vision tower on the first device, its output rows copied to each.
 
-    Either every device runs a replica on the same patches, or device 0 runs
-    the only tower and copies its rows to the others, as deepseekV41 does. A
-    replica costs about 1.1 GB of weights and repeats the encode's FLOPs, and
-    the patches it reads cross the interconnect as well: 18.8 KB of float32
-    per merged token, against 8.2 KB of bfloat16 rows. The encoder cache
-    stores one copy of each row per device either way.
+    Every device needs the rows. Encoding once and copying them moves 8.2 KB
+    of bfloat16 per merged token, where a replica per device would read 18.8
+    KB of float32 patches, repeat the encode and hold another 1.1 GB of
+    weights. The encoder cache stores one copy of each row per device.
     """
 
-    def __init__(self, config: Glm5NextConfig, *, replicate: bool) -> None:
+    def __init__(self, config: Glm5NextConfig) -> None:
         super().__init__()
-        vision_config = config.vision_config
-        assert vision_config is not None
+        assert config.vision_config is not None
         self.devices = config.devices
-        self.towers = LayerList(
-            [
-                Glm5NextVisionTransformer(
-                    vision_config, device, use_subgraphs=config.use_subgraphs
-                )
-                for device in (
-                    config.devices if replicate else config.devices[:1]
-                )
-            ]
+        # Named as the weight rules name the tower's weights.
+        self.vision_encoder = Glm5NextVisionTransformer(
+            config.vision_config,
+            config.devices[0],
+            use_subgraphs=config.use_subgraphs,
         )
 
     def __call__(
@@ -121,19 +124,10 @@ class _VisionTowers(Module):
         row_offsets: TensorValue,
         max_seqlen: TensorValue,
     ) -> tuple[TensorValue, ...]:
-        if len(self.towers) == 1:
-            (tower,) = self.towers
-            rows = tower(pixel_values, rot_pos_ids, row_offsets, max_seqlen)
-            return tuple(rows.to(device) for device in self.devices)
-        return tuple(
-            tower(
-                pixel_values.to(device),
-                rot_pos_ids.to(device),
-                row_offsets.to(device),
-                max_seqlen,
-            )
-            for tower, device in zip(self.towers, self.devices, strict=True)
+        rows = self.vision_encoder(
+            pixel_values, rot_pos_ids, row_offsets, max_seqlen
         )
+        return tuple(rows.to(device) for device in self.devices)
 
 
 class Glm5NextModel(DeepseekV3_2Model):
@@ -151,13 +145,6 @@ class Glm5NextModel(DeepseekV3_2Model):
     )
 
     _vision_weights_dict: dict[str, WeightData]
-
-    #: Whether every device runs its own vision tower rather than device 0
-    #: encoding and copying the rows. Replicated until encode time and memory
-    #: are measured both ways. The memory planner charges a tower and its
-    #: activations per device either way: device 0 holds both regardless,
-    #: and it bounds the evenly split KV cache.
-    replicate_vision_tower: ClassVar[bool] = True
 
     @property
     def vision_model(self) -> Model | None:
@@ -286,6 +273,19 @@ class Glm5NextModel(DeepseekV3_2Model):
         return module, config
 
     @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: Glm5NextConfig
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the built decoder's weights.
+
+        Its rules name the whole checkpoint, vision tower included, and each
+        graph takes the weights it declares.
+        """
+        del config
+        assert isinstance(context.adapter, WeightTransform)
+        return [WeightEntry(CheckpointRole.TARGET, context.adapter)]
+
+    @classmethod
     def build_vision_graph(
         cls, context: ModelLoadContext
     ) -> tuple[Graph, dict[str, Any]]:
@@ -303,26 +303,17 @@ class Glm5NextModel(DeepseekV3_2Model):
             raise ValueError(
                 "This GLM-5.3-Flash checkpoint has no vision tower."
             )
-        # The adapter converts each tower weight on its own, so it is handed
-        # only the tower: a whole-checkpoint pass would concatenate and upcast
-        # every text layer again just to drop it.
-        assert context.adapter is not None
+        # Handed only the tower, so the text layers are not renamed just to
+        # be dropped.
+        assert isinstance(context.adapter, WeightTransform)
         state_dict = context.adapter(
             {
                 name: weight
                 for name, weight in context.weights.items()
                 if name.startswith(VISION_CHECKPOINT_PREFIX)
-            },
-            huggingface_config=context.pipeline_config.model.huggingface_config,
-            pipeline_config=context.pipeline_config,
+            }
         )
-        spec = cls._vision_spec(
-            config,
-            {
-                name.removeprefix(VISION_WEIGHT_PREFIX): weight
-                for name, weight in state_dict.items()
-            },
-        )
+        spec = cls._vision_spec(config, state_dict)
         return spec.trace(), dict(spec.weights_registry())
 
     #: The resolved config, captured in :meth:`_create_model_config`. The base
@@ -333,15 +324,27 @@ class Glm5NextModel(DeepseekV3_2Model):
     def _load_state_dict(self) -> dict[str, Any]:
         """Loads the weights, setting the vision tower's aside.
 
-        They lose their prefix, so the decoder's strict load sees only its own.
+        So the decoder's strict load sees only its own. A checkpoint that
+        loads through rules names each graph's weights.
         """
         state_dict = super()._load_state_dict()
         self._vision_weights_dict = {
-            name.removeprefix(VISION_WEIGHT_PREFIX): state_dict.pop(name)
+            name: state_dict.pop(name)
             for name in [
                 n for n in state_dict if n.startswith(VISION_WEIGHT_PREFIX)
             ]
         }
+        if isinstance(self.adapter, WeightTransform):
+            config = self.huggingface_config
+            naming = {GraphRole.DECODER: glm5_next_decoder_weight_rules(config)}
+            if self._vision_weights_dict:
+                naming[GraphRole.VISION] = glm5_next_vision_weight_rules(config)
+            self.weight_naming = {
+                role: (
+                    WeightEntry(CheckpointRole.TARGET, WeightTransform(rules)),
+                )
+                for role, rules in naming.items()
+            }
         return state_dict
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
@@ -382,20 +385,11 @@ class Glm5NextModel(DeepseekV3_2Model):
     def _vision_spec(
         cls, config: Glm5NextConfig, state_dict: dict[str, WeightData]
     ) -> GraphSpec:
-        """Returns the vision graph: its towers, built from shared host weights."""
+        """Returns the vision graph, its weights under the rules' names."""
         vision_config = config.vision_config
         assert vision_config is not None
-        towers = _VisionTowers(config, replicate=cls.replicate_vision_tower)
-        # Keyed by replica index; the host arrays are shared, not copied.
-        towers.load_state_dict(
-            {
-                f"towers.{replica}.{name}": weight
-                for replica in range(len(towers.towers))
-                for name, weight in state_dict.items()
-            },
-            weight_alignment=1,
-            strict=True,
-        )
+        tower = _VisionTower(config)
+        tower.load_state_dict(state_dict, weight_alignment=1, strict=True)
         patch_dim = (
             vision_config.in_channels
             * vision_config.temporal_patch_size
@@ -403,7 +397,7 @@ class Glm5NextModel(DeepseekV3_2Model):
         )
         device0 = config.devices[0]
         return GraphSpec(
-            towers,
+            tower,
             "glm5_next_vision_graph",
             [
                 TensorType(
@@ -413,7 +407,7 @@ class Glm5NextModel(DeepseekV3_2Model):
                 TensorType(DType.uint32, ["vision_segments"], device0),
                 TensorType(DType.uint32, [1], DeviceRef.CPU()),
             ],
-            weights=towers.state_dict(),
+            weights=tower.state_dict(),
             group=_COMPILE_GROUP,
         )
 

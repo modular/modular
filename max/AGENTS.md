@@ -123,21 +123,38 @@ result = session.run(input_data)
 
 ### Adding New Pipeline Architectures
 
-1. Create new directory in `architectures/`
-2. Implement model components:
-   - `model.py`: Core model implementation
-   - `model_config.py`: Configuration class
-   - `arch.py`: Architecture registration
-   - `weight_adapters.py`: Weight loading logic
+Create the package under `max/python/max/pipelines/architectures/` by copying
+the closest one. `olmo3/` registers a bare decoder module; `llama3_modulev3/`
+adds a `pipeline_model` and a `model.py` on top of that.
 
-3. Register the architecture:
+Register it in these places:
 
-```python
-@register_pipelines_model("your-model", provider="your-org")
-class YourModelConfig(HFModelConfig): ...
-```
+1. `arch.py` builds a `SupportedArchitecture`. Its `name=` must match the
+   `architectures[0]` string in the checkpoint's `config.json`.
+2. `max/python/max/pipelines/architectures/__init__.py` adds a
+   `_LazyArch(name, ".module", "symbol")` entry to `lazy_architectures`, which
+   `register_all_models()` hands to `PIPELINE_REGISTRY.register_lazy`, so the
+   module is imported the first time the architecture is requested.
+3. `max/python/max/pipelines/architectures/all_arches.bzl` adds the package to
+   `ALL_ARCHITECTURES`, which fills the `deps` and `ignore_extra_deps` of
+   `//max/python/max/_entrypoints` and the integration test targets. A package
+   left out of that list is absent from the bazel venv.
+
+`SupportedArchitecture` (`max/python/max/pipelines/lib/arch_lookup.py`) lists
+every field and carries a worked registration example in its docstring. Check
+`arch.py` against a neighbor before adding fields.
+
+`--custom-architectures` is the escape hatch for a package that is not merged
+yet: it imports the module you point at and reads its `ARCHITECTURES` list.
 
 ## Testing Guidelines
+
+Invoke the `presubmit-test-policy` skill before adding a test here. Committed
+layer and function tests are surface checks that don't compile the graph.
+Numerics belong in Mojo kernel tests, and a committed compiling or GPU
+function test must meet the skill's exception bar. Development-time
+compilation and reference comparisons are encouraged; leave them out of the
+PR.
 
 ### Unit Tests
 

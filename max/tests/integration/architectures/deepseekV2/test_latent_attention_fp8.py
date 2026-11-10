@@ -21,11 +21,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
+from max.nn.kv_cache import MLAKVCacheParams
 from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.kv_cache import MLAKVCacheParams
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -33,10 +34,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -320,13 +318,6 @@ def generate_max_outputs_fp8(
     )
     latent_attention.load_state_dict(quantized_weights, strict=True)
 
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     hidden_state_type = TensorType(
         DType.bfloat16, ["total_seq_len", config.hidden_size], DeviceRef.GPU()
     )
@@ -361,6 +352,12 @@ def generate_max_outputs_fp8(
 
     g = construct()
     compiled = session.load(g, weights_registry=latent_attention.state_dict())
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
     batch_size = 1
     total_tokens = input_tensor.shape[1]
     prompt_lens = [total_tokens] if use_prefill else [1]

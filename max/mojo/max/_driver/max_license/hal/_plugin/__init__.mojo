@@ -26,5 +26,5 @@ field and call sites guard the vendor path with
 code-size cost for hooks the active backend does not set.
 """
 
-from ._impl import CurrentHalPlugin
+from ._impl import HalPluginForTarget
 from ._trait import DefaultHalPlugin, HalPluginHooks

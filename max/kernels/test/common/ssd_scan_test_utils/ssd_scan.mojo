@@ -44,12 +44,12 @@ trait SSDRunObserver:
 
     @staticmethod
     def observe[
-        Operation: def(DeviceContext, Int) raises -> None,
+        Operation: def(DeviceContext[], Int) raises -> None,
         //,
         grouped_pair: Bool,
         paired: Bool,
         grouped_mode: Int,
-    ](ctx: DeviceContext, operation: Operation) raises:
+    ](ctx: DeviceContext[], operation: Operation) raises:
         """Leaves correctness-only launches unobserved."""
         return
 
@@ -161,6 +161,8 @@ def run_ssd_gpu[
     DSTATE_SPLIT: Int,
     CH_PER_THREAD: Int,
     prefill: Bool,
+    ROW_RULE: Bool = False,
+    SKIP_LONG_ROWS: Bool = False,
     compare_chunked: Bool = False,
     guard_output: Bool = False,
     grouped_pair: Bool = False,
@@ -168,7 +170,7 @@ def run_ssd_gpu[
     use_grouped_default: Bool = False,
     Observer: SSDRunObserver = NoSSDObservation,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     nheads: Int,
     head_dim: Int,
     ngroups: Int,
@@ -194,6 +196,7 @@ def run_ssd_gpu[
     slot_h: ImmPointer[UInt32, _],
     y_out: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     pool: MutPointer[Scalar[state_dtype], MutUntrackedOrigin],
+    num_draft_tokens: Int = 0,
 ) raises:
     """Runs a GPU scan, optionally checking a paired implementation first.
 
@@ -225,6 +228,10 @@ def run_ssd_gpu[
     )
     comptime if guard_output:
         ctx.enqueue_memset(y_d, nan[dtype]())
+    else:
+        # Seed the output from the caller's buffer: a launch that leaves
+        # rows alone must keep their sentinel visible.
+        ctx.enqueue_copy(y_d, y_out)
     var pool_d = ctx.enqueue_create_buffer[state_dtype](pool_size)
     ctx.enqueue_copy(x_d, x_h)
     ctx.enqueue_copy(dt_d, dt_h)
@@ -286,13 +293,16 @@ def run_ssd_gpu[
     # path (which ignores grouped_cb_mode) would make both arms the same.
     var sm100_x = 0 if grouped_pair else Int(x_d.unsafe_ptr())
 
-    def launch_chunked(lctx: DeviceContext) raises {imm}:
+    def launch_chunked(lctx: DeviceContext[]) raises {imm}:
         comptime if (DSTATE_SPLIT < 0 or compare_chunked) and (
             lctx.target._is_sm_8x_or_newer()
             or lctx.target.is_amd_gpu["gfx950"]()
         ):
             mamba2_ssd_chunked_fwd_inplace_gpu[
-                DSTATE, dt_softplus=True, grouped_cb_mode=GROUPED_CB_OFF
+                DSTATE,
+                dt_softplus=True,
+                grouped_cb_mode=GROUPED_CB_OFF,
+                ROW_RULE=ROW_RULE,
             ](
                 lctx,
                 total_len,
@@ -316,9 +326,10 @@ def run_ssd_gpu[
                 b_addr=Int(B_d.unsafe_ptr()),
                 c_addr=Int(C_d.unsafe_ptr()),
                 bc_ld=bc_row,
+                num_draft_tokens=num_draft_tokens,
             )
 
-    def launch_grouped(lctx: DeviceContext) raises {imm}:
+    def launch_grouped(lctx: DeviceContext[]) raises {imm}:
         comptime if (grouped_pair and lctx.target._is_sm_8x_or_newer()):
             comptime if use_grouped_default:
                 mamba2_ssd_chunked_fwd_inplace_gpu[DSTATE, dt_softplus=True](
@@ -373,7 +384,7 @@ def run_ssd_gpu[
                     bc_ld=bc_row,
                 )
 
-    def launch(lctx: DeviceContext) raises {imm}:
+    def launch(lctx: DeviceContext[]) raises {imm}:
         comptime if DSTATE_SPLIT < 0:
             launch_chunked(lctx)
         elif DSTATE_SPLIT > 0:
@@ -401,9 +412,12 @@ def run_ssd_gpu[
                 type_of(slot_fn),
                 prefill=prefill,
                 CH_PER_THREAD=CH_PER_THREAD,
+                ROW_RULE=ROW_RULE,
+                SKIP_LONG_ROWS=SKIP_LONG_ROWS,
             ]
             lctx.enqueue_function[kernel](
                 Int32(ngroups),
+                Int32(num_draft_tokens),
                 A_g,
                 D_g,
                 dt_bias_g,
@@ -440,9 +454,12 @@ def run_ssd_gpu[
                 type_of(b_fn),
                 type_of(c_fn),
                 type_of(slot_fn),
+                ROW_RULE=ROW_RULE,
+                SKIP_LONG_ROWS=SKIP_LONG_ROWS,
             ]
             lctx.enqueue_function[kernel](
                 Int32(ngroups),
+                Int32(num_draft_tokens),
                 A_g,
                 D_g,
                 dt_bias_g,
@@ -538,7 +555,7 @@ def run_ssd_gpu[
         comptime if Observer.enabled:
 
             def pair_operation(
-                lctx: DeviceContext, action: Int
+                lctx: DeviceContext[], action: Int
             ) raises {
                 imm pool_d,
                 imm pool_seed_d,
@@ -568,7 +585,7 @@ def run_ssd_gpu[
         ctx.synchronize()
 
         def single_operation(
-            lctx: DeviceContext, action: Int
+            lctx: DeviceContext[], action: Int
         ) raises {imm pool_d, imm pool_seed_d, imm launch}:
             if action == SSD_RESET:
                 lctx.enqueue_copy(pool_d, pool_seed_d)

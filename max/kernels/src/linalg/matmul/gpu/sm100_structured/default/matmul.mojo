@@ -26,10 +26,10 @@ from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from comm import Signal
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     coord,
@@ -227,8 +227,11 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     comptime if c_type == .float32:
         comptime assert (
-            a_type == b_type == .float32
-        ), "Only support float32 input types is tested for float32 output dtype"
+            a_type == b_type == .float32 or a_type == b_type == .bfloat16
+        ), (
+            "Only float32 and bfloat16 input types are tested for float32"
+            " output dtype"
+        )
         comptime assert (
             register_based_epilogue
         ), "only register-based epilogue is supported for float32 output dtype"
@@ -264,9 +267,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     comptime assert (
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
-
-    # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     comptime epilogue_is_1d = config.epilogue_is_1d
 
@@ -449,6 +449,12 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     comptime if has_epilogue_fn:
         comptime kernel = matmul_kernel.run_with_epilogue_fn[EpilogueFnType]
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=KernelType.NUM_THREADS,
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -458,13 +464,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             mnk,
             workspace,
             host_args=(epilogue_fn,),
-            grid_dim=grid_dim,
-            block_dim=KernelType.NUM_THREADS,
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
-            attributes=pdl_launch_attributes(pdl_level),
         )
     elif has_compute_fn:
         # Passing `c_device` to the same call as this closure would alias
@@ -492,6 +491,12 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             type_of(compute_with_c)
         ]
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=KernelType.NUM_THREADS,
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -503,17 +508,16 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             rank_sigs,
             Int32(0),
             host_args=(compute_with_c,),
-            grid_dim=grid_dim,
-            block_dim=KernelType.NUM_THREADS,
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
-            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = matmul_kernel.run
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=KernelType.NUM_THREADS,
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -524,13 +528,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             workspace,
             rank_sigs,
             Int32(0),
-            grid_dim=grid_dim,
-            block_dim=KernelType.NUM_THREADS,
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
-            attributes=pdl_launch_attributes(pdl_level),
         )
 
     comptime if enable_profiling:
@@ -960,7 +957,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         a_device: LHS TileTensor of shape (M, K).
         b_device: RHS TileTensor of shape (N, K) (transposed).
         epilogue_fn: Stores each output value. Signature:
-            `def[dtype, width, *, alignment](IndexList[2], SIMD)`, with
+            `def[dtype, width, *, alignment](Coord, SIMD)`, with
             coordinates in the (M, N) output.
         ctx: Device context used to create TMA descriptors and enqueue the
             kernel.
@@ -1106,8 +1103,8 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         "LINALG_SM100_SPLITK_", ctx.device().id, "_", Int(ctx._handle.value())
     )
     var cached = _get_global_or_null(key)
-    if cached:
-        return cached.unsafe_value().unsafe_bitcast[_SplitKContext]()[]
+    if case .Some(ptr) = cached:
+        return ptr.unsafe_bitcast[_SplitKContext]()[]
     var slot = -1
     var device = ctx.device().id
     if device < _SPLITK_MAX_DEVICES:
@@ -1128,7 +1125,7 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
     var state = alloc[_SplitKContext]({length = 1}).unsafe_leak()
     state.unsafe_write(_SplitKContext(workspace, slot))
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key), state.unsafe_bitcast[NoneType]()
+        StringSpan(key), state.unsafe_bitcast[NoneType]()
     )
     return state[]
 
@@ -1237,7 +1234,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         a_type, b_type, c_type, transpose_b, config=config
     ]
     comptime smem_size = size_of[SmemType]()
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     comptime max_profiled_tiles = max_profiled_tiles_per_SM.or_else(0)
     comptime enable_profiling = max_profiled_tiles > 0
@@ -1456,6 +1452,15 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         workspace = Span[UInt64, MutAnyOrigin]()
 
     ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
+            block_dim=(
+                32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
+            ),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1467,16 +1472,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         cluster_dim,
         mnk,
         workspace,
-        grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-        block_dim=(
-            32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
-        ),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
     _ = reduction_workspace^
@@ -1680,8 +1675,8 @@ def matmul_sm100_fallback[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    # Fallback kernel uses actual computed SMEM (not b200_smem hardware max)
-    # because it's a simple non-pipelined kernel without CLC/TMEM overhead.
+    # Fallback kernel needs only its A and B tiles because it's a simple
+    # non-pipelined kernel without CLC/TMEM overhead.
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
     ) * BK + 24
@@ -1728,29 +1723,27 @@ def matmul_sm100_fallback[
     comptime if has_compute_fn:
         comptime kernel = fallback_kernel.run_with_compute_fn[ComputeFnType]
         ctx.enqueue_function[kernel](
+            GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                block_dim=(block_dim),
+                shared_mem_bytes=smem_use,
+            ),
             a_tma_op,
             b_tma_op,
             c,
             Int32(ceildiv(K, BK)),
             host_args=(compute_fn,),
-            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-            block_dim=(block_dim),
-            shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
     else:
         comptime kernel = fallback_kernel.run
         ctx.enqueue_function[kernel](
+            GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                block_dim=(block_dim),
+                shared_mem_bytes=smem_use,
+            ),
             a_tma_op,
             b_tma_op,
             c,
             Int32(ceildiv(K, BK)),
-            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-            block_dim=(block_dim),
-            shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )

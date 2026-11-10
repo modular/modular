@@ -58,6 +58,7 @@ from layout.tensor_engine import TensorEngine
 
 from nn.activations import silu
 from state_space.pdl_wait import wait_on_producers
+from state_space.row_rule import commit_len, is_prefill_row
 
 
 # ============================================================================
@@ -409,6 +410,7 @@ def causal_conv1d_varlen_fwd_cpu[
     silu_activation: Bool,
     use_residual: Bool = False,
     channels_last: Bool = False,
+    ROW_RULE: Bool = False,
 ](
     weight: TileTensor[mut=False, dtype, ...],
     bias: TileTensor[mut=False, dtype, ...],
@@ -419,6 +421,7 @@ def causal_conv1d_varlen_fwd_cpu[
     output: TileTensor[mut=True, dtype, ...],
     x_fn: XFn,
     slot_fn: SlotFn,
+    num_draft_tokens: Int = 0,
 ):
     """Forward pass for causal conv1d with variable length sequences.
 
@@ -438,6 +441,9 @@ def causal_conv1d_varlen_fwd_cpu[
             output position, before the activation.
         channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
             rather than `(dim, total_seqlen)`.
+        ROW_RULE: If True, a prefill row (longer than one real token plus
+            `num_draft_tokens`) writes its state window at its last real
+            token, whatever its `update_state` flag.
 
     Args:
         weight: Weight tensor of shape `(dim, width)`.
@@ -447,13 +453,16 @@ def causal_conv1d_varlen_fwd_cpu[
             whether to continue the stored state, or empty.
         update_state: Per-sequence flags of shape `(batch,)` selecting whether
             the sequence writes its new window to `conv_states`, or empty to
-            write every sequence's. A clear flag leaves the slot untouched.
+            write every sequence's. A clear flag leaves the slot untouched;
+            under `ROW_RULE` a prefill row writes it anyway.
         conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
             updated in place, or empty.
         output: Output tensor of shape `(dim, total_seqlen)`.
         x_fn: Reads the input `x`, of shape `(dim, total_seqlen)`.
         slot_fn: Reads each sequence's slot in `conv_states`. `PAD_SLOT_ID`
             skips the sequence.
+        num_draft_tokens: The step's draft-token count per row; the row rule
+            commits a prefill row at `row_len - num_draft_tokens`.
     """
     comptime accum_dtype = get_accum_type[dtype]()
     comptime state_dtype = type_of(conv_states).dtype
@@ -510,9 +519,19 @@ def causal_conv1d_varlen_fwd_cpu[
                     ](),
                 )
 
-            if has_conv_states and _write_state(update_state, b):
+            var write_state = _write_state(update_state, b)
+            comptime if ROW_RULE:
+                # A prefill row commits at its last real token, whatever the
+                # flag.
+                write_state = write_state or is_prefill_row(
+                    seqlen, num_draft_tokens
+                )
+            if has_conv_states and write_state:
+                var commit_end = seqlen
+                comptime if ROW_RULE:
+                    commit_end = commit_len(seqlen, num_draft_tokens)
                 for s in range(width_minus_1):
-                    var src_l = seqlen - width_minus_1 + s
+                    var src_l = commit_end - width_minus_1 + s
                     var val = Scalar[state_dtype](0)
                     if src_l >= 0:
                         val = io.load_x(d, seq_start + src_l).cast[
@@ -566,8 +585,10 @@ def _causal_conv1d_varlen_fwd_kernel[
     silu_activation: Bool,
     use_residual: Bool,
     channels_last: Bool,
+    ROW_RULE: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
 ](
+    num_draft_tokens: Int32,
     weight: TileTensor[dtype, weight_LT, MutUntrackedOrigin, Engine=Engine],
     bias: TileTensor[dtype, bias_LT, MutUntrackedOrigin, Engine=Engine],
     query_start_loc: TileTensor[
@@ -629,6 +650,9 @@ def _causal_conv1d_varlen_fwd_kernel[
             the activation.
         channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
             rather than `(dim, total_seqlen)`.
+        ROW_RULE: If True, a prefill row (longer than one real token plus
+            `num_draft_tokens`) writes its state window at its last real
+            token, whatever its `update_state` flag.
         pdl_level: Programmatic dependent launch level. Every enabled level
             waits on the predecessor grid before its first load.
             Only `OVERLAP_AT_BEGINNING` releases dependents explicitly; the
@@ -638,13 +662,16 @@ def _causal_conv1d_varlen_fwd_kernel[
             kernel's CTAs are too short to repay it.
 
     Args:
+        num_draft_tokens: The step's draft-token count per row; the row rule
+            commits a prefill row at `row_len - num_draft_tokens`.
         weight: Weight tensor of shape `(dim, width)`.
         bias: Bias tensor of shape `(dim,)`, or empty.
         query_start_loc: Cumulative sequence lengths of shape `(batch + 1,)`.
         has_initial_state: Per-sequence flags of shape `(batch,)`, or empty.
         update_state: Per-sequence flags of shape `(batch,)` selecting whether
             the sequence writes its new window to `conv_states`, or empty to
-            write every sequence's. A clear flag leaves the slot untouched.
+            write every sequence's. A clear flag leaves the slot untouched;
+            under `ROW_RULE` a prefill row writes it anyway.
         conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
             updated in place, or empty.
         output: Output tensor, same shape as `x`.
@@ -715,6 +742,14 @@ def _causal_conv1d_varlen_fwd_kernel[
         has_initial_state, conv_states, b
     )
     var write_state = _write_state(update_state, b)
+    comptime if ROW_RULE:
+        # A prefill row commits at its last real token, whatever the flag.
+        write_state = write_state or is_prefill_row(
+            seqlen, Int(num_draft_tokens)
+        )
+    var commit_end = seqlen
+    comptime if ROW_RULE:
+        commit_end = commit_len(seqlen, Int(num_draft_tokens))
     var bias_val = (
         bias.load[width=VEC]((d,)) if Int(bias.dim[0]()) > 0 else Vec(0)
     ).cast[accum_dtype]()
@@ -795,16 +830,34 @@ def _causal_conv1d_varlen_fwd_kernel[
     vectorize[_FWD_UNROLL](tile_end - tile_start, _emit_chunk)
 
     # Tile 0 is the only block that reads the slot, so it also writes it;
-    # the tail tile writing it would race with that read. When tile 0 is not
-    # the tail, the sequence is longer than WIDTH-1 and its new state is
-    # plain `x`; otherwise the window holds it, with the continued state
-    # filling any entries a short chunk lacks.
+    # the tail tile writing it would race with that read. The committed
+    # window may lie past tile 0 or before WIDTH-1: taps come from `x`,
+    # else the stored window, else zero.
     if Int(conv_states.dim[0]()) > 0 and tile_start == 0 and write_state:
         comptime for i in range(WIDTH_MINUS_1):
-            if tile_end != seqlen:
-                win[i] = _load_x[dtype, channels_last, VEC](
-                    x_fn, d, seq_start + seqlen - WIDTH_MINUS_1 + i
-                ).cast[accum_dtype]()
+            comptime if ROW_RULE:
+                if tile_end != commit_end:
+                    var pos = commit_end - WIDTH_MINUS_1 + i
+                    # A missing tap is zero unless the stored state fills it.
+                    win[i] = AccVec(0)
+                    if pos >= 0:
+                        win[i] = _load_x[dtype, channels_last, VEC](
+                            x_fn, d, seq_start + pos
+                        ).cast[accum_dtype]()
+                    elif use_initial_state:
+                        comptime for c in range(VEC):
+                            win[i][c] = (
+                                conv_states.load[width=1](
+                                    (slot, d + c, WIDTH_MINUS_1 + pos)
+                                )
+                                .cast[dtype]()
+                                .cast[accum_dtype]()
+                            )
+            else:
+                if tile_end != seqlen:
+                    win[i] = _load_x[dtype, channels_last, VEC](
+                        x_fn, d, seq_start + seqlen - WIDTH_MINUS_1 + i
+                    ).cast[accum_dtype]()
             comptime for c in range(VEC):
                 conv_states.store(
                     (slot, d + c, i), win[i][c].cast[conv_states_dtype]()
@@ -833,18 +886,15 @@ def causal_conv1d_varlen_fwd_gpu[
     silu_activation: Bool = False,
     use_residual: Bool = False,
     channels_last: Bool = False,
+    ROW_RULE: Bool = False,
 ](
     weight: TileTensor[dtype, weight_LT, _, Engine=Engine],
-    bias: TileTensor[dtype, bias_LT, _, Engine=Engine],
-    query_start_loc: TileTensor[.int32, query_start_loc_LT, _, Engine=Engine],
-    has_initial_state: TileTensor[
-        .bool, has_initial_state_LT, _, Engine=Engine
-    ],
-    update_state: TileTensor[.bool, update_state_LT, _, Engine=Engine],
-    conv_states: TileTensor[
-        conv_states_dtype, conv_states_LT, _, Engine=Engine
-    ],
-    output: TileTensor[dtype, output_LT, _, Engine=Engine],
+    bias: TileTensor[dtype, bias_LT, _, Engine=_],
+    query_start_loc: TileTensor[.int32, query_start_loc_LT, _, Engine=_],
+    has_initial_state: TileTensor[.bool, has_initial_state_LT, _, Engine=_],
+    update_state: TileTensor[.bool, update_state_LT, _, Engine=_],
+    conv_states: TileTensor[conv_states_dtype, conv_states_LT, _, Engine=_],
+    output: TileTensor[dtype, output_LT, _, Engine=_],
     x_addr: Int,
     x_row_stride: Int,
     x_fn: XFn,
@@ -852,6 +902,7 @@ def causal_conv1d_varlen_fwd_gpu[
     ctx: DeviceContext,
     x_vector_loads: Bool = True,
     x_col_stride: Int = 1,
+    num_draft_tokens: Int = 0,
 ) raises:
     """Launches the causal conv1d forward kernel with variable length sequences.
 
@@ -879,7 +930,8 @@ def causal_conv1d_varlen_fwd_gpu[
         update_state_LT: Layout type of `update_state`.
         conv_states_LT: Layout type of `conv_states`.
         output_LT: Layout type of `output`.
-        Engine: Engine shared by all tile operands.
+        Engine: Engine of `weight`. The launched kernel takes one engine for
+            every tile operand, so the others must match it.
         XFn: Reads `x` at its physical `(row, column)` index, claiming
             `alignment` elements of alignment.
         SlotFn: Reads the conv-state slot of each sequence.
@@ -889,6 +941,9 @@ def causal_conv1d_varlen_fwd_gpu[
             the activation.
         channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
             rather than `(dim, total_seqlen)`.
+        ROW_RULE: If True, a prefill row (longer than one real token plus
+            `num_draft_tokens`) writes its state window at its last real
+            token, whatever its `update_state` flag.
 
     Args:
         weight: Weight tensor of shape `(dim, width)`.
@@ -897,7 +952,8 @@ def causal_conv1d_varlen_fwd_gpu[
         has_initial_state: Per-sequence flags of shape `(batch,)`, or empty.
         update_state: Per-sequence flags of shape `(batch,)` selecting whether
             the sequence writes its new window to `conv_states`, or empty to
-            write every sequence's. A clear flag leaves the slot untouched.
+            write every sequence's. A clear flag leaves the slot untouched;
+            under `ROW_RULE` a prefill row writes it anyway.
         conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
             updated in place, or empty.
         output: Output tensor, same shape as `x`.
@@ -912,6 +968,8 @@ def causal_conv1d_varlen_fwd_gpu[
             address of those loads is not the one in `x_addr`.
         x_col_stride: Stride, in elements, of that view's channel axis. A
             channel vector needs this to be 1.
+        num_draft_tokens: The step's draft-token count per row; the row rule
+            commits a prefill row at `row_len - num_draft_tokens`.
     """
     comptime seq_axis = 0 if channels_last else 1
     var dim = Int(output.dim[1 - seq_axis]())
@@ -941,9 +999,11 @@ def causal_conv1d_varlen_fwd_gpu[
             silu_activation,
             use_residual,
             channels_last,
+            ROW_RULE,
             level,
         ]
         ctx.enqueue_function[kernel](
+            Int32(num_draft_tokens),
             weight,
             bias,
             query_start_loc,

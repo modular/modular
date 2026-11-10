@@ -24,27 +24,22 @@ from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheParamInterface,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice as _KVCacheInputsPerDevice,
-)
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
+from max.nn.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
     KVCacheMemory,
     KVConnectorType,
     recurrent_leaf,
 )
-from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
-from max.nn.legacy.kv_cache.utils import (
-    build_max_lengths_tensors,
-    padded_lut_cols,
-)
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.utils import padded_lut_cols
 from max.pipelines.context import TextContext
 from max.pipelines.graph_input_stager import (
     GraphInputStager,
@@ -68,6 +63,7 @@ from ._common import (
     compute_block_hashes,
     prompt_tokens_for_context,
 )
+from ._mixed_step_split import lengths_and_record
 from .block_manager import BlockManager
 from .block_utils import InsufficientBlocksError
 from .cache_manager_interface import PagedKVCacheManagerInterface
@@ -120,7 +116,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef
-        from max.nn.legacy.kv_cache import MHAKVCacheParams
+        from max.nn.kv_cache import MHAKVCacheParams
         from max.pipelines.context import TextContext, TokenBuffer
         from max.pipelines.kv_cache import PagedKVCacheManager
         from max.pipelines.modeling.types import RequestID
@@ -503,6 +499,8 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         # Update cache_lengths and max prompt / cache lengths.
         max_prompt_len = 0
         absolute_max_cached_len = 0
+        widths: list[int] = []
+        valid_lengths: list[int] = []
         for batch_idx, ctx in enumerate(batch):
             # Get the blocks for this request.
             blocks = self._block_manager.get_req_blocks(ctx)
@@ -532,12 +530,15 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             # Update the maximum lengths seen so far. The shared helpers keep
             # this in lockstep with the graph-capture replay path's
             # upper-bound characteristics.
-            max_prompt_len = max(max_prompt_len, prompt_tokens_for_context(ctx))
-            absolute_max_cached_len = max(
-                absolute_max_cached_len,
+            widths.append(prompt_tokens_for_context(ctx))
+            valid_lengths.append(
                 cache_valid_length_for_context(
                     ctx, self.params.num_draft_tokens
-                ),
+                )
+            )
+            max_prompt_len = max(max_prompt_len, widths[-1])
+            absolute_max_cached_len = max(
+                absolute_max_cached_len, valid_lengths[-1]
             )
 
         # Choose the shape used to prepare attention dispatch metadata. When
@@ -561,8 +562,11 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             max_prompt_len = bc.max_prompt_length
             absolute_max_cached_len = bc.max_cache_valid_length
 
-        max_prompt_length_host, max_cache_length_host = (
-            build_max_lengths_tensors(
+        max_prompt_length_host, max_cache_length_host, mixed_step_split = (
+            lengths_and_record(
+                widths,
+                valid_lengths,
+                self.params.num_draft_tokens,
                 max_prompt_len,
                 absolute_max_cached_len,
             )
@@ -582,6 +586,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 max_prompt_length=max_prompt_len,
                 max_cache_valid_length=absolute_max_cached_len,
             ),
+            mixed_step_split=mixed_step_split,
         )
 
     def runtime_inputs(

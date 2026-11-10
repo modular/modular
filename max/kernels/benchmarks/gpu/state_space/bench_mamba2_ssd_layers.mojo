@@ -64,7 +64,7 @@ def _bf16_rand(n: Int, scale: Float32) -> List[Scalar[DType.bfloat16]]:
 
 
 def _bench_shape(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     nheads: Int,
     head_dim: Int,
     ngroups: Int,
@@ -190,7 +190,7 @@ def _bench_shape(
 
     # The same `n`-deep chain twice, into two independently allocated pairs of
     # y and pool, so the caller can compare the two.
-    def chain_split(lctx: DeviceContext, n: Int) raises {imm}:
+    def chain_split(lctx: DeviceContext[], n: Int) raises {imm}:
         for _ in range(n):
             mamba2_ssd_chunked_fwd_inplace_gpu[DSTATE, dt_softplus=True](
                 lctx,
@@ -217,7 +217,7 @@ def _bench_shape(
                 bc_ld=bc_ld,
             )
 
-    def chain_joined(lctx: DeviceContext, n: Int) raises {imm}:
+    def chain_joined(lctx: DeviceContext[], n: Int) raises {imm}:
         for _ in range(n):
             mamba2_ssd_chunked_fwd_inplace_gpu[DSTATE, dt_softplus=True](
                 lctx,
@@ -244,7 +244,7 @@ def _bench_shape(
                 bc_ld=bc_ld,
             )
 
-    def chain_layers(lctx: DeviceContext) raises {imm}:
+    def chain_layers(lctx: DeviceContext[]) raises {imm}:
         chain_joined(lctx, layers)
 
     # The two runs take identical inputs and their scratch comes from

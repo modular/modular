@@ -19,7 +19,7 @@ here. Mirrors ``kimi_k3/tests/test_memory_planner.py``'s behaviours, adjusted
 for this planner's narrower scope (no DSpark, no KDA live-state term).
 
 The gfx950 chunk-workspace tests patch the driver queries inside
-``max.nn.legacy.state_space.kimi_delta``, the module whose helper decides the
+``max.nn._graph_ops.state_space.kimi_delta``, the module whose helper decides the
 reservation, so they run from any host.
 """
 
@@ -31,8 +31,10 @@ from typing import Any, cast
 
 import pytest
 from max.driver import Device, DeviceSpec
-from max.nn.legacy.state_space import kimi_delta
-from max.nn.legacy.state_space.kimi_delta import kda_chunk_workspace_bytes
+from max.dtype import DType
+from max.nn._graph_ops.state_space import kimi_delta
+from max.nn._graph_ops.state_space.kimi_delta import kda_chunk_workspace_bytes
+from max.pipelines.architectures.kimi_k3_modulev3 import memory_planner
 from max.pipelines.architectures.kimi_k3_modulev3.memory_planner import (
     KimiK3ModuleV3MemoryPlanner,
     _layer_counts,
@@ -42,9 +44,14 @@ from max.pipelines.architectures.kimi_k3_modulev3.memory_planner import (
 from max.pipelines.architectures.kimi_k3_modulev3.memory_planner import (
     _text_config as _resolve_text_config,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.state_cache import (
+    kda_state_regions,
+)
 from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.modeling.config_enums import PipelineRole
+from max.pipelines.speculative.config import SpeculativeConfig
+from max.support.math import ceildiv
 
 _GiB = 1024**3
 
@@ -63,8 +70,25 @@ _PER_REQUEST_BF16 = 6 * ((768 * 3 + 8 * 32 * 32) * 2)
 _PER_REQUEST_MIXED = 6 * (768 * 3 * 2 + 8 * 32 * 32 * 4)
 _PER_REQUEST_FP32 = 2 * _PER_REQUEST_BF16
 
+_DRAFT_TOKENS = 7
+"""K3's DSpark draft width, as a real speculative config declares it."""
+
+_RING_LEN = 8
+"""The compiled ring length the ``1 + _DRAFT_TOKENS`` window needs."""
+
+# One request's verify ring: num_layers * heads * ring_len * stride * f32
+# bytes. The stride is the record's own 2 * key_dim + value_dim = 96
+# elements -- already line-aligned at this geometry, and the page it forms
+# divides the live leaves' pages.
+_PER_REQUEST_RING = 6 * 8 * _RING_LEN * 96 * 4
+
 _MAX_BATCH_INPUT_TOKENS = 8192
 _MAX_LENGTH = 512
+
+# Published K3's MLA geometry, whose 576-wide latent is what the fused MLA
+# kernels (and so their prefill window) serve.
+_K3_KV_LORA = 512
+_K3_QK_ROPE = 64
 
 _HIDDEN = 1024
 _LATENT = 512
@@ -115,6 +139,15 @@ def _text_config(
     )
 
 
+def _k3_mla_text_config() -> types.SimpleNamespace:
+    """The text config at published K3's MLA geometry, which alone opens
+    the fused-kernel latent-cache path the prefill window serves."""
+    config = _text_config()
+    config.kv_lora_rank = _K3_KV_LORA
+    config.qk_rope_head_dim = _K3_QK_ROPE
+    return config
+
+
 _VT_HIDDEN = 256
 _VT_QKV_HIDDEN = 1536
 _VT_INTERMEDIATE = 1024
@@ -152,9 +185,10 @@ def _huggingface_config(
     vision: bool,
     stored_dtype: str = "bfloat16",
     linear_attn_config: dict[str, Any] | None = None,
+    text_config: types.SimpleNamespace | None = None,
 ) -> Any:
     text_only = types.SimpleNamespace(
-        text_config=_text_config(linear_attn_config),
+        text_config=text_config or _text_config(linear_attn_config),
         torch_dtype=stored_dtype,
     )
     if not vision:
@@ -169,9 +203,12 @@ def _model_config(
     encoding: str,
     n_devices: int = 1,
     pool_dtype: str | None = None,
+    kv_cache_format: str | None = None,
 ) -> Any:
     return types.SimpleNamespace(
-        kv_cache=KVCacheConfig(state_pool_dtype=pool_dtype),
+        kv_cache=KVCacheConfig(
+            state_pool_dtype=pool_dtype, kv_cache_format=kv_cache_format
+        ),
         quantization_encoding=encoding,
         graph_quantization_encoding=None,
         weight_path=[Path(f"model-{encoding}.safetensors")],
@@ -200,20 +237,28 @@ def _pipeline_config(
     pipeline_role: PipelineRole = "prefill_and_decode",
     enable_chunked_prefill: bool = True,
     linear_attn_config: dict[str, Any] | None = None,
+    draft_model: types.SimpleNamespace | None = None,
+    kv_cache_format: str | None = None,
+    speculative: SpeculativeConfig | types.SimpleNamespace | None = None,
+    text_config: types.SimpleNamespace | None = None,
 ) -> PipelineConfig:
     huggingface_config = _huggingface_config(
-        vision=vision, linear_attn_config=linear_attn_config
+        vision=vision,
+        linear_attn_config=linear_attn_config,
+        text_config=text_config,
     )
     model_config = _model_config(
         huggingface_config,
         encoding=encoding,
         n_devices=n_devices,
         pool_dtype=pool_dtype,
+        kv_cache_format=kv_cache_format,
     )
     model_config.weights_size = lambda: weights_total
     stub = types.SimpleNamespace(
         model=model_config,
-        speculative=None,
+        speculative=speculative,
+        draft_model=draft_model,
         runtime=PipelineRuntimeConfig(
             max_batch_input_tokens=_MAX_BATCH_INPUT_TOKENS,
             max_batch_size=max_batch_size,
@@ -257,6 +302,43 @@ def test_weights_size_is_unchanged_for_a_text_only_checkpoint() -> None:
     )
 
     assert estimate == 4 * _GiB
+
+
+def test_a_speculative_build_prices_the_verify_ring() -> None:
+    """A speculative config draws one scratch ring page per request on top
+    of the live pools, sized off the same region declaration the cache
+    builds from."""
+    text_config = _text_config()
+    ring_len = 8
+    live = _per_request_state_bytes(
+        text_config,
+        n_devices=2,
+        ssm_dtype=DType.bfloat16,
+        recurrent_state_dtype=DType.float32,
+        num_kda=len(_KDA_LAYERS),
+    )
+    ringed = _per_request_state_bytes(
+        text_config,
+        n_devices=2,
+        ssm_dtype=DType.bfloat16,
+        recurrent_state_dtype=DType.float32,
+        num_kda=len(_KDA_LAYERS),
+        ring_len=ring_len,
+    )
+
+    regions = kda_state_regions(
+        num_kda_layers=len(_KDA_LAYERS),
+        conv_dim=3 * _KDA_NUM_HEADS * _KDA_HEAD_DIM,
+        conv_kernel_size=_KDA_CONV_KERNEL,
+        num_heads=_KDA_NUM_HEADS,
+        head_dim=_KDA_HEAD_DIM,
+        conv_dtype=DType.bfloat16,
+        recurrent_dtype=DType.float32,
+        num_devices=2,
+        ring_len=ring_len,
+    )
+
+    assert ringed - live == regions[-1].bytes_per_page
 
 
 def test_weights_size_never_goes_negative() -> None:
@@ -330,6 +412,96 @@ def test_dense_checkpoint_reserves_no_dequant_buffer() -> None:
     )
 
     assert activation == 0
+
+
+def _dspark_draft_model(heads: int = 64) -> types.SimpleNamespace:
+    """A latent-capable DSpark draft checkpoint, as the planner reads it.
+
+    The published head geometry -- the drafter's latent is 576 wide, which
+    is what lets it serve through the fused MLA kernels at all. The planner
+    reads the geometry straight off the config's attributes, so the stub
+    carries them as attributes.
+    """
+    return types.SimpleNamespace(
+        huggingface_config=types.SimpleNamespace(
+            model_type="k3_dspark",
+            num_attention_heads=heads,
+            kv_lora_rank=512,
+            qk_nope_head_dim=128,
+            qk_rope_head_dim=64,
+            v_head_dim=128,
+        )
+    )
+
+
+# A speculative config as the planner reads it: the method and token count
+# the target's own speculative term reads, and the draft width the drafter's
+# cache leaf is stamped with.
+_SPECULATIVE = types.SimpleNamespace(
+    speculative_method="dspark", draft_width=7, num_speculative_tokens=7
+)
+
+
+def _drafter_window(
+    planner: KimiK3ModuleV3MemoryPlanner,
+    *,
+    n_devices: int = 1,
+    pipeline_role: PipelineRole = "prefill_and_decode",
+    kv_cache_format: str | None = None,
+    max_batch_size: int | None = None,
+    speculative: SpeculativeConfig | types.SimpleNamespace | None = None,
+) -> int:
+    """The drafter's share of the activation estimate.
+
+    A speculative build also prices the target's plan window at every
+    role, so the drafter's term is the estimate with the draft less the
+    same config's estimate without it.
+    """
+
+    def estimate(draft_model: types.SimpleNamespace | None) -> int:
+        pipeline_config = _pipeline_config(
+            draft_model=draft_model,
+            n_devices=n_devices,
+            pipeline_role=pipeline_role,
+            kv_cache_format=kv_cache_format,
+            max_batch_size=max_batch_size,
+            speculative=speculative,
+        )
+        return planner.estimate_activation_memory(
+            pipeline_config, pipeline_config.model.huggingface_config
+        )
+
+    return estimate(_dspark_draft_model()) - estimate(None)
+
+
+def test_a_dspark_draft_reserves_its_prefill_window_at_every_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The drafter's window is a decode-step cost the planner must price.
+
+    A BF16 latent never folds, so the block call takes the one-shot
+    decompression prefill arm on every decode step -- including a
+    decode-only pipeline, whose own target term is role-gated away. The
+    window is the plan cap times the full head count's per-row key and
+    value bytes, the same shape the target's term prices.
+    """
+    monkeypatch.setattr(memory_planner, "accelerator_api", lambda: "hip")
+    window = _drafter_window(
+        _planner(),
+        pipeline_role="decode_only",
+        max_batch_size=4,
+        speculative=_SPECULATIVE,
+    )
+
+    # The block call's window is its cache length -- the committed
+    # context plus up to ``draft_width + 1`` accepted rows -- plus the
+    # block's own ``draft_width``: the same ``2 * 7 + 1`` rows of slack
+    # the pool reserves for a block draft, which the plan cap must cover
+    # or the plan silently truncates the trailing windows. The per-row
+    # cost is every head's ``qk_nope + v_head`` at bf16, and the cap
+    # holds one such window per batch slot.
+    cap = ceildiv(_MAX_LENGTH + 15, 128) * 128
+    assert window == 4 * cap * 64 * (128 + 128) * 2
 
 
 def _k3_linear_attn_config(
@@ -577,14 +749,46 @@ def test_unset_max_batch_size_uses_the_inferred_one(
     assert activation == expected
 
 
+def test_a_decode_only_speculative_build_reserves_the_mla_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A decode-only node never prefills, but its verifies still read the
+    MLA plan window wherever the decode fold cannot serve them (a bf16
+    latent cache on AMD), and the pairing sizes that window's cap whatever
+    the role -- so the reservation must follow the speculative config,
+    not the role."""
+    monkeypatch.setattr(memory_planner, "accelerator_api", lambda: "hip")
+    spec = types.SimpleNamespace(
+        speculative_method="dspark", num_speculative_tokens=7
+    )
+
+    def estimate(
+        pipeline_role: PipelineRole, speculative: types.SimpleNamespace | None
+    ) -> int:
+        pipeline_config = _pipeline_config(
+            pipeline_role=pipeline_role,
+            max_batch_size=4,
+            speculative=speculative,
+            text_config=_k3_mla_text_config(),
+        )
+        return _planner().estimate_activation_memory(
+            pipeline_config, pipeline_config.model.huggingface_config
+        )
+
+    # Plain decode never plans, so the role alone still reserves nothing.
+    assert estimate("decode_only", None) == 0
+    # The verify's TG worst case: all 4 batch slots at the rope table's row
+    # count -- ``max_seq_len`` plus the 8 verify rows, page-aligned to 640
+    # -- times 8 heads of one 128-wide nope+v window in bfloat16.
+    assert estimate("decode_only", spec) == 4 * 640 * 8 * (64 + 64) * 2
+
+
 def test_per_request_state_bytes_covers_only_the_kda_layers() -> None:
     huggingface_config = _huggingface_config(vision=False)
     text_config = _resolve_text_config(huggingface_config)
     num_kda, num_full_attn = _layer_counts(text_config)
     assert num_kda == len(_KDA_LAYERS)
     assert num_full_attn == len(_FULL_ATTN_LAYERS)
-
-    from max.dtype import DType
 
     per_request = _per_request_state_bytes(
         text_config,

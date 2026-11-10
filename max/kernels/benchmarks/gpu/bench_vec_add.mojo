@@ -42,7 +42,7 @@ def vec_func(
 
 @inline(.never)
 def bench_vec_add(
-    mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
+    mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext[]
 ) raises:
     comptime dtype = DType.float32
     var in0_host = List(length=length, fill=Scalar[dtype](0))
@@ -60,7 +60,7 @@ def bench_vec_add(
     context.enqueue_copy(in1_device, in1_host)
 
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {mut out_device, imm}:
+    def kernel_launch(ctx: DeviceContext[]) raises {mut out_device, imm}:
         context.enqueue_function[vec_func](
             in0_device,
             in1_device,

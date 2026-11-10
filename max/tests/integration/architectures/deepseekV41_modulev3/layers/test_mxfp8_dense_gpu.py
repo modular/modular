@@ -25,10 +25,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mxfp8_linear import (
     MXFP8Linear,
+    Mxfp8Rows,
+    _quantize,
 )
 from max.tensor import Tensor
 
@@ -119,6 +122,7 @@ def _check(out: np.ndarray, want: np.ndarray, atol: float = 2e-2) -> None:
 @pytest.mark.parametrize(
     ("in_dim", "out_dim", "tokens"),
     [
+        (512, 33, 17),
         # A partial last 128-row tile of the weight scales.
         (512, 160, 17),
         # The wqa_wkv shape at a decode batch, where split-K applies.
@@ -193,6 +197,27 @@ def test_rope_tail_matches_matmul_then_rotation() -> None:
     )
     want = _round_bf16(_rope_tail(product, cos_sin)).reshape(tokens, out_dim)
     _check(out, want, atol=2.0**-7 * float(np.abs(product).max()))
+
+
+def test_quantized_rope_tail_equals_rope_tail_on_the_same_rows() -> None:
+    rng = np.random.default_rng(34)
+    in_dim, heads, head_dim, rope_dim, tokens = 1280, 4, 512, 64, 12
+    out_dim = heads * head_dim
+    x = _bf16((rng.standard_normal((tokens, in_dim)) * 2.0).astype(np.float32))
+    angles = rng.uniform(-3.0, 3.0, (tokens, rope_dim // 2))
+    cos_sin = Tensor.from_dlpack(
+        np.stack([np.cos(angles), np.sin(angles)], axis=-1).astype(np.float32)
+    ).to(Accelerator())
+
+    linear = MXFP8Linear(in_dim, out_dim)
+    linear.weight = _fp8(_weight_codes(out_dim, in_dim, rng))
+    linear.scale = _e8m0(_scale_values(out_dim // 32, in_dim // 32, rng))
+    codes, scales = F.functional(_quantize)(x)
+    got = linear.forward_quantized_rope_tail(
+        Mxfp8Rows(codes, scales), cos_sin, head_dim
+    )
+    want = linear.forward_rope_tail(x, cos_sin, head_dim)
+    np.testing.assert_array_equal(_out(got), _out(want))
 
 
 def test_swiglu_down_matches_composed_swiglu_then_dense() -> None:

@@ -158,6 +158,7 @@ modular_shared_library(
         "@//Support:__subpackages__",
         "@//utils/benchmarking/kepler:__subpackages__",
     ],
+    with_import = True,
     deps = [
         "@capstone",
         "@llvm_zstd//:zstd",

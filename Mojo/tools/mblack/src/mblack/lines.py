@@ -142,13 +142,39 @@ class Line:
         return bool(self) and self.leaves[0].type == token.AT
 
     @property
+    def is_var(self) -> bool:
+        """Is this line a `var` statement?"""
+        if not self:
+            return False
+        parent = self.leaves[0].parent
+        return parent is not None and parent.type == syms.var_stmt
+
+    @property
+    def is_local_var_decorator(self) -> bool:
+        """Is this line a decorator on a `var` statement in a function body?"""
+        if not self.is_decorator:
+            return False
+        decorated = self.leaves[0].parent
+        while decorated is not None and decorated.type != syms.decorated:
+            decorated = decorated.parent
+        if decorated is None or decorated.children[1].type != syms.var_stmt:
+            return False
+        scope = decorated.parent
+        while scope is not None and scope.type not in (
+            syms.funcdef,
+            syms.classdef,
+        ):
+            scope = scope.parent
+        return scope is not None and scope.type == syms.funcdef
+
+    @property
     def is_import(self) -> bool:
         """Is this an import line?"""
         return bool(self) and is_import(self.leaves[0])
 
     @property
     def is_class(self) -> bool:
-        """Is this line a class/struct/enum/trait/extension definition?"""
+        """Is this line a class/struct/enum/union/trait/extension definition?"""
         return bool(self) and (
             (
                 self.leaves[0].type == token.NAME
@@ -157,6 +183,7 @@ class Line:
             )
             or self.leaves[0].type == token.STRUCT
             or self.leaves[0].type == token.ENUM
+            or self.leaves[0].type == token.UNION
             or self.leaves[0].type == token.TRAIT
             or self.leaves[0].type == token.EXTENSION
         )
@@ -636,14 +663,26 @@ class EmptyLineTracker:
                 else:
                     before = 2
             self.previous_defs.pop()
+        # A decorated local `var` is an ordinary statement, not a definition.
         if (
-            current_line.is_decorator
+            (
+                current_line.is_decorator
+                and not current_line.is_local_var_decorator
+            )
             or current_line.is_def
             or current_line.is_class
         ):
             return self._maybe_empty_lines_for_class_or_def(
                 current_line, before
             )
+
+        # Keep a decorated `var` and its decorators together.
+        if (
+            self.previous_line
+            and self.previous_line.is_decorator
+            and (current_line.is_local_var_decorator or current_line.is_var)
+        ):
+            return 0, 0
 
         if (
             self.previous_line

@@ -149,12 +149,6 @@ private:
   llvm::MapVector<size_t, GenericUniquePtr> map;
 };
 
-/// An RCRef-compatible version of GenericUniquePtrSet.
-class SharedGenericUniquePtrSet
-    : public GenericUniquePtrSet,
-      public ReferenceCounted<SharedGenericUniquePtrSet> {};
-using GenericUniquePtrSetRef = RCRef<SharedGenericUniquePtrSet>;
-
 } // namespace M
 
 #endif // SUPPORT_ADT_GENERICUNIQUEPTRSET_H

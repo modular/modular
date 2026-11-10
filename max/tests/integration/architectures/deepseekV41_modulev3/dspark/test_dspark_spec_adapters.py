@@ -10,26 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""CPU tests of the DSpark block spec-decode adapters.
-
-The block driver is graph-value typed and knows no ``TensorAdapter``, so the
-adapters convert at their own boundary and must work in both worlds -- these
-tests drive them with eager single-device tensors, which the conversions pass
-through unchanged.
-
-The trunk's fused kernels are GPU-only, so the verify path is pinned against
-a duck-typed trunk that returns marked streams: what is under test is the
-adapter's own math -- the K+1 verify rows, the leaf and extras assembly, the
-taps payload -- never the trunk. The drafter's block forward is likewise
-GPU-bound, so its position and window-start arithmetic are pinned directly
-at the helpers ``forward_block`` calls.
-"""
+"""CPU tests for DSpark speculative-decoding adapters."""
 
 from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from types import SimpleNamespace
 from typing import Any, cast
@@ -52,12 +39,18 @@ from max.graph import (
     ops,
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
+from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     read_engram_lookback,
 )
+from max.pipelines.architectures.deepseekV41_modulev3 import (
+    deepseekV41 as trunk,
+)
 from max.pipelines.architectures.deepseekV41_modulev3 import spec_adapters
+from max.pipelines.architectures.deepseekV41_modulev3.deepseekV41 import (
+    DeepseekV41,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     DSparkDrafter,
 )
@@ -107,7 +100,88 @@ DEPTH = 3
 _MESH = DeviceMesh((CPU(),), (1,), ("tp",))
 
 
-# ``_positions`` reads everything off its arguments, so an uninitialized
+def test_trunk_tap_captures_the_layer_entry_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hc, hidden, rows = 4, 3, 2
+    tap_layer_id = 7
+    entry = np.arange(rows * hc * hidden, dtype=np.float32).reshape(
+        rows, hc, hidden
+    )
+    entry += 1
+    carried = np.full((rows, hc, hidden), 101.0, np.float32)
+    pre = np.full_like(carried, 202.0)
+    post_attention = np.full((rows, hidden), -303.0, np.float32)
+    comb = np.zeros((rows, hc, hc), np.float32)
+    row_values = SimpleNamespace(offsets=None, positions=None)
+
+    class Layer:
+        layer_id = tap_layer_id
+        group = "tap"
+        plan = None
+
+        def __call__(self, *args):
+            return (
+                carried,
+                pre,
+                post_attention,
+                post_attention,
+                comb,
+                entry,
+                [],
+            )
+
+    batch = SimpleNamespace(
+        rows=row_values,
+        data_parallel_splits=None,
+        input_row_offsets_i64=None,
+        replay=None,
+        swa_begin=None,
+        global_write_floor=None,
+        image_token_mask=None,
+        kv={},
+        comm=None,
+    )
+    model = SimpleNamespace(
+        config=SimpleNamespace(hc_mult=hc, engram_layer_ids=()),
+        dp=1,
+        decoder_start=None,
+        layers=[Layer()],
+        _with_live_positions=lambda rows_arg: rows_arg,
+    )
+    monkeypatch.setattr(
+        trunk,
+        "mhc_identity_writeback",
+        lambda stream: (post_attention, post_attention, comb),
+    )
+    monkeypatch.setattr(
+        trunk, "mhc_post", lambda y, stream, post, coeffs, hc_mult: stream
+    )
+    monkeypatch.setattr(trunk, "leaf_values", lambda *_: ())
+    monkeypatch.setattr(trunk, "slot_constants", lambda *_: ())
+    monkeypatch.setattr(
+        trunk,
+        "_hc_mean",
+        lambda stream: Tensor.from_dlpack(
+            np.ascontiguousarray(stream.mean(axis=1))
+        ),
+    )
+
+    run_trunk = cast(
+        Callable[..., tuple[Tensor, Tensor, dict[int, Tensor] | None]],
+        DeepseekV41._run_trunk,
+    )
+    _, _, taps = run_trunk(model, batch, carried, pre, (tap_layer_id,))
+
+    assert taps is not None
+    tap = taps[tap_layer_id].to_numpy()
+    expected = entry.mean(axis=1)
+    np.testing.assert_array_equal(tap, expected)
+    assert not np.array_equal(tap, carried.mean(axis=1))
+    expanded_post = np.broadcast_to(post_attention[:, None, :], entry.shape)
+    assert not np.array_equal(tap, expanded_post.mean(axis=1))
+
+
 def _small_config(vocab: int = VOCAB) -> DeepseekV41Config:
     """The drafter's config at this module's shrunk TP1 widths.
 
@@ -1015,16 +1089,66 @@ def test_head_greedy_drafts_the_reference_tokens(tp: int) -> None:
         assert torch.equal(_torch(shard).to(torch.int64), ref)
 
 
-def test_the_mesh_greedy_picks_full_vocab_columns_on_every_rank() -> None:
-    """Each rank's pick is the full vocab's column, padding included.
+def _vocab_parallel_drafts(
+    drafter: DSparkDrafter,
+    head_weight: Tensor,
+    hidden: torch.Tensor,
+    anchors: torch.Tensor,
+) -> torch.Tensor:
+    with _eager():
+        got = drafter.draft_vocab_parallel(
+            F.distributed_broadcast(_to_max(hidden), _TP4_MESH),
+            head_weight,
+            F.distributed_broadcast(_to_max(anchors), _TP4_MESH),
+        )
+    assert got.dtype == DType.int32
+    drafts = _torch(got).to(torch.int64)
+    assert tuple(drafts.shape) == (BATCH, BLOCK)
+    return drafts
 
-    ``drafter.draft`` with no sampler is the exact greedy the head invokes
-    for ``ArgmaxDraftSampler``, and its step logits are replicated
-    whole-vocab (the head's allgather), so every rank's argmax column must
-    be the same global token id -- never a shard-local index -- including
-    when the winner is the padding column, and when the row is a tie,
-    which CPU resolves to the first index (the documented argmax contract).
-    """
+
+def test_vocab_parallel_head_drafts_the_joined_heads_tokens() -> None:
+    config = _small_tp4_config()
+    head_weight = _head_weight_on(_TP4_MESH, _TP4_VOCAB)
+    hidden = torch.randn(BATCH * BLOCK, HIDDEN).to(torch.bfloat16)
+    anchors = torch.randint(0, _TP4_VOCAB, (BATCH,), dtype=torch.int32)
+    drafter = _drafter_on(_TP4_MESH, config, live_markov=True)
+
+    got = _vocab_parallel_drafts(drafter, head_weight, hidden, anchors)
+
+    with _eager():
+        want, _ = drafter.draft(
+            F.distributed_broadcast(
+                drafter.logits(
+                    F.distributed_broadcast(_to_max(hidden), _TP4_MESH),
+                    head_weight,
+                ),
+                _TP4_MESH,
+            ),
+            F.distributed_broadcast(_to_max(anchors), _TP4_MESH),
+        )
+    assert torch.equal(got, _torch(want).to(torch.int64))
+
+
+def test_vocab_parallel_head_breaks_cross_shard_ties_to_the_lowest_index() -> (
+    None
+):
+    config = _small_tp4_config()
+    weight = torch.empty(_TP4_VOCAB, HIDDEN).uniform_(-0.5, 0.5)
+    weight[7] = weight[71] = 1.0
+    head_weight = Tensor(weight.to(torch.bfloat16), device=_TP4_MESH).to(
+        DeviceMapping(_TP4_MESH, (Sharded(0),))
+    )
+    hidden = torch.ones(BATCH * BLOCK, HIDDEN).to(torch.bfloat16)
+    anchors = torch.zeros(BATCH, dtype=torch.int32)
+    drafter = _drafter_on(_TP4_MESH, config, live_markov=False)
+
+    got = _vocab_parallel_drafts(drafter, head_weight, hidden, anchors)
+
+    assert torch.equal(got, torch.full((BATCH, BLOCK), 7, dtype=torch.int64))
+
+
+def test_the_mesh_greedy_picks_full_vocab_columns_on_every_rank() -> None:
     config = _small_tp4_config()
     # Six block rows, request-major at BLOCK columns each. The fourth row
     # peaks equally at columns 10 and 90; the first row peaks at the

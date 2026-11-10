@@ -54,7 +54,13 @@ from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.nn import Linear, Module
-from max.nn.common_layers.functional_kernels import (
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
+from max.nn.kernels import (
     flare_mla_prefill_plan,
     flash_attention_gpu,
     flash_attention_ragged,
@@ -62,13 +68,7 @@ from max.nn.common_layers.functional_kernels import (
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.common_layers.multi_latent_attention import (
-    MLAPrefillMetadata,
-)
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
@@ -452,6 +452,23 @@ def kimi_k3_mla_prefill_plan(
     layer, so call this once per device per step and share the result across
     every :meth:`KimiK3MLAAttention.forward_latent_ragged` call that step --
     not once per layer.
+
+    The device plan is draft-aware by construction: it is computed on device
+    from the runtime ``cache_lengths`` and ``input_row_offsets`` tensors, so a
+    speculative verify step's ``(1 + K)``-rows-per-request window is planned
+    at its true ``align_up(cache_length + active_length, page_size)`` width.
+    The host-side ``buffer_size`` cap is the decode-assumption risk: the
+    plan kernel clamps every chunk to it and, at ``max_chunks=1``, silently
+    drops the rest -- size it with :func:`spec_mla.kimi_k3_mla_buffer_size`,
+    never from the plain decode-step budget.
+
+    ``buffer_length`` is the host extent the caller sized for this step --
+    the kernel reads it on the host, so it must cover the plan's real total:
+    the cache-to-buffer copy zero-fills an oversized extent past the
+    plan's rows, while an undersized one silently corrupts, the copy
+    launching only the rows it names. Never read the plan's own extent back from the device
+    instead: that read synchronizes with the host, so a graph holding it
+    cannot be device-captured.
     """
     layer_idx = F.constant(0, DType.uint32, device=CPU())
     buffer_row_offsets, cache_offsets, _ = flare_mla_prefill_plan(
@@ -462,8 +479,6 @@ def kimi_k3_mla_prefill_plan(
         buffer_size,
         max_chunks=1,
     )
-    # Reading the device plan's length back appends a host synchronization,
-    # which device graph capture forbids. Batching supplies the same extent.
     return MLAPrefillMetadata(
         buffer_row_offsets=buffer_row_offsets,
         cache_offsets=cache_offsets,

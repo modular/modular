@@ -38,13 +38,13 @@ def _linear_index[
 
 
 def test_elementwise() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
 
     def run_elementwise[
         numelems: Int,
         outer_rank: Int,
         shape: IndexList[outer_rank],
-    ](ctx: DeviceContext) raises:
+    ](ctx: DeviceContext.CPU) raises:
         var memory1 = Array[Float32, numelems](fill={})
         var buffer1 = Span(memory1)
 
@@ -98,7 +98,7 @@ def test_elementwise() raises:
 
 
 def test_elementwise_implicit_runtime() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     var vector_stack = Array[Int, 20](fill={})
     var vector = Span(vector_stack)
 

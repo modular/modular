@@ -317,7 +317,7 @@ def expand_qkv_sm100(
     # slicer can't handle a capturing closure in the load path. The kernel turns
     # the selected plane into a row offset by multiplying it by the runtime token
     # count (M).
-    comptime a_plane_splits = Index(q_dim, q_dim + kv_dim)
+    comptime a_plane_splits = (q_dim, q_dim + kv_dim)
 
     @inline(.always)
     def route_qkv[

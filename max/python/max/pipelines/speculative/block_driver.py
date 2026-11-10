@@ -46,13 +46,15 @@ from max.graph import (
     ops,
 )
 from max.nn import Module as ModuleV3
-from max.nn.legacy.kernels import topk_fused_sampling_with_dist
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
-from max.nn.legacy.layer import Module
-from max.nn.legacy.sampling.rejection_sampler import (
-    AcceptanceSampler,
-    _draft_step_seed,
+from max.nn._graph_ops import (
+    _dspark_draft_sample,
+    _is_amd_gpu,
+    _is_sm10x_gpu,
+    gumbel_argmax_from_probs,
 )
+from max.nn._graph_ops.sampling import AcceptanceSampler, _draft_step_seed
+from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.legacy.layer import Module
 from max.tensor import Tensor
 from max.tensor.realization_context import current_realization_context
 from typing_extensions import override
@@ -78,6 +80,7 @@ from .spec_input_types import (
     SpecDecodeInputTypeSpec,
     draft_probs_rows_name,
     replica_leader_devices,
+    without_mixed_step_split,
 )
 from .spec_target import Verified
 from .spec_width_policy import declares_skippable_draft
@@ -94,6 +97,7 @@ __all__ = [
     "SampledDraftSampler",
     "block_dispatch_metadata",
     "block_kv_with_dispatch",
+    "block_mla_dispatch_metadata",
     "local_row_offsets",
 ]
 
@@ -115,8 +119,17 @@ def block_dispatch_metadata(meta: TensorValue | None, k: int) -> TensorValue:
 
     Returns:
         The rebuilt dispatch metadata buffer.
+
+    Raises:
+        AssertionError: If ``meta`` is not an MHA leaf's 4-int buffer.
     """
     assert meta is not None
+    assert meta.shape[0] == 4, (
+        "MHA dispatch metadata holds four host ints [batch_size, "
+        "q_max_seq_len, num_partitions, max_cache_valid_length]; got a "
+        f"{meta.shape[0]!r}-wide buffer. An MLA leaf's three device ints are "
+        "rebuilt by block_mla_dispatch_metadata."
+    )
     cpu = DeviceRef.CPU()
     return ops.concat(
         [
@@ -129,14 +142,80 @@ def block_dispatch_metadata(meta: TensorValue | None, k: int) -> TensorValue:
     )
 
 
+def block_mla_dispatch_metadata(
+    meta: TensorValue | None, k: int
+) -> TensorValue:
+    """Rebuilds the MLA dispatch metadata at the draft block's query width.
+
+    The 3-int device buffer is ``[batch_size, max_prompt_length,
+    num_partitions]``. Like the MHA one, the leaf's own metadata carries the
+    *verify* query width; the block rewrites it to its own width so no
+    consumer of the buffer sees the verify's. (On AMD the decode fold's query
+    bound comes from the collection's ``max_prompt_length`` input, which
+    :func:`block_kv_with_dispatch` also pins to the block width.)
+    ``num_partitions`` is passed through as fetched rather than zeroed: AMD
+    dense MLA sizes its split from the batch and cache length, not the query
+    width, so the fetched count is the block's too. Elsewhere (SM100, AMD
+    sparse) the count was sized for the verify width, which only makes the
+    split suboptimal, never wrong.
+
+    Args:
+        meta: The leaf's verify-width dispatch metadata buffer.
+        k: The draft block width (anchor slot plus drafted tokens).
+
+    Returns:
+        The rebuilt dispatch metadata buffer.
+
+    Raises:
+        AssertionError: If ``meta`` is not an MLA leaf's 3-int buffer.
+    """
+    assert meta is not None
+    assert meta.shape[0] == 3, (
+        "MLA dispatch metadata holds three device ints [batch_size, "
+        "max_prompt_length, num_partitions]; got a "
+        f"{meta.shape[0]!r}-wide buffer. An MHA leaf's four host ints are "
+        "rebuilt by block_dispatch_metadata."
+    )
+    return ops.concat(
+        [
+            meta[0:1],
+            ops.constant(k, DType.int64, device=meta.device).reshape((1,)),
+            meta[2:3],
+        ],
+        axis=0,
+    )
+
+
+def _block_kv_dispatch_metadata(
+    meta: TensorValue | None, k: int
+) -> TensorValue:
+    """Rebuilds the dispatch metadata whichever leaf packed ``meta``.
+
+    The metadata's static width names its leaf: four ints are the MHA
+    kernel's host buffer, three the MLA kernel's device one. Each builder
+    then refuses the other leaf's buffer, so a mis-routed cache fails at
+    graph build instead of slicing past its metadata's end.
+    """
+    assert meta is not None
+    if meta.shape[0] == 3:
+        return block_mla_dispatch_metadata(meta, k)
+    return block_dispatch_metadata(meta, k)
+
+
 def block_kv_with_dispatch(
     block_kv: list[PagedCacheValues], k: int
 ) -> list[PagedCacheValues]:
-    """The block caches with the dispatch buffer rebuilt at width ``k``."""
+    """The block caches with the dispatch buffer rebuilt at width ``k``.
+
+    The builder is picked per leaf: an MHA leaf packs four host ints, an MLA
+    leaf three on-device ones. The block width also becomes the caches'
+    ``max_prompt_length`` for both leaf kinds alike, since the kernel router
+    reads the query width off that input.
+    """
     return [
         replace(
             kv,
-            attention_dispatch_metadata=block_dispatch_metadata(
+            attention_dispatch_metadata=_block_kv_dispatch_metadata(
                 kv.attention_dispatch_metadata, k
             ),
             max_prompt_length=ops.constant(
@@ -480,14 +559,48 @@ class ArgmaxDraftSampler(DraftSampler):
 
 
 class SampledDraftSampler(DraftSampler):
-    """Draws each position at its request's temperature, top-k and top-p.
+    """Draws each position from the tempered full softmax of its logits.
 
     Serves ``draft_proposal="sampled"``, keeping the distribution each draw
     came from, in target-vocab positions, for the verifier. The driver builds
     one per iteration from the per-row sampling parameters. Position ``i`` is
     keyed like sequential draft step ``i``, so no two positions of a request
     share a draw.
+
+    The draft proposal carries no top-k/top-p truncation: the request's
+    top-k and top-p shape the target's distribution the verifier builds, and
+    the verifier's rejection test is exact for any distribution the draft
+    really samples from. Keeping the draw and the stored ``q`` on one full
+    softmax is what stops them disagreeing. ``top_k`` and ``top_p`` stay on
+    the constructor because the driver builds one sampler per iteration from
+    the request's sampling parameters.
     """
+
+    @staticmethod
+    def _draw(
+        logits: TensorValue, *, seed: TensorValue, temperature: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        """Draws one token per row from the tempered full softmax.
+
+        Returns the drawn column index and the float32 distribution it was
+        drawn from: the full softmax of ``logits / max(temperature, 1e-6)``,
+        rows summing to one. The Gumbel noise is keyed by ``seed``, one key
+        per row, so a row's draw depends only on its own seed, never on its
+        slot among co-launched rows.
+
+        Args:
+            logits: ``[rows, width]`` logits over whatever columns the head
+                scored: the target vocabulary, a pruned one, a candidate
+                list.
+            seed: Per-row RNG keys, uint64 ``[rows]``.
+            temperature: Per-row temperature, float32 ``[rows]``.
+        """
+        tempered = logits.cast(DType.float32) / ops.max(
+            ops.unsqueeze(temperature, axis=-1),
+            ops.constant(1e-6, DType.float32, device=logits.device),
+        )
+        dist = ops.softmax(tempered).cast(DType.float32)
+        return gumbel_argmax_from_probs(dist, seed=seed), dist
 
     def __init__(
         self,
@@ -526,12 +639,10 @@ class SampledDraftSampler(DraftSampler):
         seeds = ops.stack(
             [_draft_step_seed(self._seed, i) for i in range(n)], axis=1
         ).reshape((-1,))
-        tokens, dist = topk_fused_sampling_with_dist(
+        tokens, dist = self._draw(
             logits.rebind([self._rows, n, vocab]).reshape((-1, vocab)),
-            top_k=per_position(self._top_k),
-            temperature=per_position(self._temperature),
-            top_p=per_position(self._top_p),
             seed=seeds,
+            temperature=per_position(self._temperature),
         )
         self._all_dists = dist.reshape((self._rows, n, vocab))
         return tokens.reshape((self._rows, n))
@@ -550,15 +661,57 @@ class SampledDraftSampler(DraftSampler):
         logits = as_graph_values(logits)
         if token_ids is not None:
             token_ids = as_graph_values(token_ids)
-        index, dist = topk_fused_sampling_with_dist(
+        index, dist = self._draw(
             logits.rebind([self._rows, logits.shape[1]]),
-            top_k=self._top_k,
-            temperature=self._temperature,
-            top_p=self._top_p,
             seed=_draft_step_seed(self._seed, position),
+            temperature=self._temperature,
         )
         if token_ids is not None:
             dist = _scatter_to_vocab(dist, token_ids, self._vocab_size)
+        self._next_dists.append(dist)
+        return index
+
+    def sample_biased(
+        self,
+        logits: TensorValue,
+        bias: TensorValue,
+        position: int,
+    ) -> TensorValue:
+        """Draws one position's token from the tempered softmax of logits+bias.
+
+        One fused kernel adds the bias, scales by the row's temperature, draws
+        the token by Gumbel-max and writes the distribution it drew from,
+        reading the head logits once. A caller whose head adds a per-position
+        bias in-graph uses this instead of :meth:`sample_next`, so the bias
+        and the draw share the logits' single read. The fused kernel needs an
+        SM100 GPU. Elsewhere the bias is added in the graph and the draw goes
+        through :meth:`sample_next`.
+
+        Args:
+            logits: ``[rows, vocab_size]`` head logits, bfloat16 or float32,
+                before the bias.
+            bias: ``[rows, vocab_size]`` per-position bias, float32.
+            position: The position in the block, from 0.
+
+        Returns:
+            The ``[rows]`` drawn column index.
+        """
+        assert self._all_dists is None
+        assert position == len(self._next_dists), (
+            "positions must be drawn in order"
+        )
+        logits = as_graph_values(logits)
+        bias = as_graph_values(bias)
+        if not _is_sm10x_gpu():
+            return self.sample_next(
+                ops.cast(logits, DType.float32) + bias, position
+            )
+        index, dist = _dspark_draft_sample(
+            logits.rebind([self._rows, logits.shape[1]]),
+            bias.rebind([self._rows, bias.shape[1]]),
+            temperature=self._temperature,
+            seed=_draft_step_seed(self._seed, position),
+        )
         self._next_dists.append(dist)
         return index
 
@@ -1107,6 +1260,8 @@ class BlockDriver(
         if verified.roll_forward is not None:
             verified.roll_forward(batch)
 
+        # The split record describes the verify rows, not the block's.
+        batch = without_mixed_step_split(batch)
         caches = self._block_caches(
             batch, pre_cache_lengths, accepted.commit_lengths
         )
@@ -1313,13 +1468,21 @@ class BlockDriver(
         # The committed token is ``recovered`` at the accepted count, or
         # ``bonus`` when every proposal was accepted. A prefill row reads 0.
         target_tokens = ops.concat([recovered, bonus], axis=1)
-        gather_idx = ops.where(
-            is_prefill,
-            ops.constant(0, DType.int64, device=device).broadcast_to(
-                ["batch_size"]
-            ),
-            num_accepted.cast(DType.int64),
-        )
+        if _is_amd_gpu():
+            # A prefill row already has zero accepted, so the select is
+            # redundant. AMD drops it to avoid llvm/llvm-project#231154, a dead
+            # SCC def on a cloned S_CMP.
+            # TODO(CLIN-1968): restore the select on AMD once the LLVM pin
+            # carries the fix.
+            gather_idx = num_accepted.cast(DType.int64)
+        else:
+            gather_idx = ops.where(
+                is_prefill,
+                ops.constant(0, DType.int64, device=device).broadcast_to(
+                    ["batch_size"]
+                ),
+                num_accepted.cast(DType.int64),
+            )
         next_tokens = ops.gather_nd(
             target_tokens, ops.unsqueeze(gather_idx, axis=-1), batch_dims=1
         )

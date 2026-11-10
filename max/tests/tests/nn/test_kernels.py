@@ -27,7 +27,7 @@ from unittest import mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _fp6_format_code,
     block_scaled_preshuffle_grouped_scale_4d,
     grouped_dynamic_block_scaled_matmul_amd,
@@ -234,7 +234,7 @@ def test_grouped_amd_matmul_dispatches_mixed_w4a8() -> None:
     (name,) = custom.call_args.args
     values = custom.call_args.kwargs["values"]
     (out_type,) = custom.call_args.kwargs["out_types"]
-    assert name == "mo.grouped.matmul.block.scaled.amd"
+    assert name == "matmul.grouped.block.scaled.amd"
     assert values[0].dtype == DType.float8_e4m3fn
     assert values[1].dtype == DType.uint8
     assert custom.call_args.kwargs["parameters"]["preshuffled_b"] is False
@@ -293,7 +293,7 @@ def test_grouped_amd_matmul_preshuffles_with_a_scale_row_bound() -> None:
         a_scales_max_rows_per_expert=64,
     )
     names = [call.args[0] for call in custom.call_args_list]
-    assert names[-1] == "mo.grouped.matmul.block.scaled.amd"
+    assert names[-1] == "matmul.grouped.block.scaled.amd"
     assert len(names) == 2
 
 

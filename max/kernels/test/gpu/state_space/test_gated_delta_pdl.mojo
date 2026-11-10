@@ -294,6 +294,9 @@ def run_conv_recurrence_arm[
         Int32(total),
         Int32(conv_dim),
         Int32(tokens_per_block),
+        # Read only under CAPTURE_INPUT.
+        Int32(0),
+        Int32(0),
         qkv_tt,
         weight_tt,
         conv_state_tt,
@@ -476,6 +479,9 @@ def run_verify_fold_arm[
         Int32(nv),
         Int32(nk),
         Int32(key_dim),
+        # A full window is one real token and its drafts, so every row
+        # records and RECORDS_ONLY holds.
+        Int32(RING_LEN - 1),
         out_tt,
         rec_state_tt,
         slots_tt,

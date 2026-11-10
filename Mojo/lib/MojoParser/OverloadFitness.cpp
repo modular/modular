@@ -19,12 +19,12 @@
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
-#include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParamInf.h"
+#include "ParserEvaluationContext.h"
 
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITTypes.h"
@@ -104,10 +104,11 @@ static void diagnoseFailedRefTypeConversion(MojoInflightDiag &diag,
                          << " doesn't match expected element type "
                          << ASTType(argType.getElementType());
   } else if (argType.getAddressSpace() != operandRefTy.getAddressSpace()) {
-    diag.attachNote(loc) << "operand address space "
-                         << operandRefTy.getAddressSpace()
-                         << " doesn't match expected address space "
-                         << argType.getAddressSpace();
+    diag.attachNote(loc)
+        << "operand address space "
+        << ASTType::getAddressSpaceForDisplay(operandRefTy.getAddressSpace())
+        << " doesn't match expected address space "
+        << ASTType::getAddressSpaceForDisplay(argType.getAddressSpace());
   } else if (!IREmitter::canZeroCostConvert(operandRefTy.getOriginType(),
                                             argType.getOriginType(), shared,
                                             declScope)
@@ -372,22 +373,6 @@ OverloadFitness OverloadFitness::evaluateDirectCall(
       DeclResolver::DiagnosticDeclContextChanger x(candidate);
       return shared.emitError(callLoc) << "return type " << resultType
                                        << " doesn't match expected " << ctxType;
-    }
-  }
-
-  if (ASTType contextualType = callable.getContextualType(candidate)) {
-    if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(contextualType));
-        genAttr && sugarIsa<StructType>(ASTType(genAttr.getBody()))) {
-      VerifiedParamBindings &verifiedBindings = result.paramBindings;
-      auto genNumParams = genAttr.getInputParamTypes().size();
-      ArrayRef binding = verifiedBindings.getValues().take_front(genNumParams);
-      auto bound = BindParamsAttr::get(genAttr.getContext(), genAttr, binding,
-                                       &shared.getEvaluationContext());
-      SmallVector<TypedAttr> remappedBinding(ASTType(bound).getParamBindings());
-      llvm::append_range(remappedBinding,
-                         verifiedBindings.getValues().drop_front(genNumParams));
-      verifiedBindings.setBindings(
-          ParameterExprArrayAttr::get(genAttr.getContext(), remappedBinding));
     }
   }
 

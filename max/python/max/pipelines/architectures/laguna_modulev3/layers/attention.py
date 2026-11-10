@@ -24,13 +24,11 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.nn import Linear, Module
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-    rope_split_store_ragged,
-)
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.common_layers.linear import QKVLinear
+from max.nn.kernels import flash_attention_ragged, rope_split_store_ragged
+from max.nn.kv_cache import KVCacheParams
 from max.tensor import Tensor, default_dtype
 
 from .norm import LagunaRMSNorm
@@ -127,10 +125,11 @@ class LagunaAttention(Module[..., Tensor]):
         q_dim = head_dim * num_attention_heads
         kv_dim = head_dim * num_key_value_heads
         with default_dtype(dtype):
-            self.q_proj = Linear(hidden_size, q_dim, bias=False)
-            self.k_proj = Linear(hidden_size, kv_dim, bias=False)
-            self.v_proj = Linear(hidden_size, kv_dim, bias=False)
+            # Name-transparent: the weights keep their checkpoint names.
+            self.qkv_proj = QKVLinear(hidden_size, q_dim, kv_dim)
             self.o_proj = Linear(q_dim, hidden_size, bias=False)
+            # Kept out of the fused matmul: as its own GEMV, the softplus
+            # below fuses into its epilogue.
             self.g_proj = Linear(
                 hidden_size,
                 num_attention_heads if gating_mode == "per-head" else q_dim,
@@ -139,15 +138,32 @@ class LagunaAttention(Module[..., Tensor]):
         self.q_norm = LagunaRMSNorm(head_dim, eps=qk_norm_eps, dtype=norm_dtype)
         self.k_norm = LagunaRMSNorm(head_dim, eps=qk_norm_eps, dtype=norm_dtype)
 
-    def _per_head_norm(
-        self, x: Tensor, norm: LagunaRMSNorm, num_heads: int
-    ) -> Tensor:
-        """Applies a ``[head_dim]`` norm to each head of a flat projection."""
-        head_dim = self.kv_params.head_dim
-        normed = norm(x.reshape((-1, num_heads, head_dim)))
-        return normed.reshape((-1, num_heads * head_dim))
+    def project_qkv(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        """Runs the q, k and v projections as one matmul, split per head.
 
-    def _permute_rotary_lanes(self, x: Tensor, num_heads: int) -> Tensor:
+        At decode each projection is a weight-bound GEMV, so one launch over
+        the row-concatenated weight replaces three. The output is viewed as
+        heads before it is sliced: slicing the flat output and reshaping each
+        slice made the compiler copy q and k before their norms.
+
+        Args:
+            x: Normalized hidden states, ``[total_seq_len, hidden_size]``.
+
+        Returns:
+            q, k and v as ``[total_seq_len, heads, head_dim]``.
+        """
+        k_start = self.n_heads
+        v_start = k_start + self.num_key_value_heads
+        heads = self.qkv_proj(x).reshape(
+            (-1, v_start + self.num_key_value_heads, self.kv_params.head_dim)
+        )
+        return (
+            heads[:, :k_start],
+            heads[:, k_start:v_start],
+            heads[:, v_start:],
+        )
+
+    def _permute_rotary_lanes(self, heads: Tensor) -> Tensor:
         """Reorders head lanes so the kernel's RoPE pairs match the reference's.
 
         Interleaves the rotated and pass-through blocks at their midpoints, so
@@ -160,8 +176,7 @@ class LagunaAttention(Module[..., Tensor]):
         head_dim = self.kv_params.head_dim
         half_rotated = self.rotary_dim // 2
         half_passed = (head_dim - self.rotary_dim) // 2
-        heads = x.reshape((-1, num_heads, head_dim))
-        permuted = F.concat(
+        return F.concat(
             (
                 heads[:, :, :half_rotated],
                 heads[:, :, self.rotary_dim : self.rotary_dim + half_passed],
@@ -170,7 +185,6 @@ class LagunaAttention(Module[..., Tensor]):
             ),
             axis=-1,
         )
-        return permuted.reshape((-1, num_heads * head_dim))
 
     def forward(
         self,
@@ -196,15 +210,14 @@ class LagunaAttention(Module[..., Tensor]):
         total_seq_len = x.shape[0]
         head_dim = self.kv_params.head_dim
 
-        q = self._per_head_norm(self.q_proj(x), self.q_norm, self.n_heads)
-        k = self._per_head_norm(
-            self.k_proj(x), self.k_norm, self.num_key_value_heads
-        )
+        q, k, v = self.project_qkv(x)
+        q = self.q_norm(q)
+        k = self.k_norm(k)
         # After the norms, so the [head_dim] gammas stay in checkpoint order.
         if self.rotary_dim < head_dim:
-            q = self._permute_rotary_lanes(q, self.n_heads)
-            k = self._permute_rotary_lanes(k, self.num_key_value_heads)
-        qkv = F.concat((q, k, self.v_proj(x)), axis=-1)
+            q = self._permute_rotary_lanes(q)
+            k = self._permute_rotary_lanes(k)
+        qkv = F.concat((q, k, v), axis=1).reshape((total_seq_len, -1))
 
         # An FP8 cache needs the roped Q in the cache dtype too, so the QK^T
         # dot sees matching operands.

@@ -41,6 +41,7 @@ static_assert(
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
 #include "MemoryManager.h"
 #include "Metal/MetalDeviceContext.h"
+#include "PinnedCompletionFlag.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/AssertStream.h"
 #include "Support/ErrorOr.h"
@@ -287,6 +288,10 @@ ErrorOrSuccess Device::vmmMapAndSetAccess(void *, size_t, uint64_t) {
 ErrorOrSuccess Device::vmmUnmap(void *, size_t) {
   return vmmUnsupportedError();
 }
+ErrorOrSuccess Device::vmmMap(void *va, size_t byteSize, uint64_t handle) {
+  return vmmMapAndSetAccess(va, byteSize, handle);
+}
+ErrorOrSuccess Device::vmmSetAccess(void *, size_t) { return success(); }
 
 MODULAR_CXX_EXPORT size_t Device::allocationAlignment() const {
   return memoryManager().allocationAlignment();
@@ -1426,13 +1431,12 @@ const DeviceContext &DeviceTimer::context() const { return *context_; }
 //
 // ===== CompletionFlag ===== //
 //
-MODULAR_CXX_EXPORT CompletionFlag::CompletionFlag(DeviceContext &context,
-                                                  void *hostPtr,
-                                                  uint64_t devicePtr)
+PinnedCompletionFlag::PinnedCompletionFlag(DeviceContext &context,
+                                           void *hostPtr, uint64_t devicePtr)
     : context_(DeviceContextRef::copy(&context)), hostPtr_(hostPtr),
       devicePtr_(devicePtr) {}
 
-MODULAR_CXX_EXPORT CompletionFlag::~CompletionFlag() {
+PinnedCompletionFlag::~PinnedCompletionFlag() {
   if (hostPtr_ == nullptr)
     return;
   // Best-effort free. Destructor must not throw; record errors on the
@@ -1443,7 +1447,7 @@ MODULAR_CXX_EXPORT CompletionFlag::~CompletionFlag() {
   hostPtr_ = nullptr;
 }
 
-MODULAR_CXX_EXPORT void CompletionFlag::reset() {
+void PinnedCompletionFlag::reset() {
   // Relaxed: the GPU's cuStreamWaitValue64 uses CUDA-level memory fencing.
   // Stream-ordered enqueue of the wait happens-after this store, so no
   // observer can race here. The release-ordering for the *signal* side
@@ -1452,7 +1456,7 @@ MODULAR_CXX_EXPORT void CompletionFlag::reset() {
       0, std::memory_order_relaxed);
 }
 
-MODULAR_CXX_EXPORT void CompletionFlag::signal(uint64_t value) {
+void PinnedCompletionFlag::signal(uint64_t value) {
   // Release pairs with the GPU-side `cuStreamWaitValue64` (which under
   // CUDA semantics performs the equivalent of an acquire when the
   // observed value satisfies the predicate) and with `load()`'s acquire
@@ -1462,7 +1466,7 @@ MODULAR_CXX_EXPORT void CompletionFlag::signal(uint64_t value) {
       value, std::memory_order_release);
 }
 
-MODULAR_CXX_EXPORT uint64_t CompletionFlag::load() const {
+uint64_t PinnedCompletionFlag::load() const {
   return reinterpret_cast<std::atomic<uint64_t> *>(hostPtr_)->load(
       std::memory_order_acquire);
 }
@@ -1941,8 +1945,10 @@ DeviceContext::create(StringRef api, int id) {
 
 MODULAR_CXX_EXPORT ErrorOr<DeviceContextRef>
 DeviceContext::getOrCreate(StringRef api, int id) {
+  // Cached contexts live for the whole process, so the map that holds them
+  // is never destroyed either. A destroyed map would make them leaks.
   static std::mutex mu;
-  static llvm::StringMap<DeviceContext *> contextMap;
+  static auto &contextMap = *new llvm::StringMap<DeviceContext *>();
 
   ErrorOr<DeviceRef> errDev = Device::create(api, id);
   if (errDev.isError())
@@ -1987,6 +1993,14 @@ DeviceContext::operator==(const DeviceContext &other) const {
   if (errStream.isError())
     return false;
   void *streamOther = (*errStream)->ptr();
+
+  // A backend with no native stream (the CPU, a virtual device) reports a null
+  // one, so two null streams say nothing about which device each context is
+  // on. Without this a CPU context equals a virtual accelerator's, and moving
+  // a host buffer to the virtual device hands back the host buffer.
+  if (!streamThis && !streamOther)
+    return device().api() == other.device().api() &&
+           device().id() == other.device().id();
 
   return streamThis == streamOther;
 }

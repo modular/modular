@@ -53,7 +53,7 @@ from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_almost_equal, assert_equal
 
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from structured_kernels.amd_tile_io import RegTile, reg_alloc
 

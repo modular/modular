@@ -19,7 +19,7 @@ from collections.abc import MutableMapping
 from dataclasses import replace
 
 import numpy as np
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -144,7 +144,7 @@ def gaussian(
     seed = _next_seed_for(like.device)
     accum_type = _accum_type(like) if like.dtype.is_float() else DType.float32
     random_accum = Graph.current._add_op_generated(
-        rmo.MoRandomNormalOp,
+        mo.RandomNormalOp,
         result=replace(like, dtype=accum_type),
         shape=TensorValue(like.shape),
         mean=dtype_promotion._promote_to_strong(
@@ -211,7 +211,7 @@ def uniform(
     # Check whether we have a seed before we add other constants to the graph.
     seed = _next_seed_for(like.device)
     return Graph.current._add_op_generated(
-        rmo.MoRandomUniformOp,
+        mo.RandomUniformOp,
         result=like,
         shape=TensorValue(like.shape),
         lower_bound=dtype_promotion._promote_to_strong(

@@ -3,7 +3,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
 load("//bazel:api.bzl", "modular_cc_library", "mojo_binary", "requirement")
-load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "MODULAR_CONFIGS", "TOP_LEVEL_TAG")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "ASYNCRT_PROFILING_OPTIONS", "DEFAULT_GPU_MEMORY", "MODULAR_CONFIGS", "TOP_LEVEL_TAG")
 
 # gazelle:default_visibility :see_docs_and_update_this_for_your_package
 
@@ -143,6 +143,12 @@ config_setting(
     name = "oss_source_only_build",
     flag_values = {":oss_source_build": "true"},
     tags = [ALLOW_UNUSED_TAG],
+)
+
+string_flag(
+    name = "profiling",
+    build_setting_default = "off",
+    values = ASYNCRT_PROFILING_OPTIONS,
 )
 
 config_setting(
@@ -535,6 +541,22 @@ selects.config_setting_group(
     match_all = [
         ":linux_x86_64",
         ":tracy_disabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "linux_aarch64_no_tracy",
+    match_all = [
+        ":linux_aarch64",
+        ":tracy_disabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "linux_no_tracy",
+    match_any = [
+        ":linux_x86_64_no_tracy",
+        ":linux_aarch64_no_tracy",
     ],
 )
 

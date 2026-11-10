@@ -45,11 +45,16 @@ namespace Driver {
 
 namespace {
 
-// "<vendor>:<arch>" of device 0 when the plugin's api has a Mojo vendor, or ""
-// when it has no device. `std::nullopt` when the plugin doesn't load or has no
-// Mojo vendor, so the caller tries the next.
-std::optional<std::string> queryPluginArch(llvm::StringRef soPath) {
-  void *lib = ::dlopen(std::string(soPath).c_str(), RTLD_NOW);
+// "<vendor>:<arch>" of device 0, or "" when it has no device. `std::nullopt`
+// when the plugin doesn't load, is the CPU's, or has no api to name the
+// vendor, so the caller tries the next.
+//
+// A named entry's name is its api, as in the HAL runtime's own query: a MAX
+// process links both copies of `getAcceleratorArchOrEmpty`, and either may
+// answer its graph compiles, so the two must agree. A bare path names no api,
+// so the plugin's own api is used only when it's a Mojo vendor.
+std::optional<std::string> queryPluginArch(const DriverPluginEntry &plugin) {
+  void *lib = ::dlopen(std::string(plugin.path).c_str(), RTLD_NOW);
   if (!lib)
     return std::nullopt;
   auto closeLib = llvm::scope_exit([&] { ::dlclose(lib); });
@@ -81,8 +86,16 @@ std::optional<std::string> queryPluginArch(llvm::StringRef soPath) {
           M_DRIVER_STATUS_SUCCESS ||
       !apiName)
     return std::nullopt;
-  std::string api = canonicalDeviceAPI(llvm::StringRef(apiName).lower()).str();
-  if (!hasMojoVendor(api))
+  std::string pluginAPI =
+      canonicalDeviceAPI(llvm::StringRef(apiName).lower()).str();
+  if (pluginAPI == "cpu")
+    return std::nullopt;
+  std::string api;
+  if (!plugin.name.empty())
+    api = canonicalDeviceAPI(plugin.name.lower()).str();
+  else if (hasMojoVendor(pluginAPI))
+    api = pluginAPI;
+  else
     return std::nullopt;
 
   M_driver_device_t device = nullptr;
@@ -96,9 +109,9 @@ std::optional<std::string> queryPluginArch(llvm::StringRef soPath) {
   return (llvm::Twine(apiToVendorPrefix(api)) + ":" + archName).str();
 }
 
-// The arch of the first plugin in `MODULAR_DRIVER_PLUGINS` whose api has a Mojo
-// vendor. Returns "" when there's none; callers then fall back to an explicit
-// target arch.
+// The arch of the first accelerator plugin in `MODULAR_DRIVER_PLUGINS`.
+// Returns "" when there's none; callers then fall back to an explicit target
+// arch.
 std::string queryAcceleratorArch() {
   std::optional<std::string> spec =
       llvm::sys::Process::GetEnv("MODULAR_DRIVER_PLUGINS");
@@ -109,7 +122,7 @@ std::string queryAcceleratorArch() {
     // CPU's.
     if (plugin.name.equals_insensitive("cpu"))
       continue;
-    if (std::optional<std::string> arch = queryPluginArch(plugin.path))
+    if (std::optional<std::string> arch = queryPluginArch(plugin))
       return *arch;
   }
   return {};

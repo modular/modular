@@ -27,12 +27,13 @@ from typing import TypeVar
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.nn._graph_ops.quant import _matmul_float8_mxfp8
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import Linear
+from max.nn.legacy.linear import Linear, linear
 from max.nn.legacy.norm.rms_norm import RMSNorm
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -40,7 +41,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
 
 from ...deepseekV4.layers.ragged import arange_to
 from ..layer_resolver import LayerInfo
@@ -220,9 +220,11 @@ class DSparkMarkovHead(Module):
         return markov_embed, bias
 
     def bias_float32(self, prev_tokens: TensorValue) -> TensorValue:
-        """Computes ``head(embed(prev_tokens))`` in float32.
+        """Computes ``head(embed(prev_tokens))`` with float32 output.
 
-        The bf16 weights are widened in the graph.
+        Products of the 16-bit weights are exact in float32 and accumulate
+        in float32, so this matches the matmul of the widened weights up to
+        summation order without materializing them.
 
         Args:
             prev_tokens: ``[b]`` int32 token ids.
@@ -238,9 +240,8 @@ class DSparkMarkovHead(Module):
                 "DSparkMarkovHead expects int32 token ids, got "
                 f"{prev_tokens.dtype}"
             )
-        return ops.matmul(
-            ops.cast(self.embed(prev_tokens), DType.float32),
-            ops.transpose(ops.cast(self.head.weight, DType.float32), 0, 1),
+        return linear(
+            self.embed(prev_tokens), self.head.weight, out_dtype=DType.float32
         )
 
 

@@ -43,7 +43,7 @@ from layout import (
     row_major,
 )
 from layout.swizzle import Swizzle
-from layout.tile_layout import Layout as TileLayout, TensorLayout
+from layout.layout import Layout, TensorLayout
 from structured_kernels.tile_types import SMemTileArray2D
 
 from std.utils.coord import Coord, DynamicCoord
@@ -318,7 +318,7 @@ def stsm_helper[
     # the layout looks like
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-matrix-fragments-shape-16256b
     # but transposed and coalesced by 8 elements.
-    comptime trans_st_matrix_layout = TileLayout(
+    comptime trans_st_matrix_layout = Layout(
         Coord(Idx[8], Idx[2], Idx[2]),
         Coord(Idx[stride0], Idx[8 * stride1], Idx[8 * stride0]),
     )

@@ -29,7 +29,7 @@ import abi_contract
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
-from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     STATE_RING_ROWS,
     V41Config,
@@ -40,8 +40,8 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
 )
 from max.pipelines.lib import KVCacheConfig
 
-_INPUT_COUNTS = {1: 62, 2: 112, 4: 210, 8: 406}
-_KV_INPUTS_PER_DEVICE = 48
+_INPUT_COUNTS = {1: 68, 2: 124, 4: 234, 8: 454}
+_KV_INPUTS_PER_DEVICE = 54
 _EXTRAS: list[tuple[str, str, list[int | str | None], str]] = [
     ("swa_begin", "DType.int32", ["replica_0_batch_size"], "gpu:0"),
     ("global_write_floor", "DType.int32", ["replica_0_batch_size"], "gpu:0"),

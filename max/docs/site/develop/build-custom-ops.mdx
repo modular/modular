@@ -107,9 +107,7 @@ Let's inspect the struct and function signatures:
 @extensibility.register("add_one")
 struct AddOne:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
@@ -124,14 +122,14 @@ is the name we'll use to call the op from Python.
 
 The rest of the `execute()` signature describes the custom op's graph node to
 the graph compiler: the parameters, inputs, and outputs. The `execute()`
-function must include `target` as the first compile-time parameter and `output`
-as the first runtime argument; the graph compiler uses this order to identify
-the op's hardware target and output slots:
+function must take `output` as the first runtime argument; the graph compiler
+uses this order to identify the op's output slots:
 
-- There's one [compile-time
-parameter](https://mojolang.org/docs/manual/parameters/#parameters-and-generics),
-`target`, which tells the function what kind of hardware it's being compiled for
-(either `"cpu"` or `"gpu"`; we'll use the parameter in the next example).
+- This op has no [compile-time
+parameters](https://mojolang.org/docs/manual/parameters/#parameters-and-generics).
+An op declares them when it needs values fixed at compile time, as later
+examples do. The kind of hardware the function is compiled for comes from the
+`ctx` argument instead (we'll use it in the next example).
 
 - The runtime arguments include the op's inputs and outputs, which take the form
 of [`InputTensor`](/api/mojo/extensibility/managed_tensor_slice/#inputtensor)
@@ -149,9 +147,7 @@ element inside the `elementwise_add_one()` closure.
 @extensibility.register("add_one")
 struct AddOne:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
@@ -162,7 +158,7 @@ struct AddOne:
         ](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[target=target](elementwise_add_one, output, ctx)
+        foreach(elementwise_add_one, output, ctx)
 ```
 
 We call `elementwise_add_one()` using
@@ -171,8 +167,9 @@ which distributes an elementwise computation in parallel across all elements in
 the output tensor. At compile time, `foreach()` specializes the computation for
 the target hardware, so the same code runs on CPU or GPU with no changes.
 
-The `target` parameter tells `foreach()` which device to specialize for. The
-[next example](#example-2-write-device-specific-kernels) sets it explicitly.
+`foreach()` takes the device to specialize for from the `ctx` argument. The
+[next example](#example-2-write-device-specific-kernels) writes kernels that
+differ by device.
 
 ### Declare the output shape
 
@@ -432,20 +429,18 @@ The vector addition op in `kernels/vector_addition.mojo` looks like this:
 @extensibility.register("vector_addition")
 struct VectorAddition:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        comptime if target == "cpu":
+        comptime if ctx.target.is_cpu():
             _vector_addition_cpu(output, lhs, rhs, ctx)
-        elif target == "gpu":
+        elif ctx.target.is_gpu():
             _vector_addition_gpu(output, lhs, rhs, ctx)
         else:
-            raise Error("No known target:", target)
+            raise Error("No known target:", ctx.target.device_kind_label())
 ```
 
 Using the

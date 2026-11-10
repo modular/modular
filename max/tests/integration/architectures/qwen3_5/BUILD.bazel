@@ -19,7 +19,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
         requirement("torch"),
@@ -32,7 +32,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/qwen3_5",
         requirement("numpy"),
     ],
@@ -53,7 +53,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/qwen3_5",
         requirement("numpy"),
     ],
@@ -80,6 +80,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/kv_cache",
@@ -102,6 +103,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
@@ -146,7 +148,7 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },
-    # `mo.spatial_merge` is `comptime assert is_gpu[target]()`.
+    # `vision.spatial_merge` is `comptime assert is_gpu[target]()`.
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -199,7 +201,7 @@ modular_py_test(
 modular_py_test(
     name = "test_vision_pos_embed",
     srcs = ["test_vision_pos_embed.py"],
-    # `mo.spatial_merge` is `comptime assert is_gpu[target]()`, so this cannot
+    # `vision.spatial_merge` is `comptime assert is_gpu[target]()`, so this cannot
     # run on CPU at all.
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -252,6 +254,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",
     ],
@@ -264,7 +267,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
     ],
@@ -317,6 +320,26 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_mixed_step_split_graph",
+    srcs = ["test_mixed_step_split_graph.py"],
+    # Building the model constructs `Allreduce`, which needs real accelerators.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/tests/integration/test_common:mixed_step_split_ops",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_state_row_per_layer",
     srcs = ["test_state_row_per_layer.py"],
     # Building the model constructs `Allreduce`, which instantiates real
@@ -331,7 +354,7 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/qwen3_5",
         requirement("numpy"),
     ],
@@ -357,7 +380,9 @@ modular_py_test(
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",
     ],
@@ -389,6 +414,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/kv_cache",
@@ -399,6 +426,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_state_rollback",
+    size = "medium",
     srcs = ["test_state_rollback.py"],
     deps = [
         "//max/python/max/driver",
@@ -426,7 +454,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/speculative",
         requirement("numpy"),
@@ -453,6 +481,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/qwen3_5",
         requirement("numpy"),
@@ -460,12 +490,38 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_state_tail",
-    srcs = ["test_state_tail.py"],
+    name = "test_mixed_step_chunk",
+    size = "large",
+    srcs = ["test_mixed_step_chunk.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    # Bit-exact only on the NVIDIA chunk path; other GPUs take the serial
+    # ring fallback, which rounds differently from the base forward.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_verify_ring",
+    srcs = ["test_verify_ring.py"],
     deps = [
         "//max/python/max/dtype",
-        "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",

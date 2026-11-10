@@ -26,7 +26,7 @@ The output length is data-dependent (``stop``/``start``/``step`` are runtime
 values), and the op's registered ``range_shape`` function computes it
 (``builtin_kernels/kernels.mojo``), so the graph declares a symbolic ``["n"]``
 output and sizes itself at runtime. The public ``ops.range`` is used directly
-(no ``rmo`` emission needed): it requires an explicit ``out_dim`` for dynamic
+(no direct emission needed): it requires an explicit ``out_dim`` for dynamic
 scalar inputs, which is exactly this case, and it validates that the three
 scalars are on CPU, which they are.
 

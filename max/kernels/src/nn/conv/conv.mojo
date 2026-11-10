@@ -118,7 +118,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from layout import (
     Coord,
-    IntTuple,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -156,7 +155,6 @@ from .conv_utils import (
     get_partition,
     no_conv_simd_compute_fn,
     no_conv_simd_epilogue_fn,
-    reorder_padding,
 )
 from .gpu.amd.dispatch_3d import dispatch_amd_4wave_conv3d
 from .gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
@@ -1450,6 +1448,8 @@ struct ConvDirectNHWC[
                     left_pad_impact_end,
                     right_pad_impact_start,
                 )
+            case _:
+                pass
 
     def output_space_loop_1d[
         micro_kernel_height: Int,
@@ -3002,12 +3002,12 @@ def pack_conv_filter_shape(
 @inline(.always)
 def pack_filter_shape[
     filter_type: DType,
-    input_shape: IntTuple,
-    filter_shape: IntTuple,
-    output_shape: IntTuple,
-    strides: IntTuple,
-    dilations: IntTuple,
-    paddings: IntTuple,
+    input_shape: Coord,
+    filter_shape: Coord,
+    output_shape: Coord,
+    strides: Coord,
+    dilations: Coord,
+    paddings: Coord,
     num_groups: Int,
 ](filter: TileTensor) -> IndexList[filter.flat_rank + 1]:
     """
@@ -3046,23 +3046,20 @@ def pack_filter_shape[
     var F_per_group = F // num_groups
 
     comptime conv_attr = ConvInfoStatic[filter.flat_rank - 2](
-        pad=reorder_padding[filter.flat_rank - 2](IntTuple(paddings)),
-        stride=IntTuple(strides),
-        dilation=IntTuple(dilations),
+        pad=paddings,
+        stride=strides,
+        dilation=dilations,
         num_groups=num_groups,
     )
 
     # TODO: extend to 1D/3D.
-    comptime WO = output_shape[
-        2
-    ].value() if filter.flat_rank == 4 and output_shape[
-        2
-    ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
-    comptime F_NHWC = output_shape[
+    comptime WO = (
+        output_shape.element_types[2].static_value if filter.flat_rank
+        == 4 else UNKNOWN_VALUE
+    )
+    comptime F_NHWC = output_shape.element_types[
         filter.flat_rank - 1
-    ].value() if output_shape[
-        filter.flat_rank - 1
-    ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
+    ].static_value
     comptime micro_kernel_shape = get_micro_kernel_shape[
         filter.flat_rank - 2,
         WO,
@@ -3989,7 +3986,7 @@ def _get_cudnn_meta(
     new_ptr_meta.unsafe_write(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -4121,7 +4118,7 @@ def _get_cached_cudnn_meta_nhwc_full(
     new_ptr_meta.unsafe_write(CachedCuDNNMetaNHWCFull())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -4495,7 +4492,7 @@ def _get_cached_miopen_meta[
     new_ptr_meta.unsafe_write(CachedMIOpenMeta[conv_rank]())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -4567,7 +4564,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_fcrs_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
         filter_shape[0] = UInt64(F_dim)
@@ -4602,7 +4599,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_rscf_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
 
@@ -4647,7 +4644,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_qrscf_to_fqrsc, (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
         )
 
@@ -4903,10 +4900,7 @@ def _conv_miopen[
                 output_tmp.load[width=_width](coords),
             )
 
-        elementwise[
-            simd_width_of[output_type, target=ctx.target](),
-            target="gpu",
-        ](
+        elementwise[simd_width_of[output_type, target=ctx.target](),](
             miopen_epilogue,
             output.layout.shape_coord(),
             ctx,
@@ -5000,7 +4994,7 @@ def _conv_compute_in_place[
             coords, compute_fn(coords, vec)
         )
 
-    elementwise[simd_width_of[output_type](), target="gpu"](
+    elementwise[simd_width_of[output_type]()](
         apply, output.layout.shape_coord(), ctx
     )
 
@@ -5702,7 +5696,7 @@ def conv_gpu[
                     ](coords)
                     epilogue_fn(coords, vec)
 
-                elementwise[simd_width_of[output_type](), target="gpu"](
+                elementwise[simd_width_of[output_type]()](
                     epilogue_wrapper,
                     output.layout.shape_coord(),
                     ctx,
@@ -6914,7 +6908,7 @@ def _conv3d_cudnn[
             )
         )
         external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-            StringSlice(cache_key),
+            StringSpan(cache_key),
             ptr_entry.unsafe_bitcast[NoneType](),
         )
 
@@ -6992,7 +6986,7 @@ def _conv3d_cudnn[
                 )
             )
             external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-                StringSlice(cache_key),
+                StringSpan(cache_key),
                 retry_entry.unsafe_bitcast[NoneType](),
             )
 

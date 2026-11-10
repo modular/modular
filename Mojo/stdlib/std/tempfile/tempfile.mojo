@@ -94,7 +94,7 @@ def _get_default_tempdir() raises -> String:
     raise Error("No usable temporary directory found")
 
 
-def _try_to_create_file(dir: StringSlice) -> Bool:
+def _try_to_create_file(dir: StringSpan) -> Bool:
     for _ in range(TMP_MAX):
         var name = _get_random_name()
         # TODO use os.join when it exists
@@ -173,7 +173,11 @@ def mkdtemp(
     rmdir(temp_dir)
     ```
     """
-    var final_dir = Path(dir.value()) if dir else Path(_get_default_tempdir())
+    var final_dir: Path
+    if case .Some(dir) = dir:
+        final_dir = Path(dir)
+    else:
+        final_dir = Path(_get_default_tempdir())
 
     for _ in range(TMP_MAX):
         var dir_name = final_dir / (prefix + _get_random_name() + suffix)
@@ -248,7 +252,8 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
 struct TemporaryDirectory:
     """Temporary directory that cleans up automatically.
 
-    Creates a directory that's deleted when the context exits:
+    For example, this creates a directory that's deleted when the context ends:
+
     ```mojo
     from std.tempfile import TemporaryDirectory
     import std.os
@@ -263,8 +268,18 @@ struct TemporaryDirectory:
         print(std.os.path.exists(temp_path))  # False - cleaned up
     ```
 
-    The directory and all its contents are removed on exit, even if an error occurs.
-    Set `ignore_cleanup_errors=True` to suppress cleanup failures.
+    The directory and all its contents are removed on exit, even if an error
+    occurs inside the context. Such an error is discarded as long as cleanup
+    succeeds. Set `ignore_cleanup_errors=True` to suppress cleanup failures;
+    errors raised inside the context are then discarded even when the directory
+    can't be fully removed. Use `try` inside the context when you need to
+    handle or report an error.
+
+    The directory name is built as `prefix` followed by 8 random characters and
+    `suffix`. The random characters come from `std.random`, so every run of the
+    program generates the same sequence of names, skipping any names already in
+    use. Call `seed()` from `std.random` first when you need different names
+    across runs.
     """
 
     var name: String
@@ -388,7 +403,11 @@ struct NamedTemporaryFile(Movable, _FieldNicheable):
             If the operation fails.
         """
 
-        var final_dir = dir.value() if dir else _get_default_tempdir()
+        var final_dir: String
+        if case .Some(dir) = dir:
+            final_dir = dir
+        else:
+            final_dir = _get_default_tempdir()
 
         self._delete = delete
         self.name = ""

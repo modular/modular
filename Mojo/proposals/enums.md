@@ -1,186 +1,198 @@
-# Enums for Mojo
+# Enums and unions for Mojo
 
-**Status**: Concept proposal.
+**Status**: Refined proposal, but not finalized.
 
-Date: Aug 29, 2026
+Date: Nov 7, 2026
 
-This is a set of notes to braindump thoughts on adding enums to Mojo. It’s not
-meant to be canonical or strongly held opinions, it is meant to help guide
-further design discussions. This builds on the
-[Mojo Pattern Matching Notes](pattern-matching.md) doc - make sure you have
+This document describes a design for enums and unions in Mojo. This builds on
+the [Mojo Pattern Matching Notes](pattern-matching.md) doc - make sure you have
 that in context before digging into this.
 
 ## Introduction
 
-This proposal adds **enums** to Mojo: nominal types whose values may be one of a
-fixed set of alternatives. Each alternative, called a **case**, may optionally
-carry associated state.
+This proposal adds two related nominal types to Mojo: **enums** and **unions**.
+Both declare a closed set of named cases, but they serve different purposes:
 
-Enums complement structs in the type system. A struct represents a product of
-its stored values, while an enum represents a choice between alternatives.
-A simple working example of an enum is:
+- An enum case never carries a payload. Enums represent a fixed set of named
+  values and may eventually support explicit integer storage types and values.
+- A union case always carries exactly one payload. The payload may be the unit
+  type, written as an empty tuple `()`, when a case has no associated data.
+
+For example, `Color` is an enum whose cases are plain named values:
 
 ```mojo
 enum Color:
-    case red
-    case green
-    case blue
-    case rgb(Int, Int, Int)
+    case red, green, blue
 ```
 
-A `Color` value contains exactly one of these cases at a time. The `red`,
-`green`, and `blue` cases carry no associated state, while `rgb` carries a
-single payload of type `Tuple[Int, Int, Int]`.
-
-Enums should otherwise behave like normal Mojo nominal types. They may have
-methods, conform to traits, be generic, contain nested declarations, and
-participate in Mojo's ownership system. Indeed, enums are actually syntactic
-sugar for structs in Mojo.
-
-This proposal deliberately starts with a narrow but valuable model that allows
-future extension as concrete use-cases arise.
-
-## Enum Model
-
-An enum is a nominal **sum type** with a statically known, closed set of cases.
-Here is a simple example that we’d like to support:
+Enums permit comma-separated case declarations because the cases have no
+independent payload declarations. By contrast, `Result` is a union whose cases
+carry different payload types:
 
 ```mojo
-enum Result[T: Deinitable, E: Deinitable]:
+union Result[T: Movable, E: Movable](Movable):
     case success(T)
     case failure(E)
 ```
 
-A value of type `Result[T, E]` is either a `success` containing a `T` or a
-`failure` containing an `E`; there is always exactly one active case.
+A `Result[T, E]` value contains either a `T` or an `E`, together with the case
+that identifies the active payload. Union cases are declared separately rather
+than in comma-separated lists because each case defines its own payload type.
 
-A case may carry zero or one payload. The payload is a single unlabeled type.
-As a convenience, writing several types in the case parentheses declares a
-payload of that tuple type:
+This split follows the broad C and C++ precedent: enums model named,
+integer-like values, while unions provide storage for one of several payload
+types. Mojo unions are safe, tagged unions rather than C-style untagged unions,
+so the active case is known and participates in pattern matching. The overall
+model also has extensive prior art in functional-language algebraic data types,
+Swift enums, Rust enums, and C++ facilities such as `std::variant`. Swift and
+Rust use one construct for both payload-free and payload-bearing cases; this
+proposal separates them to preserve the useful distinction between enums and
+unions and to leave room for integer-backed enums, and unsafe untagged C-style
+unions.
 
-```mojo
-enum Token:
-    case eof
-    case identifier(String)
-    case integer(Int)
-    case source_range(Int, Int)  # payload type is Tuple[Int, Int]
-```
+Enums and unions otherwise behave like normal Mojo nominal types. They may have
+methods, conform to traits, be generic, contain nested declarations, and
+participate in Mojo's ownership system. They complement structs: a `struct`
+contains a product of its stored values, while `enum` and `union` declarations
+contains one alternative from a closed set.
 
-There are no keyword labels on case payloads. Tuples do not have named
-elements, so `case source_range(start: Int, end: Int)` is not part of the
-model. If named fields are needed, you may define an explicit `struct` and use
-that as the payload (then destructure with struct patterns).
+## Algebraic data type model
 
-The associated state is part of the case itself rather than stored state common
-to the enum.
-
-Enums may have methods, conform to traits, and declare comptime values within
-them, but they may not have additional state, e.g. this is rejected by the
-compiler:
-
-```mojo
-enum Foo:
-    var timestamp: Int  # error: enums may not have additional state
-
-    case first(Int)
-    case second(String)
-```
-
-Rationale: This can already be expressed explicitly with composition, and
-allowing it would open a raft of semantic questions for initialization, pattern
-matching, etc. It is better to start narrow an extend later: for reference,
-Swift and Rust never have supported this.
-
-## Declaring Enum Cases
-
-Cases are introduced with the `case` keyword:
+Enums and unions are two kinds of nominal **algebraic data types**. Each has a
+statically known, closed set of cases, and each value has exactly one active
+case. They differ in whether those cases contain associated state:
 
 ```mojo
 enum Color:
-    case red
-    case green
-    case blue
+    case red, green, blue
+
+union Result[T: Movable, E: Movable](Movable):
+    case success(T)
+    case failure(E)
 ```
 
-Payload-bearing cases list a single unlabeled type (or an inline tuple):
+A `Color` value is one of three payload-free cases. A `Result[T, E]` value is
+either a `success` containing a `T` or a `failure` containing an `E`.
+
+Enums and unions may have methods, conform to traits, declare comptime values,
+and use generic parameters. They may not declare stored instance fields outside
+their cases:
+
+```mojo
+union WeirdResult[T: Movable, E: Movable](Movable):
+    var timestamp: Int  # error: unions may not have additional stored state
+
+    case success(T)
+    case failure(E)
+```
+
+Mojo does not allow this because shared stored state can already be expressed
+with composition. Allowing it directly would also introduce unnecessary
+questions about initialization, destruction, and access across cases. Swift and
+Rust follow the same restriction for their algebraic data types.
+
+## Enums
+
+An enum represents a fixed set of payload-free named values. Cases are
+introduced with `case` and may be grouped in comma-separated lists:
 
 ```mojo
 enum Color:
-    case rgb(Int, Int, Int)  # same as rgb(Tuple[Int, Int, Int])
+    case red, green, blue
 ```
 
-This syntax deliberately makes a case resemble the constructor it introduces,
-without inventing a parallel labeled-parameter model for payloads.
+Because no case has stored payload state, every enum automatically conforms to
+the standard value traits: `Deinitable`, `Movable`, `Copyable`,
+and `ImplicitlyCopyable` - you can opt-out of one of these with
+(e.g.) `not Movable` conformance if there is a reason to.
 
-For now, each case must be declared independently, but we can allow multiple
-cases in a single line, e.g. `case red, green, blue` in the future. Requiring
-`case` keeps the grammar and declaration model narrow, and leaves room for cases
-to independently acquire documentation, attributes, availability information, or
-other modifiers in the future.
+Enums can synthesize `Equatable`, `Comparable`, `Hashable`, and `Writable`
+conformances when requested in the conformance list. These conformances use the
+active case's identity: equality and ordering compare cases, hashing hashes the
+case, and formatting writes its case name.
 
-Associated values may use generic types:
-
-```mojo
-enum Optional[T: Fooable]:
-    case none
-    case some(T)
-```
-
-and multi-element payloads are just tuples:
-
-```mojo
-enum ParseResult[T: Fooable]:
-    case success(T, Int)           # Tuple[T, Int]
-    case failure(Int, String)      # Tuple[Int, String]
-```
-
-The payload type describes the stored state associated with that alternative.
-It is not a set of independent fields of the enclosing enum.
-
-## Constructing Enum Values
-
-An `enum` declaration is syntactic sugar for a `struct`, so we can explain how
-the pieces work through the code they synthesize. An enum case introduces a
-constructor-like member of its enum type. Payload-less cases can be referenced
-directly, through a generated `comptime`:
+Each enum case is a value, not a constructor. Code refers to it without
+parentheses:
 
 ```mojo
 var color = Color.red
+set_brush_color(.green)
 ```
 
-Payload-bearing cases are constructed using call syntax (this is just invoking
-a synthesized static method). Arguments are positional, matching the unlabeled
-payload type:
+Writing `Color.red()` is an error. Parentheses imply construction of a payload,
+and enum cases never have payloads.
+
+Enums are likely to grow integer-oriented capabilities familiar from C and
+C++, including explicit backing integer types and explicit values for cases.
+Those extensions do not change the core rule that an enum case is a
+payload-free value.
+
+## Unions
+
+A union represents a choice among payload-bearing alternatives. Every case
+declares exactly one payload type (though it may be a tuple) and each case must
+be declared separately:
 
 ```mojo
-var color = Color.rgb(255, 128, 0)
+union Result[T: Movable, E: Movable](Movable):
+    case success(T)
+    case failure(E)
 ```
 
-Similarly:
+Union cases always use parentheses in declarations and construction. An empty
+parenthesis list is the empty tuple payload:
 
 ```mojo
-var result = Result[Int, Error].success(42)
+union Poll[T: Movable](Movable):
+    case pending()
+    case ready(T)
+
+var pending = Poll[Int].pending()
+var ready = Poll[Int].ready(42)
 ```
 
-Case constructors already naturally work with contextual member inference,
-allowing the enum qualification to be omitted or shortened where the surrounding
-context determines the enum type. For example, this will “just work” like it
-does today for structs:
+Writing `Poll.pending` without parentheses produces an unapplied function for
+the constructor. This keeps union cases uniform: every case is a constructor and
+every constructed value contains a payload, even when that payload is the empty
+tuple.
+
+The parenthesis list is tuple-like: its elements define the payload type, and
+the case constructor accepts the corresponding values as arguments. The payload
+is one unlabeled type. As a convenience, several types inside the parentheses
+form a tuple payload:
 
 ```mojo
-setBrushColor(.red)
+union Token(Movable):
+    case eof()  # Payload has type Tuple[]
+    case identifier(String)  # Payload has type String
+    case integer(Int)  # Int
+    case source_range(Int, Int)  # Tuple[Int, Int]
 ```
 
-and:
+Payloads are positional and do not support keyword labels. For example,
+`case source_range(start: Int, end: Int)` is not part of the model. When a
+payload needs named fields, define a struct and use that struct as the payload:
 
 ```mojo
-setBrushColor(.rgb(255, 0, 0))
+@fieldwise_init
+struct SourceRange(Movable):
+    var start: Int
+    var end: Int
+
+union Token(Movable):
+    case eof()
+    case source_range(SourceRange)
 ```
+
+Generic types and constraints follow the normal rules for nominal types. The
+payload type describes the state associated with that case; it does not declare
+independent fields on the enclosing union.
 
 ## Matching and destructuring cases
 
-Enum cases introduce a corresponding kind of pattern that tests the active case
-and decomposes its associated state. For example:
+Enums and unions use the same case-pattern machinery. A case pattern first
+tests the active case. An enum pattern is complete at that point because an
+enum has no payload:
 
 ```mojo
 match color:
@@ -192,19 +204,25 @@ case .green:
 
 case .blue:
     print("blue")
-
-case .rgb(var r, var g, var b):
-    use(r, g, b)
 ```
 
-The case pattern first tests whether the value contains the specified
-enumerator. If so, its payload pattern is recursively applied to the case's
-single associated value. Multi-element payloads are tuples, so ordinary tuple
-patterns decompose them positionally:
+A union pattern also recursively applies its payload pattern to the active
+case's associated value:
+
+```mojo
+match result:
+case .success(var value):
+    use(value)
+case .failure(var error):
+    handle(error)
+```
+
+Multi-element union payloads are tuples, so ordinary tuple patterns decompose
+them positionally:
 
 ```mojo
 match some_token:
-case .eof:
+case .eof():
     ...
 case .identifier(value):
     ...
@@ -214,7 +232,7 @@ case .source_range(start, end):
     ...  # tuple pattern against Tuple[Int, Int]
 ```
 
-Keyword labels on the payload are not allowed—there are no labeled fields to
+Keyword labels on the payload are not allowed: there are no labeled fields to
 bind:
 
 ```mojo
@@ -225,26 +243,26 @@ To destructure by name, store a named struct as the payload and use a struct
 pattern:
 
 ```mojo
-struct SourceRange:
+@fieldwise_init
+struct SourceRange(Movable):
     var start: Int
     var end: Int
 
-enum Token:
-    case eof
+union Token(Movable):
+    case eof()
     case source_range(SourceRange)
 
 match some_token:
-case .source_range(SourceRange(start=x, end=y)):
+case .source_range({start=x, end=y}):
     ...
 ```
 
 The case pattern's payload subpatterns are ordinary **refutable patterns**. They
-are not specific to the `match` statement and should work in the proposed
-`if let` syntax as well:
+are not specific to the `match` statement and work with `if case` syntax:
 
 ```mojo
-if var .rgb(r, g, b) = color:
-    use(r, g, b)
+if case .success(var value) = result:
+    use(value)
 ```
 
 Case patterns compose recursively with all other pattern forms:
@@ -254,51 +272,48 @@ case .success([var first, *rest]):
     ...
 ```
 
-Likewise, enum cases themselves may contain enums or other destructurable types.
+Likewise, union payloads may contain enums, unions, or other destructurable
+types.
 
 The [pattern-matching proposal](pattern-matching.md) defines the general
-mechanics of pattern success, failure, binding, and control flow. Enums add
-another refutable pattern form to that system, implemented against the
-`EnumLike` trait described below.
+mechanics of pattern success, failure, binding, and control flow. Enums and
+unions add another refutable pattern form to that system, implemented against
+the `SumType` family of traits described below.
 
-### How enum pattern matching works
+### How pattern matching works
 
 From the programmer's point of view, there are two surface forms:
 
-1. **Case-only patterns** name an alternative with no parentheses:
-   `Optional.None`, `.red`, `Color.blue`. These succeed when the subject's
-   active case matches the name. They introduce no payload bindings.
-2. **Case-with-payload patterns** look like a call: `Optional.Some(ref elt)`,
-   `.rgb(var r, var g, var b)`. These succeed when the case matches **and**
-   the payload subpattern(s) match the associated value. A multi-element
-   payload is one tuple value, so several subpatterns are a tuple pattern.
+1. **Enum patterns** name a case without parentheses, such as `.red` or
+   `Color.blue`. They succeed when the subject's active case matches the name.
+2. **Union patterns** always include a payload pattern in parentheses, such as
+   `.success(ref value)` or `.pending()`. They succeed when the active case
+   matches and the payload pattern matches the associated value. A
+   multi-element payload is one tuple value, so several subpatterns form a
+   tuple pattern.
 
 A few rules follow from that split:
 
-- Cases with **no associated value** (payload type `NoneType`) must use the
-  case-only form. Writing `Optional.None()` or `Optional.None(value)` is an
-  error: there is nothing to destructure.
-- Cases **with** associated value require a payload pattern when parentheses
-  are used. `Optional.Some()` with empty parentheses is rejected; write
-  `Optional.Some(_)` to ignore the payload, or `Optional.Some` (case-only) to
-  test the discriminant without projecting it.
+- Enum cases reject parentheses because there is no payload to destructure.
+- Union cases require parentheses. Use `_` to ignore a payload or an empty
+  parenthesis list to match an empty-tuple payload.
 - Payload patterns are positional. There are no `name=` bindings against the
   case itself; use a struct payload when named fields are required.
-- Leading-dot forms (`.Some(ref x)`) resolve the case name against the
+- Leading-dot forms (`.success(ref x)`) resolve the case name against the
   subject's type, the same way contextual member lookup works for
   construction.
-- Qualified forms (`Optional.Some(ref x)`) require the type prefix to be the
-  subject's nominal type (unbound `Optional` may match `Optional[Int]`).
+- Qualified forms (`Result.success(ref x)`) require the type prefix to be the
+  subject's nominal type (unbound `Result` may match `Result[Int, Error]`).
 
-Under the hood, the compiler never special-cases the `enum` keyword when
-emitting these patterns. It asks whether the **subject type** conforms to
-`EnumLike`, then:
+Under the hood, the compiler does not need separate matching algorithms for
+`enum` and `union`. It asks whether the **subject type** conforms to `SumType`,
+then:
 
-1. Resolves the written case name (`.rgb` / `Color.rgb`) to a case index by
-   searching `_enum_case_names`.
-2. Emits a predicate comparing `_get_enum_discriminant()` to that index.
-3. If the pattern has payload subpatterns, projects the active payload with
-   `_unsafe_get_enum_payload[id]()` and recursively matches the payload
+1. Resolves the written case name (`.success` / `Result.success`) to a case
+   index by searching `_sum_case_names`.
+2. Emits a predicate comparing `_get_sum_discriminant()` to that index.
+3. For a union pattern, verifies `UnionLike`, projects the active payload with
+   `_unsafe_get_union_payload[id]()` and recursively matches the payload
    pattern against that projected value (short-circuiting so the payload is
    only projected when the discriminant matches).
 
@@ -314,86 +329,74 @@ case .some(ref element):
 borrow the payload rather than copying or moving it, subject to the usual
 ownership and exclusivity rules.
 
-Unknown case names (`Optional.Nope`) are diagnosed against `_enum_case_names`
-rather than ordinary member lookup: enum cases need not exist as real members
-of the type for matching to work (hand-written `EnumLike` conformances can
+Unknown case names (`Optional.Nope`) are diagnosed against `_sum_case_names`
+rather than ordinary member lookup: logical cases need not exist as real members
+of the type for matching to work (hand-written `SumType` conformances can
 expose logical cases that are not constructor APIs).
 
-## Methods, traits, and generic enums
+## Methods, traits, and generics
 
-Enums should be full nominal Mojo types rather than restricted tagged unions.
-
-They should support methods in the same way as structs:
-
-```mojo
-enum Color:
-    case red
-    case green
-    case blue
-    case rgb(Int, Int, Int)
-
-    def is_grayscale(self) -> Bool:
-        match self:
-        case .rgb(var r, var g, var b):
-            return r == g == b  # Mojo loves Python, woo!
-        case _:
-            return False
-```
-
-Likewise, enums should support trait conformance:
+Enums and unions are full nominal Mojo types. They support methods in the same
+way as structs:
 
 ```mojo
-enum Result[T: Movable, E: Movable](Movable):
-    case success(T)
-    case failure(E)
+enum Color(Equatable):
+    case red, green, blue
+
+    def is_red(self) -> Bool:
+        return self == .red  # Use the generated Equatable conformance.
 ```
 
-and generic parameters and constraints should work according to the normal rules
-for nominal types.
+They also support explicit trait conformance:
 
-More generally, enum declarations should support the same capabilities as struct
-declarations wherever doing so is semantically meaningful:
+```mojo
+union Things(Fooable):
+    case thing1(Int)
+    case thing2(String)
+
+    def foo(self):
+        print("foo'd")
+```
+
+Generic parameters and constraints follow the normal rules for nominal types.
+
+More generally, enum and union declarations support the same capabilities as
+struct declarations wherever doing so is semantically meaningful:
 
 - instance and static methods;
-- trait conformance and default implementation inheritance—e.g. enums should be
-  able to be `Equatable` when all their state is;
+- trait conformance and default implementation inheritance;
 - generic parameters and constraints;
-- comptime values / type aliases;
-- computed properties, nested declarations, etc (some day).
+- comptime values and type aliases;
+- computed properties and nested declarations.
 
 The important restriction is on **stored instance state**, not on the
 capabilities of the nominal type itself.
 
 This gives Mojo a simple guiding rule:
 
-> An enum differs from a struct primarily in how its instance state is declared.
-> Structs contain all of their stored fields simultaneously; enums contain the
-> associated state of exactly one case.
->
+> A struct contains all of its stored fields simultaneously. An enum contains
+> one payload-free named value. A union contains the payload of exactly one
+> active case.
 
 Everything else should reuse the normal Mojo type system as much as possible.
 
-## Ownership and Mutation
+## Ownership and mutation
 
-Enums should participate naturally in Mojo's ownership system.
-
-The ownership properties of an enum depend on the state that its cases may
-contain. For example:
+Enums and unions participate naturally in Mojo's ownership system. Enums have
+no payload ownership to manage. A union's ownership properties depend on the
+payloads that its cases may contain. For example:
 
 ```mojo
-enum Optional[T: Deinitable]:
-    case none
-    case some(T)
+union Result[T: Movable, E: Movable](Movable):
+    case success(T)
+    case failure(E)
 ```
 
-must correctly represent the ownership semantics of `T` when the `some` case is
-active.
+Moving a union moves the active payload. Destroying a union destroys the payload
+of the active case. Copyability similarly depends on whether all possible
+payloads support the required copying semantics.
 
-Moving an enum moves the active payload. Destroying an enum destroys the payload
-of the active case. Copyability should similarly depend on whether the possible
-associated values support the required copying semantics.
-
-An enum value may also be replaced with a value containing a different case:
+A union value may also be replaced with a value containing a different case:
 
 ```mojo
 var result = Result.success(value)
@@ -407,139 +410,146 @@ Pattern matching should provide the normal Mojo binding conventions for
 associated state. For example:
 
 ```mojo
-match value:
-case .some(ref element):
-    use(element)
+match result:
+case .success(ref value):
+    use(value)
+case .failure(ref error):
+    handle(error)
 ```
 
 should borrow the payload rather than copying or moving it.
 
-Similarly, mutable access to an enum payload should follow the same ownership
+Similarly, mutable access to a union payload should follow the same ownership
 and exclusivity rules as mutable access to ordinary stored state.
 
-## The `EnumLike` trait
+## The `SumType`, `EnumLike`, and `UnionLike` traits
 
-The `enum` syntax is syntactic sugar for introducing a sum type, but the
-underlying semantic abstraction is broader than syntactic enums. A type that has
-a finite set of mutually exclusive alternatives, each with a statically known
-payload shape, is **enum-like** regardless of how it was declared or
-represented.
-
-Mojo captures this abstraction with a built-in `EnumLike` trait:
+The `enum` and `union` syntax both introduce closed sets of cases, but the
+underlying semantic abstraction is broader than either syntax. Mojo captures it
+with three built-in traits:
 
 ```mojo
-trait EnumLike:
-    # These lists must have the same length.
-    comptime _enum_case_names: _MLIR.KGENParamListType[KGENString]
-    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType]
+# All enums and unions conform to this trait.
+trait SumType:
+    comptime _sum_case_names: _MLIR.KGENParamListType[KGENString]
 
-    comptime _enum_elt_type_for_case[id: Int]: AnyType = TypeList[
-        Self._enum_case_types
-    ]()[id]
-
-    def _get_enum_discriminant(self) -> Int:
+    def _get_sum_discriminant(self) -> Int:
         ...
+
+# Enums conform to this trait.
+trait EnumLike(SumType):
+    pass
+
+# Unions conform to this treait.
+trait UnionLike(SumType):
+    comptime _union_case_types: _MLIR.KGENParamListType[AnyType]
+
+    comptime _union_elt_type_for_case[id: Int]: AnyType = TypeList[
+        Self._union_case_types
+    ]()[id]
 
     # FIXME: Prefer an interior origin so payload refs preserve subject
     # mutability cleanly.
-    def _unsafe_get_enum_payload[
+    def _unsafe_get_union_payload[
         id: Int
-    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+    ](ref self) -> ref[self] TypeList[Self._union_case_types]()[id]:
         ...
 ```
 
-The compiler automatically synthesizes an `EnumLike` conformance for every
-`enum`, but the trait is not restricted to compiler-generated enum types.
-User-defined types may conform as well when they provide equivalent semantics.
-`Optional` is the motivating example: it is a struct (not spelled `enum`) that
-conforms to `EnumLike` so pattern matching can treat `None` / `Some` as logical
-cases:
+`SumType` describes the common behavior: a finite set of named alternatives
+and the active case's discriminant. Code generic over `SumType` can inspect or
+format the active case without caring whether the value was declared as an enum
+or union. `EnumLike` and `UnionLike` refine that common interface to preserve
+syntax-specific information for clients that need it, such as a pretty printer
+that prints a union payload but never tries to project one from an enum.
+
+The compiler synthesizes `SumType` and `EnumLike` conformances for every enum,
+and `SumType` and `UnionLike` conformances for every union. The traits are not
+restricted to compiler-generated algebraic data types. User-defined types may
+conform when they provide equivalent semantics. `Optional` is the motivating
+example: it is a struct that can conform to `UnionLike` so pattern matching can
+treat `None` and `Some` as logical cases:
 
 ```mojo
-struct Optional[T: Movable](Copyable, EnumLike):
+struct Optional[T: Movable](Copyable, UnionLike):
     ...
     # These lists must have the same length, and all discriminators must be
     # within the range.
-    comptime _enum_case_names = ParameterList.of[
+    comptime _sum_case_names = ParameterList.of[
         "None".value, "Some".value
     ].values
-    comptime _enum_case_types = TypeList.of[NoneType, Self.T].values
+    comptime _union_case_types = TypeList.of[Tuple[], Self.T].values
 
-    def _get_enum_discriminant(self) -> Int: ...
-    def _unsafe_get_enum_payload[id: Int](ref self) -> ...: ...
+    def _get_sum_discriminant(self) -> Int: ...
+    def _unsafe_get_union_payload[id: Int](ref self) -> ...: ...
 ```
 
 The runtime discriminant selects the active alternative:
 
 ```mojo
-Color.red._get_enum_discriminant() == 0
-Color.green._get_enum_discriminant() == 1
-Color.blue._get_enum_discriminant() == 2
-Color.rgb(1, 2, 3)._get_enum_discriminant() == 3
+Color.red._get_sum_discriminant() == 0
+Color.green._get_sum_discriminant() == 1
+Color.blue._get_sum_discriminant() == 2
+Result[Int, Error].success(42)._get_sum_discriminant() == 0
+Result[Int, Error].failure(error)._get_sum_discriminant() == 1
 ```
 
 The discriminant is a semantic case index, not necessarily a promise about the
 physical representation or ABI of the type. An implementation may use an
 explicit tag, a niche representation, or some other encoding while presenting
-the same `EnumLike` interface.
+the same `SumType` interface.
 
-Payload type `NoneType` means "this case has no associated value." That is how
-`Optional.None` is modeled, and it is what causes the pattern matcher to reject
-payload subpatterns for that case.
+### `SumType` as the basis for pattern matching
 
-### `EnumLike` as the basis for pattern matching
+Syntactic enums and unions should not be privileged by the pattern-matching
+implementation. The compiler implements case patterns in terms of `SumType`
+and, for union payload patterns, `UnionLike`.
 
-Syntactic enums should not be privileged by the pattern-matching
-implementation. The compiler implements enum-style refutable patterns in terms
-of `EnumLike`.
-
-When matching a subject whose type conforms to `EnumLike`, for example:
+When matching a subject whose type conforms to `SumType`, for example:
 
 ```mojo
-if .rgb(var r, var g, var b) = color:
-    ...
+if case .success(value) = result:
+    use(value)
 ```
 
 or:
 
 ```mojo
 match opt:
-case Optional.Some(ref elt):
+case Optional.Some(elt):
     use(elt)
-case Optional.None:
+case Optional.None():
     handle_missing()
 ```
 
-the compiler performs the steps in [How enum pattern matching
-works](#how-enum-pattern-matching-works): resolve the case name through
-`_enum_case_names`, compare `_get_enum_discriminant()`, and (when needed)
-project with `_unsafe_get_enum_payload[id]()` before recursively matching
-payload patterns.
+the compiler performs the steps in [How pattern matching
+works](#how-pattern-matching-works): resolve the case name through
+`_sum_case_names`, compare `_get_sum_discriminant()`, and, for a union payload
+pattern, project with `_unsafe_get_union_payload[id]()` before recursively
+matching payload patterns.
 
-This means the compiler's pattern-matching machinery operates on **enum-like
-types**, rather than special-casing declarations spelled with `enum`.
+This means the compiler's pattern-matching machinery operates on **sum types**,
+rather than special-casing declarations spelled with `enum` or `union`.
 
 ### Reflection and derived conformances
 
-The same interface provides a useful foundation for generic reflection. For
-example, an `Equatable` default implementation can notice `EnumLike` types and
-first compare the active cases:
+`SumType` provides a useful foundation for generic reflection. For example, an
+`Equatable` default implementation can first compare the active cases:
 
 ```mojo
-if lhs._get_enum_discriminant() != rhs._get_enum_discriminant():
+if lhs._get_sum_discriminant() != rhs._get_sum_discriminant():
     return False
 ```
 
-When the discriminants match, `_enum_case_types` identifies the payload type
-corresponding to that case, allowing the implementation to compare the
-associated state when that state is itself `Equatable`.
+When both values conform to `UnionLike` and their discriminants match,
+`_union_case_types` identifies the payload type, allowing the implementation to
+compare associated state when that state is itself `Equatable`.
 
-Similarly, `_enum_case_names` enables reflective operations that need a
-human-readable name for an alternative, such as formatting, debugging,
-serialization, or generic inspection:
+Similarly, `_sum_case_names` enables generic formatting, debugging,
+serialization, or inspection:
 
 ```mojo
-comptime name = T._enum_case_names[index]
+comptime name = T._sum_case_names[index]
 ```
 
 Other derived behaviors such as hashing or serialization can use the same
@@ -547,37 +557,38 @@ metadata.
 
 This gives the language a useful separation of concerns:
 
-- `enum` is convenient syntax for declaring a nominal sum type.
-- The compiler lowers that syntax onto Mojo's ordinary nominal-type machinery
-  and synthesizes an `EnumLike` conformance.
-- `EnumLike` defines the semantic and reflective interface for finite
-  alternatives.
-- Pattern matching is implemented against `EnumLike`, rather than giving
-  syntactic enums special treatment.
-- User-defined representations may participate in the same system by conforming
-  to `EnumLike` themselves (as `Optional` already does in the prototype).
+- `enum` declares a closed set of payload-free values and conforms to
+  `EnumLike`.
+- `union` declares a closed set of payload-bearing alternatives and conforms
+  to `UnionLike`.
+- Both refine `SumType`, which defines the common semantic and reflective
+  interface for finite alternatives.
+- Pattern matching is implemented against `SumType` and `UnionLike`, rather
+  than giving syntactic enums or unions special treatment.
+- User-defined representations may participate in the same system by
+  conforming to the appropriate trait or traits.
 
 This is consistent with the broader implementation philosophy of the proposal:
-enums should introduce useful high-level syntax and synthesized machinery
-without creating a parallel type system underneath Mojo.
+enums and unions should introduce useful high-level syntax and synthesized
+machinery without creating a parallel type system underneath Mojo.
 
-## Other Implementation Details
+## Other implementation details
 
-At the language implementation level, an `enum` should be treated as **syntactic
-sugar for a struct with compiler-synthesized state and members**. This means
-that it should become a `StructDeclOp` in the compiler—we don’t need a distinct
-`EnumDeclOp`. Swift got this wrong, and it was the source of many challenges
-over the years.
+At the language implementation level, enums and unions should be treated as
+**syntactic sugar for structs with compiler-synthesized state and members**.
+They should become `StructDeclOp` operations in the compiler; they do not
+require distinct declaration operations. Swift's use of distinct declaration
+machinery caused avoidable implementation complexity.
 
 For example:
 
 ```mojo
-enum Optional[T]:
-    case none
+union Optional[T: Movable](Movable):
+    case none()
     case some(T)
 
     def has_value(self) -> Bool:
-        if .some(_) = self:
+        if case .some(_) = self:
             return True
         return False
 ```
@@ -597,60 +608,36 @@ struct Optional[T]:
     def has_value(self) -> Bool: ...
 ```
 
-The important point is the **semantic lowering model**: an enum does not require
-an entirely separate kind of nominal type throughout the compiler.
+The important point is the **semantic lowering model**: an enum or union does
+not require an entirely separate kind of nominal type throughout the compiler.
 
 This implementation strategy has several advantages:
 
 - Existing machinery for nominal types, generics, trait conformance, methods,
   visibility, and member lookup can be reused unchanged.
 - Ownership semantics can be expressed through synthesized operations rather
-  than building a parallel ownership system for enums.
-- Improvements to struct capabilities naturally apply to enums where
-  appropriate.
-- Enum-specific compiler machinery can remain focused on case representation,
-  case transitions, and pattern decomposition.
-- The surface language maintains a strong distinction between structs and enums
-  even though their implementation shares substantial infrastructure.
+  than building a parallel ownership system for unions.
+- Improvements to struct capabilities naturally apply to enums and unions
+  where appropriate.
+- Algebraic-data-type-specific compiler machinery can remain focused on case
+  representation, case transitions, and pattern decomposition.
+- The surface language maintains a strong distinction among structs, enums,
+  and unions even though their implementations share substantial
+  infrastructure.
 - This is easy to implement!
 
-In this sense, `enum` is analogous to other high-level language features that
-synthesize otherwise tedious or unsafe implementation details. The syntax
-provides a concise and semantically meaningful way to declare a sum type while
-allowing the compiler to lower it onto Mojo's existing nominal-type
-infrastructure.
+In this sense, `enum` and `union` are analogous to other high-level language
+features that synthesize otherwise tedious or unsafe implementation details.
+The syntax provides concise and semantically meaningful ways to declare
+algebraic data types while allowing the compiler to lower them onto Mojo's
+existing nominal-type infrastructure.
 
-## Initial Restrictions and Future Directions
+### Future consideration: control over layout and discriminators
 
-The initial enum design should intentionally remain narrow.
-
-In particular:
-
-- Every alternative is explicitly introduced with `case`.
-- Enum instance storage comes exclusively from case-associated values.
-- Enums do not contain additional stored instance fields.
-- Cases form a closed set known to the compiler.
-- Cases may carry a single unlabeled payload (including an inline tuple type).
-  Named payload fields require an explicit struct type.
-- Enums otherwise support normal nominal-type capabilities such as methods,
-  traits, and generics.
-- The physical representation of an enum is unspecified by default. Let’s not
-  worry about C interop or other advanced features.
-- Enum case patterns integrate with Mojo's general pattern system rather than
-  introducing separate destructuring semantics.
-
-Starting from a smaller semantic core is intentional. A closed sum type with
-associated state, normal nominal-type capabilities, and integration with Mojo's
-ownership and pattern systems provides the important functionality while keeping
-the language and implementation model straightforward. More specialized
-capabilities can be added later without weakening that foundation.
-
-### Future consideration: Control over layout and discriminators
-
-The initial proposal provides a pure algebraic data type. Languages like C and
-C++ use a very different model, which is nonetheless very useful - enums can
-have specified discriminator values, and supports efficient casts to integer
-values, and support a specifier for layout information. For example:
+The initial proposal leaves enum representation unspecified. A subsequent
+extension should support the useful C and C++ capabilities of explicit backing
+integer types, explicit case values, and efficient integer conversions. For
+example:
 
 ```C++
 enum MyColors : int32_t {
@@ -660,10 +647,10 @@ enum MyColors : int32_t {
 }
 ```
 
-The base proposal doesn't include such affordances, but they can be layered on
-top when and if demand appears and the complexity is justified. Mojo doesn't
-currently provide fine-grain control of struct layout, which is something that
-should be tackled exposing layout control for enums.
+These capabilities can be layered on without changing the rule that enum cases
+never carry payloads. Mojo does not currently provide fine-grained control of
+struct layout; that broader problem should be addressed before exposing layout
+control for enums.
 
 Note that C also supports "enums as random collections of values", such as:
 
@@ -679,29 +666,44 @@ This is a fundamentally different construct than an algebraic data type. Mojo
 supports such concepts with existing `comptime` values, enums do not need to
 provide support for this use-case.
 
-### Future consideration: Recursive/indirect enum cases
+### Future consideration: recursive and indirect union cases
 
 The initial proposal doesn't provide support for
-[Swift-style indirect enum cases](https://www.hackingwithswift.com/example-code/language/what-are-indirect-enums).
+[Swift-style indirect cases](https://www.hackingwithswift.com/example-code/language/what-are-indirect-enums).
 
-We can evaluate adding such a thing in the future, but it would be preferred to
-express this with existing language features if possible, e.g.:
+We can evaluate adding such a feature in the future, but existing language
+features are preferable when they can express the same structure:
 
 ```mojo
-enum LinkedListItem[T: Copyable] {
-    case endPoint(T)
-    case linkNode(T, HeapBox[LinkedListItem])
-}
+union LinkedListItem[T: Copyable](Copyable):
+    case end_point(T)
+    case link_node(T, HeapBox[LinkedListItem])
 ```
 
-### Future consideration: Anonymous Sum Types
+### Future consideration: caseless enums and `Never`
+
+An enum with no cases has no possible value:
+
+```mojo
+enum Never:
+    pass
+```
+
+This is the natural language-level representation of an impossible value. It
+could replace the current compiler-specific `kgen` handling of `Never`, letting
+the language and standard library model non-returning functions, unreachable
+control-flow paths, and impossible pattern branches with an ordinary caseless
+enum. A caseless enum cannot synthesize `Defaultable` because no default value
+exists.
+
+### Unlikely future consideration: anonymous sum types
 
 Note: This is specifically NOT part of the initial proposal. This is included to
-sketch out a possible next step that can only be considered after the basic
-proposal lands and settles.
+address a frequently discussed possible next step that can only be considered
+after the basic proposal lands and settles.
 
 One possible extension is to allow **anonymous sum types** directly in type
-position, rather than requiring every sum type to have a nominal `enum`
+position, rather than requiring every sum type to have a nominal enum or union
 declaration.
 
 For example, we could imagine writing:
@@ -715,8 +717,7 @@ rather than declaring a named type:
 
 ```mojo
 enum LightState:
-    case on
-    case off
+    case on, off
 
 def activate_light(state: LightState):
     ...
@@ -732,8 +733,8 @@ type—conceptually something like `Enum[...]`—and desugar the anonymous synta
 into an instantiation of it: `.on | .off`.  This could conceptually become
 something like: `Enum["on", "off"]`.
 
-However, this becomes substantially more complicated once the cases are expected
-to behave like normal enum cases.
+However, this becomes substantially more complicated once the cases are
+expected to behave like normal enum or union cases.
 
 For example:
 
@@ -744,7 +745,7 @@ def activate_light(state: .on | .off):
 
 requires `.on` to participate in contextual member lookup even though there is
 no nominal declaration containing an `on` member. This can be supported with a
-suitable implementation of `Enum.__getattr__` , but would be complicated.
+suitable implementation of `Enum.__getattr__`, but would be complicated.
 
 Payload-bearing cases make this more challenging:
 
@@ -760,8 +761,8 @@ this particular structural sum type, understand its parameter list, produce
 useful diagnostics for misspelled cases, and make the same information available
 to pattern matching and reflection.
 
-Anonymous sum types also raise broader questions that nominal enums answer
-naturally:
+Anonymous sum types also raise broader questions that nominal enums and unions
+answer naturally:
 
 - What is the concrete syntax, how do we handle the ambiguities?
 - What determines whether two anonymous sum types are the same type?
@@ -771,7 +772,7 @@ naturally:
 - How do documentation and diagnostics refer to the type?
 - Where do methods or trait conformances live?
 - How does contextual lookup find case constructors?
-- How do anonymous cases participate in reflection and `EnumLike` metadata?
+- How do anonymous cases participate in reflection and `SumType` metadata?
 - How do source and ABI stability work when an alternative is added or
   reordered?
 
@@ -780,7 +781,7 @@ fact, they could eventually be a useful lightweight facility, particularly for
 APIs whose alternatives have no meaningful identity outside of a single
 signature.
 
-However, they are orthogonal to the fundamental enum feature and require
-considerably more type-system and member-lookup machinery than nominal enums. If
-there is enough well-motivated demand, we can investigate adding this in the
-future.
+However, they are orthogonal to the fundamental enum and union features and
+require considerably more type-system and member-lookup machinery than nominal
+types. If there is enough well-motivated demand, we can investigate adding this
+in the future.

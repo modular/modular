@@ -79,7 +79,7 @@ def _launch_norm_full[
     out_ptr: MutPointer[Scalar[in_dtype], MutAnyOrigin],
     gamma_ptr: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
     rows: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Standalone RMSNorm over the full `[rows, num_cols]` tensor (M3
     input_layernorm is replicate -> norms all `rows` on every GPU). Fixed
@@ -114,7 +114,7 @@ def _verify_results[
     num_cols: Int,
 ](
     num_rows: Int,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_shards: List[CacheBustingBuffer[in_dtype]],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
@@ -294,7 +294,7 @@ def bench_allgather_rmsnorm[
     quantize: Bool = False,
     cache_busting: Bool = True,
     verify: Bool = True,
-](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext[]]) raises:
     comptime assert (
         not quantize
     ), "all-gather+RMSNorm baseline is bf16-only (quantize=False)"
@@ -479,11 +479,11 @@ def bench_allgather_rmsnorm[
     # ===== Variant 1: all-gather only -> t_AG =====
     @inline(.always)
     def bench_ag_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_shards, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_shards, imm}:
             _rebuild_shards(cache_iter, in_shards)
             # Rebuild per-rank all-gather output views (into ag_full) for the timed AG.
@@ -518,10 +518,10 @@ def bench_allgather_rmsnorm[
     # ===== Variant 2: standalone RMSNorm on a cold full tensor -> t_norm =====
     @inline(.always)
     def bench_norm_cold_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
         @inline(.always)
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn(ctx_inner: DeviceContext[], cache_iter: Int) raises {imm}:
             if num_rows > 0:
                 _launch_norm_full[
                     in_dtype, num_cols, epsilon, weight_offset_f32
@@ -546,11 +546,11 @@ def bench_allgather_rmsnorm[
     # ===== Variant 3: AG then RMSNorm on the live gathered output -> t_chained =
     @inline(.always)
     def bench_chained_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_shards, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_shards, imm}:
             _rebuild_shards(cache_iter, in_shards)
             # Rebuild per-rank all-gather output views (into ag_full) for the timed AG.
@@ -595,11 +595,11 @@ def bench_allgather_rmsnorm[
     # ===== Variant 4: fused all-gather + RMSNorm kernel -> t_fused =====
     @inline(.always)
     def bench_fused_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_shards, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_shards, imm}:
             _rebuild_shards(cache_iter, in_shards)
             allgather_rmsnorm(
@@ -626,10 +626,10 @@ def bench_allgather_rmsnorm[
     # ===== Variant 5: shape-gated dispatch =====
     @inline(.always)
     def bench_dispatch_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
         @inline(.always)
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn(ctx_inner: DeviceContext[], cache_iter: Int) raises {imm}:
             var in_shards = Array[ShardType, ngpus](uninitialized=True)
             _rebuild_shards(cache_iter, in_shards)
 
@@ -734,7 +734,7 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 

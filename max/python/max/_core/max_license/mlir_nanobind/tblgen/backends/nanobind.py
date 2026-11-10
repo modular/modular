@@ -37,6 +37,7 @@ from ..types import (
     Op,
     OpBuilder,
     OpInterface,
+    OptionalAttr,
     Parameter,
     Pass,
     Signature,
@@ -50,8 +51,24 @@ from ..types import (
 from . import infer_type_op_builders
 
 
-def annotation(arg: Arg):  # noqa: ANN201
+def builder_arg_cpp_type(arg: Arg) -> str:
+    """The C++ parameter type a builder takes for `arg`. An ``OptionalAttr``
+    arrives as ``std::optional`` so Python can pass ``None`` for an absent
+    attribute; ``create_op`` unwraps it to the null attribute the ODS builder
+    expects."""
+    if isinstance(arg.entry, OptionalAttr):
+        return f"std::optional<{arg.type.cpp}>"
+    return arg.type.cpp
+
+
+def annotation(arg: Arg, *, may_default: bool = True):  # noqa: ANN201
+    """``nb::arg`` for one builder parameter. An ``OptionalAttr`` accepts
+    ``None``, and defaults to it when every later parameter has a default
+    too; Python rejects a default followed by a required parameter."""
     annotation = f"""nb::arg("{python_variable_name(arg.name)}")"""
+    if isinstance(arg.entry, OptionalAttr):
+        annotation = f"{annotation}.none()"
+        return f"{annotation} = nb::none()" if may_default else annotation
     if isinstance(arg.entry, CArg):
         default = arg.entry.default
         default_value = (
@@ -66,7 +83,17 @@ def annotation(arg: Arg):  # noqa: ANN201
 def annotations_(
     args: Iterable[Arg],
 ) -> str:  # from __future__ import annotations
-    return ", ".join(annotation(arg) for arg in args)
+    args = list(args)
+    return ", ".join(
+        annotation(
+            arg,
+            may_default=all(
+                isinstance(later.entry, (OptionalAttr, CArg))
+                for later in args[i + 1 :]
+            ),
+        )
+        for i, arg in enumerate(args)
+    )
 
 
 def docstring(doc: str) -> str:
@@ -213,7 +240,7 @@ class NanobindBackend(Backend):
 
         if not is_infer_type_op_overload:
             def_args = [
-                f"nb::new_(&create_op<{op.type.cpp}, {', '.join(a.type.cpp for a in args)}>)",
+                f"nb::new_(&create_op<{op.type.cpp}, {', '.join(builder_arg_cpp_type(a) for a in args)}>)",
                 'nb::arg("builder")',
                 annotations_(args),
             ]

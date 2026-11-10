@@ -1,0 +1,254 @@
+---
+title: Distributed tensors
+sidebar_label: Distributed tensors
+pagination_label: Distributed tensors
+description: Learn what a distributed tensor is in MAX, how its global shape relates to the per-device shards, and what each placement records.
+---
+
+A distributed tensor is logically an N-dimensional array whose data can be laid
+out on one or more devices. Use one to split data and computation across devices
+while your code continues to refer to one global array. MAX uses the same
+[`Tensor`](/api/python/generated/max.tensor.Tensor/) abstraction for
+distributed and non-distributed tensors, so ops and eager layers accept both.
+
+Each device holds a local shard. When you call an op, MAX records it in a
+computation graph. The executor can run a supported graph through the
+interpreter or compile the graph and run the resulting model. The runtime
+launches each kernel on one device with the local buffers for that device's
+shard. A collective such as
+[`allreduce_sum()`](/api/python/functional/#max.functional.allreduce_sum)
+communicates across devices to combine their values.
+[`Tensor.shape`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.shape)
+reports each axis's global size when the placements define one, and
+[`Tensor.local_shards`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.local_shards)
+returns the per-device tensors and their local shapes.
+
+A [`DeviceMesh`](/api/python/generated/max.tensor.sharding.DeviceMesh/)
+describes the devices and their axes. A placement describes how the data is laid
+out on one mesh axis: devices can hold the same copy, slices along a tensor
+axis, terms of a sum, or values with no established relation. A
+[`DeviceMapping`](/api/python/generated/max.tensor.sharding.DeviceMapping/)
+combines a mesh with one placement per mesh axis. It serves as the multi-device
+counterpart of a [`Device`](/api/python/generated/max.driver.Device/) in APIs
+that create or move tensors.
+
+To compare a sharded result with an unsharded run, gather it first:
+[`materialize()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.materialize)
+allreduces [`Partial`](/api/python/generated/max.tensor.sharding.Partial/) axes
+and allgathers [`Sharded`](/api/python/generated/max.tensor.sharding.Sharded/)
+ones, and
+[`to_numpy()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to_numpy)
+does the same.
+
+## Global shape and local shards
+
+Mesh axes use labels such as `tp` for tensor parallelism and `dp` for data
+parallelism. This example splits 8 rows across 2 CPU devices:
+
+```python
+from max.driver import CPU
+from max.functional import full
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
+
+mesh = DeviceMesh((CPU(), CPU()), (2,), ("tp",))
+x = full([8, 4], 1.0, device=DeviceMapping(mesh, (Sharded(0),)))
+
+print("distributed:", x.is_distributed)
+print("shards:", x.num_shards)
+for shard in x.local_shards:
+    print(tuple(int(d) for d in shard.shape))
+```
+
+```output
+distributed: True
+shards: 2
+(4, 4)
+(4, 4)
+```
+
+`x.shape` reports the global shape, so `x.shape[0]` equals `8` even though each
+device holds 4 rows. The axis prints as `8`, and comparing it with an integer or
+another [`Dim`](/api/python/generated/max.graph.Dim/) works. It's a
+[`PerShardDim`](/api/python/generated/max.tensor.sharding.per_shard_dim.PerShardDim/),
+which records the global size and each device's size. `local_shards` returns one
+unsharded tensor per device, and each reports the per-device shape. When the
+split doesn't divide the axis, the shards differ in size, as
+[Uneven shards](#uneven-shards) shows.
+
+## What a placement means
+
+A placement describes the relation between the per-device values on one mesh
+axis and the tensor. The following table lists the placements.
+
+| Placement                                                             | Meaning                                                                                                                                                                                                                                                         |
+|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`Replicated`](/api/python/generated/max.tensor.sharding.Replicated/) | Every device on the axis stores a full copy                                                                                                                                                                                                                     |
+| [`Sharded`](/api/python/generated/max.tensor.sharding.Sharded/)       | The tensor axis splits across the devices on the mesh axis                                                                                                                                                                                                      |
+| [`Partial`](/api/python/generated/max.tensor.sharding.Partial/)       | Each device stores one term of a sum over the mesh axis                                                                                                                                                                                                         |
+| [`Unknown`](/api/python/generated/max.tensor.sharding.Unknown/)       | Per-device values with no established relation between them; an op without a sharding rule returns this placement, and [`rebind_mapping()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.rebind_mapping) or a collective establishes the relation |
+
+A mapping can give each mesh axis a different placement. On a mesh with `dp`
+and `tp` axes, an activation can split its batch along `dp` and stay whole
+along `tp`.
+
+## A tensor's shards
+
+[`is_distributed`][tensor-is-distributed]
+tells you whether the tensor's mesh holds more than one device, whatever the
+placement, and `local_shards` gives one unsharded tensor per device: that
+device's part of the tensor, which is the whole tensor only when every mesh axis
+is replicated or the tensor sits on one device.
+[`visualize()`](/api/python/generated/max.tensor.sharding.visualize/) draws a
+tensor's mapping across a mesh. Pass a dictionary to compare placements side by
+side. This example uses
+[`TensorLayout`](/api/python/generated/max.tensor.sharding.TensorLayout/)
+values to describe each placement without allocating tensor data:
+
+```python
+from max.driver import CPU
+from max.dtype import DType
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Placement,
+    Sharded,
+    TensorLayout,
+    Unknown,
+    visualize,
+)
+
+mesh = DeviceMesh((CPU(), CPU()), (2,), ("tp",))
+
+
+def layout(placement: Placement) -> TensorLayout:
+    return TensorLayout(
+        DType.float32, [8, 4], DeviceMapping(mesh, (placement,))
+    )
+
+
+visualize(
+    {
+        "sharded": layout(Sharded(0)),
+        "partial": layout(Partial()),
+        "unknown": layout(Unknown()),
+    },
+    tree=False,
+)
+```
+
+The visualization distinguishes `Partial` and `Unknown` cells from sharded
+cells. A `Partial` cell represents terms of a sum across devices; an `Unknown`
+cell represents values with no established relation across devices:
+
+```output
+sharded: [8, 4] Sharded(axis=0)   partial: [8, 4] Partial()   unknown: [8, 4] Unknown()
+┌──────────┐                      ┌────────────────┐          ┌────────────────┐
+│ device 0 │                      │  devices 0,1   │          │  devices 0,1   │
+│ [:4, :]  │                      │ [:, :] partial │          │ [:, :] unknown │
+├──────────┤                      └────────────────┘          └────────────────┘
+│ device 1 │
+│ [4:, :]  │
+└──────────┘
+```
+
+## Uneven shards
+
+The shards on a mesh axis share one shape only when the number of devices
+splitting a tensor axis divides that axis's size. For a static dimension, MAX
+gives every device the axis size divided by the device count, rounded down, and
+the first devices take one more each until the remainder runs out. A tensor axis
+that several mesh axes split is one split over every device they span, in
+row-major device order. `Sharded(0)` on both axes of a 2x2 mesh splits 10 rows
+four ways:
+
+```python
+from max.driver import CPU
+from max.functional import full
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
+
+mesh = DeviceMesh((CPU(),) * 4, (2, 2), ("dp", "tp"))
+x = full([10, 4], 1.0, device=DeviceMapping(mesh, (Sharded(0), Sharded(0))))
+
+print("rows:", x.shape[0])
+for i, shard in enumerate(x.local_shards):
+    print(f"device {i}:", tuple(int(d) for d in shard.shape))
+```
+
+```output
+rows: 10
+device 0: (3, 4)
+device 1: (3, 4)
+device 2: (2, 4)
+device 3: (2, 4)
+```
+
+`x.shape[0]` reports the global 10 rows, and each entry of `local_shards`
+reports the rows its device holds.
+
+## Resharding
+
+A reshard changes the placement of a tensor's values on its mesh. For example,
+changing from `Sharded` to `Replicated` gathers the shards onto every device,
+and changing `Partial` to `Replicated` sums their terms. These transitions can
+require communication between devices. Use
+[`transfer_to()`](/api/python/functional/#max.functional.transfer_to) to
+request a target `DeviceMapping` explicitly.
+
+An op's sharding rule describes the input placements it accepts and the output
+placements it produces. MAX chooses a placement plan from that rule. If the
+plan requires an input placement different from the current placement, MAX must
+reshard that input before the op can run.
+[`auto_reshard()`](/api/python/generated/max.tensor.sharding.auto_reshard/)
+controls how MAX handles a reshard selected for an op inside its block:
+
+| Mode       | Behavior when the selected plan reshards an input                      |
+|------------|------------------------------------------------------------------------|
+| `"silent"` | Performs the reshard without a message                                 |
+| `"warn"`   | Performs the reshard and emits a `UserWarning` that describes the move |
+| `"raise"`  | Rejects the reshard and raises `ShardingError` before the op runs      |
+
+Outside an `auto_reshard()` block, MAX allows the transitions in
+[`DEFAULT_TRANSITIONS`](/api/python/generated/max.tensor.sharding.DEFAULT_TRANSITIONS/)
+and uses the `"raise"` mode. An op raises
+[`ShardingError`](/api/python/generated/max.tensor.sharding.ShardingError/) in
+every mode when no placement plan uses the allowed transitions.
+
+## Host-side access
+
+Host-side accessors such as
+[`type`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.type),
+[`storage`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.storage),
+[`state`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.state),
+[`device`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.device),
+and
+[`driver_tensor`][tensor-driver-tensor]
+raise on a distributed tensor. `await x`, `bool(x)`, `x.__dlpack__()`, and
+`x.__dlpack_device__()` also raise, and
+[`item()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.item)
+raises unless the tensor is fully replicated. This example accesses `x.device`
+on the distributed tensor from [Global shape and local
+shards](#global-shape-and-local-shards):
+
+```python
+try:
+    print(x.device)
+except ValueError as error:
+    print(error)
+print("devices:", len(x.mesh.devices))
+```
+
+```output
+Cannot access single device on a distributed tensor spanning 2 devices. Use tensor.mesh.devices instead.
+devices: 2
+```
+
+## Next steps
+
+- [Parallelism strategies](/serve/parallelism/#supported-strategies):
+  tensor, data, and expert parallelism at serve time.
+- [Tensor parallelism](/serve/parallelism/#tensor-parallelism): how
+  `--devices` splits a served model across the GPUs you name.
+
+[tensor-driver-tensor]: /api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.driver_tensor
+[tensor-is-distributed]: /api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.is_distributed

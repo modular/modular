@@ -22,15 +22,15 @@ from typing import Any
 from max import tree
 from max.graph import Graph, TensorValue, Type, Value, ops
 from max.graph import Module as GraphModule
-from max.nn.legacy.attention import AttentionWithRope
-from max.nn.legacy.conv import Conv2d
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.conv import Conv2d
+from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.norm import RMSNorm

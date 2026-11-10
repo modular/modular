@@ -15,29 +15,30 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import ClassVar
 
 from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
-from max.nn.common_layers.mesh_axis import DP
+from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
-from max.pipelines.speculative.driver import gather_variable_rows
+from max.pipelines.speculative.driver import (
+    gather_variable_rows,
+)
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import (
     DeviceMapping,
@@ -77,6 +78,59 @@ def mask_padded_tail(
         shape=[vocab_size - unpadded_vocab_size],
     )
     return logits + F.cast(F.concat([keep, drop]), logits.dtype)
+
+
+def replica_size(mesh: DeviceMesh) -> int:
+    """Returns the devices one data-parallel replica spans.
+
+    It is the ``tp`` axis of a ``(dp, tp)`` mesh, else one device.
+    """
+    return mesh.axis_size(TP) if TP in mesh.axis_names else 1
+
+
+def _replica_rows_on_first_device(t: Tensor, mesh: DeviceMesh) -> Tensor:
+    """Concatenates each replica's rows on the mesh's first device.
+
+    ``t`` is replicated over the ``tp`` axis; each replica's first device's
+    copy moves to the first device, in replica order.
+    """
+    group = replica_size(mesh)
+    first = mesh.devices[0]
+    rows = [
+        t.local_shards[r * group].to(first)
+        for r in range(mesh.num_devices // group)
+    ]
+    return F.concat(rows, axis=0)
+
+
+def replica_context_lengths(
+    batch_context_lengths: Sequence[Tensor], mesh: DeviceMesh
+) -> Tensor:
+    """Places the host context lengths on a host mirror of ``mesh``.
+
+    The lengths come one per replica, or, on a ``(dp, tp)`` mesh, one per
+    device, each holding its replica's (as the decoder's
+    ``batch_context_lengths`` input types declare them). Of ``count``
+    lengths, device ``i`` reads entry ``i // (mesh.num_devices // count)``.
+    The host mesh has ``mesh``'s shape and axis names, so the attention
+    layers address it like their device mesh.
+    """
+    count = len(batch_context_lengths)
+    if mesh.num_devices % count:
+        raise ValueError(
+            f"{count} context lengths do not split the "
+            f"{mesh.num_devices} devices of {mesh}"
+        )
+    group = mesh.num_devices // count
+    cpu_mesh = DeviceMesh(
+        tuple(CPU() for _ in range(mesh.num_devices)),
+        mesh.mesh_shape,
+        mesh.axis_names,
+    )
+    return Tensor.from_shard_values(
+        [batch_context_lengths[i // group] for i in range(mesh.num_devices)],
+        DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
+    )
 
 
 def rotary_embedding(config: DeepseekV3_2Config) -> RotaryEmbedding:
@@ -148,8 +202,14 @@ class DeepseekV3_2TextModel(
 
         self.rope = rotary_embedding(config)
 
-        # Override the tensor parallel axis if data parallelism is enabled.
-        tp_axis = DP if config.data_parallel_degree > 1 else None
+        # One device per replica shards the vocabulary over the ``dp`` axis;
+        # replicas of several devices shard it over their ``tp`` axis.
+        tp_axis = (
+            DP
+            if config.data_parallel_degree > 1
+            and (config.mesh is None or TP not in config.mesh.axis_names)
+            else None
+        )
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
             dim=config.hidden_size,
@@ -227,7 +287,7 @@ class DeepseekV3_2TextModel(
             assert input_row_offsets_i64 is not None
             assert self.mesh is not None
             batch_placement = tuple(
-                Sharded(0) if name == "dp" else Replicated()
+                Sharded(0) if name == DP else Replicated()
                 for name in self.mesh.axis_names
             )
             h, input_row_offsets = split_replicated_batch(
@@ -236,6 +296,7 @@ class DeepseekV3_2TextModel(
                 input_row_offsets_i64,
                 data_parallel_splits,
                 DeviceMapping(self.mesh, batch_placement),
+                group_size=replica_size(self.mesh),
             )
 
         freqs_cis = F.cast(self.rope.freqs_cis, h.dtype)
@@ -278,9 +339,20 @@ class DeepseekV3_2TextModel(
                 indexer_slots[idx], DType.uint32, device=CPU()
             )
             call: Callable[..., tuple[Tensor, ...]] = layer
+            group = "shared" if layer.self_attn.skip_topk else "full"
             if isinstance(layer.mlp, QuantizedMoE):
-                group = "shared" if layer.self_attn.skip_topk else "full"
                 call = as_subgraph(layer, name=f"moe_block_{group}")
+            elif self.config.decode_context_parallel_degree > 1:
+                # The memory planner gives the top-level graph one pool that
+                # lives for the whole forward, and an inline block's
+                # transients land in it. Under DCP every rank attends all
+                # heads, so a dense block's peak is ~14 GiB at a 32K-token
+                # prefill: inline, that is held through all 78 layers on top
+                # of each MoE block's own pool, and the step no longer fits.
+                # As a subgraph call it is planned and freed per call. The
+                # name is the body's identity, so it carries the indexer
+                # group as the MoE blocks' does.
+                call = as_subgraph(layer, name=f"dense_block_{group}")
             # A block takes the next block's weight as an argument, since
             # a shared subgraph resolves only its own weights.
             next_input_gamma = (
@@ -309,8 +381,13 @@ class DeepseekV3_2TextModel(
         outputs: list[Tensor] = []
         if self.emit_last_token_logits:
             last_token_h = gather_last_tokens(h, input_row_offsets)
-            if self.config.data_parallel_degree > 1:
-                last_token_h = F.allgather(last_token_h)
+            # Replicas of one device gather their rows before the vocabulary
+            # projection; replicas of several gather their logits after it
+            # (see :func:`project_to_logits`).
+            if self.config.data_parallel_degree > 1 and (
+                self.mesh is None or replica_size(self.mesh) == 1
+            ):
+                last_token_h = F.allgather(last_token_h, mesh_axis=DP)
             outputs.append(self._project(last_token_h))
         if self.return_logits is ReturnLogits.VARIABLE:
             outputs.extend(
@@ -356,16 +433,6 @@ class DeepseekV3_2TextModel(
                 f"return_hidden_states={self.return_hidden_states} is not "
                 "implemented on ModuleV3."
             )
-        if (
-            self.return_logits is ReturnLogits.VARIABLE
-            or self.return_hidden_states is not ReturnHiddenStates.NONE
-        ) and self.config.data_parallel_degree > 1:
-            # Each replica would hold only its own rows; the graph-API model
-            # allgathers them, which is not built here yet.
-            raise NotImplementedError(
-                "VARIABLE logits and hidden-state outputs require "
-                "data_parallel_degree=1 on ModuleV3."
-            )
         if not self.emit_last_token_logits and (
             self.return_logits is not ReturnLogits.VARIABLE
         ):
@@ -387,8 +454,14 @@ class DeepseekV3_2TextModel(
         self, h: Tensor, input_row_offsets: Tensor, return_n_logits: Tensor
     ) -> tuple[Tensor, Tensor]:
         assert self.mesh is not None
+        # Under data parallelism each replica holds only its own rows, and
+        # the vocab-sharded head needs the whole batch on every device.
         variable_h, offsets = gather_variable_rows(
-            h, input_row_offsets, return_n_logits, self.mesh
+            h,
+            input_row_offsets,
+            return_n_logits,
+            self.mesh,
+            data_parallel_degree=self.config.data_parallel_degree,
         )
         return self._project(variable_h), offsets
 
@@ -405,9 +478,17 @@ def project_to_logits(
 
     Vocabulary rows at or past ``unpadded_vocab_size`` are masked to negative
     infinity.
+
+    On a ``(dp, tp)`` mesh ``h`` holds each replica's own rows: every replica
+    projects them over its ``tp`` axis, and the first device copies in each
+    replica's logits. No collective spans the ``dp`` axis, whose groups are
+    not runs of consecutive devices.
     """
     logits = lm_head(norm(h))
-    if mesh is not None:
+    if mesh is not None and replica_size(mesh) > 1 and DP in mesh.axis_names:
+        logits = F.allgather(logits, tensor_axis=logits.rank - 1, mesh_axis=TP)
+        logits = _replica_rows_on_first_device(logits, mesh)
+    elif mesh is not None:
         logits = logits.to(mesh.devices[0])
     return mask_padded_tail(
         logits.cast(DType.float32), vocab_size, unpadded_vocab_size
@@ -447,14 +528,8 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         batch_context_lengths = variadic_args[:dp_degree]
         variadic_args = variadic_args[dp_degree:]
         if dp_degree > 1:
-            assert dp_degree == mesh.num_devices
-
-            cpu_mesh = DeviceMesh(
-                tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
-            )
-            batch_context_lengths_tensor = Tensor.from_shard_values(
-                [TensorValue(shard) for shard in batch_context_lengths],
-                DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
+            batch_context_lengths_tensor = replica_context_lengths(
+                batch_context_lengths, mesh
             )
 
             data_parallel_splits, input_row_offsets_i64, *rest = variadic_args
@@ -462,7 +537,7 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         else:
             batch_context_lengths_tensor = batch_context_lengths[0]
 
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+        kv_inputs = iter(kv_input_values(variadic_args))
         # A ``MultiKVCacheParams`` tree unflattens to a dict keyed by child
         # name, so the two caches are addressed by name rather than position.
         kv_tree = self.kv_params.unflatten_kv_inputs(kv_inputs)
@@ -509,13 +584,15 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
 class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
     """DeepSeek-V3.2's sparse-MLA decoder, registered for the ``DECODER`` role.
 
-    It runs tensor-parallel attention over a ``tp`` mesh, or one attention
-    replica per device over a ``dp`` mesh, with its experts tensor-parallel
-    or, under expert parallelism, spread across the devices.
+    It runs tensor-parallel attention over a ``tp`` mesh, one attention
+    replica per device over a ``dp`` mesh, or, under expert parallelism,
+    tensor-parallel replicas over a ``(dp, tp)`` mesh, with its experts
+    tensor-parallel or, under expert parallelism, spread across the devices.
     """
 
     graph_name: ClassVar[str] = "DeepseekV3_2"
     supports_data_parallel: ClassVar[bool] = True
+    supports_multi_device_replicas: ClassVar[bool] = True
 
     def __init__(self, config: DeepseekV3_2Config) -> None:
         super().__init__()
@@ -549,14 +626,9 @@ class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
         input_row_offsets_i64: Tensor | None = None
         dp_degree = self.config.data_parallel_degree
         if dp_degree > 1:
-            assert dp_degree == mesh.num_devices
             assert inputs.host_input_row_offsets is not None
-            cpu_mesh = DeviceMesh(
-                tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
-            )
-            batch_context_length = Tensor.from_shard_values(
-                [TensorValue(shard) for shard in inputs.batch_context_lengths],
-                DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
+            batch_context_length = replica_context_lengths(
+                inputs.batch_context_lengths, mesh
             )
             data_parallel_splits = inputs.data_parallel_splits
             input_row_offsets_i64 = F.cast(
@@ -565,7 +637,7 @@ class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
         else:
             batch_context_length = inputs.batch_context_lengths[0]
 
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         # A ``MultiKVCacheParams`` tree unflattens to a dict keyed by child
         # name, so the two caches are addressed by name rather than position.
         kv_tree = self.kv_params.unflatten_kv_inputs(kv_inputs)

@@ -43,10 +43,6 @@ struct CompletionFlag {
   CompletionFlag(const CompletionFlag &) = delete;
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
-  /// Device-visible address of the 8-byte flag, suitable for
-  /// `DeviceStream::enqueueWaitOnHostValue`.
-  std::uint64_t devicePtr() const { return ref_->devicePtr(); }
-
   /// Convenience: relaxed store of 0 to the flag.
   void reset() { ref_->reset(); }
 
@@ -55,7 +51,7 @@ struct CompletionFlag {
   /// so that any stores the caller performed before ``signal`` are
   /// visible to whichever side first observes ``value``. Primary use
   /// from Python is priming the flag at setup time so the first
-  /// captured-graph replay's ``mo.wait_host_value`` passes immediately,
+  /// captured-graph replay's ``runtime.wait_host_value`` passes immediately,
   /// before any async kickoff has run.
   void signal(std::uint64_t value) { ref_->signal(value); }
 

@@ -22,7 +22,7 @@ from std.sys import align_of, simd_width_of
 
 from std.algorithm.functional import vectorize
 from max.gpu import block_idx, global_idx
-from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,

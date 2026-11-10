@@ -454,6 +454,10 @@ class Attr(Constraint):
     pass
 
 
+class OptionalAttr(Attr):
+    pass
+
+
 class DefaultValuedAttr(Attr):
     @property
     def default(self) -> str:

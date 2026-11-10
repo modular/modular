@@ -676,6 +676,46 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
+    def device_kind(self) -> TargetDeviceKind:
+        """Returns the kind of device the target is, as its stdlib plugin's
+        hooks declare it.
+
+        Prefer `is_gpu()` and `is_accelerator()` for branching; this is for
+        code that needs the kind itself, such as a diagnostic.
+
+        Returns:
+            The target's device kind.
+        """
+        return Self.stdlib_plugin.device_kind
+
+    @staticmethod
+    def device_kind_label() -> StaticString:
+        """Returns the target's device kind as a label.
+
+        Unlike `device_kind()`, which returns the plugin's `TargetDeviceKind`,
+        this is a string usable as a `StaticString` parameter, such as a trace
+        target.
+
+        Returns:
+            "cpu" for a CPU target and "gpu" for any other accelerator.
+        """
+        comptime if Self().is_cpu():
+            return "cpu"
+        # TODO(MSTDL-3366): The label was previously set by the GraphCompiler,
+        #   which used "gpu" all non-CPU accelerators, including devices that
+        #   were not actually GPUs. Continue to label these as "gpu" for now to
+        #   avoid a behavior change. However, eventually this entire method
+        #   should simpler be unnecessary, and will be removed.
+        elif Self().is_accelerator():
+            return "gpu"
+        else:
+            Self.unsupported_target_error[
+                operation="target label",
+                note="target is not a recognized CPU or accelerator",
+            ]()
+
+    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
+    @inline(.nodebug)
     def is_cpu(self) -> Bool:
         """Returns True if the target is a recognized general-purpose CPU
         architecture (x86, ARM, or RISC-V), and False otherwise.
@@ -691,20 +731,6 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         # FIXME(MSTDL-3279): Add other host architectures here if they become
         # supported platforms.
         return self.is_x86() or self.is_arm() or self.is_riscv()
-
-    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
-    @inline(.nodebug)
-    def device_kind(self) -> TargetDeviceKind:
-        """Returns the kind of device the target is, as its stdlib plugin's
-        hooks declare it.
-
-        Prefer `is_gpu()` and `is_accelerator()` for branching; this is for
-        code that needs the kind itself, such as a diagnostic.
-
-        Returns:
-            The target's device kind.
-        """
-        return Self.stdlib_plugin.device_kind
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
@@ -945,10 +971,11 @@ def platform_map[
     ```
     """
 
-    comptime if CompilationTarget.is_macos() and macos:
-        return materialize[macos.value()]()
-    elif CompilationTarget.is_linux() and linux:
-        return materialize[linux.value()]()
+    comptime target_value = macos if CompilationTarget.is_macos() else (
+        linux if CompilationTarget.is_linux() else None
+    )
+    comptime if case .Some(value) = target_value:
+        return materialize[value]()
     else:
         CompilationTarget.unsupported_target_error[operation=operation]()
 
@@ -1327,13 +1354,6 @@ def _cdna_version() -> Int:
         return 4
     else:
         return 5
-
-
-@inline(.nodebug)
-def _cdna_3_or_newer() -> Bool:
-    comptime if _is_amd_cdna():
-        return _cdna_version() >= 3
-    return False
 
 
 @inline(.nodebug)

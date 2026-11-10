@@ -19,10 +19,8 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_ragged_gpu,
-)
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm
 from max.nn.sequential import ModuleList

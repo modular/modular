@@ -30,3 +30,25 @@ def use_as_param_type[
     Mapper: __generator_type[Idx: Int] Int
 ]():
     pass
+
+
+# The call's inferred origins bind the signature that `function[0]` produced,
+# not the `[index: Int]` generator `function[0]` already fully bound.
+# CHECK-LABEL: lit.fn @"call_inferred_sig_through_generator_type
+# CHECK: lit.call tail[{{.*}}bind_params({{.*}}bind_params({{.*}} function, :!Int {:scalar<index> 0}), :origin<false> *"args.origin{{.*}}, {{.*}} *"args.origin{{.*}})]
+def call_inferred_sig_through_generator_type[
+    Args: TypeList[Trait=AnyType, ...],
+    function: __generator_type[index: Int] def(*args: *Args) thin -> None,
+](*args: *Args):
+    function[0](*args)
+
+
+# Same shape with a non-function inner generator: `g[0]` instantiates to
+# `[n: Int] Int`, so `[1]` binds that, not `g`.
+# CHECK-LABEL: lit.fn @"bind_through_nested_generator_type
+def bind_through_nested_generator_type[
+    g: __generator_type[index: Int] __generator_type[n: Int] Int
+]() -> Int:
+    comptime h = g[0]
+    comptime x = h[1]
+    return x

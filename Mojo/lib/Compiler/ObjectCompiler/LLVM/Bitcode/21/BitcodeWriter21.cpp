@@ -142,10 +142,6 @@ static cl::opt<bool>
 namespace M::KGEN::LLVM {
 static constexpr uint64_t UNSUPPORTED_ATTR_KIND_ENCODING = 0;
 } // namespace M::KGEN::LLVM
-namespace llvm {
-extern FunctionSummary::ForceSummaryHotnessType ForceSummaryEdgesCold;
-}
-
 namespace {
 
 /// These are manifest constants used by the bitcode writer. They do not need to
@@ -4719,9 +4715,7 @@ void ModuleBitcodeWriterBase::writePerModuleFunctionSummaryRecord(
   for (auto &RI : FS->refs())
     NameVals.push_back(getValueId(RI));
 
-  const bool UseRelBFRecord =
-      WriteRelBFToSummary && !F.hasProfileData() &&
-      ForceSummaryEdgesCold == FunctionSummary::FSHT_None;
+  const bool UseRelBFRecord = WriteRelBFToSummary && !F.hasProfileData();
   for (auto &ECI : FS->calls()) {
     NameVals.push_back(getValueId(ECI.first));
     if (UseRelBFRecord)

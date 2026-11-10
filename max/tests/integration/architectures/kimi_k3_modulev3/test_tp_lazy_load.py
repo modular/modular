@@ -17,6 +17,10 @@ under ``F.lazy()`` and compiled through ``compile_and_init_graphs``, so the
 loader, not the module, splits the real arrays across devices. The eager TP
 tests assign weights to the module directly and cannot catch a fused weight
 that is only laid out right on the module's own parameter.
+
+Both graphs compile before either executes, so the target records under
+``precompile_mefs`` and the GPU worker initializes the recorded artifacts
+instead of compiling.
 """
 
 from __future__ import annotations
@@ -27,9 +31,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
-import pytest
 from _tp_model_test_utils import (
-    kv_params_and_inputs,
+    kv_cache_inputs,
+    kv_params_only,
     random_weights,
     rel_error,
     tiny_model_config,
@@ -40,6 +44,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import load_weights
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.model import (
     KimiK3Model,
     KimiK3ModelConfig,
@@ -60,6 +65,7 @@ from max.pipelines.lib.interfaces.pipeline_model import (
     _cast_to_parameter_dtypes,
 )
 from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import DeviceMesh
 from safetensors.numpy import save_file
 
@@ -147,16 +153,19 @@ def _pipeline_config(num_devices: int) -> SimpleNamespace:
     )
 
 
-def _serve_logits(
+def _compile_serve(
     config: KimiK3ModelConfig,
     checkpoint: Path,
     devices: Sequence[Accelerator],
-    input_ids: np.ndarray,
-    input_row_offsets: np.ndarray,
-    prompt_lens: list[int],
-) -> np.ndarray:
-    """Loads and runs the model as ``ModuleV3PipelineModelWithKVCache``
-    and Kimi K3's ``_instantiate_module`` do."""
+) -> tuple[CompiledCallable[..., Any], MultiKVCacheParams]:
+    """Loads and compiles the model as ``ModuleV3PipelineModelWithKVCache``
+    and Kimi K3's ``_instantiate_module`` do, allocating no cache buffers.
+
+    Compiling first keeps this half recordable on CPU build workers
+    (``precompile_mefs``): the cache buffers the compiled graph binds are
+    allocated only at execution, so a record run stops after the compiles
+    rather than before them.
+    """
     weights = load_weights([checkpoint])
     state_dict = convert_kimi_k3_state_dict(
         dict(weights.items()),
@@ -166,9 +175,7 @@ def _serve_logits(
     mesh = DeviceMesh(tuple(devices), (len(devices),), ("tp",))
     device_refs = [DeviceRef.from_device(d) for d in devices]
     with default_device(mesh):
-        kv_params, kv_inputs = kv_params_and_inputs(
-            config, devices, prompt_lens
-        )
+        kv_params = kv_params_only(config, devices)
         with F.lazy(), default_dtype(DType.float32):
             module = KimiK3Model(config, kv_params=kv_params)
             if len(devices) > 1:
@@ -185,6 +192,20 @@ def _serve_logits(
     run = compile_and_init_graphs(session, {GraphRole.DECODER: spec})[
         GraphRole.DECODER
     ]
+    return run, kv_params
+
+
+def _serve_logits(
+    run: CompiledCallable[..., Any],
+    kv_params: MultiKVCacheParams,
+    config: KimiK3ModelConfig,
+    devices: Sequence[Accelerator],
+    input_ids: np.ndarray,
+    input_row_offsets: np.ndarray,
+    prompt_lens: list[int],
+) -> np.ndarray:
+    """Executes a compiled model on a freshly allocated cache."""
+    kv_inputs = kv_cache_inputs(config, kv_params, devices, prompt_lens)
     outputs = run(
         Tensor(input_ids, dtype=DType.int64, device=devices[0]),
         Tensor(np.array([1], dtype=np.int64), dtype=DType.int64, device=CPU()),
@@ -194,10 +215,6 @@ def _serve_logits(
     return outputs.next_token_logits.to_numpy()
 
 
-@pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache and gated_delta_conv1d_fwd are both staged as undeclared"
-    " custom ops the interpreter can't bind"
-)
 def test_lazy_loaded_tp2_matches_tp1(tmp_path: Path) -> None:
     hidden, vocab = 32, 40
     config = tiny_model_config(hidden, vocab)
@@ -212,17 +229,27 @@ def test_lazy_loaded_tp2_matches_tp1(tmp_path: Path) -> None:
     )
     prompt_lens = [total_seq_len // batch_size] * batch_size
 
+    # Both graphs compile before either runs, so a precompile-mefs record
+    # run captures the TP=2 graph too instead of stopping at TP=1's
+    # execution.
+    run1, kv_params1 = _compile_serve(config, checkpoint, [Accelerator(0)])
+    run2, kv_params2 = _compile_serve(
+        config, checkpoint, [Accelerator(0), Accelerator(1)]
+    )
+
     out1 = _serve_logits(
+        run1,
+        kv_params1,
         config,
-        checkpoint,
         [Accelerator(0)],
         input_ids,
         input_row_offsets,
         prompt_lens,
     )
     out2 = _serve_logits(
+        run2,
+        kv_params2,
         config,
-        checkpoint,
         [Accelerator(0), Accelerator(1)],
         input_ids,
         input_row_offsets,

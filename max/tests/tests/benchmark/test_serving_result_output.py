@@ -195,6 +195,10 @@ def _gpu_benchmark_result(
     image_request_rate: float | None = None,
     lora_request_rate: float | None = None,
     gpu_utilization_by_group: dict[str, list[float]] | None = None,
+    request_goodput: float | None = None,
+    goodput_attainment: float | None = None,
+    goodput_ttft_ms: float | None = None,
+    goodput_tpot_ms: float | None = None,
 ) -> BenchmarkResult:
     return BenchmarkResult(
         task_type="text",
@@ -219,6 +223,10 @@ def _gpu_benchmark_result(
             tool_call_response_rate=tool_call_response_rate,
             image_request_rate=image_request_rate,
             lora_request_rate=lora_request_rate,
+            request_goodput=request_goodput,
+            goodput_attainment=goodput_attainment,
+            goodput_ttft_ms=goodput_ttft_ms,
+            goodput_tpot_ms=goodput_tpot_ms,
         ),
     )
 
@@ -258,6 +266,35 @@ def test_print_benchmark_summary_omits_request_mix_when_unused(
 ) -> None:
     _print_summary(_gpu_benchmark_result(tool_request_rate=0.0))
     assert "Request Mix" not in capsys.readouterr().out
+
+
+def test_print_benchmark_summary_prints_goodput_after_throughput(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(
+        _gpu_benchmark_result(
+            request_goodput=1.245,
+            goodput_attainment=0.75,
+            goodput_ttft_ms=500.0,
+            goodput_tpot_ms=37.5,
+        )
+    )
+    out = capsys.readouterr().out
+    assert re.search(r"Request goodput \(req/s\):\s+1\.24500", out)
+    assert re.search(r"Goodput attainment:\s+75\.00%", out)
+    assert re.search(r"Goodput targets \(ms\):\s+ttft:500 tpot:37\.5\n", out)
+    assert (
+        out.index("Request throughput")
+        < out.index("Request goodput")
+        < out.index("Max Concurrency")
+    )
+
+
+def test_print_benchmark_summary_omits_goodput_when_unset(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(_gpu_benchmark_result())
+    assert "oodput" not in capsys.readouterr().out
 
 
 def test_print_benchmark_summary_tabulates_gpu_stats(

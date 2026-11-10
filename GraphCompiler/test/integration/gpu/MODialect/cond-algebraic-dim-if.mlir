@@ -12,7 +12,7 @@ mo.graph @CondRepro<batch, seq>(%arg0: !mo.tensor<[batch, seq, 1536], bf16, gpu:
   %2 = rmo.shape_to_tensor() [shape = #mosh<ape[batch]> : !mosh.ape] : () -> !mo.tensor<[1], si64>
   %3 = mo.constant <#M.dense_array<2> : tensor<si64>> : !mo.tensor<[], si64>
   %4 = rmo.greater(%2, %3) : (!mo.tensor<[1], si64>, !mo.tensor<[], si64>) -> !mo.tensor<[1], bool>
-  %5 = rmo.mo.not(%4) : (!mo.tensor<[1], bool>) -> !mo.tensor<[1], bool>
+  %5 = mo.not(%4) : !mo.tensor<[1], bool>
   %6 = rmo.reshape(%5) [newShape = #mosh<ape[]> : !mosh.ape] : (!mo.tensor<[1], bool>) -> !mo.tensor<[], bool>
   %7:2 = mo.if(%6 : !mo.tensor<[], bool>) -> !mo.tensor<[mul_no_wrap(batch, seq), 6, 1, 256], bf16, gpu:0>, !mo.chain {
     %10 = mo.constant <#M.dense_array<2.000000e+00> : tensor<bf16>> : !mo.tensor<[], bf16, gpu:0>

@@ -302,9 +302,9 @@ def max_pool_cpu[
     @inline(.always)
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) {input,} -> SIMD[dtype, simd_width]:
+    ](point: Coord) {input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            input.load[width=simd_width](Coord(point))
+            input.load[width=simd_width](point)
         )
 
     @inline(.always)
@@ -315,7 +315,7 @@ def max_pool_cpu[
     def max_pool_compute[
         simd_width: SIMDLength
     ](
-        point: IndexList[output.rank, ...],
+        point: Coord,
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -324,13 +324,8 @@ def max_pool_cpu[
     @inline(.always)
     def max_pool_compute_finalize[
         simd_width: SIMDLength
-    ](
-        point: IndexList[output.rank, ...],
-        val: SIMD[dtype, simd_width],
-    ) {
-        output, mut
-    }:
-        output.store[alignment=align_of[dtype]()](Coord(point), val)
+    ](point: Coord, val: SIMD[dtype, simd_width],) {output, mut}:
+        output.store[alignment=align_of[dtype]()](point, val)
 
     @inline(.always)
     def dilation_fn(dim: Int) {dilations, mut} -> Int:
@@ -553,12 +548,10 @@ def max_pool_gpu_impl[
     @inline(.always)
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: Coord) {var input} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             input.load[width=simd_width, alignment=align_of[input.dtype]()](
-                Coord(point)
+                point
             )
         )
 
@@ -570,7 +563,7 @@ def max_pool_gpu_impl[
     def max_pool_compute[
         simd_width: SIMDLength
     ](
-        point: IndexList[output.rank, ...],
+        point: Coord,
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -579,13 +572,8 @@ def max_pool_gpu_impl[
     @inline(.always)
     def max_pool_compute_finalize[
         simd_width: SIMDLength
-    ](
-        point: IndexList[output.rank, ...],
-        val: SIMD[dtype, simd_width],
-    ) {
-        var output
-    }:
-        output.store[alignment=align_of[dtype]()](Coord(point), val)
+    ](point: Coord, val: SIMD[dtype, simd_width],) {var output}:
+        output.store[alignment=align_of[dtype]()](point, val)
 
     @inline(.always)
     def dilation_fn(
@@ -742,12 +730,10 @@ def avg_pool_cpu[
     @inline(.always)
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: Coord) {var input} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             input.load[width=simd_width, alignment=align_of[input.dtype]()](
-                Coord(point)
+                point
             )
         )
 
@@ -759,7 +745,7 @@ def avg_pool_cpu[
     def avg_pool_compute[
         simd_width: SIMDLength
     ](
-        point: IndexList[output.rank, ...],
+        point: Coord,
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -780,7 +766,7 @@ def avg_pool_cpu[
     def avg_pool_compute_finalize_exclude_boundary[
         simd_width: SIMDLength
     ](
-        point: IndexList[output.rank, ...],
+        point: Coord,
         val: SIMD[dtype, simd_width],
     ) {
         var output,
@@ -794,24 +780,28 @@ def avg_pool_cpu[
         var pool_window_w,
     }:
         var window_h = pool_dim_size(
-            point[1],
+            Int(point[1]),
             output_height,
             padding_h_low,
             padding_h_high,
             pool_window_h,
         )
         var window_w = pool_dim_size(
-            point[2], output_width, padding_w_low, padding_w_high, pool_window_w
+            Int(point[2]),
+            output_width,
+            padding_w_low,
+            padding_w_high,
+            pool_window_w,
         )
         var res = val / Scalar[dtype](window_h * window_w)
 
-        output.store[alignment=align_of[dtype]()](Coord(point), res)
+        output.store[alignment=align_of[dtype]()](point, res)
 
     @inline(.always)
     def avg_pool_compute_finalize[
         simd_width: SIMDLength
     ](
-        point: IndexList[output.rank, ...],
+        point: Coord,
         val: SIMD[dtype, simd_width],
     ) {
         var output,
@@ -819,7 +809,7 @@ def avg_pool_cpu[
         var pool_window_w,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
-        output.store[alignment=align_of[dtype]()](Coord(point), res)
+        output.store[alignment=align_of[dtype]()](point, res)
 
     def dilation_fn(dim: Int) {dilations, mut} -> Int:
         return Int(dilations[dim])
@@ -1099,12 +1089,10 @@ def avg_pool_gpu_impl[
     @inline(.always)
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: Coord) {var input} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             input.load[width=simd_width, alignment=align_of[input.dtype]()](
-                Coord(point)
+                point
             )
         )
 
@@ -1116,7 +1104,7 @@ def avg_pool_gpu_impl[
     def avg_pool_compute[
         simd_width: SIMDLength
     ](
-        point: IndexList[output.rank, ...],
+        point: Coord,
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -1137,7 +1125,7 @@ def avg_pool_gpu_impl[
     def avg_pool_compute_finalize_exclude_boundary[
         simd_width: SIMDLength
     ](
-        point: IndexList[output.rank, ...],
+        point: Coord,
         val: SIMD[dtype, simd_width],
     ) {
         var output,
@@ -1151,24 +1139,28 @@ def avg_pool_gpu_impl[
         var pool_window_w,
     }:
         var window_h = pool_dim_size(
-            point[1],
+            Int(point[1]),
             output_height,
             padding_h_low,
             padding_h_high,
             pool_window_h,
         )
         var window_w = pool_dim_size(
-            point[2], output_width, padding_w_low, padding_w_high, pool_window_w
+            Int(point[2]),
+            output_width,
+            padding_w_low,
+            padding_w_high,
+            pool_window_w,
         )
         var res = val / Scalar[dtype](window_h * window_w)
 
-        output.store[alignment=align_of[dtype]()](Coord(point), res)
+        output.store[alignment=align_of[dtype]()](point, res)
 
     @inline(.always)
     def avg_pool_compute_finalize[
         simd_width: SIMDLength
     ](
-        point: IndexList[output.rank, ...],
+        point: Coord,
         val: SIMD[dtype, simd_width],
     ) {
         var output,
@@ -1177,7 +1169,7 @@ def avg_pool_gpu_impl[
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
 
-        output.store[alignment=align_of[dtype]()](Coord(point), res)
+        output.store[alignment=align_of[dtype]()](point, res)
 
     @inline(.always)
     def dilation_fn(
@@ -1272,7 +1264,6 @@ def avg_pool[
     dtype: DType,
     int_type: DType,
     count_boundary: Bool = False,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     filter: TileTensor[mut=False, int_type, ...],
@@ -1281,7 +1272,7 @@ def avg_pool[
     paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Dispatches the average pooling operation to the CPU or GPU backend based on the target.
 
@@ -1289,7 +1280,6 @@ def avg_pool[
         dtype: Data type of the input and output tensors.
         int_type: Data type of the filter, strides, dilations, and paddings tensors.
         count_boundary: Whether to count the boundary in the average computation.
-        target: Execution target, either "cpu" or "gpu".
 
     Args:
         input: Batched image input to the pool2d operator.
@@ -1305,11 +1295,11 @@ def avg_pool[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
         ctx: The DeviceContext to use for GPU execution.
     """
-    comptime if is_cpu[target]():
+    comptime if ctx.T.target.is_cpu():
         avg_pool_cpu[count_boundary=count_boundary](
             input, filter, strides, dilations, paddings, output, ceil_mode
         )
-    elif is_gpu[target]():
+    elif ctx.T.target.is_gpu():
         avg_pool_gpu[count_boundary=count_boundary](
             ctx.value(),
             input,
@@ -1321,14 +1311,15 @@ def avg_pool[
             ceil_mode,
         )
     else:
-        comptime assert False, "Unknown target " + target
+        comptime assert False, (
+            "Unknown target " + ctx.T.target.device_kind_label()
+        )
 
 
 @inline(.always)
 def max_pool[
     dtype: DType,
     int_type: DType,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     filter: TileTensor[mut=False, int_type, ...],
@@ -1337,14 +1328,13 @@ def max_pool[
     paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Dispatches the max pooling operation to the CPU or GPU backend based on the target.
 
     Parameters:
         dtype: Data type of the input and output tensors.
         int_type: Data type of the filter, strides, dilations, and paddings tensors.
-        target: Execution target, either "cpu" or "gpu".
 
     Args:
         input: Batched image input to the pool2d operator.
@@ -1360,11 +1350,11 @@ def max_pool[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
         ctx: The DeviceContext to use for GPU execution.
     """
-    comptime if is_cpu[target]():
+    comptime if ctx.T.target.is_cpu():
         max_pool_cpu(
             input, filter, strides, dilations, paddings, output, ceil_mode
         )
-    elif is_gpu[target]():
+    elif ctx.T.target.is_gpu():
         max_pool_gpu(
             ctx.value(),
             input,
@@ -1376,4 +1366,6 @@ def max_pool[
             ceil_mode,
         )
     else:
-        comptime assert False, "Unknown target " + target
+        comptime assert False, (
+            "Unknown target " + ctx.T.target.device_kind_label()
+        )

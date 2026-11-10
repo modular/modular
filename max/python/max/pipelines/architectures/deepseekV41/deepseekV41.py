@@ -36,11 +36,11 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.nn._graph_ops import _is_sm10x_gpu, mhc_post, mhc_post_supports
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.hyper_connection import HyperConnection
-from max.nn.legacy.kernels import _is_sm10x_gpu, mhc_post, mhc_post_supports
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm

@@ -53,6 +53,7 @@ from max._artifact.metadata import ARTIFACT_VERSION
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.serialization import deserialize, serialize
+from max._artifact.tokenizer import Tokenizer
 from max._artifact.value_types import sha256_file
 from max._artifact.vision import VisionMetadata
 from max.driver import DeviceSpec
@@ -134,7 +135,7 @@ class FailingComponent(FakeComponent):
 @dataclass(frozen=True)
 class FakeArtifact(ModelArtifact):
     scratch: FakeComponent | None = None
-    tokenizer: FakeComponent | None = None
+    extra: FakeComponent | None = None
 
 
 @dataclass(frozen=True)
@@ -155,7 +156,7 @@ class ProtocolArtifact(ModelArtifact):
 def _artifact(**components: FakeComponent) -> FakeArtifact:
     return FakeArtifact(
         scratch=components.get("scratch"),
-        tokenizer=components.get("tokenizer"),
+        extra=components.get("extra"),
     )
 
 
@@ -173,9 +174,7 @@ def test_round_trip(tmp_path: Path) -> None:
     )
     tokenizer = FakeComponent({"files": TOKENIZER_REF})
 
-    dest = serialize(
-        _artifact(scratch=model, tokenizer=tokenizer), tmp_path / "a"
-    )
+    dest = serialize(_artifact(scratch=model, extra=tokenizer), tmp_path / "a")
     assert dest == tmp_path / "a.m"
     assert (dest / "model.mef").read_bytes() == b"\x00mef"
     assert (dest / "graph/graph.rmo.mlir").read_text() == "module {}"
@@ -199,7 +198,7 @@ def test_round_trip(tmp_path: Path) -> None:
         MODEL_REF,
         TOKENIZER_REF,
     )
-    assert loaded.tokenizer == tokenizer
+    assert loaded.extra == tokenizer
     assert loaded.format_spec is None
     assert isinstance(loaded.scratch, FakeComponent)
     value = loaded.scratch.value
@@ -266,7 +265,7 @@ def test_failed_export_leaves_nothing(tmp_path: Path) -> None:
     ok = FakeComponent({"f": ArtifactFile("x.txt", "x")})
     bad = FakeComponent({"f": ArtifactFile("x.txt", Path("/nonexistent"))})
     with pytest.raises(ArtifactError):
-        serialize(_artifact(scratch=ok, tokenizer=bad), tmp_path / "a")
+        serialize(_artifact(scratch=ok, extra=bad), tmp_path / "a")
     with pytest.raises(ArtifactError, match="does not exist"):
         serialize(_artifact(scratch=bad), tmp_path / "a")
     with pytest.raises(RuntimeError):
@@ -279,7 +278,7 @@ def test_identical_files_deduplicated(tmp_path: Path) -> None:
     dest = serialize(
         _artifact(
             scratch=FakeComponent({"f": f}),
-            tokenizer=FakeComponent({"f": f}),
+            extra=FakeComponent({"f": f}),
         ),
         tmp_path / "a",
     )
@@ -474,7 +473,7 @@ def test_colliding_names_rejected(
     model = FakeComponent({"a": ArtifactFile(first, "a")})
     tokenizer = FakeComponent({"b": ArtifactFile(second, "b")})
     with pytest.raises(ArtifactError, match=match):
-        serialize(_artifact(scratch=model, tokenizer=tokenizer), tmp_path / "a")
+        serialize(_artifact(scratch=model, extra=tokenizer), tmp_path / "a")
     assert list(tmp_path.iterdir()) == []
 
 
@@ -485,6 +484,7 @@ def test_component_types() -> None:
         **dict.fromkeys(ModelArtifact.component_slots()),
         "model": PipelineModules,
         "format_spec": FormatSpec,
+        "tokenizer": Tokenizer,
         "batch_processor": BatchProcessorDims,
         "engine_config": EngineConfig,
         "kv_cache": KVCacheLayout,
@@ -495,13 +495,14 @@ def test_component_types() -> None:
         **dict.fromkeys(ModelArtifact.component_slots()),
         "model": PipelineModules,
         "format_spec": FormatSpec,
+        "tokenizer": Tokenizer,
         "batch_processor": BatchProcessorDims,
         "engine_config": EngineConfig,
         "kv_cache": KVCacheLayout,
         "weight_loader": WeightNaming,
         "vision": VisionMetadata,
         "scratch": FakeComponent,
-        "tokenizer": FakeComponent,
+        "extra": FakeComponent,
     }
 
 
@@ -515,8 +516,8 @@ def test_from_components_checks_slot_types() -> None:
         ModelArtifact.from_components({"model": FakeComponent()})
     with pytest.raises(ArtifactError, match="no slot 'bogus'"):
         ModelArtifact.from_components({"bogus": FakeComponent()})
-    artifact = FakeArtifact.from_components({"tokenizer": FakeComponent()})
-    assert artifact.tokenizer == FakeComponent()
+    artifact = FakeArtifact.from_components({"extra": FakeComponent()})
+    assert artifact.extra == FakeComponent()
 
 
 def test_artifact_dir_respects_umask(tmp_path: Path) -> None:
@@ -641,6 +642,8 @@ def _attention_fields(name: str, group: str) -> dict[str, Any]:
         "stride_alignment": None,
         "scratch": False,
         "kvcache_quant_config": None,
+        "speculative_method": None,
+        "num_draft_tokens": 0,
         "leaves": (
             KVPoolLeaf(
                 leaf_id=f"{name}.{group}",
@@ -657,7 +660,8 @@ KV_CACHE = KVCacheLayout(
     page_size=128,
     caches=(
         MHAKVCache(
-            **_attention_fields("attention", "full_group"),
+            **_attention_fields("attention", "full_group")
+            | {"speculative_method": "mtp", "num_draft_tokens": 3},
             n_kv_heads=4,
             allow_kv_head_replication=False,
         ),
@@ -723,6 +727,8 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
         "stride_alignment": None,
         "scratch": False,
         "kvcache_quant_config": None,
+        "speculative_method": "mtp",
+        "num_draft_tokens": 3,
         "leaves": [
             {
                 "leaf_id": "attention.full_group",
@@ -777,3 +783,63 @@ def test_format_spec_stored_unchanged(tmp_path: Path) -> None:
 def test_format_spec_document_must_be_a_file() -> None:
     with pytest.raises(ArtifactError, match=r"format_spec\.document"):
         FormatSpec.__deserialize__({"document": "spec.json"})
+
+
+def test_tokenizer_round_trip(tmp_path: Path) -> None:
+    tokenizer = Tokenizer(
+        family="gemma4",
+        flavor="thinking",
+        files={"tokenizer.json": TOKENIZER_REF},
+        chat_templates={"default": "{{ messages }}"},
+        vocab_size=262144,
+        sampleable_vocab_size=262144,
+        eos_token_ids=(1, 106),
+    )
+    dest = serialize(ModelArtifact(tokenizer=tokenizer), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    assert sections["tokenizer"] == {
+        "family": "gemma4",
+        "flavor": "thinking",
+        "files": {
+            "tokenizer.json": {
+                "$hf": {
+                    "repo_id": "org/model",
+                    "revision": MODEL_REVISION,
+                    "path": "tokenizer.json",
+                }
+            }
+        },
+        "chat_templates": {
+            "default": {"$file": "tokenizer/chat_templates/default.jinja"}
+        },
+        "vocab_size": 262144,
+        "sampleable_vocab_size": 262144,
+        "eos_token_ids": [1, 106],
+    }
+    metadata = json.loads((dest / "metadata.json").read_text())
+    assert "tokenizer/chat_templates/default.jinja" in metadata["files"]
+    assert not any(
+        name.startswith("tokenizer/tokenizer") for name in metadata["files"]
+    )
+    assert deserialize(dest).tokenizer == Tokenizer(
+        family="gemma4",
+        flavor="thinking",
+        files={"tokenizer.json": TOKENIZER_REF},
+        chat_templates={
+            "default": dest / "tokenizer/chat_templates/default.jinja"
+        },
+        vocab_size=262144,
+        sampleable_vocab_size=262144,
+        eos_token_ids=(1, 106),
+    )
+
+
+def test_malformed_tokenizer_rejected(tmp_path: Path) -> None:
+    tokenizer = Tokenizer(None, None, {}, {}, 8, 8, (7,))
+    dest = serialize(ModelArtifact(tokenizer=tokenizer), tmp_path / "a")
+    assert deserialize(dest).tokenizer == tokenizer
+    sections = json.loads((dest / "artifact.json").read_text())
+    sections["tokenizer"]["eos_token_ids"] = ["7"]
+    _rewrite_sections(dest, sections)
+    with pytest.raises(ArtifactError, match="component 'tokenizer'"):
+        deserialize(dest)

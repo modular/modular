@@ -69,7 +69,7 @@ def test_moe_finalize[
     )
     var output = TileTensor(output_dev, row_major(num_tokens, hidden))
 
-    moe_finalize["gpu"](output, down, restore_order, router_weight, ctx)
+    moe_finalize(output, down, restore_order, router_weight, ctx)
 
     ctx.enqueue_copy(output_host, output_dev)
     ctx.synchronize()

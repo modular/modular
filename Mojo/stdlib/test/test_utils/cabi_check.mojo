@@ -34,7 +34,7 @@ from std.ffi import external_call
 from std.reflection.type_info import _unqualified_type_name
 from std.sys import align_of, size_of
 from std.testing import assert_equal
-from std.testing._ffi import CField, CStruct
+from std.testing._ffi import CField, CStruct, CType
 
 
 comptime _MACROS: StaticString = """\
@@ -243,10 +243,11 @@ def struct_checks[T: AnyType]() raises -> String:
         expected type, so an incompatible field type fails to compile rather
         than failing an assertion. A 64-bit integer field gets a
         `MOJO_CHECK_CABI_FIELD_INT64` or `MOJO_CHECK_CABI_FIELD_UINT64` line
-        instead, which accepts both C spellings of that width. A `CStruct`
-        annotation on `T` can rename the C struct, or skip the field lines. A
-        `CField` annotation on a field can rename the C field, or name its C
-        type, which the field's type check then uses.
+        instead, which accepts both C spellings of that width; an array of
+        them keeps the exact `int64_t` or `uint64_t` element check. A
+        `CStruct` annotation on `T` can rename the C struct, or skip the
+        field lines. A `CField` annotation on a field can rename the C field,
+        or name its C type, which the field's type check then uses.
     """
     comptime name = _c_struct_name[T]()
     var out = String(t"MOJO_CHECK_CABI_LAYOUT({name}, struct {name})")
@@ -258,15 +259,39 @@ def struct_checks[T: AnyType]() raises -> String:
         out += String(
             t"\nMOJO_CHECK_CABI_FIELD({name}, struct {name}, {field})"
         )
-        match _cfield_of[T, i]().c_type:
-            case .Some(c_type):
+        var c_type = _cfield_of[T, i]().c_type
+        match c_type:
+            case .default:
+                out += _implied_type_check[types[i]](name, field)
+            case _:
                 out += String(
                     t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"
-                    t" {field}, {c_type} *ptr)"
+                    t" {field}, {_c_type_decl(c_type)})"
                 )
-            case .None:
-                out += _implied_type_check[types[i]](name, field)
     return out^
+
+
+def _c_type_decl(c_type: CType) raises -> String:
+    """Returns the declarator for a pointer to a `CField.c_type`.
+
+    Args:
+        c_type: The C field's type, such as `"uint16_t"` or
+            `.array("__u64", 2)`.
+
+    Returns:
+        A declarator such as `uint16_t *ptr`, or `__u64 (*ptr)[2]` for an
+        array type.
+
+    Raises:
+        If `c_type` is `.default`, which spells no type.
+    """
+    match c_type:
+        case .type(name):
+            return String(t"{name} *ptr")
+        case .array(payload):
+            return String(t"{payload[0]} (*ptr)[{payload[1]}]")
+        case .default:
+            raise Error("CType.default spells no C type")
 
 
 def _implied_type_check[
@@ -408,13 +433,14 @@ struct AbiConstant(TrivialRegisterPassable):
             name: The constant's name as spelled in C.
             value: The mirror's value, at the mirror's declared type.
         """
-        comptime c_type = _c_scalar_name[Scalar[dtype]]()
-        comptime assert (
-            c_type is not None
-        ), "a constant's mirror must be a fixed-width integer"
         self.name = name
         self.value = value.cast[.int64]()
-        self.c_type = c_type.value()
+        comptime if case .Some(c_type) = _c_scalar_name[Scalar[dtype]]():
+            self.c_type = c_type
+        else:
+            comptime assert (
+                False
+            ), "a constant's mirror must be a fixed-width integer"
 
 
 def assert_cabi_constant[entry: AbiConstant]() raises:

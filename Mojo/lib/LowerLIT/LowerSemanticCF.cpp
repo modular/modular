@@ -651,6 +651,16 @@ static Operation *addErrorRegions(Operation &op, FuncType sig,
 void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
 
   for (Operation &op : llvm::make_early_inc_range(block)) {
+    // Some front-end constructs require their body to exit rather than fall
+    // through. Semantic terminators above this marker remove it before control
+    // reaches here.
+    if (auto unreachable = dyn_cast<HLCF::UnreachableOp>(op);
+        unreachable && !unreachable.getFallthroughError().empty()) {
+      emitError(op.getLoc(), unreachable.getFallthroughError());
+      hadError = true;
+      return;
+    }
+
     // Look for semantic terminators and turn them into real terminators.
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
       auto b = handleSemanticTerminatorOp(op, "return statement");

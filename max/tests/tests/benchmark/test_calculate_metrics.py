@@ -22,6 +22,7 @@ import statistics
 from unittest.mock import MagicMock
 
 import pytest
+from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.metrics import BenchmarkResult
 from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
@@ -1424,6 +1425,179 @@ def test_build_text_generation_result_concurrency_one_falls_back() -> None:
     assert result.text_data.completed == 50
 
 
+def test_build_text_generation_result_filtering_disabled_uses_skip_counts() -> (
+    None
+):
+    """With filtering disabled, a run detection would accept uses the trim path.
+
+    The caller's skip counts apply, no outliers are rejected, and the
+    diagnostics report ``"disabled"`` rather than a failed detection.
+    """
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=200.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=10,
+        skip_last_n_requests=5,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        steady_state_filtering=False,
+    )
+
+    assert result.steady_state_mode == "disabled"
+    assert result.steady_state_detected is None
+    assert result.steady_state_window_count is None
+    assert result.steady_state_warning is None
+    assert result.num_outliers_rejected is None
+    assert result.text_data is not None
+    assert result.text_data.completed == 185
+    assert result.to_result_dict()["steady_state_mode"] == "disabled"
+
+
+def test_build_text_generation_result_filtering_disabled_keeps_all_requests() -> (
+    None
+):
+    """Requests the detector would drop are kept when filtering is disabled.
+
+    A reply that arrives in one chunk has no per-chunk TPOT, so detection
+    treats it as invalid and leaves it out of the window, and a TTFT outlier
+    is rejected inside the window. Neither happens with filtering disabled.
+    """
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+    for i in range(10):
+        single_chunk = _make_stable_request_func_output(50.0 + i + 0.5)
+        single_chunk.itl = []
+        single_chunk.tpot = []
+        outputs.append(single_chunk)
+    # Spread TTFTs so the outlier rejection's MAD is nonzero.
+    for i, output in enumerate(outputs):
+        output.ttft = 0.05 + 0.001 * (i % 5)
+    ttft_outlier = _make_stable_request_func_output(100.5)
+    ttft_outlier.ttft = 10.0
+    ttft_outlier.latency = 11.0
+    outputs.append(ttft_outlier)
+    outputs.sort(key=lambda o: o.request_submit_time or 0.0)
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+
+    def build(steady_state_filtering: bool) -> BenchmarkResult:
+        return build_text_generation_result(
+            outputs=outputs,
+            benchmark_duration=211.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=None,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            steady_state_filtering=steady_state_filtering,
+        )
+
+    filtered = build(steady_state_filtering=True)
+    unfiltered = build(steady_state_filtering=False)
+
+    assert filtered.text_data is not None
+    assert unfiltered.text_data is not None
+    assert filtered.steady_state_detected is True
+    assert filtered.text_data.completed <= 201
+    assert filtered.text_data.ttft_ms is not None
+    assert filtered.text_data.ttft_ms.mean < 60.0
+    assert unfiltered.text_data.completed == 211
+    assert unfiltered.text_data.ttft_ms is not None
+    assert unfiltered.text_data.ttft_ms.mean == pytest.approx(
+        statistics.mean(o.ttft for o in outputs) * 1000.0
+    )
+
+
+def _make_failed_request_func_output(submit_time: float) -> RequestFuncOutput:
+    return RequestFuncOutput(
+        success=False,
+        latency=0.0,
+        ttft=0.0,
+        prompt_len=10,
+        error="No text content captured from the response",
+        request_submit_time=submit_time,
+    )
+
+
+@pytest.mark.parametrize("steady_state_filtering", [True, False])
+def test_build_text_generation_result_excludes_failures(
+    steady_state_filtering: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Failed requests leave the metrics alike with or without filtering.
+
+    They are excluded from the metric set but kept in ``request_records``,
+    and they don't shift which requests the steady-state window selects.
+    """
+    outputs: list[RequestFuncOutput] = []
+    for i in range(200):
+        outputs.append(_make_stable_request_func_output(float(i)))
+        if i % 50 == 10:
+            outputs.append(_make_failed_request_func_output(i + 0.5))
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+
+    with caplog.at_level(logging.WARNING):
+        result = build_text_generation_result(
+            outputs=outputs,
+            benchmark_duration=200.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=None,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            steady_state_filtering=steady_state_filtering,
+        )
+
+    assert any(
+        "Excluding 4 failed requests" in r.message for r in caplog.records
+    )
+    assert result.text_data is not None
+    assert result.text_data.failures == 0
+    if steady_state_filtering:
+        assert result.steady_state_detected is True
+        assert result.text_data.completed == result.steady_state_window_count
+    else:
+        assert result.text_data.completed == 200
+    records = result.text_data.request_records
+    assert len(records) == 204
+    failed = [r for r in records if not r.success]
+    assert len(failed) == 4
+    assert not any(r.measured for r in failed)
+
+
+def test_build_text_generation_result_all_failed_still_counts_failures() -> (
+    None
+):
+    """With no successful request, failures are kept and still counted."""
+    outputs = [_make_failed_request_func_output(float(i)) for i in range(5)]
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=5.0,
+        tokenizer=_make_tokenizer_mock(tokens_per_output=5),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=32,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        steady_state_filtering=False,
+    )
+
+    assert result.text_data is not None
+    assert result.text_data.failures == 5
+    assert result.text_data.completed == 0
+
+
 def test_build_text_generation_result_with_outlier_inputs() -> None:
     """Synthetic run: stable-phase requests with realistic spread + extreme TTFT outliers.
 
@@ -2246,3 +2420,186 @@ def test_image_and_lora_rates_count_over_measured_requests() -> None:
     d = text.to_result_dict()
     assert d["image_request_rate"] == text.image_request_rate
     assert d["lora_request_rate"] == text.lora_request_rate
+
+
+def _goodput_outputs() -> list[RequestFuncOutput]:
+    """Requests that each test one goodput rule against ttft:200 tpot:150.
+
+    Ten-token replies have TPOT ``(latency - ttft) / 9``.
+    """
+
+    def out(
+        text: str,
+        *,
+        ttft: float,
+        latency: float,
+        submit: float,
+        success: bool = True,
+    ) -> RequestFuncOutput:
+        return RequestFuncOutput(
+            success=success,
+            latency=latency,
+            ttft=ttft,
+            prompt_len=10,
+            generated_text=text,
+            request_submit_time=submit,
+        )
+
+    return [
+        # First submitted, so --skip-first-n-requests 1 drops it even
+        # though it meets every target.
+        out("skipped", ttft=0.05, latency=0.5, submit=0.0),
+        # TPOT 0.1 s: meets both.
+        out("good", ttft=0.1, latency=1.0, submit=1.0),
+        # TTFT 0.3 s misses.
+        out("slow first", ttft=0.3, latency=1.2, submit=1.1),
+        # TPOT 1.9 / 9 = 0.211 s misses.
+        out("slow decode", ttft=0.1, latency=2.0, submit=1.2),
+        # One token, so no TPOT: misses a TPOT target.
+        out("one", ttft=0.1, latency=0.1, submit=1.3),
+        # Failed requests are not measured.
+        out("", ttft=0.0, latency=0.1, submit=1.4, success=False),
+    ]
+
+
+_GOODPUT_TOKENIZER_COUNTS = {
+    "skipped": 10,
+    "good": 10,
+    "slow first": 10,
+    "slow decode": 10,
+    "one": 1,
+}
+
+
+def _goodput_metrics(
+    targets: GoodputTargets | None,
+) -> BenchmarkResult:
+    return calculate_metrics(
+        outputs=_goodput_outputs(),
+        dur_s=10.0,
+        tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        kv_block_size=128,
+        goodput_targets=targets,
+    )
+
+
+def test_goodput_counts_requests_meeting_every_target() -> None:
+    metrics = _goodput_metrics(GoodputTargets(ttft_ms=200.0, tpot_ms=150.0))
+    text = metrics.text_data
+    assert text is not None
+    assert text.completed == 4
+    assert text.goodput_attainment == pytest.approx(0.25)
+    # One good request over the measured window, 1.0 s to 3.2 s.
+    assert text.request_goodput == pytest.approx(1 / 2.2)
+    assert text.request_goodput == pytest.approx(0.25 * text.request_throughput)
+    assert (text.goodput_ttft_ms, text.goodput_tpot_ms) == (200.0, 150.0)
+    assert text.goodput_e2el_ms is None
+
+    # The result's per-request records give the same answer.
+    rr = [r for r in text.request_records if r.measured and r.success]
+    good = [
+        r
+        for r in rr
+        if r.ttft_ms is not None
+        and r.tpot_ms is not None
+        and r.ttft_ms <= 200.0
+        and r.tpot_ms <= 150.0
+    ]
+    assert text.request_goodput == pytest.approx(len(good) / text.duration)
+    assert text.goodput_attainment == pytest.approx(len(good) / len(rr))
+
+    d = metrics.to_result_dict()
+    assert d["request_goodput"] == pytest.approx(1 / 2.2)
+    assert d["goodput_attainment"] == pytest.approx(0.25)
+    assert d["goodput_ttft_ms"] == 200.0
+    assert "goodput_e2el_ms" not in d
+    assert metrics.result_groups is not None
+    summary = metrics.result_groups.summary
+    assert summary.request_goodput == pytest.approx(1 / 2.2)
+    assert summary.goodput_attainment == pytest.approx(0.25)
+    assert summary.goodput_tpot_ms == 150.0
+
+
+def test_goodput_e2el_target_ignores_missing_tpot() -> None:
+    """Only the given targets apply, so a one-token reply can meet e2el."""
+    text = _goodput_metrics(GoodputTargets(e2el_ms=1500.0)).text_data
+    assert text is not None
+    assert text.goodput_attainment == pytest.approx(0.75)
+
+
+def test_goodput_unreported_ttft_misses_a_ttft_target() -> None:
+    """An endpoint that reports no TTFT leaves it 0.0, which is not a pass."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=0.5,
+            ttft=0.0,
+            prompt_len=10,
+            generated_text="good",
+            request_submit_time=0.0,
+        )
+    ]
+
+    def attainment(targets: GoodputTargets) -> float | None:
+        text = calculate_metrics(
+            outputs=outputs,
+            dur_s=1.0,
+            tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
+            gpu_metrics=None,
+            cpu_metrics=_EMPTY_CPU_METRICS,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            kv_block_size=128,
+            goodput_targets=targets,
+        ).text_data
+        assert text is not None
+        return text.goodput_attainment
+
+    assert attainment(GoodputTargets(ttft_ms=200.0)) == 0.0
+    assert attainment(GoodputTargets(e2el_ms=1000.0)) == 1.0
+
+
+def test_goodput_unset_reports_nothing() -> None:
+    metrics = _goodput_metrics(None)
+    text = metrics.text_data
+    assert text is not None
+    for name in (
+        "request_goodput",
+        "goodput_attainment",
+        "goodput_ttft_ms",
+        "goodput_tpot_ms",
+        "goodput_e2el_ms",
+    ):
+        assert getattr(text, name) is None
+        assert name not in metrics.to_result_dict()
+        assert metrics.result_groups is not None
+        assert getattr(metrics.result_groups.summary, name) is None
+
+
+def test_build_text_generation_result_passes_goodput_targets() -> None:
+    result = build_text_generation_result(
+        outputs=_goodput_outputs(),
+        benchmark_duration=10.0,
+        tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        steady_state_filtering=False,
+        goodput_targets=GoodputTargets(ttft_ms=200.0, tpot_ms=150.0),
+    )
+    assert result.text_data is not None
+    assert result.text_data.goodput_attainment == pytest.approx(0.25)

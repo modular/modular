@@ -283,7 +283,7 @@ def matmul_naive[
     c_ptr[x * n + y] = accum
 
 
-def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
+def bench_matmuls(mut m: Bench, ctx: DeviceContext[]) raises:
     print("== run_matmul_kernel_10")
 
     comptime M = 4096
@@ -412,7 +412,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     @inline(.always)
     def bench_matmul_10(mut b: Bencher) {imm}:
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
+        def run_func(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[sgemm_type](
                 c_buffer,
                 a_buffer,
@@ -451,7 +451,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     @inline(.always)
     def bench_naive(mut b: Bencher) {imm}:
         @inline(.always)
-        def run_func_naive(ctx: DeviceContext) raises {imm}:
+        def run_func_naive(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[naive_type](
                 a_dev_ptr,
                 b_dev_ptr,

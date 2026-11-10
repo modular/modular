@@ -1033,6 +1033,62 @@ def test_reasoning_effort_rejects_an_unknown_level() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "disabled",
+    [
+        {"thinking": {"type": "disabled"}},
+        {"chat_template_kwargs": {"thinking": False}},
+        {"chat_template_kwargs": {"enable_thinking": False}},
+        {"chat_template_kwargs": {"thinking_mode": "disabled"}},
+    ],
+)
+@pytest.mark.parametrize("effort", ["hgih", "none", "minimal", "high"])
+def test_a_disabled_request_discards_its_effort(
+    disabled: dict[str, Any], effort: str
+) -> None:
+    """An effort beside an explicit disable is never checked or rendered.
+
+    The tokenizer would discard it unrendered, and the orchestrator's parser
+    drops it too, so an invalid word is not an error either way.
+    """
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning_effort": effort,
+            **disabled,
+        }
+    )
+    assert request.reasoning_effort is None
+    assert "reasoning_effort" not in (
+        request.resolved_chat_template_kwargs or {}
+    )
+
+
+@pytest.mark.parametrize(
+    "stated",
+    [
+        {"thinking": {"type": "enabled"}},
+        {"chat_template_kwargs": {"thinking": True}},
+        {"chat_template_kwargs": {"thinking_mode": "adaptive"}},
+        {"chat_template_kwargs": {"thinking_mode": "enabled"}},
+    ],
+)
+def test_a_request_that_states_a_mode_still_checks_its_effort(
+    stated: dict[str, Any],
+) -> None:
+    """Only an explicit disable excuses the effort from the schema."""
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning_effort": "hgih",
+                **stated,
+            }
+        )
+
+
 def test_reasoning_object_effort_rejects_an_unknown_level() -> None:
     with pytest.raises(ValidationError):
         CreateChatCompletionRequest.model_validate(
@@ -1082,8 +1138,16 @@ def test_thinking_translates_to_standard_reasoning_flags() -> None:
         assert not hasattr(request, "thinking")
         return request.chat_template_kwargs
 
-    assert _kwargs("enabled") == {"enable_thinking": True, "thinking": True}
-    assert _kwargs("disabled") == {"enable_thinking": False, "thinking": False}
+    assert _kwargs("enabled") == {
+        "enable_thinking": True,
+        "thinking": True,
+        "thinking_mode": "enabled",
+    }
+    assert _kwargs("disabled") == {
+        "enable_thinking": False,
+        "thinking": False,
+        "thinking_mode": "disabled",
+    }
     # adaptive == unset: no reasoning flags injected.
     assert _kwargs("adaptive") is None
 
@@ -1093,25 +1157,44 @@ def test_thinking_translates_to_standard_reasoning_flags() -> None:
     )
     assert request.chat_template_kwargs is None
 
-    # Unknown thinking type is rejected.
-    with pytest.raises(ValidationError):
-        CreateChatCompletionRequest.model_validate(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "hi"}],
-                "thinking": {"type": "sometimes"},
-            }
-        )
+    # Unknown thinking type is rejected, and so is any other invalid falsy
+    # value: only a missing or null ``type`` defaults to adaptive.
+    for kind in ["sometimes", "", False, 0, [], {}]:
+        with pytest.raises(ValidationError):
+            CreateChatCompletionRequest.model_validate(
+                {
+                    "model": "test",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "thinking": {"type": kind},
+                }
+            )
 
-    # A malformed thinking object (extra keys) is rejected.
-    with pytest.raises(ValidationError):
-        CreateChatCompletionRequest.model_validate(
+    # A null ``thinking`` is unstated rather than an unknown field.
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "thinking": None,
+        }
+    )
+    assert not hasattr(request, "thinking")
+    assert request.chat_template_kwargs is None
+
+    # Other members are ignored, and a missing or null type is adaptive.
+    for thinking, enabled in (
+        ({"type": "enabled", "budget_tokens": 100}, True),
+        ({"budget_tokens": 100}, None),
+        ({"type": None, "budget_tokens": 100}, None),
+    ):
+        request = CreateChatCompletionRequest.model_validate(
             {
                 "model": "test",
                 "messages": [{"role": "user", "content": "hi"}],
-                "thinking": {"type": "enabled", "budget": 100},
+                "thinking": thinking,
             }
         )
+        kwargs = request.chat_template_kwargs or {}
+        assert kwargs.get("enable_thinking") is enabled, thinking
 
 
 def test_thinking_does_not_override_explicit_chat_template_kwargs() -> None:
@@ -1301,8 +1384,9 @@ def _chat_template_kwargs_for(payload: dict[str, Any]) -> dict[str, Any] | None:
                     "thinking": False,
                 },
             },
+            # `thinking` outranks the other spelling, so the request closes
+            # thinking and the effort is dropped unread, as MAX serve does.
             {
-                "reasoning_effort": "low",
                 "enable_thinking": True,
                 "thinking": False,
             },
@@ -1474,7 +1558,6 @@ _THINKING_ON = {"enable_thinking": True, "thinking": True}
         pytest.param(
             [
                 {"chat_template_kwargs": _THINKING_OFF},
-                {"thinking": {"type": "disabled"}},
                 {"reasoning": {"enabled": False}},
                 {"reasoning": {"enabled": False, "effort": "high"}},
             ],
@@ -1484,7 +1567,6 @@ _THINKING_ON = {"enable_thinking": True, "thinking": True}
         pytest.param(
             [
                 {"chat_template_kwargs": _THINKING_ON},
-                {"thinking": {"type": "enabled"}},
                 {"reasoning": {"enabled": True}},
             ],
             _THINKING_ON,

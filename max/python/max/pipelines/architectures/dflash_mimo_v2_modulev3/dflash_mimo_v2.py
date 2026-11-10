@@ -39,20 +39,20 @@ from max.nn import (
     ModuleList,
     RMSNorm,
 )
+from max.nn._graph_ops import (
+    flash_attention_ragged,
+    fused_qk_ragged_rope,
+    store_k_cache_ragged,
+    store_v_cache_ragged,
+)
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.mlp import MLP
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import (
-    flash_attention_ragged,
-    fused_qk_ragged_rope,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
-)
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context
 from max.tensor.sharding import NamedMapping

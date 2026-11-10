@@ -33,6 +33,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SessionMessage,
     TurnSelector,
 )
+from tests.benchmark.benchmark_fakes import make_session
 
 _RF: ResponseFormat = {"type": "json_object"}
 
@@ -45,18 +46,6 @@ def _make_request() -> SampledRequest:
         encoded_images=[],
         ignore_eos=True,
     )
-
-
-def _make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
-    messages: list[SessionMessage] = []
-    for i in range(num_user_turns):
-        messages.append(
-            SessionMessage(source="user", content=f"turn {i}", num_tokens=10)
-        )
-        messages.append(
-            SessionMessage(source="assistant", content="", num_tokens=5)
-        )
-    return ChatSession(id=session_id, messages=messages)
 
 
 def _constrained_turn_indices(session: ChatSession) -> list[int]:
@@ -112,7 +101,7 @@ def test_chat_fraction_lands_on_turns_not_sessions() -> None:
     Per-session selection would leave every session all-on or all-off.
     """
     turns_per_session = 4
-    sessions = [_make_session(i, turns_per_session) for i in range(500)]
+    sessions = [make_session(i, turns_per_session) for i in range(500)]
     augment_samples_with_response_format(
         ChatSamples(chat_sessions=sessions),
         response_format=_RF,
@@ -138,7 +127,7 @@ def test_chat_fraction_lands_on_turns_not_sessions() -> None:
 def test_turn_selector_restricts_eligible_turns(
     turn: TurnSelector, expected: list[int]
 ) -> None:
-    session = _make_session(0, num_user_turns=3)
+    session = make_session(0, num_user_turns=3)
     augment_samples_with_response_format(
         ChatSamples(chat_sessions=[session]),
         response_format=_RF,
@@ -149,7 +138,7 @@ def test_turn_selector_restricts_eligible_turns(
 
 
 def test_assistant_messages_are_never_constrained() -> None:
-    session = _make_session(0, num_user_turns=3)
+    session = make_session(0, num_user_turns=3)
     augment_samples_with_response_format(
         ChatSamples(chat_sessions=[session]),
         response_format=_RF,
@@ -168,7 +157,7 @@ def test_chat_judge_is_skipped_with_a_warning(
 ) -> None:
     """Its driver builds its own requests and never reads the per-turn field,
     so constraining here would be reported but never sent."""
-    session = _make_session(0, num_user_turns=2)
+    session = make_session(0, num_user_turns=2)
     samples = ChatJudgeChatSamples(chat_sessions=[session])
     with caplog.at_level(logging.WARNING):
         augment_samples_with_response_format(
@@ -186,7 +175,7 @@ def test_first_turn_selector_warns_about_warmed_sessions(
     ignore the selector, so they must stay quiet."""
     with caplog.at_level(logging.WARNING):
         augment_samples_with_response_format(
-            ChatSamples(chat_sessions=[_make_session(0, 3)]),
+            ChatSamples(chat_sessions=[make_session(0, 3)]),
             response_format=_RF,
             fraction=1.0,
             turn="first",

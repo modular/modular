@@ -157,8 +157,8 @@ def main() raises:
         raise Error("MODULAR_DRIVER_PLUGINS not set")
 
     var driver = Driver.create(plugin_spec)
-    print("Driver:", driver[].get_name())
-    print("Devices:", driver[].get_device_count())
+    print("Driver:", driver[].name())
+    print("Devices:", driver[].device_count())
 
     do_invalid_device_test(driver[])
 

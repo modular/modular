@@ -336,7 +336,7 @@ struct Foo[x: Int, y: Int](FooTrait, Movable where False):
 # INLINE-SAME: !lit.generator<<"[[OORIGIN:O._mlir_origin`2x]]": origin<
 trait PluginHooks:
     comptime print_emit_fn: Optional[
-        def[O: ImmOrigin](str: StringSlice[O]) thin
+        def[O: ImmOrigin](str: StringSpan[O]) thin
     ]
 
 
@@ -347,7 +347,7 @@ trait PluginHooks:
 # INLINE: kgen.witness "print_emit_fn"
 struct DefaultPlugin(PluginHooks, Movable where False):
     comptime print_emit_fn: Optional[
-        def[O: ImmOrigin](str: StringSlice[O]) thin
+        def[O: ImmOrigin](str: StringSpan[O]) thin
     ] = (
         None
     )

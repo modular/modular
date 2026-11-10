@@ -76,11 +76,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("max.pipelines")
 
-# Encodings that can be casted to/from each other.
-# We currently only support float32 <-> bfloat16 weight type casting.
+# Encodings whose weights can be cast to one another at load time.
 _ALLOWED_CAST_ENCODINGS = {
     "float32",
     "bfloat16",
+    "float16",
 }
 
 
@@ -215,7 +215,7 @@ def _resolve_dtype_cast(
     ):
         raise ValueError(
             f"Cannot cast from '{from_encoding}' to '{to_encoding}' on device '{default_device_spec}'. "
-            f"We only support float32 <-> bfloat16 weight type casting."
+            f"We only support weight casts between float32, bfloat16 and float16."
         )
 
     if not supported_encoding_supported_on(to_encoding, default_device_spec):
@@ -425,7 +425,7 @@ def _resolve_given_quantization_encoding(
     Pure counterpart of the old
     ``_validate_and_resolve_with_given_quantization_encoding``: when the
     requested encoding differs from what the weight files actually carry (and
-    both are float32/bfloat16), it records a load-time cast and returns the
+    both are castable floats), it records a load-time cast and returns the
     file's encoding. Read-only -- does not mutate *config*.
 
     Returns:
@@ -460,8 +460,12 @@ def _resolve_given_quantization_encoding(
         return encoding, None, None
 
     # No weight_path: if the repo carries a single castable encoding whose
-    # files exist, record a cast from it to the requested encoding.
-    for from_encoding in config.huggingface_weight_repo.supported_encodings:
+    # files exist, record a cast from it to the requested encoding. Files in
+    # the requested encoding win over a cast.
+    supported_encodings = config.huggingface_weight_repo.supported_encodings
+    if encoding in supported_encodings:
+        return encoding, None, None
+    for from_encoding in supported_encodings:
         if not (
             from_encoding in _ALLOWED_CAST_ENCODINGS
             and encoding in _ALLOWED_CAST_ENCODINGS
@@ -493,7 +497,7 @@ def _select_encoding_and_dtype_cast(
 
     Arch-aware sibling of :func:`_infer_quantization_encoding`: the consumer
     calls this with the architecture's ``default_encoding`` to obtain the
-    effective ``quantization_encoding`` plus any float32<->bfloat16 load-time
+    effective ``quantization_encoding`` plus any float-to-float load-time
     cast. Read-only -- does not mutate *config*.
 
     Prefer :func:`_select_quantization_encoding` (encoding only) or
@@ -556,7 +560,7 @@ def _select_dtype_cast(
 ) -> tuple[SupportedEncoding | None, SupportedEncoding | None]:
     """Resolves the load-time weight dtype cast for a model, if any.
 
-    Returns ``(cast_from, cast_to)`` describing a float32<->bfloat16 cast
+    Returns ``(cast_from, cast_to)`` describing a float-to-float cast
     applied when loading weights against the resolved encoding, or
     ``(None, None)`` when no cast applies. Read-only -- does not mutate
     *config*.
@@ -742,6 +746,32 @@ class MAXModelConfig(MAXModelConfigBase):
         ),
     )
     """The degree of data parallelism for replicating the model."""
+
+    decode_context_parallel_degree: int = Field(
+        default=1,
+        description=(
+            "Decode context parallelism: the number of attention "
+            "tensor-parallel ranks that split each request's KV cache by "
+            "token position instead of replicating it. Must divide the "
+            "attention tensor-parallel degree; 1 disables it. Set only by "
+            "the gen-mef export: it is not a `max serve` flag, because "
+            "MAX's own KV cache manager doesn't shard by position."
+        ),
+    )
+    """The decode context parallel degree within each attention replica."""
+
+    dcp_q_replicate: bool | None = Field(
+        default=None,
+        description=(
+            "Under decode context parallelism, whether every rank computes "
+            "all of its group's query heads from replicated query weights "
+            "(True) or absorbs its own tensor-parallel heads and all-gathers "
+            "them (False). None takes the default, True, for every "
+            "architecture. Set only by the gen-mef export, like "
+            "decode_context_parallel_degree."
+        ),
+    )
+    """Whether decode context parallel ranks replicate the query."""
 
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."

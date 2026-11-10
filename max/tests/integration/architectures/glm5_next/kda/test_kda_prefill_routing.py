@@ -29,18 +29,15 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.layer import Module
-from max.nn.legacy.state_space import (
-    kda_ring_record_elements,
-    kimi_delta,
-    verify_width_operand,
-)
-from max.nn.legacy.state_space.kimi_delta import (
+from max.nn._graph_ops.state_space import kimi_delta, verify_width_operand
+from max.nn._graph_ops.state_space.kimi_delta import (
     KdaGateMode,
     amd_kda_chunk_workspace_bytes,
     kda_chunk_predicate,
     kda_chunk_workspace_bytes,
+    kda_ring_record_elements,
 )
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.glm5_next.layers import (
     kimi_delta_attention,
 )
@@ -172,9 +169,9 @@ def _modulev3_mlir(
         i = graph.inputs
         graph.output(
             modulev3_kda._kda_core_graph(
-                q=i[0].tensor,
-                k=i[1].tensor,
-                v=i[2].tensor,
+                qkv=ops.concat(
+                    [i[0].tensor, i[1].tensor, i[2].tensor], axis=-1
+                ),
                 q_conv=i[3].tensor,
                 k_conv=i[4].tensor,
                 v_conv=i[5].tensor,

@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """The attention mechanism used within the model."""
 
+from max.nn.attention_mask import AttentionMaskVariant, MHAMaskVariant
+
 from .attention_with_rope import (
     AttentionWithRope,
     GGUFQAttentionWithRope,
@@ -19,10 +21,6 @@ from .attention_with_rope import (
     TensorParallelAttentionWithRope,
 )
 from .interfaces import DistributedAttentionImpl
-from .mask_config import (
-    AttentionMaskVariant,
-    MHAMaskVariant,
-)
 from .multi_latent_attention import (
     LatentAttentionWithRope,
     TensorParallelLatentAttentionWithRope,

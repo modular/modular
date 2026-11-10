@@ -222,6 +222,42 @@ def MAP_StructuredIterOpInterface : OpInterface<"StructuredIterOpInterface"> {
   ];
 }
 
+def MAP_RowwiseOpInterface : OpInterface<"RowwiseOpInterface"> {
+  let description = [{
+    A rowwise kernel's row: `map.iter.rowwise` or its outlined form,
+    `map.iter.rowwise.body`. Its body runs once per row of `getShape()` along
+    `getAxis()`, at the row index `getRowArg()`.
+  }];
+
+  let cppNamespace = "::M::MAP";
+
+  let methods = [
+    InterfaceMethod<"Returns the shape the rows span.",
+      "::M::MOSH::ShapeAttr", "getShape", (ins)>,
+    InterfaceMethod<"Returns the reduced axis.", "int64_t", "getAxis", (ins)>,
+    InterfaceMethod<"Returns the row index block argument.",
+      "::mlir::BlockArgument", "getRowArg", (ins)>,
+  ];
+}
+
+def MAP_RowwisePhaseOpInterface : OpInterface<"RowwisePhaseOpInterface"> {
+  let description = [{
+    A phase of a `map.iter.rowwise` row: a fold (`map.iter.reduce`) or a
+    per-element phase (`map.iter.map`). Its body runs once per element of the
+    row, at the index in its only block argument.
+  }];
+
+  let cppNamespace = "::M::MAP";
+
+  let methods = [
+    InterfaceMethod<
+      "Returns the element index block argument.",
+      "::mlir::BlockArgument", "getIndexArg", (ins), [{}],
+      "return $_op.getBody().front().getArgument(0);"
+    >,
+  ];
+}
+
 def MAP_IndexTransformOpInterface : OpInterface<"IndexTransformOpInterface"> {
   let description = [{
     Common interface for ops that project a structured loop's own index into
@@ -246,6 +282,22 @@ def MAP_IndexTransformOpInterface : OpInterface<"IndexTransformOpInterface"> {
       "::mlir::Value", "createStridedView",
       (ins "::mlir::OpBuilder &":$builder, "::mlir::Value":$tensor,
            "const ::mlir::IRMapping &":$outerValues)
+    >,
+    InterfaceMethod<
+      [{Tracks which loop dimension each coordinate of an index is.
+
+        `dims[k]` is the loop dimension coordinate `k` of `getIndex()` equals,
+        or `kPinnedCoordinate` when the coordinate is always 0. Returns the
+        same for the index this op produces, or nullopt when one of its
+        coordinates isn't a single loop dimension (say, a reshape that merges
+        two). For a loop over [M, N] and its index, dims = [0, 1]:
+
+          broadcast [M, 1] -> [M, N]:  [0, kPinnedCoordinate]
+          broadcast [N] -> [M, N]:     [1]
+          transpose, perm [1, 0]:      [1, 0]}],
+      "std::optional<::llvm::SmallVector<int64_t>>", "mapLoopDims",
+      (ins "::llvm::ArrayRef<int64_t>":$dims), [{}],
+      "return std::nullopt;"
     >,
   ];
 }

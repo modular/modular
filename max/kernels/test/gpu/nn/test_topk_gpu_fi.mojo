@@ -295,7 +295,7 @@ def test_topk_topp_sampling[
     dtype: DType,
     out_idx_type: DType = .int32,
     block_size: Int = 1024,
-](ctx: DeviceContext, batch_size: Int, N: Int, K: Int, p: Float32) raises:
+](ctx: DeviceContext[], batch_size: Int, N: Int, K: Int, p: Float32) raises:
     """Test joint top-K + top-P sampling by validating samples are in both sets.
 
     Runs multiple trials with different seeds and verifies every sample is in
@@ -403,7 +403,7 @@ def test_topk_topp_rng_offset_batch_invariant[
     dtype: DType,
     out_idx_type: DType = .int32,
     block_size: Int = 1024,
-](ctx: DeviceContext, N: Int, K: Int, p: Float32) raises:
+](ctx: DeviceContext[], N: Int, K: Int, p: Float32) raises:
     """Regression test: the same request samples the same token regardless of
     its physical batch slot.
 
@@ -490,7 +490,7 @@ def test_topk_sampling[
     out_idx_type: DType = .int32,
     block_size: Int = 1024,
     sampling_from_prob: Bool = True,
-](ctx: DeviceContext, test_case: TestCase) raises:
+](ctx: DeviceContext[], test_case: TestCase) raises:
     """
     Test top-K sampling kernels with property-based validation.
 
@@ -644,7 +644,7 @@ def test_topk_sampling[
     comptime if DEBUG_BENCH:
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {var}:
+        def run_func(ctx: DeviceContext[]) raises {var}:
             comptime if sampling_from_prob:
                 topk_sampling_from_prob[dtype, out_idx_type, block_size](
                     ctx,
@@ -741,7 +741,7 @@ def test_case_batched[
     dtype: DType,
     out_idx_type: DType = .int,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     test_case: TestCase,
     fill_fn: Some[
         def[rank: Int, dtype: DType](TileTensor[mut=True, dtype, ...]) -> None
@@ -804,7 +804,7 @@ def test_case_batched[
     comptime if DEBUG_BENCH:
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {var}:
+        def run_func(ctx: DeviceContext[]) raises {var}:
             topk_mask_logits[dtype, out_idx_type, block_size](
                 ctx,
                 in_tensor,
@@ -882,7 +882,7 @@ def test_case_batched[
                 comptime if DEBUG_BENCH:
 
                     @inline(.always)
-                    def run_func_cpu(ctx: DeviceContext) raises {var}:
+                    def run_func_cpu(ctx: DeviceContext[]) raises {var}:
                         _top_k_cpu[
                             dtype=dtype,
                             out_idx_type=DType.int64,
@@ -958,14 +958,14 @@ def test_case_batched[
 
 def time_kernel(
     mut m: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     kernel_name: String,
-    func: Some[def(DeviceContext) raises -> None],
+    func: Some[def(DeviceContext[]) raises -> None],
 ) raises:
     @inline(.always)
     def bench_func(mut m: Bencher) {imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             func(ctx)
 
         bencher_iter_custom(m, kernel_launch, ctx)
@@ -1061,7 +1061,7 @@ def test_topk_topp_sampling_fi[
     dtype: DType,
     out_idx_type: DType = .int32,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     batch_size: Int,
     N: Int,
     K: Int,

@@ -87,7 +87,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             + 42,
         )
 
-    elementwise[pack_size, target="gpu"](
+    elementwise[pack_size](
         func,
         (2, 8),
         ctx,
@@ -165,7 +165,7 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
             + 42,
         )
 
-    elementwise[pack_size, target="gpu"](
+    elementwise[pack_size](
         func,
         (3, 3),
         ctx,
@@ -222,7 +222,7 @@ def run_elementwise_exact_boundary_uses_simd[
             linear_idx, SIMD[dtype, simd_width](simd_width)
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(shape), ctx)
+    elementwise[pack_size](func, Coord(shape), ctx)
     out_device.enqueue_copy_to(out_host.unsafe_ptr())
     ctx.synchronize()
 
@@ -288,7 +288,7 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
             ),
         )
 
-    elementwise[1, target="gpu"](func, Coord(out_shape), ctx)
+    elementwise[1](func, Coord(out_shape), ctx)
 
     out_device.enqueue_copy_to(out_host)
     ctx.synchronize()
@@ -374,7 +374,7 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
             input_buffer.unsafe_ptr().unsafe_load[width=simd_width](linear_idx),
         )
 
-    elementwise[pack_size, target="gpu"](
+    elementwise[pack_size](
         func,
         (0, 4, 4),
         ctx,
@@ -382,7 +382,7 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # Test with zero in second dimension
-    elementwise[pack_size, target="gpu"](
+    elementwise[pack_size](
         func,
         (2, 0, 4),
         ctx,
@@ -390,7 +390,7 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # Test with zero in third dimension
-    elementwise[pack_size, target="gpu"](
+    elementwise[pack_size](
         func,
         (2, 4, 0),
         ctx,

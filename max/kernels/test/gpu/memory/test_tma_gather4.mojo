@@ -41,7 +41,7 @@ from std.math import ceildiv
 from std.sys.info import size_of
 
 from max.gpu import block_dim, thread_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     TMADescriptor,
@@ -1650,9 +1650,6 @@ def test_gather4_tile_api[
         grid_dim=(1, 1),
         block_dim=num_threads,
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 
@@ -1830,9 +1827,6 @@ def test_gather4_tile_api_paged[
         grid_dim=(1, 1),
         block_dim=num_threads,
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 

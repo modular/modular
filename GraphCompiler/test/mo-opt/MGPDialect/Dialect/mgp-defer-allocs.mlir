@@ -12,7 +12,7 @@
 //  mo.output %r : !mo.tensor<[8], f32>
 //}
 
-// CHECK-LABEL: mgp.model @basic : mof
+// CHECK-LABEL: mgp.model @basic
 // CHECK: execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context
 
 // ** No change to mul output allocation.
@@ -31,7 +31,7 @@
 // CHECK-NEXT: mef.output %[[CH0]], %[[OUT_TENSOR]]
 // CHECK-NEXT: }
 
-mgp.model @basic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @basic devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -92,7 +92,7 @@ mgp.model @basic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.op
 // CHECK-NEXT: %[[OUT_TENSOR:.*]] = mgp.tensor.create %[[CH10]], %[[OUT_BUF_3]], %{{.*}}
 // CHECK-NEXT: mef.output %[[CH10]], %[[OUT_TENSOR]]
 
-mgp.model @divergent : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @divergent devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -141,7 +141,7 @@ mgp.model @divergent : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mg
 // CHECK-NEXT: mef.output %[[CH1]], %[[BUF0]], %[[BUF1]]
 // CHECK-NEXT: }
 
-mgp.model @multiple_writers_convergence : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @multiple_writers_convergence devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

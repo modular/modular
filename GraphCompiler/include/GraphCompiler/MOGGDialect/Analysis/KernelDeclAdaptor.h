@@ -211,19 +211,6 @@ inline bool symbolMatchesRootAndLeaf(mlir::SymbolRefAttr symbol,
   return symbol.getRootReference() == root && symbol.getLeafReference() == leaf;
 }
 
-inline bool isXType(KGEN::LIT::StructType maybeTensor, llvm::StringLiteral root,
-                    llvm::StringLiteral className) {
-  return symbolMatchesRootAndLeaf(maybeTensor.getSymbol(), root, className);
-}
-
-inline bool isExtensibilityTensor(KGEN::LIT::StructType maybeTensor) {
-  return isXType(maybeTensor, "extensibility", "Tensor");
-}
-
-inline bool isCustomType(KGEN::LIT::StructType maybeCustom) {
-  return !isExtensibilityTensor(maybeCustom);
-}
-
 llvm::StringRef toString(IOSpec spec);
 std::optional<IOSpec> toIOSpec(llvm::StringRef str);
 std::pair<mlir::TypedAttr, mlir::TypedAttr> getParams(IOSpec ioSpec,
@@ -231,6 +218,7 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> getParams(IOSpec ioSpec,
 
 bool isOutputIOSpec(IOSpec spec);
 bool isFusableIOSpec(IOSpec spec);
+bool isTileFusedOutputIOSpec(IOSpec spec);
 bool isMutableIOSpec(IOSpec spec);
 
 //===----------------------------------------------------------------------===//
@@ -282,11 +270,6 @@ struct KernelDeclTileTensorAdaptor {
 };
 
 struct KernelDeclContextPtrAdaptor {
-  /// The context's target is a parameter of the signature, as in
-  /// `DeviceContext.Generic`, so the caller picks it by the static type of the
-  /// context it passes. Otherwise the context is the default accelerator's.
-  bool genericTarget = false;
-
   bool operator==(const KernelDeclContextPtrAdaptor &) const { return true; }
 };
 
@@ -427,12 +410,6 @@ struct KernelDeclOperandAdaptor {
                underlyingType);
   }
 
-  /// A single `DeviceContext` whose target the callee leaves generic.
-  bool isGenericTargetContextType() const {
-    const auto *t = std::get_if<KernelDeclContextPtrAdaptor>(&underlyingType);
-    return t && t->genericTarget;
-  }
-
   bool isVariadicContextType() const {
     return std::holds_alternative<KernelDeclContextPtrListAdaptor>(
         underlyingType);
@@ -504,6 +481,14 @@ struct KernelDeclFunctionAdaptor {
   /// argument, and injects a synthetic fused-output tensor.
   static KernelDeclFunctionAdaptor
   synthesizeExecuteFromElementwise(KGEN::LIT::FnTypeGeneratorType sig);
+
+  /// Whether the last input is the element's `IndexList`, which an
+  /// elementwise function takes when its result depends on the position.
+  bool takesIndexList() const {
+    return !inputArguments.empty() &&
+           inputArguments.back().isOpaqueWithTypeName(
+               kMojoInternalDpsIndexListTypeQualifiedName);
+  }
 
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {

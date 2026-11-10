@@ -255,7 +255,7 @@ def _test_w4a8_grouped[
     ctx.enqueue_copy(expert_scales_dev, expert_scales_host)
     ctx.enqueue_memset(c_dev, Scalar[c_type](0))
 
-    grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True, target="gpu"](
+    grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True](
         TileTensor(c_dev, row_major(M, Idx[N])).as_unsafe_any_origin(),
         TileTensor(a_dev, row_major(M, Idx[K])).as_unsafe_any_origin(),
         TileTensor(
@@ -384,6 +384,14 @@ def main() raises:
         # and 8 < 32 <= 64 is the only band the shapes above skip.
         _test_w4a8_grouped[N=256, K=512, num_experts=4](
             [32, 32, 32, 32], [0, 1, 2, 3], ctx
+        )
+
+        # Decode shapes the dispatch runs with four k-tiles per stage.
+        _test_w4a8_grouped[N=4096, K=4096, num_experts=4](
+            [1, 2, 1, 3], [3, 0, 2, 1], ctx
+        )
+        _test_w4a8_grouped[N=4096, K=2048, num_experts=4](
+            [2, 1, 3, 1], [1, 3, 0, 2], ctx
         )
 
         # K3's routed-expert shapes.

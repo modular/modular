@@ -20,8 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.graph.buffer_utils import cast_tensor_to
-from max.nn.legacy.kernels import fused_qk_ragged_rms_norm, rms_norm_key_cache
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops import fused_qk_ragged_rms_norm, rms_norm_key_cache
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
@@ -184,6 +184,7 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         scales_page_stride=graph_inputs.scales_page_stride,
         scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        mixed_step_split=graph_inputs.mixed_step_split,
     )
     unfused_inputs = KVCacheInputsPerDevice(
         kv_blocks=cast_tensor_to(
@@ -198,6 +199,7 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         scales_page_stride=graph_inputs.scales_page_stride,
         scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        mixed_step_split=graph_inputs.mixed_step_split,
     )
 
     input_row_offsets = Buffer.from_numpy(np.array([0, seq_len], np.uint32)).to(

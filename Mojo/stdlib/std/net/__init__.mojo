@@ -10,8 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides networking support.
+"""Provides networking: IP and socket addresses, and TCP sockets.
 
-This package currently contains only internal building blocks, its public
-types are not yet available.
+Examples:
+
+```mojo
+from std.net.tcp import TCPSocket
+from std.net.tcp.option import NoDelay
+
+def main() raises:
+    var socket = TCPSocket.v4()
+    socket.set_option[NoDelay](True)
+```
 """
+
+from .addr import (
+    IpAddr,
+    Ipv4Addr,
+    Ipv6Addr,
+    SocketAddr,
+    SocketAddrV4,
+    SocketAddrV6,
+)
+from .tcp import TCPListener, TCPSocket

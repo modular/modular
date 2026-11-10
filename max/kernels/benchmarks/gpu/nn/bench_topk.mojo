@@ -58,7 +58,7 @@ from std.sys import (
 def bench_topk_batched[
     dtype: DType, out_idx_type: DType, rank: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     test_case: TestCase,
     fill_fn_name: String,
@@ -176,7 +176,7 @@ def bench_topk_batched[
         mut b: Bencher,
     ) {var K_dev_buffer, var top_p_dev_buffer, imm,}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             var k_imm = (
                 k.reshape(row_major(Int64(batch_size)))
                 .as_unsafe_any_origin()
@@ -295,7 +295,7 @@ def bench_topk_batched[
 
 def bench_topk_stage2[
     dtype: DType, out_idx_type: DType
-](ctx: DeviceContext, mut m: Bench, test_case: TestCase) raises:
+](ctx: DeviceContext[], mut m: Bench, test_case: TestCase) raises:
     """Benchmarks `_topk_stage2` alone, on stage-1-shaped candidate buffers.
 
     The entries above time stage 1, stage 2 and both launches together. This one
@@ -356,7 +356,7 @@ def bench_topk_stage2[
     @inline(.always)
     def bench_func(mut b: Bencher) raises {imm}:
         @inline(.always)
-        def kernel_launch(dctx: DeviceContext) raises {imm}:
+        def kernel_launch(dctx: DeviceContext[]) raises {imm}:
             comptime kernel = _topk_stage2[
                 dtype, out_idx_type, sampling, largest
             ]
@@ -411,7 +411,7 @@ def bench_topk_multi_rank[
     rank: Int,
     out_idx_type: DType = .int,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     input_shape: IndexList[rank],
     test_case: TestCase,
@@ -487,7 +487,7 @@ def bench_topk_multi_rank[
     @inline(.always)
     def bench_func(mut b: Bencher) {var k, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
@@ -569,7 +569,7 @@ def bench_topk_fi[
     dtype: DType,
     out_idx_type: DType,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     test_case: TestCase,
     fill_fn_name: String,
@@ -621,7 +621,7 @@ def bench_topk_fi[
     @inline(.always)
     def bench_func(mut b: Bencher) {imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             _topk_topp_sampling_fi[dtype, out_idx_type](
                 ctx,
                 K,
@@ -667,7 +667,7 @@ def bench_topk_topp_dist[
     out_idx_type: DType,
     emit_dist: Bool,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     test_case: TestCase,
     fill_fn_name: String,
@@ -734,7 +734,7 @@ def bench_topk_topp_dist[
     def bench_func(mut b: Bencher) {mut tokens_dev, mut dist_dev, imm}:
         @inline(.always)
         def kernel_launch(
-            ctx: DeviceContext,
+            ctx: DeviceContext[],
         ) raises {mut tokens_dev, mut dist_dev, imm}:
             topk_topp_sampling_from_prob[
                 from_logits=True, emit_dist=emit_dist, dist_dtype=DType.float32
@@ -806,7 +806,7 @@ def bench_topk_topp_dist[
 def bench_topk_topp_masked[
     dtype: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     test_case: TestCase,
     fill_fn_name: String,
@@ -851,7 +851,7 @@ def bench_topk_topp_masked[
     @inline(.always)
     def bench_func(mut b: Bencher) {mut probs_dev, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {mut probs_dev, imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {mut probs_dev, imm}:
             topk_topp_masked_probs[dtype](
                 ctx,
                 TileTensor(logits_dev, row_major(batch_size, d)),
@@ -1144,7 +1144,7 @@ from nn.topk import fused_token_sampling_gpu, gumbel_sampling_fused_gpu
 
 def bench_dispatch[
     dtype: DType, max_k: Int
-](mut b: Bench, ctx: DeviceContext, batch_size: Int, N: Int) raises:
+](mut b: Bench, ctx: DeviceContext[], batch_size: Int, N: Int) raises:
     var buf0 = ctx.enqueue_create_buffer[dtype](batch_size * N)
     var buf1 = ctx.enqueue_create_buffer[dtype](batch_size * N)
     var buf2 = ctx.enqueue_create_buffer[dtype](batch_size * N)
@@ -1184,7 +1184,7 @@ def bench_dispatch[
     def do_bench(mut bb: Bencher) raises {mut iter0, imm}:
         @inline(.always)
         def launch(
-            dctx: DeviceContext,
+            dctx: DeviceContext[],
         ) raises {
             imm buf0,
             imm buf1,
@@ -1294,7 +1294,7 @@ def bench_gumbel_from_probs() raises:
                 @inline(.always)
                 def bench_fn(mut bb: Bencher) raises {imm}:
                     @inline(.always)
-                    def launch(dctx: DeviceContext) raises {imm}:
+                    def launch(dctx: DeviceContext[]) raises {imm}:
                         gumbel_sampling_fused_gpu[from_probs=True](
                             dctx, probs, out, seed=seeds
                         )
@@ -1319,7 +1319,7 @@ def bench_gumbel_from_probs() raises:
 
 def bench_bitonic_topk(
     mut b: Bench,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     N: Int = PERSISTENT_TOPK_MAX_N,
     K: Int = PERSISTENT_TOPK_MAX_N,
     batch_size: Int = 1,
@@ -1342,7 +1342,7 @@ def bench_bitonic_topk(
     @inline(.always)
     def bench_fn(mut bb: Bencher) {mut idxs_buf, imm}:
         @inline(.always)
-        def launch(dctx: DeviceContext) raises {mut idxs_buf, imm}:
+        def launch(dctx: DeviceContext[]) raises {mut idxs_buf, imm}:
             persistent_topk_block(
                 dctx,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](

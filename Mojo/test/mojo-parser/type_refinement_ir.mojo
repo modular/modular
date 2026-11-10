@@ -187,7 +187,7 @@ def refine_type_value_struct_binding[T: AnyType]():
 
 # CHECK-LABEL: lit.fn @"refine_type_value_binding_preserves_original_bound
 # CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!AnyType_RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!AnyType_OriginalParam T))>
-# CHECK: lit.call{{.*}}@"accepts_original_param{{.*}}<:!AnyType_OriginalParam T>
+# CHECK: lit.call{{.*}}@"accepts_original_param{{.*}}<:!AnyType_OriginalParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!AnyType_OriginalParam T))>
 def refine_type_value_binding_preserves_original_bound[T: OriginalParam]():
     comptime if conforms_to(T, RefinedParam):
         accepts_refined_param[T]()

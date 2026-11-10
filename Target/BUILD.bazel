@@ -97,16 +97,15 @@ modular_cc_test(
 # single-GPU CUDAPluginTest with a multi-GPU requirement.
 modular_cc_test(
     name = "CUDAPeerCopyTest",
-    # ~40s suite (generic DriverPluginTests plus the two 2-GPU CopyInterDevice
-    # tests). Only runs when the toolchain SHA invalidates it; under
-    # full-invalidation contention on a shared multi-GPU node it can exceed
-    # small's 60s cap, so use medium for margin. (Does not affect scheduling
-    # queue time, which is a separate multi-GPU pool-capacity concern.)
-    size = "medium",
+    size = "small",
     srcs = ["test/Fixture.h"],
     data = [":CUDAPlugin.so"],
     env = {
         "MODULAR_DRIVER_PLUGINS": "$(location :CUDAPlugin.so)",
+        # Otherwise each context-level case sets up a context on every GPU on
+        # the node, which is much slower. Two GPUs cover the peer-copy cases.
+        "MODULAR_DRIVER_TEST_MAX_DEVICES": "2",
+        "MODULAR_DRIVER_TEST_SHARE_CONTEXTS": "1",
     },
     gpu_constraints = [
         "//:nvidia_gpu",
@@ -252,6 +251,13 @@ modular_cc_binary(
         "lib/CPU/*.cpp",
         "lib/CPU/*.h",
     ]),
+    dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     linkshared = True,
     linkstatic = False,
     visibility = ["//visibility:public"],

@@ -30,12 +30,8 @@ from typing import Any, ClassVar
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
-    KVCacheParamInterface,
-    spec_decode_cache_slack,
-)
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.glm5_next.model_config import (
     LINEAR_ATTENTION,
     MLA_KERNEL_LATENT_WIDTH,
@@ -65,8 +61,8 @@ from typing_extensions import Self, override
 
 from ..deepseekV3_2_modulev3.model_config import DeepseekV3_2Config
 from .checkpoint import (
-    _hc_fn_dtype,
     _stored_hc_fn_dtype,
+    check_raw_projections,
     checkpoint_quant_scheme,
 )
 
@@ -122,6 +118,10 @@ class Glm5NextConfig(DeepseekV3_2Config):
     swiglu_limit: float = 10.0
     """Clamp applied before the activation in every MLP and expert."""
 
+    index_share_for_mtp_iteration: bool = True
+    """Whether the MTP draft's later steps reuse its first step's top-k
+    selection."""
+
     hf_quantization_config: dict[str, Any] | None = None
     quant_scheme: Glm5NextQuantScheme | None = None
     declared_dtype: DType | None = None
@@ -135,26 +135,25 @@ class Glm5NextConfig(DeepseekV3_2Config):
         state_dict: Mapping[str, Any],
         outputs: ModelOutputConfig,
     ) -> Self:
-        """Resolves checkpoint precision and validates the supported output mode."""
-        if (
-            outputs.return_logits is not ReturnLogits.LAST_TOKEN
-            or outputs.return_hidden_states is not ReturnHiddenStates.NONE
-        ):
-            raise NotImplementedError(
-                "GLM-5.3-Flash on ModuleV3 supports only last-token logits without hidden-state outputs"
-            )
+        """Resolves checkpoint precision.
+
+        The decoder returns only the last token's logits, whatever
+        ``outputs`` asks for; the fused MTP graph sets its own outputs.
+
+        Raises:
+            ValueError: If the checkpoint's ``modules_to_not_convert``
+                disagrees with which MLA projections carry a scale.
+        """
+        del outputs
+        check_raw_projections(state_dict)
         self.quant_config = self.resolve_quant_scheme(state_dict)
         for name, weight in state_dict.items():
             if name.endswith("e_score_correction_bias"):
                 self.correction_bias_dtype = weight.dtype
                 break
-        self.hc_fn_dtype = _hc_fn_dtype(
-            _stored_hc_fn_dtype(state_dict),
-            self.hc_mult,
-            self.hidden_size,
-            self.compute_dtype,
-            self.devices[0].to_device(),
-        )
+        # Held as stored: the fused pre-site op reads a bfloat16 projection,
+        # and the unfused path widens it to float32, which is exact.
+        self.hc_fn_dtype = _stored_hc_fn_dtype(state_dict)
         return self
 
     def __post_init__(self) -> None:
@@ -383,6 +382,9 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 MLA_KERNEL_LATENT_WIDTH,
             ),
             swiglu_limit=getattr(text_config, "swiglu_limit", 10.0),
+            index_share_for_mtp_iteration=getattr(
+                text_config, "index_share_for_mtp_iteration", True
+            ),
             hf_quantization_config=resolve_hf_quant_config(
                 huggingface_config, {}
             ),

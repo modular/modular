@@ -4,6 +4,13 @@ lit.fn @my_abort() -> !kgen.never {
   hlcf.unreachable
 }
 
+// An empty fallthrough message is the default and is not printed.
+// CHECK-LABEL: lit.fn @empty_fallthrough_message
+// CHECK-NEXT: hlcf.unreachable{{$}}
+lit.fn @empty_fallthrough_message() {
+  hlcf.unreachable {fallthroughError = ""}
+}
+
 // CHECK-LABEL: lit.struct.decl @SomeStruct
 lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.fn @dead_returns

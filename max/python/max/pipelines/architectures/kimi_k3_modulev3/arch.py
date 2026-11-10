@@ -18,7 +18,12 @@ Selected over the Graph-API architecture (``kimi_k3.arch.kimi_k3_arch``) by
 TP, EP and MXFP4 are all wired (see ``layers/ep.py``, ``layers/moe_latent.py``
 and ``weight_adapters.py``); EP and MXFP4 are mutually exclusive, matching
 ``moonshotai/Kimi-K3`` (MXFP4) vs ``moonshotai/Kimi-K3-ep`` (EP, bf16).
-Speculative decoding is not ported.
+The tower builds for a speculative pairing through the framework's
+registered builder, on a config the pairing stamped with the draft's
+``target_layer_ids``, so it reads the attention-residual mixture the
+drafter was trained against (TP only, the config refusing expert
+parallelism there); the fused pairing itself lives in the DSpark drafter's
+package (``kimi_k3_modulev3.dspark``).
 """
 
 from __future__ import annotations
@@ -57,4 +62,11 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
     memory_planner=KimiK3ModuleV3MemoryPlanner,
     multi_gpu_supported=True,
     requires_max_batch_context_length=True,
+    # The fused graph the `Inferact/Kimi-K3-DSpark` drafter builds with this
+    # target. Named apart from the graph API path's `unified_dspark_kimi_k3`
+    # because the two ABIs share nothing but arity: the ModuleV3 graph ends
+    # its declared inputs with the PR7 extent pair and takes its traced signal
+    # buffers after it (mach/docs/models/kimi-k3-inferact-dspark.md). The
+    # exporter selects the fused submodel by this name.
+    spec_decode_graph_names={"dspark": "unified_dspark_kimi_k3_modulev3"},
 )

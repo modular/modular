@@ -31,7 +31,7 @@ def mojo_test(
     validate_gpu_tags(tags, target_compatible_with)
 
     default_exec_properties = get_default_exec_properties(tags, target_compatible_with)
-    resources_exec_properties = get_resources_exec_properties(name, test = True)
+    resources_exec_properties = get_resources_exec_properties(name)
     _upstream_mojo_test(
         name = name,
         tags = ["mojo-fixits"] + tags + get_resources_tags(name),

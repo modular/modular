@@ -6776,3 +6776,36 @@ def test_deepseek_v41_empty_arguments_whitespace_cap_through_shim() -> None:
         compiled,
         '<\uff5cDSML\uff5c parameter name="x" string="true">v</\uff5cDSML\uff5c parameter>\n',
     )
+
+
+def test_free_form_object_value_takes_the_node_s_separators_and_bound() -> None:
+    # A free-form object value uses the node's separators and whitespace
+    # bound, the same as a typed object.
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": "object"}},
+        "required": ["a"],
+    }
+
+    def compile_with(**settings: Any) -> xgr.CompiledGrammar:
+        return _compiler().compile_structural_tag(
+            xgr.StructuralTag(
+                format=JSONSchemaFormat(
+                    json_schema=schema,
+                    require_object_root=True,
+                    strict_mode=False,
+                    max_whitespace_cnt=1,
+                    **settings,
+                )
+            )
+        )
+
+    exact = compile_with(any_whitespace=False, separators=(",", ":"))
+    assert _accepts(exact, '{"a":{"a":1,"b":1}}')
+    assert not _accepts(exact, '{"a":{"a":1, "b":1}}')
+    assert not _accepts(exact, '{"a":{ "a":1}}')
+
+    bounded = compile_with(any_whitespace=True)
+    assert _accepts(bounded, '{"a":{ "a":1, "b":1 }}')
+    assert not _accepts(bounded, '{"a":{  "a":1}}')
+    assert not _accepts(bounded, '{"a":{"a":1,  "b":1}}')

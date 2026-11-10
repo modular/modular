@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _moe_test_utils import assign_experts
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -38,7 +39,7 @@ def _rel_error(a: np.ndarray, b: np.ndarray) -> float:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
+    "moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_latent_moe_ep2_matches_single_device() -> None:
     hidden = 32
@@ -107,12 +108,12 @@ def test_latent_moe_ep2_matches_single_device() -> None:
         layer.routed_expert_norm.weight = Tensor(
             norm_np, dtype=DType.float32
         ).cast(DType.bfloat16)
-        layer.experts_gate_up_proj = Tensor(
-            experts_gate_up_np, dtype=DType.float32
-        ).cast(DType.bfloat16)
-        layer.experts_down_proj = Tensor(
-            experts_down_np, dtype=DType.float32
-        ).cast(DType.bfloat16)
+        assign_experts(
+            layer,
+            experts_gate_up_np,
+            experts_down_np,
+            lambda a, device: Tensor(a, device=device).cast(DType.bfloat16),
+        )
         layer.shared_experts.gate_up_proj.weight = Tensor(
             shared_gate_up_np, dtype=DType.float32
         ).cast(DType.bfloat16)

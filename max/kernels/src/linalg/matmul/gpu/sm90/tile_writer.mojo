@@ -58,10 +58,10 @@ from ....utils import (
     no_epilogue_fn,
 )
 from std.utils.coord import Coord, DynamicCoord
-from std.sys import align_of, size_of
+from std.sys import size_of
 from layout.tile_io import copy_local_to_dram
 import std.itertools
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle
+from layout.swizzle import make_ldmatrix_swizzle
 from std.bit import log2_floor
 from std.math.uutils import ufloordiv
 

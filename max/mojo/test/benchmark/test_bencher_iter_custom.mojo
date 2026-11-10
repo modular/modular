@@ -20,11 +20,11 @@ from std.testing import TestSuite, assert_equal, assert_true
 def test_iter_custom_device_context_closure() raises:
     """Tests the closure overload for `def(DeviceContext) raises`."""
     var bencher = Bencher(3)
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     var count = 0
 
     @inline(.always)
-    def launch(ctx: DeviceContext) raises {mut count, imm}:
+    def launch(ctx: DeviceContext.CPU) raises {mut count, imm}:
         _ = ctx
         count += 1
 
@@ -37,12 +37,12 @@ def test_iter_custom_device_context_closure() raises:
 def test_iter_custom_device_context_iteration_closure() raises:
     """Tests the closure overload for `def(DeviceContext, Int) raises`."""
     var bencher = Bencher(4)
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     var iteration_sum = 0
 
     @inline(.always)
     def launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext.CPU, iteration: Int
     ) raises {mut iteration_sum, imm}:
         _ = ctx
         iteration_sum += iteration

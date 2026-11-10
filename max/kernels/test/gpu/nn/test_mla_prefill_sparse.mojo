@@ -36,6 +36,7 @@ from std.math.constants import log2e
 from std.memory import alloc
 from std.memory.alloc import unsafe_alloc
 from std.random import randn
+from std.sys import get_defined_int
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -874,6 +875,19 @@ def main() raises:
         comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
+            comptime if get_defined_int[
+                "MLA_SPARSE_PREFILL_FP16_CONTRACT", 0
+            ]():
+                run_test_prefill_sparse[.float16, 8, 64](
+                    "fp16_h8_contract", 1, 2, 128, ctx
+                )
+                run_test_prefill_sparse[.float16, 64, 64](
+                    "fp16_h64_contract", 1, 2, 128, ctx
+                )
+                run_test_prefill_sparse[.float16, 128, 128](
+                    "fp16_h128_contract", 1, 2, 256, ctx
+                )
+                return
             # ===============================================================
             # Production DSv3.2/GLM regime: constant broadcast topk_lengths.
             # ---------------------------------------------------------------

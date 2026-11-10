@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import requests
 from max import tree
+from max.engine import InferenceSession, Model
+from max.engine.api import PrintStyle
 from max.nn import Linear, Module
 from max.nn._weight_utils import (
     _ExternalWeight,
@@ -39,7 +41,7 @@ from max.nn.common_layers.quant_linear import (
     QuantizedQKVLinear,
 )
 from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
-from max.nn.legacy.quant_config import QuantConfig, WeightSource
+from max.nn.quant_config import QuantConfig, QuantFormat, WeightSource
 from max.pipelines import PIPELINE_REGISTRY, TextGenerationPipelineInterface
 from max.pipelines.context import (
     SamplingParams,
@@ -70,6 +72,7 @@ from max.tensor import Tensor, compilation
 
 from .generate import stream_text_to_console
 from .metrics import TextGenerationMetrics
+from .quant_error_report import JSON_NAME, clear_error_dumps, write_report
 
 logger = logging.getLogger("max._entrypoints")
 
@@ -121,6 +124,13 @@ def _fused_modules_to_swap(
     return swaps
 
 
+#: Formats whose on-the-fly quantizer can decode in the graph to measure
+#: its own error.
+_ERROR_REPORT_FORMATS = frozenset(
+    {QuantFormat.NVFP4, QuantFormat.MXFP8, QuantFormat.MXFP4}
+)
+
+
 def insert_quantized_linears(
     module: Module[..., Any],
     targets: Iterable[str],
@@ -134,7 +144,24 @@ def insert_quantized_linears(
     statement of intent. Gate/up and unstacked q/k/v are one matmul, so a
     full match swaps the parent onto the quant fuser. A partial match is
     rejected.
+
+    With ``quant_config.report_error``, each quantizer is built to print its
+    weight's quantization error from inside the graph, named after the
+    weight. Only the on-the-fly block-scaled formats in
+    :data:`_ERROR_REPORT_FORMATS` can measure their error.
+
+    Raises:
+        ValueError: If ``quant_config.report_error`` is set for a format that
+            cannot measure its error.
     """
+    if quant_config.report_error and (
+        quant_config.format not in _ERROR_REPORT_FORMATS
+    ):
+        known = ", ".join(sorted(f.value for f in _ERROR_REPORT_FORMATS))
+        raise ValueError(
+            "error reporting is only implemented for "
+            f"{known}; got {quant_config.format.value}"
+        )
     patterns = [re.compile(pattern) for pattern in targets]
     swaps = _fused_modules_to_swap(module, patterns)
     count = 0
@@ -317,6 +344,14 @@ _ON_THE_FLY: dict[str, QuantConfig] = {
         QuantConfig.nvfp4(mlp_quantized_layers=(), attn_quantized_layers=()),
         source=WeightSource.QUANTIZE,
     ),
+    "mxfp8": dataclasses.replace(
+        QuantConfig.mxfp8(mlp_quantized_layers=(), attn_quantized_layers=()),
+        source=WeightSource.QUANTIZE,
+    ),
+    "mxfp4": dataclasses.replace(
+        QuantConfig.mxfp4(mlp_quantized_layers=(), attn_quantized_layers=()),
+        source=WeightSource.QUANTIZE,
+    ),
 }
 
 
@@ -325,8 +360,11 @@ def quant_formats() -> tuple[str, ...]:
     return tuple(sorted(_ON_THE_FLY))
 
 
-def on_the_fly_config(name: str) -> QuantConfig:
+def on_the_fly_config(name: str, *, report_error: bool = False) -> QuantConfig:
     """The config ``--quantization-format`` selects.
+
+    With ``report_error``, the quantizers built from it print their
+    quantization error from inside the graph.
 
     Raises:
         ValueError: if ``name`` is not a format this command can produce.
@@ -339,7 +377,24 @@ def on_the_fly_config(name: str) -> QuantConfig:
             f"produce {', '.join(quant_formats())}"
         ) from None
     # A copy, because QuantConfig is mutable and the table is shared.
-    return dataclasses.replace(config)
+    return dataclasses.replace(config, report_error=report_error)
+
+
+def _enable_error_prints(
+    session: InferenceSession, directory: Path | None
+) -> None:
+    """Has ``session`` dump the graph's prints, which carry the error stats.
+
+    Must run before the graphs compile. Dumps from an earlier run are
+    removed, so the report holds only this run's weights. A no-op without a
+    directory.
+    """
+    if directory is None:
+        return
+    clear_error_dumps(directory)
+    session.set_debug_print_options(
+        style=PrintStyle.BINARY_MAX_CHECKPOINT, output_directory=directory
+    )
 
 
 def _single_graph_quantizing_model(
@@ -347,6 +402,7 @@ def _single_graph_quantizing_model(
     targets: Iterable[str],
     quant_config: QuantConfig,
     verbose: bool,
+    error_report_dir: Path | None,
 ) -> type[Any]:
     """Returns a subclass that quantizes what ``_instantiate_module`` builds.
 
@@ -364,10 +420,17 @@ def _single_graph_quantizing_model(
         def _instantiate_module(self, model_config: Any) -> Any:
             nn_model = super()._instantiate_module(model_config)
             insert_quantized_linears(
-                nn_model, targets, quant_config, verbose=verbose
+                nn_model,
+                targets,
+                quant_config,
+                verbose=verbose,
             )
             self.nn_module = nn_model
             return nn_model
+
+        def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+            _enable_error_prints(session, error_report_dir)
+            return super().load_graphs(session)
 
     return QuantizingPipelineModel
 
@@ -377,6 +440,7 @@ def _multi_graph_quantizing_model(
     targets: Iterable[str],
     quant_config: QuantConfig,
     verbose: bool,
+    error_report_dir: Path | None,
 ) -> type[Any]:
     """Returns a subclass that quantizes what ``_language_spec`` builds.
 
@@ -400,10 +464,17 @@ def _multi_graph_quantizing_model(
                     "so layer quantizers cannot be inserted"
                 )
             insert_quantized_linears(
-                language, targets, quant_config, verbose=verbose
+                language,
+                targets,
+                quant_config,
+                verbose=verbose,
             )
             self.nn_module = language
             return spec
+
+        def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+            _enable_error_prints(session, error_report_dir)
+            return super().load_graphs(session)
 
     return QuantizingPipelineModel
 
@@ -414,6 +485,7 @@ def _factory_with_layer_quantizers(
     quant_config: QuantConfig,
     *,
     verbose: bool = False,
+    error_report_dir: Path | None = None,
 ) -> Callable[[], Any]:
     """Returns a factory that quantizes layers before the module is compiled.
 
@@ -431,11 +503,11 @@ def _factory_with_layer_quantizers(
     model_cls = keywords["pipeline_model"]
     if issubclass(model_cls, ModuleV3MultiGraphPipelineModelWithKVCache):
         pipeline_model = _multi_graph_quantizing_model(
-            model_cls, targets, quant_config, verbose
+            model_cls, targets, quant_config, verbose, error_report_dir
         )
     elif issubclass(model_cls, ModuleV3PipelineModelWithKVCache):
         pipeline_model = _single_graph_quantizing_model(
-            model_cls, targets, quant_config, verbose
+            model_cls, targets, quant_config, verbose, error_report_dir
         )
     else:
         raise TypeError(
@@ -459,14 +531,28 @@ def quantize_pipeline(
     num_warmups: int = 0,
     profile: bool = False,
     profile_top_n: int = 15,
+    error_report_dir: Path | None = None,
     export_path: Path | None = None,
 ) -> None:
-    quant_config = on_the_fly_config(quantization_format)
+    """Quantizes the targeted layers on load, then generates text.
+
+    With ``error_report_dir``, every quantized weight's error against its
+    native-precision source is measured inside the compiled graph and
+    printed as the graph runs. The report is built from the files that run
+    leaves behind.
+    """
+    quant_config = on_the_fly_config(
+        quantization_format, report_error=error_report_dir is not None
+    )
     pipeline_config = PipelineConfig.from_args(pipeline_args)
     retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
     tokenizer = retrieved.tokenizer
     pipeline = _factory_with_layer_quantizers(
-        retrieved.factory, targets, quant_config, verbose=verbose
+        retrieved.factory,
+        targets,
+        quant_config,
+        verbose=verbose,
+        error_report_dir=error_report_dir,
     )()
     assert isinstance(pipeline, Pipeline)
     log_basic_config(pipeline_config, memory_plan=retrieved.memory_plan)
@@ -528,6 +614,9 @@ def quantize_pipeline(
     finally:
         if capture is not None:
             capture.end_and_finalize()
+    if error_report_dir is not None:
+        write_report(error_report_dir)
+        logger.info(f"Wrote {error_report_dir / JSON_NAME}")
     if export_path is not None:
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         export_quantized_checkpoint(pipeline._pipeline_model, export_path)

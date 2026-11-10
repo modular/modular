@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
@@ -25,7 +27,7 @@ from .model_config import InklingConfig
 from .reasoning import InklingReasoningParser  # noqa: F401  registers "inkling"
 from .tokenizer import InklingTokenizer
 from .tool_parser import InklingToolParser  # noqa: F401  registers "inkling"
-from .weight_adapters import convert_safetensor_state_dict
+from .weight_adapters import inkling_weight_rules
 
 inkling_arch = SupportedArchitecture(
     name="InklingForConditionalGeneration",
@@ -40,9 +42,8 @@ inkling_arch = SupportedArchitecture(
     context_type=TextAndVisionContext,
     config=InklingConfig,
     tool_parser="inkling",
-    weight_adapters={
-        WeightsFormat.safetensors: convert_safetensor_state_dict,
-    },
+    weight_rules=inkling_weight_rules,
+    use_weight_rules=True,
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
     checkpoints_recurrent_state=True,
@@ -50,4 +51,5 @@ inkling_arch = SupportedArchitecture(
     reasoning_parser="inkling",
     checkpoint_drafts={"mtp": "MTPInklingDraftModel"},
     spec_decode_graph_names={"mtp": "inkling_with_mtp_graph"},
+    format_spec=Path(__file__).parent / "formatspec.json",
 )

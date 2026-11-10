@@ -25,22 +25,18 @@ from max.gpu.memory import fence_mbarrier_init
 from layout import (
     TensorLayout,
     Coord,
-    Layout,
     TileTensor,
     coord,
     row_major,
 )
-from layout.tile_layout import Layout as NativeLayout
 from layout.tile_tensor import stack_allocation
-from layout.int_tuple import _IntTupleToCoordLike
-from std.utils import TypeList
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tile_io import copy_local_to_dram
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    tile_layout_k_major,
-    tile_layout_mn_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
     warpgroup_fence,
 )
 from layout.tma_async import (
@@ -58,19 +54,6 @@ from std.utils.numerics import get_accum_type
 from std.utils.coord import Coord
 
 
-# Keep the nested SMEM modes used by the existing descriptor formulas.
-comptime _SmemLayout[legacy: Layout] = NativeLayout[
-    shape_types=TypeList.of[
-        Coord[*_IntTupleToCoordLike[.int64, legacy.shape[0]]],
-        Coord[*_IntTupleToCoordLike[.int64, legacy.shape[1]]],
-    ](),
-    stride_types=TypeList.of[
-        Coord[*_IntTupleToCoordLike[.int64, legacy.stride[0]]],
-        Coord[*_IntTupleToCoordLike[.int64, legacy.stride[1]]],
-    ](),
-]
-
-
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def multicast_tma_wgmma_kernel[
@@ -84,8 +67,10 @@ def multicast_tma_wgmma_kernel[
     b_desc_shape: Coord,
     block_tile_shape: Coord[Int, Int, Int],
     wgmma_shape: DynamicCoord[.int, 3],
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
+    ASmemLayout: TensorLayout,
+    BSmemLayout: TensorLayout,
+    a_smem_layout: ASmemLayout,
+    b_smem_layout: BSmemLayout,
     cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -101,21 +86,11 @@ def multicast_tma_wgmma_kernel[
     comptime assert type_of(c).LayoutType.shape_known
     var a_smem_tile = stack_allocation[
         dtype=a_type, address_space=.SHARED, alignment=128
-    ](
-        _SmemLayout[a_smem_layout](
-            Coord[*_SmemLayout[a_smem_layout].shape_types](),
-            Coord[*_SmemLayout[a_smem_layout].stride_types](),
-        )
-    )
+    ](a_smem_layout)
 
     var b_smem_tile = stack_allocation[
         dtype=b_type, address_space=.SHARED, alignment=128
-    ](
-        _SmemLayout[b_smem_layout](
-            Coord[*_SmemLayout[b_smem_layout].shape_types](),
-            Coord[*_SmemLayout[b_smem_layout].stride_types](),
-        )
-    )
+    ](b_smem_layout)
 
     comptime accum_type = get_accum_type[a_type]()
     var wgmma_op = TensorCoreAsync[
@@ -385,14 +360,16 @@ def test_multicast_tma_wgmma[
     var c_ref = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
 
     # Shared memory tile layouts
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
+    comptime a_smem_layout = tile_layout_k_major_typed[
+        a_type, BM, BK, a_swizzle
+    ]
+    # Two distinct layouts; select the type, then default-construct it.
+    comptime BSmemLayout = type_of(
+        tile_layout_k_major_typed[b_type, BN, BK, b_swizzle]
+    ) if transpose_b else type_of(
+        tile_layout_mn_major_typed[b_type, BN, BK, b_swizzle]
+    )
+    comptime b_smem_layout = BSmemLayout()
 
     a.to_device()
     b.to_device()
@@ -428,6 +405,8 @@ def test_multicast_tma_wgmma[
         type_of(b_tma_op).desc_shape,
         block_tile_shape,
         wgmma_shape,
+        type_of(a_smem_layout),
+        type_of(b_smem_layout),
         a_smem_layout,
         b_smem_layout,
         cluster_shape=cluster_shape,

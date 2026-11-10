@@ -31,7 +31,8 @@ from max.gpu.primitives.cluster import (
     cluster_arrive_relaxed,
     cluster_sync,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu import block_id_in_cluster, lane_id, warp_id as get_warp_id
@@ -62,11 +63,9 @@ from layout import (
     coord,
 )
 from layout.coord import ComptimeInt
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_sf_layout_k_major,
+    tile_sf_layout_k_major_typed,
 )
 from layout.tma_async import (
     PipelineState,
@@ -95,7 +94,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
     OutputStage,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
@@ -1092,7 +1091,7 @@ def _sfb_cpasync_produce_tile[
     # Global memory atom layout: (k_tile, row_in_atom, sub_column) → flat
     # offset within one n_group. Strides: k_tile by K_TILE_ELEMS (512),
     # row by ROW_STRIDE (16), sub_column by SF_ATOM_K (4).
-    comptime sfb_global_atom_layout = TileLayout(
+    comptime sfb_global_atom_layout = Layout(
         Coord(
             Idx[num_sf_k_tiles],
             Idx[SF_ATOM_M[0]],
@@ -1106,7 +1105,7 @@ def _sfb_cpasync_produce_tile[
     )
 
     # SMEM stage layout: pipeline stage offset → flat SMEM element offset.
-    comptime sfb_smem_stage_layout = TileLayout(
+    comptime sfb_smem_stage_layout = Layout(
         Coord(Idx[num_sfb_pipeline_stages * k_group_size]),
         Coord(Idx[sfb_smem_tile_elems]),
     )
@@ -1238,7 +1237,7 @@ def _sfb_cpasync_produce_tile_warpwide[
 
     # Global memory atom layout: (k_tile, row_in_atom, sub_column) → flat
     # offset within one n_group.
-    comptime sfb_global_atom_layout = TileLayout(
+    comptime sfb_global_atom_layout = Layout(
         Coord(
             Idx[num_sf_k_tiles],
             Idx[SF_ATOM_M[0]],
@@ -1252,7 +1251,7 @@ def _sfb_cpasync_produce_tile_warpwide[
     )
 
     # SMEM stage layout: pipeline stage offset → flat SMEM element offset.
-    comptime sfb_smem_stage_layout = TileLayout(
+    comptime sfb_smem_stage_layout = Layout(
         Coord(Idx[num_sfb_pipeline_stages * k_group_size]),
         Coord(Idx[sfb_smem_tile_elems]),
     )
@@ -1483,28 +1482,20 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime b_tma_rows = b_desc_shape.element_types[1].static_value
 
     # keep the physical SMEM buffer BM x MMA_N
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=config.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]()
 
-    comptime sfa_smem_layout = tile_sf_layout_k_major[
+    comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         BM,
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
-    ]()
+    ]
     # Always use the hardware atom layout for SFB so that tcgen05_cp can
     # bulk-copy SMEM→TMEM from the MMA warp (no 4-warp tcgen05_st needed).
     # cp.async scatters data into the correct atom positions on load.
-    comptime sfb_smem_layout = tile_sf_layout_k_major[
+    comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
         align_up(MMA_N, SF_MN_GROUP_SIZE),
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
-    ]()
+    ]
 
     comptime SmemType = B200BlockScaledMatmulSmem[
         a_type,
@@ -1610,10 +1601,10 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     # Verify TileTensor tile sizes match the iterator tile sizes.
     comptime assert (
-        sfa_d0 * sfa_d1 == sfa_smem_layout.size()
+        sfa_d0 * sfa_d1 == sfa_smem_layout.static_product
     ), "SFA TileTensor tile size must match iterator tile size"
     comptime assert (
-        sfb_d0 * sfb_d1 == sfb_smem_layout.size()
+        sfb_d0 * sfb_d1 == sfb_smem_layout.static_product
     ), "SFB TileTensor tile size must match iterator tile size"
 
     comptime num_sf_tiles = config.num_pipeline_stages
@@ -2043,7 +2034,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         config.num_sf_k_tiles,
                         config.k_group_size,
                         config.num_pipeline_stages // config.k_group_size,
-                        sfb_smem_layout.size(),
+                        sfb_smem_layout.static_product,
                     ](
                         work_info,
                         num_iters,
@@ -2064,7 +2055,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         config.num_sf_k_tiles,
                         config.k_group_size,
                         config.num_pipeline_stages // config.k_group_size,
-                        sfb_smem_layout.size(),
+                        sfb_smem_layout.static_product,
                     ](
                         work_info,
                         num_iters,
@@ -2493,7 +2484,7 @@ def _create_tma_and_launch[
         Int64(sfa_5d_tensor.dim[2]()),
         Idx[sf_atom_u16],
     )
-    var sfa_4d_layout = TileLayout(
+    var sfa_4d_layout = Layout(
         sfa_4d_shape,
         Coord(
             Int64(sfa_5d_tensor.dynamic_stride(0) // 2),
@@ -2527,9 +2518,6 @@ def _create_tma_and_launch[
     var _sfb_batch_stride_val = Int(sfb_5d_tensor.dynamic_stride(0))
 
     # Shared memory
-    # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
     comptime SmemType = B200BlockScaledMatmulSmem[
         a_type,
         b_type,
@@ -2603,7 +2591,24 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch kernel
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
+            block_dim=(
+                32
+                * (
+                    load_warps
+                    + sfb_load_warps
+                    + sfb_ready_warps
+                    + mma_warps
+                    + scheduler_warps
+                    + epilogue_warps
+                )
+            ),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -2618,24 +2623,6 @@ def _create_tma_and_launch[
         Int32(_sfb_k_tiles),
         Int32(N_maybe_swapped),
         host_args=(epilogue_fn, compute_fn),
-        grid_dim=grid_dim,
-        # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
-        block_dim=(
-            32
-            * (
-                load_warps
-                + sfb_load_warps
-                + sfb_ready_warps
-                + mma_warps
-                + scheduler_warps
-                + epilogue_warps
-            )
-        ),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
     comptime if enable_profiling:
@@ -2829,11 +2816,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 Idx[1],
             )
 
-    var sfa_5d_layout = TileLayout(
+    var sfa_5d_layout = Layout(
         _scales_5d_shape(a_scales_tensor), _scales_5d_stride(a_scales_tensor)
     )
     var sfa_5d_tensor = a_scales_tensor.as_imm().reshape(sfa_5d_layout)
-    var sfb_5d_layout = TileLayout(
+    var sfb_5d_layout = Layout(
         _scales_5d_shape(b_scales_tensor), _scales_5d_stride(b_scales_tensor)
     )
     var sfb_5d_tensor = b_scales_tensor.as_imm().reshape(sfb_5d_layout)

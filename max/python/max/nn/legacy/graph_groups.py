@@ -23,15 +23,17 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
-from typing import ClassVar, Literal, TypeVar
+from typing import Any, ClassVar, Literal
 
 from max import tree
 from max.graph import BufferType, TensorType, TensorValue
-from typing_extensions import Self
+from typing_extensions import Self, TypeVar
 
 __all__ = [
     "BatchContext",
+    "BlockDiffusionGraphInputs",
     "ConvStates",
+    "DecoderGraphInputs",
     "DecoderOutputs",
     "EPLBProfile",
     "EPPayload",
@@ -43,7 +45,10 @@ __all__ = [
     "MRoPEPositions",
     "RaggedBatch",
     "SparseIndices",
+    "SpecDecode",
+    "SpecDecodeOutputs",
     "TPSignals",
+    "TokenBitmask",
     "VisionEmbeddings",
     "VisionHostMax",
     "VisionMerge",
@@ -57,6 +62,17 @@ __all__ = [
 
 _K = TypeVar("_K", bound=str)
 _V = TypeVar("_V")
+# A ModuleV3 graph's groups hold tensor layouts and tensors in place of
+# graph-API types and values, and a step packs some groups with its buffers.
+_TensorT = TypeVar("_TensorT", default=TensorValue)
+_MergeT = TypeVar(
+    "_MergeT",
+    default=tuple[TensorType, ...] | tuple[tuple[TensorType, ...], ...],
+)
+_SignalsT = TypeVar("_SignalsT", default=tuple[BufferType, ...])
+_ContextT = TypeVar("_ContextT", default=tuple[TensorType, ...])
+_SpecT = TypeVar("_SpecT", default=TensorType | tuple[TensorType, ...])
+_BitmaskT = TypeVar("_BitmaskT", default=TensorType | BufferType)
 
 
 class GraphGroup(OrderedDict[_K, _V]):
@@ -107,15 +123,13 @@ class RaggedBatch(GraphGroup[str, TensorType | tuple[TensorType, ...]]):
     kind = "ragged_batch"
 
 
-class TPSignals(GraphGroup[str, tuple[BufferType, ...]]):
+class TPSignals(GraphGroup[str, _SignalsT]):
     """The allreduce signal buffers, one per device."""
 
     kind = "tp_signals"
 
 
-class VisionMerge(
-    GraphGroup[str, tuple[TensorType, ...] | tuple[tuple[TensorType, ...], ...]]
-):
+class VisionMerge(GraphGroup[str, _MergeT]):
     """Image embeddings per device and the token positions they replace.
 
     A model that injects image features into later layers, such as
@@ -225,7 +239,7 @@ class ItemPositions(GraphGroup[str, TensorValue]):
     kind = "item_positions"
 
 
-class BatchContext(GraphGroup[str, tuple[TensorType, ...]]):
+class BatchContext(GraphGroup[str, _ContextT]):
     """Per-device host scalars summarizing the batch's context lengths."""
 
     kind = "batch_context"
@@ -247,7 +261,7 @@ LogitsName = Literal["next_token_logits", "logits", "logit_offsets"]
 """The outputs a :class:`Logits` group can hold."""
 
 
-class Logits(GraphGroup[LogitsName, TensorValue]):
+class Logits(GraphGroup[LogitsName, _TensorT]):
     """The decoder's logits: the next token's, and any others requested.
 
     Which are present depends on the decoder's ``return_logits``, and a
@@ -259,9 +273,9 @@ class Logits(GraphGroup[LogitsName, TensorValue]):
     def __init__(
         self,
         *,
-        next_token_logits: TensorValue | None = None,
-        logits: TensorValue | None = None,
-        logit_offsets: TensorValue | None = None,
+        next_token_logits: _TensorT | None = None,
+        logits: _TensorT | None = None,
+        logit_offsets: _TensorT | None = None,
     ) -> None:
         super().__init__()
         if next_token_logits is not None:
@@ -272,7 +286,7 @@ class Logits(GraphGroup[LogitsName, TensorValue]):
             self["logit_offsets"] = logit_offsets
 
 
-class HiddenStates(GraphGroup[str, tuple[TensorValue, ...]]):
+class HiddenStates(GraphGroup[str, tuple[_TensorT, ...]]):
     """Hidden states a decoder returns for one mode.
 
     The mode is a drafter, a capture, or the next pipeline stage.
@@ -280,7 +294,7 @@ class HiddenStates(GraphGroup[str, tuple[TensorValue, ...]]):
 
     kind = "hidden_states"
 
-    def tensors(self) -> tuple[TensorValue, ...]:
+    def tensors(self) -> tuple[_TensorT, ...]:
         """Returns the hidden states, whichever mode produced them."""
         (states,) = self.values()
         return states
@@ -298,11 +312,69 @@ class SparseIndices(GraphGroup[str, tuple[TensorValue, ...]]):
     kind = "sparse_indices"
 
 
+class SpecDecode(GraphGroup[str, _SpecT]):
+    """A speculative-decoding step's drafts and per-row sampling inputs.
+
+    The drafts to verify, any distributions the draft sampled them from, and
+    the seed, temperature, top-k and top-p each row samples with, as a fused
+    speculative-decoding graph takes them.
+    """
+
+    kind = "spec_decode"
+
+
+class TokenBitmask(GraphGroup[str, _BitmaskT]):
+    """The structured-output token bitmask and the handshake it arrives by.
+
+    The host writes each row's allowed tokens to ``pinned_bitmask`` and sets
+    the flag ``wait_payload`` points at; the graph waits on the flag, then
+    copies the bitmask to ``device_bitmask_scratch``.
+    """
+
+    kind = "token_bitmask"
+
+
+class SpecDecodeOutputs(GraphGroup[str, _TensorT | tuple[_TensorT, ...]]):
+    """A speculative-decoding step's verdicts and the next step's drafts.
+
+    How many drafts each row accepted, the token that follows them, the next
+    step's drafts, and any distributions the draft sampled those from.
+    """
+
+    kind = "spec_decode_outputs"
+
+
+class BlockDiffusionGraphInputs(GraphGroup[str, Any]):
+    """A block-diffusion denoiser graph's named inputs, keyed by its fields.
+
+    The keys are the
+    :class:`~max.pipelines.lib.role_contracts.BlockDiffusionInputs` fields,
+    in their order, so a serving engine finds each input by name.
+    """
+
+    kind = "block_diffusion_inputs"
+
+
+class DecoderGraphInputs(GraphGroup[str, Any]):
+    """A decoder graph's named inputs, keyed by the decoder's input fields.
+
+    A decoder registered by role takes its fields in an order it may choose,
+    so a serving engine finds each one by name. A field that is one input is
+    a direct leaf, such as ``tokens``; the rest are groups or trees of them,
+    such as the ``kv`` tree.
+    """
+
+    kind = "decoder_inputs"
+
+
 _G = TypeVar("_G", Logits, HiddenStates, ConvStates, SparseIndices)
 
 
 class DecoderOutputs(
-    GraphGroup[str, Logits | HiddenStates | ConvStates | SparseIndices]
+    GraphGroup[
+        str,
+        Logits[_TensorT] | HiddenStates[_TensorT] | ConvStates | SparseIndices,
+    ]
 ):
     """A decoder graph's named outputs.
 
@@ -319,14 +391,22 @@ class DecoderOutputs(
         return group
 
     @property
-    def logits(self) -> Logits:
+    def logits(self) -> Logits[_TensorT]:
         """The decoder's logits."""
-        return self.group("logits", Logits)
+        logits = self["logits"]
+        assert isinstance(logits, Logits), (
+            f"logits is a {type(logits).__name__}"
+        )
+        return logits
 
     @property
-    def hidden_states(self) -> HiddenStates:
+    def hidden_states(self) -> HiddenStates[_TensorT]:
         """The decoder's hidden states."""
-        return self.group("hidden_states", HiddenStates)
+        states = self["hidden_states"]
+        assert isinstance(states, HiddenStates), (
+            f"hidden_states is a {type(states).__name__}"
+        )
+        return states
 
 
 def group_fields(groups: Mapping[str, Mapping[str, _V]]) -> dict[str, _V]:

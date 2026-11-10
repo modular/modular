@@ -165,9 +165,9 @@ def mutateInt(mut a: Int):
 
 
 def initialize_in_addrspace(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
@@ -177,13 +177,13 @@ def initialize_in_addrspace(
 
 
 def mutate_in_addrspace(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    memtcptr: UnsafePointer[
+    memtcptr: Pointer[
         MemExampleTriviallyCopyable,
         AnyOrigin[mut=True],
         address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
@@ -195,9 +195,9 @@ def mutate_in_addrspace(
 
 
 def variadic_addr_space(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # expected-error @below {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}

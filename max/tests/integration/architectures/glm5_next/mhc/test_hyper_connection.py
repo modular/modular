@@ -319,8 +319,7 @@ def test_write_back_falls_back_outside_the_kernel_limits(
         streams, y, post, comb = (v.tensor for v in graph.inputs)
         mixing = StreamMixing(post=post, comb=comb, xs=y)
         graph.output(hc.write_back(streams, y, mixing))
-    uses_kernel = supported and accelerator_api() == "hip"
-    assert ("mo.mhc.post" in str(graph)) == uses_kernel
+    assert ("hyper_connection.mhc.post" in str(graph)) == supported
 
 
 def _on_gfx950() -> bool:
@@ -342,7 +341,7 @@ def _on_gfx950() -> bool:
 def test_mapping_uses_the_fused_kernel_on_gfx950(
     hc_mult: int, hidden_size: int, supported: bool, with_norm: bool
 ) -> None:
-    """``mo.mhc.pre`` replaces the mapping chain where the kernel runs."""
+    """``hyper_connection.mhc.pre`` replaces the mapping chain where the kernel runs."""
     hc = HyperConnection(
         hidden_size=hidden_size,
         hc_mult=hc_mult,
@@ -367,8 +366,8 @@ def test_mapping_uses_the_fused_kernel_on_gfx950(
         graph.output(mixing.post, mixing.comb, mixing.xs)
     uses_kernel = supported and _on_gfx950()
     text = str(graph)
-    assert ("mo.mhc.pre" in text) == uses_kernel
-    assert ("mo.hyper_connection.gates" in text) != uses_kernel
+    assert ("hyper_connection.mhc.pre" in text) == uses_kernel
+    assert ("hyper_connection.gates" in text) != uses_kernel
 
 
 class _FusedAndChainSites(Module):
@@ -463,7 +462,7 @@ def test_fused_mapping_matches_chain_and_float64(
         ),
     )
     fused = _on_gfx950()
-    assert ("mo.mhc.pre" in str(graph)) == fused
+    assert ("hyper_connection.mhc.pre" in str(graph)) == fused
     compiled = session.load(graph, weights_registry=site.state_dict())
     rtol = NORMED_RTOL if with_norm else COLLAPSED_RTOL
 

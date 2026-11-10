@@ -15,12 +15,17 @@
 from __future__ import annotations
 
 import logging
+import os
+import queue
+import threading
+import time
 from collections import OrderedDict
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max.driver import is_virtual_device_mode
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 
 # Re-exported for back-compat with callers that import CompilationTimer from
@@ -121,22 +126,6 @@ def upper_bounded_default(upper_bound: int, default: int | None) -> int:
     return default
 
 
-def weights_under_prefix(
-    weights: Weights, prefix: str
-) -> dict[str, WeightData]:
-    """Returns the checkpoint's weights under ``prefix``, named relative to it.
-
-    A module whose attributes are named as its checkpoint names them loads
-    from a checkpoint that holds it under a prefix, such as a draft head
-    that ships in its target's.
-    """
-    return {
-        name.removeprefix(prefix): weight.data()
-        for name, weight in weights.items()
-        if name.startswith(prefix)
-    }
-
-
 def parse_state_dict_from_weights(
     pipeline_config: PipelineConfig,
     weights: Weights,
@@ -162,3 +151,102 @@ def parse_state_dict_from_weights(
             **extra,
         )
     return {key: value.data() for key, value in weights.items()}
+
+
+# Measured over Kimi K3's 1.56 TB checkpoint on 8x MI355X from a cold page
+# cache: 54 GB/s with 64 MiB reads, where an init's own 4 KiB mmap faults
+# reach about 1.4 GB/s. Doubling the workers adds nothing.
+_PREFETCH_WORKERS = 32
+_PREFETCH_CHUNK = 64 << 20
+
+
+def weights_reach_devices(model_config: Any) -> bool:
+    """Whether loading ``model_config`` copies real checkpoint bytes to devices.
+
+    A compile-only load (header-only weights, virtual devices) never reads
+    them, and a forced download has just written them through the page cache,
+    so neither gains from :func:`prefetch_checkpoint`.
+    """
+    return not (
+        model_config.force_download
+        or model_config.header_only_weights
+        or is_virtual_device_mode()
+    )
+
+
+def start_checkpoint_prefetch(*model_configs: Any) -> None:
+    """Prefetches the checkpoints of ``model_configs`` on a daemon thread.
+
+    Skips configs that are ``None`` or whose weights never reach the devices
+    (see :func:`weights_reach_devices`), and reads a file that several
+    configs share once.
+    """
+    configs = [
+        config
+        for config in model_configs
+        if config is not None and weights_reach_devices(config)
+    ]
+    if not configs:
+        return
+
+    def run() -> None:
+        paths = dict.fromkeys(
+            os.path.realpath(path)
+            for config in configs
+            for path in config.resolved_weight_paths()
+        )
+        prefetch_checkpoint(list(paths))
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def prefetch_checkpoint(paths: Sequence[str | os.PathLike[str]]) -> int:
+    """Reads every byte of ``paths`` once, leaving them in the page cache.
+
+    The weights reach the graph as views of the checkpoint's mapping, so the
+    init that copies them to the devices then reads memory rather than
+    faulting the files in a page at a time.
+
+    Args:
+        paths: The checkpoint files; symlinks (as in the Hugging Face cache)
+            are followed.
+
+    Returns:
+        The number of bytes read.
+    """
+    files = [os.path.realpath(path) for path in paths]
+    jobs: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
+    for path in files:
+        for offset in range(0, os.path.getsize(path), _PREFETCH_CHUNK):
+            jobs.put((path, offset))
+    read_bytes = [0] * _PREFETCH_WORKERS
+
+    def read(worker: int) -> None:
+        buffer = bytearray(_PREFETCH_CHUNK)
+        while True:
+            try:
+                path, offset = jobs.get_nowait()
+            except queue.Empty:
+                return
+            with open(path, "rb", buffering=0) as f:
+                f.seek(offset)
+                read_bytes[worker] += f.readinto(buffer) or 0
+
+    start = time.perf_counter()
+    # Daemon threads rather than an executor, whose workers interpreter exit
+    # would join: a process that stops early must not wait for the read.
+    workers = [
+        threading.Thread(target=read, args=(i,), daemon=True)
+        for i in range(_PREFETCH_WORKERS)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    total = sum(read_bytes)
+    logger.info(
+        "Prefetched %.1f GB of checkpoint into the page cache in %.1f s",
+        total / 1e9,
+        time.perf_counter() - start,
+    )
+    return total

@@ -20,8 +20,7 @@ these ops, not a compile-time attribute (see ``MO_SelectKLikeOp`` in
 ``ops.top_k``/``ops.bottom_k`` graph-builder API can't express that -- it
 bakes ``k`` in as a compile-time constant -- so both ops are built directly
 via ``_add_op_generated`` instead, the same pattern ``ops.split`` uses for
-``mo.SplitOp`` (there's also no ``rmo`` MO-analogue for top-k to go through,
-unlike ``rmo.MoBottomKOp`` for bottom-k).
+``mo.SplitOp``.
 
 ``axis`` is canonicalized to the shared rank-3 view (see
 ``gc_compile.canonical_rank3``) and applied directly at axis=1 on CPU. GPU

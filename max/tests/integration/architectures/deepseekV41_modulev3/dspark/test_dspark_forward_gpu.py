@@ -10,22 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The DSpark stage forward, executed on a real GPU against a numpy reference.
-
-``DSparkAttention.store_context`` writes each verified token's record into
-the trunk's packed sliding-window leaf; ``read_window`` names each request's
-window of those records; the stage forward stores the draft block's own
-records at the block's positions and attends over both through the trunk's
-CSA2 kernel. The reference never touches the leaf: it rebuilds the same
-projections, quantizes the keys through an independent MXFP8 round trip and
-evaluates the oracle's ``sparse_attn`` (fp32 softmax over the window and
-block keys, the per-head sink in the denominator only), then the grouped
-output projection. It runs on one device.
-
-Run on a leased box:
-  ./bazelw test --config=remote-b200 \
-    //max/tests/integration/architectures/deepseekV41_modulev3/dspark:test_dspark_forward_gpu
-"""
+"""GPU coverage for DSpark stage forward and attention projections."""
 
 from __future__ import annotations
 
@@ -47,7 +32,7 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     drafter_layer_infos,
 )
@@ -58,6 +43,9 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.dspark import (
     DSparkAttention,
+)
+from max.pipelines.architectures.deepseekV41_modulev3.layers.dspark_moe import (
+    DSparkMoE,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
     RopeParams,
@@ -88,17 +76,15 @@ _requires_gpu = pytest.mark.skipif(
 
 
 def _config() -> DeepseekV41Config:
-    """The shrunk stage geometry at the packed leaf's 512-channel width.
-
-    ``head_dim`` must be 512 (the packed MXFP8 row the store takes). The
-    CSA2 kernel serves 8, 16, 32 or 64 heads a device.
-    """
+    """Return a compact geometry supported by the packed attention kernels."""
     return dataclasses.replace(
         _small_config(),
         head_dim=_WIDTH,
         sliding_window=_WINDOW,
         num_attention_heads=16,
+        q_lora_rank=256,
         o_groups=4,
+        o_lora_rank=128,
     )
 
 
@@ -257,20 +243,46 @@ def _stage(
     )
 
 
+def _mxfp8_weight(
+    w: np.ndarray, rng: np.random.Generator
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return checkpoint-format MXFP8 codes, scales, and decoded values."""
+    n, k = w.shape
+    exponents = rng.integers(-2, 2, size=(n // _GROUP, k // _GROUP))
+    expanded = np.repeat(
+        np.repeat(np.power(2.0, exponents).astype(np.float32), _GROUP, 0),
+        _GROUP,
+        1,
+    )
+    codes = (w / expanded).astype(ml_dtypes.float8_e4m3fn)
+    return (
+        codes.view(np.uint8),
+        (127 + exponents).astype(np.uint8),
+        codes.astype(np.float32) * expanded,
+    )
+
+
 def _random_weights(
     config: DeepseekV41Config, rng: np.random.Generator
 ) -> dict[str, np.ndarray]:
-    """The stage's whole forward in synthetic weights, as host floats."""
+    """Build synthetic stage weights and decoded reference values."""
     heads, d = config.num_attention_heads, config.head_dim
     hidden = config.hidden_size
     rank, groups = config.o_lora_rank, config.o_groups
-    return {
+    w = {
         "wq_a": rng.standard_normal((config.q_lora_rank, hidden)) * 0.1,
-        "q_norm": 1.0 + 0.1 * rng.standard_normal(config.q_lora_rank),
         "wq_b": rng.standard_normal((heads * d, config.q_lora_rank)) * 0.1,
         "wkv": rng.standard_normal((d, hidden)) * 0.5,
-        "kv_norm": 1.0 + 0.1 * rng.standard_normal(d),
         "wo_a": rng.standard_normal((groups * rank, heads * d // groups)) * 0.1,
+    }
+    out: dict[str, np.ndarray] = {}
+    for name, values in w.items():
+        out[f"{name}_codes"], out[f"{name}_scale"], out[name] = _mxfp8_weight(
+            values.astype(np.float32), rng
+        )
+    return out | {
+        "q_norm": 1.0 + 0.1 * rng.standard_normal(config.q_lora_rank),
+        "kv_norm": 1.0 + 0.1 * rng.standard_normal(d),
         "wo_b": rng.standard_normal((hidden, groups * rank)) * 0.05,
         "wo_b_scale": np.full(
             (hidden // 32, groups * rank // 32), 127, np.uint8
@@ -279,29 +291,46 @@ def _random_weights(
     }
 
 
+def _fp8_tensor(codes: np.ndarray, dtype: DType, device: Device) -> Tensor:
+    return Tensor(
+        storage=Buffer.from_numpy(np.ascontiguousarray(codes))
+        .view(dtype)
+        .to(device)
+    )
+
+
 def _install_weights(
     attn: DSparkAttention,
     w: dict[str, np.ndarray],
     device: Device,
 ) -> None:
     """Places the synthetic weights on the device."""
-    for name in ("wq_a", "q_norm", "wq_b", "wkv", "kv_norm", "wo_a"):
+    for name in ("q_norm", "kv_norm"):
         getattr(attn, name).weight = _bf16_tensor(w[name], device)
+    attn.wqa_wkv.weight = _fp8_tensor(
+        np.concatenate([w["wq_a_codes"], w["wkv_codes"]]),
+        DType.float8_e4m3fn,
+        device,
+    )
+    attn.wqa_wkv.scale = _fp8_tensor(
+        np.concatenate([w["wq_a_scale"], w["wkv_scale"]]),
+        DType.float8_e8m0fnu,
+        device,
+    )
+    for name in ("wq_b", "wo_a"):
+        getattr(attn, name).weight = _fp8_tensor(
+            w[f"{name}_codes"], DType.float8_e4m3fn, device
+        )
+        getattr(attn, name).scale = _fp8_tensor(
+            w[f"{name}_scale"], DType.float8_e8m0fnu, device
+        )
     wo_b_bits = (
         np.ascontiguousarray(w["wo_b"])
         .astype(ml_dtypes.float8_e4m3fn)
         .view(np.uint8)
     )
-    attn.wo_b.weight = Tensor(
-        storage=Buffer.from_numpy(wo_b_bits)
-        .view(DType.float8_e4m3fn)
-        .to(device)
-    )
-    attn.wo_b.scale = Tensor(
-        storage=Buffer.from_numpy(np.ascontiguousarray(w["wo_b_scale"]))
-        .view(DType.float8_e8m0fnu)
-        .to(device)
-    )
+    attn.wo_b.weight = _fp8_tensor(wo_b_bits, DType.float8_e4m3fn, device)
+    attn.wo_b.scale = _fp8_tensor(w["wo_b_scale"], DType.float8_e8m0fnu, device)
     attn.attn_sink = _fp32_tensor(w["attn_sink"].astype(np.float32), device)
 
 
@@ -324,7 +353,7 @@ def _positions(starts: list[int], lengths: list[int]) -> np.ndarray:
     )
 
 
-# --- The independent reference ----------------------------------------------
+# The independent reference
 
 
 def _r(x: np.ndarray) -> np.ndarray:
@@ -386,11 +415,11 @@ def _reference_stage(
     )
 
     def kv_records(x: np.ndarray, positions: np.ndarray) -> np.ndarray:
-        kv = _rms(_r(_r(x) @ _r(w["wkv"]).T), w["kv_norm"])
+        kv = _rms(_r(_fake_quant(_r(x)) @ w["wkv"].T), w["kv_norm"])
         return _fake_quant(_rope_tail(kv, positions, inv_freqs, False))
 
-    qr = _rms(_r(_r(block_x) @ _r(w["wq_a"]).T), w["q_norm"])
-    q = _r(qr @ _r(w["wq_b"]).T).reshape(len(block_x), heads, d)
+    qr = _rms(_r(_fake_quant(_r(block_x)) @ w["wq_a"].T), w["q_norm"])
+    q = _r(_fake_quant(qr) @ w["wq_b"].T).reshape(len(block_x), heads, d)
     q = _rope_tail(q, block_pos, inv_freqs, False)
     block_kv = kv_records(block_x, block_pos)
     sink = w["attn_sink"].astype(np.float32)
@@ -409,20 +438,24 @@ def _reference_stage(
     out = _rope_tail(_r(out), block_pos, inv_freqs, True)
 
     group_width = heads * d // groups
-    wo_a = _r(w["wo_a"]).reshape(groups, rank, group_width)
+    wo_a = w["wo_a"].reshape(groups, rank, group_width)
     projected = np.einsum(
-        "tgw,grw->tgr", out.reshape(len(block_x), groups, group_width), wo_a
+        "tgw,grw->tgr",
+        _fake_quant(out.reshape(len(block_x), heads * d)).reshape(
+            len(block_x), groups, group_width
+        ),
+        wo_a,
     )
     flat = _fake_quant(_r(projected).reshape(len(block_x), groups * rank))
     wo_b = w["wo_b"].astype(ml_dtypes.float8_e4m3fn).astype(np.float32)
     return _r(flat @ wo_b.T)
 
 
-# --- The executed forward ---------------------------------------------------
-
-
 def _host(t: Tensor) -> np.ndarray:
     return torch.from_dlpack(t.to(CPU())).float().numpy()
+
+
+# The executed forward
 
 
 @_requires_gpu
@@ -479,6 +512,162 @@ def test_stage_forward_matches_the_reference() -> None:
     want = _reference_stage(
         config, weights, inv_freqs, context_x, block_x, starts
     )
+    assert float(np.abs(want).max()) > 0.0
+    got = _host(out)
+    assert got.shape == want.shape
+    rms_err = np.sqrt(((got - want) ** 2).mean())
+    assert rms_err < 0.05 * np.sqrt((want**2).mean()), rms_err
+    np.testing.assert_allclose(
+        got, want, rtol=0.1, atol=0.15 * float(np.abs(want).max())
+    )
+
+
+_E2M1 = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0], np.float32)
+
+
+def _decode_mxfp4(codes: np.ndarray, scale: np.ndarray) -> np.ndarray:
+    """Decode packed E2M1 values with E8M0 scales."""
+    experts, n, half = codes.shape
+    k = half * 2
+    flat = codes.reshape(experts * n, half)
+    nibbles = np.stack([flat & 0xF, flat >> 4], axis=-1).reshape(experts * n, k)
+    magnitude = _E2M1[(nibbles & 0x7).astype(np.int64)]
+    signed = np.where(nibbles >= 8, -magnitude, magnitude)
+    decoded = signed * np.repeat(
+        np.power(
+            2.0, scale.reshape(experts * n, -1).astype(np.float32) - 127.0
+        ),
+        32,
+        axis=-1,
+    )
+    return decoded.reshape(experts, n, k)
+
+
+def _mxfp4_weight(
+    experts: int, n: int, k: int, rng: np.random.Generator
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build synthetic MXFP4 weights and their decoded values."""
+    codes = rng.integers(0, 256, (experts, n, k // 2)).astype(np.uint8)
+    scale = rng.integers(123, 126, (experts, n, k // 32)).astype(np.uint8)
+    return codes, scale, _decode_mxfp4(codes, scale)
+
+
+def _moe_weights(
+    config: DeepseekV41Config, rng: np.random.Generator
+) -> dict[str, np.ndarray]:
+    """Build synthetic weights and decoded values for the MoE reference."""
+    hidden, inter = config.hidden_size, config.moe_intermediate_size
+    experts = config.dspark_n_routed_experts
+    w: dict[str, np.ndarray] = {}
+    for name, n, k in (
+        ("gate_up", 2 * inter, hidden),
+        ("down", hidden, inter),
+    ):
+        codes, scale, decoded = _mxfp4_weight(experts, n, k, rng)
+        w[f"{name}_codes"], w[f"{name}_scale"] = codes, scale
+        w[name] = decoded
+    w["gate"] = _r(rng.standard_normal((experts, hidden)) * 0.1)
+    w["gate_bias"] = (rng.standard_normal(experts) * 0.1).astype(np.float32)
+    for name, n, k in (
+        ("w1", inter, hidden),
+        ("w3", inter, hidden),
+        ("w2", hidden, inter),
+    ):
+        values = (rng.standard_normal((n, k)) * 0.1).astype(np.float32)
+        w[name] = values.astype(ml_dtypes.float8_e4m3fn).astype(np.float32)
+        w[f"{name}_scale"] = np.full((n // 32, k // 32), 127, np.uint8)
+    return w
+
+
+def _install_moe_weights(
+    moe: DSparkMoE, w: dict[str, np.ndarray], device: Device
+) -> None:
+    """Load synthetic MoE weights into the device module."""
+    moe.gate.weight = _bf16_tensor(w["gate"], device)
+    moe.gate.bias = _fp32_tensor(w["gate_bias"], device)
+    for proj, prefix in (
+        (moe.experts.gate_up_proj, "gate_up"),
+        (moe.experts.down_proj, "down"),
+    ):
+        proj.weight = _int_tensor(w[f"{prefix}_codes"], DType.uint8, device)
+        proj.weight_scale = _fp8_tensor(
+            w[f"{prefix}_scale"], DType.float8_e8m0fnu, device
+        )
+    for name in ("w1", "w3", "w2"):
+        linear = getattr(moe.shared_experts, name)
+        linear.weight = _fp8_tensor(
+            np.ascontiguousarray(w[name])
+            .astype(ml_dtypes.float8_e4m3fn)
+            .view(np.uint8),
+            DType.float8_e4m3fn,
+            device,
+        )
+        linear.scale = _fp8_tensor(
+            w[f"{name}_scale"], DType.float8_e8m0fnu, device
+        )
+
+
+def _reference_moe(
+    config: DeepseekV41Config,
+    w: dict[str, np.ndarray],
+    x: np.ndarray,
+) -> np.ndarray:
+    """NumPy reference for the drafter's gated and expert projections."""
+    tokens = x.shape[0]
+    hidden, inter = config.hidden_size, config.moe_intermediate_size
+    k = config.dspark_num_experts_per_tok
+    limit = float(config.swiglu_limit)
+
+    logits = x @ w["gate"].T
+    softplus = np.maximum(logits, 0.0) + np.log(np.exp(-np.abs(logits)) + 1.0)
+    scores = np.sqrt(softplus)
+    top = np.argsort(-(scores + w["gate_bias"]), axis=-1, kind="stable")[:, :k]
+    picked = np.take_along_axis(scores, top, axis=1)
+    total = picked.sum(-1, keepdims=True)
+    weights = picked / total * config.routed_scaling_factor
+
+    def silu(v: np.ndarray) -> np.ndarray:
+        return v / (1.0 + np.exp(-v))
+
+    routed = np.zeros((tokens, hidden), np.float32)
+    for t in range(tokens):
+        row = _fake_quant(x[t : t + 1])[0]
+        for j in range(k):
+            expert = top[t, j]
+            gate_up = _r(row @ w["gate_up"][expert].T).astype(np.float32)
+            gate, up = gate_up[:inter], gate_up[inter:]
+            gate = np.minimum(gate, limit)
+            up = np.clip(up, -limit, limit)
+            h = silu(gate) * up * weights[t, j]
+            routed[t] += _r(
+                _fake_quant(_r(h)[None])[0] @ w["down"][expert].T
+            ).astype(np.float32)
+
+    a1 = _r(_fake_quant(x) @ w["w1"].T).astype(np.float32)
+    a3 = _r(_fake_quant(x) @ w["w3"].T).astype(np.float32)
+    gate = np.minimum(a1, limit)
+    up = np.clip(a3, -limit, limit)
+    activated = _r(silu(gate) * up)
+    shared = _r(_fake_quant(activated) @ w["w2"].T).astype(np.float32)
+    return _r(shared + routed)
+
+
+@_requires_gpu
+def test_moe_forward_matches_the_reference() -> None:
+    config = dataclasses.replace(_small_config(), moe_intermediate_size=128)
+    rng = np.random.default_rng(11)
+    tokens = 7
+    x = rng.standard_normal((tokens, config.hidden_size)).astype(np.float32)
+    weights = _moe_weights(config, rng)
+
+    with rc.EagerRealizationContext() as ctx, realization_context(ctx):
+        device = Accelerator()
+        mesh = DeviceMesh((device,), (1,), ("tp",))
+        moe = DSparkMoE(config, mesh)
+        _install_moe_weights(moe, weights, device)
+        out = moe(_bf16_tensor(x, device))
+
+    want = _reference_moe(config, weights, _r(x))
     assert float(np.abs(want).max()) > 0.0
     got = _host(out)
     assert got.shape == want.shape

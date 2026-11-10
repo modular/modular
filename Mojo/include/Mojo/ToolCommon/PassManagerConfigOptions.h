@@ -46,7 +46,27 @@ struct PassManagerConfigOptions {
   bool applyPassManagerCLOptions = false;
   std::optional<std::string> operationName;
 
+  /// Configures `pm` and reports pass times into `timingScope`. Only safe when
+  /// `pm` is the sole pass manager under that scope; otherwise give each pass
+  /// manager its own `nestTimingScope` and use the overload below.
   ErrorOrSuccess configurePassManager(mlir::PassManager &pm) const;
+
+  /// Configures `pm` as above, but reports pass times into `timing` instead of
+  /// `timingScope`. `timing` must outlive `pm`.
+  ErrorOrSuccess configurePassManager(mlir::PassManager &pm,
+                                      mlir::TimingScope &timing) const;
+
+  /// Returns a hidden scope named `name` under `timingScope`, or an empty scope
+  /// when the timing is off. MLIR keys pass timers by the address of the pass,
+  /// so a pass manager that reports into a scope after another one has been
+  /// destroyed can land a pass on a freed pass's address and take over its
+  /// timer and name. Give each pass manager a scope of its own. A hidden scope
+  /// prints no row of its own in the tree display.
+  mlir::TimingScope nestTimingScope(llvm::StringRef name) const;
+
+private:
+  ErrorOrSuccess configureWithTiming(mlir::PassManager &pm,
+                                     mlir::TimingScope *timing) const;
 };
 
 } // namespace M::KGEN

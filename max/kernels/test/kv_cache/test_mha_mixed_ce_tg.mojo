@@ -30,15 +30,18 @@ def execute_ragged_flash_attention() raises:
     comptime type = DType.float32
     comptime num_paged_blocks = 32
     comptime page_size = 512
-    comptime PagedCollectionType = PagedKVCacheCollection[
+    # The origins below are placeholders: only the layout, which does not
+    # depend on them, is queried. The collections themselves infer their
+    # origins from their constructor arguments.
+    comptime BlocksLayout = PagedKVCacheCollection[
         type,
         kv_params,
         page_size,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
-    ]
+        MutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
+        MutUntrackedOrigin,
+    ].blocks_tt_layout
     var num_layers = 1
     var layer_idx = 0
 
@@ -190,7 +193,6 @@ def execute_ragged_flash_attention() raises:
         * kv_params.head_size,
         fill=Scalar[type](0),
     )
-    comptime BlocksLayout = PagedCollectionType.blocks_tt_layout
     var native_blocks_shape = Coord[*BlocksLayout.shape_types]()
     native_blocks_shape[0] = Int64(num_paged_blocks)
     native_blocks_shape[2] = Int64(num_layers)
@@ -230,18 +232,22 @@ def execute_ragged_flash_attention() raises:
             paged_lut_set.add(randval)
             paged_lut[bs, block_idx] = UInt32(randval)
 
-    var true_ce_kv_collection = PagedCollectionType(
-        kv_block_paged.as_unsafe_any_origin(),
-        true_ce_cache_lengths.as_imm().as_unsafe_any_origin(),
-        paged_lut.as_imm().as_unsafe_any_origin(),
+    var true_ce_kv_collection = PagedKVCacheCollection[
+        type, kv_params, page_size, scales_origin=MutUntrackedOrigin
+    ](
+        kv_block_paged,
+        true_ce_cache_lengths.as_imm(),
+        paged_lut.as_imm(),
         UInt32(true_ce_max_prompt_length),
         UInt32(true_ce_max_full_context_length),
     )
 
-    var mixed_ce_kv_collection = PagedCollectionType(
-        kv_block_paged.as_unsafe_any_origin(),
-        mixed_ce_cache_lengths.as_imm().as_unsafe_any_origin(),
-        paged_lut.as_imm().as_unsafe_any_origin(),
+    var mixed_ce_kv_collection = PagedKVCacheCollection[
+        type, kv_params, page_size, scales_origin=MutUntrackedOrigin
+    ](
+        kv_block_paged,
+        mixed_ce_cache_lengths.as_imm(),
+        paged_lut.as_imm(),
         UInt32(mixed_ce_max_prompt_length),
         UInt32(mixed_ce_max_full_context_length),
     )

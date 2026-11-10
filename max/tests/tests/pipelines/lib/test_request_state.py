@@ -31,10 +31,10 @@ from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.graph.weights import WeightsFormat
 from max.nn import Module as ModuleV3
-from max.nn.legacy.graph_groups import RaggedBatch
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.legacy.graph_groups import DecoderGraphInputs, RaggedBatch
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,
@@ -48,6 +48,7 @@ from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.module_registration import (
     DecoderBatchProcessor,
     ModuleV3DecoderPipelineModel,
+    _role_outputs,
     bind_state_store,
     decoder_input_types,
 )
@@ -412,21 +413,31 @@ def test_modulev3_state_follows_the_lora_inputs() -> None:
 
 
 def test_the_modulev3_graph_feeds_state_and_returns_it() -> None:
-    input_types = {
-        "tokens": X,
-        "input_row_offsets": X,
-        "return_n_logits": X,
-        "kv": (X,),
-        "state": (X,),
-    }
-    run = ModuleV3DecoderGraph(
-        StatefulModuleV3Decoder(ToyConfig()), input_types
-    ).compile(X, X, X, X, X)
+    run = ModuleV3DecoderGraph(StatefulModuleV3Decoder(ToyConfig())).compile(
+        DecoderGraphInputs(
+            tokens=X,
+            input_row_offsets=X,
+            return_n_logits=X,
+            kv=(X,),
+            state=(X,),
+        )
+    )
     tokens, offsets, n_logits, kv, state = (
         Buffer.from_numpy(np.full(2, value, np.float32))
         for value in (1, 2, 3, 4, 5)
     )
-    outputs = run(tokens, offsets, n_logits, kv, state)
+    grouped = run(
+        DecoderGraphInputs(
+            tokens=tokens,
+            input_row_offsets=offsets,
+            return_n_logits=n_logits,
+            kv=(kv,),
+            state=(state,),
+        )
+    )
+    # The state follows the named outputs.
+    assert isinstance(grouped, tuple)
+    outputs = _role_outputs(grouped)
     np.testing.assert_array_equal(
         np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 6)
     )

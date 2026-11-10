@@ -42,7 +42,7 @@ def bench_rms_norm_fused_fp8[
     out_dtype: DType,
     shape: IndexList[rank],
     cache_busting: Bool = True,
-](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
     """Benchmark fused RMS norm + FP8 quantization against separate operations.
 
     Compares:
@@ -107,7 +107,7 @@ def bench_rms_norm_fused_fp8[
         mut b: Bencher,
     ) raises {var gamma_tensor, var cb_data, var cb_rms_output, imm,}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             # Construct buffers with offsets
             var data_ptr_offset = cb_data.offset_ptr(iteration)
             var rms_output_ptr_offset = cb_rms_output.offset_ptr(iteration)
@@ -168,7 +168,7 @@ def bench_rms_norm_fused_fp8[
         mut b: Bencher,
     ) raises {var cb_rms_output, var cb_fp8_output, var scales_base_ptr, imm,}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             # Input function for FP8 quant (reads from RMS norm output)
             var rms_ptr_offset = cb_rms_output.offset_ptr(iteration)
 
@@ -220,7 +220,7 @@ def bench_rms_norm_fused_fp8[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx_: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx_: DeviceContext[], iteration: Int) raises {imm}:
             # Input function with offset
             var data_ptr_offset = cb_data.offset_ptr(iteration)
 

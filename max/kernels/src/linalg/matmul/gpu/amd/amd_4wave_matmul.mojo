@@ -54,7 +54,7 @@ from max.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 
 from pipeline.config import ScheduleConfig, SchedulingStrategy
@@ -1237,6 +1237,8 @@ struct AMD4WaveMatmul[
                         )
                     case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
+                    case _:
+                        pass
 
             # Prologue. The schedule overrides `warp_stagger=none()`
             # (4-wave has only 4 warps, so warp-group staggering is
@@ -1833,6 +1835,8 @@ struct AMD4WaveMatmul[
                         )
                     case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
+                    case _:
+                        pass
 
             # Prologue. The schedule overrides `warp_stagger=none()`
             # (4-wave has only 4 warps, so warp-group staggering is

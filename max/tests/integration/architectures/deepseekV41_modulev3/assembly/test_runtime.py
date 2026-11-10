@@ -26,7 +26,7 @@ from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.deepseekV41_modulev3 import (
     model as dsv41_model,
@@ -81,7 +81,6 @@ from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizerFast
 
 
 def test_registered_runtime_is_text_only() -> None:
-    assert deepseekV41_modulev3_arch.pipeline_model is DeepseekV41Model
     assert deepseekV41_modulev3_arch.tokenizer is DeepseekV41Tokenizer
     assert issubclass(DeepseekV41Tokenizer, TextTokenizer)
     assert not deepseekV41_modulev3_arch.supports_device_graph_capture
@@ -123,10 +122,10 @@ def test_real_module_parameter_tree() -> None:
         text.num_attention_heads * text.head_dim // text.o_groups // 32,
     ]
     for projection in ("w1", "w3", "w2"):
-        prefix = f"layers.0.ffn.experts.0.{projection}.weight"
+        prefix = f"layers.0.ffn.experts.0.{projection}"
         for leaf in ("weight", "weight_scale", "weight_scale_2", "input_scale"):
             assert f"{prefix}.{leaf}" in params
-    assert "layers.0.ffn.routed.experts.0.w1.weight.weight" not in params
+    assert "layers.0.ffn.routed.experts.0.w1.weight" not in params
     # The token map is a graph input the model binds once and the decoder's
     # row count rides its input's extent; this fixture carries no Engram
     # layers, so no table extras.
@@ -424,7 +423,7 @@ def test_real_trunk_traces_symbolic_rows_and_batch(
     monkeypatch: pytest.MonkeyPatch, all_roles: bool
 ) -> None:
     # Shape tracing targets SM100 while running on CPU; no kernel executes.
-    monkeypatch.setattr("max.nn.legacy.kernels._is_sm10x_gpu", lambda: True)
+    monkeypatch.setattr("max.nn._graph_ops._is_sm10x_gpu", lambda: True)
     text = text_config()
     if all_roles:
         text.num_hidden_layers = 12
@@ -523,7 +522,7 @@ def test_trunk_gates_read_the_checkpoint_norm_eps(
     checkpoint revision with a different ``config.json`` epsilon must move
     the gates with the norms and the Engram gate, not leave them behind.
     """
-    monkeypatch.setattr("max.nn.legacy.kernels._is_sm10x_gpu", lambda: True)
+    monkeypatch.setattr("max.nn._graph_ops._is_sm10x_gpu", lambda: True)
     text = text_config()
     text.rms_norm_eps = 1e-6
     interface = V41Config.from_hf({"text_config": vars(text)})

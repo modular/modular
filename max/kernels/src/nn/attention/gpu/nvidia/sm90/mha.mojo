@@ -36,7 +36,7 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -46,14 +46,13 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    IntTuple,
-    Layout,
     TensorEngine,
     TileTensor,
+    coord,
     row_major,
     stack_allocation,
 )
-from layout.tile_layout import Layout as TTLayout
+from layout.layout import Layout as TTLayout
 from layout.tensor_engine import DefaultEngine
 from layout.tile_io import copy_sram_to_dram
 from layout.swizzle import make_swizzle
@@ -1057,9 +1056,6 @@ def _mha_sm90_enqueue[
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -1274,63 +1270,32 @@ def _mha_sm90[
     #
     # Note the ordering of strides:
     # ((1, 3), (0, 2, 4))
-    # alias output_layout = Layout(
-    #     IntTuple(
-    #         IntTuple(num_row_blocks_per_mma, num_m_mmas),
-    #         IntTuple(
-    #             p_frag_simdwidth,
-    #             p_frag_size // (num_row_blocks_per_mma * p_frag_simdwidth),
-    #             num_n_mmas,
-    #         ),
-    #     ),
-    #     IntTuple(
-    #         IntTuple(p_frag_simdwidth, p_frag_size),
-    #         IntTuple(1, 2 * p_frag_simdwidth, num_m_mmas * p_frag_size),
-    #     ),
-    # )
-    # Vectorizing the layout:
-    comptime vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
-    comptime p_vec_output_layout = Layout(
-        IntTuple(
-            vec_output_row_shape,
-            IntTuple(
-                p_frag_size // (num_row_blocks_per_mma * frag_simdwidth),
-                num_n_mmas,
-            ),
-        ),
-        IntTuple(
-            IntTuple(frag_simdwidth, p_frag_size),
-            IntTuple(
-                num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * p_frag_size,
-            ),
-        ),
+    #
+    # shape  = ((num_row_blocks_per_mma, num_m_mmas),
+    #           (p_frag_size // (num_row_blocks_per_mma * p_frag_simdwidth),
+    #            num_n_mmas))
+    # stride = ((p_frag_simdwidth, p_frag_size),
+    #           (num_row_blocks_per_mma * p_frag_simdwidth,
+    #            num_m_mmas * p_frag_size))
+    #
+    # The softmax helpers walk the per-warp fragment as `num_rows_per_warp`
+    # rows by `num_cols_{p,output}` columns: the products of the two mode
+    # sub-shapes.
+    comptime num_rows_per_warp = num_row_blocks_per_mma * num_m_mmas
+    comptime p_frag_cols = p_frag_size // (
+        num_row_blocks_per_mma * frag_simdwidth
     )
-    comptime o_vec_output_layout = Layout(
-        IntTuple(
-            vec_output_row_shape,
-            IntTuple(
-                o_frag_size // (num_row_blocks_per_mma * frag_simdwidth),
-                num_n_mmas,
-            ),
-        ),
-        IntTuple(
-            IntTuple(frag_simdwidth, o_frag_size),
-            IntTuple(
-                num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * o_frag_size,
-            ),
-        ),
+    comptime o_frag_cols = o_frag_size // (
+        num_row_blocks_per_mma * frag_simdwidth
     )
-    comptime num_rows_per_warp = p_vec_output_layout[0].size()
-    comptime num_cols_p = p_vec_output_layout[1].size()
-    comptime num_cols_output = o_vec_output_layout[1].size()
+    comptime num_cols_p = p_frag_cols * num_n_mmas
+    comptime num_cols_output = o_frag_cols * num_n_mmas
 
     # Rowwise max and sum for online softmax
     comptime accum_simd_width = simd_width_of[accum_type]()
     comptime row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
 
-    comptime mma_thread_layout = Layout.row_major(8, 4)
+    comptime mma_thread_shape = coord[8, 4]
 
     # Handle sink_weights
     var sink_weights_ptr = Optional[
@@ -1575,18 +1540,11 @@ def _mha_sm90[
         var p_frag = p_frag_buffer.as_unsafe_any_origin()
 
         # Nested TileTensor views over the flat register tiles: the
-        # hand-built nested layouts mirror the legacy `p_vec_output_layout`
-        # / `o_vec_output_layout` IntTuple geometry leaf-for-leaf (pinned by
-        # `test_mha_vec_output_layout_crd2idx_parity`). `frag_cols` is hoisted
-        # to an explicit param: a parameterized alias whose type arguments
-        # perform division trips a KGEN crash when the alias is instantiated
-        # through a function return type.
-        comptime p_frag_cols = p_frag_size // (
-            num_row_blocks_per_mma * frag_simdwidth
-        )
-        comptime o_frag_cols = o_frag_size // (
-            num_row_blocks_per_mma * frag_simdwidth
-        )
+        # hand-built nested layouts encode the fragment geometry above leaf
+        # for leaf (pinned by `test_mha_vec_output_layout_crd2idx_parity`).
+        # `frag_cols` is hoisted to an explicit param: a parameterized alias
+        # whose type arguments perform division trips a KGEN crash when the
+        # alias is instantiated through a function return type.
         comptime _PVecTTLayout = TTLayout[
             Coord[
                 Coord[
@@ -1942,7 +1900,7 @@ def _mha_sm90[
             # threads layout by warp
             frag_simdwidth,
             1,
-            mma_thread_layout,
+            mma_thread_shape,
             use_exp2=True,
         ](vectorize_p_reg_tile(), rowmax, init_rowmax=SinkType.is_null)
 
@@ -1952,7 +1910,7 @@ def _mha_sm90[
         var attention_rowsum = _rowsum[
             type_of(rowsum_buffer.layout),
             frag_simdwidth,
-            mma_thread_layout,
+            mma_thread_shape,
         ](vectorize_p_reg_tile())
 
         # Add sink weight contribution to rowsum
@@ -2032,7 +1990,7 @@ def _mha_sm90[
                     # threads layout by warp
                     frag_simdwidth,
                     1,
-                    mma_thread_layout,
+                    mma_thread_shape,
                     use_exp2=True,
                 ](vectorize_p_reg_tile(), rowmax, new_q)
 
@@ -2060,7 +2018,7 @@ def _mha_sm90[
                     var score_frag_rowsum = _rowsum[
                         type_of(rowsum_buffer.layout),
                         frag_simdwidth,
-                        mma_thread_layout,
+                        mma_thread_shape,
                     ](vectorize_p_reg_tile())
                     rowmax.copy_from(score_frag_rowmax)
                     elementwise_reciprocal(rowsum, score_frag_rowsum)
@@ -2106,7 +2064,7 @@ def _mha_sm90[
                     var score_frag_rowsum = _rowsum[
                         type_of(rowsum_buffer.layout),
                         frag_simdwidth,
-                        mma_thread_layout,
+                        mma_thread_shape,
                     ](vectorize_p_reg_tile())
 
                     _online_softmax_correction[use_exp2=True](
@@ -2134,9 +2092,10 @@ def _mha_sm90[
                 q_pipeline_state.step()
                 produced_mbar_q[q_idx_old].wait(q_phase_old)
                 var docontinue = advance[False](q_idx_old)
-                if not docontinue:
+                if case .Some(seq_info) = docontinue:
+                    position = get_position(seq_info)
+                else:
                     break
-                position = get_position(docontinue.value())
                 var start, new_end = position.get_start_and_end_for_partitions[
                     page_size=KVLUTType.page_size
                 ](partition, mask)

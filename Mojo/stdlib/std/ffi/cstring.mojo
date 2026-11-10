@@ -217,17 +217,6 @@ struct CStringSpan[origin: ImmOrigin](
         """
         return self._data
 
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=ptr)
-    def unsafe_ptr(self) -> Pointer[c_char, Self.origin]:
-        """Get a pointer to the underlying `CStringSpan`.
-
-        Returns:
-            A pointer to the underlying `CStringSpan`.
-        """
-        return self.ptr()
-
     @inline(.always)
     def as_bytes(self) -> Span[Byte, Self.origin]:
         """Get a span of the underlying `CStringSpan` as bytes.
@@ -287,8 +276,3 @@ struct CStringSpan[origin: ImmOrigin](
         return Self._PointerType.classify_niche(
             memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()
         )
-
-
-@deprecated(use=CStringSpan)
-comptime CStringSlice = CStringSpan
-"""Provides a compatibility alias for `CStringSpan`."""

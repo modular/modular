@@ -37,6 +37,7 @@ from max.pipelines.architectures.deepseekV41.model_config import Q_MXFP8_ENV
 from max.pipelines.architectures.deepseekV41.weight_adapters import (
     as_uint8,
     convert_weight_data,
+    fuse_compressor_projections,
     rewire_trunk_state_dict,
     with_dtype,
 )
@@ -127,6 +128,26 @@ def test_gate_weights_other_than_bias_vl_stay_required(required: str) -> None:
         ValueError, match=rf"Missing required weights: {required}\b"
     ):
         _load_gate_bias_vl(state_dict)
+
+
+@pytest.mark.parametrize("ratio", [1, 2])
+def test_compressor_projections_fuse_wkv_then_wgate(ratio: int) -> None:
+    compressor = "layers.2.attn.compressor"
+    names = ["wkv", "wgate"][:ratio]
+    state_dict = {
+        f"{compressor}.{name}.weight": _bf16(
+            f"{compressor}.{name}.weight", (2, 4), float(i + 1)
+        )
+        for i, name in enumerate(names)
+    }
+    fuse_compressor_projections(state_dict, compressor)
+    assert list(state_dict) == [f"{compressor}.proj.weight"]
+    fused = state_dict[f"{compressor}.proj.weight"]
+    assert fused.dtype == DType.bfloat16
+    want = np.concatenate(
+        [np.full((2, 4), i + 1, np.float32) for i in range(ratio)]
+    )
+    np.testing.assert_array_equal(_bf16_values(fused), want)
 
 
 _SHARED_EXPERT = "layers.0.ffn.shared_experts"

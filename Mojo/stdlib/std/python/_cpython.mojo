@@ -22,7 +22,7 @@ from .python_object import PythonObject
 from std.collections import Array
 from std.memory import OpaquePointer
 from std.memory.alloc import alloc, Layout
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.os import abort, getenv, setenv
 from std.os.path import dirname
 from std.pathlib import Path
@@ -266,7 +266,7 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
     var patch: Int
     """The patch version number."""
 
-    def __init__(out self, version: StringSlice):
+    def __init__(out self, version: StringSpan):
         """Initialize a PythonVersion object from a version string.
 
         Args:
@@ -1527,7 +1527,7 @@ struct GILReleased(Movable):
 
 def _untracked_symbol[
     result_type: AnyType
-](mut lib: OwnedDLHandle, name: StringSlice) -> Optional[
+](mut lib: OwnedDLHandle, name: StringSpan) -> Optional[
     Pointer[result_type, MutUntrackedOrigin]
 ]:
     """Resolves a symbol and drops the borrow tying it to `lib`.
@@ -1549,10 +1549,11 @@ def _untracked_symbol[
     Returns:
         An optional pointer to the symbol, or `None` if not found.
     """
-    var ptr = lib.get_symbol[result_type](name)
-    if not ptr:
-        return None
-    return ptr.unsafe_value().unsafe_origin_cast[MutUntrackedOrigin]()
+    match lib.get_symbol[result_type](name):
+        case .Some(ptr):
+            return ptr.unsafe_origin_cast[MutUntrackedOrigin]()
+        case .None:
+            return None
 
 
 @fieldwise_init
@@ -2079,7 +2080,7 @@ struct CPython(Defaultable, Movable):
 
     def get_error_global(
         self,
-        global_name: StringSlice,
+        global_name: StringSpan,
     ) -> PyObjectPtr:
         """Get a Python read-only reference to the specified global exception
         object.
@@ -3380,7 +3381,7 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     # TODO: fix the signature to take str, size, and errors as args
-    def PyUnicode_DecodeUTF8(self, s: StringSlice) -> PyObjectPtr:
+    def PyUnicode_DecodeUTF8(self, s: StringSpan) -> PyObjectPtr:
         """Create a Unicode object by decoding size bytes of the UTF-8 encoded
         string slice `s`. Return `NULL` if an exception was raised by the codec.
 
@@ -3402,7 +3403,7 @@ struct CPython(Defaultable, Movable):
     # TODO: fix signature to take unicode and size as args
     def PyUnicode_AsUTF8AndSize(
         self, obj: PyObjectPtr
-    ) -> Optional[StringSlice[ImmutAnyOrigin]]:
+    ) -> Optional[StringSpan[ImmutAnyOrigin]]:
         """Return a pointer to the UTF-8 encoding of the Unicode object, and
         store the size of the encoded representation (in bytes) in `size`.
 
@@ -3416,7 +3417,7 @@ struct CPython(Defaultable, Movable):
         )
         if length == Py_ssize_t(-1):
             return None
-        return StringSlice[ImmutAnyOrigin](
+        return StringSpan[ImmutAnyOrigin](
             unsafe_from_utf8=Span(
                 unsafe_ptr=ptr.value().unsafe_bitcast[Byte](),
                 length=Int(length),

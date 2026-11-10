@@ -17,6 +17,7 @@
 #include "AsyncRT/Runtime/AnyAsyncValueRef.h"
 #include "AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/SymbolExport.h"
 
 #include "llvm/Support/Alignment.h"
 
@@ -26,7 +27,7 @@ namespace M::MLRT {
 
 // A block of owned memory. When there are no more references to this it will
 // free the underlying memory.
-struct OwnedMemoryBlock {
+struct MODULAR_CXX_EXPORT OwnedMemoryBlock {
   OwnedMemoryBlock() = default;
   OwnedMemoryBlock(size_t size, std::optional<size_t> alignment,
                    AsyncRT::CompactCPUDevicePtr rt, void *takePtr = nullptr);
@@ -45,7 +46,7 @@ using BufferRefLifetimeProfilerEntry =
 /// uninterpreted and possibly uninitialized bytes, along with metadata needed
 /// to interop with the Modular cpuDevice. Each buffer has an async value to its
 /// storage which will be freed on deconstruction.
-class TensorBufferRef {
+class MODULAR_CXX_EXPORT TensorBufferRef {
 public:
   /// Constructs a reference in the 'null' state. Useful for references
   /// which are allocated lazily.

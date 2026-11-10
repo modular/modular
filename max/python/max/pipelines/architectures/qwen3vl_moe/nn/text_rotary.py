@@ -23,10 +23,8 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
-from max.nn.legacy.rotary_embedding import (
-    Llama3RopeScalingParams,
-    Llama3RotaryEmbedding,
-)
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.rope_scaling import Llama3RopeScalingParams
 
 
 class Qwen3VLTextRotaryEmbedding(Llama3RotaryEmbedding):

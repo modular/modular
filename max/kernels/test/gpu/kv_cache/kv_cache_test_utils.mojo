@@ -168,10 +168,11 @@ struct _KVCacheTestTensor[dtype: DType, rank: Int](Copyable):
         self.host_ptr.unsafe_free()
 
     def copy_to_device(mut self, ctx: DeviceContext) raises:
-        self.device_buf = ctx.enqueue_create_buffer[Self.dtype](
+        var buf = ctx.enqueue_create_buffer[Self.dtype](
             self.shape.flattened_length()
         )
-        ctx.enqueue_copy(self.device_buf.value(), self.host_ptr)
+        ctx.enqueue_copy(buf, self.host_ptr)
+        self.device_buf = buf^
 
     def host_tensor(self) -> Self.tensor_type:
         return self._tensor(self.host_ptr)
@@ -215,7 +216,7 @@ struct CacheLengthsTable(Copyable):
         mut self,
         prompt_lens: List[Int],
         cache_lens: List[Int],
-        ctx: Optional[DeviceContext] = None,
+        ctx: DeviceContext.Optional = DeviceContext.NoneValue,
     ) raises:
         var cache_lengths_ptr = self.cache_lengths.host_ptr
         var input_row_offsets_ptr = self.input_row_offsets.host_ptr
@@ -250,7 +251,7 @@ struct CacheLengthsTable(Copyable):
     def build(
         prompt_lens: List[Int],
         cache_lens: List[Int],
-        ctx: Optional[DeviceContext],
+        ctx: DeviceContext.Optional,
     ) raises -> Self:
         var batch_size = len(prompt_lens)
         var cache_lengths_table = Self(batch_size)
@@ -280,7 +281,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
         prompt_lens: List[Int],
         cache_lens: List[Int],
         num_paged_blocks: Int,
-        ctx: Optional[DeviceContext] = None,
+        ctx: DeviceContext.Optional = DeviceContext.NoneValue,
     ) raises:
         var batch_size = len(prompt_lens)
 
@@ -314,7 +315,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
         cache_lens: List[Int],
         max_full_context_length: Int,
         num_paged_blocks: Int,
-        ctx: Optional[DeviceContext],
+        ctx: DeviceContext.Optional,
     ) raises -> Self:
         var batch_size = len(prompt_lens)
         var paged_lut = Self(batch_size, max_full_context_length)

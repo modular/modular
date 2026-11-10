@@ -28,13 +28,15 @@ a tolerance instead.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import verify_width_operand
+from max.nn._graph_ops.state_space import verify_width_operand
 from max.pipelines.architectures.glm5_next.layers.kda import (
     KdaReplayInputs,
     KdaRing,
@@ -50,11 +52,7 @@ from max.pipelines.architectures.glm5_next.state_cache import (
     state_regions,
     with_verify_ring,
 )
-from max.pipelines.speculative.gated_delta_rollback import (
-    accepted_lengths,
-    accepted_row_plan,
-    replay_conv_pools,
-)
+from max.pipelines.speculative.gated_delta_rollback import accepted_lengths
 
 HIDDEN = 256
 HEADS = 2
@@ -104,7 +102,7 @@ def _sparse(
 
 def _weights() -> dict[str, np.ndarray]:
     rng = np.random.default_rng(29)
-    return {
+    weights = {
         "q_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
         "k_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
         "v_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
@@ -121,6 +119,13 @@ def _weights() -> dict[str, np.ndarray]:
         "o_norm.weight": np.ones(HEAD_DIM, dtype=np.float32),
         "o_proj.weight": _sparse(rng, HIDDEN, QKV_DIM, 0.5),
     }
+    # The checkpoint's three conv tensors, in the layer's q, k, v order.
+    conv = np.split(weights.pop("conv1d.weight"), 3)
+    weights.update(
+        (f"{part}_conv1d.weight", np.ascontiguousarray(block))
+        for part, block in zip("qkv", conv, strict=True)
+    )
+    return weights
 
 
 def _layer() -> KimiDeltaAttention:
@@ -166,12 +171,14 @@ def _rel_rms(a: np.ndarray, b: np.ndarray) -> float:
     )
 
 
-def _run_spec_against_decode(
-    accepted: list[int],
-) -> tuple[dict[str, np.ndarray], list[tuple[np.ndarray, np.ndarray]]]:
-    """Runs the verify and rollback, then the accepted tokens one at a time.
+_SpecResult = tuple[dict[str, np.ndarray], list[tuple[np.ndarray, np.ndarray]]]
 
-    Returns the four pools, and each accepted token's readout from both arms.
+
+def _load_spec_against_decode(accepted: list[int]) -> Callable[[], _SpecResult]:
+    """Compiles the verify and rollback, then the accepted tokens one at a time.
+
+    Returns a function that runs them and returns the four pools, and each
+    accepted token's readout from both arms.
     """
     batch = len(accepted)
     window = NUM_DRAFTS + 1
@@ -240,23 +247,14 @@ def _run_spec_against_decode(
             verify_width=verify_width,
         )
         num_drafts = ops.constant(NUM_DRAFTS, DType.int64, device=gpu)
-        row_indices, replay_offsets = accepted_row_plan(
-            offsets_v, accepted_v, num_drafts, x_v.shape[0], gpu
-        )
-        replay_conv_pools(
-            [captures],
-            [conv],
-            [conv_rows],
-            row_indices,
-            replay_offsets,
-            [],
-            verify_width,
-        )
         fold_kda_state_pools(
             [rec],
             [rec_rows],
             [ring],
             [ring_rows],
+            [conv],
+            [conv_rows],
+            [captures],
             accepted_lengths(offsets_v, accepted_v, num_drafts),
             [offsets_v],
             [],
@@ -280,43 +278,46 @@ def _run_spec_against_decode(
         graph, weights_registry=layer.state_dict()
     )
 
-    def put(value: np.ndarray) -> Buffer:
-        return Buffer.from_numpy(np.ascontiguousarray(value)).to(device)
+    def run() -> _SpecResult:
+        def put(value: np.ndarray) -> Buffer:
+            return Buffer.from_numpy(np.ascontiguousarray(value)).to(device)
 
-    buffers = {
-        "conv": put(pools["conv"]),
-        "recurrent": put(pools["recurrent"]),
-        "ring": put(np.zeros(ring_shape, dtype=np.float32)),
-        "base_conv": put(pools["conv"]),
-        "base_recurrent": put(pools["recurrent"]),
-    }
-    step_buffers = []
-    for step_x, step_offsets, _ in steps:
-        step_buffers += [put(step_x), put(step_offsets)]
-    outputs = model.execute(
-        put(x),
-        put(offsets),
-        put(np.array(accepted, dtype=np.int64)),
-        put(_table(CONV_ROWS)),
-        put(_table(RECURRENT_ROWS)),
-        put(_table(RING_ROWS)),
-        *step_buffers,
-        *buffers.values(),
-    )
-    host = [np.array(out.to(CPU()).to_numpy()) for out in outputs]
-    spec, base = host[0], host[1:]
-    readouts = [
-        (spec[b * window + t], base[t][i])
-        for t, (_, _, members) in enumerate(steps)
-        for i, b in enumerate(members)
-    ]
-    return (
-        {
-            name: np.array(buf.to(CPU()).to_numpy())
-            for name, buf in buffers.items()
-        },
-        readouts,
-    )
+        buffers = {
+            "conv": put(pools["conv"]),
+            "recurrent": put(pools["recurrent"]),
+            "ring": put(np.zeros(ring_shape, dtype=np.float32)),
+            "base_conv": put(pools["conv"]),
+            "base_recurrent": put(pools["recurrent"]),
+        }
+        step_buffers = []
+        for step_x, step_offsets, _ in steps:
+            step_buffers += [put(step_x), put(step_offsets)]
+        outputs = model.execute(
+            put(x),
+            put(offsets),
+            put(np.array(accepted, dtype=np.int64)),
+            put(_table(CONV_ROWS)),
+            put(_table(RECURRENT_ROWS)),
+            put(_table(RING_ROWS)),
+            *step_buffers,
+            *buffers.values(),
+        )
+        host = [np.array(out.to(CPU()).to_numpy()) for out in outputs]
+        spec, base = host[0], host[1:]
+        readouts = [
+            (spec[b * window + t], base[t][i])
+            for t, (_, _, members) in enumerate(steps)
+            for i, b in enumerate(members)
+        ]
+        return (
+            {
+                name: np.array(buf.to(CPU()).to_numpy())
+                for name, buf in buffers.items()
+            },
+            readouts,
+        )
+
+    return run
 
 
 @pytest.mark.parametrize(
@@ -325,7 +326,7 @@ def _run_spec_against_decode(
 def test_the_rollback_lands_where_decoding_the_accepted_tokens_does(
     accepted: list[int],
 ) -> None:
-    pools, readouts = _run_spec_against_decode(accepted)
+    pools, readouts = _load_spec_against_decode(accepted)()
     np.testing.assert_array_equal(pools["conv"], pools["base_conv"])
     np.testing.assert_array_equal(pools["recurrent"], pools["base_recurrent"])
     spec = np.stack([s for s, _ in readouts])
@@ -335,7 +336,9 @@ def test_the_rollback_lands_where_decoding_the_accepted_tokens_does(
 
 def test_a_rejected_draft_changes_the_state() -> None:
     """Checks the fixture can tell an accepted count from another."""
-    rejected, _ = _run_spec_against_decode([0, 0])
-    accepted, _ = _run_spec_against_decode([NUM_DRAFTS, NUM_DRAFTS])
+    run_rejected = _load_spec_against_decode([0, 0])
+    run_accepted = _load_spec_against_decode([NUM_DRAFTS, NUM_DRAFTS])
+    rejected, _ = run_rejected()
+    accepted, _ = run_accepted()
     assert not np.array_equal(rejected["recurrent"], accepted["recurrent"])
     assert not np.array_equal(rejected["conv"], accepted["conv"])

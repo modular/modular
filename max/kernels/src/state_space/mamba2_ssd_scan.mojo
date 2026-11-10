@@ -43,7 +43,8 @@ dstate axis of `ssm_pool` must be contiguous.
 
 `update_state[b]` (empty means all true) says whether sequence `b`'s final
 state is written back. With it clear the scan only reads the pool, which lets a
-speculative verify run on the live state and leave it as it was.
+speculative verify run on the live state and leave it as it was; under
+`ROW_RULE` a prefill row writes its commit point anyway.
 
 `x`, `dt`, `B`, `C` and the slot indices are read through operand functions,
 so a graph op can fold a slice of a larger tensor into its loads instead of
@@ -67,6 +68,7 @@ from std.sys.info import align_of
 from std.utils.static_tuple import StaticTuple
 from layout import TensorLayout, TensorEngine, TileTensor
 from state_space.pdl_wait import wait_on_producers
+from state_space.row_rule import commit_len, is_prefill_row
 from state_space.selective_scan import softplus
 
 # exp(x) == exp2(x * LOG2E), and exp2 is the faster GPU instruction.
@@ -285,8 +287,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     dt_softplus: Bool = True,
     prefill: Bool = True,
     CH_PER_THREAD: Int = 1,
+    ROW_RULE: Bool = False,
+    SKIP_LONG_ROWS: Bool = False,
 ](
     ngroups: Int32,
+    num_draft_tokens: Int32,
     A: TileTensor[kernel_dtype, A_LT, ImmUntrackedOrigin, Engine=Engine],
     D: TileTensor[kernel_dtype, D_LT, ImmUntrackedOrigin, Engine=Engine],
     dt_bias: TileTensor[
@@ -364,9 +369,17 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         CH_PER_THREAD: Number of head_dim channels each thread carries. The B/C
             vectors of a token depend only on the group and dstate slice, so
             each load feeds this many channels.
+        ROW_RULE: Whether a prefill row (longer than one real token plus
+            its drafts) commits its state at its last real token, whatever
+            its `update_state` flag.
+        SKIP_LONG_ROWS: Whether a prefill row writes zero outputs for its
+            draft rows and touches no state, leaving the row to the
+            chunked launch.
     Args:
         ngroups: Number of `B`/`C` groups; `nheads // ngroups` heads share
             each group.
+        num_draft_tokens: Draft tokens per row; a row longer than this
+            plus one is a prefill row under `ROW_RULE`.
         A: Per-head scalar decay of shape `(nheads,)`.
         D: Per-head skip connection of shape `(nheads,)`, or empty.
         dt_bias: Per-head bias added to `dt` of shape `(nheads,)`, or empty.
@@ -379,7 +392,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         update_state: Per-sequence flag of shape `(batch,)` selecting whether
             the final state is written back to the pool, or empty to write
             every sequence's. A sequence with the flag clear leaves its slot
-            untouched, so the scan reads the pool without advancing it.
+            untouched, so the scan reads the pool without advancing it;
+            under `ROW_RULE` a prefill row writes its commit point anyway.
         x_fn: Reads `x` of shape `(total_len, nheads, head_dim)`.
         dt_fn: Reads `dt` of shape `(total_len, nheads)`.
         b_fn: Reads `B` of shape `(total_len, ngroups, dstate)`.
@@ -432,12 +446,42 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     if seq_end <= seq_start:
         return
 
+    comptime if ROW_RULE or SKIP_LONG_ROWS:
+        var k = Int(num_draft_tokens)
+        var row_len = seq_end - seq_start
+        comptime if SKIP_LONG_ROWS:
+            if is_prefill_row(row_len, k):
+                # The chunked launch owns this row's real tokens; only its
+                # draft rows' outputs are written here.
+                var commit_end = seq_start + commit_len(row_len, k)
+                comptime for j in range(W_TOKEN):
+                    var i: Int
+                    comptime if P >= DSTATE_SPLIT:
+                        i = tx * W_TOKEN + j
+                    else:
+                        i = tx % P
+                    var p = p0 + i * NY
+                    if tx * W_TOKEN < P and p < head_dim:
+                        for t in range(k):
+                            y.store(
+                                (commit_end + t, h, p),
+                                SIMD[kernel_dtype, 1](0),
+                            )
+                return
+
     var head = _HeadScalars.load(A, D, dt_bias, h)
     var slot = Int(slot_fn[1, 1](b))
     # Read the flag outside the `active` guard so its load issues alongside
     # the others; behind the guard it serialized and slowed decode by 14%.
     var use_initial_state = _use_initial_state(has_initial_state, b)
     var write_state = _write_final_state(update_state, b)
+    var commit_end = seq_end
+    comptime if ROW_RULE:
+        var k = Int(num_draft_tokens)
+        var row_len = seq_end - seq_start
+        # A prefill row commits at its last real token, whatever the flag.
+        write_state = write_state or is_prefill_row(row_len, k)
+        commit_end = seq_start + commit_len(row_len, k)
     # The state loads issue first so their HBM latency overlaps the B/C/x
     # loads and staging below.
     var state = Array[SIMD[.float32, L], P](fill=0)
@@ -528,6 +572,20 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                             B_vals, SIMD[.float32, L](dt_x), state[i] * dA
                         )
                         part[i * T + t] = (state[i] * C_vals).reduce_add()
+                    comptime if ROW_RULE:
+                        if (
+                            write_state
+                            and commit_end < seq_end
+                            and cur + t + 1 == commit_end
+                        ):
+                            # The pool holds the commit-point state, not
+                            # the state after the drafts.
+                            comptime for i in range(P):
+                                if p0 + i * NY < head_dim:
+                                    ssm_pool.store[alignment=pool_align](
+                                        (slot, h, p0 + i * NY, n_base),
+                                        state[i].cast[state_dtype](),
+                                    )
                 var y_vals = _scatter_sum[T * P, DSTATE_SPLIT](part, tx)
                 comptime for j in range(W_STAGED):
                     var k: Int
@@ -602,12 +660,37 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                         (y_vals[j] + head.D * x_vals[i]).cast[kernel_dtype](),
                     )
 
-    if write_state:
-        comptime for i in range(P):
-            if p0 + i * NY < head_dim:
-                ssm_pool.store[alignment=pool_align](
-                    (slot, h, p0 + i * NY, n_base), state[i].cast[state_dtype]()
-                )
+            comptime if ROW_RULE:
+                if (
+                    write_state
+                    and commit_end < seq_end
+                    and gt + 1 == commit_end
+                ):
+                    # The pool holds the commit-point state, not the state
+                    # after the drafts.
+                    comptime for i in range(P):
+                        if p0 + i * NY < head_dim:
+                            ssm_pool.store[alignment=pool_align](
+                                (slot, h, p0 + i * NY, n_base),
+                                state[i].cast[state_dtype](),
+                            )
+
+    comptime if not ROW_RULE:
+        if write_state:
+            comptime for i in range(P):
+                if p0 + i * NY < head_dim:
+                    ssm_pool.store[alignment=pool_align](
+                        (slot, h, p0 + i * NY, n_base),
+                        state[i].cast[state_dtype](),
+                    )
+    else:
+        if write_state and commit_end == seq_end:
+            comptime for i in range(P):
+                if p0 + i * NY < head_dim:
+                    ssm_pool.store[alignment=pool_align](
+                        (slot, h, p0 + i * NY, n_base),
+                        state[i].cast[state_dtype](),
+                    )
 
     launch_dependent_grids()
 
@@ -650,8 +733,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     # 16 bytes of fp32 is the M5 vector-load cap. A width-8 bf16 load
     # scalarizes on M5, so 4 is the width that is safe for both state dtypes.
     VEC: Int = 4,
+    ROW_RULE: Bool = False,
+    SKIP_LONG_ROWS: Bool = False,
 ](
     ngroups: Int32,
+    num_draft_tokens: Int32,
     A: TileTensor[kernel_dtype, A_LT, ImmUntrackedOrigin, Engine=Engine],
     D: TileTensor[kernel_dtype, D_LT, ImmUntrackedOrigin, Engine=Engine],
     dt_bias: TileTensor[
@@ -714,10 +800,18 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         SlotFn: Reads the pool slot of each sequence.
         dt_softplus: Whether to apply softplus to `dt + dt_bias`.
         VEC: SIMD width of the dstate loads and stores.
+        ROW_RULE: Whether a prefill row (longer than one real token plus
+            its drafts) commits its state at its last real token, whatever
+            its `update_state` flag.
+        SKIP_LONG_ROWS: Whether a prefill row writes zero outputs for its
+            draft rows and touches no state, leaving the row to the
+            chunked launch.
 
     Args:
         ngroups: Number of `B`/`C` groups; `nheads // ngroups` heads share
             each group.
+        num_draft_tokens: Draft tokens per row; a row longer than this
+            plus one is a prefill row under `ROW_RULE`.
         A: Per-head scalar decay of shape `(nheads,)`.
         D: Per-head skip connection of shape `(nheads,)`, or empty.
         dt_bias: Per-head bias added to `dt` of shape `(nheads,)`, or empty.
@@ -730,7 +824,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         update_state: Per-sequence flag of shape `(batch,)` selecting whether
             the final state is written back to the pool, or empty to write
             every sequence's. A sequence with the flag clear leaves its slot
-            untouched, so the scan reads the pool without advancing it.
+            untouched, so the scan reads the pool without advancing it;
+            under `ROW_RULE` a prefill row writes its commit point anyway.
         x_fn: Reads `x` of shape `(total_len, nheads, head_dim)`.
         dt_fn: Reads `dt` of shape `(total_len, nheads)`.
         b_fn: Reads `B` of shape `(total_len, ngroups, dstate)`.
@@ -756,8 +851,31 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     if seq_end <= seq_start:
         return
 
+    comptime if ROW_RULE or SKIP_LONG_ROWS:
+        var k = Int(num_draft_tokens)
+        var row_len = seq_end - seq_start
+        comptime if SKIP_LONG_ROWS:
+            if is_prefill_row(row_len, k):
+                # The chunked launch owns this row's real tokens; only its
+                # draft rows' outputs are written here.
+                var commit_end = seq_start + commit_len(row_len, k)
+                for t in range(k):
+                    y.store(
+                        (commit_end + t, h, p),
+                        SIMD[kernel_dtype, 1](0),
+                    )
+                return
+
     var head = _HeadScalars.load(A, D, dt_bias, h)
     var slot = Int(slot_fn[1, 1](b))
+    var write_state = _write_final_state(update_state, b)
+    var commit_end = seq_end
+    comptime if ROW_RULE:
+        var k = Int(num_draft_tokens)
+        var row_len = seq_end - seq_start
+        # A prefill row commits at its last real token, whatever the flag.
+        write_state = write_state or is_prefill_row(row_len, k)
+        commit_end = seq_start + commit_len(row_len, k)
     var state = Array[SIMD[.float32, VEC], NCHUNK](fill=0)
     if _use_initial_state(has_initial_state, b):
         comptime for c in range(NCHUNK):
@@ -783,11 +901,27 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
             (y_acc.reduce_add() + head.D * x_val).cast[kernel_dtype](),
         )
 
-    if _write_final_state(update_state, b):
-        comptime for c in range(NCHUNK):
-            ssm_pool.store[alignment=pool_align](
-                (slot, h, p, c * VEC), state[c].cast[state_dtype]()
-            )
+        comptime if ROW_RULE:
+            if write_state and commit_end < seq_end and gt + 1 == commit_end:
+                # The pool holds the commit-point state, not the state
+                # after the drafts.
+                comptime for c in range(NCHUNK):
+                    ssm_pool.store[alignment=pool_align](
+                        (slot, h, p, c * VEC), state[c].cast[state_dtype]()
+                    )
+
+    comptime if not ROW_RULE:
+        if write_state:
+            comptime for c in range(NCHUNK):
+                ssm_pool.store[alignment=pool_align](
+                    (slot, h, p, c * VEC), state[c].cast[state_dtype]()
+                )
+    else:
+        if write_state and commit_end == seq_end:
+            comptime for c in range(NCHUNK):
+                ssm_pool.store[alignment=pool_align](
+                    (slot, h, p, c * VEC), state[c].cast[state_dtype]()
+                )
 
 
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
@@ -817,8 +951,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
     & RegisterPassable
     & def[width: Int, alignment: Int](Int) -> SIMD[.uint32, width],
     dt_softplus: Bool = True,
+    ROW_RULE: Bool = False,
+    SKIP_LONG_ROWS: Bool = False,
 ](
     ngroups: Int,
+    num_draft_tokens: Int32,
     A: TileTensor[mut=False, kernel_dtype, ...],
     D: TileTensor[mut=False, kernel_dtype, ...],
     dt_bias: TileTensor[mut=False, kernel_dtype, ...],
@@ -852,10 +989,18 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
         CFn: Reads `C`.
         SlotFn: Reads the pool slot of each sequence.
         dt_softplus: Whether to apply softplus to `dt + dt_bias`.
+        ROW_RULE: Whether a prefill row (longer than one real token plus
+            its drafts) commits its state at its last real token, whatever
+            its `update_state` flag.
+        SKIP_LONG_ROWS: Whether a prefill row writes zero outputs for its
+            draft rows and touches no state, leaving the row to the
+            chunked launch.
 
     Args:
         ngroups: Number of `B`/`C` groups; `nheads // ngroups` heads share
             each group.
+        num_draft_tokens: Draft tokens per row; a row longer than this
+            plus one is a prefill row under `ROW_RULE`.
         A: Per-head scalar decay of shape `(nheads,)`.
         D: Per-head skip connection of shape `(nheads,)`, or empty.
         dt_bias: Per-head bias added to `dt` of shape `(nheads,)`, or empty.
@@ -868,7 +1013,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
         update_state: Per-sequence flag of shape `(batch,)` selecting whether
             the final state is written back to the pool, or empty to write
             every sequence's. A sequence with the flag clear leaves its slot
-            untouched, so the scan reads the pool without advancing it.
+            untouched, so the scan reads the pool without advancing it;
+            under `ROW_RULE` a prefill row writes its commit point anyway.
         x_fn: Reads `x` of shape `(total_len, nheads, head_dim)`.
         dt_fn: Reads `dt` of shape `(total_len, nheads)`.
         b_fn: Reads `B` of shape `(total_len, ngroups, dstate)`.
@@ -892,8 +1038,32 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
         if seq_end <= seq_start:
             return
 
+        comptime if ROW_RULE or SKIP_LONG_ROWS:
+            var k = Int(num_draft_tokens)
+            var row_len = seq_end - seq_start
+            comptime if SKIP_LONG_ROWS:
+                if is_prefill_row(row_len, k):
+                    # The chunked launch owns this row's real tokens; only
+                    # its draft rows' outputs are written here.
+                    var commit_end = seq_start + commit_len(row_len, k)
+                    for t in range(k):
+                        y.store(
+                            (commit_end + t, h, p),
+                            Scalar[kernel_dtype](0),
+                        )
+                    return
+
         var head = _HeadScalars.load(A, D, dt_bias, h)
         var slot = Int(slot_fn[1, 1](b))
+        var write_state = _write_final_state(update_state, b)
+        var commit_end = seq_end
+        comptime if ROW_RULE:
+            var k = Int(num_draft_tokens)
+            var row_len = seq_end - seq_start
+            # A prefill row commits at its last real token, whatever the
+            # flag.
+            write_state = write_state or is_prefill_row(row_len, k)
+            commit_end = seq_start + commit_len(row_len, k)
         var state = SIMD[.float32, DSTATE](0)
         if _use_initial_state(has_initial_state, b):
             state = ssm_pool.load[width=DSTATE]((slot, h, p, 0)).cast[
@@ -911,7 +1081,21 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
             var y_val = (state * C_vals).reduce_add() + head.D * x_val
             y.store((gt, h, p), y_val.cast[kernel_dtype]())
 
-        if _write_final_state(update_state, b):
-            ssm_pool.store((slot, h, p, 0), state.cast[state_dtype]())
+            comptime if ROW_RULE:
+                if (
+                    write_state
+                    and commit_end < seq_end
+                    and gt + 1 == commit_end
+                ):
+                    # The pool holds the commit-point state, not the state
+                    # after the drafts.
+                    ssm_pool.store((slot, h, p, 0), state.cast[state_dtype]())
+
+        comptime if not ROW_RULE:
+            if write_state:
+                ssm_pool.store((slot, h, p, 0), state.cast[state_dtype]())
+        else:
+            if write_state and commit_end == seq_end:
+                ssm_pool.store((slot, h, p, 0), state.cast[state_dtype]())
 
     sync_parallelize(worker, batch * nheads * head_dim, ctx)

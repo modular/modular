@@ -28,7 +28,6 @@ from .mla_prefill_generic import mla_sm100_prefill_generic
 from .mla_prefill_blockscale import mla_sm100_prefill_blockscale
 from .mla_prefill_sparse_utils import MLASparseConfig
 from .mla_prefill_sparse import mla_prefill_sparse
-from .mla_prefill_sparse_kv_fp8 import mla_prefill_sparse_fp8
 
 
 @inline(.always)
@@ -246,107 +245,6 @@ def mla_sm100_prefill_sparse[
         indices,
         topk_lengths,
         attn_sink_ptr,
-        scale,
-        Int32(indices_stride),
-        ctx,
-    )
-
-
-# SM100 host launch wrapper. Deliberately NOT `@inline(.always)`: this wrapper's
-# transitively-inlined FP8 host launch path (the INT64-packed gather4 K+V TMA
-# descriptor construction, `mla_prefill_sparse_fp8` below) is a large store
-# chain. If it inlines into the model's giant fused host `region_0`, LLVM's SLP
-# vectorizer goes quadratic (`BoUpSLP::calculateDependencies` O(n^2) alias
-# queries) and the GLM-5.2 FP8-cache model compile blows up (~66 min vs ~15 for
-# bf16-cache). `@inline(.never)` keeps the store chain in its own small function
-# where SLP is cheap. Host-side only — the device kernel body is unchanged.
-@inline(.never)
-def mla_sm100_prefill_sparse_fp8[
-    output_type: DType,
-    q_type: DType,
-    cache_t: KVCacheT,
-    //,
-    num_q_heads: Int,
-    qk_depth: Int,
-    v_depth: Int,
-    indices_stride: Int,
-    scale_block_size: Int,
-](
-    output: TileTensor[output_type, address_space=.GENERIC, ...],
-    q: TileTensor[q_type, address_space=.GENERIC, ...],
-    kv_cache: cache_t,
-    indices: TileTensor[.uint32, address_space=.GENERIC, ...],
-    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
-    attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
-    scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
-    scale: Float32,
-    ctx: DeviceContext,
-) raises:
-    """FP8 KV-cache variant of ``mla_sm100_prefill_sparse``.
-
-    Thin wrapper around ``mla_prefill_sparse_fp8`` that builds the
-    ``MLASparseConfig`` from the passed dimensions.  The FP8 KV cache
-    uses ``DType.float8_e4m3fn`` storage with one Float32 scale per
-    physical KV token supplied via ``scales_ptr``.
-
-    Parameters:
-        output_type: Output element type (BF16).
-        q_type: Query element type (BF16).
-        cache_t: FP8 KV cache type (``DType.float8_e4m3fn``).
-        num_q_heads: Number of query heads (128 for DSv3.2).
-        qk_depth: Per-head Q/K depth (576 for DSv3.2).
-        v_depth: Per-head V depth (512 for DSv3.2).
-        indices_stride: Per-query indices buffer stride (= top-k count).
-        scale_block_size: Quantization block size along the depth axis.
-            ``0`` selects no-scale mode: FP8 latents are read at unit scale
-            (no dequant, ``scales_ptr`` unused / may be null), mirroring the
-            sparse-decode read of today's scale-less MLA latent cache — the
-            current DSv3.2 production path. ``>= qk_depth`` selects tensorwise
-            scaling (one scale per KV token). A smaller positive value (e.g.
-            32) selects cache-native blockwise scaling: MLA stores one
-            ``ceildiv(qk_depth, scale_block_size)``-wide scale vector per token
-            over the full latent, K consumes all of it and V the first
-            ``ceildiv(v_depth, scale_block_size)`` blocks, so a single
-            ``scales_ptr`` (stride ``ceildiv(qk_depth, sbs)``) serves both.
-
-    Args:
-        output: Output tile tensor ``[total_q_tokens, num_q_heads, v_depth]``.
-        q: Query tile tensor ``[total_q_tokens, num_q_heads, qk_depth]``.
-        kv_cache: Paged MLA FP8 KV cache for the current layer.
-        indices: Per-query gather4 indices (uint32).
-        topk_lengths: Per-query effective top-k count.
-        attn_sink_ptr: Optional attention sink (pass ``None`` to skip).
-        scales_ptr: FP8 dequantization scales in ``get_tma_row`` space, laid
-            out ``[total_phys_rows, ceildiv(qk_depth, scale_block_size)]``
-            (i.e. ``k.scales_raw_ptr()`` for the paged cache).
-        scale: Softmax scale.
-        ctx: GPU device context.
-    """
-    comptime cta_group = 2 if num_q_heads == 128 else 1
-    comptime b_topk = 128 if num_q_heads == 128 else 64
-    comptime config = MLASparseConfig[
-        q_type, b_topk_=b_topk, cta_group_=cta_group
-    ](
-        num_q_heads=num_q_heads,
-        num_kv_heads=1,
-        qk_depth=qk_depth,
-        v_depth=v_depth,
-        indices_stride=indices_stride,
-        group=num_q_heads,
-    )
-    mla_prefill_sparse_fp8[
-        config=config,
-        group=num_q_heads,
-        q_depth=qk_depth,
-        scale_block_size=scale_block_size,
-    ](
-        output,
-        q,
-        kv_cache,
-        indices,
-        topk_lengths,
-        attn_sink_ptr,
-        scales_ptr,
         scale,
         Int32(indices_stride),
         ctx,

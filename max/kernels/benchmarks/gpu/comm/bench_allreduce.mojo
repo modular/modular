@@ -74,7 +74,7 @@ def bench_reduce[
     use_vendor_ccl: Bool = False,
 ](
     mut b: Bench,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     num_bytes: Int,
     max_num_blocks: Optional[Int],
     ragged: Bool,
@@ -179,16 +179,15 @@ def bench_reduce[
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
 
         # All GPUs use the same multicast pointer
-        multi_ptr = (
+        var ptr = (
             multicast_buf.multicast_buffer_for(list_of_ctx[0])
             .unsafe_ptr()
             .unsafe_mut_cast[True]()
             .as_unsafe_any_origin()
         )
+        multi_ptr = ptr
         in_tensors[0] = TileTensor(
-            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                multi_ptr.unsafe_value()
-            ),
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](ptr),
             row_major(length),
         )
     else:
@@ -226,11 +225,11 @@ def bench_reduce[
 
     @inline(.always)
     def bench_iter(
-        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut b: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_tensors, imm}:
             comptime if not use_multimem:
                 comptime for i in range(ngpus):
@@ -244,7 +243,7 @@ def bench_reduce[
                 # multi_ptr is set when use_multimem == True
                 in_tensors[0] = TileTensor(
                     rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                        multi_ptr.unsafe_value().unsafe_offset(
+                        multi_ptr[].unsafe_offset(
                             cb_template.offset(cache_iter)
                         )
                     ),
@@ -387,7 +386,7 @@ def main() raises:
     assert_true(num_bytes % size_of[dtype]() == 0)
 
     # Create GPU context.
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 

@@ -19,9 +19,11 @@
 #include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/ExprNode.h"
+#include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/MojoTooling/DeclRendering.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
+#include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/Filesystem/Paths.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
@@ -107,6 +109,8 @@ struct CodeCompletionListener : public BaseCompletionListener {
 
   /// Notify the listener that an import is currently being resolved.
   void onImport(SMLoc importLoc) override {
+    SharedState &shared = parserContext->getSharedState();
+
     // Simple helper for adding completion results and dropping duplicates.
     StringSet<> addedImports;
     auto addImportCompletion = [&](const std::filesystem::path &path,
@@ -120,7 +124,8 @@ struct CodeCompletionListener : public BaseCompletionListener {
       // Grab the documentation for the import. Do this out of the current
       // context to avoid pulling in a bunch of unwanted state.
       MLIRContext ctx{MLIRContext::Threading::DISABLED};
-      FrontendOptions frontendOptions = parserContext->getFrontendOptions();
+      configureKGENContext(&ctx);
+      FrontendOptions frontendOptions = shared.frontendOptions;
       frontendOptions.autoFixItHandler = nullptr;
       frontendOptions.useMLIRDiagnostics = false;
       frontendOptions.parserListener = nullptr;
@@ -137,17 +142,19 @@ struct CodeCompletionListener : public BaseCompletionListener {
     // they are defined inside the 'std' package.
     addedImports.insert("std");
     onImport(
-        [&]() {
-          return &parserContext->getSharedState().importModule(
-              {"std"}, PackageOp(), SMLoc());
-        },
+        [&]() { return &shared.importModule({"std"}, PackageOp(), SMLoc()); },
         importLoc);
     for (CodeCompletionResult &result : results)
       addedImports.insert(result.label);
 
     // Compute the viable imports for the given location.
-    for (const std::string &dir :
-         parserContext->getModuleSearchDirectories(completionBufferId)) {
+    SmallVector<std::string> searchDirs;
+    shared.getModuleLoader().traverseImportDirectories(
+        completionBufferId, [&](StringRef dir) {
+          searchDirs.push_back(dir.str());
+          return WalkResult::advance();
+        });
+    for (const std::string &dir : searchDirs) {
       std::error_code ec;
       for (const auto &it : std::filesystem::directory_iterator(dir, ec)) {
         if (ec)

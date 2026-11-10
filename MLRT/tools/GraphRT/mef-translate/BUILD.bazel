@@ -11,13 +11,19 @@ package(
 modular_cc_binary(
     name = "mef-translate",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         "//AsyncRT:CompilerSupport",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:GraphRT/GRTDialect",
         "//MLRT:GraphRT/MEFToMLIR",
         "//MLRT:GraphRT/MLIRToMEF",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",

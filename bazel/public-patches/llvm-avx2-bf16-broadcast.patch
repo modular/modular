@@ -1,0 +1,22 @@
+--- a/llvm/lib/Target/X86/X86InstrSSE.td
++++ b/llvm/lib/Target/X86/X86InstrSSE.td
+@@ -7841,11 +7841,19 @@
+   def : Pat<(v8f16 (X86VBroadcastld16 addr:$src)),
+             (VPBROADCASTWrm addr:$src)>;
+   def : Pat<(v16f16 (X86VBroadcastld16 addr:$src)),
++            (VPBROADCASTWYrm addr:$src)>;
++  def : Pat<(v8bf16 (X86VBroadcastld16 addr:$src)),
++            (VPBROADCASTWrm addr:$src)>;
++  def : Pat<(v16bf16 (X86VBroadcastld16 addr:$src)),
+             (VPBROADCASTWYrm addr:$src)>;
+ 
+   def : Pat<(v8f16 (X86VBroadcast (v8f16 VR128:$src))),
+             (VPBROADCASTWrr VR128:$src)>;
+   def : Pat<(v16f16 (X86VBroadcast (v8f16 VR128:$src))),
++            (VPBROADCASTWYrr VR128:$src)>;
++  def : Pat<(v8bf16 (X86VBroadcast (v8bf16 VR128:$src))),
++            (VPBROADCASTWrr VR128:$src)>;
++  def : Pat<(v16bf16 (X86VBroadcast (v8bf16 VR128:$src))),
+             (VPBROADCASTWYrr VR128:$src)>;
+ 
+   def : Pat<(v8f16 (X86VBroadcast (f16 FR16:$src))),

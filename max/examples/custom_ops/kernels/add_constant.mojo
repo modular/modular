@@ -24,10 +24,7 @@ from std.utils.index import IndexList
 @extensibility.register("add_constant")
 struct AddConstant[value: Int]:
     @staticmethod
-    def execute[
-        # e.g. "CUDA" or "CPU"
-        target: StaticString,
-    ](
+    def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
@@ -37,7 +34,7 @@ struct AddConstant[value: Int]:
         def add_constant[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + Scalar[output.dtype](Self.value)
 
-        foreach[target=target](add_constant, output, ctx)
+        foreach(add_constant, output, ctx)
 
 
 # You only need to implement this if you do not manually annotate

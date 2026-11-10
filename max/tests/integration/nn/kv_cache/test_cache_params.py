@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import get_args
+from typing import ClassVar, get_args
 
 import numpy as np
 import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     AttnKey,
     BatchCharacteristics,
     KVCacheBuffer,
@@ -29,11 +29,14 @@ from max.nn.legacy.kv_cache import (
     MLAKVCacheParams,
     PagedKVLeafRegion,
 )
-from max.nn.legacy.kv_cache.cache_params import (
-    SpeculativeMethod as CacheSpeculativeMethod,
-)
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache.cache_params import (
+    _MAX_INT32_ROW_ID,
+    _MAX_UINT32_SCALE_ROW_ID,
+    _check_paged_row_ids,
     page_stride_of,
+)
+from max.nn.kv_cache.cache_params import (
+    SpeculativeMethod as CacheSpeculativeMethod,
 )
 from max.pipelines.speculative import SpeculativeMethod
 
@@ -716,3 +719,75 @@ def test_a_padded_leaf_hands_byte_movers_its_padded_grid() -> None:
     )
     assert isinstance(buffer, KVCacheBuffer)
     assert page_stride_of(buffer.values[0]) == 192
+
+
+# GLM 5.3's NVFP4 MLA scale pages hold 78 layers x 128 tokens of rows.
+_GLM53_SCALE_ROWS_PER_PAGE = 78 * 128
+
+
+@pytest.mark.parametrize(
+    ("num_pages", "max_row_id", "fits"),
+    [
+        # Past 215,092 pages the scale rows no longer fit int32.
+        (215_092, _MAX_INT32_ROW_ID, True),
+        (215_093, _MAX_INT32_ROW_ID, False),
+        # The uint32 kernels keep all ones for an unused slot.
+        (430_185, _MAX_UINT32_SCALE_ROW_ID, True),
+        (430_186, _MAX_UINT32_SCALE_ROW_ID, False),
+    ],
+)
+def test_paged_row_ids_must_fit_the_kernels(
+    num_pages: int, max_row_id: int, fits: bool
+) -> None:
+    def check() -> None:
+        _check_paged_row_ids(
+            "scales", num_pages, _GLM53_SCALE_ROWS_PER_PAGE, max_row_id
+        )
+
+    if fits:
+        check()
+    else:
+        with pytest.raises(ValueError, match="reduce the KV cache memory"):
+            check()
+
+
+class _ScaleRowsCappedAtOne(MHAKVCacheParams):
+    nvfp4_max_scale_row_id: ClassVar[int | None] = 1
+
+
+class _ScaleRowsUnbounded(MHAKVCacheParams):
+    nvfp4_max_scale_row_id: ClassVar[int | None] = None
+
+
+@pytest.mark.parametrize(
+    ("params_cls", "fits"),
+    [(_ScaleRowsCappedAtOne, False), (_ScaleRowsUnbounded, True)],
+)
+def test_nvfp4_scale_row_check_follows_the_cache_class(
+    params_cls: type[MHAKVCacheParams], fits: bool
+) -> None:
+    """A cache whose kernels address scales with 64-bit offsets opts out."""
+    params = params_cls(
+        dtype=DType.uint8,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn, quantization_granularity=16
+        ),
+    )
+    assert params.is_nvfp4_kv_cache
+    # Two value pages, which the smaller scale pages also tile.
+    value_page_bytes = int(np.prod(params.shape_per_block))
+    slab = Buffer.from_numpy(np.zeros(2 * value_page_bytes, np.uint8))
+
+    def views() -> None:
+        params.slab_to_buffer_views([slab])
+
+    if fits:
+        views()
+    else:
+        with pytest.raises(ValueError, match="reduce the KV cache memory"):
+            views()

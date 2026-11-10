@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import torch
 import torchvision.transforms as T
-from max._core.dialects import builtin, kgen, rmo
+from max._core.dialects import builtin, kgen, mo
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -352,7 +352,7 @@ def free_output_resize(
         )
         graph.output(
             Graph.current._add_op_generated(
-                rmo.MoResizeBicubicOp,
+                mo.ResizeBicubicOp,
                 result=out_type,
                 input=x,
                 size=size,

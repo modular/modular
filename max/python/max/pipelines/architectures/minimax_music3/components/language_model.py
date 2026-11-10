@@ -43,7 +43,7 @@ from max.nn import Linear, Module, ModuleList, RMSNorm
 from max.nn.common_layers.attention import AttentionWithRope
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.tensor import Tensor
 
 from ..model_config import LanguageModelConfig

@@ -1,4 +1,4 @@
-// RUN: mo-opt --gc-pipeline="compiled-framework-label=mof constant-fold=false default-device-label=gpu kernel-library-paths=%kernel_api_test_lib" %s -o %t
+// RUN: mo-opt --gc-pipeline="constant-fold=false default-device-label=gpu kernel-library-paths=%kernel_api_test_lib" %s -o %t
 // RUN: mt --execute --default-device-label=gpu --model-inputs=ones --result-output-style=full %t | FileCheck %s
 
 // End-to-end device-graph synthesis + replay for the execute-only recording

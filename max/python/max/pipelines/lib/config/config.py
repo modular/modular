@@ -606,6 +606,55 @@ def _resolved_runtime_and_sampling(
     return runtime, sampling
 
 
+def _resolve_prefer_module_v3(
+    prefer_module_v3: bool,
+    models: Mapping[str, MAXModelConfig],
+    arch_name: str | None,
+    task: PipelineTask | None,
+) -> bool:
+    """Returns the ModuleV3 preference a checkpoint can actually be served on.
+
+    ``prefer_module_v3`` promises a fallback to the graph API architecture,
+    but :func:`find_architecture` only falls back when no ModuleV3 variant is
+    *registered*. A registered variant that does not list the checkpoint's
+    encoding -- a ModuleV3 architecture is often brought up on bfloat16 before
+    its quantized encodings -- would otherwise fail resolution outright rather
+    than fall back. Clearing the preference here keeps every later lookup, the
+    registry's included, on the variant that can serve the checkpoint.
+    """
+    if not prefer_module_v3 or arch_name is None or "main" not in models:
+        return prefer_module_v3
+    v3_arch = find_architecture(arch_name, prefer_module_v3=True, task=task)
+    if v3_arch is None:
+        return prefer_module_v3
+    try:
+        encoding = _select_quantization_encoding(
+            models["main"], v3_arch.default_encoding
+        )
+    except Exception:
+        logger.debug(
+            "Could not resolve the encoding for the ModuleV3 preference; "
+            "keeping it.",
+            exc_info=True,
+        )
+        return prefer_module_v3
+    if encoding in v3_arch.supported_encodings:
+        return prefer_module_v3
+    graph_arch = find_architecture(arch_name, prefer_module_v3=False, task=task)
+    if graph_arch is None or encoding not in graph_arch.supported_encodings:
+        # Neither variant serves the encoding. Keep the preference so the
+        # error names the architecture that was asked for.
+        return prefer_module_v3
+    logger.warning(
+        "Encoding '%s' is not supported by '%s'. Falling back to the graph API"
+        " architecture '%s'.",
+        encoding,
+        v3_arch.name,
+        graph_arch.name,
+    )
+    return False
+
+
 def _apply_speculative_draft_architecture(
     speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
 ) -> None:
@@ -1499,14 +1548,23 @@ class PipelineConfig(ConfigFileModel):
                 exc_info=True,
             )
             denoising_arch_name = None
+        resolved_task = (
+            args.task
+            if args.task != PipelineTask.UNDEFINED
+            else PipelineTask.TEXT_GENERATION
+        )
+        # Resolve the preference before the first lookup, so the denoising
+        # arch, the arch below, and the registry all select the same variant.
+        prefer_module_v3 = _resolve_prefer_module_v3(
+            args.runtime.prefer_module_v3,
+            models,
+            denoising_arch_name,
+            resolved_task,
+        )
         denoising_arch = find_architecture(
             denoising_arch_name,
-            prefer_module_v3=args.runtime.prefer_module_v3,
-            task=(
-                args.task
-                if args.task != PipelineTask.UNDEFINED
-                else PipelineTask.TEXT_GENERATION
-            ),
+            prefer_module_v3=prefer_module_v3,
+            task=resolved_task,
         )
         denoising_cache = resolve_denoising_cache(
             args.denoising_cache,
@@ -1517,7 +1575,11 @@ class PipelineConfig(ConfigFileModel):
         )
 
         runtime = _construct_from_user_fields(
-            args.runtime, denoising_cache=denoising_cache
+            args.runtime,
+            denoising_cache=denoising_cache,
+            **_resolved_field_changes(
+                args.runtime, prefer_module_v3=prefer_module_v3
+            ),
         )
         lora = args.lora.model_copy(deep=True) if args.lora else None
 
@@ -1527,7 +1589,7 @@ class PipelineConfig(ConfigFileModel):
         spec_arch: SupportedArchitecture | None = None
         if args.speculative is not None and "main" in models:
             spec_arch = _apply_speculative_target_architecture(
-                args.speculative, models, args.runtime.prefer_module_v3
+                args.speculative, models, prefer_module_v3
             )
         for model in models.values():
             model.validate_repo_access()
@@ -1549,15 +1611,10 @@ class PipelineConfig(ConfigFileModel):
                     "construction; skipping construction-time resolution.",
                     exc_info=True,
                 )
-            task = (
-                args.task
-                if args.task != PipelineTask.UNDEFINED
-                else PipelineTask.TEXT_GENERATION
-            )
             arch = find_architecture(
                 arch_name,
                 prefer_module_v3=runtime.prefer_module_v3,
-                task=task,
+                task=resolved_task,
             )
             if arch_name is not None and arch is None:
                 raise ValueError(f"No architecture found for {arch_name}")

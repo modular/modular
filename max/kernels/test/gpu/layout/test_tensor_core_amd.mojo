@@ -17,11 +17,11 @@ from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 from std.utils.coord import DynamicCoord
 
 comptime fp8_dtype = (
-    DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
+    DType.float8_e4m3fnuz if DeviceContext[].default_device_info.compute
     <= MI300X.compute else DType.float8_e4m3fn
 )
 comptime bf8_dtype = (
-    DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
+    DType.float8_e5m2fnuz if DeviceContext[].default_device_info.compute
     <= MI300X.compute else DType.float8_e5m2
 )
 

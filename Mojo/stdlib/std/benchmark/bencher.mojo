@@ -242,7 +242,7 @@ struct Format(ImplicitlyCopyable, Writable):
     var value: StaticString
     """The format to print results."""
 
-    def __init__(out self, value: StringSlice):
+    def __init__(out self, value: StringSpan):
         """Constructs a Format object from a string.
 
         Args:
@@ -569,7 +569,7 @@ struct Bench(Writable):
     @inline(.always)
     def example(mut b: Bencher, shape: IndexList[2]) raises:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[example_kernel](
                 grid_dim=shape[0], block_dim=shape[1]
             )
@@ -636,7 +636,10 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        self.config = config.value().copy() if config else BenchConfig()
+        if case .Some(config) = config:
+            self.config = config.copy()
+        else:
+            self.config = BenchConfig()
         self.mode = mode
         self.info_vec = List[BenchmarkInfo]()
 

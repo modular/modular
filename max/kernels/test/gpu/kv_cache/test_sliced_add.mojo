@@ -58,7 +58,7 @@ def test_sliced_add[
     var c_device_tensor = c.device_tensor()
 
     # Execute sliced_add directly
-    sliced_add[target="gpu"](
+    sliced_add(
         c_device_tensor,
         a_device_tensor,
         b_device_tensor,

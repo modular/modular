@@ -113,7 +113,7 @@ def _verify_results[
     num_cols: Int,
 ](
     num_rows: Int,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
@@ -333,7 +333,7 @@ def _verify_add_results[
     num_cols: Int,
 ](
     num_rows: Int,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
@@ -593,7 +593,7 @@ def _verify_noquant_results[
     weight_offset_f32: Float32,
 ](
     num_rows: Int,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
@@ -781,7 +781,7 @@ def bench_allreduce_rmsnorm_fp8[
     ngpus: Int,
     num_cols: Int,
     cache_busting: Bool = True,
-](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext[]]) raises:
     var length = num_rows * num_cols
 
     # When out_dtype == in_dtype the kernel skips FP8 quantization. The two
@@ -1010,11 +1010,11 @@ def bench_allreduce_rmsnorm_fp8[
 
     @inline(.always)
     def bench_allreduce_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
@@ -1045,11 +1045,11 @@ def bench_allreduce_rmsnorm_fp8[
 
         @inline(.always)
         def bench_ar_fused_iter(
-            mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+            mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_tensors, imm}:
             @inline(.always)
             def call_fn(
-                ctx_inner: DeviceContext, cache_iter: Int
+                ctx_inner: DeviceContext[], cache_iter: Int
             ) raises {mut in_tensors, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
@@ -1118,11 +1118,11 @@ def bench_allreduce_rmsnorm_fp8[
 
         @inline(.always)
         def bench_ar_norm_iter(
-            mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+            mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_tensors, imm}:
             @inline(.always)
             def call_fn(
-                ctx_inner: DeviceContext, cache_iter: Int
+                ctx_inner: DeviceContext[], cache_iter: Int
             ) raises {mut in_tensors, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
@@ -1163,11 +1163,11 @@ def bench_allreduce_rmsnorm_fp8[
 
     @inline(.always)
     def bench_fully_fused_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
@@ -1217,11 +1217,11 @@ def bench_allreduce_rmsnorm_fp8[
 
         @inline(.always)
         def bench_ar_add_fused_iter(
-            mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+            mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_tensors, mut ar_out_dev, imm}:
             @inline(.always)
             def call_fn(
-                ctx_inner: DeviceContext, cache_iter: Int
+                ctx_inner: DeviceContext[], cache_iter: Int
             ) raises {mut in_tensors, mut ar_out_dev, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
@@ -1312,11 +1312,11 @@ def bench_allreduce_rmsnorm_fp8[
 
     @inline(.always)
     def bench_fused_add_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
@@ -1468,7 +1468,7 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 

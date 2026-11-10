@@ -30,15 +30,17 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep.ep_kernels import (
+from max.nn._graph_ops import amd_mega_ffn_workspace_words
+from max.nn._graph_ops.ep import (
     _ep_dispatch_output_types,
     uses_mx_ep_token_format,
 )
-from max.nn.legacy.kernels import amd_mega_ffn_workspace_words
-from max.nn.legacy.moe import GatedActivation, MoEGate, MoEQuantized, moe_fp8
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
+from max.nn.legacy.moe import MoEGate, MoEQuantized, moe_fp8
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -235,8 +237,6 @@ def test_ep_moe_mxfp8_nvidia(
     moe_shards = moe.shard(devices_ref)
     moe.load_state_dict(wrapped_moe_weights)
 
-    ep_comm_init.ep_init(session)
-
     per_device_input_types: list[TensorType] = [
         TensorType(
             DType.bfloat16,
@@ -255,10 +255,6 @@ def test_ep_moe_mxfp8_nvidia(
         )
         for i in range(n_devices)
     ]
-    per_device_inputs = [
-        Buffer.from_dlpack(input).to(devices[i])
-        for i, input in enumerate(per_device_inputs_torch)
-    ]
 
     with Graph(
         "EPMoE_MXFP8",
@@ -273,12 +269,6 @@ def test_ep_moe_mxfp8_nvidia(
         graph.output(outputs)
 
     compiled = session.load(graph, weights_registry=moe.state_dict())
-    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
-    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
-    all_outputs = torch.cat(torch_result, dim=0)
-    assert not torch.any(torch.isnan(all_outputs)), (
-        "MoE output should not contain NaN"
-    )
 
     moe_gate = MoEGate(
         devices=devices_ref,
@@ -308,6 +298,20 @@ def test_ep_moe_mxfp8_nvidia(
     gate_compiled = session.load(
         gate_graph, weights_registry=moe_gate.state_dict()
     )
+
+    ep_comm_init.ep_init(session)
+
+    per_device_inputs = [
+        Buffer.from_dlpack(input).to(devices[i])
+        for i, input in enumerate(per_device_inputs_torch)
+    ]
+    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
+    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
+    all_outputs = torch.cat(torch_result, dim=0)
+    assert not torch.any(torch.isnan(all_outputs)), (
+        "MoE output should not contain NaN"
+    )
+
     gate_result = gate_compiled.execute(*per_device_inputs)
     topk_idxs_weights = [torch.from_dlpack(x).to("cpu") for x in gate_result]
 
@@ -502,7 +506,7 @@ def test_ep_moe_mxfp8_mega_ffn_default_amd(
         moe_dim=3072,
     )
     graph = _lower_ep_moe(moe, n_devices, hidden_dim, "EPMoE_MXFP8_MegaFFN")
-    assert "mo.grouped.ffn.block.scaled.amd" in str(graph)
+    assert "moe.grouped.ffn.block.scaled.amd" in str(graph)
     capacity = ep_config.get_max_recv_tokens() + ep_config.max_tokens_per_rank
     assert NUM_EXPERTS // n_devices + 1 + capacity // 128 > 4096
     assert sized and set(sized) == {capacity}

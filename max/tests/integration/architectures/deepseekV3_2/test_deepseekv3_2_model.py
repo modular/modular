@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy import (
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -24,7 +25,6 @@ from max.nn.legacy import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,

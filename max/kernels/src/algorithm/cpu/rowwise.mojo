@@ -54,7 +54,6 @@ from algorithm.rowwise_types import (
     ContextParams,
     ReduceTier,
     RowBody,
-    RowCoord,
     _SPLITK_STATE_BYTES,
     _num_outputs_excluding_axis,
 )
@@ -184,11 +183,14 @@ struct SerialReducer(Reducer, TrivialRegisterPassable):
 @inline(.always)
 def _simd_walk_unrolled[
     W: Int,
-    rank: Int,
     //,
     axis: Int,
-    TileFn: ImplicitlyCopyable & (def[ws: Int](RowCoord[rank]) -> None),
-](mut coords: RowCoord[rank], lo: Int, hi: Int, tile_fn: TileFn):
+](
+    mut coords: Coord,
+    lo: Int,
+    hi: Int,
+    tile_fn: Some[ImplicitlyCopyable & (def[ws: Int](type_of(coords)) -> None)],
+):
     """8-way-unrolled SIMD walk over `[lo, hi)` along `axis`, then SIMD
     and scalar tails. Shared by the split-axis tier (`[lo, hi)` a
     per-worker stripe) and the inner-axis cooperative tier
@@ -203,15 +205,15 @@ def _simd_walk_unrolled[
     var k = lo
     while k < simd_unrolled:
         comptime for u in range(UNROLL):
-            coords.write_axis[axis](k + u * W)
+            coords.replace_dynamic[axis](k + u * W)
             tile_fn[W](coords)
         k += W_U
     while k < simd_aligned:
-        coords.write_axis[axis](k)
+        coords.replace_dynamic[axis](k)
         tile_fn[W](coords)
         k += W
     while k < hi:
-        coords.write_axis[axis](k)
+        coords.replace_dynamic[axis](k)
         tile_fn[1](coords)
         k += 1
 
@@ -220,17 +222,16 @@ def _simd_walk_unrolled[
 def _simd_walk_unrolled[
     State: ReduceOp,
     W: Int,
-    rank: Int,
     //,
     axis: Int,
-    TileFn: ImplicitlyCopyable
-    & (def[ws: Int](mut State, RowCoord[rank]) -> None),
 ](
-    mut coords: RowCoord[rank],
+    mut coords: Coord,
     lo: Int,
     hi: Int,
     mut state: State,
-    tile_fn: TileFn,
+    tile_fn: Some[
+        ImplicitlyCopyable & (def[ws: Int](mut State, type_of(coords)) -> None)
+    ],
 ):
     """State-carrying overload of `_simd_walk_unrolled` — see there for
     the tier-sharing rationale."""
@@ -242,15 +243,15 @@ def _simd_walk_unrolled[
     var k = lo
     while k < simd_unrolled:
         comptime for u in range(UNROLL):
-            coords.write_axis[axis](k + u * W)
+            coords.replace_dynamic[axis](k + u * W)
             tile_fn[W](state, coords)
         k += W_U
     while k < simd_aligned:
-        coords.write_axis[axis](k)
+        coords.replace_dynamic[axis](k)
         tile_fn[W](state, coords)
         k += W
     while k < hi:
-        coords.write_axis[axis](k)
+        coords.replace_dynamic[axis](k)
         tile_fn[1](state, coords)
         k += 1
 
@@ -258,14 +259,14 @@ def _simd_walk_unrolled[
 @inline(.always)
 def reduce[
     params: ContextParams,
-    rank: Int,
     //,
-    TileFn: ImplicitlyCopyable & (def[ws: Int](RowCoord[rank]) -> None),
 ](
-    row_coords: RowCoord[rank],
+    row_coords: Coord,
     axis_size: Int,
     ctx: Context[params],
-    tile_fn: TileFn,
+    tile_fn: Some[
+        ImplicitlyCopyable & (def[ws: Int](type_of(row_coords)) -> None)
+    ],
 ):
     """Drives `tile_fn` over the reduce axis, CPU-side, with no monoid
     state — pure per-tile iteration for map/emit terminals (see the
@@ -276,7 +277,6 @@ def reduce[
 
     Parameters:
         params: Comptime dispatch parameters.
-        TileFn: The value-closure type of `tile_fn`.
 
     Args:
         row_coords: The current row's coords.
@@ -293,16 +293,16 @@ def reduce[
         var stripe = ceildiv(axis_size, num_splits)
         var lo = split * stripe
         var hi = min((split + 1) * stripe, axis_size)
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+        _simd_walk_unrolled[W=ctx.simd_width, axis=ctx.axis](
             coords, lo, hi, tile_fn
         )
     elif ctx.emit_tile_width > 1:
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords.write_axis[ctx.axis](k)
+            coords.replace_dynamic[ctx.axis](k)
             tile_fn[W](coords)
     else:
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+        _simd_walk_unrolled[W=ctx.simd_width, axis=ctx.axis](
             coords, 0, axis_size, tile_fn
         )
 
@@ -311,16 +311,16 @@ def reduce[
 def reduce[
     State: ReduceOp,
     params: ContextParams,
-    rank: Int,
     //,
-    TileFn: ImplicitlyCopyable
-    & (def[ws: Int](mut State, RowCoord[rank]) -> None),
 ](
-    row_coords: RowCoord[rank],
+    row_coords: Coord,
     axis_size: Int,
     ctx: Context[params],
     mut state: State,
-    tile_fn: TileFn,
+    tile_fn: Some[
+        ImplicitlyCopyable
+        & (def[ws: Int](mut State, type_of(row_coords)) -> None)
+    ],
 ):
     """Drives `tile_fn` over the reduce axis, CPU-side.
 
@@ -345,7 +345,6 @@ def reduce[
     Parameters:
         State: The monoid type being accumulated.
         params: Comptime dispatch parameters.
-        TileFn: The value-closure type of `tile_fn`.
 
     Args:
         row_coords: The current row's coords.
@@ -374,20 +373,20 @@ def reduce[
         var stripe = ceildiv(axis_size, num_splits)
         var lo = min(split * stripe, axis_size)
         var hi = min((split + 1) * stripe, axis_size)
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+        _simd_walk_unrolled[W=ctx.simd_width, axis=ctx.axis](
             coords, lo, hi, state, tile_fn
         )
     elif ctx.emit_tile_width > 1:
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords.write_axis[ctx.axis](k)
+            coords.replace_dynamic[ctx.axis](k)
             tile_fn[W](state, coords)
     else:
         # 8-way unrolled SIMD walk along the whole axis (unroll factor
         # from `_reduce_along_inner_dimension`); the unroll lets the OoO
         # core overlap loads + reduces. Shared with the split-axis tier
         # above via `_simd_walk_unrolled` — same walk, `[0, axis_size)`.
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+        _simd_walk_unrolled[W=ctx.simd_width, axis=ctx.axis](
             coords, 0, axis_size, state, tile_fn
         )
 

@@ -27,7 +27,6 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Support/DeviceSpecs.h"
-#include "Support/ML/Permutation.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -248,7 +247,7 @@ struct DecomposeSmallReduceAddPattern
   static bool feedsRmsNorm(Value v) {
     while (v.hasOneUse()) {
       Operation *user = *v.getUsers().begin();
-      if (isa<MO::ReduceRMSNormOp>(user))
+      if (isa<MO::Composite::ReduceRMSNormOp>(user))
         return true;
       if (isa<MO::CastOp, MO::RebindOp>(user)) {
         v = user->getResult(0);
@@ -1160,1566 +1159,14 @@ struct LayerNormPattern
   }
 };
 
-std::string
-getPatternMatchingError(GraphCompiler::Logger &patternMatcherLogger) {
-  std::string errMsg;
-  llvm::raw_string_ostream st(errMsg);
-  patternMatcherLogger.print(st);
-  return errMsg;
-}
-
-ErrorOrSuccess checkRank(TensorValue value, const std::string &valueName,
-                         const SmallVector<int64_t> &allowedRanks) {
-  if (!value.getType().hasRank()) {
-    return Error(valueName + " is unranked");
-  }
-
-  int64_t rank = value.getType().getRank();
-  for (int64_t allowedRank : allowedRanks) {
-    if (allowedRank == rank)
-      return success();
-  }
-
-  std::string errMsg;
-  llvm::raw_string_ostream st(errMsg);
-  st << valueName << " has rank " << rank << " but expected one of: ";
-  for (int64_t allowedRank : allowedRanks)
-    st << allowedRank << " ";
-  return Error(errMsg);
-}
-
-template <typename pInT>
-auto inline pOptionalBroadcast(Operation **bindDest, pInT patternIn) {
-  auto bcast = m_Op<Static::BroadcastToOp>(bindDest, patternIn);
-  return m_Optional(bcast, patternIn);
-}
-
-template <typename pInT>
-auto inline pOptionalReshape(Operation **bindDest, pInT patternIn) {
-  auto reshape = m_Op<Static::ReshapeOp>(bindDest, patternIn);
-  return m_Optional(reshape, patternIn);
-}
-
-template <typename pInT>
-auto inline pOptionalCast(Operation **bindDest, pInT patternIn) {
-  auto reshape = m_Op<CastOp>(bindDest, patternIn);
-  return m_Optional(reshape, patternIn);
-}
-
-/// A helper for matching against softmax(input) @ V for fused attention
-class MultiHeadAttentionEpilogueMatcher {
-private:
-  // Bottom of pattern
-  TensorValue value; // V   , layout B,H,S,D
-  Operation *reprojectProducer = nullptr;
-
-  // Top of the pattern
-  TensorValue softmaxInput;
-  Operation *softmaxProducer = nullptr;
-
-  // For unsafe broadcasts
-  Operation *optBCast1 = nullptr;
-  Operation *optBCast2 = nullptr;
-
-  // For internal reshapes
-  Operation *optReshape1 = nullptr;
-  Operation *optReshape2 = nullptr;
-
-  // For optional casts
-  Operation *optCast1 = nullptr;
-  Operation *optCast2 = nullptr;
-
-  GraphCompiler::Logger patternMatcherLogger;
-  MultiHeadAttentionEpilogueMatcher() = default;
-
-public:
-  static ErrorOr<MultiHeadAttentionEpilogueMatcher>
-  match(BatchMatmulOp reprojection, bool allowUnsafeBCast,
-        bool allowInternalReshape, bool debugMHAPattern) {
-    MultiHeadAttentionEpilogueMatcher matcher;
-    auto pV = m_Any(&matcher.value);
-
-    // optional broadcast + softmax
-    auto maybeReshape1 =
-        pOptionalReshape(&matcher.optReshape1, m_Any(&matcher.softmaxInput));
-    auto maybeBCast1 = pOptionalBroadcast(&matcher.optBCast1, maybeReshape1);
-    auto pSoftmaxAttnMatrix =
-        m_Op<SoftmaxOp>(&matcher.softmaxProducer, maybeBCast1);
-
-    // support up to two optional casts (from bf16 --> fp32 --> bf16)
-    auto maybeCast1 = pOptionalCast(&matcher.optCast1, pSoftmaxAttnMatrix);
-    auto maybeCast2 = pOptionalCast(&matcher.optCast2, maybeCast1);
-
-    // optional broadcast + re-project using V
-    auto maybeReshape2 = pOptionalReshape(&matcher.optReshape2, maybeCast2);
-    auto maybeBCast2 = pOptionalBroadcast(&matcher.optBCast2, maybeReshape2);
-    auto pAnswer =
-        m_Op<BatchMatmulOp>(&matcher.reprojectProducer, maybeBCast2, pV);
-
-    bool matches = pAnswer.match(reprojection,
-                                 debugMHAPattern ? &matcher.patternMatcherLogger
-                                                 : nullptr);
-    if (!matches)
-      return Error("[MultiHeadAttentionEpilogueMatcher]: " +
-                   getPatternMatchingError(matcher.patternMatcherLogger));
-
-    int64_t axis =
-        cast<SoftmaxOp>(matcher.softmaxProducer).getAxisAttr().getInt();
-    if (size_t(axis) != matcher.softmaxInput.getType().getRank() - 1)
-      return Error("[MultiHeadAttentionEpilogueMatcher]: softmax axis is not "
-                   "the last axis");
-
-    if (!allowUnsafeBCast && (matcher.optBCast1 || matcher.optBCast2))
-      return Error("[MultiHeadAttentionEpilogueMatcher]: pattern matches but "
-                   "has unsafe broadcasts.");
-
-    if (!allowInternalReshape && (matcher.optReshape1 || matcher.optReshape2))
-      return Error("[MultiHeadAttentionEpilogueMatcher]: pattern matches but "
-                   "has internal reshapes.");
-
-    return matcher;
-  }
-  TensorValue getValue() { return value; }
-  TensorValue getSoftMaxInput() { return softmaxInput; }
-  TensorValue getTopOfPattern() { return getSoftMaxInput(); }
-  ErrorOrSuccess hasExpectedRanks() {
-    // Allowed to elide the batch dimension
-    ErrorOrSuccess valueOk =
-        checkRank(value, "[MultiHeadAttentionEpilogueMatcher] value", {3, 4});
-    if (valueOk.isError())
-      return valueOk.takeError();
-
-    return success();
-  }
-  void fillUnsafeBCasts(SmallVector<Static::BroadcastToOp> &unsafeBcasts) {
-    if (optBCast1)
-      unsafeBcasts.push_back(cast<Static::BroadcastToOp>(optBCast1));
-    if (optBCast2)
-      unsafeBcasts.push_back(cast<Static::BroadcastToOp>(optBCast2));
-  }
-};
-
-/// Matches attention masking through select, usually causal masking of the
-/// attentionMatrix.
-///
-/// %cond : ...
-/// %true : ...
-/// %false : ... all same shape
-/// %result = mo.select(%cond, %true, %false)
-///
-/// Where "cond" is usually a triangular matrix whose lower part and main
-/// diagonal are "false" and the upper part is "true". The %true branch
-/// is usually a scalar -inf broadcasted and %false is the attentionMatrix.
-///
-/// This sets the upper triangle of attentionMatrix to "-inf". The %true and
-/// %false branches may be swapped.
-///
-/// Notes on masking:
-/// https://www.notion.so/modularai/Multi-Head-Attention-bbc2d300937a495da40c18b6a2028d22
-class MultiHeadAttentionSelectMaskingMatcher {
-  friend class MultiHeadAttentionMaskingMuxMatcher;
-
-  // Thresholds for what is considered "-inf" for different datatypes
-  // ~ -3.40282347E+38 seems popular, -1E+38 is chosen since its close to
-  // the smallest normal floating point number (as opposed to subnormal).
-  const double FLOAT32_NEGINF_THRESHOLD = -1E+38;
-
-private:
-  TensorValue patternInput;
-  TensorValue scalarMask;
-  TensorValue conditionalStatement;
-
-  // We assume scalarMasked is immediately broadcasted
-  Operation *scalarMaskBCast = nullptr;
-
-  // Whether the attention matrix masked is in the "true" or "false" branch
-  // of the config.
-  bool attentionMatrixTrueBranch;
-
-  // For unsafe broadcasts of the attentionMatrix branch
-  Operation *optBCast1 = nullptr;
-  Operation *optBCast2 = nullptr;
-
-  // For internal reshapes
-  Operation *optReshape1 = nullptr;
-
-  GraphCompiler::Logger patternMatcherLogger;
-
-  MultiHeadAttentionSelectMaskingMatcher() = default;
-
-  ErrorOrSuccess verifyScalarNegInf() {
-    // Per-dtype thresholds may be needed.
-    if (!scalarMask)
-      return Error("scalar mask is nullptr!");
-
-    auto maybeFloat = tryGetConstantOfRank<double>(scalarMask, 0);
-    if (!maybeFloat)
-      return Error("could not extract scalar float!");
-
-    double value = (*maybeFloat)[0];
-    if (value > FLOAT32_NEGINF_THRESHOLD)
-      return Error("scalar detected but not small enough");
-
-    return success();
-  }
-
-  static ErrorOr<MultiHeadAttentionSelectMaskingMatcher>
-  match(Operation *producingOp, bool allowUnsafeBCast,
-        bool allowInternalReshape, bool debugMHAPattern) {
-    MultiHeadAttentionSelectMaskingMatcher matcher;
-
-    // Input to the pattern -- the "attentionMask"
-    auto pPatternInputBase = m_Any(&matcher.patternInput);
-    auto pPatternInputRank3 = m_Ranked(3, pPatternInputBase);
-    auto pPatternInputRank4 = m_Ranked(4, pPatternInputBase);
-    auto pPatternInput = m_Optional(pPatternInputRank3, pPatternInputRank4);
-
-    // One more bcast for starcoder 2
-    auto pInitialMaybeBCast =
-        pOptionalBroadcast(&matcher.optBCast1, pPatternInput);
-    auto pPatternMaybeReshape =
-        pOptionalReshape(&matcher.optReshape1, pInitialMaybeBCast);
-    auto pPatternMaybeBCast =
-        pOptionalBroadcast(&matcher.optBCast2, pPatternMaybeReshape);
-
-    // Scalar and conditional for select
-    auto pBCastScalar = m_Op<Static::BroadcastToOp>(
-        &matcher.scalarMaskBCast, m_Ranked(0, m_Any(&matcher.scalarMask)));
-    auto pConditional = m_Any(&matcher.conditionalStatement);
-
-    // consider the case where attentionMask is in the "false branch"
-    auto pAttentionMaskAsFalse =
-        m_Op<SelectOp>(pConditional, pBCastScalar, pPatternMaybeBCast);
-    bool matchesNegBranch = pAttentionMaskAsFalse.match(
-        producingOp, debugMHAPattern ? &matcher.patternMatcherLogger : nullptr);
-    if (matchesNegBranch && !matcher.verifyScalarNegInf().isError() &&
-        (allowUnsafeBCast || (!matcher.optBCast1 && !matcher.optBCast2)) &&
-        (allowInternalReshape || !matcher.optReshape1)) {
-      matcher.attentionMatrixTrueBranch = false;
-      return matcher;
-    }
-
-    // case where attentionMask is in the "true branch"
-    auto pAttentionMaskAsTrue =
-        m_Op<SelectOp>(pConditional, pPatternMaybeBCast, pBCastScalar);
-    bool matchesPosBranch = pAttentionMaskAsTrue.match(
-        producingOp, debugMHAPattern ? &matcher.patternMatcherLogger : nullptr);
-    if (matchesPosBranch && !matcher.verifyScalarNegInf().isError() &&
-        (allowUnsafeBCast || (!matcher.optBCast1 && !matcher.optBCast2)) &&
-        (allowInternalReshape || !matcher.optReshape1)) {
-      matcher.attentionMatrixTrueBranch = true;
-      return matcher;
-    }
-
-    return Error(
-        "[MultiHeadAttentionSelectMaskingMatcher] No matches detected!");
-  }
-
-public:
-  TensorValue getTopOfPattern() { return patternInput; }
-
-  TypedAttr getAttentionMaskShape() {
-    return conditionalStatement.getType().getShape();
-  }
-
-  // Return the conditional such that masking should be applied in the "false"
-  // branch.
-  TensorValue getConditionalStatement(mlir::OpBuilder &builder) {
-    if (attentionMatrixTrueBranch)
-      return conditionalStatement;
-    else
-      return NotOp::create(builder, conditionalStatement.getLoc(),
-                           conditionalStatement.getType(),
-                           conditionalStatement);
-  }
-
-  TensorValue getAttentionMask(mlir::OpBuilder &builder) {
-    // In general `select(%cond, %true, %false)` is:
-    //   %cond * %true + not(%cond) * %false
-    //
-    // Since the scalar is -inf it dominates in the addition, and the result is
-    // softmaxed, so with the mask in %false:
-    //
-    // select(%cond, %true, %false) ~= [not(%cond) * %false] + %true
-    //
-    // which is explicit masking with the mask in brackets.
-    TensorValue bcastedMask = cast<TensorValue>(scalarMaskBCast->getResult(0));
-    Location loc = bcastedMask.getLoc();
-
-    if (attentionMatrixTrueBranch) {
-      TensorValue notCond = NotOp::create(builder, loc, conditionalStatement);
-      TensorValue notCondCasted = CastOp::create(
-          builder, loc, notCond, bcastedMask.getType().getDtype());
-      return MulOp::create(builder, loc, bcastedMask, notCondCasted);
-    } else {
-      TensorValue condCasted = CastOp::create(
-          builder, loc, conditionalStatement, bcastedMask.getType().getDtype());
-      return MulOp::create(builder, loc, bcastedMask, condCasted);
-    }
-  }
-
-  ErrorOrSuccess hasExpectedRanks() {
-    // NOTE: select requires all inputs to be the same shape
-    // Allowed to elide the batch dimension
-    ErrorOrSuccess rankOk = checkRank(
-        conditionalStatement,
-        "[MultiHeadAttentionSelectMaskingMatcher] select inputs", {3, 4});
-    if (rankOk.isError())
-      return rankOk.takeError();
-    return success();
-  }
-
-  void fillUnsafeBCasts(SmallVector<Static::BroadcastToOp> &unsafeBcasts) {
-    if (optBCast1)
-      unsafeBcasts.push_back(cast<Static::BroadcastToOp>(optBCast1));
-    if (optBCast2)
-      unsafeBcasts.push_back(cast<Static::BroadcastToOp>(optBCast2));
-  }
-};
-
-/// Matches explicit attention masking, where a tensor is added directly to the
-/// attention matrix:
-///
-/// %attentionMatrix
-/// %attentionMask
-/// %result = mo.add(%attentionMatrix, %attentionMask)
-///
-/// Where usually some elements of %attentionMask will be -inf
-///
-/// Notes on masking:
-/// https://www.notion.so/modularai/Multi-Head-Attention-bbc2d300937a495da40c18b6a2028d22
-class MultiHeadAttentionExplicitMaskingMatcher {
-  friend class MultiHeadAttentionMaskingMuxMatcher;
-
-private:
-  Operation *attentionMatrixNormMaskedProducer = nullptr;
-
-  TensorValue patternInput;
-  TensorValue attentionMask;
-
-  // For unsafe broadcasts
-  Operation *optBCast1 = nullptr;
-
-  // For internal reshapes
-  Operation *optReshape1 = nullptr;
-
-  GraphCompiler::Logger patternMatcherLogger;
-
-  MultiHeadAttentionExplicitMaskingMatcher() = default;
-
-  static ErrorOr<MultiHeadAttentionExplicitMaskingMatcher>
-  match(Operation *producingOp, bool allowUnsafeBCast,
-        bool allowInternalReshape, bool debugMHAPattern) {
-    MultiHeadAttentionExplicitMaskingMatcher matcher;
-
-    auto pPatternInput = m_Any(&matcher.patternInput);
-
-    // Optional Broadcast into the add
-    auto maybeReshape1 = pOptionalReshape(&matcher.optReshape1, pPatternInput);
-    auto maybeBCast1 = pOptionalBroadcast(&matcher.optBCast1, maybeReshape1);
-    auto pMaskedNormalizedAttnMatrix = m_BinaryCommutativeOp<AddOp>(
-        &matcher.attentionMatrixNormMaskedProducer, maybeBCast1,
-        m_Any(&matcher.attentionMask));
-
-    if (!producingOp)
-      return Error("[MultiHeadAttentionExplicitMaskingMatcher] producing "
-                   "operation is nullptr.");
-
-    if (producingOp->getNumResults() != 1)
-      return Error(
-          "[MultiHeadAttentionExplicitMaskingMatcher] producing operation "
-          "does not have one result.");
-
-    TensorValue producingOpResult =
-        cast<TensorValue>(producingOp->getResult(0));
-
-    // attempt to match the pattern
-    bool matchesPattern = pMaskedNormalizedAttnMatrix.match(
-        producingOpResult,
-        debugMHAPattern ? &matcher.patternMatcherLogger : nullptr);
-    if (!matchesPattern)
-      return Error("Attention Masking Component Does Not Match: " +
-                   getPatternMatchingError(matcher.patternMatcherLogger));
-
-    if (!allowUnsafeBCast && matcher.optBCast1)
-      return Error(
-          "[MultiHeadAttentionExplicitMaskingMatcher]: pattern matches but "
-          "has unsafe broadcasts.");
-    if (!allowInternalReshape && matcher.optReshape1)
-      return Error(
-          "[MultiHeadAttentionExplicitMaskingMatcher]: pattern matches but "
-          "has internal reshapes.");
-
-    return matcher;
-  }
-
-public:
-  TypedAttr getAttentionMaskShape() {
-    return attentionMask.getType().getShape();
-  }
-  TensorValue getTopOfPattern() { return patternInput; }
-  TensorValue getAttentionMask() { return attentionMask; }
-
-  ErrorOrSuccess hasExpectedRanks() {
-    // Allowed to elide the batch dimension
-    ErrorOrSuccess attnMaskOk = checkRank(
-        attentionMask, "[MultiHeadAttentionExplicitMaskingMatcher] attnMask",
-        {3, 4});
-    if (attnMaskOk.isError())
-      return attnMaskOk.takeError();
-
-    ErrorOrSuccess patternInputOk = checkRank(
-        attentionMask,
-        "[MultiHeadAttentionExplicitMaskingMatcher] patternInput", {3, 4});
-    if (patternInputOk.isError())
-      return patternInputOk.takeError();
-
-    return success();
-  }
-
-  void fillUnsafeBCasts(SmallVector<Static::BroadcastToOp> &unsafeBcasts) {
-    if (optBCast1)
-      unsafeBcasts.push_back(cast<Static::BroadcastToOp>(optBCast1));
-  }
-};
-
-/// MHA masking multiplexer. Handles the common masking variations:
-///
-/// - No masking at all
-/// - Only causal masking
-/// - Only explicit masking
-/// - Causal and explicit masking, in either order
-///
-/// and returns a single "attention mask" combining every matched pattern.
-class MultiHeadAttentionMaskingMuxMatcher {
-private:
-  TensorValue patternInput;
-
-  // Each determine whether the particular pattern was detected
-  ErrorOr<MultiHeadAttentionSelectMaskingMatcher> causalMask =
-      Error("Not initialized!");
-  ErrorOr<MultiHeadAttentionExplicitMaskingMatcher> explicitMask =
-      Error("Not initialized!");
-  MultiHeadAttentionMaskingMuxMatcher() = default;
-
-public:
-  static ErrorOr<MultiHeadAttentionMaskingMuxMatcher>
-  match(Operation *producingOp, bool allowUnsafeBCast,
-        bool allowInternalReshape, bool debugMHAPattern) {
-    MultiHeadAttentionMaskingMuxMatcher matcher;
-
-    Operation *curProducingOp = producingOp;
-    matcher.causalMask = MultiHeadAttentionSelectMaskingMatcher::match(
-        curProducingOp, allowUnsafeBCast, allowInternalReshape,
-        debugMHAPattern);
-    matcher.explicitMask = MultiHeadAttentionExplicitMaskingMatcher::match(
-        curProducingOp, allowUnsafeBCast, allowInternalReshape,
-        debugMHAPattern);
-
-    ASSERT_STREAM(
-        matcher.causalMask.isError() || matcher.explicitMask.isError(),
-        << "[MultiHeadAttentionMaskingMuxMatcher] expect only a single mask "
-           "pattern to initial match.");
-
-    // no masking at all!
-    if (matcher.causalMask.isError() && matcher.explicitMask.isError()) {
-      if (producingOp->getNumResults() != 1)
-        return Error("[MultiHeadAttentionMaskingMuxMatcher] tried to match "
-                     "against something with more than one result.");
-
-      matcher.patternInput = cast<TensorValue>(producingOp->getResult(0));
-      return matcher;
-    }
-
-    // There still could be the other type of masking left!
-    if (!matcher.causalMask.isError()) {
-      matcher.patternInput = matcher.causalMask->getTopOfPattern();
-      matcher.explicitMask = MultiHeadAttentionExplicitMaskingMatcher::match(
-          matcher.patternInput.getDefiningOp(), allowUnsafeBCast,
-          allowInternalReshape, debugMHAPattern);
-      if (!matcher.explicitMask.isError())
-        matcher.patternInput = matcher.explicitMask->getTopOfPattern();
-    } else { // explicit mask is filled
-      matcher.patternInput = matcher.explicitMask->getTopOfPattern();
-      matcher.causalMask = MultiHeadAttentionSelectMaskingMatcher::match(
-          matcher.patternInput.getDefiningOp(), allowUnsafeBCast,
-          allowInternalReshape, debugMHAPattern);
-      if (!matcher.causalMask.isError())
-        matcher.patternInput = matcher.causalMask->getTopOfPattern();
-    }
-
-    // The two masks may have different shapes, which is only allowed with
-    // `allowUnsafeBCast`.
-    if (!matcher.causalMask.isError() && !matcher.explicitMask.isError()) {
-      bool shapesMatch = matcher.causalMask->getAttentionMaskShape() ==
-                         matcher.explicitMask->getAttentionMaskShape();
-      if (!shapesMatch && !allowUnsafeBCast)
-        return Error("[MultiHeadAttentionMaskingMuxMatcher] Both explicit and "
-                     "causal masking found but their shapes are not the same!");
-    }
-
-    return matcher;
-  }
-  bool hasAttentionMask() {
-    return !causalMask.isError() || !explicitMask.isError();
-  }
-
-  TensorValue getTopOfPattern() { return patternInput; }
-
-  // Has a mask in the form of an explicit addition
-  bool hasExplicitMask() { return !explicitMask.isError(); }
-
-  // Returns the explicit mask. Does not construct any new operators.
-  // Returns Null if no explicit mask exists.
-  TensorValue getExplicitMask() {
-    if (!hasExplicitMask())
-      return {};
-    return explicitMask->getAttentionMask();
-  }
-
-  // Mask in the form of using mo.select to apply a boolean mask
-  bool hasCausalMask() { return !causalMask.isError(); }
-
-  TensorValue getAttentionMask(OpBuilder &builder) {
-    SmallVector<TensorValue> masks;
-    if (!explicitMask.isError())
-      masks.push_back(explicitMask->getAttentionMask());
-    if (!causalMask.isError())
-      masks.push_back(causalMask->getAttentionMask(builder));
-
-    if (masks.empty())
-      return {};
-
-    if (masks.size() == 1)
-      return masks[0];
-
-    TensorValue mask = masks[0];
-    for (size_t i = 1; i < masks.size(); ++i) {
-      // statically cast incoming mask to the current shape
-      // note this is always assumed to be safe because of `allowUnsafeBCast`
-      TensorValue otherMask = masks[i];
-      otherMask =
-          BroadcastToOp::create(builder, mask.getLoc(), otherMask, mask);
-
-      mask = AddOp::create(builder, mask.getLoc(), mask, otherMask);
-    }
-    return mask;
-  }
-
-  ErrorOrSuccess hasExpectedRanks() {
-    if (!causalMask.isError()) {
-      ErrorOrSuccess causalMaskOk = causalMask->hasExpectedRanks();
-      if (causalMaskOk.isError())
-        return causalMaskOk.takeError();
-    }
-
-    if (!explicitMask.isError()) {
-      ErrorOrSuccess explicitMaskOk = explicitMask->hasExpectedRanks();
-      if (explicitMaskOk.isError())
-        return explicitMaskOk.takeError();
-    }
-
-    if (!causalMask.isError() && !explicitMask.isError()) {
-      MOSH::ShapeAttr causalMaskShape =
-          cast<MOSH::ShapeAttr>(causalMask->getAttentionMaskShape());
-      MOSH::ShapeAttr explicitMaskShape =
-          cast<MOSH::ShapeAttr>(explicitMask->getAttentionMaskShape());
-
-      if (causalMaskShape.getRank() != explicitMaskShape.getRank())
-        return Error("Attention masks are not the same rank!");
-    }
-    return success();
-  }
-
-  TypedAttr getAttentionMaskShape() {
-    if (!causalMask.isError())
-      return causalMask->getAttentionMaskShape();
-    if (!explicitMask.isError())
-      return explicitMask->getAttentionMaskShape();
-    return {};
-  }
-
-  void fillUnsafeBCasts(SmallVector<Static::BroadcastToOp> &unsafeBcasts) {
-    if (!causalMask.isError())
-      causalMask->fillUnsafeBCasts(unsafeBcasts);
-    if (!explicitMask.isError())
-      explicitMask->fillUnsafeBCasts(unsafeBcasts);
-  }
-};
-
-/// A helper for matching against normalization of the attentionMatrix
-///
-/// attentionMatrix = Q @ KT
-/// attentionMatrixNorm = attentionMatrix .* scalarConstant
-///   OR
-/// attentionMatrixNorm = attentionMatrix ./ scalarConstant
-///   OR
-/// attentionMatrixNorm = attentionMatrix (no normalization)
-class MultiHeadAttentionNormalizationMatcher {
-private:
-  // Will be nullptr if no normalization
-  TensorValue scalarConstant;
-  bool isDiv;
-
-  // Must bcast scalar in MO due to lack of implicit broadcasting
-  Operation *scalarBcastProducer = nullptr;
-
-  // The actual operation which produces the normalized value, either
-  // DIV, MUL or nullptr (if normalization was not done).
-  Operation *normalizationProducer = nullptr;
-
-  // Top of the pattern, the matrix
-  TensorValue attentionMatrix;
-
-  // For unsafe bcasts
-  Operation *optBCast1 = nullptr;
-
-  // For internal reshapes
-  Operation *optReshape1 = nullptr;
-
-  // For internal casts
-  Operation *optCast1 = nullptr;
-
-  MultiHeadAttentionNormalizationMatcher() = default;
-
-public:
-  static ErrorOr<MultiHeadAttentionNormalizationMatcher>
-  match(Operation *producingOp, bool allowUnsafeBCast,
-        bool allowInternalReshape) {
-    GraphCompiler::Logger patternMatcherLogger;
-
-    MultiHeadAttentionNormalizationMatcher matcher;
-    auto scalarConstant = m_Any(&matcher.scalarConstant);
-
-    // normScalar is usually 1 / sqrt(D), so the kernel could match it
-    // implicitly.
-    auto pNorm = m_Op<Static::BroadcastToOp>(&matcher.scalarBcastProducer,
-                                             scalarConstant);
-    auto pAttentionMatrix = m_Any(&matcher.attentionMatrix);
-
-    // normalize by mul with optional bcast
-    auto maybeReshape1 =
-        pOptionalReshape(&matcher.optReshape1, pAttentionMatrix);
-    auto maybeBCast1 = pOptionalBroadcast(&matcher.optBCast1, maybeReshape1);
-    auto pNormalizedByMul =
-        m_Op<MulOp>(&matcher.normalizationProducer, maybeBCast1, pNorm);
-
-    // Allow additional cast
-    auto maybeCast = pOptionalCast(&matcher.optCast1, pNormalizedByMul);
-    bool matchesMul =
-        maybeCast.match(producingOp->getResult(0), &patternMatcherLogger);
-    bool bcastAllowedMul = allowUnsafeBCast || !matcher.optBCast1;
-    bool internalReshapeAllowedMul =
-        allowInternalReshape || !matcher.optReshape1;
-    if (matchesMul && bcastAllowedMul && internalReshapeAllowedMul) {
-      matcher.isDiv = false;
-      return matcher;
-    }
-
-    // normalize by div with optional bcast
-    auto pNormalizedByDiv =
-        m_Op<DivOp>(&matcher.normalizationProducer, maybeBCast1, pNorm);
-    bool matchesDiv = pNormalizedByDiv.match(producingOp);
-    bool bcastAllowedDiv = allowUnsafeBCast || !matcher.optBCast1;
-    bool internalReshapeAllowedDiv =
-        allowInternalReshape && !matcher.optReshape1;
-    if (matchesDiv && bcastAllowedDiv && internalReshapeAllowedDiv) {
-      matcher.isDiv = true;
-      return matcher;
-    }
-
-    // no normalization, producingOp is also the "top of the pattern"
-    // aka attentionMask. No optional bcast -- covered by next pattern
-    if (producingOp->getNumResults() == 1) {
-      matcher.isDiv = false;
-      matcher.attentionMatrix = cast<TensorValue>(producingOp->getResult(0));
-      return matcher;
-    }
-
-    return Error("[MultiHeadAttentionNormalizationMatcher] matching failed.");
-  }
-
-  TensorValue getScalarValueForMul(OpBuilder &builder) {
-    Location loc = attentionMatrix.getLoc();
-    DeviceRefAttr device = attentionMatrix.getType().getDeviceRef();
-    if (!scalarConstant) {
-      // No normalization, return one as an equivalent
-      TensorValue one = ConstantOp::create(builder, loc, 1.0, device);
-      TensorType targetType =
-          one.getType().cloneWith(attentionMatrix.getType().getDtype());
-      TensorValue oneCasted = CastOp::create(builder, loc, targetType, one);
-      return oneCasted;
-    }
-
-    if (isDiv) {
-      TensorValue one = ConstantOp::create(builder, loc, 1.0, device);
-      TensorType targetType =
-          one.getType().cloneWith(scalarConstant.getType().getDtype());
-      TensorValue oneCasted = CastOp::create(builder, loc, targetType, one);
-
-      // Must cast from shape `[]` to `[1]` possibly.
-      TensorValue oneBCast = Static::BroadcastToOp::create(
-          builder, loc, scalarConstant.getType(), oneCasted);
-      return DivOp::create(builder, loc, oneBCast, scalarConstant);
-    }
-
-    // already read for mul
-    return scalarConstant;
-  }
-
-  TensorValue getAttentionMatrix() { return attentionMatrix; }
-  TensorValue getTopOfPattern() { return getAttentionMatrix(); }
-  ErrorOrSuccess hasExpectedRanks() {
-    // Allowed to elide the batch dimension
-    if (scalarConstant) {
-      // May have a pre-broadcasted batch-dimension
-      ErrorOrSuccess normScalarOk =
-          checkRank(scalarConstant,
-                    "[MultiHeadAttentionNormalizationMatcher] normScalar", {0});
-      if (normScalarOk.isError())
-        return normScalarOk.takeError();
-    }
-
-    return success();
-  }
-
-  void fillUnsafeBCasts(SmallVector<Static::BroadcastToOp> &unsafeBcasts) {
-    if (optBCast1)
-      unsafeBcasts.push_back(cast<Static::BroadcastToOp>(optBCast1));
-  }
-};
-
-/// A helper for matching against the initial Q @ KT step of fused attention
-class MultiHeadAttentionPrologueMatcher {
-private:
-  // Should always be filled by match()
-  TensorValue query, // Q   , layout B,H,s,D
-      keyT;          // K^T , layout B,H,D,S
-
-  GraphCompiler::Logger patternMatcherLogger;
-  MultiHeadAttentionPrologueMatcher() = default;
-
-public:
-  static ErrorOr<MultiHeadAttentionPrologueMatcher>
-  match(Operation *producingOp, bool debugMHAPattern) {
-    MultiHeadAttentionPrologueMatcher matcher;
-    auto pQ = m_Any(&matcher.query);
-    auto pKT = m_Any(&matcher.keyT);
-
-    Operation *attentionMatrixProducer = nullptr;
-    auto pAttentionMatrix =
-        m_Op<BatchMatmulOp>(&attentionMatrixProducer, pQ, pKT);
-
-    bool matches = pAttentionMatrix.match(
-        producingOp, debugMHAPattern ? &matcher.patternMatcherLogger : nullptr);
-    if (!matches) {
-      return Error("[MultiHeadAttentionPrologueMatcher]: " +
-                   getPatternMatchingError(matcher.patternMatcherLogger));
-    }
-
-    return matcher;
-  }
-
-  TensorValue getQuery() { return query; }
-  TensorValue getKeyT() { return keyT; }
-  ErrorOrSuccess hasExpectedRanks() {
-    // Allowed to elide the batch dimension
-    ErrorOrSuccess queryOk =
-        checkRank(query, "[MultiHeadAttentionPrologueMatcher] query", {3, 4});
-    if (queryOk.isError())
-      return queryOk.takeError();
-
-    ErrorOrSuccess keyTOk =
-        checkRank(keyT, "[MultiHeadAttentionPrologueMatcher] keyT", {3, 4});
-    if (keyTOk.isError())
-      return keyTOk.takeError();
-
-    return success();
-  }
-};
-
-/// A helper to match multi-headed attention and its variations
-class MultiHeadAttentionPatternHelper {
-  /*
-  Input values to the pattern.
-
-  Dimension names:
-    - (B)atch
-    - Attention (H)ead
-    - (S)equence Length
-    - Embedding (D)imension
-
-  We delineate the current tokens attended to (s) with those in the cache (S)
-
-  Pseudocode:
-    # Calculate Attention matrix
-    **Step 1:
-    attentionMatrix = query @ keyT
-
-    **Step 2:
-    norm = broadcast_to(normScalar, shape_of(attentionMatrix))
-
-    **Step 3:
-    # Normalize and apply masking
-    # This is optional, else `attentionMatrixNorm = attentionMatrix`
-    attentionMatrixNorm = attentionMatrix * norm
-
-    # Masking optional, else `attentionMatrixNormMasked = attentionMatrixNorm`
-    attnMaskBCast = broadcast(attnMask, attentionMatrixNorm)
-    attentionMatrixNormMasked = attentionMatrixNorm + attnMaskBCast
-
-    **Step 4:
-    # Apply softmax and reproject result
-    attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
-    answer = attentionMatrixSoftMax @ value
-  */
-private:
-  ErrorOr<MultiHeadAttentionPrologueMatcher> prologueMatcher =
-      Error("Note set");
-  ErrorOr<MultiHeadAttentionEpilogueMatcher> epilogueMatcher = Error("Not set");
-  ErrorOr<MultiHeadAttentionNormalizationMatcher> normalizationMatcher =
-      Error("Not set");
-  ErrorOr<MultiHeadAttentionMaskingMuxMatcher> maskingMatcher =
-      Error("Not set.");
-  OpBuilder *builder = nullptr;
-
-  ErrorOrSuccess hasExpectedRanks() {
-    ErrorOrSuccess prologueOK = prologueMatcher->hasExpectedRanks();
-    if (prologueOK.isError())
-      return prologueOK.takeError();
-
-    ErrorOrSuccess epilogueOk = epilogueMatcher->hasExpectedRanks();
-    if (epilogueOk.isError())
-      return epilogueOk.takeError();
-
-    ErrorOrSuccess normalizationOk = normalizationMatcher->hasExpectedRanks();
-    if (normalizationOk.isError())
-      return normalizationOk.takeError();
-
-    ErrorOrSuccess maskingOk = maskingMatcher->hasExpectedRanks();
-    if (maskingOk.isError())
-      return maskingOk.takeError();
-
-    // Ensure Q, KT, V and the same rank
-    size_t expectedQKVRank = prologueMatcher->getQuery().getType().getRank();
-    if (prologueMatcher->getKeyT().getType().getRank() != expectedQKVRank ||
-        epilogueMatcher->getValue().getType().getRank() != expectedQKVRank) {
-      return Error("[MultiHeadAttentionPrologueMatcher] QKV tensors are not "
-                   "all the same rank!");
-    }
-
-    // We need the attention mask to match the attention matrix shape
-    if (maskingMatcher->hasAttentionMask()) {
-      MOSH::ShapeAttr attentionMaskShape =
-          cast<MOSH::ShapeAttr>(maskingMatcher->getAttentionMaskShape());
-      MOSH::ShapeAttr attentionMatrixShape =
-          normalizationMatcher->getAttentionMatrix().getType().getShape();
-
-      bool sameRank =
-          attentionMaskShape.getRank() == attentionMatrixShape.getRank();
-      bool differentRank = attentionMaskShape.getRank() == 4 &&
-                           attentionMatrixShape.getRank() == 3;
-      if (!sameRank && !differentRank)
-        return Error("[MultiHeadAttentionPatternHelper] Attention mask only "
-                     "supports being the same rank as attention matrix or "
-                     "attention mask being rank 4 and the matrix rank 3.");
-    }
-    return success();
-  }
-
-  MultiHeadAttentionPatternHelper() = default;
-
-public:
-  static ErrorOr<MultiHeadAttentionPatternHelper>
-  match(BatchMatmulOp finalOp, DeviceAwareRewriter &rewriter,
-        bool allowUnsafeBCast, bool allowInternalReshape,
-        bool debugMHAPattern) {
-    MultiHeadAttentionPatternHelper matcher;
-    matcher.builder = &rewriter.rewriter;
-
-    // We match backwards from finalOp (`D`) with composable patterns:
-    //
-    //   D                     C                      B                   A
-    // <----[BOTTOM PATTERN] <---- [MIDDLE PATTERN] <---- [TOP PATTERN] <----
-    //
-    // Each pattern matches an output and derives its input, which is the
-    // output the next pattern matches against.
-
-    // `allowUnsafeBCast` lets the patterns match through single optional
-    // broadcasts. Shape inference can't always prove dims compatible for
-    // implicitly-broadcasting ops like monnx.add, so a broadcast remains after
-    // lowering; it has been extraneous in every case examined. The optional
-    // broadcasts sit before ops that commonly broadcast in other frameworks
-    // (add, mul, matmul), e.g. `mo.static.broadcast_to --> mo.add`. An
-    // adversarial graph could yield a non-equivalent kernel, but that is
-    // unlikely in the wild.
-
-    // Ensures the pattern input has a defining op and one use, and returns the
-    // next Operation* to match against.
-    auto checkInputToPattern =
-        [](TensorValue topOfPattern,
-           const std::string &name) -> ErrorOr<Operation *> {
-      std::string errMsgRoot(
-          "[MultiHeadAttentionPatternHelper] Intermediate value " + name +
-          ": ");
-
-      if (!topOfPattern)
-        return Error(errMsgRoot + Twine("is nullptr!"));
-
-      if (!topOfPattern.hasOneUse()) {
-        return Error(errMsgRoot + Twine("has more than one use!"));
-      }
-
-      Operation *definingOp = topOfPattern.getDefiningOp();
-      if (!definingOp)
-        return Error(errMsgRoot + Twine("has no defining op!"));
-
-      return definingOp;
-    };
-
-    // **Step 4: Match epilogue
-    matcher.epilogueMatcher = MultiHeadAttentionEpilogueMatcher::match(
-        finalOp, allowUnsafeBCast, allowInternalReshape, debugMHAPattern);
-    if (matcher.epilogueMatcher.isError())
-      return matcher.epilogueMatcher.takeError();
-
-    ErrorOr<Operation *> maskPatternBottom = checkInputToPattern(
-        matcher.epilogueMatcher->getTopOfPattern(), "softmax");
-    if (maskPatternBottom.isError())
-      return maskPatternBottom.takeError();
-
-    // **Step 3: Match masking
-    matcher.maskingMatcher = MultiHeadAttentionMaskingMuxMatcher::match(
-        *maskPatternBottom, allowUnsafeBCast, allowInternalReshape,
-        debugMHAPattern);
-    if (matcher.maskingMatcher.isError())
-      return matcher.maskingMatcher.takeError();
-
-    ErrorOr<Operation *> normPatternBottom = checkInputToPattern(
-        matcher.maskingMatcher->getTopOfPattern(), "mask_input");
-    if (normPatternBottom.isError())
-      return normPatternBottom.takeError();
-
-    // **Step 2: Match normalization
-    matcher.normalizationMatcher =
-        MultiHeadAttentionNormalizationMatcher::match(
-            *normPatternBottom, allowUnsafeBCast, allowInternalReshape);
-    if (matcher.normalizationMatcher.isError())
-      return matcher.normalizationMatcher.takeError();
-
-    ErrorOr<Operation *> prologuePatternBottom = checkInputToPattern(
-        matcher.normalizationMatcher->getTopOfPattern(), "attention_matrix");
-    if (prologuePatternBottom.isError())
-      return prologuePatternBottom.takeError();
-
-    // **Step 1: Match the prologue
-    matcher.prologueMatcher = MultiHeadAttentionPrologueMatcher::match(
-        *prologuePatternBottom, debugMHAPattern);
-    if (matcher.prologueMatcher.isError())
-      return matcher.prologueMatcher.takeError();
-
-    ErrorOrSuccess hasExpectedRanks = matcher.hasExpectedRanks();
-    if (hasExpectedRanks.isError())
-      return hasExpectedRanks.takeError();
-
-    return matcher;
-  }
-
-  bool hasExplicitMask() { return maskingMatcher->hasExplicitMask(); }
-  TensorValue getExplicitMask() { return maskingMatcher->getExplicitMask(); }
-  bool hasAttentionMask() { return maskingMatcher->hasAttentionMask(); }
-
-  // layout B,H,s,D
-  TensorValue getAttentionMask() {
-    return maskingMatcher->getAttentionMask(*builder);
-  }
-
-  TensorValue getAttentionMatrix() {
-    return normalizationMatcher->getAttentionMatrix();
-  }
-
-  // layout B,H,s,D
-  TensorValue getQuery() { return prologueMatcher->getQuery(); }
-
-  // layout B,H,D,S
-  TensorValue getKeyT() { return prologueMatcher->getKeyT(); }
-
-  // layout B,H,s,D
-  TensorValue getValue() { return epilogueMatcher->getValue(); }
-
-  // the factor for mul. Q^K_t to be variance 1
-  TensorValue getNormScalar() {
-    return normalizationMatcher->getScalarValueForMul(*builder);
-  }
-
-  // Returns any unsafe broadcasts that were required to be matched.
-  SmallVector<Static::BroadcastToOp> getUnsafeBroadcasts() {
-    SmallVector<Static::BroadcastToOp> unsafeBCasts;
-
-    epilogueMatcher->fillUnsafeBCasts(unsafeBCasts);
-    normalizationMatcher->fillUnsafeBCasts(unsafeBCasts);
-    maskingMatcher->fillUnsafeBCasts(unsafeBCasts);
-
-    return unsafeBCasts;
-  }
-};
-
-struct MultiHeadAttentionPattern
-    : public DeviceAwareRewritePattern<OpRewritePattern, BatchMatmulOp> {
-  bool allowUnsafeBCast, allowInternalReshape, debugMHAPattern;
-  DeviceRefAttr targetDevice;
-  MultiHeadAttentionPattern(MLIRContext *ctx, bool allowUnsafeBCast,
-                            bool allowInternalReshape, bool debugMHAPattern,
-                            DeviceRefAttr targetDevice)
-      : DeviceAwareRewritePattern<OpRewritePattern, BatchMatmulOp>(ctx, 20),
-        allowUnsafeBCast(allowUnsafeBCast),
-        allowInternalReshape(allowInternalReshape),
-        debugMHAPattern(debugMHAPattern), targetDevice(targetDevice) {}
-
-  static void insertShapeGuard(DeviceAwareRewriter &rewriter, GraphOp graphOp,
-                               TypedAttr beforeShape, TypedAttr afterShape,
-                               Location loc, const Twine &checkName,
-                               const Twine &errorMsg) {
-    // Skip the guard if the shapes are equal at compile time
-    if (beforeShape == afterShape)
-      return;
-
-    // Inserts a cpuDevice guard checking (beforeShape == afterShape)
-    Type boolTy =
-        KGEN::SIMDType::get(graphOp.getContext(), 1, KGEN::KGENDType::kBool);
-    TypedAttr cmpAttr =
-        KGEN::emitMLIROperationCall(MOSH::EqualOp::getOperationName(), {},
-                                    {beforeShape, afterShape}, boolTy);
-    KGEN::ParamDeclAttr condAttr = graphOp.getNewParamOfType(checkName, boolTy);
-    rewriter.create<KGEN::ParamDeclareOp>(loc, condAttr, cmpAttr);
-
-    // Add cpuDevice assertion into graph
-    TypedAttr assertAttr = MO::AssertOp::emitStaticCall(
-        KGEN::ParamDeclRefAttr::get(condAttr), errorMsg);
-    auto chainTy = rewriter.getType<ChainType>();
-    KGEN::ParamDeclAttr chainAttr =
-        graphOp.getNewParamOfType(checkName, chainTy);
-    rewriter.create<KGEN::ParamDeclareOp>(loc, chainAttr, assertAttr);
-  }
-
-  void guardUnsafeBCast(Static::BroadcastToOp unsafeBCast,
-                        DeviceAwareRewriter &rewriter) const {
-    // Bcasts matched under `allowUnsafeBCast` are expected to be no-ops; this
-    // inserts a cpuDevice check that they don't change shape.
-    //
-    // Shape functions are assumed inlined by now, so no internal op of the
-    // pattern produces result parameters. E.g. this is assumed impossible:
-    // %bmm1 = mo.batch_matmul<() -> N1, N2, N3>(%0, %1) ...
-    //            -> !mo.tensor<[N1, N2, N3]>
-    // mo.static.broadcast(%something): ... -> !mo.tensor<[N1, N2, N3]>
-    //
-    // since rewriting %bmm1 would remove the definitions of N1, N2 and N3.
-
-    TypedAttr beforeShape = unsafeBCast.getInput().getType().getShape();
-    TypedAttr afterShape = unsafeBCast.getResult().getType().getShape();
-
-    GraphOp graphOp = unsafeBCast->getParentOfType<GraphOp>();
-    Location loc = unsafeBCast->getLoc();
-
-    insertShapeGuard(rewriter, graphOp, beforeShape, afterShape, loc,
-                     "MHA_BCAST_CHECK",
-                     "MHA Pattern Detected unsafe broadcast. This is of great "
-                     "interest so please report!");
-  }
-
-  // The QKV matchers return Q: BHSD, K: BHDS, V: BHSD, but the kernels expect
-  // `BSHD`, which models usually transpose into the above. ONNX imports may
-  // sprinkle reshapes and broadcasts through the transpose, so we support
-  //
-  // BSHD_tensor --> transpose --> *static_reshape --> *static_broadcast
-  //             --> Q/K/V tensor
-  //
-  // where * is optional, and guard that the intermediates don't change shape.
-  // Q/K/V may be rank 3 with the batch dimension elided. A rewrite cannot
-  // fail, so without a parent transpose we insert one.
-  struct TransposeTensorHelper {
-    static TensorValue backwardGetBSHDTensor(
-        // indices for a transpose operator to move the layout of `start` to
-        // BSHD e.g. {0, 2, 1, 3} implies `start` is BHSD
-        ArrayRef<int64_t> transposeToBSHD, TensorValue start,
-        DeviceAwareRewriter &rewriter, GraphOp graphOp) {
-      // Stores all tensor types from intermediate reshapes/broadcasts.
-      // These all need to be equal
-      SmallVector<TensorType> equivalentShapes;
-      TensorValue current = start;
-
-      // Walk past any reshapes/bcasts we assume are no-ops
-      while (current.getDefiningOp<Static::BroadcastToOp>() ||
-             current.getDefiningOp<Static::ReshapeOp>()) {
-        if (auto bcast = current.getDefiningOp<Static::BroadcastToOp>()) {
-          current = bcast.getInput();
-          equivalentShapes.push_back(bcast.getType());
-        }
-        if (auto reshape = current.getDefiningOp<Static::ReshapeOp>()) {
-          current = reshape.getInput();
-          equivalentShapes.push_back(reshape.getType());
-        }
-      }
-
-      // If no transpose, still must return something valid for the kernel.
-      auto transposeOp = current.getDefiningOp<TransposeOp>();
-      if (!transposeOp)
-        return backwardFallbackGetBSHDTensor(transposeToBSHD, start, rewriter);
-
-      TensorValue tensorBSHD = transposeOp.getInput();
-
-      // Validate that the permutation gives BSHD, otherwise re-transpose.
-      SmallVector<TypedAttr> tensorStartDimsRank4Permuted =
-          permute(getRank4Dims(start, rewriter), transposeToBSHD);
-      SmallVector<TypedAttr> tensorBSHDDimsRank4 =
-          getRank4Dims(tensorBSHD, rewriter);
-      if (tensorStartDimsRank4Permuted != tensorBSHDDimsRank4)
-        return backwardFallbackGetBSHDTensor(transposeToBSHD, start, rewriter);
-
-      // Runtime Check: all reshapes/bcasts really do nothing to shape.
-      for (TensorType equivalentShapeTy : equivalentShapes) {
-        insertShapeGuard(
-            rewriter, graphOp, equivalentShapeTy.getShape(),
-            start.getType().getShape(), start.getLoc(),
-            "MHA_QKV_TRANSPOSE_BCAST_OR_RESHAPE_CHECK",
-            "MHA Pattern Detected unsafe broadcast/reshape. This is of great "
-            "interest so please report!");
-      }
-
-      return tensorBSHD;
-    }
-
-    // Returns dimensions of value. If value is rank-3, assume batch dimension
-    // was elided and pretends to add it back in as a dim of size `1`.
-    static SmallVector<TypedAttr> getRank4Dims(TensorValue value,
-                                               DeviceAwareRewriter &rewriter) {
-      [[maybe_unused]] size_t rank = value.getType().getRank();
-      ASSERT_STREAM(rank == 3 || rank == 4, << "Support only rank3/4 inputs.");
-
-      SmallVector<TypedAttr> answer;
-      auto curDims = value.getType().getShape().getValues();
-      if (curDims.size() == 3)
-        answer.push_back(ShapeAttr::getDim(rewriter.getContext(), 1));
-
-      answer.append(curDims.begin(), curDims.end());
-      return answer;
-    }
-
-    // Without a parent transpose, transposes the current layout to BSHD.
-    static TensorValue
-    backwardFallbackGetBSHDTensor(ArrayRef<int64_t> transposeToBSHD,
-                                  TensorValue start,
-                                  DeviceAwareRewriter &rewriter) {
-      // Pretend everything is rank 4 for simplicity
-      SmallVector<TypedAttr> rank4Dim = getRank4Dims(start, rewriter);
-      TensorValue startRank4 = rewriter.create<Static::ReshapeOp>(
-          start.getLoc(), start.getType().cloneWith(rank4Dim), start);
-
-      SmallVector<TypedAttr> expectedBSHDShape =
-          permute(rank4Dim, transposeToBSHD);
-      ArrayRef<TypedAttr> finalShape = expectedBSHDShape;
-      auto permConst =
-          rewriter.createHostConstant(start.getLoc(), transposeToBSHD);
-      TensorValue transposedTensor = rewriter.create<TransposeOp>(
-          start.getLoc(), startRank4.getType().cloneWith(finalShape),
-          startRank4, permConst);
-
-      // If we were rank-3 to begin with, chop off elided batch dimension
-      if (start.getType().getRank() == 3)
-        transposedTensor = rewriter.create<Static::ReshapeOp>(
-            start.getLoc(), start.getType().cloneWith(finalShape.slice(1)),
-            transposedTensor);
-
-      return transposedTensor;
-    }
-
-    // Given a tensor from `backwardGetBSHDTensor`, finds the grouped attention
-    // weight tensor (K and V shared across heads). Consider Q @ K:
-    //
-    // mo.batch_matmul(%Q, %K) : (!mo.tensor<[B, H, S, D], f32>, !mo.tensor<[B,
-    // H, D, S], f32>) -> !mo.tensor<[B, H, S, S], f32>
-    //
-    // With g groups and H = g * h, we match:
-    //
-    // %K_compressed: !mo.tensor<[B, h, D, S], f32>
-    // %stg1 = mo.static.reshape(%K_compressed): !mo.tensor<[B, h, D, S], f32>
-    // -> !mo.tensor<[B, h, 1, D, S], f32> %stg2 =
-    // mo.static.broadcast_to(%stg1): !mo.tensor<[B, h, 1, D, S], f32> ->
-    // !mo.tensor<[B, h, g, D, S], f32> %K_orig = mo.static.reshape(%stg2):
-    // !mo.tensor<[B, h, g, D, S], f32> -> !mo.tensor<[B, H, D, S], f32> %K =
-    // mo.transpose(%K_orig, %permutes): (!mo.tensor<[B, H, S, D], f32>, ...) ->
-    // !mo.tensor<[B, H, D, S], f32>
-    //
-    // and extract `K_compressed`, or return an error.
-    static ErrorOr<TensorValue>
-    extractGroupedAttentionTensorBSHD(TensorValue tensorBSHD,
-                                      DeviceAwareRewriter &rewriter,
-                                      GraphOp graphOp) {
-      // Go through optional transposes and reshapes which do not matter
-      TensorValue startTensor = tensorBSHD;
-
-      SmallVector<int64_t> identityPermutation = {0, 1, 2, 3};
-
-      // Keep track the layout of `startTensor` as we push through transposes.
-      // We map the identity permutation to BSHD, e.g. H = 2.
-      SmallVector<int64_t> curLayout = identityPermutation;
-      while (true) {
-        if (auto transposeOp = startTensor.getDefiningOp<TransposeOp>()) {
-          startTensor = transposeOp.getInput();
-          auto maybePerm = tryGetConstantIntVector(transposeOp.getPerm());
-          if (!maybePerm.has_value())
-            return Error("[extractGroupedAttentionTensor] transpose does not "
-                         "have constant permutation.");
-
-          // Get the input layout given the permutation
-          curLayout = permuteReverse(curLayout, *maybePerm);
-          continue;
-        }
-
-        auto reshapeOp = startTensor.getDefiningOp<Static::ReshapeOp>();
-        if (reshapeOp &&
-            reshapeOp.getInput().getType() == startTensor.getType()) {
-          startTensor = reshapeOp.getInput();
-          continue;
-        }
-
-        break;
-      }
-
-      auto reshape1 = startTensor.getDefiningOp<Static::ReshapeOp>();
-      if (!reshape1)
-        return Error(
-            "[extractGroupedAttentionTensor] unable to get reshape for `orig`");
-
-      TensorValue stg2 = reshape1.getInput();
-      auto staticBcast = stg2.getDefiningOp<Static::BroadcastToOp>();
-      if (!staticBcast)
-        return Error("[extractGroupedAttentionTensor] unable to get broadcast "
-                     "for `stg2`");
-
-      TensorValue stg1 = staticBcast.getInput();
-      auto reshape2 = stg1.getDefiningOp<Static::ReshapeOp>();
-      if (!reshape2)
-        return Error("[extractGroupedAttentionTensor] unable to get broadcast "
-                     "for `stg1`");
-
-      TensorValue compressedValue = reshape2.getInput();
-
-      // Map curLayout back to identityPermutation.
-      SmallVector<int64_t> permutationBackToBSHD =
-          solvePermutation(identityPermutation, curLayout);
-      return backwardGetBSHDTensor(permutationBackToBSHD, compressedValue,
-                                   rewriter, graphOp);
-    }
-  };
-
-  void rewriteRootOp(BatchMatmulOp rootOp, DeviceAwareRewriter &rewriter,
-                     MultiHeadAttentionPatternHelper &matcher,
-                     bool isCPUDevice) const {
-    // The matcher returns Q: BHSD, K: BHDS, V: BHSD, possibly with the batch
-    // dimension elided.
-    TensorValue initQuery = matcher.getQuery();
-    TensorValue initKey = matcher.getKeyT();
-    TensorValue initValue = matcher.getValue();
-
-    SmallVector<int64_t> permuteBHSD2BSHD = {0, 2, 1, 3};
-    ArrayRef<int64_t> permuteBSHD2BHSD = permuteBHSD2BSHD; // cyclical
-
-    SmallVector<int64_t> permuteBHDS2BSHD = {0, 3, 1, 2};
-    auto permuteBSHD2BHSDValue =
-        rewriter.createHostConstant(rootOp.getLoc(), permuteBSHD2BHSD);
-
-    // The kernel wants `BSHD` (this also handles elided batch dimensions).
-    auto graphOp = rootOp->getParentOfType<MO::GraphOp>();
-    TensorValue query = TransposeTensorHelper::backwardGetBSHDTensor(
-        permuteBHSD2BSHD, initQuery, rewriter, graphOp);
-    TensorValue key = TransposeTensorHelper::backwardGetBSHDTensor(
-        permuteBHDS2BSHD, initKey, rewriter, graphOp);
-    TensorValue value = TransposeTensorHelper::backwardGetBSHDTensor(
-        permuteBHSD2BSHD, initValue, rewriter, graphOp);
-
-    // For grouped query attention, try to extract the non-broadcasted K and V.
-    // We expect K and V to be layout BSHD.
-    auto maybeGroupedKey =
-        TransposeTensorHelper::extractGroupedAttentionTensorBSHD(key, rewriter,
-                                                                 graphOp);
-    auto maybeGroupedValue =
-        TransposeTensorHelper::extractGroupedAttentionTensorBSHD(
-            value, rewriter, graphOp);
-    if (!maybeGroupedKey.isError() && !maybeGroupedValue.isError()) {
-      // Both grouped weights must be extracted.
-      key = maybeGroupedKey.takeValue();
-      value = maybeGroupedValue.takeValue();
-    }
-
-    // Flash attention pattern includes the transposes from `mhaResult`
-    // which is BHSD to BSHD.
-    SmallVector<TypedAttr> initialOutputShape =
-        llvm::to_vector(rootOp.getType().getShape().getValues());
-
-    if (initialOutputShape.size() == 3) {
-      // add elided batch dimension if needed
-      initialOutputShape.insert(initialOutputShape.begin(),
-                                ShapeAttr::getDim(rewriter.getContext(), 1));
-    }
-
-    // Because output shape is rank4, to fit kernel spec, QKV must be rank 4
-    // too. If rank 3 -- add back in elided batch dimension
-    auto getRank4Tensor = [&](TensorValue val) {
-      if (val.getType().getRank() == 4)
-        return val;
-
-      ArrayRef<TypedAttr> dims = val.getType().getShape().getValues();
-      ASSERT_STREAM(dims.size() == 3, << "Only expect rank 3!");
-      SmallVector<TypedAttr> valShape{
-          ShapeAttr::getDim(rewriter.getContext(), 1), dims[0], dims[1],
-          dims[2]};
-      TensorType newTy = val.getType().cloneWith(valShape);
-      return rewriter.create<Static::ReshapeOp>(rootOp.getLoc(), newTy, val)
-          .getResult();
-    };
-    query = getRank4Tensor(query);
-    key = getRank4Tensor(key);
-    value = getRank4Tensor(value);
-
-    SmallVector<TypedAttr> mhaOutputShape =
-        permute(initialOutputShape, permuteBHSD2BSHD);
-    // Kernel expects FP32 scale
-    auto normScalar = cast<TensorValue>(matcher.getNormScalar());
-    TensorValue normScalarAsFP32 = rewriter.create<CastOp>(
-        rootOp.getLoc(), normScalar.getType().cloneWith(DType::f32),
-        normScalar);
-
-    // The scale operand to all variants of flash attention are scalar
-    // values, which must always be on the host. If they are not present on
-    // the host, transfer the value.
-    if (!isOnHost(normScalarAsFP32.getDefiningOp())) {
-      ChainValue inChain =
-          rewriter.create<ChainCreateOp>(rootOp.getLoc(), ValueRange{});
-
-      normScalarAsFP32 = cast<TensorValue>(
-          rewriter
-              .create<TransferOp>(rootOp.getLoc(), normScalarAsFP32,
-                                  getHostDevice(rootOp), inChain)
-              .getResult());
-    }
-
-    // Replace the matched subgraph with the device/mask-specific composite op.
-    // Each is a 1:1 wrapper around an existing flash-attention kernel, so the
-    // op name alone selects the kernel (no dispatch in the graph compiler). The
-    // GPU attention fusion always carries a mask (see runAdditionalGPUChecks).
-    TensorType resultTy = rootOp.getType().cloneWith(mhaOutputShape);
-    TensorValue mhaResult;
-    if (isCPUDevice) {
-      if (matcher.hasAttentionMask())
-        mhaResult = cast<TensorValue>(
-            rewriter
-                .create<MO::Composite::MaskedFlashAttentionCPUOp>(
-                    rootOp.getLoc(), resultTy, query, key, value,
-                    matcher.getAttentionMask(), normScalarAsFP32)
-                .getResult());
-      else
-        mhaResult = cast<TensorValue>(
-            rewriter
-                .create<MO::Composite::NoMaskFlashAttentionCPUOp>(
-                    rootOp.getLoc(), resultTy, query, key, value,
-                    normScalarAsFP32)
-                .getResult());
-    } else {
-      mhaResult = cast<TensorValue>(
-          rewriter
-              .create<MO::Composite::MaskedFlashAttentionGPUOp>(
-                  rootOp.getLoc(), resultTy, query, key, value,
-                  matcher.getAttentionMask(), normScalarAsFP32)
-              .getResult());
-    }
-
-    // The mhaResult should be shape BSHD, however the rooted op is layout BHSD.
-    //
-    // Try to go forward from the rooting op until we find a transpose.
-    // Much like `backwardGetBSHDTensor`, except we go forward in uses.
-    bool oneUseBMM = rootOp->hasOneUse();
-    Operation *curOp = oneUseBMM ? *rootOp->getUsers().begin() : nullptr;
-
-    // Single-user ops from `rootOp` (inclusive) to a transpose (exclusive). If
-    // a transpose is found it is replaced with the kernel call and this chain
-    // is erased, since the rewriter contract requires modifying the root op.
-    SmallVector<Operation *> trailingOpsToTranspose = {rootOp};
-    while (curOp && curOp->hasOneUse() &&
-           isa<Static::ReshapeOp, Static::BroadcastToOp>(curOp)) {
-      TensorValue result = cast<TensorValue>(curOp->getResult(0));
-      if (result.hasOneUse()) {
-        trailingOpsToTranspose.push_back(curOp);
-        curOp = *result.getUsers().begin();
-      }
-    }
-
-    // Only absorb the final transpose if it may turn BHSD into BSHD. This
-    // can't always be proven, so we assume it and insert a cpuDevice check,
-    // unless static shapes prove it wrong at compile time.
-    auto finalTranspose = dyn_cast<TransposeOp>(curOp);
-    auto transposeIsStaticallyWrong = [&]() {
-      ArrayRef<TypedAttr> transposeShapeAttr =
-          finalTranspose.getType().getShape().getValues();
-      ArrayRef<TypedAttr> finalResultShapeAttr =
-          mhaResult.getType().getShape().getValues();
-      return llvm::any_of(llvm::zip(transposeShapeAttr, finalResultShapeAttr),
-                          [&](std::tuple<TypedAttr, TypedAttr> values) {
-                            auto &[a, b] = values;
-                            return MO::TensorType::isIntegerDimParam(a) &&
-                                   MO::TensorType::isIntegerDimParam(b) &&
-                                   a != b;
-                          });
-    };
-
-    if (finalTranspose && !transposeIsStaticallyWrong() && oneUseBMM) {
-      // We have a chain like
-      // *rootOp (BHSD) --> *bcast/reshape --> *bcast/reshape
-      //                --> transpose (BSHD)
-      //
-      // where * are in `trailingOpsToTranspose`. Replace the transpose with
-      // the result and erase the rest.
-
-      // Runtime Check 1: make sure all the ops in `oneUseOps` have the same
-      // shape. This guarantees the bcasts/reshapes we collected do nothing.
-      // Note we allow the elision of batch dimension still.
-      TypedAttr targetShape = ShapeAttr::get(
-          TransposeTensorHelper::getRank4Dims(rootOp.getResult(), rewriter),
-          MOSH::ShapeType::get(rewriter.getContext()));
-      for (Operation *op : trailingOpsToTranspose) {
-        auto curValue = cast<TensorValue>(op->getResult(0));
-        TypedAttr actualShape = ShapeAttr::get(
-            TransposeTensorHelper::getRank4Dims(curValue, rewriter),
-            MOSH::ShapeType::get(rewriter.getContext()));
-        insertShapeGuard(
-            rewriter, graphOp, targetShape, actualShape, rootOp.getLoc(),
-            "MHA_ROOT_TRANSPOSE_BCAST_OR_RESHAPE_CHECK",
-            "MHA Pattern Detected unsafe reshapes/bcasts. This is of great "
-            "interest so please report!");
-      }
-
-      // Runtime Check 2: make sure the transpose does go to BSHD.
-      insertShapeGuard(rewriter, graphOp, finalTranspose.getType().getShape(),
-                       mhaResult.getType().getShape(), rootOp->getLoc(),
-                       "MHA_ROOT_TRANSPOSE_BSHD_CHECK",
-                       "MHA Pattern Detected final transpose does not go to "
-                       "BSHD layout. This is of great "
-                       "interest so please report!");
-
-      rewriter.replaceAllOpUsesWith(finalTranspose, mhaResult);
-      rewriter.eraseOp(finalTranspose);
-      for (Operation *op : llvm::reverse(trailingOpsToTranspose)) {
-        rewriter.eraseOp(op);
-      }
-    } else {
-      // Otherwise add a BSHD --> BHSD transpose, which canonicalization folds
-      // with any adjacent transpose.
-      SmallVector<TypedAttr> finalOutputShape =
-          permute(mhaResult.getType().getShape().getValues(), permuteBHSD2BSHD);
-      TensorType finalTy = mhaResult.getType().cloneWith(finalOutputShape);
-      auto finalOp = rewriter.create<TransposeOp>(
-          mhaResult.getLoc(), finalTy, mhaResult, permuteBSHD2BHSDValue);
-
-      rewriter.replaceAllOpUsesWith(rootOp, finalOp);
-    }
-  }
-
-  // Check additional constraints on rewriting MHA operations on GPU, and
-  // extract information as needed.
-  ErrorOrSuccess runAdditionalGPUChecks(
-      ErrorOr<MultiHeadAttentionPatternHelper> &matcher) const {
-
-    // CHECK 1: Must be rank 3/4 q/k/v only. Note rank(q) == rank(k) ==
-    // rank(v)
-    if (matcher->getQuery().getType().getRank() != 4 &&
-        matcher->getQuery().getType().getRank() != 3)
-      return Error("GPU Kernel expects rank 3 or 4 QKV.");
-
-    // CHECK 2: D in {64, 128} and static H due to kernel limitation.
-    // TODO: lift to static D once kernel is generalized.
-    // Q is BHSD, K is BHDS, V is BHSD, with B elided if rank 3. Due to bcasts
-    // only some of QKV may have static dims.
-    bool isRank3 = matcher->getQuery().getType().getRank() == 3;
-    int64_t dimD = -1;
-    dimD = std::max(dimD, matcher->getQuery().getType().getIntDim(3 - isRank3));
-    dimD = std::max(dimD, matcher->getKeyT().getType().getIntDim(2 - isRank3));
-    dimD = std::max(dimD, matcher->getValue().getType().getIntDim(3 - isRank3));
-
-    SmallVector<int64_t> dimHs{
-        matcher->getQuery().getType().getIntDim(1 - isRank3),
-        matcher->getKeyT().getType().getIntDim(1 - isRank3),
-        matcher->getValue().getType().getIntDim(1 - isRank3),
-    };
-    bool isDimHStatic =
-        std::any_of(dimHs.begin(), dimHs.end(), [](int64_t value) {
-          return value != mlir::ShapedType::kDynamic;
-        });
-
-    if ((dimD != 64 && dimD != 128) || !isDimHStatic)
-      return Error("Right now must prove (D == 128 || D == 64) && static H.");
-
-    // CHECK 3: The GPU kernel requires an attention mask tensor.
-    if (!matcher->hasAttentionMask())
-      return Error("GPU Kernel expects attention mask tensor.");
-
-    return success();
-  }
-
-  LogicalResult
-  deviceAwareMatchAndRewrite(BatchMatmulOp op,
-                             DeviceAwareRewriter &rewriter) const override {
-    DeviceRefAttr device = op.getInputA().getType().getDeviceRef();
-    if (!device)
-      device = getTargetDevice(op, targetDevice);
-
-    // Use the CPU kernel only if the default device is CPU.
-    if (device && device.getLabel() != M::kCPULabel &&
-        device.getLabel() != M::kGPULabel)
-      return rewriter.notifyMatchFailure(
-          op->getLoc(), "Only support CPU and CUDA for this pattern.");
-
-    // if not CPU, assume CUDA
-    bool isCPUDevice = !device || device.getLabel() == M::kCPULabel;
-
-    ErrorOr<MultiHeadAttentionPatternHelper> matcher =
-        MultiHeadAttentionPatternHelper::match(op, rewriter, allowUnsafeBCast,
-                                               allowInternalReshape,
-                                               debugMHAPattern);
-    if (matcher.isError())
-      return rewriter.notifyMatchFailure(op.getLoc(), matcher.getError());
-
-    // TODO: The tail logic of rewriteRootOp appends a rank 4 transpose op if no
-    // transpose op already exists, but this does not work if QKV is rank 3.
-    // Disable support for rank 3 tensors until the flow can be fixed.
-    if (matcher->getQuery().getType().getRank() != 4)
-      return rewriter.notifyMatchFailure(op.getLoc(),
-                                         "Supports rank 4 QKV only");
-
-    // The GPU kernel has some additional checks and needs an extracted rank3 op
-    if (!isCPUDevice) {
-      ErrorOrSuccess gpuCheck = runAdditionalGPUChecks(matcher);
-      if (gpuCheck.isError())
-        return rewriter.notifyMatchFailure(op.getLoc(), gpuCheck.getError());
-    }
-
-    // The rewrite must not abort past this point.
-    for (Static::BroadcastToOp unsafeBCast : matcher->getUnsafeBroadcasts())
-      guardUnsafeBCast(unsafeBCast, rewriter);
-
-    rewriteRootOp(op, rewriter, *matcher, isCPUDevice);
-
-    return mlir::success();
-  }
-};
-
 struct RMSNormFusedResidualAddPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::ReduceRMSNormOp> {
+                                           MO::Composite::ReduceRMSNormOp> {
   RMSNormFusedResidualAddPattern(MLIRContext *ctx)
       : DeviceAwareRewritePattern(ctx, 3) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::ReduceRMSNormOp op,
+  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp op,
                              MO::DeviceAwareRewriter &rewriter) const override {
     // Matches rms_norm(rms_norm(input) + residual_input).
     auto addOp = op.getInput().getDefiningOp<MO::AddOp>();
@@ -2733,11 +1180,13 @@ struct RMSNormFusedResidualAddPattern
 
     Value innerRmsNormResult = addOp.getOperand(0);
     Value residualInput = addOp.getOperand(1);
-    auto innerRmsNorm = innerRmsNormResult.getDefiningOp<MO::ReduceRMSNormOp>();
+    auto innerRmsNorm =
+        innerRmsNormResult.getDefiningOp<MO::Composite::ReduceRMSNormOp>();
     if (!innerRmsNorm) {
       innerRmsNormResult = addOp.getOperand(1);
       residualInput = addOp.getOperand(0);
-      innerRmsNorm = innerRmsNormResult.getDefiningOp<MO::ReduceRMSNormOp>();
+      innerRmsNorm =
+          innerRmsNormResult.getDefiningOp<MO::Composite::ReduceRMSNormOp>();
       if (!innerRmsNorm)
         return rewriter.notifyMatchFailure(op, "inner rms_norm not found");
     }
@@ -2783,12 +1232,12 @@ struct RMSNormFusedResidualAddPattern
 // higher-benefit `RMSNormFusedResidualAddPattern`.
 struct RMSNormResidualAddPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::ReduceRMSNormOp> {
+                                           MO::Composite::ReduceRMSNormOp> {
   RMSNormResidualAddPattern(MLIRContext *ctx)
       : DeviceAwareRewritePattern(ctx, 2) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::ReduceRMSNormOp op,
+  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp op,
                              MO::DeviceAwareRewriter &rewriter) const override {
     auto addOp = op.getInput().getDefiningOp<MO::AddOp>();
     if (!addOp)
@@ -2800,8 +1249,8 @@ struct RMSNormResidualAddPattern
 
     Value lhs = addOp.getOperand(0);
     Value rhs = addOp.getOperand(1);
-    if (lhs.getDefiningOp<MO::ReduceRMSNormOp>() ||
-        rhs.getDefiningOp<MO::ReduceRMSNormOp>())
+    if (lhs.getDefiningOp<MO::Composite::ReduceRMSNormOp>() ||
+        rhs.getDefiningOp<MO::Composite::ReduceRMSNormOp>())
       return rewriter.notifyMatchFailure(
           op, "double-norm topology handled by RMSNormFusedResidualAddPattern");
 
@@ -2831,57 +1280,35 @@ struct RMSNormResidualAddPattern
 };
 
 struct RMSNormFusedQuantizeDynamicScaledFP8Pattern
-    : public MO::DeviceAwareRewritePattern<OpRewritePattern, MO::CustomOp> {
+    : public MO::DeviceAwareRewritePattern<
+          OpRewritePattern, MO::Composite::QuantizeDynamicScaledFP8Op> {
   DeviceRefAttr targetDevice;
   RMSNormFusedQuantizeDynamicScaledFP8Pattern(MLIRContext *ctx,
                                               DeviceRefAttr targetDevice)
       : DeviceAwareRewritePattern(ctx, 3), targetDevice(targetDevice) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::CustomOp op,
+  deviceAwareMatchAndRewrite(MO::Composite::QuantizeDynamicScaledFP8Op op,
                              MO::DeviceAwareRewriter &rewriter) const override {
-    if (op.getSymbol() != "mo.quantize_dynamic_scaled_float8")
-      return rewriter.notifyMatchFailure(op, "not a quantize operation");
-    if (op.getOperands().size() != 2)
-      return rewriter.notifyMatchFailure(op,
-                                         "unexpected quantize operand count");
-
     DeviceRefAttr device = getTargetDevice(op, targetDevice);
     if (!device || device.getLabel() != M::kGPULabel)
       return rewriter.notifyMatchFailure(op, "fused op requires GPU");
 
-    TensorValue input = dyn_cast<TensorValue>(op.getOperand(0));
+    TensorValue input = cast<TensorValue>(op.getInput());
     if (!input.hasOneUse())
       return rewriter.notifyMatchFailure(op, "input has multiple uses");
 
-    auto rmsNormOp = input.getDefiningOp<MO::ReduceRMSNormOp>();
+    auto rmsNormOp = input.getDefiningOp<MO::Composite::ReduceRMSNormOp>();
     if (!rmsNormOp)
       return rewriter.notifyMatchFailure(op, "input not a rms_norm operation");
 
+    // The fused kernel derives the scale itself and has no amax floor.
+    if (op.getAmaxFloor())
+      return rewriter.notifyMatchFailure(op, "amax_floor is set");
     TensorType inputTy = input.getType();
-    if (!inputTy.hasRank())
-      return rewriter.notifyMatchFailure(op, "missing input rank");
-    size_t rank = inputTy.getRank();
-    if (rank == 0)
-      return rewriter.notifyMatchFailure(op, "unexpected input rank");
-
-    DictionaryAttr opParams = op.getParameters();
-    if (opParams.size() != 1)
-      return rewriter.notifyMatchFailure(op,
-                                         "missing or unexpected parameters");
-
-    Attribute groupSizeAttr = opParams.get("group_size_or_per_token");
-    if (!groupSizeAttr)
-      return rewriter.notifyMatchFailure(op, "missing group_size_or_per_token");
-    if (auto groupSizeIntAttr = dyn_cast<IntegerAttr>(groupSizeAttr)) {
-      int64_t groupSize = groupSizeIntAttr.getInt();
-      if (groupSize != -1 && groupSize != inputTy.getIntDim(rank - 1))
-        return rewriter.notifyMatchFailure(op,
-                                           "tokenwise quantization required");
-    } else {
-      return rewriter.notifyMatchFailure(op,
-                                         "wrong group_size_or_per_token type");
-    }
+    int64_t groupSize = op.getGroupSizeOrPerToken().getSExtValue();
+    if (groupSize != -1 && groupSize != inputTy.getIntDim(1))
+      return rewriter.notifyMatchFailure(op, "tokenwise quantization required");
 
     if (!rmsNormOp.getMultiplyBeforeCast())
       return rewriter.notifyMatchFailure(op, "multiply_before_cast required");
@@ -2889,7 +1316,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8Pattern
     rewriter.replaceOpWithNewOp<
         MO::Composite::RMSNormFusedQuantizeDynamicScaledFP8Op>(
         op, op.getResultTypes(), rmsNormOp.getInput(), rmsNormOp.getWeight(),
-        /*scaleUb=*/op.getOperand(1), rmsNormOp.getEpsilonAttr(),
+        op.getScaleUb(), rmsNormOp.getEpsilonAttr(),
         rmsNormOp.getWeightOffsetAttr());
 
     return mlir::success();
@@ -2920,11 +1347,12 @@ static bool matchResidualOp(Value val, MO::AddOp &residualOp,
   return false;
 }
 
-/// Finds an `mo.reduce.rms_norm` consumer of `val` and returns it via
+/// Finds an `mo.composite.reduce.rms_norm` consumer of `val` and returns it via
 /// `rmsNormOp`.
-static bool matchRMSNormOp(Value val, MO::ReduceRMSNormOp &rmsNormOp) {
+static bool matchRMSNormOp(Value val,
+                           MO::Composite::ReduceRMSNormOp &rmsNormOp) {
   for (Operation *user : val.getUsers()) {
-    auto op = dyn_cast<MO::ReduceRMSNormOp>(user);
+    auto op = dyn_cast<MO::Composite::ReduceRMSNormOp>(user);
     if (!op)
       continue;
     rmsNormOp = op;
@@ -2933,15 +1361,15 @@ static bool matchRMSNormOp(Value val, MO::ReduceRMSNormOp &rmsNormOp) {
   return false;
 }
 
-/// Finds an `mo.custom` consumer of `val` whose symbol equals `customOpName`.
-static bool matchCustomOp(Value val, MO::CustomOp &customOp,
-                          StringRef customOpName) {
+/// Finds an `mo.composite.quantize_dynamic_scaled_fp8` consumer of `val`.
+static bool
+matchQuantizeOp(Value val,
+                MO::Composite::QuantizeDynamicScaledFP8Op &quantizeOp) {
   for (Operation *user : val.getUsers()) {
-    auto op = dyn_cast<MO::CustomOp>(user);
-    if (!op || op.getSymbol() != customOpName)
-      continue;
-    customOp = op;
-    return true;
+    if (auto op = dyn_cast<MO::Composite::QuantizeDynamicScaledFP8Op>(user)) {
+      quantizeOp = op;
+      return true;
+    }
   }
   return false;
 }
@@ -2950,9 +1378,10 @@ static bool matchCustomOp(Value val, MO::CustomOp &customOp,
 /// `inputTy` is the tensor type entering the add op (the allreduce output on
 /// the relevant device); a null `quantizeOp` is the chain that stops at the
 /// norm, which the kernel serves in the input dtype.
-static bool verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
-                                     MO::ReduceRMSNormOp rmsNormOp,
-                                     MO::CustomOp quantizeOp) {
+static bool
+verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
+                         MO::Composite::ReduceRMSNormOp rmsNormOp,
+                         MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp) {
   if (!inputTy.hasRank())
     return false;
   // The fused kernel needs P2P between the peers and flattens to [rows, cols].
@@ -2963,20 +1392,13 @@ static bool verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
   if (rank < 2)
     return false;
   if (quantizeOp) {
-    if (quantizeOp.getOperand(0) != rmsNormOp.getResult())
+    if (quantizeOp.getInput() != rmsNormOp.getResult())
       return false;
-    DictionaryAttr quantizeOpParams = quantizeOp.getParameters();
     // The fused kernel derives the scale itself and has no amax floor, so a
     // quantize op that asks for one must stay unfused.
-    if (quantizeOpParams.get("amax_floor"))
+    if (quantizeOp.getAmaxFloor())
       return false;
-    Attribute groupSizeAttr = quantizeOpParams.get("group_size_or_per_token");
-    if (!groupSizeAttr)
-      return false;
-    auto groupSizeIntAttr = dyn_cast<IntegerAttr>(groupSizeAttr);
-    if (!groupSizeIntAttr)
-      return false;
-    int64_t groupSize = groupSizeIntAttr.getInt();
+    int64_t groupSize = quantizeOp.getGroupSizeOrPerToken().getSExtValue();
     if (groupSize != -1 && groupSize != inputTy.getIntDim(rank - 1))
       return false;
   } else {
@@ -3028,7 +1450,7 @@ public:
       return;
     // The composite carries one epsilon, weight_offset and cast order for
     // every device.
-    MO::ReduceRMSNormOp firstNorm = rmsNormOps.begin()->second;
+    MO::Composite::ReduceRMSNormOp firstNorm = rmsNormOps.begin()->second;
     for (auto &[device, rmsNormOp] : rmsNormOps)
       if (rmsNormOp.getEpsilonAttr() != firstNorm.getEpsilonAttr() ||
           rmsNormOp.getWeightOffsetAttr() != firstNorm.getWeightOffsetAttr() ||
@@ -3050,7 +1472,7 @@ public:
     llvm::SmallVector<Value> scaleUbOperands;
     for (Value out : allReduceOp.getOutputs()) {
       DeviceRefAttr device = cast<TensorValue>(out).getType().getDeviceRef();
-      MO::ReduceRMSNormOp rmsNormOp = rmsNormOps.at(device);
+      MO::Composite::ReduceRMSNormOp rmsNormOp = rmsNormOps.at(device);
       outputTypes.push_back(normedResultFor(device).getType());
       outScaleTypes.push_back(scaleTypeFor(device));
       scaleUbOperands.push_back(scaleUbFor(device));
@@ -3082,7 +1504,7 @@ public:
     for (auto [i, out] : llvm::enumerate(allReduceOp.getOutputs())) {
       DeviceRefAttr device = cast<TensorValue>(out).getType().getDeviceRef();
       MO::AddOp residualOp = residualOps.at(device);
-      MO::ReduceRMSNormOp rmsNormOp = rmsNormOps.at(device);
+      MO::Composite::ReduceRMSNormOp rmsNormOp = rmsNormOps.at(device);
       // Replace the intermediate result.
       residualOp.getResult().replaceAllUsesExcept(
           allReduceFusedOp.getOutResidual()[i], rmsNormOp);
@@ -3100,8 +1522,9 @@ private:
   DeviceRefAttr targetDevice;
   OpBuilder builder;
   llvm::DenseMap<DeviceRefAttr, MO::AddOp> residualOps;
-  llvm::DenseMap<DeviceRefAttr, MO::ReduceRMSNormOp> rmsNormOps;
-  llvm::DenseMap<DeviceRefAttr, MO::CustomOp> quantizeOps;
+  llvm::DenseMap<DeviceRefAttr, MO::Composite::ReduceRMSNormOp> rmsNormOps;
+  llvm::DenseMap<DeviceRefAttr, MO::Composite::QuantizeDynamicScaledFP8Op>
+      quantizeOps;
   llvm::DenseMap<DeviceRefAttr, Value> residualValues;
   bool quantizes = false;
   // Stands in for `scale_ub`; the kernel's scale clamp never reads it.
@@ -3131,11 +1554,11 @@ private:
       return false;
 
     MO::AddOp residualOp;
-    MO::ReduceRMSNormOp rmsNormOp;
-    MO::CustomOp quantizeOp;
+    MO::Composite::ReduceRMSNormOp rmsNormOp;
+    MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp;
     Value residualValue;
 
-    // Match add + rms_norm + custom["mo.quantize_dynamic_scaled_float8"]
+    // Match add + rms_norm + mo.composite.quantize_dynamic_scaled_fp8
     if (!matchResidualOp(allReduceOut, residualOp, residualValue))
       return false;
 
@@ -3143,8 +1566,7 @@ private:
       return false;
 
     // Optional; a null quantizeOp selects the kernel's no-quantize path.
-    matchCustomOp(rmsNormOp.getResult(), quantizeOp,
-                  "mo.quantize_dynamic_scaled_float8");
+    matchQuantizeOp(rmsNormOp.getResult(), quantizeOp);
 
     if (!verifyFusedAllReducePath(allReduceOut.getType(), residualOp, rmsNormOp,
                                   quantizeOp))
@@ -3172,9 +1594,8 @@ private:
 //   %r0..N = mo.tensor.unbundle(%bundle_result)
 //   // Per-device chain, OUTSIDE the parallel:
 //   %add_i  = mo.add(%residual_i, %r_i)
-//   %norm_i = mo.reduce.rms_norm(%add_i, %gamma_i, %eps, %wo)
-//   %q_i:2  = mo.custom { "mo.quantize_dynamic_scaled_float8" }
-//               (%norm_i, %scale_ub)
+//   %norm_i = mo.composite.reduce.rms_norm(%add_i, %gamma_i, %eps, %wo)
+//   %q_i:2  = mo.composite.quantize_dynamic_scaled_fp8(%norm_i, %scale_ub)
 //
 // rebuilds the parallel with two extra bundle inputs (residuals, gammas)
 // and three bundle results (FP8 outputs, scales, post-add residuals),
@@ -3237,14 +1658,18 @@ private:
   size_t yieldOperandIdx = 0;
   // Per-launch operand chains.
   SmallVector<MO::AddOp> addOps;
-  SmallVector<MO::ReduceRMSNormOp> rmsNormOps;
-  SmallVector<MO::CustomOp> quantizeOps;
+  SmallVector<MO::Composite::ReduceRMSNormOp> rmsNormOps;
+  SmallVector<MO::Composite::QuantizeDynamicScaledFP8Op> quantizeOps;
   SmallVector<Value> residualValues;
   SmallVector<Value> gammaValues;
   // Captured (same SSA value across launches).
   Value scaleUbValue;
 
   bool matchAll() {
+    // The fused op has no grouping or explicit rank, so avoid fusing.
+    if (allReduceOp.getGroupSize() != 0 || allReduceOp.getPeerRank())
+      return false;
+
     // 1. The seed must sit inside an mo.parallel body.
     parallelOp = allReduceOp->getParentOfType<MO::ParallelOp>();
     if (!parallelOp)
@@ -3296,14 +1721,13 @@ private:
       Value launchAllredOut = unbundleOp.getResult(i);
       MO::AddOp addOp;
       Value residualValue;
-      MO::ReduceRMSNormOp rmsNormOp;
-      MO::CustomOp quantizeOp;
+      MO::Composite::ReduceRMSNormOp rmsNormOp;
+      MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp;
       if (!matchResidualOp(launchAllredOut, addOp, residualValue))
         return false;
       if (!matchRMSNormOp(addOp.getResult(), rmsNormOp))
         return false;
-      if (!matchCustomOp(rmsNormOp.getResult(), quantizeOp,
-                         "mo.quantize_dynamic_scaled_float8"))
+      if (!matchQuantizeOp(rmsNormOp.getResult(), quantizeOp))
         return false;
       auto launchTy = dyn_cast<TensorType>(launchAllredOut.getType());
       if (!launchTy)
@@ -3590,12 +2014,12 @@ static MO::AddOp followToAdd(Value v, SmallVectorImpl<Operation *> &chain) {
 /// traversed transparently.
 struct ReduceRMSNormRoPEPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::ReduceRMSNormOp> {
+                                           MO::Composite::ReduceRMSNormOp> {
   ReduceRMSNormRoPEPattern(MLIRContext *ctx)
       : DeviceAwareRewritePattern(ctx, 2) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::ReduceRMSNormOp rmsNormOp,
+  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp rmsNormOp,
                              MO::DeviceAwareRewriter &rewriter) const override {
     Value normed = rmsNormOp.getResult();
     auto normedTy = cast<MO::TensorType>(normed.getType());
@@ -4916,15 +3340,20 @@ public:
     // Sized to bound `total_m_blocks` (sum over experts of
     // `ceildiv(tokens_e, MMA_N)`): with the smallest tile MMA_N=8 and at most
     // `numExperts` partial blocks, `ceildiv(M, 8) + numExperts + 1` suffices.
-    // Over-allocation is safe. This needs static M and numExperts; the EP path
-    // uses statically-shaped activation buffers.
+    // Over-allocation is safe. This needs an upper bound on M and a static
+    // numExperts. The EP path has a statically-shaped activation buffer; a
+    // dynamic row count (the TP path, whose rows are tokens * top_k) takes its
+    // bound from L1's `max_total_m`, and the kernel op checks the actual row
+    // count against the buffer before it launches.
     int64_t m =
         cast<MO::TensorType>(l1.getHiddenStates().getType()).getIntDim(0);
+    if (m == mlir::ShapedType::kDynamic && l1.getMaxTotalM() > 0)
+      m = l1.getMaxTotalM();
     if (m == mlir::ShapedType::kDynamic ||
         numExperts == mlir::ShapedType::kDynamic)
       return rewriter.notifyMatchFailure(
-          downOp, "mega_ffn needs a static token count and num_experts to size "
-                  "the arrival_count buffer");
+          downOp, "mega_ffn needs a static token count (or max_total_m) and "
+                  "num_experts to size the arrival_count buffer");
 
     constexpr int64_t kAtomicPad = 32;
     constexpr int64_t kMinTokenBlock = 8;
@@ -4965,7 +3394,8 @@ public:
         /*down_num_active_experts=*/downOp.getNumActiveExperts(),
         /*arrival_count=*/arrivalBuf,
         /*inChain=*/inChain,
-        /*has_gate_up_a_row_scales=*/l1.getHasARowScales());
+        /*has_gate_up_a_row_scales=*/l1.getHasARowScales(),
+        /*prefill_dynamic_claim=*/l1.getPrefillDynamicClaim());
 
     // Forward L1's gated activation; the fused kernel builds it from these at
     // compile time, so dropping one would silently change the numerics.
@@ -4994,7 +3424,8 @@ public:
 // Graph pattern detected:
 //   %gemv = mo.matmul(%x, %W) [transpose_b = true] : [1, K] x [N, K] -> [1, N]
 //   %normed_slice = mo.slice(%gemv) : [1, N] -> [1, N_normed]
-//   %normed = mo.reduce.rms_norm(%normed_slice, %gamma, ...) : [1, N_normed]
+//   %normed = mo.composite.reduce.rms_norm(%normed_slice, %gamma, ...)
+//       : [1, N_normed]
 //   %unnormed_slice = mo.slice(%gemv) : [1, N] -> [1, N - N_normed]
 //
 // Fused into:
@@ -5004,12 +3435,12 @@ public:
 
 struct MatmulFusedPartialRMSNormPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::ReduceRMSNormOp> {
+                                           MO::Composite::ReduceRMSNormOp> {
   MatmulFusedPartialRMSNormPattern(MLIRContext *ctx)
       : DeviceAwareRewritePattern(ctx, 2) {}
 
   LogicalResult
-  deviceAwareMatchAndRewrite(MO::ReduceRMSNormOp rmsNormOp,
+  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp rmsNormOp,
                              MO::DeviceAwareRewriter &rewriter) const override {
     auto normedOutputTy = cast<MO::TensorType>(rmsNormOp.getResult().getType());
     DeviceRefAttr device = normedOutputTy.getDeviceRef();
@@ -5279,7 +3710,6 @@ void applyFuseParallelBundledAllReduceAddRMSNormQuantFP8(
 void populateFusionPatterns(mlir::RewritePatternSet &patterns,
                             PackParamCache &cache,
                             M::DeviceRefAttr targetDeviceRef,
-                            const MHAOptions &mhaOpts,
                             const DeviceInfoMapping &deviceInfoMapping) {
   mlir::MLIRContext *ctx = patterns.getContext();
 
@@ -5298,12 +3728,6 @@ void populateFusionPatterns(mlir::RewritePatternSet &patterns,
   patterns.add<ForceMatmulTransposeBForGPU, BatchMatmulAdjBPattern,
                RMSNormFusedQuantizeDynamicScaledFP8Pattern,
                FuseMatmulReduceScatterPattern>(ctx, targetDeviceRef);
-
-  if (mhaOpts.enable) {
-    patterns.add<MultiHeadAttentionPattern>(ctx, mhaOpts.allowUnsafeBCast,
-                                            mhaOpts.allowInternalReshape,
-                                            mhaOpts.debug, targetDeviceRef);
-  }
 }
 
 void populateFusionMatmulAddPatterns(const DeviceInfoMapping &deviceInfoMapping,

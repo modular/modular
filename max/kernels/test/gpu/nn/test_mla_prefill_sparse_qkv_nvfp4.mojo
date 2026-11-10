@@ -148,7 +148,7 @@ def _prefill[
     indices_tt: TileTensor[.uint32, address_space=.GENERIC, ...],
     topk_lengths_tt: TileTensor[.uint32, address_space=.GENERIC, ...],
     attn_sink_ptr: Optional[ImmPointer[Float32, ImmutAnyOrigin]],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # head<=64 runs the single-CTA tile, head=128 the 2-CTA tile; the same
     # tiling the production dispatch picks.
@@ -197,7 +197,7 @@ def run_nvfp4_vs_fp8[
     batch_size: Int,
     seq_len: Int,
     num_kv_tokens: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     *,
     valid_topk: Int = -1,
     with_sink: Bool = False,
@@ -631,7 +631,7 @@ def run_nvfp4_vs_fp8[
 
     comptime if perf_iters > 0:
 
-        def _launch_fp8(ctx: DeviceContext) raises {imm}:
+        def _launch_fp8(ctx: DeviceContext[]) raises {imm}:
             _prefill[num_heads, row_depth, topk](
                 kv_fp8,
                 out_fp8_tt,
@@ -642,7 +642,7 @@ def run_nvfp4_vs_fp8[
                 ctx,
             )
 
-        def _launch_fp4(ctx: DeviceContext) raises {imm}:
+        def _launch_fp4(ctx: DeviceContext[]) raises {imm}:
             _prefill[num_heads, row_depth, 2 * topk](
                 kv_fp4,
                 out_fp4_tt,

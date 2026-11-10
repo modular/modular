@@ -21,6 +21,7 @@
 
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveRegistry.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 namespace M {
 
@@ -29,10 +30,9 @@ class ErrorOrSuccess;
 class QuantTensorSpec;
 
 /// Decodes a MEFFunctionType signature into input and output QuantTensorSpecs.
-ErrorOrSuccess
-decodeQuantizedSignature(MEFFunctionType signature,
-                         SmallVectorImpl<QuantTensorSpec> &inputSpecs,
-                         SmallVectorImpl<QuantTensorSpec> &outputSpecs);
+MODULAR_CXX_EXPORT ErrorOrSuccess decodeQuantizedSignature(
+    MEFFunctionType signature, SmallVectorImpl<QuantTensorSpec> &inputSpecs,
+    SmallVectorImpl<QuantTensorSpec> &outputSpecs);
 
 /// Decodes e.g. {argument_names = ["a", "b"], result_names = ["c"]} into
 /// `inputNames` and `outputNames`.

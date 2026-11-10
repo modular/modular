@@ -111,6 +111,20 @@ def elaboration_error_include_prelude: Flag<["--", "-"],
     "(prelude).">,
   MarshallingInfoFlag<CompilationOpts<"elaborationErrorIncludePrelude">>;
 
+def elaboration_stats: Flag<["--", "-"], "elaboration-stats">,
+  Group<CompilationOptionGroup>, Flags<[HelpHidden]>,
+  HelpText<
+    "Reports what elaboration produced: each `comptime for` loop with its "
+    "iteration count and the operations its unrolled iterations hold, and "
+    "the interpreter calls for comptime values with their cache hits and the "
+    "CPU time to interpret the rest, one part per elaborated pipeline. The "
+    "report takes the format and the destination of the timing reports: "
+    "text on stderr, JSON with `--timing-json`, a file with `--timing-file`. "
+    "A compile the compilation cache serves does not elaborate, so it "
+    "reports nothing; point `MODULAR_CACHE_DIR` at an empty directory to see "
+    "a whole pipeline.">,
+  MarshallingInfoFlag<CompilationOpts<"elaborationStats">>;
+
 defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
   "elaboration-error-verbose",
   CompilationOptionGroup, MetaVarName<"ELABERRORVERBOSE">,

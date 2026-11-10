@@ -28,6 +28,7 @@ from .engine_config import EngineConfig
 from .format_spec import FormatSpec
 from .kv_cache import KVCacheLayout
 from .pipeline_modules import PipelineModules
+from .tokenizer import Tokenizer
 from .value_types import ArtifactComponent, ArtifactError, HuggingFaceRef
 from .vision import VisionMetadata
 
@@ -37,7 +38,7 @@ class ModelArtifact:
     """Serializable serve-able pipeline."""
 
     model: PipelineModules | None = None
-    tokenizer: ArtifactComponent | None = None
+    tokenizer: Tokenizer | None = None
     format_spec: FormatSpec | None = None
     engine_config: EngineConfig | None = None
     kv_cache: KVCacheLayout | None = None

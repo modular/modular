@@ -119,7 +119,7 @@ compensate. The run's log reports both, over the turns it sampled.
 ### `--image-turn first` on a warmed session
 
 `first` is the default, and it is safe on sessions that start mid-conversation
-(`--warmup-to-steady-state`, on by default). Those sessions build their opening
+(`--warmup-multiturn`, on by default). Those sessions build their opening
 turns locally, but the driver splices the images into the history it sends, so
 an image on a replayed turn still reaches the server on the first measured
 request.

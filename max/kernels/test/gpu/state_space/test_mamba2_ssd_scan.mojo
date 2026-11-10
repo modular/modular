@@ -27,6 +27,7 @@ from std.sys import size_of
 from std.testing import (
     TestSuite,
     assert_almost_equal,
+    assert_equal,
     assert_false,
     assert_true,
 )
@@ -49,10 +50,16 @@ from state_space.mamba2_ssd_chunked import (
 from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
 )
+from state_space.row_rule import commit_len, is_prefill_row
 
 
 def _scan_cpu[
-    dtype: DType, state_dtype: DType, //, DSTATE: Int
+    dtype: DType,
+    state_dtype: DType,
+    ROW_RULE: Bool = False,
+    SKIP_LONG_ROWS: Bool = False,
+    //,
+    DSTATE: Int,
 ](
     x: TileTensor[mut=False, dtype, ...],
     dt: TileTensor[mut=False, dtype, ...],
@@ -67,6 +74,7 @@ def _scan_cpu[
     has_initial_state: TileTensor[mut=False, .bool, ...],
     update_state: TileTensor[mut=False, .bool, ...],
     cache_indices: TileTensor[mut=False, .uint32, ...],
+    num_draft_tokens: Int = 0,
 ):
     """Runs the CPU scan with operand functions that read these tensors."""
     comptime elt = size_of[dtype]()
@@ -96,8 +104,11 @@ def _scan_cpu[
     ](b: Int) {var cache_indices} -> SIMD[.uint32, width]:
         return cache_indices.load[width=width]((b,))
 
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[DSTATE](
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
+        DSTATE, ROW_RULE=ROW_RULE, SKIP_LONG_ROWS=SKIP_LONG_ROWS
+    ](
         Int(B.dim[1]()),
+        Int32(num_draft_tokens),
         A,
         D,
         dt_bias,
@@ -325,7 +336,7 @@ def run_mamba2_ssd[
     ngroups: Int,
     max_slots: Int,
     seq_lengths: IndexList,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     rtol: Float64 = 0.02,
     row_pad: Int = 0,
     atol_frac: Float64 = 0.0,
@@ -1099,7 +1110,7 @@ def test_mamba2_ssd_dstate_split_chunk_boundaries() raises:
 
 def _channel_blocked_decode_shapes[
     update_flags: Bool
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     """Verify/replay rows 1 to 8 (one masked staged chunk) and a decode."""
     run_mamba2_ssd[
         .bfloat16,
@@ -1387,6 +1398,564 @@ def test_mamba2_ssd_update_state_flag() raises:
             )
 
 
+def run_mamba2_ssd_row_rule[
+    dtype: DType,
+    DSTATE: Int,
+    DSTATE_SPLIT: Int,
+    CH_PER_THREAD: Int,
+    PREFILL: Bool,
+    SKIP_LONG_ROWS: Bool,
+    ON_CPU: Bool,
+    CHUNKED: Bool = False,
+](
+    nheads: Int,
+    head_dim: Int,
+    ngroups: Int,
+    max_slots: Int,
+    seq_lengths: IndexList,
+    num_draft_tokens: Int,
+    ctx: DeviceContext[],
+    update_state: Bool = False,
+) raises:
+    """The row rule against main's kernel.
+
+    Main's kernel on the real tokens only (`len - K`, `update_state` true)
+    names the state a prefill row must commit; main's kernel on the full
+    row names every token's output. Rows of `len <= K + 1` keep main's
+    behavior: their slot follows the `update_state` flag. `CHUNKED` runs
+    the row-rule launch on the chunked scan, whose bf16 GEMMs are covered
+    by `check_chunked_parity`'s tolerance; a decode row then gets no
+    chunk, so its outputs and slot must keep what they started with.
+    """
+    comptime dstate = DSTATE
+    var batch = len(seq_lengths)
+    var total_len = 0
+    for i in range(batch):
+        total_len += seq_lengths[i]
+    var x_row = nheads * head_dim
+    var bc_row = ngroups * dstate
+    var y_size = total_len * nheads * head_dim
+    var state_size = nheads * head_dim * dstate
+    var pool_size = max_slots * state_size
+
+    var x_h = unsafe_alloc[Scalar[dtype]](total_len * x_row)
+    var dt_h = unsafe_alloc[Scalar[dtype]](total_len * nheads)
+    var A_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var B_h = unsafe_alloc[Scalar[dtype]](total_len * bc_row)
+    var C_h = unsafe_alloc[Scalar[dtype]](total_len * bc_row)
+    var D_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var dt_bias_h = unsafe_alloc[Scalar[dtype]](nheads)
+    var his_h = unsafe_alloc[Scalar[.bool]](batch)
+    var us_h = unsafe_alloc[Scalar[.bool]](batch)
+    var qsl_h = unsafe_alloc[Int32](batch + 1)
+    var slot_h = unsafe_alloc[UInt32](batch)
+    var is_h = unsafe_alloc[Float32](batch * state_size)
+    rand(x_h, total_len * x_row)
+    rand(dt_h, total_len * nheads)
+    rand(A_h, nheads)
+    rand(B_h, total_len * bc_row)
+    rand(C_h, total_len * bc_row)
+    rand(D_h, nheads)
+    rand(dt_bias_h, nheads)
+    rand(is_h, batch * state_size)
+    # A = -exp(A_log) keeps the recurrence bounded over the row.
+    for i in range(nheads):
+        A_h.unsafe_store(
+            i, Scalar[dtype](Float32(A_h.unsafe_load(i)) * -1 - 0.1)
+        )
+    for i in range(batch):
+        his_h.unsafe_store(i, Scalar[.bool](True))
+        us_h.unsafe_store(i, Scalar[.bool](update_state))
+        slot_h.unsafe_store(i, UInt32(1 + i))
+    var cum = 0
+    qsl_h.unsafe_store(0, Int32(0))
+    for i in range(batch):
+        cum += seq_lengths[i]
+        qsl_h.unsafe_store(i + 1, Int32(cum))
+
+    var pool_init_h = unsafe_alloc[Scalar[.float32]](pool_size)
+    for i in range(pool_size):
+        pool_init_h.unsafe_store(i, Scalar[.float32](0))
+    for b in range(batch):
+        var slot = Int(slot_h.unsafe_load(b))
+        for i in range(state_size):
+            pool_init_h.unsafe_store(
+                slot * state_size + i, is_h.unsafe_load(b * state_size + i)
+            )
+
+    var x_layout = MixedLayout(
+        (total_len, nheads, head_dim), (x_row, head_dim, 1)
+    )
+    var bc_layout = MixedLayout(
+        (total_len, ngroups, dstate), (bc_row, dstate, 1)
+    )
+
+    # The row-rule run: `update_state` false, as the verify graph passes it.
+    var y_rule_h = unsafe_alloc[Scalar[dtype]](y_size)
+    comptime if SKIP_LONG_ROWS or CHUNKED:
+        # A skipped or chunk-mapped row writes only part of `y`; the
+        # sentinel proves which rows the launch left alone.
+        for i in range(y_size):
+            y_rule_h.unsafe_store(i, Scalar[dtype](-1))
+    var pool_rule_h = unsafe_alloc[Scalar[.float32]](pool_size)
+    for i in range(pool_size):
+        pool_rule_h.unsafe_store(i, pool_init_h.unsafe_load(i))
+    comptime if CHUNKED:
+        run_ssd_gpu[DSTATE, -1, 1, prefill=True, ROW_RULE=True](
+            ctx,
+            nheads,
+            head_dim,
+            ngroups,
+            max_slots,
+            batch,
+            total_len,
+            x_row,
+            bc_row,
+            nheads,
+            nheads,
+            batch,
+            batch,
+            x_h,
+            dt_h,
+            A_h,
+            B_h,
+            C_h,
+            D_h,
+            dt_bias_h,
+            qsl_h,
+            his_h,
+            us_h,
+            slot_h,
+            y_rule_h,
+            pool_rule_h,
+            num_draft_tokens,
+        )
+    elif not ON_CPU:
+        run_ssd_gpu[
+            DSTATE,
+            DSTATE_SPLIT,
+            CH_PER_THREAD,
+            prefill=PREFILL,
+            ROW_RULE=True,
+            SKIP_LONG_ROWS=SKIP_LONG_ROWS,
+        ](
+            ctx,
+            nheads,
+            head_dim,
+            ngroups,
+            max_slots,
+            batch,
+            total_len,
+            x_row,
+            bc_row,
+            nheads,
+            nheads,
+            batch,
+            batch,
+            x_h,
+            dt_h,
+            A_h,
+            B_h,
+            C_h,
+            D_h,
+            dt_bias_h,
+            qsl_h,
+            his_h,
+            us_h,
+            slot_h,
+            y_rule_h,
+            pool_rule_h,
+            num_draft_tokens,
+        )
+    else:
+        _scan_cpu[ROW_RULE=True, SKIP_LONG_ROWS=SKIP_LONG_ROWS, DSTATE](
+            TileTensor(x_h, x_layout),
+            TileTensor(dt_h, row_major(total_len, nheads)),
+            TileTensor(A_h, row_major(nheads)),
+            TileTensor(B_h, bc_layout),
+            TileTensor(C_h, bc_layout),
+            TileTensor(D_h, row_major(nheads)),
+            TileTensor(dt_bias_h, row_major(nheads)),
+            TileTensor(y_rule_h, row_major(total_len, nheads, head_dim)),
+            TileTensor(
+                pool_rule_h, row_major(max_slots, nheads, head_dim, dstate)
+            ),
+            TileTensor(qsl_h, row_major(batch + 1)),
+            TileTensor(his_h, row_major(batch)),
+            TileTensor(us_h, row_major(batch)),
+            TileTensor(slot_h, row_major(batch)),
+            num_draft_tokens,
+        )
+
+    # Main's kernel on the full row names every token's output.
+    var y_main_h = unsafe_alloc[Scalar[dtype]](y_size)
+    var pool_main_h = unsafe_alloc[Scalar[.float32]](pool_size)
+    for i in range(pool_size):
+        pool_main_h.unsafe_store(i, pool_init_h.unsafe_load(i))
+    comptime if not ON_CPU:
+        run_ssd_gpu[DSTATE, DSTATE_SPLIT, CH_PER_THREAD, prefill=PREFILL](
+            ctx,
+            nheads,
+            head_dim,
+            ngroups,
+            max_slots,
+            batch,
+            total_len,
+            x_row,
+            bc_row,
+            nheads,
+            nheads,
+            batch,
+            batch,
+            x_h,
+            dt_h,
+            A_h,
+            B_h,
+            C_h,
+            D_h,
+            dt_bias_h,
+            qsl_h,
+            his_h,
+            us_h,
+            slot_h,
+            y_main_h,
+            pool_main_h,
+        )
+    else:
+        _scan_cpu[DSTATE](
+            TileTensor(x_h, x_layout),
+            TileTensor(dt_h, row_major(total_len, nheads)),
+            TileTensor(A_h, row_major(nheads)),
+            TileTensor(B_h, bc_layout),
+            TileTensor(C_h, bc_layout),
+            TileTensor(D_h, row_major(nheads)),
+            TileTensor(dt_bias_h, row_major(nheads)),
+            TileTensor(y_main_h, row_major(total_len, nheads, head_dim)),
+            TileTensor(
+                pool_main_h, row_major(max_slots, nheads, head_dim, dstate)
+            ),
+            TileTensor(qsl_h, row_major(batch + 1)),
+            TileTensor(his_h, row_major(batch)),
+            TileTensor(us_h, row_major(batch)),
+            TileTensor(slot_h, row_major(batch)),
+        )
+
+    # Main's kernel on the real tokens only, `update_state` true, names the
+    # committed state.
+    var real_lengths = List[Int](fill=0, length=batch)
+    for i in range(batch):
+        real_lengths[i] = commit_len(seq_lengths[i], num_draft_tokens)
+    var real_total = 0
+    for i in range(batch):
+        real_total += real_lengths[i]
+    var x_real_h = unsafe_alloc[Scalar[dtype]](real_total * x_row)
+    var dt_real_h = unsafe_alloc[Scalar[dtype]](real_total * nheads)
+    var B_real_h = unsafe_alloc[Scalar[dtype]](real_total * bc_row)
+    var C_real_h = unsafe_alloc[Scalar[dtype]](real_total * bc_row)
+    var real_start = 0
+    for i in range(batch):
+        var src = Int(qsl_h.unsafe_load(i))
+        for l in range(real_lengths[i]):
+            for j in range(x_row):
+                x_real_h.unsafe_store(
+                    real_start * x_row + l * x_row + j,
+                    x_h.unsafe_load((src + l) * x_row + j),
+                )
+            for j in range(nheads):
+                dt_real_h.unsafe_store(
+                    real_start * nheads + l * nheads + j,
+                    dt_h.unsafe_load((src + l) * nheads + j),
+                )
+            for j in range(bc_row):
+                B_real_h.unsafe_store(
+                    real_start * bc_row + l * bc_row + j,
+                    B_h.unsafe_load((src + l) * bc_row + j),
+                )
+                C_real_h.unsafe_store(
+                    real_start * bc_row + l * bc_row + j,
+                    C_h.unsafe_load((src + l) * bc_row + j),
+                )
+        real_start += real_lengths[i]
+    var qsl_real_h = unsafe_alloc[Int32](batch + 1)
+    var real_cum = 0
+    qsl_real_h.unsafe_store(0, Int32(0))
+    for i in range(batch):
+        real_cum += real_lengths[i]
+        qsl_real_h.unsafe_store(i + 1, Int32(real_cum))
+    var y_ref_h = unsafe_alloc[Scalar[dtype]](real_total * nheads * head_dim)
+    var pool_ref_h = unsafe_alloc[Scalar[.float32]](pool_size)
+    for i in range(pool_size):
+        pool_ref_h.unsafe_store(i, pool_init_h.unsafe_load(i))
+    var x_real_layout = MixedLayout(
+        (real_total, nheads, head_dim), (x_row, head_dim, 1)
+    )
+    var bc_real_layout = MixedLayout(
+        (real_total, ngroups, dstate), (bc_row, dstate, 1)
+    )
+    comptime if not ON_CPU:
+        # Empty `us_size`: every sequence writes its final state.
+        run_ssd_gpu[DSTATE, DSTATE_SPLIT, CH_PER_THREAD, prefill=PREFILL](
+            ctx,
+            nheads,
+            head_dim,
+            ngroups,
+            max_slots,
+            batch,
+            real_total,
+            x_row,
+            bc_row,
+            nheads,
+            nheads,
+            batch,
+            0,
+            x_real_h,
+            dt_real_h,
+            A_h,
+            B_real_h,
+            C_real_h,
+            D_h,
+            dt_bias_h,
+            qsl_real_h,
+            his_h,
+            us_h,
+            slot_h,
+            y_ref_h,
+            pool_ref_h,
+        )
+    else:
+        _scan_cpu[DSTATE](
+            TileTensor(x_real_h, x_real_layout),
+            TileTensor(dt_real_h, row_major(real_total, nheads)),
+            TileTensor(A_h, row_major(nheads)),
+            TileTensor(B_real_h, bc_real_layout),
+            TileTensor(C_real_h, bc_real_layout),
+            TileTensor(D_h, row_major(nheads)),
+            TileTensor(dt_bias_h, row_major(nheads)),
+            TileTensor(y_ref_h, row_major(real_total, nheads, head_dim)),
+            TileTensor(
+                pool_ref_h, row_major(max_slots, nheads, head_dim, dstate)
+            ),
+            TileTensor(qsl_real_h, row_major(batch + 1)),
+            TileTensor(his_h, row_major(batch)),
+            # Empty: every sequence writes its final state.
+            TileTensor(us_h, row_major(0)),
+            TileTensor(slot_h, row_major(batch)),
+        )
+
+    comptime if CHUNKED:
+        # A prefill row's real tokens match main at the chunked tolerance;
+        # its drafts and every decode row keep the sentinel, and a decode
+        # row's slot keeps its seed.
+        var y_max = Float32(0)
+        for i in range(y_size):
+            y_max = max(y_max, abs(Float32(y_main_h.unsafe_load(i))))
+        for b in range(batch):
+            var seqlen = seq_lengths[b]
+            var start = Int(qsl_h.unsafe_load(b))
+            var commit = commit_len(seqlen, num_draft_tokens)
+            var real = is_prefill_row(seqlen, num_draft_tokens)
+            for t in range(seqlen):
+                for hp in range(nheads * head_dim):
+                    var idx = (start + t) * nheads * head_dim + hp
+                    if real and t < commit:
+                        assert_almost_equal(
+                            Float32(y_main_h.unsafe_load(idx)),
+                            Float32(y_rule_h.unsafe_load(idx)),
+                            rtol=0.03,
+                            atol=Float64(0.01 * y_max),
+                            msg="chunked row-rule y mismatch at token "
+                            + String(start + t),
+                        )
+                    else:
+                        # The launch left this row alone: the sentinel.
+                        assert_equal(
+                            y_rule_h.unsafe_load(idx), Scalar[dtype](-1)
+                        )
+
+        var s_max = Float32(0)
+        for i in range(pool_size):
+            s_max = max(s_max, abs(Float32(pool_ref_h.unsafe_load(i))))
+        for b in range(batch):
+            var seqlen = seq_lengths[b]
+            var slot = Int(slot_h.unsafe_load(b))
+            if is_prefill_row(seqlen, num_draft_tokens):
+                for i in range(state_size):
+                    assert_almost_equal(
+                        Float32(pool_ref_h.unsafe_load(slot * state_size + i)),
+                        Float32(pool_rule_h.unsafe_load(slot * state_size + i)),
+                        rtol=0.03,
+                        atol=Float64(0.01 * s_max),
+                        msg="chunked row-rule state mismatch at slot "
+                        + String(slot),
+                    )
+            else:
+                # An untouched slot reads back bit-identical.
+                for i in range(state_size):
+                    assert_equal(
+                        pool_rule_h.unsafe_load(slot * state_size + i),
+                        pool_init_h.unsafe_load(slot * state_size + i),
+                    )
+
+    comptime if not SKIP_LONG_ROWS and not CHUNKED:
+        # Outputs stay as main computes them for every token.
+        for i in range(y_size):
+            assert_equal(y_rule_h.unsafe_load(i), y_main_h.unsafe_load(i))
+
+        for b in range(batch):
+            var seqlen = seq_lengths[b]
+            var is_prefill = is_prefill_row(seqlen, num_draft_tokens)
+            var slot = Int(slot_h.unsafe_load(b))
+            for i in range(state_size):
+                var expected = pool_init_h.unsafe_load(slot * state_size + i)
+                if is_prefill:
+                    expected = pool_ref_h.unsafe_load(slot * state_size + i)
+                elif update_state:
+                    expected = pool_main_h.unsafe_load(slot * state_size + i)
+                assert_equal(
+                    pool_rule_h.unsafe_load(slot * state_size + i), expected
+                )
+
+    comptime if SKIP_LONG_ROWS:
+        # A skipped prefill row leaves its real tokens' outputs and its
+        # slot untouched; its draft rows' outputs are zero.
+        for b in range(batch):
+            var seqlen = seq_lengths[b]
+            var slot = Int(slot_h.unsafe_load(b))
+            for i in range(state_size):
+                var expected = pool_init_h.unsafe_load(slot * state_size + i)
+                if not is_prefill_row(seqlen, num_draft_tokens):
+                    if update_state:
+                        # A decode row writes at its row end, as on main.
+                        expected = pool_main_h.unsafe_load(
+                            slot * state_size + i
+                        )
+                assert_equal(
+                    pool_rule_h.unsafe_load(slot * state_size + i), expected
+                )
+
+        for b in range(batch):
+            var seqlen = seq_lengths[b]
+            var start = Int(qsl_h.unsafe_load(b))
+            var commit = commit_len(seqlen, num_draft_tokens)
+            for t in range(seqlen):
+                for hp in range(nheads * head_dim):
+                    var idx = (start + t) * nheads * head_dim + hp
+                    var expected = Scalar[dtype](-1)
+                    if not is_prefill_row(seqlen, num_draft_tokens):
+                        # A decode row is not skipped: main's output.
+                        expected = y_main_h.unsafe_load(idx)
+                    elif t >= commit:
+                        expected = Scalar[dtype](0)
+                    assert_equal(y_rule_h.unsafe_load(idx), expected)
+
+    x_h.unsafe_free()
+    dt_h.unsafe_free()
+    A_h.unsafe_free()
+    B_h.unsafe_free()
+    C_h.unsafe_free()
+    D_h.unsafe_free()
+    dt_bias_h.unsafe_free()
+    his_h.unsafe_free()
+    us_h.unsafe_free()
+    qsl_h.unsafe_free()
+    slot_h.unsafe_free()
+    is_h.unsafe_free()
+    pool_init_h.unsafe_free()
+    y_rule_h.unsafe_free()
+    pool_rule_h.unsafe_free()
+    y_main_h.unsafe_free()
+    pool_main_h.unsafe_free()
+    x_real_h.unsafe_free()
+    dt_real_h.unsafe_free()
+    B_real_h.unsafe_free()
+    C_real_h.unsafe_free()
+    qsl_real_h.unsafe_free()
+    y_ref_h.unsafe_free()
+    pool_ref_h.unsafe_free()
+
+
+def test_mamba2_ssd_row_rule() raises:
+    """A prefill row commits its state at its last real token.
+
+    `update_state` false: prefill rows still write, decode rows keep their
+    seed. One batch runs the flag true: a decode row then writes at its row
+    end, as on main. The CPU kernel runs the token path; the cooperative
+    split runs the token path and the staged path (a multi-token row), the
+    Apple kernel one case.
+    """
+    with DeviceContext() as ctx:
+        # CPU kernel, token path.
+        run_mamba2_ssd_row_rule[.bfloat16, 128, 0, 1, False, False, True](
+            8, 16, 2, 6, Index(8, 8, 8), 7, ctx
+        )
+        # CPU kernel, multi-token rows.
+        run_mamba2_ssd_row_rule[.bfloat16, 128, 0, 1, True, False, True](
+            8, 16, 2, 6, Index(10, 9, 8), 7, ctx
+        )
+        comptime if ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu():
+            # Cooperative split, token path.
+            run_mamba2_ssd_row_rule[.bfloat16, 128, 8, 1, False, False, False](
+                8, 16, 2, 6, Index(8, 8, 8), 7, ctx
+            )
+            # Cooperative split, staged path: a multi-token row.
+            run_mamba2_ssd_row_rule[.bfloat16, 128, 8, 1, True, False, False](
+                8, 16, 2, 6, Index(10, 9, 8), 7, ctx
+            )
+            # A 15-token row: the commit point lands on a staged chunk
+            # edge.
+            run_mamba2_ssd_row_rule[.bfloat16, 128, 8, 1, True, False, False](
+                8, 16, 2, 6, Index(15, 8), 7, ctx
+            )
+            # A decode row with the flag true writes at its row end.
+            run_mamba2_ssd_row_rule[.bfloat16, 128, 8, 1, False, False, False](
+                8, 16, 2, 6, Index(8, 9), 7, ctx, update_state=True
+            )
+            # A narrowed width: K is the argument, never a constant.
+            run_mamba2_ssd_row_rule[.bfloat16, 128, 8, 1, True, False, False](
+                8, 16, 2, 6, Index(7, 6), 5, ctx
+            )
+        # Apple kernel, one case.
+        run_mamba2_ssd_row_rule[.bfloat16, 128, 0, 1, True, False, False](
+            8, 16, 2, 6, Index(10, 9, 8), 7, ctx
+        )
+
+
+def test_mamba2_ssd_skip_long_rows() raises:
+    """A skipped prefill row writes zero outputs for its draft rows only.
+
+    Its real tokens keep main's outputs (the chunked launch owns them), its
+    slot keeps its seed, and decode rows match main. The CPU kernel runs
+    the token path; the cooperative split runs the token path and the
+    staged path, the Apple kernel one case.
+    """
+    with DeviceContext() as ctx:
+        # CPU kernel, token path.
+        run_mamba2_ssd_row_rule[.bfloat16, 128, 0, 1, False, True, True](
+            8, 16, 2, 6, Index(8, 8, 8), 7, ctx
+        )
+        # CPU kernel, multi-token rows.
+        run_mamba2_ssd_row_rule[.bfloat16, 128, 0, 1, True, True, True](
+            8, 16, 2, 6, Index(10, 9, 8), 7, ctx
+        )
+        comptime if ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu():
+            # Cooperative split, token path.
+            run_mamba2_ssd_row_rule[.bfloat16, 128, 8, 1, False, True, False](
+                8, 16, 2, 6, Index(8, 8, 8), 7, ctx
+            )
+            # Cooperative split, staged path: a multi-token row.
+            run_mamba2_ssd_row_rule[.bfloat16, 128, 8, 1, True, True, False](
+                8, 16, 2, 6, Index(10, 9, 8), 7, ctx
+            )
+            # A narrowed width: K is the argument, never a constant.
+            run_mamba2_ssd_row_rule[.bfloat16, 128, 8, 1, True, True, False](
+                8, 16, 2, 6, Index(7, 6), 5, ctx
+            )
+        # Apple kernel, one case.
+        run_mamba2_ssd_row_rule[.bfloat16, 128, 0, 1, True, True, False](
+            8, 16, 2, 6, Index(10, 9, 8), 7, ctx
+        )
+
+
 def test_mamba2_ssd_chunked() raises:
     """The chunked prefill scan matches the fp32 reference.
 
@@ -1469,6 +2038,33 @@ def test_mamba2_ssd_chunked_boundaries() raises:
         )
         run_mamba2_ssd[DType.bfloat16, 128, -1, init_state=True](
             4, 64, 2, 3, Index(5, 1300), ctx
+        )
+
+
+def test_mamba2_ssd_chunked_row_rule() raises:
+    """The chunked scan maps a prefill row's real tokens and commits there.
+
+    `update_state` false everywhere, as the verify graph passes it: a
+    prefill row still writes its state at its last real token, and a
+    decode row gets no chunk, so its outputs and slot keep what they
+    started with. The state and the real tokens' outputs are compared
+    against the serial kernel at the chunked tests' tolerance, which
+    covers the bf16 rounding of the chunked score and state GEMMs.
+    """
+    with DeviceContext() as ctx:
+        # the chunked scan runs on NVIDIA SM80+ and MI355
+        comptime if not (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
+            return
+        # A commit that is a multiple of the chunk, one that is not, a
+        # row of len = K + 2, and decode rows beside them.
+        run_mamba2_ssd_row_rule[.bfloat16, 128, 0, 1, True, False, False, True](
+            8, 64, 2, 6, Index(519, 300, 9, 8), 7, ctx
+        )
+        # A narrowed width: K is the argument, never a constant.
+        run_mamba2_ssd_row_rule[.bfloat16, 128, 0, 1, True, False, False, True](
+            8, 64, 2, 5, Index(261, 7, 6), 5, ctx
         )
 
 

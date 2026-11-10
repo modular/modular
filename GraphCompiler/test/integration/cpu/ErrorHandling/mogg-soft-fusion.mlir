@@ -5,6 +5,6 @@
 // CHECK: This is an error
 mo.graph @return_error() -> !mo.tensor<[1], si32> {
   %data = mo.constant <#M.dense_array<1> : tensor<1xsi32>> : !mo.tensor<[1], si32>
-  %0 = mo.custom [symbol = "mo.test.return_error", device = #M.device_ref<"cpu", 0>](%data) : (!mo.tensor<[1], si32>) -> !mo.tensor<[1], si32>
+  %0 = mo.custom [symbol = "test.return_error", device = #M.device_ref<"cpu", 0>](%data) : (!mo.tensor<[1], si32>) -> !mo.tensor<[1], si32>
   mo.output %0 : !mo.tensor<[1], si32>
 }

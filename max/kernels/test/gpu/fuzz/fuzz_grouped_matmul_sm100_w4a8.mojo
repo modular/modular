@@ -381,9 +381,7 @@ def run_one_case(
         expert_scales_dev, row_major(Idx[num_experts])
     ).as_unsafe_any_origin()
 
-    grouped_matmul_block_scaled_sm100_dispatch[
-        transpose_b=transpose_b, target="gpu"
-    ](
+    grouped_matmul_block_scaled_sm100_dispatch[transpose_b=transpose_b,](
         c_tt,
         a_tt,
         b_tt,
@@ -410,7 +408,7 @@ def run_one_case(
         ctx.synchronize()
         for _ in range(rerun - 1):
             grouped_matmul_block_scaled_sm100_dispatch[
-                transpose_b=transpose_b, target="gpu"
+                transpose_b=transpose_b,
             ](
                 c_tt,
                 a_tt,

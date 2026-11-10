@@ -237,7 +237,7 @@ canonical_rank3 = gc_compile.canonical_rank3
 def variant_for(op: _core.Operation) -> Variant:
     """The cache-key variant for *op*: (exclusive, reverse) for cumsum, else ().
 
-    Matches by canonical name (not ``isinstance``) so an ``rmo.MoCumsumOp``
+    Matches by canonical name (not ``isinstance``) so an ``mo.CumsumOp``
     dispatch carries its variant too, not just ``mo.CumsumOp``.
     """
     if (

@@ -214,7 +214,6 @@ def test_dynamic[
         out_dtype,
         scales_dtype,
         rank,
-        target="gpu",
     ](
         input_fn,
         Coord(shape),

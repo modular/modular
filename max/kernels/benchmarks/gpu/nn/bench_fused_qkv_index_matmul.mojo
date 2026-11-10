@@ -128,7 +128,7 @@ comptime IndexCollection = PagedKVCacheCollection[
 
 
 def bench_shape(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     prompt_lens: List[Int],
     regime: String,
@@ -295,7 +295,7 @@ def bench_shape(
     # ============ FUSED: one GEMM over the stacked weight ============
     @inline(.always)
     def fused_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_hs, mut cb_w, mut fused_out, imm,}:
         var hs_tensor = (
             TileTensor(
@@ -313,7 +313,7 @@ def bench_shape(
             .as_imm()
             .as_unsafe_any_origin()
         )
-        generic_fused_qkv_index_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_index_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_full,
@@ -341,7 +341,7 @@ def bench_shape(
     # ============ UNFUSED: main QKV then indexer QKV (2 calls) ============
     @inline(.always)
     def unfused_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_hs, mut cb_w, mut q_out, mut iq_out, imm,}:
         var hs_tensor = (
             TileTensor(
@@ -367,7 +367,7 @@ def bench_shape(
             .as_imm()
             .as_unsafe_any_origin()
         )
-        generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_qkv,
@@ -376,7 +376,7 @@ def bench_shape(
             q_out,
             ctx,
         )
-        generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_idx,

@@ -43,7 +43,7 @@ from typing import Any
 from max.driver import Buffer, Device
 from max.graph import BufferType, SymbolicDim, TensorType
 from max.nn.legacy.graph_groups import GraphGroup
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 
@@ -210,6 +210,17 @@ class RequestStateMixin:
     """
 
     _state_store: RequestStateStore | None = None
+
+    @property
+    def holds_request_state(self) -> bool:
+        """Whether a decoder's state store is bound to this model.
+
+        A bound store hands the graph per-request buffers that the step
+        advances in place, so a caller that must not execute a step twice
+        over the same state -- launch-trace verification -- refuses while
+        this is ``True``.
+        """
+        return self._state_store is not None
 
     def release(self, request_id: RequestID) -> None:
         """Frees the state a finished request held."""

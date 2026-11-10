@@ -32,7 +32,7 @@ MOJO_DEPS = [
     "@mojo//:std",
 ] + INTERNAL_KERNEL_MOJOPKGS
 
-def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS, **kwargs):
+def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS, testonly = False, **kwargs):
     """Generate mef file from a python executable.
 
     The generated file will be {name}.mef.
@@ -43,6 +43,7 @@ def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS
         args: Args added to the python file's execution
         target_compatible_with: Constraints for platform execution
         mojo_deps: Additional mojo dependencies to add to the python file's execution
+        testonly: Marks both generated targets testonly, for a MEF only tests consume
         **kwargs: forwarded to the `py_binary` target
     """
     py_binary_name = name + ".py_binary"
@@ -54,12 +55,14 @@ def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS
         main = src,
         target_compatible_with = target_compatible_with,
         mojo_deps = mojo_deps,
+        testonly = testonly,
         **kwargs
     )
 
     modular_genrule(
         name = name,
         outs = [mef_name],
+        testonly = testonly,
         exec_compatible_with = TARGET_CONSTRAINTS + target_compatible_with,
         target_compatible_with = target_compatible_with + select({
             "//:asan": ["@platforms//:incompatible"],  # TODO: SDLC-4011

@@ -153,13 +153,6 @@ def _bool_tuple_reduce[
 # ===-----------------------------------------------------------------------===#
 
 
-def _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
-    comptime if unsigned:
-        return _uint_type_of_width[bitwidth]()
-    else:
-        return _int_type_of_width[bitwidth]()
-
-
 struct IndexList[size: Int, *, element_type: DType = .int64](
     Comparable,
     Defaultable,

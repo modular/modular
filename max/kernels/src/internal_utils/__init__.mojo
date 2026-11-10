@@ -25,6 +25,7 @@ from ._utils import (
     Timer,
     arg_parse,
     bench_compile_time,
+    coprime_multiplier,
     get_defined_shape,
     human_readable_size,
     init_vector_launch,

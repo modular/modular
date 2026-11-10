@@ -14,6 +14,7 @@
 #define KGEN_COMPILER_PIPELINE_PIPELINE_H
 
 #include "Mojo/Compiler/KGENCompiler.h"
+#include "Mojo/Compiler/Pipeline.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/LLVMForwardDecls.h"
 
@@ -59,19 +60,6 @@ void buildElaborateModulePipeline(mlir::PassManager &pm, TargetInfoAttr target,
 /// defaults for elaboration handlers.
 void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
                                    const CompilationOptions &options);
-
-//===----------------------------------------------------------------------===//
-// PostElaborationPipeline
-//===----------------------------------------------------------------------===//
-
-/// This populates the post-elaboration optimization and simplification passes.
-/// These passes are intended to run immediately after the elaborator.
-void buildPostElaborationPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options);
-void buildFirstOptPipeline(mlir::PassManager &pm,
-                           const CompilationOptions &options);
-void buildLateOptPipeline(mlir::PassManager &pm,
-                          const CompilationOptions &options);
 
 } // namespace KGEN
 } // namespace M

@@ -24,7 +24,7 @@ These are pure functions: the layer holds the checkpoint parameters
 every tensor. The three ``pre_mix`` states are distinct (see
 :class:`_PreMixOmitted` and :func:`mhc_shifted_post_pre`).
 
-Each boundary between two sublayers is main's one-kernel ``mo.mega_mhc``
+Each boundary between two sublayers is main's one-kernel ``hyper_connection.mega_mhc``
 step (:func:`mhc_fused_post_pre`); the composed :func:`mhc_post` and
 :func:`mhc_pre` remain for the trunk's first site, the Engram sites and
 the tap capture. A tensor-parallel caller reduces its sublayer partials
@@ -36,12 +36,17 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferType, Dim, TensorType, TensorValue, ops
-from max.nn.common_layers.functional_kernels import (
-    hyper_connection_gates,
+from max.nn._graph_ops import (
+    _block_scaled_quantize_out_types,
+    _is_sm10x_gpu,
+    mhc_post_supports,
 )
+from max.nn._graph_ops import mhc_post as _mhc_post_kernel
+from max.nn.kernels import hyper_connection_gates
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 
+from .mxfp8_linear import Mxfp8Rows, trace_device_is_gpu
 from .norm import RMSNorm
 
 # Arrival counters one fused step keeps between calls (V2's
@@ -259,8 +264,9 @@ def _mega_post_pre(
     hc_eps: float,
     sinkhorn_iters: int,
     rms_eps: float,
-) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
-    """Runs ``mo.mega_mhc``, as V2's ``fused_hc_step`` does."""
+    mxfp8: bool,
+) -> tuple[TensorValue, ...]:
+    """Run the fused mHC writeback, gates, collapse, and normalization step."""
     device = stream.device
     hc_mult, hidden = int(stream.shape[1]), int(stream.shape[2])
     rows = stream.shape[0]
@@ -268,8 +274,27 @@ def _mega_post_pre(
         BufferType(DType.uint64, [_MEGA_MHC_COUNTERS], device=device),
         init_value=0,
     )
+    out_types = [
+        TensorType(DType.bfloat16, [rows, hc_mult, hidden], device),
+        TensorType(DType.float32, [rows, hc_mult], device),
+        TensorType(DType.float32, [rows, hc_mult], device),
+        TensorType(DType.float32, [rows, hc_mult * hc_mult], device),
+        TensorType(DType.bfloat16, [rows, hidden], device),
+    ]
+    if mxfp8:
+        out_types += _block_scaled_quantize_out_types(
+            rows,
+            Dim(hidden),
+            name="hidden",
+            sf_vector_size=32,
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.float8_e4m3fn,
+            device=device,
+        )
     results = ops.inplace_custom(
-        "mo.mega_mhc",
+        "hyper_connection.mega_mhc.mxfp8"
+        if mxfp8
+        else "hyper_connection.mega_mhc",
         device=device,
         values=[
             ops.cast(sublayer_out, DType.bfloat16),
@@ -283,13 +308,7 @@ def _mega_post_pre(
             ops.cast(norm_weight, DType.bfloat16),
             counters,
         ],
-        out_types=[
-            TensorType(DType.bfloat16, [rows, hc_mult, hidden], device),
-            TensorType(DType.float32, [rows, hc_mult], device),
-            TensorType(DType.float32, [rows, hc_mult], device),
-            TensorType(DType.float32, [rows, hc_mult * hc_mult], device),
-            TensorType(DType.bfloat16, [rows, hidden], device),
-        ],
+        out_types=out_types,
         parameters={
             "hidden": hidden,
             "shifted": True,
@@ -301,17 +320,23 @@ def _mega_post_pre(
             "rms_norm_eps": rms_eps,
         },
     )
-    streams, new_pre, new_post, new_comb, normed = (r.tensor for r in results)
+    streams, new_pre, new_post, new_comb, normed, *quantized = (
+        r.tensor for r in results
+    )
     return (
         streams,
         new_pre,
         new_post,
         ops.reshape(new_comb, [rows, hc_mult, hc_mult]),
         normed,
+        *quantized,
     )
 
 
 _mega_post_pre_op = F.functional(_mega_post_pre)
+# No sharding rule, like the step above: it runs on each rank's own rows
+# (or its replicated copy), and the caller claims the placement.
+_mhc_post_op = F.functional(_mhc_post_kernel)
 
 
 def mhc_fused_post_pre(
@@ -327,44 +352,11 @@ def mhc_fused_post_pre(
     norm_eps: float = 1e-20,
     hc_eps: float = 1e-6,
     sinkhorn_iters: int = 20,
-) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
-    """One mHC boundary in one kernel: finish the previous site, start this one.
-
-    The previous site's output ``y`` (``sublayer_out``) is written back onto
-    the stream with the previous site's ``post`` and ``comb``; this site's
-    ``pre``/``post``/``comb`` gates and the collapse with the carried
-    ``pre_mix`` both read the post-updated stream, and ``norm`` normalizes
-    the collapse. This is :func:`mhc_post`, :func:`mhc_pre` and the
-    sublayer's input norm as V2's ``mo.mega_mhc`` fuses them: the gate
-    projection runs in TF32. The Engram sites and the trunk's first site
-    keep the composed pair, since each must touch the stream between the
-    write-back and the gates.
-
-    Args:
-        stream: The parallel streams *before* the previous site's
-            write-back, bf16 ``[rows, hc_mult, hidden]``; ``hc_mult`` is 4
-            and ``hidden`` a multiple of 1024.
-        sublayer_out: The previous site's output, ``[rows, hidden]``.
-        post_mix: The previous site's ``post``, float32 ``[rows, hc_mult]``.
-        comb_mix: The previous site's ``comb``, float32 ``[rows, hc_mult,
-            hc_mult]`` or its row-major ``[rows, hc_mult * hc_mult]``.
-        pre_mix: The collapse weights carried from the previous site,
-            float32 ``[rows, hc_mult]``.
-        hc_fn: See :func:`mhc_pre`.
-        hc_scale: See :func:`mhc_pre`.
-        hc_base: See :func:`mhc_pre`.
-        norm: This sublayer's input norm.
-        norm_eps: See :func:`mhc_pre`.
-        hc_eps: See :func:`mhc_pre`.
-        sinkhorn_iters: See :func:`mhc_pre`.
-
-    Returns:
-        ``(stream_next, post, comb, pre, normed)``: the post-updated streams,
-        this site's write-back coefficients (``comb`` as ``[rows, hc_mult,
-        hc_mult]``) and collapse weights ``pre``, and the normalized
-        sublayer input ``[rows, hidden]``.
-    """
-    stream_next, pre, post, comb, normed = _mega_post_pre_op(
+    *,
+    mxfp8: bool = False,
+) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Mxfp8Rows | None]:
+    """Fuse the previous writeback with this site's mHC gates and normalization."""
+    stream_next, pre, post, comb, normed, *quantized = _mega_post_pre_op(
         sublayer_out,
         stream,
         post_mix,
@@ -378,6 +370,12 @@ def mhc_fused_post_pre(
         hc_eps,
         sinkhorn_iters,
         norm.eps,
+        mxfp8 and _is_sm10x_gpu(),
+    )
+    rows = (
+        Mxfp8Rows(*(claim_replicated(t, stream) for t in quantized))
+        if quantized
+        else None
     )
     return (
         claim_replicated(stream_next, stream),
@@ -385,6 +383,7 @@ def mhc_fused_post_pre(
         claim_replicated(comb, stream),
         claim_replicated(pre, stream),
         claim_replicated(normed, stream),
+        rows,
     )
 
 
@@ -412,6 +411,16 @@ def mhc_post(
     Returns:
         The mixed stream, ``[rows, hc_mult, hidden]``, in ``stream``'s dtype.
     """
+    # V2's write-back kernel where it takes the shape: the batched matmul
+    # below lowers to the naive kernel, which costs milliseconds at a full
+    # prefill chunk. Both round once, from float32, to ``stream``'s dtype.
+    if trace_device_is_gpu(stream.mesh.devices[0]) and mhc_post_supports(
+        hc_mult, int(stream.shape[2]), stream.dtype
+    ):
+        written = _mhc_post_op(
+            stream, sublayer_out.cast(stream.dtype), post_mix, comb_mix
+        )
+        return claim_replicated(written, stream)
     y = sublayer_out.cast(DType.float32)
     # mixed[r, j, d] = sum_i comb[i, j] * stream[i, d]: contract comb's
     # first (input-stream) axis against the stream axis of `stream`.
@@ -481,21 +490,13 @@ def mhc_final_collapse(stream: Tensor, last_ffn_pre: Tensor) -> Tensor:
     return _collapse(stream, last_ffn_pre).cast(stream.dtype)
 
 
-def mhc_identity_writeback(stream: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-    """A write-back that leaves ``stream`` unchanged: ``(y, post, comb)``.
-
-    ``y = 0``, ``post = 0`` and ``comb = I`` make :func:`mhc_post` return
-    ``stream`` exactly (the sum is ``0 * 0 + 1 * stream`` in float32, then
-    rounded to the bf16 it already was). It starts the trunk and follows
-    Engram, where the stream is already post-updated, so one layer body
-    serves every position.
-
-    Returns:
-        ``y`` bf16 ``[rows, hidden]``, ``post`` float32 ``[rows, hc_mult]``
-        and the row-major ``comb`` float32 ``[rows, hc_mult * hc_mult]``.
-    """
-    rows, hidden = stream.shape[0], stream.shape[2]
-    y = F.zeros([rows, hidden], dtype=DType.bfloat16, device=stream.mapping)
+def mhc_identity_writeback(
+    stream: Tensor, y: Tensor | None = None
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Return identity writeback gates, reusing the supplied ``y`` tensor."""
+    if y is None:
+        rows, hidden = stream.shape[0], stream.shape[2]
+        y = F.zeros([rows, hidden], dtype=DType.bfloat16, device=stream.mapping)
     post, comb = _identity_gates(stream)
     return y, post, comb
 

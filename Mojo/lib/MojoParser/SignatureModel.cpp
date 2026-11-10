@@ -1057,8 +1057,8 @@ void printFunctionSignature(DefASTDecl &decl, llvm::raw_string_ostream &os,
   FnTypeGeneratorType signature = fnOp.getFuncTypeGenerator();
 
   std::optional<ASTType> selfType;
-  if (auto parentStruct = dyn_cast<StructDeclOp>(parentOp))
-    selfType = ASTType(StructASTDecl::computeSelfType(parentStruct));
+  if (auto *parentStruct = dyn_cast<StructASTDecl>(decl.getParentDecl()))
+    selfType = ASTType(parentStruct->computeSelfType());
   else if (auto parentTrait = dyn_cast<TraitDeclOp>(parentOp))
     selfType = ASTType(TraitASTDecl::computeSelfType(parentTrait));
 

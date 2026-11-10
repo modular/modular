@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Numerical E2E test for MLA_SM100_Decode_Sparse_KV_FP8.
+"""Numerical E2E test for sparse MLA decode with BF16 Q over an all-FP8
+cache, which MLA_SM100_Decode_Sparse_QKV_FP8 converts to BF16 in SMEM.
 
-This kernel stores the full 576-byte KV row (nope+rope) as FP8 in HBM,
-loaded via a single INT64/SWIZZLE_NONE gather4 (tile_width=72 INT64 =
-576 B). The parent kernel (`MLA_SM100_Decode_Sparse`) instead keeps rope
-in BF16 (128 bytes) so its rows are 640 bytes.
+The cache stores the full 576-byte KV row (nope+rope) as FP8 in HBM, loaded
+via a single INT64/SWIZZLE_NONE gather4 (tile_width=72 INT64 = 576 B).
 
 Layout tested here per KV row:
     [nope: 512 FP8 bytes] [rope: 64 FP8 bytes]  = 576 bytes total
@@ -50,7 +49,7 @@ from layout import Idx, TileTensor, row_major
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     compute_mla_dispatch_scalars,
@@ -73,7 +72,6 @@ comptime NUM_LAYERS = 1
 comptime KV_NUM_HEADS = 1  # MLA has 1 KV head
 
 # ALL-FP8 KV layout: 512 (FP8 nope) + 64 (FP8 rope) = 576 FP8 bytes.
-# Unlike test_mla_sparse.mojo (640), rope is ALSO FP8 here.
 comptime KV_HEAD_SIZE = V_DEPTH + ROPE_DEPTH  # 576
 
 
@@ -259,8 +257,8 @@ def run_test_sparse_kv_fp8[
     # causal for order 0 (documented limitation).
     order_mode: Int = 0,
     # Phase 5 seq_len=0: make the LAST batch a 0-length (empty) ragged sequence.
-    # Under the fold (grid.y=1, block_idx.y=0) the ragged early-exit fires
-    # (block_idx.y >= seq_len) and _pdl_early_exit_all_q writes -inf LSE for
+    # Under the fold (grid_y=1, seq_idx=0) the ragged early-exit fires
+    # (seq_idx >= seq_len) and _pdl_early_exit_all_q writes -inf LSE for
     # every folded slot. Invariant: the empty batch does NOT hang/poison the
     # combine and the non-empty batches stay correct. The empty batch's own
     # output is undefined (skipped in the NaN scan + assert). Default False.
@@ -727,6 +725,7 @@ def run_test_sparse_kv_fp8[
             sparse=True,
             fold_shared_index=shared_index,
             physical_indices=not logical,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -750,6 +749,7 @@ def run_test_sparse_kv_fp8[
             sparse=True,
             fold_shared_index=shared_index,
             physical_indices=not logical,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -1155,6 +1155,7 @@ def run_test_sparse_kv_fp8_variable_topk[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -1488,6 +1489,7 @@ def run_test_sparse_kv_fp8_attn_sink[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -2029,6 +2031,7 @@ def run_test_sparse_kv_fp8_extra_kv[
         ragged=True,
         sparse=True,
         has_extra_k=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -2403,6 +2406,7 @@ def run_test_sparse_kv_fp8_topk_clamping[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -2654,7 +2658,7 @@ def main() raises:
             # =====================================================
             # Read-once shared-index MTP fold (KERN-3141), shared_index=True.
             # All q positions share ONE identity-ordered topk list; the fold
-            # gathers it ONCE (grid.y=1) and every BM row (q_len*nqh=48) attends
+            # gathers it ONCE (grid_y=1) and every BM row (q_len*nqh=48) attends
             # the single pass. Driven by the fold_shared_index comptime param
             # (no -D). These exercise the fold branches (NullMask + CausalMask);
             # Phase 4 adds the order-correctness matrix (reversed / random /
@@ -2851,7 +2855,7 @@ def main() raises:
             # --- Phase 5 unsupported-ragged FALLBACK (dispatch-negative). ---
             # q_len=1 is BELOW MIN_FOLD_Q=2, so the dispatch fold-selection loop
             # `for n in [2,8]` never matches even with shared_index requested ->
-            # the UNFOLDED baseline runs (grid.y=1 for a single position). This
+            # the UNFOLDED baseline runs (grid_y=1 for a single position). This
             # is exactly the production disjointness (Phase 8: index_share is
             # only True at q_len=1, where the fold cannot be selected). Output
             # matching the per-position reference proves the fold is NOT selected
@@ -3045,9 +3049,8 @@ def main() raises:
             # indices expose only a subset of those positions. The exact
             # mapping from (q_seq, sparse_slot) -> causal validity isn't
             # straightforward to reference on the host without duplicating
-            # kernel internals; the parent test_mla_sparse.mojo also does
-            # not cover causal+multi-seq directly. The seq_len=1 causal
-            # case above exercises the mask wiring end-to-end.
+            # kernel internals. The seq_len=1 causal case above exercises
+            # the mask wiring end-to-end.
 
             # =====================================================
             # Variable per-batch topk (has_variable_topk=True).

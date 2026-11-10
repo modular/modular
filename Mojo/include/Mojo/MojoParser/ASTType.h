@@ -91,6 +91,10 @@ public:
   ArrayRef<TypedAttr> getParamBindings() const;
   TypeSignatureType getSignature() const;
 
+  /// Returns true if the parameter binding at `idx` is unresolved, i.e., the
+  /// param value depends on sibling parameters that are unbound.
+  bool isUnresolvedParam(size_t idx) const;
+
   /// Return this type with any parameter bindings removed.
   ASTType getWithoutParameters(SharedState &shared) const;
 
@@ -348,6 +352,15 @@ public:
   /// field doesn't exist or the value isn't a struct type.
   static TypedAttr extractStructField(TypedAttr value, StringRef fieldName,
                                       llvm::SMLoc loc, SharedState &shared);
+
+  /// Return the index-typed address space a value denotes, either an index
+  /// itself or an `AddressSpace` struct. Returns null without diagnosing if it
+  /// is neither.
+  static TypedAttr extractAddressSpace(TypedAttr value, llvm::SMLoc loc,
+                                       SharedState &shared);
+
+  /// Return an index-typed address space in a human-readable form.
+  static TypedAttr getAddressSpaceForDisplay(TypedAttr addrSpace);
 
   /// Return the !lit.origin parameter if this type is a standard library
   /// `Origin` struct, otherwise return null.

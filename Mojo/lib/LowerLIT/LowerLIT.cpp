@@ -2074,6 +2074,14 @@ static TypedAttr getAlignmentFromType(Type type, LITTypeLowerer &b) {
 
 static Value lowerOp(VarDeclOp op, VarDeclOpAdaptor adaptor,
                      LITTypeLowerer &b) {
+  // TODO: Storage outside the default address space needs a target-specific
+  // allocation rather than a stack slot; reject it until that lowering exists.
+  if (!op.getType().isDefaultAddrSpace()) {
+    op.emitError("variables outside the default address space are not yet "
+                 "supported");
+    return {};
+  }
+
   // Lower a lit.var.decl to pop.stack_allocation.
   // Check if the element type is a struct with explicit alignment.
   TypedAttr alignment = getAlignmentFromType(op.getType().getElementType(), b);

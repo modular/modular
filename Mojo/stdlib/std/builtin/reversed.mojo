@@ -50,12 +50,10 @@ trait ReversibleRange:
     """The iterator type returned by `__reversed__()`."""
 
     def __reversed__(self) -> Self.ReversedType:
-        """Get a reversed iterator for the type.
-
-        **Note**: iterators are currently non-raising.
+        """Returns a reverse iterator for the conforming type.
 
         Returns:
-            The reversed iterator of the type.
+            An iterator over the type's elements in reverse order.
         """
         ...
 
@@ -66,35 +64,43 @@ trait ReversibleRange:
 
 
 def reversed[T: ReversibleRange](value: T) -> T.ReversedType:
-    """Get a reversed iterator of the input range.
+    """Returns an iterator over the elements in reverse order.
 
-    **Note**: iterators are currently non-raising.
+    The iterator comes from the value's `__reversed__()` method, so any type
+    that conforms to `ReversibleRange` works here. Iterators are currently
+    non-raising.
 
     Parameters:
-        T: The type conforming to ReversibleRange.
+        T: The type of the value. Must conform to `ReversibleRange`.
 
     Args:
-        value: The range to get the reversed iterator of.
+        value: The range to iterate in reverse.
 
     Returns:
-        The reversed iterator of the range.
+        The reverse iterator of the range.
     """
     return value.__reversed__()
 
 
 def reversed[T: Copyable](ref value: List[T]) -> type_of(value.__reversed__()):
-    """Get a reversed iterator of the input list.
-
-    **Note**: iterators are currently non-raising.
+    """Returns an iterator over the list's elements in reverse order.
 
     Parameters:
-        T: The type of the elements in the list.
+        T: The element type of the list.
 
     Args:
-        value: The list to get the reversed iterator of.
+        value: The list to iterate in reverse.
 
     Returns:
-        The reversed iterator of the list.
+        An iterator over the list's elements in reverse order.
+
+    For example:
+
+    ```mojo
+    var numbers = [1, 2, 3]
+    for number in reversed(numbers):
+        print(number)  # 3, 2, 1
+    ```
     """
     return value.__reversed__()
 
@@ -102,19 +108,17 @@ def reversed[T: Copyable](ref value: List[T]) -> type_of(value.__reversed__()):
 def reversed[
     T: Copyable, size: Int
 ](ref value: Array[T, size]) -> _ArrayIter[T, size, origin_of(value), False]:
-    """Get a reversed iterator of the input array.
-
-    **Note**: iterators are currently non-raising.
+    """Returns an iterator over the array's elements in reverse order.
 
     Parameters:
-        T: The type of the elements in the array.
-        size: The size of the array.
+        T: The element type of the array.
+        size: The number of elements in the array.
 
     Args:
-        value: The array to get the reversed iterator of.
+        value: The array to iterate in reverse.
 
     Returns:
-        The reversed iterator of the array.
+        An iterator over the array's elements in reverse order.
     """
     return value.__reversed__()
 
@@ -122,18 +126,16 @@ def reversed[
 def reversed[
     T: Copyable & Deinitable
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
-    """Get a reversed iterator of the deque.
-
-    **Note**: iterators are currently non-raising.
+    """Returns an iterator over the deque's elements in reverse order.
 
     Parameters:
-        T: The type of the elements in the deque.
+        T: The element type of the deque.
 
     Args:
-        value: The deque to get the reversed iterator of.
+        value: The deque to iterate in reverse.
 
     Returns:
-        The reversed iterator of the deque.
+        An iterator over the deque's elements in reverse order.
     """
     return value.__reversed__()
 
@@ -143,20 +145,26 @@ def reversed[
     V: Copyable,
     H: Hasher & Defaultable & Deinitable,
 ](ref value: Dict[K, V, H],) -> _DictKeyIter[K, V, H, origin_of(value), False]:
-    """Get a reversed iterator of the input dict.
-
-    **Note**: iterators are currently non-raising.
+    """Returns an iterator over the dict's keys in reverse order.
 
     Parameters:
-        K: The type of the keys in the dict.
-        V: The type of the values in the dict.
-        H: The type of the hasher in the dict.
+        K: The key type of the dict.
+        V: The value type of the dict.
+        H: The hasher type of the dict.
 
     Args:
-        value: The dict to get the reversed iterator of.
+        value: The dict to iterate in reverse.
 
     Returns:
-        The reversed iterator of the dict keys.
+        An iterator over the dict's keys in reverse order.
+
+    For example:
+
+    ```mojo
+    var scores = {"ana": 90, "ben": 85}
+    for name in reversed(scores):
+        print(name)  # ben, ana
+    ```
     """
     return value.__reversed__()
 
@@ -171,22 +179,23 @@ def reversed[
 ](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
     K, V, H, dict_origin, False
 ]:
-    """Get a reversed iterator of the input dict values.
+    """Returns an iterator over the dict values in reverse order.
 
-    **Note**: iterators are currently non-raising.
+    Use it on a `values()` view to walk the values back to front.
 
     Parameters:
         dict_mutability: Whether the reference to the dict values is mutable.
-        K: The type of the keys in the dict.
-        V: The type of the values in the dict.
-        H: The type of the hasher in the dict.
-        dict_origin: The origin of the dict values.
+            Inferred; it can't be set at the call site.
+        K: The key type of the dict.
+        V: The value type of the dict.
+        H: The hasher type of the dict.
+        dict_origin: The origin of the dict values. Inferred.
 
     Args:
-        value: The dict values to get the reversed iterator of.
+        value: The dict values to iterate in reverse.
 
     Returns:
-        The reversed iterator of the dict values.
+        An iterator over the dict values in reverse order.
     """
     return value.__reversed__()
 
@@ -201,22 +210,23 @@ def reversed[
 ](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[
     K, V, H, dict_origin, False
 ]:
-    """Get a reversed iterator of the input dict items.
+    """Returns an iterator over the dict entries in reverse order.
 
-    **Note**: iterators are currently non-raising.
+    Use it on an `items()` view to walk the key-value entries back to front.
 
     Parameters:
         dict_mutability: Whether the reference to the dict items is mutable.
-        K: The type of the keys in the dict.
-        V: The type of the values in the dict.
-        H: The type of the hasher in the dict.
-        dict_origin: The origin of the dict items.
+            Inferred; it can't be set at the call site.
+        K: The key type of the dict.
+        V: The value type of the dict.
+        H: The hasher type of the dict.
+        dict_origin: The origin of the dict items. Inferred.
 
     Args:
-        value: The dict items to get the reversed iterator of.
+        value: The dict items to iterate in reverse.
 
     Returns:
-        The reversed iterator of the dict items.
+        An iterator over the dict items in reverse order.
     """
     var src = value.src
     return _DictEntryIter[K, V, H, dict_origin, False](
@@ -228,18 +238,16 @@ def reversed[
 def reversed[
     T: Copyable
 ](value: Span[T, _]) -> _SpanIter[T, value.origin, forward=False]:
-    """Get a reversed iterator of the input Span.
-
-    **Note**: iterators are currently non-raising.
+    """Returns an iterator over the span's elements in reverse order.
 
     Parameters:
-        T: The type of the elements in the Span.
+        T: The element type of the span.
 
     Args:
-        value: The Span to get the reversed iterator of.
+        value: The span to iterate in reverse.
 
     Returns:
-        The reversed iterator of the Span.
+        An iterator over the span's elements in reverse order.
     """
     return rebind[_SpanIter[T, value.origin, forward=False]](
         value.__reversed__()

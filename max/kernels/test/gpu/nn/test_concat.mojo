@@ -26,7 +26,9 @@ from std.testing import assert_equal, assert_true
 from std.utils import IndexList, StaticTuple
 
 
-def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
+def test_concat_4_inputs_rank5[
+    test_epilogue: Bool
+](ctx: DeviceContext[]) raises:
     print("== test_concat_4_inputs_rank5")
 
     comptime rank = 5
@@ -147,7 +149,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     @inline(.always)
     def run_concat_inner_most_single_dim(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var output_dyn,
         var input_0_dyn,
@@ -223,7 +225,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     @inline(.always)
     def run_concat_gpu(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var output_dyn,
         var input_0_dyn,
@@ -272,7 +274,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     _ = output_device_buffer
 
 
-def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
+def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext[]) raises:
     """Static-divisor fold numerical-equivalence check.
 
     Runs `_concat_inner_most_single_dim` twice on identical inputs: once with a

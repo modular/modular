@@ -110,6 +110,11 @@ class MHAKVCache:
         scratch: Whether the cache is one block per request that is never
             published.
         kvcache_quant_config: How the values are quantized, or ``None``.
+        speculative_method: The speculative-decoding method whose draft
+            forward reads the cache, which then takes a draft dispatch
+            record, or ``None``.
+        num_draft_tokens: The draft width the cache is sized for, ``0``
+            without speculative decoding.
         leaves: The pool leaves the cache occupies.
     """
 
@@ -128,6 +133,8 @@ class MHAKVCache:
     stride_alignment: int | None
     scratch: bool
     kvcache_quant_config: KVCacheQuantization | None
+    speculative_method: str | None
+    num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
 
 
@@ -166,6 +173,10 @@ class MLAKVCache:
         scratch: Whether the cache is one block per request that is never
             published.
         kvcache_quant_config: How the values are quantized, or ``None``.
+        speculative_method: The speculative-decoding method whose draft
+            forward reads the cache, or ``None``.
+        num_draft_tokens: The draft width the cache is sized for, ``0``
+            without speculative decoding.
         leaves: The pool leaves the cache occupies.
     """
 
@@ -184,6 +195,8 @@ class MLAKVCache:
     stride_alignment: int | None
     scratch: bool
     kvcache_quant_config: KVCacheQuantization | None
+    speculative_method: str | None
+    num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
 
 
@@ -306,6 +319,8 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
         "kvcache_quant_config": _serialize_quantization(
             cache.kvcache_quant_config
         ),
+        "speculative_method": cache.speculative_method,
+        "num_draft_tokens": cache.num_draft_tokens,
     }
     if isinstance(cache, MLAKVCache):
         return (
@@ -408,6 +423,8 @@ def _mha(value: dict[str, ArtifactType], cls: type[MHAKVCache]) -> MHAKVCache:
         kvcache_quant_config=decode_optional(_quantization)(
             obj["kvcache_quant_config"]
         ),
+        speculative_method=decode_optional(_str)(obj["speculative_method"]),
+        num_draft_tokens=_int(obj["num_draft_tokens"]),
         leaves=_tuple(_leaf)(obj["leaves"]),
     )
 
@@ -431,6 +448,8 @@ def _mla(value: dict[str, ArtifactType]) -> MLAKVCache:
         kvcache_quant_config=decode_optional(_quantization)(
             obj["kvcache_quant_config"]
         ),
+        speculative_method=decode_optional(_str)(obj["speculative_method"]),
+        num_draft_tokens=_int(obj["num_draft_tokens"]),
         leaves=_tuple(_leaf)(obj["leaves"]),
     )
 

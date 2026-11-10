@@ -49,6 +49,14 @@ struct MockOffloadTraits final : TargetTraits {
   bool matches(const llvm::Triple &triple) const override {
     return triple.str().starts_with(kMockTriplePrefix);
   }
+  bool implementsDialect(llvm::StringRef dialectNamespace) const override {
+    return dialectNamespace == "kgenmockdialect";
+  }
+  bool inlineOpToGeneric(llvm::StringRef wrapped, std::string &out,
+                         std::string &error) const override {
+    out = wrapped.str();
+    return true;
+  }
   bool forcesExportedSymbols() const override { return true; }
   bool emitsOffloadObjectFile() const override { return false; }
   llvm::StringRef getAsmExtension() const override { return ".mock.mlir"; }
@@ -101,6 +109,27 @@ struct RegisterMocks {
   }
 };
 RegisterMocks registerMocks;
+
+// The compiler routes an op in a dialect no in-tree target owns through
+// `traitsForDialect` and accepts it through `isKnownDialect`; a target that
+// implements the dialect hooks is what makes both true.
+TEST(TargetBackendTest, PluginDialectHooks) {
+  TargetTraitsRegistry &registry = TargetTraitsRegistry::get();
+  const TargetTraits *traits = registry.traitsForDialect("kgenmockdialect");
+  ASSERT_NE(traits, nullptr);
+  EXPECT_EQ(traits->name(), "kgenmock");
+  EXPECT_EQ(registry.traitsForDialect("notadialect"), nullptr);
+
+  MLIRContext ctx;
+  EXPECT_TRUE(registry.isKnownDialect(&ctx, "kgenmockdialect"));
+  EXPECT_FALSE(registry.isKnownDialect(&ctx, "notadialect"));
+
+  std::string out;
+  std::string error;
+  ASSERT_TRUE(traits->inlineOpToGeneric("wrapped", out, error));
+  EXPECT_EQ(out, "wrapped");
+  EXPECT_TRUE(error.empty());
+}
 
 TEST(TargetBackendTest, TraitsRegistryDispatch) {
   llvm::Triple mockTriple("kgenmock-none-unknown");

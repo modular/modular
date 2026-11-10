@@ -52,16 +52,18 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy import graph_groups
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.graph_groups import RaggedBatch
-from max.nn.legacy.kv_cache import MHAKVCacheParams, max_pages_per_request
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MHAKVCacheParams, max_pages_per_request
+from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     MultiKVCacheParams,
     RecurrentStateParams,
+    RecurrentStateRegion,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy import graph_groups
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.graph_groups import RaggedBatch
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV4.deepseekV4 import DeepseekV4
@@ -72,6 +74,11 @@ from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
 from max.pipelines.architectures.gemma4.vision_model.vision_model import (
     Gemma4VisionModel,
 )
+from max.pipelines.architectures.inkling.inkling import Inkling
+from max.pipelines.architectures.inkling.layers.vision import InklingVisionModel
+from max.pipelines.architectures.inkling.state_cache import (
+    InklingConvStateLayout,
+)
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
 )
@@ -80,6 +87,11 @@ from max.pipelines.architectures.llama3.distributed_llama import (
 )
 from max.pipelines.architectures.llama3.llama3 import Llama3
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
+from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
+    CONV_LEAF_ID,
+    SSM_LEAF_ID,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.nemotron_h import NemotronH
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     VisionTransformer as Qwen2_5VLVisionTransformer,
 )
@@ -105,6 +117,7 @@ from max.pipelines.lib.interfaces import (
     PipelineModel,
     modulev3_ragged_kv_symbolic_input_tree,
 )
+from max.pipelines.lib.module_registration import decoder_input_types
 from max.pipelines.lib.registration_graph_api import (
     graph_api_decoder_input_types,
 )
@@ -196,7 +209,7 @@ def _qwen3_5_kv_params(devices: list[DeviceRef]) -> MultiKVCacheParams:
     )
 
 
-def _ep_config(*, eplb: bool = False) -> EPConfig:
+def _ep_config(*, eplb: bool = False, count: bool = False) -> EPConfig:
     return EPConfig(
         dispatch_dtype=DType.bfloat16,
         combine_dtype=DType.bfloat16,
@@ -207,6 +220,7 @@ def _ep_config(*, eplb: bool = False) -> EPConfig:
         n_gpus_per_node=2,
         n_nodes=1,
         eplb_enabled=eplb,
+        eplb_count_expert_load=count,
         num_moe_layers=3,
         max_replicas=2,
     )
@@ -222,6 +236,45 @@ def _llama3(
         Llama3.input_tree(model, kv_params, needs_hidden_state_input=hidden),
         Llama3.input_types(model, kv_params, needs_hidden_state_input=hidden),
     )
+
+
+def _registered_decoder() -> tuple[_InputTree, _InputTypes]:
+    """A decoder registered by role, whose graph takes its fields by name."""
+    types = decoder_input_types(_kv_params(_gpus(1)), DeviceRef.GPU(0))
+    return types, tuple(tree.leaves(types))
+
+
+def _nemotron_h(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
+    """Nemotron-H registered by role: attention beside the Mamba state.
+
+    Its tokens and row offsets sit on the first device, and the graph keeps
+    the input order its pre-registration MEFs take.
+    """
+    n = len(devices)
+    state = RecurrentStateParams(
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=CONV_LEAF_ID,
+                num_layers=2,
+                row_shape=(64 // n, 3),
+                dtype=DType.bfloat16,
+            ),
+            RecurrentStateRegion(
+                leaf_id=SSM_LEAF_ID,
+                num_layers=2,
+                row_shape=(4 // n, 16, 16),
+                dtype=DType.float32,
+            ),
+        ),
+        devices=devices,
+    )
+    kv_params = MultiKVCacheParams.from_params(
+        {ATTN_CACHE_KEY: _kv_params(devices), STATE_CACHE_KEY: state}
+    )
+    types = decoder_input_types(
+        kv_params, devices[0], input_layout=NemotronH.input_layout
+    )
+    return types, tuple(tree.leaves(types))
 
 
 def _distributed_llama3() -> tuple[_InputTree, _InputTypes]:
@@ -271,13 +324,18 @@ def _gemma4(*, two_caches: bool = False) -> tuple[_InputTree, _InputTypes]:
 
 
 def _deepseek(
-    cls: Any, *, ep: bool, eplb: bool = False, profile: bool = False
+    cls: Any,
+    *,
+    ep: bool,
+    eplb: bool = False,
+    profile: bool = False,
+    count: bool = False,
 ) -> tuple[_InputTree, _InputTypes]:
     devices = _gpus(2)
     config = _fake(
         devices=devices,
         data_parallel_degree=2,
-        ep_config=_ep_config(eplb=eplb) if ep else None,
+        ep_config=_ep_config(eplb=eplb, count=count) if ep else None,
         # V3.2 builds no profiling counters, so only V3 reads these.
         eplb_profile_enabled=profile,
         num_hidden_layers=3,
@@ -326,7 +384,38 @@ def _deepseekV4(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
     return _text_model(DeepseekV4, config=config)
 
 
+def _inkling(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
+    """Inkling's global/sliding caches and all eight convolution-state leaves."""
+    channels = 16 // len(devices)
+    state = RecurrentStateParams(
+        regions=InklingConvStateLayout(
+            ring_len=3,
+            layers=((channels, channels, _HIDDEN, _HIDDEN),) * 2,
+            is_local=(False, True),
+        ).regions(),
+        devices=devices,
+    )
+    kv_params = MultiKVCacheParams.from_params(
+        {
+            "full_attention": _kv_params(devices),
+            "sliding_attention": _kv_params(devices),
+            "conv_state": state,
+        }
+    )
+    model = _model(
+        Inkling,
+        devices=devices,
+        num_devices=len(devices),
+        dtype=DType.bfloat16,
+        text_config=_fake(hidden_size=_HIDDEN),
+        kv_params=kv_params,
+    )
+    return Inkling.input_tree(model), Inkling.input_types(model)
+
+
 _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
+    "inkling_single_device": lambda: _inkling(_gpus(1)),
+    "inkling_multi_device": lambda: _inkling(_gpus(2)),
     "llama3_single_device": lambda: _llama3(_gpus(1)),
     "llama3_eagle_draft": lambda: _llama3(_gpus(1), hidden=True),
     "llama3_multi_device": _distributed_llama3,
@@ -339,6 +428,9 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "deepseekV3": lambda: _deepseek(DeepseekV3, ep=False),
     "deepseekV3_ep": lambda: _deepseek(DeepseekV3, ep=True),
     "deepseekV3_ep_eplb": lambda: _deepseek(DeepseekV3, ep=True, eplb=True),
+    "deepseekV3_ep_expert_load": lambda: _deepseek(
+        DeepseekV3, ep=True, count=True
+    ),
     "deepseekV3_eplb_profile": lambda: _deepseek(
         DeepseekV3, ep=True, profile=True
     ),
@@ -352,6 +444,9 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "mimo_v2": lambda: _per_device_offsets(MiMoV2, two_caches=True),
     "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
     "deepseekV4_multi_device": lambda: _deepseekV4(_gpus(2)),
+    "registered_decoder": _registered_decoder,
+    "nemotron_h_single_device": lambda: _nemotron_h(_gpus(1)),
+    "nemotron_h_multi_device": lambda: _nemotron_h(_gpus(2)),
 }
 
 
@@ -370,7 +465,18 @@ def _qwen_vl_vision(cls: Any, patch_dim: int) -> _InputTree:
     )
 
 
+def _inkling_vision() -> _InputTree:
+    model = _bare(
+        InklingVisionModel,
+        config=_fake(patch_size=40, n_channels=3),
+        dtype=DType.bfloat16,
+        device=DeviceRef.GPU(0),
+    )
+    return InklingVisionModel.input_tree(model)
+
+
 _VISION_CASES: dict[str, Callable[[], _InputTree]] = {
+    "inkling": _inkling_vision,
     "gemma4": _gemma4_vision,
     "qwen3_5": lambda: _qwen_vl_vision(Qwen3_5VisionTransformer, 1536),
     "qwen2_5vl": lambda: _qwen_vl_vision(Qwen2_5VLVisionTransformer, 1176),
@@ -670,6 +776,17 @@ def test_ep_fetch_buffers_reads_the_input_tree_in_order() -> None:
     }
 
 
+def test_ep_fetch_buffers_reads_the_expert_load_tally_per_device() -> None:
+    manager = EPBatchManager(_ep_config(eplb=True, count=True))
+    paths = _leaf_paths(manager.input_tree())
+    assert paths[-2:] == ["eplb_expert_load.0", "eplb_expert_load.1"]
+    manager.fetch_buffers([_fake(buffer=p, tensor=p) for p in paths])
+    assert manager._eplb_expert_load_per_device == {
+        0: "eplb_expert_load.0",
+        1: "eplb_expert_load.1",
+    }
+
+
 def test_modulev3_input_tree_orders_return_n_logits_before_offsets() -> None:
     """ModuleV3 ``forward`` takes ``(tokens, return_n_logits, row_offsets, *kv)``.
 
@@ -696,6 +813,7 @@ def test_modulev3_input_tree_orders_return_n_logits_before_offsets() -> None:
             "max_cache_length",
             "page_stride",
             "attention_dispatch_metadata",
+            "mixed_step_split",
         )
     ]
     batch = inputs["batch"]

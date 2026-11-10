@@ -37,8 +37,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.functional import collective_ops
 from max.graph import DeviceRef, TensorValue
-from max.nn.legacy import kernels
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn import _graph_ops as kernels
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )
@@ -49,6 +49,8 @@ from max.pipelines.architectures.nemotron_h_modulev3.layers.mamba2 import (
 from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
     NemotronHMLP,
     NemotronHMoE,
+    NemotronHRouter,
+    _NVFP4Projection,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
     NVFP4Linear,
@@ -73,8 +75,9 @@ from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     plan_jenga_geometry,
 )
-from max.pipelines.lib.interfaces.batch_processor import (
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.realization_context import ensure_context
@@ -89,6 +92,17 @@ MIB = 1024**2
 
 
 Scheme = Callable[[NemotronHConfig], NemotronHQuantScheme]
+
+
+def _trace(model: NemotronH, config: NemotronHConfig) -> None:
+    """Traces ``model`` as serving registers it, on its named inputs."""
+    _DecoderGraph(model).trace(
+        decoder_input_types(
+            config.kv_params,
+            config.devices[0],
+            input_layout=NemotronH.input_layout,
+        )
+    )
 
 
 def _model(config: NemotronHConfig) -> NemotronH:
@@ -170,11 +184,7 @@ def test_each_mamba_layer_reads_its_own_state_row(
         return original(value, dtype, *args, **kwargs)
 
     monkeypatch.setattr(F, "constant", record)
-    model.trace(
-        *modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params, device_refs=config.devices
-        )
-    )
+    _trace(model, config)
 
     # One index per Mamba layer, in order.
     assert layers == [0, 1, 2]
@@ -255,11 +265,7 @@ def _trace_on_devices(
         auto_reshard(mode="raise"),
     ):
         warnings.simplefilter("always")
-        model.trace(
-            *modulev3_ragged_kv_symbolic_inputs(
-                kv_params=config.kv_params, device_refs=config.devices
-            )
-        )
+        _trace(model, config)
     peer_copies = [
         str(m.message) for m in moves if "cross_mesh_transfer" in str(m.message)
     ]
@@ -382,27 +388,32 @@ def test_moe_splits_each_experts_channels(w4a4: bool) -> None:
     with _built_on_devices(config) as model:
         moe = model.backbone.layers[1].mixer
         assert isinstance(moe, NemotronHMoE)
-        # Four experts of 32 channels, as stored.
-        stored = [moe.up_weight, moe.down_weight]
+        # Four experts of 32 channels, each stored on its own.
+        expert = moe.experts[0]
+        stored = [expert.up_proj.weight, expert.down_proj.weight]
         if w4a4:
+            up_proj, down_proj = expert.up_proj, expert.down_proj
+            assert isinstance(up_proj, _NVFP4Projection)
+            assert isinstance(down_proj, _NVFP4Projection)
             stored += [
-                moe.up_block_scale,
-                moe.down_block_scale,
-                moe.up_scale,
-                moe.down_scale,
+                up_proj.weight_scale,
+                down_proj.weight_scale,
+                up_proj.weight_scale_2,
+                down_proj.weight_scale_2,
             ]
             assert _shapes(stored) == [
-                (4, 32, 32),
-                (4, 64, 16),
-                (4, 32, 4),
-                (4, 64, 2),
-                (4,),
-                (4,),
+                (32, 32),
+                (64, 16),
+                (32, 4),
+                (64, 2),
+                (),
+                (),
             ]
         else:
-            assert _shapes(stored) == [(4, 32, 64), (4, 64, 32)]
-        for param in stored:
-            assert param.mesh.num_devices == 1
+            assert _shapes(stored) == [(32, 64), (64, 32)]
+        for routed in moe.experts:
+            for _, param in routed.parameters:
+                assert param.mesh.num_devices == 1
         # Sixteen channels per device, padded to 64.
         for up_d, down_d in zip(
             *(moe.device_params(proj, _mesh(2)) for proj in ("up", "down")),
@@ -423,14 +434,17 @@ def test_moe_splits_each_experts_channels(w4a4: bool) -> None:
 
 
 @pytest.mark.parametrize("bf16_gate", [False, True])
-def test_router_gate_is_built_in_the_dtype_it_loads(bf16_gate: bool) -> None:
-    """The router's gate weight has the dtype that ``_prepare_state_dict``
-    casts the checkpoint's gate to."""
+def test_router_gate_loads_as_stored_and_routes_in_its_own_dtype(
+    bf16_gate: bool,
+) -> None:
+    """The router's gate weight has the dtype the checkpoint stores it in,
+    and the graph casts it to the router's own dtype."""
     config = model_config(TINY_LAYERS, TINY)
     config.bf16_router_gate = bf16_gate
     moe = _model(config).backbone.layers[1].mixer
     assert isinstance(moe, NemotronHMoE)
-    assert moe.gate.weight.dtype == config.router_gate_dtype
+    assert moe.gate.weight.dtype == config.router_gate_stored_dtype
+    assert moe.gate.gate_dtype == config.router_gate_dtype
     assert config.router_gate_dtype == (
         DType.bfloat16 if bf16_gate else DType.float32
     )
@@ -615,10 +629,13 @@ def test_nvfp4_shared_expert_runs_as_routed_experts(n: int) -> None:
                 assert (
                     weights[f"{shared}.{proj}.{suffix}"].mesh.num_devices == 1
                 )
+        # Each routed expert's tensors, as the checkpoint stores them.
+        for e in range(config.num_experts):
+            for proj in ("up_proj", "down_proj"):
+                for suffix in ("weight", "weight_scale", "weight_scale_2"):
+                    param = weights[f"{mixer}.experts.{e}.{proj}.{suffix}"]
+                    assert param.mesh.num_devices == 1
         for proj in ("up", "down"):
-            for suffix in ("weight", "block_scale", "scale"):
-                param = weights[f"{mixer}.{proj}_{suffix}"]
-                assert int(param.shape[0]) == config.num_experts
             stacked = config.num_experts + 2
             for params in moe.device_params(proj, _mesh(n)):
                 assert [s[0] for s in _shapes(params)] == [stacked] * 3
@@ -644,7 +661,7 @@ def test_loading_is_strict() -> None:
     weights = dict(model.parameters)
     names = set(weights)
 
-    missing = "backbone.layers.1.mixer.down_weight"
+    missing = "backbone.layers.1.mixer.experts.0.down_proj.weight"
     del weights[missing]
     with pytest.raises(KeyError, match=missing):
         model.compile(weights=weights)
@@ -758,7 +775,7 @@ def _bytes_on_devices(config: NemotronHConfig) -> int:
                 sources = [
                     param
                     for name, param in module.parameters
-                    if name.startswith(("up_", "down_"))
+                    if name.startswith("experts.")
                     or (name.startswith("shared_experts.") and not runs_alone)
                 ]
             elif isinstance(module, RowGroupedLinear):
@@ -778,6 +795,16 @@ def _bytes_on_devices(config: NemotronHConfig) -> int:
                     qkv.k_proj.weight,
                     qkv.v_proj.weight,
                 ]
+            elif isinstance(module, NemotronHRouter):
+                # Each device keeps the gate the graph casts at init, so a
+                # widening cast adds the difference beside the stored gate.
+                gate = module.weight
+                widened = (
+                    module.gate_dtype.size_in_bytes - gate.dtype.size_in_bytes
+                )
+                total += (
+                    math.prod(int(d) for d in gate.shape) * max(widened, 0) * n
+                )
             replaced.update(id(param) for param in sources)
         for _, param in model.parameters:
             if id(param) in replaced:
@@ -824,7 +851,7 @@ def test_weights_are_planned_as_the_modules_place_them(
     """Sharded weights are counted once, replicated ones per device, and a
     repeated KV head once per device that holds it. Weights the graph
     prepares are counted as each device holds them, padding included, and
-    the router gates in their dtype."""
+    the router gates in the wider of their stored and routing dtypes."""
     pipeline = Mock()
     pipeline.model.weights_size.return_value = 1000
     one_config = model_config(TINY_LAYERS, dims)

@@ -691,7 +691,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
         GeneratorType::get(info.decl.getSignature().getParamTypes(), fnType,
                            info.decl.getSignature().getParamListAttrs());
     auto sym = FuncSymbolGenerator::dynCast(dtorAttr).getSymbol();
-    return SpecialMemberInfo::available(FuncSymbolGenerator::get(sym, newType));
+    return SpecialMemberInfo::available(
+        FuncSymbolGenerator::getUnbound(sym, newType));
   };
 
   return getSpecialMemberForType(type, this, getDestructor, loc);
@@ -1711,7 +1712,7 @@ public:
     // If we're going to explode, produce some debris to help debug.
     if (!(it != interiorOriginID.end() && it->second < nextInteriorOriginID)) {
       llvm::errs() << "\n-----\n";
-      o.dump();
+      llvm::errs() << o << "\n";
       llvm::errs() << "\n-----\n";
       dump();
       llvm::errs() << "\n-----\n";
@@ -2751,7 +2752,7 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
 
 /// This function is called when an operation uses a #lit.any.origin origin.
 /// This happens when the operation accesses through (e.g.) an unbound
-/// UnsafePointer.  We don't know what objects may be touched by this access,
+/// Pointer.  We don't know what objects may be touched by this access,
 /// but we want to ensure (for usability sake) that any origin-tracked values
 /// are treated as a use, so they don't get destroyed too early.
 ///

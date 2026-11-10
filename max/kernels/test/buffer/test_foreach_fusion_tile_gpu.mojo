@@ -30,7 +30,7 @@ from extensibility import (
 
 from layout import ComptimeInt, Coord, RowMajorLayout, TileTensor, row_major
 from layout.tile_io import TileCopier
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 
 from std.memory import unsafe_stack_allocation as raw_stack_allocation
 
@@ -90,13 +90,11 @@ struct AddFusionTile(ElementwiseFusionTile):
         )
         copier.copy(rhs, b_tile.address_space_cast[Copier.src_address_space]())
 
-        # `Add.elementwise` operates on GENERIC / `MutAnyOrigin` tiles; `dst` is
+        # `Add.elementwise` operates on GENERIC-address-space tiles; `dst` is
         # already one, so only `rhs` needs a generic view. Add writes into `dst`
         # in place and returns it.
         var rhs_g = TileTensor(
-            rhs._storage.unsafe_address_space_cast[
-                .GENERIC
-            ]().unsafe_origin_cast[MutAnyOrigin](),
+            rhs._storage.unsafe_address_space_cast[.GENERIC](),
             dst.layout,
         )
         return Add.elementwise[dtype, LayoutType](dst, rhs_g)
@@ -132,9 +130,7 @@ def test_foreach_fusion_tile_add(ctx: DeviceContext) raises:
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](out_dev.unsafe_ptr(), (M, N))
 
-    foreach_fusion_tile[target="gpu", tile_shape=(Int(TM), Int(TN))](
-        out_mts, elem, ctx
-    )
+    foreach_fusion_tile[tile_shape=(Int(TM), Int(TN))](out_mts, elem, ctx)
 
     var out_host = ctx.enqueue_create_host_buffer[.float32](NUM)
     ctx.enqueue_copy(out_host, out_dev)

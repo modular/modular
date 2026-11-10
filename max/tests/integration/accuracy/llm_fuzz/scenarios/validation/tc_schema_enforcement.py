@@ -4502,6 +4502,9 @@ class TCSchemaEnforcement(BaseScenario):
             },
         },
         "required": ["prop3"],
+        # `_validate_shared_defs_args` refuses undeclared top-level keys, so
+        # the schema says so: without it an extra key is valid JSON Schema.
+        "additionalProperties": False,
         "title": "tool_name",
     }
 

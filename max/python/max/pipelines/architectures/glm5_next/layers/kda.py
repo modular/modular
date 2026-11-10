@@ -25,7 +25,7 @@ from typing import NamedTuple
 
 from max import tree
 from max.graph import BufferValue, TensorValue
-from max.nn.legacy.kv_cache import RecurrentStateInputsPerDevice
+from max.nn.kv_cache import RecurrentStateInputsPerDevice
 
 from ..state_cache import (
     CONV_LEAF_ID,
@@ -125,9 +125,10 @@ class KdaReplayInputs(NamedTuple):
     """``[total_tokens, num_heads]`` input-gate logits, pre-sigmoid."""
 
     qkv_window: TensorValue | None = None
-    """``[batch_size * (1 + K), conv_dim]`` copy of ``qkv`` that a verify's
-    conv kernel writes when there are drafts, or ``None`` outside a verify.
-    The conv replay reads this instead of ``qkv``."""
+    """``[batch_size * (K + 1), conv_dim]`` copy of each row the verify
+    window holds, one slot per row, that a verify's conv kernel writes when
+    there are drafts, or ``None`` outside a verify. The conv replay reads
+    this instead of ``qkv``."""
 
 
 def kda_sublayer_inputs(

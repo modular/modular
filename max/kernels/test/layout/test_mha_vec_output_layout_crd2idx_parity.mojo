@@ -17,33 +17,34 @@ online-softmax helpers (`_rowmax_online_softmax` / `_rowsum` in
 `nn/softmax.mojo`) and their SM90 caller (`sm90/mha.mojo`
 `vectorize_p_reg_tile` / `vectorize_o_reg_tile`). Those helpers index a per-warp
 MMA register fragment as `score_reg_tile[col_tile, row_tile]`, where the
-fragment's view layout is the *nested, non-row-major* `p_vec_output_layout` /
-`o_vec_output_layout` constructed in the kernel (see `_mha_sm90` in
-`nn/attention/gpu/nvidia/sm90/mha.mojo`).
+fragment's view layout is the *nested, non-row-major* `_PVecTTLayout` /
+`_OVecTTLayout` built in `_mha_sm90` in
+`nn/attention/gpu/nvidia/sm90/mha.mojo`.
 
-The mechanical converter `LTToTTLayout` (`layout/tile_tensor.mojo`) is LOSSY
+The mechanical legacy-layout converter was LOSSY
 for these layouts: it `product_each`-collapses both shape AND stride,
-destroying the nested non-contiguous stride structure. So the migration must
-HAND-BUILD an equivalent nested TileTensor `Layout`. This test proves the
-hand-built nested TileTensor layout reproduces the legacy `Layout` crd2idx
-EXACTLY for every `[col_tile, row_tile]` coordinate the helpers visit (the
-rank-2 "rank-matching" coord form against a 2-mode nested layout), at the
-default shape (num_m_mmas = num_n_mmas = 1) and at larger 2x2 shapes.
+destroying the nested non-contiguous stride structure. So the layout must be
+HAND-BUILT. This test proves the hand-built nested TileTensor layout
+reproduces the fragment geometry EXACTLY for every `[col_tile, row_tile]`
+coordinate the helpers visit (the rank-2 "rank-matching" coord form against a
+2-mode nested layout), at the default shape (num_m_mmas = num_n_mmas = 1) and
+at larger 2x2 shapes.
 
 The geometry is inlined (rather than importing the kernel) so the test stays
 in the `//max:layout` package and does not pull a `//max:nn` dep into the
-layout test target. The construction formula is the source of truth at
-`sm90/mha.mojo` (`_mha_sm90` vec-output layout block). If those formulas
-change, update the `_legacy_*` / `_tt_*` builders below in lockstep.
+layout test target. The reference offset is the closed form of the nested
+shape/stride pair documented at `sm90/mha.mojo` (`_mha_sm90` fragment layout
+block). If that geometry changes, update `_fragment_offset` and the `_tt_*`
+builder below in lockstep.
 
-If this test ever FAILS, the hand-build recipe diverges from the production
-fragment layout and the migration is NOT safe as written — stop and re-derive
-the nested Coord shape/stride before touching any helper.
+If this test ever FAILS, the hand-built layout diverges from the production
+fragment geometry and the softmax helpers are NOT safe as written — stop and
+re-derive the nested Coord shape/stride before touching any helper.
 """
 
-from layout import ComptimeInt, Idx, IntTuple, Layout as LegacyLayout
+from layout import ComptimeInt, Idx
 from layout.coord import Coord
-from layout.tile_layout import Layout as TTLayout
+from layout.layout import Layout as TTLayout
 from std.testing import assert_equal, TestSuite
 
 
@@ -52,59 +53,65 @@ def main() raises:
 
 
 # ===----------------------------------------------------------------------=== #
-# Legacy `p_vec_output_layout` / `o_vec_output_layout` builder.
+# Closed-form fragment geometry.
 #
-# Mirror EXACTLY the `comptime p_vec_output_layout` / `o_vec_output_layout`
-# construction in `nn/attention/gpu/nvidia/sm90/mha.mojo`:
+# The kernel builds the fragment as the nested shape/stride pair
 #
-#   vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
-#   <p|o>_vec_output_layout = Layout(
-#       IntTuple(
-#           vec_output_row_shape,
-#           IntTuple(frag_size // (num_row_blocks_per_mma * frag_simdwidth),
-#                    num_n_mmas),
-#       ),
-#       IntTuple(
-#           IntTuple(frag_simdwidth, frag_size),
-#           IntTuple(num_row_blocks_per_mma * frag_simdwidth,
-#                    num_m_mmas * frag_size),
-#       ),
-#   )
+#   shape  = ((num_row_blocks_per_mma, num_m_mmas),
+#             (frag_size // (num_row_blocks_per_mma * frag_simdwidth),
+#              num_n_mmas))
+#   stride = ((frag_simdwidth, frag_size),
+#             (num_row_blocks_per_mma * frag_simdwidth,
+#              num_m_mmas * frag_size))
+#
+# A scalar coordinate splits across a mode's sub-modes with the first
+# sub-mode fastest, so `[col_tile, row_tile]` maps to
+#
+#   (col_tile % R) * frag_simdwidth + (col_tile // R) * frag_size
+# + (row_tile % C) * (R * frag_simdwidth) + (row_tile // C) * (M * frag_size)
+#
+# where R = num_row_blocks_per_mma, M = num_m_mmas and
+# C = frag_size // (R * frag_simdwidth).
 # ===----------------------------------------------------------------------=== #
 
 
-def _legacy_vec_output_layout[
+def _fragment_offset[
     num_row_blocks_per_mma: Int,
     num_m_mmas: Int,
-    num_n_mmas: Int,
     frag_simdwidth: Int,
     frag_size: Int,
-]() -> LegacyLayout:
-    comptime vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
-    return LegacyLayout(
-        IntTuple(
-            vec_output_row_shape,
-            IntTuple(
-                frag_size // (num_row_blocks_per_mma * frag_simdwidth),
-                num_n_mmas,
-            ),
-        ),
-        IntTuple(
-            IntTuple(frag_simdwidth, frag_size),
-            IntTuple(
-                num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * frag_size,
-            ),
-        ),
+    frag_cols: Int,
+](col_tile: Int, row_tile: Int) -> Int:
+    """Returns the reference linear offset of `[col_tile, row_tile]`.
+
+    Parameters:
+        num_row_blocks_per_mma: Row blocks per MMA fragment.
+        num_m_mmas: MMA tiles along M.
+        frag_simdwidth: Elements per fragment vector.
+        frag_size: Elements per MMA fragment.
+        frag_cols: Columns per fragment mode.
+
+    Args:
+        col_tile: Row-block coordinate within the fragment.
+        row_tile: Fragment-column coordinate within the fragment.
+
+    Returns:
+        The linear offset the nested fragment geometry maps the coordinate to.
+    """
+    return (
+        (col_tile % num_row_blocks_per_mma) * frag_simdwidth
+        + (col_tile // num_row_blocks_per_mma) * frag_size
+        + (row_tile % frag_cols) * (num_row_blocks_per_mma * frag_simdwidth)
+        + (row_tile // frag_cols) * (num_m_mmas * frag_size)
     )
 
 
 # ===----------------------------------------------------------------------=== #
 # Hand-built nested TileTensor `Layout`. THIS IS THE MIGRATION BUILDING BLOCK.
-# Shape and stride mirror the legacy IntTuple structure leaf for leaf as
-# nested `Coord(Coord(...), Coord(...))` element-type lists. The strides are
-# explicit (NOT row_major_nested / col_major_nested, which would impose a
-# contiguous convention the production layout does not use).
+# Shape and stride mirror the fragment geometry above leaf for leaf as nested
+# `Coord(Coord(...), Coord(...))` element-type lists. The strides are explicit
+# (NOT row_major_nested / col_major_nested, which would impose a contiguous
+# convention the production layout does not use).
 #
 # `frag_cols` (= frag_size // (num_row_blocks_per_mma * frag_simdwidth)) is a
 # separate explicit parameter: a parameterized comptime alias whose type
@@ -165,7 +172,7 @@ def _tt_vec_output_layout[
 
 # ===----------------------------------------------------------------------=== #
 # Parity driver: walk every `[col_tile, row_tile]` coord the helpers visit and
-# assert the legacy and hand-built-TileTensor crd2idx agree exactly.
+# assert the hand-built TileTensor crd2idx matches the closed-form geometry.
 #
 # `col_tile in [0, mode0_size)` where mode0_size = product of mode-0 sub-shape
 #   = num_row_blocks_per_mma * num_m_mmas         (== num_rows_per_warp)
@@ -173,9 +180,9 @@ def _tt_vec_output_layout[
 #   = frag_cols * num_n_mmas
 #
 # These are the SINGLE-INT-into-a-NESTED-MODE accesses (rank-2 coord, 2-mode
-# nested layout). Legacy uses `layout(IntTuple(col_tile, row_tile))`; TileTensor
-# uses `layout(Coord(Idx[col_tile], Idx[row_tile]))` -- both route through CuTe
-# crd2idx and must produce identical element offsets.
+# nested layout). TileTensor uses
+# `layout(Coord(Idx[col_tile], Idx[row_tile]))`, which must route through CuTe
+# crd2idx to the reference offset `_fragment_offset` computes.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -192,13 +199,6 @@ def _assert_crd2idx_parity[
     comptime mode0_size = num_row_blocks_per_mma * num_m_mmas
     comptime mode1_size = frag_cols * num_n_mmas
 
-    comptime legacy = _legacy_vec_output_layout[
-        num_row_blocks_per_mma,
-        num_m_mmas,
-        num_n_mmas,
-        frag_simdwidth,
-        frag_size,
-    ]()
     comptime tt = _tt_vec_output_layout[
         num_row_blocks_per_mma,
         num_m_mmas,
@@ -211,18 +211,24 @@ def _assert_crd2idx_parity[
     # Exhaustive coord parity over the helper iteration domain.
     comptime for col_tile in range(mode0_size):
         comptime for row_tile in range(mode1_size):
-            comptime legacy_off = legacy(IntTuple(col_tile, row_tile))
+            comptime expected_off = _fragment_offset[
+                num_row_blocks_per_mma,
+                num_m_mmas,
+                frag_simdwidth,
+                frag_size,
+                frag_cols,
+            ](col_tile, row_tile)
             comptime tt_off = Int(tt(Coord(Idx[col_tile], Idx[row_tile])))
             assert_equal(
                 tt_off,
-                legacy_off,
+                expected_off,
                 String(
                     "crd2idx divergence at (col_tile=",
                     col_tile,
                     ", row_tile=",
                     row_tile,
-                    "): legacy=",
-                    legacy_off,
+                    "): expected=",
+                    expected_off,
                     " tt=",
                     tt_off,
                 ),

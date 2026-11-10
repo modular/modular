@@ -28,7 +28,6 @@ def create_attention_weights(
     hidden_size: int,
     has_bias: bool = False,
     dtype: torch.dtype = torch.float32,
-    device: str = "cuda",
     stacked_qkv: bool = False,
 ) -> dict[str, torch.Tensor]:
     """Create shared attention weights for both PyTorch and MAX models."""
@@ -41,30 +40,28 @@ def create_attention_weights(
     if stacked_qkv:
         # Create stacked QKV weight
         weights["qkv_proj.weight"] = std * torch.randn(
-            3 * hidden_size, hidden_size, dtype=dtype, device=device
+            3 * hidden_size, hidden_size, dtype=dtype
         )
         if has_bias:
             weights["qkv_proj.bias"] = std * torch.randn(
-                3 * hidden_size, dtype=dtype, device=device
+                3 * hidden_size, dtype=dtype
             )
     else:
         for proj in ["q", "k", "v"]:
             weights[f"{proj}_proj.weight"] = std * torch.randn(
-                hidden_size, hidden_size, dtype=dtype, device=device
+                hidden_size, hidden_size, dtype=dtype
             )
             if has_bias:
                 weights[f"{proj}_proj.bias"] = std * torch.randn(
-                    hidden_size, dtype=dtype, device=device
+                    hidden_size, dtype=dtype
                 )
 
     # Always create output projection
     weights["o_proj.weight"] = std * torch.randn(
-        hidden_size, hidden_size, dtype=dtype, device=device
+        hidden_size, hidden_size, dtype=dtype
     )
     if has_bias:
-        weights["o_proj.bias"] = std * torch.randn(
-            hidden_size, dtype=dtype, device=device
-        )
+        weights["o_proj.bias"] = std * torch.randn(hidden_size, dtype=dtype)
 
     return weights
 
@@ -217,23 +214,12 @@ def test_multihead_attention_gpu(
         hidden_size=hidden_size,
         has_bias=has_bias,
         dtype=torch_dtype,
-        device="cuda",
         stacked_qkv=stacked_qkv,
     )
 
     torch.manual_seed(42)
     input_tensor = torch.randn(
-        batch_size, seq_len, hidden_size, dtype=torch_dtype, device="cuda"
-    )
-
-    torch_output = generate_torch_outputs(
-        num_heads=num_heads,
-        hidden_size=hidden_size,
-        attention_weights=attention_weights,
-        input_tensor=input_tensor,
-        has_bias=has_bias,
-        dtype=torch_dtype,
-        stacked_qkv=stacked_qkv,
+        batch_size, seq_len, hidden_size, dtype=torch_dtype
     )
 
     max_output = generate_max_outputs(
@@ -245,6 +231,18 @@ def test_multihead_attention_gpu(
         input_tensor=input_tensor,
         has_bias=has_bias,
         dtype=dtype,
+        stacked_qkv=stacked_qkv,
+    )
+
+    torch_output = generate_torch_outputs(
+        num_heads=num_heads,
+        hidden_size=hidden_size,
+        attention_weights={
+            name: weight.cuda() for name, weight in attention_weights.items()
+        },
+        input_tensor=input_tensor.cuda(),
+        has_bias=has_bias,
+        dtype=torch_dtype,
         stacked_qkv=stacked_qkv,
     )
 

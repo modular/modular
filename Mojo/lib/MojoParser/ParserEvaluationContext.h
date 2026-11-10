@@ -15,7 +15,6 @@
 #define KGEN_MOJOPARSER_PARSERPARAMETEREVALUATOR_H
 
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
-#include "Mojo/MojoParser/SharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <utility>
 

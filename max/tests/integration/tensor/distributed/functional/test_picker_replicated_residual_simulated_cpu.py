@@ -24,12 +24,14 @@ residual stream along the batch axis (the algebraic dim
 These tests run on a 2-CPU simulated mesh, where the collective lowering
 inlines reductions as direct per-device ops (no literal ``allreduce`` /
 ``allgather`` strings appear in the IR). The presence or absence of
-``div(batch`` / ``rmo.mo.slice`` on the residual stream is the
+``div(batch`` / ``mo.slice`` on the residual stream is the
 load-bearing binary signal: the algebraic split only appears when the
 picker chose the sequence-parallel layout.
 """
 
 from __future__ import annotations
+
+import re
 
 import numpy as np
 from max.driver import CPU
@@ -56,6 +58,9 @@ from max.tensor.sharding import (
 from max.tensor.sharding.types import TensorLayout
 
 F32 = DType.float32
+# The static slice; `rmo.slice` is the symbolic one, hence the word boundary.
+_STATIC_SLICE = re.compile(r"\bmo\.slice\b")
+
 HIDDEN = 8
 FFL = 16
 BATCH = 3
@@ -170,7 +175,7 @@ class TestReduceScatterPermission:
             "Replicated; the algebraic per-rank dim ``div(batch, 2)`` "
             "should not appear."
         )
-        assert "rmo.mo.slice" not in ir, (
+        assert not _STATIC_SLICE.search(ir), (
             "Without (Partial, Sharded) no per-rank slice ops may appear "
             "on the residual stream."
         )
@@ -178,7 +183,7 @@ class TestReduceScatterPermission:
     def test_with_reduce_scatter_enables_sp_roundtrip(self) -> None:
         """Permitting ``(Partial, Sharded)`` lets the picker take SP.
 
-        The residual stream is split via ``rmo.mo.slice`` carrying the
+        The residual stream is split via ``mo.slice`` carrying the
         algebraic per-rank dim ``div(batch, 2)``.
         """
         ir = _block_ir(SEQUENCE_PARALLEL)
@@ -186,7 +191,7 @@ class TestReduceScatterPermission:
             "Permitting (Partial, Sharded) should let the picker shard "
             "the residual stream, producing ``div(batch, 2)``."
         )
-        assert "rmo.mo.slice" in ir, (
+        assert _STATIC_SLICE.search(ir), (
             "Permitting (Partial, Sharded) should emit per-rank slice "
             "ops for the SP path."
         )
@@ -199,5 +204,7 @@ class TestReduceScatterPermission:
         graph output, so neither setting inserts a slice. This documents
         that the permission only acts where a ``Partial`` is consumed.
         """
-        assert "rmo.mo.slice" not in _matmul_relu_matmul_ir(PURE_TP)
-        assert "rmo.mo.slice" not in _matmul_relu_matmul_ir(SEQUENCE_PARALLEL)
+        assert not _STATIC_SLICE.search(_matmul_relu_matmul_ir(PURE_TP))
+        assert not _STATIC_SLICE.search(
+            _matmul_relu_matmul_ir(SEQUENCE_PARALLEL)
+        )

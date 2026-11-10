@@ -33,8 +33,7 @@ public:
 
   bool MightHaveChildren() override;
 
-  llvm::Expected<size_t>
-  GetIndexOfChildWithName(lldb_private::ConstString name) override;
+  llvm::Expected<size_t> GetIndexOfChildWithName(llvm::StringRef name) override;
 
   /// Parse the given `ValueObject` representing a kgen.variant.
   /// Returns the ValueObjectSP for the active variant.

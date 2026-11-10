@@ -21,6 +21,7 @@
 #include "llvm/Support/Regex.h"
 
 namespace M::KGEN {
+class GeneratorType;
 class NoneType;
 namespace LIT {
 class ModuleType;
@@ -35,10 +36,14 @@ class FnMetaOriginDataAttr;
 } // namespace LIT
 } // namespace M::KGEN
 
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LITEnums.h.inc"
+#pragma GCC visibility pop
 
 #define GET_ATTRDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LITAttrs.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN::LIT {
 
@@ -67,6 +72,44 @@ static inline void processOriginUnionElts(TypedAttr origin, T &&fn) {
 
   fn(origin);
 }
+
+//===----------------------------------------------------------------------===//
+// StructTypeGenerator
+//===----------------------------------------------------------------------===//
+
+/// A view of a `GeneratorAttr` whose body is a struct type: a struct referenced
+/// without all of its parameters, like `List` for `List[T]`.
+class StructTypeGenerator {
+public:
+  StructTypeGenerator() = default;
+  /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a struct
+  /// type.
+  /*implicit*/ StructTypeGenerator(TypedAttr attr);
+
+  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a struct type.
+  static StructTypeGenerator dynCast(Attribute attr);
+
+  /*implicit*/ operator Attribute() const { return storage; }
+  /*implicit*/ operator TypedAttr() const { return storage; }
+  /*implicit*/ operator GeneratorAttr() const { return storage; }
+  explicit operator bool() const { return static_cast<bool>(storage); }
+
+  GeneratorType getType() const;
+  ArrayRef<Type> getInputParamTypes() const;
+  PogListAttr getMetadata() const;
+
+  /// Returns the struct type expression. Its parameter values are inside the
+  /// generator, one scope deeper than the generator itself.
+  TypedAttr getBody() const;
+  StructType getStructType() const;
+
+  /// Returns the body as seen from the scope enclosing the generator, with
+  /// each generator input left unbound.
+  TypedAttr getBodyWithUnboundInputs() const;
+
+private:
+  GeneratorAttr storage;
+};
 
 } // namespace M::KGEN::LIT
 

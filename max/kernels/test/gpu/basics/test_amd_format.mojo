@@ -26,7 +26,7 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         self.data = Array[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         var data_ptr: Pointer[
             UInt8, origin_of(self.data)
         ] = self.data.unsafe_ptr()

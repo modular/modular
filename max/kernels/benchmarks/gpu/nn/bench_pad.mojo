@@ -30,7 +30,7 @@ from nn.pad_gpu import pad_constant, get_padding_output_shape
 
 def bench_pad_gpu[
     dtype: DType, shape: Coord, pad_size: Int
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     comptime rank = shape.rank
     # Create paddings with uniform pre/post padding on all dimensions.
     var paddings_stack = Array[Int, 2 * rank](uninitialized=True)
@@ -50,7 +50,7 @@ def bench_pad_gpu[
     @inline(.always)
     def bench_fn(mut b: Bencher) raises {mut out_device, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {mut out_device, imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {mut out_device, imm}:
             pad_constant(
                 out_device.unsafe_ptr(),
                 output_shape,

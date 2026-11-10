@@ -1442,24 +1442,17 @@ def test_persist_sweep_closes_generator_before_exit(tmp_path: Path) -> None:
     assert events == ["server closed", "persist_sweep returned"]
 
 
-@pytest.mark.parametrize("failing_callback", ["report_result", "upload"])
-def test_persist_sweep_closes_generator_when_callback_raises(
-    tmp_path: Path, failing_callback: str
+def test_persist_sweep_closes_generator_when_upload_raises(
+    tmp_path: Path,
 ) -> None:
-    """A callback exception closes the generator before it propagates."""
+    """An uploader exception closes the generator before it propagates."""
     config = ServingBenchmarkConfig(
         model="myorg/mymodel",
         log_dir=str(tmp_path / "logs"),
         upload_results=True,
     )
     uploader = MagicMock()
-    report_result = MagicMock()
-    failing = (
-        report_result
-        if failing_callback == "report_result"
-        else uploader.upload
-    )
-    failing.side_effect = RuntimeError("callback failed")
+    uploader.upload.side_effect = RuntimeError("callback failed")
     events: list[str] = []
 
     def iterations() -> Iterator[BenchmarkRunResult]:
@@ -1481,12 +1474,100 @@ def test_persist_sweep_closes_generator_when_callback_raises(
                 config,
                 iterations(),
                 uploader=uploader,
-                report_result=report_result,
             )
         finally:
             events.append("persist_sweep returned")
 
     assert events == ["generator closed", "persist_sweep returned"]
+
+
+def test_persist_sweep_closes_generator_when_report_result_raises_base_exception(
+    tmp_path: Path,
+) -> None:
+    """A ``BaseException`` from ``report_result`` is not swallowed: it
+    closes the generator before it propagates."""
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel", log_dir=str(tmp_path / "logs")
+    )
+    events: list[str] = []
+
+    def iterations() -> Iterator[BenchmarkRunResult]:
+        try:
+            yield BenchmarkRunResult(
+                max_concurrency=1,
+                request_rate=float("inf"),
+                num_prompts=5,
+                result=_real_text_result(completed=5),
+                labels=_labels(),
+            )
+            events.append("drew past the failure")
+        finally:
+            events.append("generator closed")
+
+    def report_result(run: BenchmarkRunResult) -> None:
+        raise KeyboardInterrupt()
+
+    with pytest.raises(KeyboardInterrupt):
+        try:
+            sweep_benchmark_serving.persist_sweep(
+                config, iterations(), report_result=report_result
+            )
+        finally:
+            events.append("persist_sweep returned")
+
+    assert events == ["generator closed", "persist_sweep returned"]
+
+
+def test_persist_sweep_publication_failure_continues_then_exits(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A ``report_result`` exception is logged with the level and the sweep
+    continues to the next level; the sweep exits 1 at the end so the
+    publication loss is never silent."""
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel", log_dir=str(tmp_path / "logs")
+    )
+    reported: list[BenchmarkRunResult] = []
+    drawn: list[int] = []
+
+    def iterations() -> Iterator[BenchmarkRunResult]:
+        for mc in [1, 2]:
+            drawn.append(mc)
+            yield BenchmarkRunResult(
+                max_concurrency=mc,
+                request_rate=float("inf"),
+                num_prompts=5,
+                result=_real_text_result(completed=5, duration=float(mc)),
+                labels=_labels(),
+            )
+
+    def report_result(run: BenchmarkRunResult) -> None:
+        reported.append(run)
+        if run.max_concurrency == 1:
+            raise RuntimeError("insert failed")
+
+    with caplog.at_level(logging.ERROR, logger="sweep-benchmark-serving"):
+        with pytest.raises(SystemExit) as excinfo:
+            sweep_benchmark_serving.persist_sweep(
+                config, iterations(), report_result=report_result
+            )
+
+    assert excinfo.value.code == 1
+    # Level 2 still ran and was reported after level 1 failed to publish.
+    assert drawn == [1, 2]
+    assert [r.max_concurrency for r in reported] == [1, 2]
+    errors = [
+        r.getMessage()
+        for r in caplog.records
+        if "Result publication failed" in r.getMessage()
+    ]
+    assert len(errors) == 1
+    assert "max_concurrency=1" in errors[0]
+    assert any(
+        r.exc_info and isinstance(r.exc_info[1], RuntimeError)
+        for r in caplog.records
+    )
 
 
 def test_persist_sweep_failed_iteration_without_result_writes_nothing(

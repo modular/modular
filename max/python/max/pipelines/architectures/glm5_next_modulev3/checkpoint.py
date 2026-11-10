@@ -18,10 +18,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from max.driver import Device, accelerator_api
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.kernels import mhc_pre_supports
 from max.pipelines.architectures.glm5_next.quantization import (
     Glm5NextQuantScheme,
     parse_quant_scheme,
@@ -30,6 +28,10 @@ from max.pipelines.architectures.glm5_next.quantization import (
 _HC_FN_SUFFIX = ".hc_fn"
 _V3_SCALE = re.compile(
     r"^language_model\.(layers\.\d+\.(?:mlp|self_attn)\..+?)\.weight_scale_inv$"
+)
+_MLA_PROJECTION = re.compile(
+    r"^(language_model\.layers\.\d+\.self_attn\."
+    r"(?:q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj))(\.weight)?$"
 )
 
 
@@ -52,30 +54,6 @@ def _stored_hc_fn_dtype(state_dict: Mapping[str, WeightData]) -> DType:
     return stored.pop() if stored else DType.float32
 
 
-def _hc_fn_dtype(
-    stored: DType,
-    hc_mult: int,
-    hidden_size: int,
-    dtype: DType,
-    device: Device,
-    *,
-    api: str | None = None,
-) -> DType:
-    """Returns the dtype the mHC sites hold their stream projections in.
-
-    The fused pre-site op reads a bfloat16 projection in one pass rather
-    than three, so it keeps the checkpoint's bfloat16. The op chain computes
-    in float32, and widening there is exact.
-    """
-    if (
-        stored == DType.bfloat16
-        and (api if api is not None else accelerator_api()) == "hip"
-        and mhc_pre_supports(hc_mult, hidden_size, dtype, stored, device)
-    ):
-        return DType.bfloat16
-    return DType.float32
-
-
 def checkpoint_quant_scheme(
     hf_quantization_config: dict[str, Any] | None,
     declared_dtype: DType | None,
@@ -92,15 +70,26 @@ def checkpoint_quant_scheme(
     )
 
 
-def cast_hc_fn_weights(
-    state_dict: dict[str, Any], dtype: DType
-) -> dict[str, Any]:
-    """Casts mHC projections while preserving other checkpoint entries."""
-    return {
-        name: weight.astype(dtype)
-        if name.endswith(_HC_FN_SUFFIX)
-        and isinstance(weight, WeightData)
-        and weight.dtype != dtype
-        else weight
-        for name, weight in state_dict.items()
-    }
+def check_raw_projections(state_dict: Mapping[str, Any]) -> None:
+    """Checks each MLA projection's name against its scale.
+
+    The weight rules name a projection bare when the checkpoint's
+    ``modules_to_not_convert`` lists it, while the precision map reads which
+    projections carry a scale. The two have to agree.
+
+    Raises:
+        ValueError: If ``modules_to_not_convert`` lists a projection the
+            checkpoint quantizes, or omits one it leaves unquantized.
+    """
+    for name in state_dict:
+        if (match := _MLA_PROJECTION.match(name)) is None:
+            continue
+        projection, weight = match.groups()
+        quantized = f"{projection}.weight_scale_inv" in state_dict
+        if quantized != (weight is not None):
+            raise ValueError(
+                f"GLM-5.3-Flash ships {projection}"
+                f" {'with' if quantized else 'without'} an FP8 scale, but its"
+                " quantization_config.modules_to_not_convert"
+                f" {'lists' if quantized else 'omits'} it"
+            )

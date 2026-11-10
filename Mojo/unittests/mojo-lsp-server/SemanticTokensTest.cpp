@@ -105,7 +105,7 @@ TEST(SemanticTokensTest, testAddressSpaceModifiers) {
 from std.collections import Array
 from std.memory import AddressSpace
 
-comptime SharedPtr = UnsafePointer[
+comptime SharedPtr = Pointer[
     Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
 ]
 
@@ -119,7 +119,7 @@ struct Tile:
 
 def kernel[param_ptr: SharedPtr](
     smem: SharedPtr,
-    gmem: UnsafePointer[Float32, MutAnyOrigin],
+    gmem: Pointer[Float32, MutAnyOrigin],
     ref [_, AddressSpace.LOCAL] local_val: Float32,
     plain: Int,
     nested: Array[SharedPtr, 2],

@@ -40,6 +40,25 @@ class IREmitter;
 class CallOperands;
 class TraitType;
 
+//===--------------------------------------------------------------------===//
+// TypeStrictness
+//===--------------------------------------------------------------------===//
+
+/// The restriction on a type emitted by IREmitter, ordered from least
+/// restrictive to most restrictive.
+enum class TypeStrictness {
+  /// The result is not necessarily a type (It may have holes from parameters
+  /// left unbound, e.g. `List[_]`).
+  /// TODO(MOCO-3542): The long term plan is to remove this option, and instead
+  /// have callers install a DeferredTypingContext to ensure every implicit
+  /// parameter is explicitly created at the callsite.
+  kIncomplete,
+  /// The result is any type (may be parametric, e.g. a generator type).
+  kParametric,
+  /// The result is any type that is not parametric (can be used at runtime).
+  kConcrete,
+};
+
 //===----------------------------------------------------------------------===//
 // ConversionFailure
 //===----------------------------------------------------------------------===//
@@ -555,14 +574,14 @@ public:
   // Emission helpers for specific value types.
 
   /// This helper emits the specified expression tree as a type, e.g. turning
-  /// "Int" into the type for it.  This emits an error and returns null on
-  /// failure. If `allowUnbound` is set, then a type with no bound parameters is
-  /// allowed.
-  ASTType emitExprType(const ExprNode *expr, bool allowUnbound = false);
+  /// "Int" into the type for it. This emits an error and returns null on
+  /// failure. `strictness` is the restriction on the returned type, see
+  /// TypeStrictness.
+  ASTType emitExprType(const ExprNode *expr, TypeStrictness strictness);
 
   /// This emits the specified PValue as a type, binding defaulted parameters
-  /// etc if needed.
-  ASTType emitType(ASTExprAnd<PValue> value, bool allowUnbound = false);
+  /// etc if needed. `strictness` is as documented on emitExprType.
+  ASTType emitType(ASTExprAnd<PValue> value, TypeStrictness strictness);
 
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// scalar<bool> value that we can test directly.  This reports and error and
@@ -629,11 +648,12 @@ public:
   void emitNormalReturn(Location loc, Value value = Value(),
                         bool emitEndFunc = true);
 
-  /// Helper to emit a VarDeclOp with a uniquely generated origin name.
+  /// Helper to emit a VarDeclOp with a uniquely generated origin name. A null
+  /// address space means the default one.
   VarDeclOp emitVarDecl(const Twine &name, Type type, Location loc,
-                        VarDeclKind kind);
+                        VarDeclKind kind, TypedAttr addressSpace = {});
   VarDeclOp emitVarDecl(StringAttr name, Type type, Location loc,
-                        VarDeclKind kind);
+                        VarDeclKind kind, TypedAttr addressSpace = {});
 
   /// Internal implementation of call emission, use emitCall/emitIndirectCall
   /// or higher level wrappers instead.

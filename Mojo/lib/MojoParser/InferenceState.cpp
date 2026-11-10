@@ -224,7 +224,7 @@ LogicalResult InferenceState::checkBodyConstraints(
 TypedAttr
 VerifiedParamBindings::specializeStructType(StructDeclOp structOp) const {
   assert(*this && "specializing with failed inference bindings");
-  return PValue(structOp.bindReference(getValues()));
+  return PValue(structOp.bindReference(evaluationContext, getValues()));
 }
 
 TypedAttr

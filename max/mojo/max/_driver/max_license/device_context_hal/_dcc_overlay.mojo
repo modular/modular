@@ -26,7 +26,7 @@ from max._driver.max_license.device_context_hal.device_context_hal import (
     _DeviceContextScopeHAL,
     _DeviceFunctionPtr,
     _DumpPath,
-    _check_dim,
+    _check_dim_in_range,
     _checked,
 )
 from max._driver.max_license.device_context_hal.device_graph_hal import *
@@ -40,3 +40,6 @@ from max._driver.max_license.device_context_hal._amdgpu_hip_hal import (
     hipDevice_t,
     hipStream_t,
 )
+
+comptime HAL_DEVICE_CONTEXT = True
+"""Whether `max.gpu.host` is the HAL `DeviceContext`."""

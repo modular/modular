@@ -24,17 +24,17 @@ from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn._graph_ops import argmax_with_bias
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm
 from typing_extensions import Self
 
-from ..deepseekV4.layers import expand_copies
 from .deepseekV41 import (
     DeepseekV41Block,
-    HCStreams,
     _adopt_shards,
+    first_streams,
 )
 from .layer_resolver import LayerInfo
 from .layer_resolver import resolve as resolve_layers
@@ -68,9 +68,53 @@ def drafter_layer_infos(config: DeepseekV41Config) -> list[LayerInfo]:
     return rows
 
 
-def _greedy(logits: TensorValue, step: int) -> TensorValue:
+def _greedy(logits: TensorValue, bias: TensorValue, step: int) -> TensorValue:
     del step
-    return ops.squeeze(ops.argmax(logits, axis=-1), axis=-1)
+    return ops.squeeze(
+        ops.argmax(ops.cast(logits, DType.float32) + bias, axis=-1), axis=-1
+    )
+
+
+def draft_block(
+    logits: TensorValue,
+    anchor_ids: TensorValue,
+    markov_head: DSparkMarkovHead,
+    sampler: Callable[[TensorValue, TensorValue, int], TensorValue]
+    | None = None,
+) -> TensorValue:
+    """Draws a block of draft tokens per request, one position at a time.
+
+    Position ``i``'s logits get the Markov bias of the token drawn at
+    position ``i - 1`` (the anchor at position 0). A greedy draft on a GPU
+    adds the bias inside :func:`argmax_with_bias`, which reads the logits in
+    place and adds in float32, the index an argmax of the float32 sum takes.
+    The ``sampler`` callback receives the position's logits, the bias and the
+    position, so a sampler that can add the bias itself draws from both in
+    one pass; any other sampler receives their sum.
+
+    Args:
+        logits: ``[b, block_size, vocab]`` draft logits.
+        anchor_ids: ``[b]`` int32, each block's first token.
+        markov_head: The drafter's Markov head.
+        sampler: Draws position ``i``'s ``[b]`` tokens from its
+            ``[b, vocab]`` logits and bias; greedy argmax when ``None``.
+
+    Returns:
+        ``[b, block_size]`` int32 draft ids.
+    """
+    fused = sampler is None and logits.device != DeviceRef.CPU()
+    sample = _greedy if sampler is None else sampler
+    current = ops.cast(anchor_ids, DType.int32)
+    drafted = []
+    for i in range(int(logits.shape[1])):
+        bias = markov_head.bias_float32(current)
+        if fused:
+            token = argmax_with_bias(logits, bias, position=i)
+        else:
+            token = sample(logits[:, i], bias, i)
+        current = ops.cast(token, DType.int32)
+        drafted.append(current)
+    return ops.stack(drafted, axis=1)
 
 
 class DeepseekV41DSparkDrafter(Module):
@@ -259,9 +303,7 @@ class DeepseekV41DSparkDrafter(Module):
             raise ValueError(
                 f"expected {len(self.stages)} stage windows, got {len(windows)}"
             )
-        streams = HCStreams(
-            expand_copies(embed(block_ids), self.config.hc_mult)
-        )
+        streams = first_streams(embed(block_ids), self.config.hc_mult)
         for stage, window in zip(self.stages, windows, strict=True):
             streams, _ = stage(streams, rows, block_ids, window)
         return streams.collapse()
@@ -299,7 +341,7 @@ class DeepseekV41DSparkDrafter(Module):
         """
         lead = drafters[0]
         streams = [
-            HCStreams(expand_copies(embed(ids), lead.config.hc_mult))
+            first_streams(embed(ids), lead.config.hc_mult)
             for embed, ids in zip(embeds, block_ids, strict=True)
         ]
         for i in range(len(lead.stages)):
@@ -352,7 +394,7 @@ class DeepseekV41DSparkDrafter(Module):
             for ids in block_ids
         ]
         streams = [
-            HCStreams(expand_copies(embed(ids), lead.config.hc_mult))
+            first_streams(embed(ids), lead.config.hc_mult)
             for embed, ids in zip(embeds, block_ids, strict=True)
         ]
         for i in range(len(lead.stages)):
@@ -382,18 +424,16 @@ class DeepseekV41DSparkDrafter(Module):
             head_weight: The target's ``[vocab, hidden]`` LM head weight.
 
         Returns:
-            ``[b * block_size, vocab]`` float32, request major.
+            ``[b * block_size, vocab]`` in the head weight's dtype, request
+            major.
         """
         normed = self.norm(ops.reshape(hidden, [-1, self.config.hidden_size]))
         if head_weight.dtype == DType.bfloat16:
-            # Compute in bfloat16 and widen afterwards, so the draft logits
-            # round the same way as the target's bfloat16 LM head.
-            return ops.cast(
-                ops.matmul(
-                    ops.cast(normed, DType.bfloat16),
-                    ops.transpose(head_weight, 0, 1),
-                ),
-                DType.float32,
+            # bfloat16, so the draft logits round the same way as the
+            # target's bfloat16 LM head.
+            return ops.matmul(
+                ops.cast(normed, DType.bfloat16),
+                ops.transpose(head_weight, 0, 1),
             )
         return ops.matmul(
             ops.cast(normed, DType.float32),
@@ -404,37 +444,23 @@ class DeepseekV41DSparkDrafter(Module):
         self,
         logits: TensorValue,
         anchor_ids: TensorValue,
-        sampler: Callable[[TensorValue, int], TensorValue] | None = None,
-    ) -> tuple[TensorValue, TensorValue]:
-        """Draws ``block_size`` draft tokens per request, one at a time.
-
-        Step ``i``'s logits get the bigram bias of the token drawn at step
-        ``i - 1`` (the anchor at step 0); the loop unrolls over the static
-        ``block_size``.
+        sampler: Callable[[TensorValue, TensorValue, int], TensorValue]
+        | None = None,
+    ) -> TensorValue:
+        """Draws ``block_size`` draft tokens per request (:func:`draft_block`).
 
         Args:
             logits: ``[b * block_size, vocab]``, :meth:`logits`' output.
             anchor_ids: ``[b]`` int32, each block's first token.
-            sampler: Draws step ``i``'s ``[b]`` int32 tokens from its
-                ``[b, vocab]`` biased logits; greedy argmax when ``None``.
+            sampler: As :func:`draft_block` takes it.
 
         Returns:
-            ``([b, block_size]`` int32 draft ids, ``[b, block_size, vocab]``
-            float32 biased logits).
+            ``[b, block_size]`` int32 draft ids.
         """
-        sample = _greedy if sampler is None else sampler
         batch = anchor_ids.shape[0]
         vocab = logits.shape[-1]
         logits = ops.reshape(
             ops.rebind(logits, [batch * self.block_size, vocab]),
             [batch, self.block_size, vocab],
         )
-        current = ops.cast(anchor_ids, DType.int32)
-        drafted = []
-        biased = []
-        for i in range(self.block_size):
-            step = logits[:, i] + self.markov_head.bias_float32(current)
-            biased.append(step)
-            current = ops.cast(sample(step, i), DType.int32)
-            drafted.append(current)
-        return ops.stack(drafted, axis=1), ops.stack(biased, axis=1)
+        return draft_block(logits, anchor_ids, self.markov_head, sampler)

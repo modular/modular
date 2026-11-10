@@ -1268,8 +1268,7 @@ ways:
 - Specialized legalization patterns, e.g., `rmo.slice`.
 - Lower to other RMO ops first, then get legalized later in the same pass.
 
-Legalization via the interface assumes all the output values are tensors, so
-any operation like `rmo.mo.transfer` has to have a separate pattern. Device
+Legalization via the interface assumes all the output values are tensors. Device
 handling is done via output annotation. After the pass, all ops are in `mo`
 (TODO: verify).
 

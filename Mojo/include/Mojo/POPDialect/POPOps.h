@@ -63,6 +63,8 @@ class UnionType;
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/POPDialect/POP.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_POPDIALECT_POPOPS_H

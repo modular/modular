@@ -533,10 +533,12 @@ def filter_architectures(archs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
         # Exclude ModuleV3 architectures from the public models table. They
         # stay registered and importable, but their internal module-v3
-        # variants (directories suffixed ``_modulev3``) are not surfaced in
-        # the supported-models catalog, even when no base counterpart exists.
+        # variants (directories suffixed ``_modulev3``, and modules nested
+        # under one) are not surfaced in the supported-models catalog, even
+        # when no base counterpart exists.
         module_name = arch.get("module_name", "")
-        if module_name.endswith("_modulev3") or module_name in UNLISTED_MODULES:
+        package = module_name.split(".")[0]
+        if package.endswith("_modulev3") or module_name in UNLISTED_MODULES:
             continue
 
         filtered.append(arch)

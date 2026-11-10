@@ -54,8 +54,8 @@ struct MemExample(ImplicitlyCopyable):
     def __bool__(self) -> Bool:
         return True
 
-    def unsafe_ptr(self) -> UnsafePointer[Int, AnyOrigin[mut=True]]:
-        return UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
+    def unsafe_ptr(self) -> Pointer[Int, AnyOrigin[mut=True]]:
+        return Pointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
         pass

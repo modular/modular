@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "dflash2_beam_modulev3",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        # The dflash_config parser and the export record are shared with the
+        # Qwen3.5 DFlash2 and MiMo-V2 DFlash drafters.
+        "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+    ],
+)

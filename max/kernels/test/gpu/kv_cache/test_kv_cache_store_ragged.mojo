@@ -135,7 +135,7 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         return q_device_tensor.load[width=width](idx)
 
     var k_cache_device = kv_collection_paged_device.get_key_cache(0)
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         k_cache_device,
         q_shape,
         cache_lengths_table.input_row_offsets.device_tile_tensor(),
@@ -325,7 +325,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         return q_device_tensor.load[width=width](idx)
 
     var k_cache_device = kv_collection_paged_device.get_key_cache(0)
-    kv_cache_store_padded[target="gpu"](
+    kv_cache_store_padded(
         k_cache_device, q_shape, valid_lengths_tensor, input_fn, ctx
     )
     ctx.synchronize()

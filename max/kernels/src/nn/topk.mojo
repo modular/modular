@@ -50,7 +50,7 @@ from layout import (
     row_major,
 )
 from layout.coord import CoordLike, DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.math import log2
 from std.memory import unsafe_stack_allocation
 from nn.gather_scatter import normalize_neg_index
@@ -167,7 +167,7 @@ def _topk_stage2_smem_bytes[
     bitonic network and then rounded up to whole warps, plus a value and two
     indices per sample-cache slot, rounded up to `WARP_SIZE` bytes.
     """
-    comptime warp_size = DeviceContext.default_device_info.warp_size
+    comptime warp_size = DeviceContext[].default_device_info.warp_size
     var num_elem_reduced = align_up(
         _topk_stage2_sort_len(num_blocks_per_input * max_k), warp_size
     )
@@ -290,7 +290,6 @@ def top_k[
     //,
     KEngine: TensorEngine,
     largest: Bool = True,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     max_k: Int,
@@ -314,7 +313,6 @@ def top_k[
         out_idx_type: The data dtype of the output indices (default == .int64).
         KEngine: Engine policy of the `k` tensor.
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
-        target: The target to run on.
 
     Args:
         input: The input tensor.
@@ -347,7 +345,7 @@ def top_k[
             )
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "top_k",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.device().id),
@@ -357,7 +355,7 @@ def top_k[
         # Clamp max_k
         var bound_max_k = 255 if max_k == -1 else max_k
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             comptime assert (
                 out_idx_type == .int64
             ), "out_idx_type must be int64 for cpu"
@@ -630,14 +628,14 @@ def fused_token_sampling_cpu[
         # `_top_k_sampling` resolves a row's -1 to the output width, which an
         # explicit k above the cap widens, so resolve those rows to the cap.
         var resolved_k = List[Int64]()
-        if max_k == -1 and k:
-            var k_in = k.value()
-            var cap = bound_max_k
-            for i in range(k_in.num_elements()):
-                var k_raw = Int(k_in[i])
-                var row_k = cap if k_raw == -1 else k_raw
-                resolved_k.append(Int64(row_k))
-                bound_max_k = max(bound_max_k, row_k)
+        if max_k == -1:
+            if case .Some(k_in) = k:
+                var cap = bound_max_k
+                for i in range(k_in.num_elements()):
+                    var k_raw = Int(k_in[i])
+                    var row_k = cap if k_raw == -1 else k_raw
+                    resolved_k.append(Int64(row_k))
+                    bound_max_k = max(bound_max_k, row_k)
 
         # materialize the out_vals which is of shape [input[:-1]] + [k]
         var out_vals_shape = _dynamic_shape_of(

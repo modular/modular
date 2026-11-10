@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from _mla_sparse_test_utils import (
+    make_deepseek_rope,
     paged_kv_from_flat_graph_inputs,
     random_weights,
 )
@@ -38,22 +39,19 @@ from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
-)
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
 )
 from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
     SparseLatentAttentionWithRope,
@@ -99,6 +97,9 @@ class PrefillSpec:
     """Attention routing: ``"auto"`` or the disaggregated ``"prefill"``; both
     assemble the same graph for a pure prefill batch."""
 
+    cache_dtype: DType = DType.bfloat16
+    """Element type of the MLA latent cache."""
+
 
 PREFILL_SPECS: tuple[PrefillSpec, ...] = (
     # DeepSeek V3.2 (128) + GLM 5.1/5.2 (64) + GLM TP-sharded 64//{2,4,8}.
@@ -110,6 +111,29 @@ PREFILL_SPECS: tuple[PrefillSpec, ...] = (
     # GLM BF16 attention: 64 unsharded + 8 per device at TP8.
     PrefillSpec("prefill_bf16_64h", "bf16", 64),
     PrefillSpec("prefill_bf16_8h", "bf16", 8),
+    # BF16 attention over a unit-scale FP8 cache, which runs prefill on the
+    # sparse decode kernel.
+    PrefillSpec(
+        "prefill_bf16_fp8kv_64h", "bf16", 64, cache_dtype=DType.float8_e4m3fn
+    ),
+    PrefillSpec(
+        "prefill_bf16_fp8kv_8h", "bf16", 8, cache_dtype=DType.float8_e4m3fn
+    ),
+    PrefillSpec(
+        "prefill_bf16_fp8kv_32h", "bf16", 32, cache_dtype=DType.float8_e4m3fn
+    ),
+    PrefillSpec(
+        "prefill_fp8_fp8kv_8h", "fp8", 8, cache_dtype=DType.float8_e4m3fn
+    ),
+    PrefillSpec(
+        "prefill_fp8_fp8kv_16h", "fp8", 16, cache_dtype=DType.float8_e4m3fn
+    ),
+    PrefillSpec(
+        "prefill_fp8_fp8kv_32h", "fp8", 32, cache_dtype=DType.float8_e4m3fn
+    ),
+    PrefillSpec(
+        "prefill_fp8_fp8kv_64h", "fp8", 64, cache_dtype=DType.float8_e4m3fn
+    ),
 )
 
 # Disaggregated prefill_only (``graph_mode="prefill"``) variants of the FP8 head
@@ -146,30 +170,13 @@ def make_quant_config() -> QuantConfig:
     )
 
 
-def make_rope(num_heads: int) -> DeepseekYarnRotaryEmbedding:
-    """Builds the DeepSeek YaRN rope for ``num_heads`` heads."""
-    return DeepseekYarnRotaryEmbedding(
-        dim=QK_ROPE_HEAD_DIM,
-        n_heads=num_heads,
-        theta=10000.0,
-        max_seq_len=ROPE_MAX_SEQ_LEN,
-        scaling_params=DeepseekYarnRopeScalingParams(
-            scaling_factor=40.0,
-            original_max_position_embeddings=4096,
-            beta_fast=32,
-            beta_slow=1,
-            mscale=1.0,
-            mscale_all_dim=1.0,
-        ),
-    )
-
-
 def make_kv_params(
     num_heads: int,
+    cache_dtype: DType = DType.bfloat16,
 ) -> tuple[MLAKVCacheParams, MLAKVCacheParams]:
     """Builds the ``(mla, indexer)`` KV-cache params for ``num_heads`` heads."""
     mla = MLAKVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=cache_dtype,
         head_dim=KV_LORA_RANK + QK_ROPE_HEAD_DIM,
         num_layers=1,
         page_size=PAGE_SIZE,
@@ -191,9 +198,11 @@ def make_kv_params(
     return mla, indexer
 
 
-def make_multi_kv(num_heads: int) -> MultiKVCacheParams:
+def make_multi_kv(
+    num_heads: int, cache_dtype: DType = DType.bfloat16
+) -> MultiKVCacheParams:
     """Builds the combined ``{mla, indexer}`` :class:`MultiKVCacheParams`."""
-    mla, indexer = make_kv_params(num_heads)
+    mla, indexer = make_kv_params(num_heads, cache_dtype)
     return MultiKVCacheParams.from_params({"mla": mla, "indexer": indexer})
 
 
@@ -206,7 +215,7 @@ def make_attn(
     layer and the graph's ``freqs_cis`` constant, matching the e2e tests.
     ``spec.graph_mode`` selects the routing.
     """
-    mla_kv_params, _ = make_kv_params(spec.num_heads)
+    mla_kv_params, _ = make_kv_params(spec.num_heads, spec.cache_dtype)
     if spec.route == "fp8":
         return SparseLatentAttentionWithRopeFp8(
             rope=rope,
@@ -251,7 +260,7 @@ def weights_for(spec: PrefillSpec) -> dict[str, WeightData]:
     Weight names and shapes are ``graph_mode``-independent, so one registry
     initializes any graph built from this spec.
     """
-    attn = make_attn(spec, make_rope(spec.num_heads))
+    attn = make_attn(spec, make_deepseek_rope(spec.num_heads, ROPE_MAX_SEQ_LEN))
     _ = attn.state_dict()
     return random_weights(attn)
 
@@ -268,8 +277,10 @@ def build_prefill_graph(spec: PrefillSpec) -> Graph:
     Returns:
         The constructed :class:`Graph`, ready to compile.
     """
-    rope = make_rope(spec.num_heads)
-    mla_kv_params, indexer_kv_params = make_kv_params(spec.num_heads)
+    rope = make_deepseek_rope(spec.num_heads, ROPE_MAX_SEQ_LEN)
+    mla_kv_params, indexer_kv_params = make_kv_params(
+        spec.num_heads, spec.cache_dtype
+    )
     attn = make_attn(spec, rope)
     # Materialize the layer's weights once before graph construction; without
     # this the forward lazily double-registers them ("Weight already exists").
@@ -289,9 +300,16 @@ def build_prefill_graph(spec: PrefillSpec) -> Graph:
     row_off_type = TensorType(
         DType.uint32, ["row_offsets_len"], DeviceRef.GPU()
     )
+    batch_context_length_type = TensorType(DType.int32, [1], DeviceRef.CPU())
 
     with Graph(
-        spec.name, input_types=[hidden_type, row_off_type, *kv_sym]
+        spec.name,
+        input_types=[
+            hidden_type,
+            row_off_type,
+            *kv_sym,
+            batch_context_length_type,
+        ],
     ) as g:
         hidden = g.inputs[0].tensor
         input_row_offsets = g.inputs[1].tensor
@@ -303,6 +321,13 @@ def build_prefill_graph(spec: PrefillSpec) -> Graph:
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         freqs_cis = ops.cast(rope.freqs_cis, hidden.dtype).to(hidden.device)
+        # Mirror the model graph: the prefill plan's device-resident buffer
+        # length would cost a device-to-host copy, whose sync breaks device
+        # graph capture, so the host batch context length replaces it.
+        mla_prefill_metadata = attn.create_mla_prefill_metadata(
+            input_row_offsets, kv_mla
+        )
+        mla_prefill_metadata.buffer_lengths = g.inputs[-1].tensor
         out, _rows = attn(
             layer_idx,
             hidden,
@@ -310,7 +335,7 @@ def build_prefill_graph(spec: PrefillSpec) -> Graph:
             kv_idx,
             freqs_cis,
             input_row_offsets,
-            None,
+            mla_prefill_metadata,
         )
         g.output(out)
     return g

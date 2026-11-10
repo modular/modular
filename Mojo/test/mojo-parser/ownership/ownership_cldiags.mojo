@@ -487,7 +487,7 @@ def testConditionalMut(cond: __mlir_type.`!kgen.scalar<bool>`):
 # address space.
 def bad_addr_space[
     addr_space: AddressSpace
-](ptr: UnsafePointer[MemExample, address_space=addr_space, ...]):
+](ptr: Pointer[MemExample, address_space=addr_space, ...]):
     # expected-error @+1 {{cannot destroy value in non-default address space}}
     _ = __get_address_as_owned_value(ptr._get_kgen_pointer())
 

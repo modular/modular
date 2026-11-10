@@ -14,7 +14,7 @@
 """Pins the vision position embedding across a clip's temporal slices.
 
 ``BilinearInterpolationPositionEmbedding`` interpolates one position grid per
-FRAME -- ``sum(h * w)`` rows -- and ``mo.spatial_merge`` replicates it across
+FRAME -- ``sum(h * w)`` rows -- and ``vision.spatial_merge`` replicates it across
 each grid item's ``t`` temporal patches, emitting ``sum(t * h * w)``. The two
 lengths coincide only for still images, so nothing in the image path can see a
 mistake here.

@@ -14,29 +14,36 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
     ArchConfigWithVisionCache,
+    ModelOutputConfig,
+)
+from max.pipelines.lib.registration_runtime import (
+    DeploymentConfig,
+    ModuleRuntime,
 )
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -257,7 +264,9 @@ _MAX_IMAGE_TOKENS = 4096
 
 
 @dataclass(kw_only=True)
-class MuseGlimmerConfig(ArchConfigWithKVCache, ArchConfigWithVisionCache):
+class MuseGlimmerConfig(
+    ArchConfigWithKVCache, ArchConfigWithVisionCache, DeploymentConfig
+):
     """Top-level Muse Glimmer configuration composing text and vision."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
@@ -272,6 +281,16 @@ class MuseGlimmerConfig(ArchConfigWithKVCache, ArchConfigWithVisionCache):
     vision_config: MuseGlimmerVisionConfig | None
     """``None`` when the checkpoint has no ``vision_config``."""
     quantization_encoding: SupportedEncoding | None = None
+    mesh: DeviceMesh | None = None
+
+    weight_prefixes: ClassVar[Mapping[str, str]] = {
+        GraphRole.DECODER: "decoder.",
+        GraphRole.VISION: "vision.",
+    }
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Binds the text tower to the framework device mesh."""
+        return replace(self, mesh=runtime.mesh)
 
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
@@ -421,14 +440,16 @@ class MuseGlimmerConfig(ArchConfigWithKVCache, ArchConfigWithVisionCache):
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
-    ) -> None:
-        """Sets the fields that depend on the loaded weights and pipeline.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-            state_dict: Model weights dictionary.
-            return_logits: Return logits configuration.
-        """
-        self.text_config.return_logits = return_logits
+        state_dict: Mapping[str, object],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Applies output settings without mutating the reusable text config."""
+        del huggingface_config, state_dict
+        return replace(
+            self,
+            text_config=replace(
+                self.text_config,
+                return_logits=outputs.return_logits,
+                return_hidden_states=outputs.return_hidden_states,
+            ),
+        )

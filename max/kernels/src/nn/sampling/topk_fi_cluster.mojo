@@ -52,19 +52,22 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.math import ceildiv, exp, gcd, isfinite
 from std.memory import bitcast, unsafe_stack_allocation
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.sys import size_of
 from std.utils.static_tuple import StaticTuple
 from std.random import Random
+from ..argmaxmin_gpu import _argmax_block_partial
+from ..topk import _block_reduce_topk
 from .topk_fi import (
     TopKTopPMaskedProbsKernel,
     TopKTopPSamplingFromProbKernel,
     ValueCount,
     device_sampling_from_prob,
     _block_reduce_value_count,
+    _coop_first_argmax,
     _topp_budget,
 )
 
@@ -381,7 +384,8 @@ def TopKTopPMaskedProbsClusterKernel[
     `emit_dist`, so a verifier's target-side probabilities and a draft's
     proposal distribution are described identically. A row whose total mass
     is not finite has no distribution to report and comes out all-zero, as it
-    does for the draft side.
+    does for the draft side. A k == 1 row is a one-hot at its first maximum
+    whatever its mass, as in `TopKTopPMaskedProbsKernel`.
 
     One block per row uses only as many SMs as there are rows, which leaves
     most of the GPU idle at decode batch sizes. Here the CTAs of one cluster
@@ -449,6 +453,34 @@ def TopKTopPMaskedProbsClusterKernel[
     var inv_temp = 1.0 / max(temp_val, Float32(1e-6))
 
     var logits_row = logits[bx : bx + 1, :]
+
+    if k == 1:
+        var best = _block_reduce_topk[ascending=True](
+            _argmax_block_partial[dtype, vec_size, 1](
+                logits_row.ptr.as_unsafe_any_origin(),
+                vec_begin * vec_size,
+                (vec_end - vec_begin) * vec_size,
+                False,
+                Int(tx),
+                block_size,
+            )
+        )
+        var combined = cluster_allreduce[
+            _coop_first_argmax, cluster_size, need_tail_sync=False
+        ](
+            cluster_slot,
+            SIMD[.float32, 2](best.u.cast[.float32](), Float32(best.p)),
+        )
+        var first = Int(combined[1])
+        var top1_row = probs[bx : bx + 1, :]
+        for i in range(vec_begin + tx, vec_end, block_size):
+            var one_hot = SIMD[.float32, vec_size](0)
+            comptime for j in range(vec_size):
+                if i * vec_size + j == first:
+                    one_hot[j] = 1.0
+            top1_row.store((Idx[0], i * vec_size), one_hot)
+        cluster_sync()
+        return
 
     # Row max, combined across the cluster in rank order so every CTA holds
     # the same bits. Every value below derives from it, so one disagreeing
@@ -766,6 +798,7 @@ def topk_topp_masked_probs_cluster[
                 temperature_ptr,
                 Int32(d),
                 Optional[MutPointer[Int32, MutAnyOrigin]](None),
+                Optional[MutPointer[UInt64, MutAnyOrigin]](None),
                 grid_dim=batch_size,
                 block_dim=block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1598,14 +1631,16 @@ def topk_topp_sampling_from_prob_cluster[
         ] = None
 
         comptime if emit_dist:
-            if not out_dist:
-                raise Error("out_dist is required when emit_dist is set")
-            var dist_shape = coord_to_index_list(
-                out_dist.unsafe_value().layout.shape_coord()
-            )
-            if dist_shape[0] != batch_size or dist_shape[1] != d:
-                raise Error("out_dist shape must match probs shape")
-            dist_ptr = out_dist.unsafe_value().ptr
+            match out_dist:
+                case .Some(dist):
+                    var dist_shape = coord_to_index_list(
+                        dist.layout.shape_coord()
+                    )
+                    if dist_shape[0] != batch_size or dist_shape[1] != d:
+                        raise Error("out_dist shape must match probs shape")
+                    dist_ptr = dist.ptr
+                case .None:
+                    raise Error("out_dist is required when emit_dist is set")
 
         # A speculative-decoding step that skips its drafter samples zero
         # draft rows, and a zero grid is rejected by `enqueue_function`.
@@ -1703,6 +1738,7 @@ def topk_topp_sampling_from_prob_cluster[
                 temperature_ptr,
                 min_p_ptr,
                 Optional[MutPointer[Int32, MutAnyOrigin]](None),
+                Optional[MutPointer[UInt64, MutAnyOrigin]](None),
                 grid_dim=batch_size,
                 block_dim=block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),

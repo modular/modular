@@ -18,7 +18,7 @@ from .plugin import (
     FunctionHandle,
     ContextHandle,
 )
-from ._plugin._overlay import HAL_PLUGINS
+from ._plugin._impl import HalPluginForTarget
 from .buffer import Buffer, BufferView
 from .context import Context
 from .memory import _enqueue_copy
@@ -39,6 +39,7 @@ from max.gpu.host import (
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
 from max.gpu.host import LaunchAttribute
+from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 
 
 @fieldwise_init
@@ -54,9 +55,9 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
     var _context: ArcPointer[Context[Self.device_spec]]
     var _self_ref: WeakPointer[Self]
 
-    comptime HALExtensions = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.device_spec]()
-    ].HookFor[DeviceSpec.target[Self.device_spec]()].extensions
+    comptime HALExtensions = HalPluginForTarget[
+        DeviceSpec.target[Self.device_spec]()
+    ].extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
 
@@ -214,8 +215,14 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
             "near compute scratchpad usage must fit in 32 bits",
         )
 
-        # A 1x1x1 cluster, the vendor configurations' default, emits no
+        # Attributes the config carries are appended to the caller's. A
+        # 1x1x1 cluster, the vendor configurations' default, emits no
         # attribute so that targets without cluster launch accept it.
+        var config_attributes = List[LaunchAttribute]()
+        comptime if conforms_to(
+            ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ):
+            config_attributes.extend(execution_config.get_launch_attributes())
         comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
             var cluster_dim = execution_config.get_cluster_dim()
             if (
@@ -223,37 +230,38 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
                 or cluster_dim.y() != 1
                 or cluster_dim.z() != 1
             ):
-                var all_attributes = List[LaunchAttribute](
-                    capacity=Int(num_attributes) + 1
-                )
-                if case .Some(caller_attributes) = attributes:
-                    var src = caller_attributes.unsafe_bitcast[
-                        LaunchAttribute
-                    ]()
-                    for i in range(Int(num_attributes)):
-                        all_attributes.append(src[unsafe_offset=i])
-                all_attributes.append(
+                config_attributes.append(
                     LaunchAttribute.from_cluster_dim(cluster_dim)
                 )
-                self._raw[].execute_function(
-                    self._handle,
-                    func,
-                    grid,
-                    block,
-                    args,
-                    arg_sizes,
-                    num_args,
-                    shared_mem_bytes=UInt32(near_compute_scratchpad_usage),
-                    attributes=OptionalReg(
-                        all_attributes.unsafe_ptr()
-                        .unsafe_bitcast[NoneType]()
-                        .unsafe_origin_cast[MutUntrackedOrigin]()
-                    ),
-                    num_attributes=UInt32(len(all_attributes)),
-                )
-                # Keep attributes alive until the plugin has read them.
-                _ = all_attributes^
-                return
+
+        if config_attributes:
+            var all_attributes = List[LaunchAttribute](
+                capacity=Int(num_attributes) + len(config_attributes)
+            )
+            if case .Some(caller_attributes) = attributes:
+                var src = caller_attributes.unsafe_bitcast[LaunchAttribute]()
+                for i in range(Int(num_attributes)):
+                    all_attributes.append(src[unsafe_offset=i])
+            all_attributes.extend(config_attributes^)
+            self._raw[].execute_function(
+                self._handle,
+                func,
+                grid,
+                block,
+                args,
+                arg_sizes,
+                num_args,
+                shared_mem_bytes=UInt32(near_compute_scratchpad_usage),
+                attributes=OptionalReg(
+                    all_attributes.unsafe_ptr()
+                    .unsafe_bitcast[NoneType]()
+                    .unsafe_origin_cast[MutUntrackedOrigin]()
+                ),
+                num_attributes=UInt32(len(all_attributes)),
+            )
+            # Keep attributes alive until the plugin has read them.
+            _ = all_attributes^
+            return
 
         self._raw[].execute_function(
             self._handle,
@@ -398,8 +406,8 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
     def wait_value64(
         self, device_address: UInt64, value: UInt64
     ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` equals
-        `value` (e.g. cuStreamWaitValue64 with EQ semantics)."""
+        """Enqueues a wait until the 64-bit slot at `device_address` is at
+        least `value` (cuStreamWaitValue64 with GEQ semantics)."""
         self._raw[].queue_wait_value64(self._handle, device_address, value)
 
     def record_event[

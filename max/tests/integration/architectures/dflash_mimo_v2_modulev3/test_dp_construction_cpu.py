@@ -40,10 +40,11 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy import kernels
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn import _graph_ops as kernels
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.memory_planner import (
     ep_dispatch_row_budget,
@@ -229,7 +230,8 @@ def test_the_tp_signature_declares_no_distributed_group() -> None:
     call = module.driver_call()
     types = call.input_types
     assert not call.driver.input_spec.distributed
-    assert len(types) == 35
+    # Each of the three paged leaves ends with its split record.
+    assert len(types) == 38
     # The single-device graph declares its own signal buffer at the
     # engine's slot; the batch inputs ahead of it are the TP three.
     assert isinstance(types[3], BufferType)

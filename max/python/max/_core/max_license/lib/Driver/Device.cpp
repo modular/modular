@@ -15,6 +15,7 @@
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "GraphCompiler/Driver/Device/DeviceExecution.h"
+#include "MLRT/Driver/CAPI/ArchitectureVersion.h"
 #include "MLRT/Driver/DeviceContext/DeviceAffinity.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/MArchTarget/MArchTargetMinimal.h"
@@ -202,6 +203,17 @@ std::string Python::Device::getArchName() const {
     throw std::invalid_argument(errorMessage);
   }
   return archNameOr.get();
+}
+
+M::Driver::ArchitectureVersion Python::Device::getArchVersion() const {
+  ErrorOr<M::Driver::ArchitectureVersion> versionOr = [&] {
+    nb::gil_scoped_release release;
+    return M::Driver::getArchitectureVersion(ctx->device());
+  }();
+  if (versionOr.isError())
+    throw std::invalid_argument("failed to get device architecture version: "s +
+                                versionOr.getError());
+  return versionOr.get();
 }
 
 std::string Python::Device::getModelName() const {
@@ -508,8 +520,7 @@ void Python::DeviceStream::waitForHostValue(const CompletionFlag &flag,
   if (mlrtStream.isError())
     throw std::runtime_error(mlrtStream.getError());
 
-  ErrorOrSuccess err =
-      (*mlrtStream)->enqueueWaitOnHostValue(*flag.ref(), value);
+  ErrorOrSuccess err = (*mlrtStream)->enqueueWaitOnFlag(*flag.ref(), value);
   if (err.isError())
     throw std::runtime_error(err.getError());
 }

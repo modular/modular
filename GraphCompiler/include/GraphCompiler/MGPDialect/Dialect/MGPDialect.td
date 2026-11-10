@@ -37,9 +37,8 @@ def MGPDialect : Dialect {
     semantic' (take buffers, some pre-allocated to hold outputs).
 
     MGP provides:
-    1. `mgp.model`, holding the model's 'init' and 'execute' invokables and a
-       framework name telling the runtime which framework-specific API
-       (generally an `M::Model` subclass) to wrap around them.
+    1. `mgp.model`, holding the model's 'init' and 'execute' invokables that
+       the `M::Model` runtime wraps around.
     2. `!mgp.context`, backed by `M::MGP::Context`, holding any number of
        `M::MGP::StateSlot`s. Returned by 'init' and reused by each 'execute',
        it gives ops a place to cache op-specific values. A well-known slot can

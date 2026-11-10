@@ -14,13 +14,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessorBase,
 )
+from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 
 if TYPE_CHECKING:
     from .model import UnifiedMTPGlm5_2Inputs
@@ -36,6 +38,16 @@ class UnifiedMTPGlm5_2BatchProcessor(
     slot required for speculative decoding. The slot is left ``None`` here; the
     overlap pipeline fills it in after this call returns.
     """
+
+    input_spec: SpecDecodeInputTypeSpec | None = None
+    """The fused graph's signature, which the model binds when it builds the
+    graph and each step's inputs pack by."""
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Bounds the dims of a decoder's inputs and of the spec-decode tail."""
+        return self.runtime.spec_decode_max_dims(dims, kv_params)
 
     def _make_mla_inputs(
         self,
@@ -63,5 +75,5 @@ class UnifiedMTPGlm5_2BatchProcessor(
             data_parallel_splits=data_parallel_splits,
             ep_inputs=ep_inputs,
             draft_tokens=None,
-            structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
+            spec=self.input_spec,
         )

@@ -35,6 +35,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/TypeID.h"
 #include "nanobind/nanobind.h"
+#include "nanobind/stl/optional.h"    // IWYU pragma: keep (type caster)
 #include "nanobind/stl/string.h"      // IWYU pragma: keep (type caster)
 #include "nanobind/stl/string_view.h" // IWYU pragma: keep (type caster)
 #include "nanobind/stl/unique_ptr.h"
@@ -62,6 +63,22 @@ namespace M::Graph::Python {
 void registerTypeID(mlir::TypeID, const std::type_info *);
 const std::type_info *lookupTypeID(mlir::TypeID);
 
+template <typename T>
+struct IsStdOptional : std::false_type {};
+template <typename T>
+struct IsStdOptional<std::optional<T>> : std::true_type {};
+
+/// An `OptionalAttr` builder argument arrives from Python as `std::optional`
+/// (so `None` can stand for an absent attribute); the ODS builder wants the
+/// null attribute instead.
+template <typename Arg>
+decltype(auto) unwrapOptionalArg(Arg &&arg) {
+  if constexpr (IsStdOptional<std::decay_t<Arg>>::value)
+    return arg.value_or(typename std::decay_t<Arg>::value_type());
+  else
+    return std::forward<Arg>(arg);
+}
+
 /// Wrap an OpBuilder->create call.
 /// - We can't bind templatized functions on OpBuilder
 /// - Instead, each Op has their own constructors that take a builder
@@ -69,7 +86,7 @@ const std::type_info *lookupTypeID(mlir::TypeID);
 template <typename Op, typename... Args>
 auto create_op(nanobind::handle_t<mlir::OpBuilder> builder, Args... args) {
   return Op::create(*nanobind::cast<mlir::OpBuilder *>(builder),
-                    std::forward<Args>(args)...);
+                    unwrapOptionalArg(std::forward<Args>(args))...);
 }
 
 /// Nanobind doesn't support multiple inheritance, but we want to correctly

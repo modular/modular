@@ -33,7 +33,7 @@ def c_value(row: Int, col: Int) -> Float32:
 
 def test_views[
     M: Int, N: Int, K: Int, use_tensor_cores: Bool = False
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     print("matmul views:", M, N, K, use_tensor_cores)
     comptime a_layout = row_major[M, K]()
     comptime b_layout = row_major[K, N]()

@@ -558,7 +558,7 @@ ErrorOr<MojoValue> EmitMojoState::inferDefaultKernelParamValue(
       SmallVector<int64_t> values;
       for (auto val : arrAttr)
         values.push_back(cast<IntegerAttr>(val).getValue().getSExtValue());
-      return EmitMojoState::getAsIntTupleMojoValue(values);
+      return EmitMojoState::getAsCoordMojoValue(values);
     } else
       return Error(llvm::formatv("Unsupported custom param MLIR type for `{}`",
                                  paramName));
@@ -579,10 +579,6 @@ ErrorOr<MojoValue> EmitMojoState::inferDefaultKernelParamValue(
   // TODO(GEX-2847): Check the op, not the FuncOp, in case these get
   // sequence fused. Safe today: stubs are outlined before sequence fusion, and
   // sequence-fused ones are all on the host.
-  if (paramName == MOGG::kMoggTargetParameterName) {
-    auto kernelStubOp = callOp->getParentOfType<FuncOp>();
-    return MojoValue(kernelStubOp.getDevice()).quote();
-  }
   if (paramName == MOGG::kMoggTraceNameParameterName) {
     auto kernelStubOp = callOp->getParentOfType<FuncOp>();
     return getTraceNameValue(kernelStubOp.getFusionInfoAttr());

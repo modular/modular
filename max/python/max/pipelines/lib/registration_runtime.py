@@ -39,7 +39,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.pipelines.context import TextContext
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
@@ -77,6 +78,10 @@ class ConstantInputs:
     buffers: tree.Tree[Buffer]
 
     def __post_init__(self) -> None:
+        if is_virtual_device_mode() and not self.buffers:
+            # Compile-only: a virtual device cannot allocate, and only
+            # execution reads the buffers. The declarations still stand.
+            return
         _, structure = tree.flatten(self.input_types)
         structure.flatten_up_to(self.buffers)
 
@@ -200,6 +205,15 @@ class DeploymentConfig:
         del runtime
         return self
 
+    def export_records(self, runtime: ModuleRuntime) -> Mapping[str, object]:
+        """Returns what an exporter records of the deployment, by name.
+
+        The serving pipeline model keeps them as its ``export_records``,
+        where an exporter reads them. The default records nothing.
+        """
+        del runtime
+        return {}
+
 
 class ExpertParallelDeploymentConfig(DeploymentConfig, abc.ABC):
     """A registered config whose decoder serves its experts across devices.
@@ -317,26 +331,43 @@ def ep_input_tree(
 
 def batch_context_length_types(
     data_parallel_degree: int,
+    *,
+    devices_per_replica: int = 1,
+    dtype: DType = DType.int32,
 ) -> tuple[TensorType, ...]:
-    """Returns the ``batch_context_lengths`` input types, one per replica."""
+    """Returns the ``batch_context_lengths`` input types.
+
+    There is one per replica, or with ``devices_per_replica``, one for each
+    device of each replica, a replica's devices in a row.
+    """
     return tuple(
-        TensorType(DType.int32, shape=[1], device=DeviceRef.CPU())
-        for _ in range(max(1, data_parallel_degree))
+        TensorType(dtype, shape=[1], device=DeviceRef.CPU())
+        for _ in range(max(1, data_parallel_degree) * devices_per_replica)
     )
 
 
 class BatchContextLengths:
     """Each replica's page-aligned KV context length, refreshed per batch.
 
-    The buffers persist across batches, and each batch rewrites them in
-    place, so a captured device graph keeps reading the live values.
+    With ``devices_per_replica``, each replica's length fills that many
+    buffers in a row, one for each of its devices. The buffers persist
+    across batches, and each batch rewrites them in place, so a captured
+    device graph keeps reading the live values.
     """
 
-    def __init__(self, data_parallel_degree: int, page_size: int) -> None:
+    def __init__(
+        self,
+        data_parallel_degree: int,
+        page_size: int,
+        *,
+        devices_per_replica: int = 1,
+        dtype: DType = DType.int32,
+    ) -> None:
         self._page_size = page_size
+        self._devices_per_replica = devices_per_replica
         self._buffers = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(max(1, data_parallel_degree))
+            Buffer.zeros(shape=[1], dtype=dtype)
+            for _ in range(max(1, data_parallel_degree) * devices_per_replica)
         ]
 
     def update(
@@ -344,9 +375,12 @@ class BatchContextLengths:
     ) -> list[Buffer]:
         """Writes each replica's context length and returns the buffers."""
         page = self._page_size
-        for buffer, batch in zip(self._buffers, replica_batches, strict=False):
-            buffer.to_numpy()[0] = sum(
+        count = self._devices_per_replica
+        for replica, batch in enumerate(replica_batches):
+            length = sum(
                 (ctx.tokens.current_position + page - 1) // page * page
                 for ctx in batch
             )
+            for buffer in self._buffers[replica * count :][:count]:
+                buffer.to_numpy()[0] = length
         return self._buffers

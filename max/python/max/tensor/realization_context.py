@@ -234,6 +234,7 @@ class EagerRealizationContext(RealizationContext):
         self.source_values = {}
         self.unrealized = []
         self.signal_buffers = None
+        self._failure: str | None = None
 
         # Inherits process-global default custom extensions (see
         # max.graph.default_custom_extensions), so a backend's kernel overlays
@@ -256,8 +257,11 @@ class EagerRealizationContext(RealizationContext):
         with realization_context(self), self.graph:
             # peek rather than next! If compilation or execute fails
             # the seed should remain the same.
+            # Built directly rather than with ``Tensor.from_graph_value``,
+            # which would register the seed in ``unrealized``: a retry would
+            # then stage the failed attempt's seed as an extra output.
             outputs = [
-                Tensor.from_graph_value(ops.random._peek_seed()),
+                _make_unrealized(self, (ops.random._peek_seed(),), None),
                 *(
                     tensor
                     for ref in self.unrealized
@@ -271,7 +275,38 @@ class EagerRealizationContext(RealizationContext):
         _core.lower(self.graph._module, [builtin.passes.RemoveDeadValuesPass()])
         # The graph symbol is public, so RemoveDeadValues won't remove
         # unused arguments. Do that explicitly.
+        # An argument removed here takes its cached graph value with it, so
+        # extending the graph later cannot build on a freed value.
+        stale = [value for value in self.sources if not value.num_uses]
         _passes.remove_unused_arguments(self.graph)
+        pruned = [
+            source
+            for value in stale
+            if (source := self.sources.pop(value, None)) is not None
+        ]
+        for source in pruned:
+            self.source_values.pop(id(source), None)
+        # A tensor a surviving entry still maps keeps its pending state: the
+        # read-only argument pruned here can sit beside the mutable input a
+        # pending store targets, and the store has yet to run.
+        live = {id(source) for source in self.sources.values()}
+        for source in pruned:
+            # A mutable source whose only uses were removed is realized again:
+            # the argument that stood in for it is gone.
+            if (
+                id(source) not in live
+                and source._state is not None
+                and source._state.ctx is self
+            ):
+                source._state = None
+        if self.signal_buffers is not None and any(
+            buffer._mlir_value in stale for buffer in self.signal_buffers
+        ):
+            # Signal buffers are inputs too, so a collective re-adds them if
+            # one is gone. Only one of their own values being pruned justifies
+            # the reset: for any other argument it would add a second set of
+            # mutable inputs for the same driver buffers.
+            self.signal_buffers = None
         return outputs, self.graph
 
     # Lazy realize fires after the surrounding `with` exits — re-enter on bg threads.
@@ -281,82 +316,132 @@ class EagerRealizationContext(RealizationContext):
 
         Finalizes the computation graph, passes it to the bound
         :class:`~max.tensor.executor.Executor`, and applies the results
-        to produce concrete values for all pending (unrealized) tensors. After
-        execution, all tensors tracked by this context will have their data in
-        memory.
+        to produce concrete values for all pending (unrealized) tensors.
 
         Returns:
-            list[Tensor]: The list of realized output tensors (excluding the
-                internal seed tensor).
+            list[Tensor]: The tensors this call realized, excluding the
+                internal seed tensor. A retry after a failure realizes, and
+                returns, only what the failed attempt left pending.
 
         Raises:
             TypeError: If called while still inside this realization context.
+            RuntimeError: If an earlier attempt failed after the executor
+                began running a graph with mutable inputs, which a retry
+                would run a second time. The tensors it was going to mutate
+                cannot be recovered.
         """
         if current_realization_context(None) is self:
             raise TypeError(
                 "Can't realize tensor before realization context is completed."
             )
+        if self._failure is not None:
+            raise RuntimeError(
+                "Can't retry a realization that failed after execution began:"
+                " it may already have applied its in-place buffer mutations."
+                " The tensors it was going to mutate can't be recovered, so"
+                " recreate them rather than reading them, and build a new"
+                " context for further work.\n" + self._failure
+            )
 
-        outputs, graph = self.finalize_graph()
-
-        # All graph inputs (tensor data + signal buffers) go through
-        # self.sources — signal buffers are registered there by
-        # ensure_signal_buffers().
+        applied: list[driver.Buffer] = []
         input_buffers: list[driver.Buffer] = []
         mutated_inputs: list[driver.Buffer] = []
-        # graph.inputs excludes what remove_unused_arguments dropped.
-        for inp in graph.inputs:
-            buffer = self.sources[inp._mlir_value].driver_tensor
-            input_buffers.append(buffer)
-            if isinstance(inp, BufferValue):
-                mutated_inputs.append(buffer)
-
+        # Set before the executor is handed the graph, and cleared only when
+        # it refuses the graph before running anything.
+        executed = False
+        # Set once the executor returns; its writes are then in flight.
+        completed = False
         try:
-            results = self._executor.execute(graph, input_buffers)
-        except UnsupportedGraphError:
-            # Nothing was enqueued, so nothing needs poisoning.
-            raise
-        except BaseException as executor_error:
-            # Enqueued work can still land in a mutated source.
-            stamp_device_write(
-                mutated_inputs,
-                error=render_producer_error(executor_error),
-            )
-            raise
+            outputs, graph = self.finalize_graph()
 
-        # Update tensors to realized.
-        # Each tensor consumes num_shards consecutive results (1 for
-        # unsharded, N for sharded).
-        result_idx = 0
-        written = list(mutated_inputs)
-        for tensor in outputs:
-            n = tensor.num_shards
-            extracted = results[result_idx : result_idx + n]
-            if not all(isinstance(buf, driver.Buffer) for buf in extracted):
-                raise TypeError(
-                    "Expected all results to be driver.Buffer, got: "
-                    + str([type(b).__name__ for b in extracted])
+            # All graph inputs (tensor data + signal buffers) go through
+            # self.sources — signal buffers are registered there by
+            # ensure_signal_buffers().
+            # graph.inputs excludes what remove_unused_arguments dropped.
+            for inp in graph.inputs:
+                buffer = self.sources[inp._mlir_value].driver_tensor
+                input_buffers.append(buffer)
+                if isinstance(inp, BufferValue):
+                    mutated_inputs.append(buffer)
+
+            executed = True
+            try:
+                results = self._executor.execute(graph, input_buffers)
+            except UnsupportedGraphError:
+                # Nothing was enqueued, so nothing needs poisoning.
+                executed = False
+                raise
+            except BaseException as executor_error:
+                # Enqueued work can still land in a mutated source.
+                stamp_device_write(
+                    mutated_inputs,
+                    error=render_producer_error(executor_error),
                 )
-            tensor._storages = tuple(cast(list[driver.Buffer], extracted))
-            tensor._state = None
-            result_idx += n
-            written.extend(tensor._storages)
+                raise
+            completed = True
 
-        # Update mutated buffer inputs to realized
-        for source in self.sources.values():
-            # This was set by calling `__buffervalue__` on the source.
-            # Mark the tensor as realized again.
-            if source._state and source._state.ctx is self:
-                source._state = None
+            # Nothing is applied until every result checks out, so a failure
+            # never leaves the graph's outputs half realized.
+            storages: list[driver.Buffer] = []
+            for result in results:
+                if not isinstance(result, driver.Buffer):
+                    raise TypeError(
+                        "Expected all results to be driver.Buffer, got: "
+                        + str([type(r).__name__ for r in results])
+                    )
+                storages.append(result)
 
-        # Must precede the seed read below, which is a host read of one of
-        # these buffers.
-        stamp_device_write(written, input_buffers)
+            # Update tensors to realized.
+            # Each tensor consumes num_shards consecutive results (1 for
+            # unsharded, N for sharded).
+            result_idx = 0
+            for tensor in outputs:
+                n = tensor.num_shards
+                tensor._storages = tuple(storages[result_idx : result_idx + n])
+                tensor._state = None
+                result_idx += n
+                applied.extend(tensor._storages)
+            # Everything pending is real now, so a later realization must not
+            # stage their graph values again.
+            self.unrealized = []
 
-        new_seed, *outputs = outputs
-        set_seed(new_seed.item())
+            # Update mutated buffer inputs to realized
+            for source in self.sources.values():
+                # This was set by calling `__buffervalue__` on the source.
+                # Mark the tensor as realized again.
+                if source._state and source._state.ctx is self:
+                    source._state = None
 
-        return outputs
+            # Must precede the seed read below, which is a host read of one of
+            # these buffers.
+            stamp_device_write([*mutated_inputs, *applied], input_buffers)
+
+            new_seed, *outputs = outputs
+            set_seed(new_seed.item())
+
+            return outputs
+        except BaseException as error:
+            if executed and mutated_inputs:
+                # The graph's in-place stores may already have run, so a retry
+                # would apply them to the same buffers a second time.
+                self._failure = render_producer_error(error)
+            else:
+                # Unfinished realization must not leave a terminator behind:
+                # the next op, and any retry, would be inserted after
+                # `mo.output`.
+                self.graph._erase_output_if_present()
+            if completed:
+                # The submission's writes to mutated inputs and to applied
+                # outputs are in flight, so a host read of them must wait on
+                # it. Best effort, so a driver error cannot replace the
+                # failure being raised.
+                try:
+                    stamp_device_write(
+                        [*mutated_inputs, *applied], input_buffers
+                    )
+                except Exception:
+                    pass
+            raise
 
     def add_source(self, tensor: Tensor) -> RealizationState:
         """Adds a realized tensor as an input source to the computation graph.
@@ -455,8 +540,15 @@ class EagerRealizationContext(RealizationContext):
         if len(gpu_ids) < 2:
             return None
 
-        # Get or allocate shared runtime buffers (expensive — 1+256 MB each).
-        runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
+        # Compile-only: a virtual device allocates nothing, so the graph
+        # declares its signal inputs but has no storage to bind them to.
+        virtual = driver.is_virtual_device_mode()
+        if virtual:
+            runtime_bufs: list[driver.Buffer] = []
+            buf_types = _signal_buffer_types(tuple(gpu_ids))
+        else:
+            # Get or allocate shared runtime buffers (expensive — 1+256 MB each).
+            runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
 
         # Add signal buffer types as new graph inputs (per-graph, cheap).
         # Register them in self.sources so the execution loop picks them
@@ -466,7 +558,10 @@ class EagerRealizationContext(RealizationContext):
             value = _passes.add_input(self.graph, bt)
             assert isinstance(value, BufferValue)
             buf_values.append(value)
-            self.sources[value._mlir_value] = Tensor(storage=runtime_bufs[i])
+            if not virtual:
+                self.sources[value._mlir_value] = Tensor(
+                    storage=runtime_bufs[i]
+                )
 
         self.signal_buffers = buf_values
         return self.signal_buffers

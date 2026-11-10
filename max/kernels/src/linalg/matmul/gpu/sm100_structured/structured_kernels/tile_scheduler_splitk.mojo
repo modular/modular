@@ -22,13 +22,12 @@ from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout import (
     Coord,
-    Idx,
-    Layout,
     TensorEngine,
     TensorLayout,
     TileTensor,
     row_major,
 )
+from layout.layout import row_major as tt_row_major
 from std.atomic import Atomic, Ordering
 from std.collections.string.string_span import _get_kgen_string
 from std.math import align_up, ceildiv
@@ -45,7 +44,7 @@ from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 
 from linalg.structuring import SMemPtr
@@ -718,8 +717,10 @@ struct TileScheduler[
         # TmemTensor for split-K reduction.
         # Use cta_group=2 to force is_lower_required=True - split-K always
         # needs both upper and lower fragments for the full reduction.
-        comptime accum_layout = Layout.row_major(Self.BM, Self.ROW_SIZE)
-        comptime AccumTmem = TmemTensor[accum_type, accum_layout, cta_group=2]
+        comptime accum_layout = tt_row_major[Self.BM, Self.ROW_SIZE]()
+        comptime AccumTmem = TmemTensor[
+            accum_type, type_of(accum_layout), accum_layout, cta_group=2
+        ]
 
         var local_warp_id = ufloordiv(epilogue_thread_idx, WARP_SIZE)
 

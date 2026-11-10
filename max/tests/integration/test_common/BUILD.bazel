@@ -164,6 +164,19 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "mixed_step_split_ops",
+    testonly = True,
+    srcs = ["mixed_step_split_ops.py"],
+    imports = [".."],
+    # Also the MiniMax-M3.1 DSpark graph test, which lives with its model.
+    visibility = [
+        "//max/tests:__subpackages__",
+        "//max_private/minimax_m3_dspark:__pkg__",
+    ],
+    deps = ["//max/python/max/mlir"],
+)
+
+modular_py_library(
     name = "vision_preprocess_parity",
     testonly = True,
     srcs = ["vision_preprocess_parity.py"],
@@ -217,12 +230,13 @@ modular_py_library(
     srcs = ["context_utils.py"],
     imports = [".."],
     # Extends the package default with the Qwen4-Exp arch package, whose QSA
-    # tests build their contexts through this helper.
+    # tests build their contexts through this helper, and with plugin tests.
     visibility = [
         "//:__pkg__",
         "//max/tests:__subpackages__",
         "//max_private/qwen4_exp:__pkg__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         requirement("numpy"),
@@ -239,7 +253,7 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         "//max/python/max/driver",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/support",
     ],
 )
@@ -257,6 +271,7 @@ modular_py_library(
         "//max/internal:__subpackages__",
         "//max/tests:__subpackages__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         requirement("pytest"),
@@ -277,6 +292,8 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
@@ -297,13 +314,14 @@ modular_py_library(
         "//max/internal:__subpackages__",
         "//max/tests:__subpackages__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -396,12 +414,20 @@ modular_py_library(
         "mocks/tokenizer.py",
     ],
     imports = [".."],
+    # Extends the package default with plugin tests.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",

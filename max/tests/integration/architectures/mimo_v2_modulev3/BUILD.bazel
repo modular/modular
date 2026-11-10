@@ -27,6 +27,8 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
     ],
     imports = ["."],
+    # DISTINF-819: slow enough in CI that `//...` should skip it.
+    per_test_tags = {"test_expert_stacks_cpu.py": ["manual"]},
     # Importing max.pipelines times out pytest collection on contended macOS
     # workers, and macOS adds no coverage to these CPU-only tests.
     target_compatible_with = select({
@@ -41,7 +43,10 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
@@ -63,6 +68,8 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
     ],
     imports = ["."],
+    # DISTINF-819: slow enough in CI that `//...` should skip it.
+    tags = ["manual"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -75,7 +82,10 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -97,7 +107,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/lib",
         requirement("ml-dtypes"),
@@ -139,7 +149,10 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
@@ -181,7 +194,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
@@ -303,7 +316,9 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
@@ -334,11 +349,11 @@ modular_py_test(
     imports = ["."],
     precompile_device_count = 2,
     precompile_mefs = True,
-    # Postsubmit: an expensive B200 test that presubmit would rerun on any
-    # change to its dependencies.
+    # DISTINF-808: an expensive B200 test, so `//...` skips it rather than
+    # presubmit rerunning it on any change to its dependencies.
     tags = [
         "gpu",
-        "postsubmit",
+        "manual",
     ],
     deps = [
         ":mimo_v3_runner",
@@ -398,7 +413,7 @@ modular_py_test(
         ":mimo_v3_runner",
         "//max/python/max/driver",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/tests/integration/architectures/mimo_v2:mimo_runner",
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
         requirement("numpy"),
@@ -435,7 +450,7 @@ modular_py_test(
         ":mimo_v3_runner",
         "//max/python/max/driver",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/tests/integration/architectures/mimo_v2:mimo_runner",
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
         requirement("numpy"),

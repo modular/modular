@@ -25,18 +25,18 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafKind,
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
@@ -48,7 +48,7 @@ from max.tensor.sharding import (
     Partial,
 )
 
-from ..inkling.inkling import _subgraph_layer_groups
+from ..inkling.inkling import _subgraph_layer_groups, token_positions
 from ..inkling.layers.attention import log_scaling_tau
 from ..inkling.model_config import (
     GLOBAL_ATTENTION,
@@ -65,6 +65,7 @@ from .layers.short_convolution import InklingRMSNorm, ShortConvolution
 
 _log_scaling_tau = F.functional(log_scaling_tau)
 _merge_multimodal_embeddings = F.functional(merge_multimodal_embeddings)
+_token_positions = F.functional(token_positions)
 
 
 class _ConvSites:
@@ -344,7 +345,6 @@ class Inkling(Module[..., ModuleV3Outputs]):
         self,
         tokens: Tensor,
         input_row_offsets: Tensor,
-        positions: Tensor,
         return_n_logits: Tensor,
         image_embeddings: Tensor,
         image_indices: Tensor,
@@ -356,7 +356,6 @@ class Inkling(Module[..., ModuleV3Outputs]):
         (
             tokens,
             input_row_offsets,
-            positions,
             image_embeddings,
             image_indices,
         ) = (
@@ -364,7 +363,6 @@ class Inkling(Module[..., ModuleV3Outputs]):
             for t in (
                 tokens,
                 input_row_offsets,
-                positions,
                 image_embeddings,
                 image_indices,
             )
@@ -372,7 +370,7 @@ class Inkling(Module[..., ModuleV3Outputs]):
         replicated = tokens.mapping
 
         kv_tree = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in kv_inputs)
+            iter(kv_input_values(kv_inputs))
         )
         kv_collections = {
             key: PagedCacheValues.from_upstream(
@@ -381,6 +379,11 @@ class Inkling(Module[..., ModuleV3Outputs]):
             for key, child in kv_tree.items()
             if key != STATE_CACHE_KEY
         }
+        positions = _token_positions(
+            input_row_offsets,
+            next(iter(kv_collections.values())).cache_lengths,
+            tokens.shape[0],
+        )
         assert STATE_CACHE_KEY in kv_tree, (
             "Inkling always convolves; the cache declared no conv-state child"
         )
@@ -565,7 +568,6 @@ class Inkling(Module[..., ModuleV3Outputs]):
             TensorType(
                 DType.uint32, shape=["input_row_offsets_len"], device=device
             ),
-            TensorType(DType.uint32, shape=["total_seq_len"], device=device),
             TensorType(
                 DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
             ),

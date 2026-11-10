@@ -18,9 +18,9 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
@@ -167,7 +167,7 @@ class HYV4(Module[..., ModuleV3Outputs]):
         if mesh.num_devices > 1:
             tokens = F.distributed_broadcast(tokens, mesh)
             input_row_offsets = F.distributed_broadcast(input_row_offsets, mesh)
-        values = iter(t._graph_value for t in kv_inputs)
+        values = iter(kv_input_values(kv_inputs))
         mla, indexer = (
             PagedCacheValues.from_upstream(
                 params.unflatten_kv_inputs(values), tokens.mapping

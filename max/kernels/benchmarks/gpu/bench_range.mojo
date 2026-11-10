@@ -137,7 +137,7 @@ def grid_stride_kernel(
 
 
 @inline(.never)
-def bench_range(mut b: Bench, ctx: DeviceContext) raises:
+def bench_range(mut b: Bench, ctx: DeviceContext[]) raises:
     var threads = GRID_DIM * BLOCK_DIM
     var src_host = List(length=SIZE, fill=Scalar[DTYPE](1))
     var src = ctx.enqueue_create_buffer[DTYPE](SIZE)
@@ -149,7 +149,7 @@ def bench_range(mut b: Bench, ctx: DeviceContext) raises:
     var strided_elems = threads * ceildiv(SIZE, STEP)
 
     def run[
-        LaunchFn: def(DeviceContext) raises -> None
+        LaunchFn: def(DeviceContext[]) raises -> None
     ](launch: LaunchFn, name: StaticString, elems: Int) raises {mut b, imm ctx}:
         def bench_func(mut bencher: Bencher) raises {imm launch, imm ctx}:
             bencher_iter_custom(bencher, launch, ctx)
@@ -160,22 +160,22 @@ def bench_range(mut b: Bench, ctx: DeviceContext) raises:
             [ThroughputMeasure(BenchMetric.elements, elems)],
         )
 
-    def launch_zero_start(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_zero_start(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[zero_start_kernel](
             dst, src, Int64(SIZE), grid_dim=GRID_DIM, block_dim=BLOCK_DIM
         )
 
-    def launch_sequential(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_sequential(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[sequential_kernel](
             dst, src, Int64(SIZE), grid_dim=GRID_DIM, block_dim=BLOCK_DIM
         )
 
-    def launch_static_step(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_static_step(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[strided_static_step_kernel](
             dst, src, Int64(SIZE), grid_dim=GRID_DIM, block_dim=BLOCK_DIM
         )
 
-    def launch_dynamic_step(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_dynamic_step(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[strided_dynamic_step_kernel](
             dst,
             src,
@@ -185,12 +185,12 @@ def bench_range(mut b: Bench, ctx: DeviceContext) raises:
             block_dim=BLOCK_DIM,
         )
 
-    def launch_negative_step(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_negative_step(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[strided_negative_step_kernel](
             dst, src, Int64(SIZE), grid_dim=GRID_DIM, block_dim=BLOCK_DIM
         )
 
-    def launch_grid_stride(c: DeviceContext) raises {imm src, imm dst}:
+    def launch_grid_stride(c: DeviceContext[]) raises {imm src, imm dst}:
         c.enqueue_function[grid_stride_kernel](
             dst,
             src,

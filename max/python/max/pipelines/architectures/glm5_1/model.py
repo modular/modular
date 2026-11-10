@@ -17,6 +17,8 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from max.pipelines.architectures.deepseekV3_2.model import DeepseekV3_2Model
+from max.pipelines.lib import CheckpointRole, WeightEntry, WeightTransform
+from max.pipelines.lib.graph_specs import GraphRole
 
 from .model_config import Glm5_1Config
 
@@ -34,3 +36,14 @@ class Glm5_1Model(DeepseekV3_2Model):
     # before the expert dispatch, which is the layout GLM-5.3's recipe serves.
     # Exporters pick the matching EP backend from it.
     ep_dispatch_token_layout: ClassVar[str] = "tp_sharded"
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        state_dict = super()._load_state_dict()
+        # The architecture's rules name the decoder's weights.
+        assert isinstance(self.adapter, WeightTransform)
+        self.weight_naming = {
+            GraphRole.DECODER: (
+                WeightEntry(CheckpointRole.TARGET, self.adapter),
+            )
+        }
+        return state_dict

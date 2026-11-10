@@ -218,15 +218,18 @@ modular_eager_py_test(
     name = "functional/test_collective_rms_norm_2gpu",
     size = "enormous",
     srcs = ["functional/test_collective_rms_norm_2gpu.py"],
-    # The eager interpreter has no handler for the fused collectives.
-    env = {"MAX_EAGER_EXECUTOR": "compile"},
+    # The eager interpreter has no handler for the fused collectives, so
+    # compile the graphs it refuses and interpret the rest: `compile` would
+    # recompile every eager graph.
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     exec_properties = {
         "test.resources:gpu-1": "0",
         "test.resources:gpu-2": "0.01",
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"],
-    # Collective signal buffers come from max.nn.legacy, imported lazily.
+    # Collective signal buffers come from max.nn.legacy, imported lazily by
+    # the realization context when the fused collectives allocate them.
     ignore_extra_deps = ["//max/python/max/nn/legacy"],
     imports = ["."],
     tags = ["gpu"],

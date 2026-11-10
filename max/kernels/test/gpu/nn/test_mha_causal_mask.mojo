@@ -49,7 +49,7 @@ def test[
     seq_len: Int,
     num_keys: Int,
     mask: MaskType,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     *,
     is_benchmark: Bool = False,
     num_partitions: Optional[Int] = None,
@@ -119,7 +119,7 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         flash_attention(
             output_device,
@@ -490,7 +490,7 @@ def main() raises:
         # pins the allocation across the kernel. `test` synchronizes before it
         # returns, so that is the full extent of the launch.
         def vl_buffer(
-            val: UInt32, ctx: DeviceContext
+            val: UInt32, ctx: DeviceContext[]
         ) raises -> DeviceBuffer[.uint32]:
             var dev_buf = ctx.enqueue_create_buffer[.uint32](1)
             ctx.enqueue_memset(dev_buf, val)

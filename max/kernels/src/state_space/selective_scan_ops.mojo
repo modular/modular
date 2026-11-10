@@ -63,9 +63,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Output & Tensor],
         out_z: Some[Output & Tensor],
@@ -136,7 +134,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
 
         # Dispatch runtime dstate to compile-time DSTATE for comptime for
         # loop unrolling and guaranteed register allocation on GPU.
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             if dstate == 16:
                 selective_scan_fwd_cpu[
                     dtype,
@@ -183,7 +181,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_tt,
                     Optional(ctx.assert_cpu_target()),
                 )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
@@ -274,7 +272,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     block_dim=(BLOCK_SIZE,),
                 )
         else:
-            raise Error("Unsupported target: " + target)
+            raise Error("Unsupported target")
 
 
 @extensibility.register_shape_function("selective_scan_fwd")
@@ -359,9 +357,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         output: Some[Output & Tensor],
         x: Some[Output & Tensor],
         u: Some[Input & Tensor],
@@ -414,7 +410,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                 String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             if dstate == 16:
                 selective_scan_fwd_cpu_minimal[
                     dtype,
@@ -453,7 +449,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     C_tt,
                     Optional(ctx.assert_cpu_target()),
                 )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
@@ -598,9 +594,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
+    def execute(
         state_out: Some[Output & Tensor],
         output: Some[Output & Tensor],
         state_in: Some[Input & Tensor],
@@ -665,7 +659,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                 String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             if dstate == 16:
                 selective_scan_update_cpu[
                     dtype,
@@ -710,7 +704,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     dt_bias_tt,
                     Optional(ctx.assert_cpu_target()),
                 )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
@@ -799,7 +793,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     block_dim=(BLOCK_SIZE,),
                 )
         else:
-            raise Error("Unsupported target: " + target)
+            raise Error("Unsupported target")
 
 
 @extensibility.register_shape_function("selective_scan_update")

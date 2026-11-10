@@ -14,7 +14,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 # Registers the ``deepseekv4`` reasoning parser at import.
@@ -23,10 +23,12 @@ from .. import deepseekV4 as _deepseekV4  # noqa: F401
 # Registers the ``deepseekv41`` tool parser at import.
 from ..deepseekV41 import tool_parser as _v41_tool_parser  # noqa: F401
 from . import weight_adapters
-from .batch_processor import DeepseekV41BatchProcessor
 from .memory_planner import DeepseekV41MemoryPlanner
-from .model import DeepseekV41Model
-from .model_config import DeepseekV41Config
+from .registration import (
+    RegisteredDeepseekV41BatchProcessor,
+    RegisteredDeepseekV41Config,
+    RegisteredDeepseekV41Decoder,
+)
 from .tokenizer import DeepseekV41Tokenizer
 
 deepseekV41_modulev3_arch = SupportedArchitecture(
@@ -35,8 +37,8 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     example_repo_ids=[
         "nvidia/DeepSeek-V4.1-Flash-NVFP4",
     ],
-    default_encoding=DeepseekV41Config.DEFAULT_ENCODING,
-    supported_encodings=DeepseekV41Config.SUPPORTED_ENCODINGS,
+    default_encoding=RegisteredDeepseekV41Config.DEFAULT_ENCODING,
+    supported_encodings=RegisteredDeepseekV41Config.SUPPORTED_ENCODINGS,
     # Multi-GPU serves the data-parallel attention + expert-parallel MoE
     # shapes this trunk wires (dp == ep_size == the device count, the
     # full attention heads once per rank); plain tensor parallelism
@@ -45,7 +47,7 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     supports_device_graph_capture=False,
     supports_empty_batches=False,
     requires_max_batch_context_length=True,
-    pipeline_model=DeepseekV41Model,
+    modules={GraphRole.DECODER: RegisteredDeepseekV41Decoder},
     tokenizer=DeepseekV41Tokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -58,8 +60,8 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     # blocks the cached prefix shares with other sessions. Prefix caching
     # stays off until resuming from cached pages is supported.
     required_arguments={"enable_prefix_caching": False},
-    config=DeepseekV41Config,
-    batching=DeepseekV41BatchProcessor,
+    config=RegisteredDeepseekV41Config,
+    batching=RegisteredDeepseekV41BatchProcessor,
     memory_planner=DeepseekV41MemoryPlanner,
     reasoning_parser="deepseekv4",
     tool_parser="deepseekv41",

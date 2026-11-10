@@ -21,12 +21,17 @@
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Regex.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <thread>
 #include <vector>
@@ -104,6 +109,27 @@ TEST_F(GraphCaptureTest, BeginAndEndCapture) {
   EXPECT_TRUE(graph);
 }
 
+// A pool stream's capture shows through the view that runs it, not the base
+// context.
+TEST_F(GraphCaptureTest, IsGraphCapturingTracksCapture) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->createStream());
+  ASSIGN_NO_ERR(DeviceContextRef, view,
+                ctx->selectStream(ctx->numStreams() - 1));
+  ASSIGN_NO_ERR(DeviceStreamRef, viewStream, view->stream());
+  ASSERT_EQ(viewStream->ptr(), stream->ptr());
+
+  EXPECT_FALSE(view->isGraphCapturing());
+
+  EXPECT_NO_ERR(stream->beginCapture());
+  EXPECT_TRUE(view->isGraphCapturing());
+  EXPECT_FALSE(ctx->isGraphCapturing());
+
+  ASSIGN_NO_ERR(DeviceGraphRef, graph, stream->endCapture());
+  EXPECT_FALSE(view->isGraphCapturing());
+}
+
 TEST_F(GraphCaptureTest, DoubleBeginCaptureErrors) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx,
                 DeviceContext::create(Device::gpuAPI, /*id=*/0));
@@ -163,6 +189,7 @@ TEST_F(GraphCaptureTest, CPUDeviceReturnsNotSupported) {
 
   EXPECT_ERR(stream->beginCapture());
   EXPECT_ERR(stream->endCapture());
+  EXPECT_FALSE(ctx->isGraphCapturing());
 }
 
 TEST_F(GraphCaptureTest, ReplayOnCPUStreamErrors) {
@@ -1124,7 +1151,7 @@ TEST_F(GraphCaptureTest, WaitOnHostValueIsRecordedIntoCapturedGraph) {
 
   ErrorOr<DeviceGraphCollection> captured =
       DeviceGraph::capture(*runtime_, {stream}, [&]() -> ErrorOrSuccess {
-        return stream->enqueueWaitOnHostValue(*flag, 1);
+        return stream->enqueueWaitOnFlag(*flag, 1);
       });
   ASSERT_FALSE(captured.isError()) << std::string(captured.getError());
 
@@ -1192,7 +1219,7 @@ TEST_F(GraphCaptureTest, WaitOnHostValueGatesReplayedGraph) {
 
   flag->reset();
   EXPECT_NO_ERR(stream->beginCapture());
-  EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+  EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
   EXPECT_NO_ERR(deviceDst->copyFrom(src));
   ASSIGN_NO_ERR(DeviceGraphRef, graph, stream->endCapture());
   EXPECT_NO_ERR(graph->instantiate());
@@ -1237,6 +1264,145 @@ TEST_F(GraphCaptureTest, WaitOnHostValueGatesReplayedGraph) {
            "host-value wait did not gate the H2D";
     EXPECT_EQ(readback.back(), freshWord) << "iteration " << iteration;
   }
+}
+
+TEST_F(GraphCaptureTest, HipForkKeepsItsOwnStreamOnTheFirstEdge) {
+  llvm::SmallString<128> dotDir;
+  ASSERT_FALSE(
+      llvm::sys::fs::createUniqueDirectory("graph-capture-dot", dotDir));
+  ScopedEnvVar logCapture("MODULAR_DEVICE_CONTEXT_LOG_GRAPH_CAPTURE", dotDir);
+
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  if (ctx->device().api() != Device::hipAPI)
+    GTEST_SKIP() << "only HIP assigns graph queues by dependent-edge order";
+  ASSIGN_NO_ERR(DeviceStreamRef, sideStream, ctx->createStream());
+  ASSIGN_NO_ERR(DeviceContextRef, side, ctx->selectStream(1));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(DeviceFunctionRef, deviceFunc, loadVecAdd(*ctx));
+
+  const uint64_t length = 1024;
+  const size_t elemSize = sizeof(float);
+  ASSIGN_NO_ERR(DeviceBufferRef, bufOut,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  ASSIGN_NO_ERR(DeviceBufferRef, bufIn0,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  ASSIGN_NO_ERR(DeviceBufferRef, bufIn1,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  EXPECT_NO_ERR(stream->synchronize());
+
+  void *outPtr = bufOut->ptr();
+  void *in0Ptr = bufIn0->ptr();
+  void *in1Ptr = bufIn1->ptr();
+  void *args[] = {(void *)&outPtr, (void *)&in0Ptr, (void *)&in1Ptr,
+                  (void *)&length};
+  const uint32_t blockDim = 256;
+  const uint32_t gridDim = (length + blockDim - 1) / blockDim;
+  auto launch = [&](DeviceStream &onStream) -> ErrorOrSuccess {
+    return onStream.enqueueFunctionExecDirect(
+        *deviceFunc,
+        /*gridX=*/gridDim, /*gridY=*/1, /*gridZ=*/1,
+        /*blockX=*/blockDim, /*blockY=*/1, /*blockZ=*/1,
+        /*sharedMemBytes=*/0,
+        /*attrs=*/nullptr, /*numAttrs=*/0, args);
+  };
+
+  ErrorOr<DeviceGraphCollection> captured =
+      DeviceGraph::capture(*runtime_, {stream}, [&]() -> ErrorOrSuccess {
+        RETURN_IF_ERROR(launch(*stream));
+        RETURN_IF_ERROR(side->enqueueWaitFor(*ctx));
+        RETURN_IF_ERROR(launch(*sideStream));
+        RETURN_IF_ERROR(launch(*stream));
+        RETURN_IF_ERROR(ctx->enqueueWaitFor(*side));
+        return launch(*stream);
+      });
+  ASSERT_FALSE(captured.isError());
+  EXPECT_NO_ERR(captured->replay());
+  EXPECT_NO_ERR(stream->synchronize());
+
+  std::vector<std::string> dotFiles;
+  std::error_code ec;
+  for (llvm::sys::fs::directory_iterator it(dotDir, ec), end; it != end && !ec;
+       it.increment(ec))
+    if (llvm::StringRef(it->path()).ends_with(".dot"))
+      dotFiles.push_back(it->path());
+  ASSERT_EQ(dotFiles.size(), 1u);
+  auto dot = llvm::MemoryBuffer::getFile(dotFiles.front());
+  ASSERT_TRUE(dot);
+
+  llvm::Regex edge(
+      "\"graph_[0-9]+_node_([0-9]+)\" -> \"graph_[0-9]+_node_([0-9]+)\"");
+  std::map<uint64_t, std::vector<uint64_t>> dependents;
+  llvm::SmallVector<llvm::StringRef> lines;
+  (*dot)->getBuffer().split(lines, '\n');
+  for (llvm::StringRef line : lines) {
+    llvm::SmallVector<llvm::StringRef, 3> match;
+    if (!edge.match(line, &match))
+      continue;
+    uint64_t from = 0, to = 0;
+    ASSERT_FALSE(match[1].getAsInteger(10, from));
+    ASSERT_FALSE(match[2].getAsInteger(10, to));
+    dependents[from].push_back(to);
+  }
+
+  std::vector<std::vector<uint64_t>> forks;
+  for (const auto &[node, nodeDependents] : dependents)
+    if (nodeDependents.size() > 1)
+      forks.push_back(nodeDependents);
+  ASSERT_EQ(forks.size(), 1u);
+  ASSERT_EQ(forks.front().size(), 2u);
+  EXPECT_GT(forks.front()[0], forks.front()[1])
+      << "the fork's first dependent is the side stream's launch, so HIP "
+         "would run the base stream's continuation on another queue";
+}
+
+TEST_F(GraphCaptureTest, HipHighPriorityMainStreamCapturesAndReplays) {
+  ScopedEnvVar priority("MODULAR_DEVICE_CONTEXT_HIP_MAIN_STREAM_PRIORITY",
+                        "high");
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  if (ctx->device().api() != Device::hipAPI)
+    GTEST_SKIP() << "hip_main_stream_priority is a HIP option";
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(DeviceFunctionRef, deviceFunc, loadVecAdd(*ctx));
+
+  const uint64_t length = 1024;
+  const size_t elemSize = sizeof(float);
+  ASSIGN_NO_ERR(DeviceBufferRef, bufOut,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  ASSIGN_NO_ERR(DeviceBufferRef, bufIn0,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  ASSIGN_NO_ERR(DeviceBufferRef, bufIn1,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  std::vector<float> in0(length, 1.0f), in1(length, 2.0f), out(length, 0.0f);
+  EXPECT_NO_ERR(bufIn0->copyFrom(in0.data()));
+  EXPECT_NO_ERR(bufIn1->copyFrom(in1.data()));
+  EXPECT_NO_ERR(stream->synchronize());
+
+  void *outPtr = bufOut->ptr();
+  void *in0Ptr = bufIn0->ptr();
+  void *in1Ptr = bufIn1->ptr();
+  void *args[] = {(void *)&outPtr, (void *)&in0Ptr, (void *)&in1Ptr,
+                  (void *)&length};
+  const uint32_t blockDim = 256;
+  const uint32_t gridDim = (length + blockDim - 1) / blockDim;
+  ErrorOr<DeviceGraphCollection> captured =
+      DeviceGraph::capture(*runtime_, {stream}, [&]() -> ErrorOrSuccess {
+        return stream->enqueueFunctionExecDirect(
+            *deviceFunc,
+            /*gridX=*/gridDim, /*gridY=*/1, /*gridZ=*/1,
+            /*blockX=*/blockDim, /*blockY=*/1, /*blockZ=*/1,
+            /*sharedMemBytes=*/0,
+            /*attrs=*/nullptr, /*numAttrs=*/0, args);
+      });
+  ASSERT_FALSE(captured.isError());
+  EXPECT_NO_ERR(captured->replay());
+  EXPECT_NO_ERR(stream->synchronize());
+
+  EXPECT_NO_ERR(bufOut->copyTo(out.data()));
+  EXPECT_NO_ERR(stream->synchronize());
+  EXPECT_EQ(out.front(), 3.0f);
+  EXPECT_EQ(out.back(), 3.0f);
 }
 
 } // namespace

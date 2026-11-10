@@ -21,10 +21,24 @@
 #include "mlir/IR/Value.h"
 #include "llvm/ADT/SmallVector.h"
 
+namespace M::MAP {
+/// In `IndexTransformOpInterface::mapLoopDims`, a coordinate that is 0 for
+/// every element.
+inline constexpr int64_t kPinnedCoordinate = -1;
+} // namespace M::MAP
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOpInterfaces.h.inc"
+
+namespace M::MAP {
+/// The loop dimension each coordinate of `index` is (see
+/// `IndexTransformOpInterface::mapLoopDims`), following the index transforms
+/// from `loopIdx`. Nullopt when one of them doesn't map loop dimensions.
+std::optional<llvm::SmallVector<int64_t>> traceLoopDims(mlir::Value index,
+                                                        mlir::Value loopIdx);
+} // namespace M::MAP
 
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPOPINTERFACES_H

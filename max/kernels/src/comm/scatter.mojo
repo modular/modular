@@ -26,7 +26,7 @@ Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 """
 
 from layout import Coord, TensorEngine, TileTensor
-from layout.tile_layout import TensorLayout, row_major
+from layout.layout import TensorLayout, row_major
 from std.collections import Array
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu import (

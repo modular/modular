@@ -19,7 +19,7 @@ process creation, output capture, and resource cleanup automatically.
 
 import std.sys._libc as libc
 from std.ffi import external_call
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
 
@@ -76,7 +76,7 @@ struct _POpenHandle:
                 break
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
-            res += StringSlice(
+            res += StringSpan(
                 from_utf8=Span(
                     unsafe_ptr=line.value().unsafe_bitcast[Byte](), length=read
                 )

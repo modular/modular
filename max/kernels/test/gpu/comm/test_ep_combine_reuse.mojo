@@ -40,12 +40,13 @@ from comm.sync import enable_p2p
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from shmem.ep import ep_fused_combine_kernel_api
 from shmem.ep_comm import (
     EP_NO_INPUT_SCALES,
     BF16TokenFormat,
     EPLocalSyncCounters,
+    NullExpertLoad,
     dispatch_async_kernel,
     dispatch_wait_kernel,
 )
@@ -188,7 +189,7 @@ def main() raises:
         print("This test requires exactly", N_RANKS, "GPUs; skipping.")
         return
 
-    var ctxs = List[DeviceContext]()
+    var ctxs = List[DeviceContext[]]()
     for i in range(N_RANKS):
         ctxs.append(DeviceContext(device_id=i))
 
@@ -393,6 +394,7 @@ def main() raises:
                 counters[d].unsafe_ptr().as_unsafe_any_origin()
             ),
             Int32(d),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -439,7 +441,6 @@ def main() raises:
             MAX_TOK,
             N_RANKS,
             1,
-            "gpu",
             use_shmem=False,
         ](
             rows,

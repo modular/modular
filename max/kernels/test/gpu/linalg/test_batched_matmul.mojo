@@ -25,7 +25,7 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from linalg.bmm import (
     _batched_matmul_gpu,
     batched_matmul,
@@ -214,7 +214,7 @@ def run_bmm_and_check_result[
         )
 
     comptime if lambda_fn:
-        elementwise[pack_size, target="gpu"](
+        elementwise[pack_size](
             func,
             (b, m, n),
             ctx,
@@ -667,7 +667,7 @@ def _late_producer_once[
     var a_t = TileTensor(a, row_major(b, m, Idx[K]))
     var w_t = TileTensor(w, row_major(b, Idx[N], Idx[K]))
     comptime if via_public:
-        batched_matmul[transpose_b=True, target="gpu", pdl_level=pdl_level](
+        batched_matmul[transpose_b=True, pdl_level=pdl_level](
             c_t, a_t.as_imm(), w_t.as_imm(), context=ctx
         )
     else:

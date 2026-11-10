@@ -24,8 +24,8 @@ from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import MultiKVCacheParams, spec_decode_cache_slack
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import MultiKVCacheParams, spec_decode_cache_slack
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gpt_oss.batch_processor import (
     GptOssBatchProcessor,
     GptOssInputs,
@@ -34,11 +34,14 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     BatchProcessor,
+    CheckpointRole,
     GraphPipelineModelWithKVCache,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    WeightEntry,
+    WeightTransform,
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
@@ -140,12 +143,18 @@ class MiMoV2Model(
     def _load_state_dict(self) -> dict[str, Any]:
         """Adapts the text model's tensors, :func:`text_model_weights`.
 
-        The adapter must see exactly those to prove every one is consumed or
-        ignored.
+        The rules must see exactly those to prove every one is consumed or
+        ignored, and they name the decoder's weights.
         """
         self._language_weights_dict = _adapted_state_dict(
             self.pipeline_config, self.weights, self.adapter
         )
+        assert isinstance(self.adapter, WeightTransform)
+        self.weight_naming = {
+            GraphRole.DECODER: (
+                WeightEntry(CheckpointRole.TARGET, self.adapter),
+            )
+        }
         return self._language_weights_dict
 
     @classmethod
@@ -250,11 +259,9 @@ def _adapted_state_dict(
     weights: Weights,
     adapter: WeightsAdapter | None,
 ) -> dict[str, Any]:
-    assert adapter is not None
+    assert isinstance(adapter, WeightTransform)
     return adapter(
         text_model_weights(
             pipeline_config.model.huggingface_weight_repo, weights
-        ),
-        huggingface_config=pipeline_config.model.huggingface_config,
-        pipeline_config=pipeline_config,
+        )
     )

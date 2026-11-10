@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from enum import IntEnum
+
 import mojo.importer
 from max.driver import Device
 
@@ -101,7 +103,63 @@ def mla_dispatch_args_scalar(
     ``sparse_indices_stride`` is the selected rows per token of a sparse
     MLA cache (``0`` for dense). On AMD it sizes ``num_partitions`` from the
     selection instead of from ``max_cache_valid_length``, matching the
-    split the sparse decode kernel launches.
+    split the sparse decode kernel launches. On NVIDIA it follows the
+    SM100 sparse launch at head counts 8 through 64 in multiples of eight
+    and at 128 heads.
+    """
+    key = mla_dispatch_key(
+        batch_size,
+        max_cache_valid_length,
+        q_max_seq_len,
+        num_heads,
+        is_fp8_kv,
+        device,
+        sparse_indices_stride,
+    )
+    return key[0], key[1], key[2]
+
+
+class MLASparseKVForm(IntEnum):
+    """The cache forms the SM100 sparse MLA dispatch key distinguishes."""
+
+    PLAIN = 0
+    """A sparse MLA cache without scales: unit-scale FP8 or BF16."""
+    SCALED_FP8 = 1
+    """A sparse MLA cache of FP8 with block scales."""
+    NVFP4 = 2
+    """A packed NVFP4 sparse MLA cache."""
+
+
+def mla_dispatch_key(
+    batch_size: int,
+    max_cache_valid_length: int,
+    q_max_seq_len: int,
+    num_heads: int,
+    is_fp8_kv: bool,
+    device: Device,
+    sparse_indices_stride: int = 0,
+    *,
+    kv_form: MLASparseKVForm = MLASparseKVForm.PLAIN,
+    page_size: int = 128,
+    fixed_topk: bool = True,
+    physical_indices: bool = False,
+    depth: int = 0,
+) -> tuple[int, int, int, int]:
+    """Returns :func:`mla_dispatch_args_scalar`'s scalars and a kernel variant.
+
+    The variant distinguishes 64-key single-CTA (``0``), 128-key paired
+    (``1``), and 128-key single-CTA (``2``) launches. It is part of the
+    capture identity; device dispatch metadata still contains three scalars.
+
+    SM100 sparse keys follow the launched split and variant at head counts
+    8 through 64 in multiples of eight and at 128 heads. The selection also
+    depends on ``kv_form``, ``page_size``, and ``fixed_topk``: whether the
+    decode passes neither per-token top-k lengths nor an attention sink.
+    ``physical_indices`` identifies rows already mapped to cache storage,
+    allowing policies measured for that form. It defaults to logical indices;
+    NVFP4 always uses physical value and scale rows regardless of this flag.
+    ``depth`` is the cache row width; its default of zero keeps policies that
+    require a measured row width disabled.
     """
     result = _mla_dispatch_args_scalar(
         batch_size,
@@ -111,13 +169,20 @@ def mla_dispatch_args_scalar(
         is_fp8_kv,
         device._device_context_ptr(),
         sparse_indices_stride,
+        kv_form,
+        page_size,
+        fixed_topk,
+        physical_indices,
+        depth,
     )
-    return int(result[0]), int(result[1]), int(result[2])
+    return int(result[0]), int(result[1]), int(result[2]), int(result[3])
 
 
 __all__ = [
+    "MLASparseKVForm",
     "mha_decode_num_partitions",
     "mha_split_kv_decode_num_partitions",
     "mla_dispatch_args_scalar",
+    "mla_dispatch_key",
     "multiprocessor_count",
 ]

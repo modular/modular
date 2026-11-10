@@ -1,4 +1,32 @@
 {
+  "inkling": {
+    "in_layouts": [
+      {"buffer": false, "dtype": "int32", "shape": ["total_patches", 40, 40, 3], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]}
+    ],
+    "in_tree": {
+      "kind": "tuple",
+      "children": [
+        {
+          "kind": "tuple",
+          "children": [
+            {
+              "kind": "ordered_dict",
+              "keys": ["patches"],
+              "children": [
+                {
+                  "kind": "node",
+                  "type": "vision_rows",
+                  "keys": ["pixels"],
+                  "children": [{"kind": "leaf"}]
+                }
+              ]
+            }
+          ]
+        },
+        {"kind": "dict", "keys": [], "children": []}
+      ]
+    }
+  },
   "gemma4": {
     "in_layouts": [
       {"buffer": false, "dtype": "bfloat16", "shape": ["total_patches", 768], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
