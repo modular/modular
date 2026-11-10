@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Any, Generic, TypeAlias, TypeVar
 
+import numpy as np
+import numpy.typing as npt
 from max import tree
 from max.driver import Buffer
 from max.dtype import DType
@@ -34,6 +36,28 @@ _Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
 
 MIXED_STEP_SPLIT_SIZE = 7
 """Number of ``uint32`` slots in a KV cache's mixed-step split record."""
+
+_MIXED_STEP_SPLIT_DECODE_CAP = 8
+"""Widest query the split-route ops run on their decode routes
+(``MIXED_STEP_DECODE_WIDTH`` in ``kv_cache.mixed_step_split``). A mismatch only
+turns the split off: the ops re-check it."""
+
+
+def _mixed_step_decode_view(
+    record: npt.NDArray[np.uint32], batch_size: int
+) -> tuple[int, int, int] | None:
+    """Returns the record's decode view as ``(rows, max_query, max_cache)``.
+
+    ``None`` when the record does not split (slot 0 zero) or its head row
+    count reaches the batch size. Mirrors ``MixedSplit.decode_view`` in
+    ``kv_cache.mixed_step_split``: the head view (slots 0, 2-3) when its
+    max query fits the decode cap, else the tail view (slots 4-5).
+    """
+    if record[0] == 0 or record[0] >= batch_size:
+        return None
+    if record[2] <= _MIXED_STEP_SPLIT_DECODE_CAP:
+        return int(record[0]), int(record[2]), int(record[3])
+    return batch_size - int(record[0]), int(record[4]), int(record[5])
 
 
 @tree.kind("split_kv_head_dims")

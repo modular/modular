@@ -46,12 +46,10 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
-
-MIXED_STEP_SPLIT_DECODE_CAP = 8
-"""Widest query the split-route ops run on their decode routes
-(``MIXED_STEP_DECODE_WIDTH`` in ``kv_cache.mixed_step_split``). A mismatch only
-turns the split off: the ops re-check it."""
+from max.nn.kv_cache.input_types import (
+    _MIXED_STEP_SPLIT_DECODE_CAP,
+    MIXED_STEP_SPLIT_SIZE,
+)
 
 MIXED_STEP_SPLIT_SWITCH = "MODULAR_MIXED_STEP_SPLIT"
 """Set to ``0`` to fill zeros on the same graph, for A/B runs. Mach reads the
@@ -65,7 +63,7 @@ def mixed_step_decode_width(num_draft_tokens: int) -> int:
     bound would also take short prefill rows, which the persistent decode
     scratch, sized for ``max_batch * (1 + K)``, does not cover.
     """
-    return min(1 + num_draft_tokens, MIXED_STEP_SPLIT_DECODE_CAP)
+    return min(1 + num_draft_tokens, _MIXED_STEP_SPLIT_DECODE_CAP)
 
 
 def mixed_step_split_record(
@@ -99,7 +97,7 @@ def mixed_step_split_record(
     record = np.zeros(MIXED_STEP_SPLIT_SIZE, dtype=np.uint32)
     if os.environ.get(MIXED_STEP_SPLIT_SWITCH, "").strip() == "0":
         return record
-    if not widths or max(widths) <= MIXED_STEP_SPLIT_DECODE_CAP:
+    if not widths or max(widths) <= _MIXED_STEP_SPLIT_DECODE_CAP:
         return record
     leading = _run_length(widths, decode_width)
     trailing = _run_length(widths[::-1], decode_width)
