@@ -4428,6 +4428,105 @@ def _mixed_step_split_value(
 
 
 @_rejects_split_head_dims
+def mla_kpool_append(
+    tail: BufferValue,
+    k: TensorValue,
+    gate: TensorValue,
+    ape: TensorValue,
+    input_row_offsets: TensorValue,
+    slot_idx: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    kpool: int,
+    quantization_granularity: int,
+    scale_ub: float = 1200.0,
+) -> None:
+    """Pools, FP8-quantizes and caches every k-pool this call completes.
+
+    One launch with the same bytes as :func:`mla_kpool_ring_close` and
+    :func:`mla_kpool_compress`, each pooled key then quantized as one
+    ``float8_e4m3fn`` group with a ``float32`` scale
+    (:func:`quantize_dynamic_scaled_float8`, ``group_size_or_per_token`` the
+    key width) and stored with :func:`store_k_cache_ragged` and
+    :func:`store_k_scale_cache_ragged`. Pool ``P`` lands at cache positions
+    ``[P * kpool, (P + 1) * kpool)``, ``head_dim // kpool`` values each, with
+    the pool's scale in every one of them.
+
+    The tail ring is only read; run :func:`mla_kpool_seed_tail` after this.
+
+    Args:
+        tail: Persistent slot-indexed ring, dtype of ``k``, ``[max_slots, 2,
+            kpool, head_dim]``.
+        k: This call's layer-normed keys, ``[total_tokens, head_dim]``.
+        gate: This call's gate scores, ``[total_tokens, head_dim]``, same
+            dtype as ``k``.
+        ape: Within-pool position embedding, ``[kpool, head_dim]``, float32.
+        input_row_offsets: Token row offsets per request, ``[batch + 1]``.
+        slot_idx: Ring slot per request, ``[batch]`` uint32.
+        kv_collection: The pooled key cache, FP8 with float32 scales.
+        layer_idx: uint32 scalar, the layer to write.
+        kpool: Tokens per pool.
+        quantization_granularity: Cache values per scale.
+        scale_ub: Upper bound on a pool's max-abs before its scale derives.
+
+    Raises:
+        ValueError: If ``kpool`` is not positive, if the operand shapes or
+            dtypes disagree, or if the cache carries no scales.
+    """
+    if kpool < 1:
+        raise ValueError(f"kpool must be at least 1, got {kpool}")
+    if k.rank != 2 or gate.rank != 2:
+        raise ValueError(
+            f"k and gate must be rank 2, got {k.rank} and {gate.rank}"
+        )
+    if k.shape[1] != gate.shape[1] or k.dtype != gate.dtype:
+        raise ValueError(
+            "k and gate must share head_dim and dtype, got"
+            f" {k.shape} {k.dtype} and {gate.shape} {gate.dtype}"
+        )
+    if ape.rank != 2 or ape.shape[0] != kpool or ape.shape[1] != k.shape[1]:
+        raise ValueError(
+            f"ape must be [kpool, head_dim] = [{kpool}, {k.shape[1]}], got"
+            f" {ape.shape}"
+        )
+    if (
+        kv_collection.kv_scales is None
+        or kv_collection.scales_page_stride is None
+        or kv_collection.scales_lookup_table is None
+    ):
+        raise ValueError("mla_kpool_append needs a cache with scales")
+
+    ops.inplace_custom(
+        "attention.mla.kpool.append.paged",
+        device=k.device,
+        values=[
+            tail,
+            k,
+            gate,
+            ape,
+            input_row_offsets,
+            slot_idx,
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+            kv_collection.kv_blocks,
+            kv_collection.page_stride,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            kv_collection.max_prompt_length,
+            kv_collection.max_cache_length,
+            kv_collection.kv_scales,
+            kv_collection.scales_page_stride,
+            kv_collection.scales_lookup_table,
+            layer_idx,
+        ],
+        parameters={
+            "head_dim": int(k.shape[1]),
+            "kpool": kpool,
+            "quantization_granularity": quantization_granularity,
+        },
+    )
+
+
+@_rejects_split_head_dims
 def msa_sparse_indexer(
     kv_params: KVCacheParams,
     index_q: TensorValue,

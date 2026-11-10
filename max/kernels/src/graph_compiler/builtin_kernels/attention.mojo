@@ -131,6 +131,7 @@ from std.utils import IndexList
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
 from nn.attention.gpu.mla_index_kpool import (
+    kpool_append_ragged_paged,
     kpool_compress_kernel,
     KPOOL_EXPAND_BLOCK_SIZE,
     kpool_expand_topk_kernel,
@@ -598,6 +599,129 @@ struct MLAKPoolRingClose:
             grid_dim=(batch_size, 1, 1),
             block_dim=(head_dim, 1, 1),
             attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+
+
+@extensibility.register("attention.mla.kpool.append.paged")
+struct MLAKPoolAppendPaged:
+    """Registers the `attention.mla.kpool.append.paged` graph op with the graph
+    compiler.
+    """
+
+    @staticmethod
+    def execute[
+        cache_dtype: DType,
+        scale_dtype: DType,
+        //,
+        *,
+        head_dim: Int,
+        kpool: Int,
+        quantization_granularity: Int,
+    ](
+        # Read only, but `attention.mla.kpool.seed_tail` writes the ring this
+        # same step and must run after this op; see `MLAKPoolRingClose`.
+        tail: Some[MutableInput & Tensor],
+        k: Some[Input & Tensor],
+        gate: Some[Input & Tensor],
+        ape: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        slot_idx: Some[Input & Tensor],
+        scale_ub: Float32,
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        k_scales_blocks: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContext,
+    ) raises:
+        """Pools, FP8-quantizes and caches every k-pool this call completes.
+
+        One launch for what `attention.mla.kpool.ring_close`,
+        `attention.mla.kpool.compress`, `quantize_dynamic_scaled_float8` and
+        the paged K and K-scale stores do together; see `kpool_append_ragged_paged`.
+
+        Parameters:
+            cache_dtype: Element type of the pooled key cache (inferred).
+            scale_dtype: Element type of its scales (inferred).
+            head_dim: Channels per key; also the kernel's block width.
+            kpool: Tokens per pool.
+            quantization_granularity: Cache values per scale.
+
+        Args:
+            tail: Persistent slot-indexed ring `[max_slots, 2, kpool,
+                head_dim]`. Read only.
+            k: This call's layer-normed keys `[total_tokens, head_dim]`.
+            gate: This call's gate scores `[total_tokens, head_dim]`.
+            ape: Within-pool position embedding `[kpool, head_dim]`, float32.
+            input_row_offsets: Token row offsets per request `[batch + 1]`.
+            slot_idx: Ring slot per request `[batch]`.
+            scale_ub: Upper bound on a pool's max-abs before its scale.
+            kv_blocks: The pooled key cache's pages.
+            page_stride: Page stride of `kv_blocks`.
+            cache_lengths: Cached-prefix length per request `[batch]`.
+            kv_lookup_table: Page table.
+            max_prompt_length: Longest new-token count in the batch.
+            max_cache_length: Longest cached prefix in the batch.
+            k_scales_blocks: The pooled key cache's scale pages.
+            scales_page_stride: Page stride of `k_scales_blocks`.
+            k_scales_lookup_table: Scale page table.
+            layer_idx: The layer's index in the cache.
+            ctx: Device context for GPU execution.
+        """
+        comptime assert conforms_to(type_of(tail), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(gate), TileTensorable)
+        comptime assert conforms_to(type_of(ape), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert type_of(tail).rank == 4
+        comptime assert type_of(k).rank == 2
+        comptime assert type_of(gate).rank == 2
+        comptime assert type_of(ape).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(slot_idx).rank == 1
+        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime cache_head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        comptime kv_params = KVCacheStaticParams(
+            num_heads, cache_head_dim, is_mla
+        )
+
+        var k_collection = generic_get_paged_cache_with_scales[
+            cache_dtype,
+            scale_dtype,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor(),
+            cache_lengths.to_tile_tensor(),
+            kv_lookup_table.to_tile_tensor(),
+            max_prompt_length.to_tile_tensor(),
+            max_cache_length.to_tile_tensor(),
+            k_scales_blocks.to_tile_tensor(),
+            scales_page_stride.to_tile_tensor(),
+            k_scales_lookup_table.to_tile_tensor(),
+        )
+
+        kpool_append_ragged_paged[head_dim=head_dim, kpool=kpool](
+            tail.to_tile_tensor[type_of(k).dtype]().as_imm(),
+            k.to_tile_tensor().as_imm(),
+            gate.to_tile_tensor[type_of(k).dtype]().as_imm(),
+            ape.to_tile_tensor[.float32]().as_imm(),
+            input_row_offsets.to_tile_tensor[.uint32]().as_imm(),
+            cache_lengths.to_tile_tensor().as_imm(),
+            slot_idx.to_tile_tensor[.uint32]().as_imm(),
+            k_collection.get_key_cache(Int(layer_idx)),
+            scale_ub,
+            ctx,
         )
 
 

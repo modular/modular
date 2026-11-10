@@ -37,14 +37,9 @@ from max.graph import BufferValue, TensorValue, ops
 from max.nn import Module
 from max.nn._graph_ops import (
     mla_fp8_index_top_k,
-    mla_kpool_compress,
+    mla_kpool_append,
     mla_kpool_expand_topk,
-    mla_kpool_ring_close,
     mla_kpool_seed_tail,
-    quantize_dynamic_scaled_float8,
-    scatter_nd_skip_oob_indices,
-    store_k_cache_ragged,
-    store_k_scale_cache_ragged,
 )
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -54,7 +49,6 @@ from max.nn.norm import LayerNorm
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     KpoolTailReplayInputs,
-    exclusive_prefix_sum,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
@@ -105,101 +99,9 @@ class _Pooling:
     """The compile-time constants of the pooled selection."""
 
     kpool: int
-    head_dim: int
     pools_selected: int
     always_select_tail: bool
     quant_config: QuantConfig
-
-
-def _quantize_pooled_keys(
-    pooled: TensorValue, p: _Pooling
-) -> tuple[TensorValue, TensorValue]:
-    """Quantizes pooled keys into the pooled cache's FP8 row layout.
-
-    One float32 scale per pool, replicated across the pool's cache rows.
-    """
-    rows = ops.flatten(pooled, 0, pooled.rank - 2)
-    num_pools = rows.shape[0]
-    values, scales = quantize_dynamic_scaled_float8(
-        rows,
-        p.quant_config.input_scale,
-        p.quant_config.weight_scale,
-        scales_type=DType.float32,
-        group_size_or_per_token=p.head_dim,
-        out_type=DType.float8_e4m3fn,
-    )
-    scales = ops.transpose(scales[:, :num_pools], 0, 1)
-    pooled_head_dim = p.head_dim // p.kpool
-    cache_rows = ops.unsqueeze(
-        values.reshape((num_pools * p.kpool, pooled_head_dim)), 1
-    )
-    scale_rows = ops.unsqueeze(
-        ops.flatten(ops.broadcast_to(scales, (num_pools, p.kpool))).reshape(
-            (num_pools * p.kpool, 1)
-        ),
-        1,
-    )
-    return cache_rows, scale_rows
-
-
-def _store_pools(
-    cache: GraphPagedCacheValues,
-    pooled: TensorValue,
-    row_offsets: TensorValue,
-    cache_lengths: TensorValue,
-    layer_idx: TensorValue,
-    p: _Pooling,
-) -> None:
-    cache_rows, scale_rows = _quantize_pooled_keys(pooled, p)
-    aligned = dataclasses.replace(cache, cache_lengths=cache_lengths)
-    store_k_cache_ragged(aligned, cache_rows, row_offsets, layer_idx)
-    store_k_scale_cache_ragged(
-        aligned,
-        scale_rows,
-        row_offsets,
-        layer_idx,
-        quantization_granularity=p.quant_config.scales_granularity_mnk[2],
-    )
-
-
-def _store_closed_pools(
-    pooled: TensorValue,
-    closed_pool: TensorValue,
-    row_offsets: TensorValue,
-    cache: GraphPagedCacheValues,
-    layer_idx: TensorValue,
-    p: _Pooling,
-) -> None:
-    """Compacts the rows that closed a pool.
-
-    It writes them behind the cache length, at the closed pool's own
-    boundary.
-    """
-    device = pooled.device
-    closed = (closed_pool >= 0).cast(DType.int32)
-    closed_before = exclusive_prefix_sum(closed)
-    # A skipped row must index past the axis; -1 would read from the end.
-    skip = ops.constant(1 << 30, DType.int32, device=device)
-    indices = ops.unsqueeze(ops.where(closed > 0, closed_before[:-1], skip), -1)
-    compacted = scatter_nd_skip_oob_indices(
-        ops.broadcast_to(
-            ops.constant(0, pooled.dtype, device=device), pooled.shape
-        ),
-        pooled,
-        indices,
-    )
-    pool_offsets = ops.gather(
-        closed_before, row_offsets.cast(DType.int32), axis=0
-    )
-    lengths = cache.cache_lengths
-    _store_pools(
-        cache,
-        compacted,
-        (pool_offsets * p.kpool).cast(DType.uint32),
-        ((lengths // p.kpool) * p.kpool).cast(DType.uint32),
-        layer_idx,
-        p,
-    )
 
 
 def _select_pooled_graph(
@@ -225,7 +127,6 @@ def _select_pooled_graph(
     """
     p = pooling
     kpool = p.kpool
-    device = k.device
     cache = indexer_k_collection
     cache_lengths = cache.cache_lengths
     slot_idx = ops.squeeze(
@@ -233,36 +134,20 @@ def _select_pooled_graph(
     )
     ape = ape.cast(DType.float32)
 
-    # Closes each request's pending ring pool first: `seed_tail` below may
-    # reuse the same ring slots for the request's next pool.
-    ring_pooled, ring_closed_pool = mla_kpool_ring_close(
-        tail, k, gate, ape, input_row_offsets, cache_lengths, slot_idx, kpool
-    )
-    batch = cache_lengths.shape[0]
-    identity_offsets = ops.range(
-        0, batch + 1, 1, out_dim=batch + 1, dtype=DType.uint32, device=device
-    )
-    _store_closed_pools(
-        ring_pooled, ring_closed_pool, identity_offsets, cache, layer_idx, p
-    )
-
-    cache_len64 = cache_lengths.cast(DType.int64)
-    n_per_request = (
-        (input_row_offsets[1:] - input_row_offsets[:-1])
-        .cast(DType.int64)
-        .rebind(cache_len64.shape, "one row-offset span per request")
-    )
-    # Pools this call completes from new tokens alone.
-    full_pools = ops.max(
-        (
-            (cache_len64 + n_per_request) // kpool
-            - (cache_len64 + kpool - 1) // kpool
-        ).cast(DType.int64),
-        ops.constant(0, DType.int64, device=device),
-    )
-    pool_row_offsets = exclusive_prefix_sum(full_pools).cast(DType.uint32)
-    pooled = mla_kpool_compress(
-        k, gate, ape, input_row_offsets, pool_row_offsets, cache_lengths, kpool
+    # Every pool this call completes, closed from the ring or built from new
+    # tokens, is pooled, quantized and cached in one launch. It reads the ring
+    # before `seed_tail` below reuses its slots for the request's next pool.
+    mla_kpool_append(
+        tail,
+        k,
+        gate,
+        ape,
+        input_row_offsets,
+        slot_idx,
+        cache,
+        layer_idx,
+        kpool,
+        p.quant_config.scales_granularity_mnk[2],
     )
     mla_kpool_seed_tail(
         tail,
@@ -284,16 +169,6 @@ def _select_pooled_graph(
                 kpool=kpool,
             )
         )
-    # `compress` owns the rows from the next pool boundary on; the ring
-    # close above owns the floor row.
-    _store_pools(
-        cache,
-        pooled,
-        (pool_row_offsets * kpool).cast(DType.uint32),
-        (((cache_lengths + kpool - 1) // kpool) * kpool).cast(DType.uint32),
-        layer_idx,
-        p,
-    )
 
     pool_ids = mla_fp8_index_top_k(
         q_fp8,
@@ -410,7 +285,6 @@ class PooledIndexer(Module[..., Tensor]):
             tail.layer,
             _Pooling(
                 kpool=self.kpool,
-                head_dim=self.head_dim,
                 pools_selected=self.pools_selected,
                 always_select_tail=self.always_select_tail,
                 quant_config=self.quant_config,

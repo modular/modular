@@ -388,6 +388,13 @@ _EXTRA_CONSTRAINTS = {
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # The fused k-pool append quantizes to FP8 and stores through the paged
+    # cache; built for the SM100 and MI355 FP8 formats only.
+    "test_mla_index_kpool_append.mojo": select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_rms_norm_fused_fp8.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
