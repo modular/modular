@@ -653,19 +653,21 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 // Helpers
 //===----------------------------------------------------------------------===//
 
-/// Find the single !lit.ref.store that stores to the specified var decl.
+/// Return the value that the single !lit.ref.store writes to the var decl.
+/// Return null if the var decl does not have exactly one store. A temporary
+/// variable that the parser makes has one store. A user variable can have
+/// more stores, or it can get its value through an `out` argument.
 static Value findSingleStoreToVarDecl(VarDeclOp varDecl) {
   Value foundValue;
   for (Operation *user : varDecl.getResult().getUsers()) {
     if (auto refStore = ::dyn_cast<RefStoreOp>(user)) {
       if (refStore.getDest() == varDecl.getResult()) {
-        assert(!foundValue && "expected to find a single store to a var decl");
+        if (foundValue)
+          return {};
         foundValue = refStore.getValue();
       }
     }
   }
-
-  assert(foundValue && "expected to find a single store to a var decl");
   return foundValue;
 }
 
@@ -709,6 +711,8 @@ static Value findArgPassedToVariadicConstructor(Value val) {
     return {};
 
   auto storedValue = findSingleStoreToVarDecl(varDecl);
+  if (!storedValue)
+    return {};
 
   // Look through VariadicList/VariadicPack::__init__ so we can check the
   // individual arguments for exclusivity. Without this, `mutate_pack(x, x)`
@@ -773,8 +777,9 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
 
   if (auto varDecl =
           listStorage ? listStorage.getDefiningOp<VarDeclOp>() : nullptr) {
-    if (auto arrayCreate = findSingleStoreToVarDecl(varDecl)
-                               .getDefiningOp<POP::ArrayCreateOp>()) {
+    Value stored = findSingleStoreToVarDecl(varDecl);
+    if (auto arrayCreate =
+            stored ? stored.getDefiningOp<POP::ArrayCreateOp>() : nullptr) {
       // Locally constructed VariadicList. The parser emits:
       //   %__passed_varargs__ = lit.var.decl: !lit.ref<array<4, eltref>>
       //   %arr = pop.array.create [%1, %2, %3]
