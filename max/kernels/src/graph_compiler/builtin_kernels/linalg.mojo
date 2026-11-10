@@ -494,58 +494,84 @@ struct MatmulGPU:
 
 @extensibility.register("mo.batch_matmul", extensibility.CPU)
 struct BatchMatmulCPU:
-    """Registers the `mo.batch_matmul` graph op for CPU devices."""
+    """Registers the `mo.batch_matmul` graph op for CPU devices.
+
+    Two `execute` overloads under one registration: the graph compiler calls
+    the fused one when the output has a fused epilogue and the plain one when
+    it has none. The fused form's epilogue stores each finished tile into the
+    fused output, while the plain form has the kernel write the output
+    directly. The pair is grandfathered on the graph compiler's allow list;
+    new kernels declare one `execute` with a `StoreAccess` output.
+    """
 
     @staticmethod
     def execute[
-        has_epilogue_fusion: Bool,
-        rank: Int,
         transpose_b: Bool,
     ](
-        c: _FusedComputeOutputTensor[rank=rank, ...],
-        a: InputTensor[rank=rank, ...],
-        b: InputTensor[rank=rank, ...],
+        c: Some[Output & Fused & StoreAccess],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), Storable)
+        comptime dtype = type_of(c).dtype
+
+        # The epilogue closure copies its capture into the kernel's loops, so
+        # refine the output to the register-passable value it arrives as.
+        comptime assert conforms_to(type_of(c), TrivialRegisterPassable)
+
         @inline(.always)
-        def output_fn[
-            _type: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_type, _width]) {var c}:
-            # TODO(GEX-4375): `batched_matmul` only takes a store epilogue, so
-            # take a plain `FusedOutputTensor` and drop this compute branch.
-            comptime has_compute_lambda = type_of(c)._has_compute_fusion
-
-            comptime if has_compute_lambda:
-                var output = c._fused_compute_output_lambda[
-                    element_alignment=alignment
-                ](coords, rebind[SIMD[c.dtype, _width]](val))
-                c.store[element_alignment=alignment](coords, output)
-            else:
-                c._lambda_store[width=_width, element_alignment=alignment](
-                    coords, rebind[SIMD[c.dtype, _width]](val)
-                )
-
-        comptime if has_epilogue_fusion:
-            batched_matmul[
-                transpose_a=False,
-                transpose_b=transpose_b,
-            ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                output_fn,
-                context=ctx,
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var c}:
+            c.store[width=Int(_width), element_alignment=alignment](
+                coords, rebind[SIMD[dtype, Int(_width)]](val)
             )
-        else:
-            batched_matmul[
-                transpose_a=False,
-                transpose_b=transpose_b,
-            ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                context=ctx,
-            )
+
+        # As in `MatmulCPU`, the fused output has no buffer the kernel may use
+        # as `c`, so `c` is supplied here. f16/bf16/f8 outputs accumulate in
+        # registers and read `c` only for its shape, so `c` is a dangling
+        # pointer with the output's layout; this must stay in step with
+        # `_batched_matmul_cpu_impl`. Every other dtype accumulates in `c` (and
+        # Apple Accelerate writes it before the epilogue reads it back), so `c`
+        # is a buffer of the output's size from `ctx`.
+        #
+        # TODO(GEX-4431): take this buffer through an accumulator trait bound
+        # the graph provides and memory plans, instead of allocating it on
+        # every call.
+        var c_layout = row_major(c.shape().tuple())
+        var c_ptr = MutPointer[
+            Scalar[dtype], MutUntrackedOrigin
+        ].unsafe_dangling()
+        var c_buf = Optional[DeviceBuffer[dtype]]()
+        comptime if get_accum_type[dtype]() == dtype:
+            var buf = ctx.enqueue_create_buffer[dtype](c_layout.product())
+            c_ptr = buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            c_buf = buf^
+        batched_matmul[transpose_a=False, transpose_b=transpose_b](
+            TileTensor(c_ptr, c_layout),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            epilogue_fn,
+            context=ctx,
+        )
+        _ = c_buf^
+
+    @staticmethod
+    def execute[
+        transpose_b: Bool,
+    ](
+        c: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+        ctx: DeviceContext,
+    ) raises where not conforms_to(type_of(c), Fused):
+        batched_matmul[transpose_a=False, transpose_b=transpose_b](
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            context=ctx,
+        )
 
 
 @extensibility.register("mo.batch_matmul", extensibility.ACCELERATOR)
