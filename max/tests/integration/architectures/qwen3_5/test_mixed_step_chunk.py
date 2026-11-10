@@ -28,7 +28,7 @@ import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import (
     BufferType,
     DeviceRef,
@@ -41,6 +41,7 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
+    RecurrentStateRegion,
 )
 from max.nn.legacy.comm import Signals
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
@@ -152,23 +153,80 @@ def _seeded_block(
     return target, block
 
 
+def _regions(k: int) -> tuple[RecurrentStateRegion, ...]:
+    """Returns the test geometry's state regions at verify width ``k``."""
+    return linear_state_regions(
+        num_linear_layers=1,
+        key_head_dim=KEY_HEAD_DIM,
+        num_key_heads=NUM_K_HEADS,
+        value_head_dim=VALUE_HEAD_DIM,
+        num_value_heads=NUM_V_HEADS,
+        conv_kernel_dim=CONV_KERNEL,
+        dtype=_config().state_dtype,
+        num_devices=1,
+        ring_len=ring_len_for_window(1 + k),
+    )
+
+
+@functools.cache
+def _base_forward() -> Model:
+    # The base forward reads no ring and no draft width, so every k
+    # shares one compile.
+    regions = _regions(K)
+    gpu = DeviceRef.GPU()
+    dtype = _config().state_dtype
+    x_type = TensorType(DType.float32, ["total_seq_len", HIDDEN], device=gpu)
+    offsets_type = TensorType(DType.uint32, ["offsets_len"], device=gpu)
+    rows = TensorType(DType.uint32, [1, "batch_size"], device=gpu)
+    pools = [
+        BufferType(
+            dtype,
+            [ROLLBACK_POOL_ROWS, *regions[0].row_shape],
+            device=gpu,
+        ),
+        BufferType(
+            dtype,
+            [ROLLBACK_POOL_ROWS, *regions[1].row_shape],
+            device=gpu,
+        ),
+    ]
+    signals_types = Signals([gpu]).input_types()
+    base_types: list[TensorType | BufferType] = [
+        x_type,
+        offsets_type,
+        rows,
+        rows,
+        *signals_types,
+        *pools,
+    ]
+    with Graph("base_forward", input_types=base_types) as base:
+        x, offsets, conv_rows, rec_rows = (v.tensor for v in base.inputs[:4])
+        signals, conv, rec = (v.buffer for v in base.inputs[4:])
+        leaves = [
+            RecurrentStateInputsPerDevice(
+                leaves=(
+                    RecurrentLeafInputs(pool=conv, live_row_ids=conv_rows),
+                    RecurrentLeafInputs(pool=rec, live_row_ids=rec_rows),
+                )
+            )
+        ]
+        target, block = _seeded_block(_config())
+        base_out = block(
+            [x], [signals], layer_state_access(leaves, 0), [offsets]
+        )
+        base.output(base_out[0])
+    return InferenceSession(devices=[CPU(), Accelerator()]).load(
+        base, weights_registry=target.state_dict()
+    )
+
+
 class _Harness:
     """A mixed verify of one block, and the base forward of other rows."""
 
     def __init__(self) -> None:
         config = _config()
         target, block = _seeded_block(config)
-        regions = linear_state_regions(
-            num_linear_layers=1,
-            key_head_dim=KEY_HEAD_DIM,
-            num_key_heads=NUM_K_HEADS,
-            value_head_dim=VALUE_HEAD_DIM,
-            num_value_heads=NUM_V_HEADS,
-            conv_kernel_dim=CONV_KERNEL,
-            dtype=config.state_dtype,
-            num_devices=1,
-            ring_len=ring_len_for_window(1 + K),
-        )
+        regions = _regions(K)
         self.conv_shape = (POOL_ROWS, *regions[0].row_shape)
         self.rec_shape = (POOL_ROWS, *regions[1].row_shape)
         self.ring_shape = (RING_ROWS, *regions[2].row_shape)
@@ -346,17 +404,7 @@ class _RollbackHarness:
 
     def __init__(self, k: int) -> None:
         config = _config()
-        regions = linear_state_regions(
-            num_linear_layers=1,
-            key_head_dim=KEY_HEAD_DIM,
-            num_key_heads=NUM_K_HEADS,
-            value_head_dim=VALUE_HEAD_DIM,
-            num_value_heads=NUM_V_HEADS,
-            conv_kernel_dim=CONV_KERNEL,
-            dtype=config.state_dtype,
-            num_devices=1,
-            ring_len=ring_len_for_window(1 + k),
-        )
+        regions = _regions(k)
         self.k = k
         self.conv_shape = (ROLLBACK_POOL_ROWS, *regions[0].row_shape)
         self.rec_shape = (ROLLBACK_POOL_ROWS, *regions[1].row_shape)
@@ -364,7 +412,6 @@ class _RollbackHarness:
         # A layer keeps values from the graph it was first called in, so
         # each graph gets its own copy of the same weights.
         target, block = _seeded_block(config)
-        base_target, base_block = _seeded_block(config)
 
         gpu, cpu = DeviceRef.GPU(), DeviceRef.CPU()
         dtype = config.state_dtype
@@ -431,38 +478,12 @@ class _RollbackHarness:
             )
             verify.output(out[0])
 
-        base_types: list[TensorType | BufferType] = [
-            x_type,
-            offsets_type,
-            rows,
-            rows,
-            *signals_types,
-            *pools,
-        ]
-        with Graph("base_forward", input_types=base_types) as base:
-            x, offsets, conv_rows, rec_rows = (
-                v.tensor for v in base.inputs[:4]
-            )
-            signals, conv, rec = (v.buffer for v in base.inputs[4:])
-            leaves = [
-                RecurrentStateInputsPerDevice(
-                    leaves=(
-                        RecurrentLeafInputs(pool=conv, live_row_ids=conv_rows),
-                        RecurrentLeafInputs(pool=rec, live_row_ids=rec_rows),
-                    )
-                )
-            ]
-            base_out = base_block(
-                [x], [signals], layer_state_access(leaves, 0), [offsets]
-            )
-            base.output(base_out[0])
-
+        # Loaded before the first device allocation, so the precompile
+        # record keeps it.
+        self.base = _base_forward()
         self.device = Accelerator()
         session = InferenceSession(devices=[CPU(), self.device])
         self.verify = session.load(verify, weights_registry=target.state_dict())
-        self.base = session.load(
-            base, weights_registry=base_target.state_dict()
-        )
         self.signal_buffers = Signals.allocate([self.device])
 
     def _buf(self, values: np.ndarray) -> Buffer:

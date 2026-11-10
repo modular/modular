@@ -23,10 +23,20 @@ passes while the descriptor reads past its buffer.
 
 from __future__ import annotations
 
+import functools
+from typing import NamedTuple
+
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn._graph_ops.state_space import verify_width_operand
 from max.nn.legacy import Module
 from max.pipelines.architectures.qwen3_5.layers import gated_deltanet
@@ -320,27 +330,43 @@ def test_an_unfused_geometry_keeps_the_serial_ring(
     assert "kda_chunk" in mlir
 
 
-def _mixed_case_predicate(num_drafts: int, total_tokens: int) -> bool:
-    """Evaluates the layer's mixed-case predicate for a batch of two rows."""
-    with Graph("mixed_case_predicate", input_types=[]) as graph:
-        total = ops.shape_to_tensor([total_tokens])[0]
-        batch = ops.shape_to_tensor([3])[0] - 1
-        prefill_case = gated_deltanet._prefill_case(
-            verify_width_operand(num_drafts), total > batch
-        )
+def _mixed_case_predicate(num_drafts: int, total_tokens: int) -> TensorValue:
+    """Builds the layer's mixed-case predicate for a batch of two rows."""
+    total = ops.shape_to_tensor([total_tokens])[0]
+    batch = ops.shape_to_tensor([3])[0] - 1
+    prefill_case = gated_deltanet._prefill_case(
+        verify_width_operand(num_drafts), total > batch
+    )
+    return gated_deltanet._mixed_case_predicate(
+        verify_width_operand(num_drafts), prefill_case, total, batch
+    )
+
+
+class _NoLongRowPredicates(NamedTuple):
+    decode_only: bool
+    zero_width: bool
+
+
+@functools.cache
+def _no_long_row_predicates() -> _NoLongRowPredicates:
+    # One graph for both checks, so the two checks cost one compile.
+    with Graph("mixed_case_predicates", input_types=[]) as graph:
         graph.output(
-            gated_deltanet._mixed_case_predicate(
-                verify_width_operand(num_drafts), prefill_case, total, batch
-            )
+            _mixed_case_predicate(NUM_DRAFTS, 2 * (NUM_DRAFTS + 1)),
+            _mixed_case_predicate(0, 8),
         )
-    return bool(InferenceSession().load(graph).execute()[0].to_numpy())
+    decode_only, zero_width = InferenceSession().load(graph).execute()
+    return _NoLongRowPredicates(
+        decode_only=bool(decode_only.to_numpy()),
+        zero_width=bool(zero_width.to_numpy()),
+    )
 
 
 def test_a_decode_only_verify_takes_no_long_row_launch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Every row is K + 1 tokens, so the mixed-case predicate is false."""
-    assert not _mixed_case_predicate(NUM_DRAFTS, 2 * (NUM_DRAFTS + 1))
+    assert not _no_long_row_predicates().decode_only
     mlir = _verify_mlir(monkeypatch, "sm_100a")
     assert "kda_chunk_rows" in mlir
 
@@ -349,7 +375,7 @@ def test_a_zero_width_prompt_takes_no_long_row_launch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """At K = 0 the prefill case owns the step, not the long-row branch."""
-    assert not _mixed_case_predicate(0, 8)
+    assert not _no_long_row_predicates().zero_width
     mlir = _verify_mlir(monkeypatch, "sm_100a", num_drafts=0)
     assert "kda_chunk_rows" in mlir
 
