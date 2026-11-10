@@ -87,8 +87,10 @@ from max.tensor.sharding import (
 
 from .layers import ep
 from .layers.attn_residual import (
+    PendingAttnResStream,
     attn_res_mix_op,
     kimi_k3_attn_res_mix_norm,
+    kimi_k3_attn_res_mix_norm_delta,
 )
 from .layers.decoder_layer import (
     KimiK3DecoderLayer,
@@ -547,6 +549,9 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     attention=attention,
                     ffn=ffn,
                     rms_norm_eps=config.rms_norm_eps,
+                    # The residual add folds into the next layer's mix; the
+                    # tap layers hand the drafter a materialized stream.
+                    fold_pending_ffn=i not in (self._capture_after or ()),
                 )
             )
         self.layers = ModuleList(layers)
@@ -687,6 +692,9 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         capture_after = self._capture_after
         block_residual: list[Tensor] = []
         captures: list[Tensor] = []
+        # The layer boundary carries the pending stream between the fold's
+        # producer and consumer layers.
+        current: Tensor | PendingAttnResStream = hidden_states
         kda_idx = 0
         for layer_idx, layer in enumerate(self.layers):
             if layer.is_kda:
@@ -695,8 +703,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     " layer"
                 )
                 conv, recurrent = state.leaves[:2]
-                hidden_states, block_residual = layer(
-                    hidden_states,
+                current, block_residual = layer(
+                    current,
                     block_residual,
                     conv_pool=conv.pool,
                     conv_row_id=conv.live_row_ids[kda_idx],
@@ -708,8 +716,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                 )
                 kda_idx += 1
             else:
-                hidden_states, block_residual = layer(
-                    hidden_states,
+                current, block_residual = layer(
+                    current,
                     block_residual,
                     input_row_offsets=input_row_offsets,
                     kv_collection=kv_collection,
@@ -719,22 +727,37 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     ep_buffers=ep_buffers,
                 )
             if capture_after is not None and layer_idx in capture_after:
+                # The tap layers run with the fold off, so the boundary
+                # value is materialized here.
+                assert isinstance(current, Tensor)
                 captures.append(
-                    self._capture_tap(block_residual, hidden_states, layer_idx)
+                    self._capture_tap(block_residual, current, layer_idx)
                 )
 
         # The final norm rides the fused mix; the output head takes the
         # already-normed hidden state (norm-then-gather is per-row
         # identical to V2's gather-then-norm).
-        normed = kimi_k3_attn_res_mix_norm(
-            hidden_states,
-            block_residual,
-            self.output_attn_res_proj_weight,
-            self.output_attn_res_norm_weight,
-            self.final_norm_weight,
-            eps=self.config.rms_norm_eps,
-            norm_eps=KIMI_RMS_NORM_EPS,
-        )
+        if isinstance(current, PendingAttnResStream):
+            normed, _ = kimi_k3_attn_res_mix_norm_delta(
+                current.prefix,
+                current.delta,
+                block_residual,
+                self.output_attn_res_proj_weight,
+                self.output_attn_res_norm_weight,
+                self.final_norm_weight,
+                eps=self.config.rms_norm_eps,
+                norm_eps=KIMI_RMS_NORM_EPS,
+            )
+        else:
+            normed = kimi_k3_attn_res_mix_norm(
+                current,
+                block_residual,
+                self.output_attn_res_proj_weight,
+                self.output_attn_res_norm_weight,
+                self.final_norm_weight,
+                eps=self.config.rms_norm_eps,
+                norm_eps=KIMI_RMS_NORM_EPS,
+            )
         output = kimi_k3_output_head(
             normed,
             input_row_offsets,
@@ -783,6 +806,10 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                 candidate.
             layer_idx: The tapped layer's 0-based index.
         """
+        if isinstance(stream, PendingAttnResStream):
+            # The tap layers materialize their stream in the decoder; this
+            # keeps the tap correct if the fold set ever widens.
+            stream = stream.materialize()
         if self._tap_mode == KimiK3TapMode.PREFIX:
             return stream
         # The mixture mode's ids never name the last layer; `_tap_layers`

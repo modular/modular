@@ -166,6 +166,7 @@ def test_decoder_layer_mla_decompressed_ragged_matches_padded() -> None:
             for c in block_residual_np
         ]
         out_padded, _ = layer(x, block_residual)
+        assert isinstance(out_padded, Tensor)
         out_padded_np = out_padded.cast(DType.float32).to_numpy()
 
         layer.attention.kv_params = kv_params
@@ -179,6 +180,7 @@ def test_decoder_layer_mla_decompressed_ragged_matches_padded() -> None:
             input_row_offsets=input_row_offsets,
             kv_collection=kv_collection,
         )
+        assert isinstance(out_ragged, Tensor)
         out_ragged_np = out_ragged.cast(DType.float32).to_numpy()
 
     err = _rel_error(out_ragged_np, out_padded_np)
@@ -224,6 +226,7 @@ def test_decoder_layer_mla_latent_ragged_matches_padded() -> None:
             for c in block_residual_np
         ]
         out_padded, _ = layer(x, block_residual)
+        assert isinstance(out_padded, Tensor)
         out_padded_np = out_padded.cast(DType.float32).to_numpy()
 
         layer.attention.kv_params = kv_params
@@ -254,6 +257,7 @@ def test_decoder_layer_mla_latent_ragged_matches_padded() -> None:
             mla_prefill_plan=prefill_plan,
             mla_freqs_cis=freqs_cis,
         )
+        assert isinstance(out_ragged, Tensor)
         out_ragged_np = out_ragged.cast(DType.float32).to_numpy()
 
     err = _rel_error(out_ragged_np, out_padded_np)

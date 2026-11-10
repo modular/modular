@@ -209,6 +209,7 @@ def test_decoder_layer_mla_moe_single_device_matches_ep2() -> None:
                 for c in block_residual_np
             ],
         )
+        assert isinstance(out1, Tensor)
         out1_np = out1.cast(DType.float32).to_numpy()
 
     # MLA only rebinds onto `tp` if the tensor is actually distributed, so
@@ -235,6 +236,7 @@ def test_decoder_layer_mla_moe_single_device_matches_ep2() -> None:
             ep_config=config,
             ep_buffers=buffers,
         )
+        assert isinstance(out2, Tensor)
         out2_np = out2.cast(DType.float32).to_numpy()
 
     err = _rel_error(out2_np, out1_np)

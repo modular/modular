@@ -85,7 +85,14 @@ def _run_case[
         and sk_threads > 0
     )
     comptime sk_beta_tier = (
-        gfx950 and use_b and a_type == .float32 and N < 16 and sk_threads > 0
+        gfx950
+        and use_b
+        and N < 16
+        and (
+            a_type == DType.float32
+            or (a_type == DType.bfloat16 and c_type == DType.float32)
+        )
+        and sk_threads > 0
     )
     comptime tier_rpb = (
         4 if (sk_small_n_tier and 17 <= M <= 64) else 2 if (
@@ -849,7 +856,10 @@ def main() raises:
     r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 1024](8)
     assert_equal(r[0], False)  # below the K floor
     r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 12, 7168](8)
-    assert_equal(r[0], False)  # bf16 keeps N >= 16
+    assert_equal(r[0], False)  # bf16 output keeps N >= 16
+    # The N < 16 bf16 band is the measured bf16-in/fp32-out variant only.
+    r = _amd_small_m_gemv_route[.float32, .bfloat16, .bfloat16, 12, 7168](8)
+    assert_equal(r[0], tier_admitted)
 
     # The static-K stage needs K % (simd_width * num_threads) == 0. bf16
     # K % 2048 == 0 keeps the 256-thread instantiation (the 576x2048 and
@@ -992,6 +1002,23 @@ def main() raises:
     assert_equal(r[0], False)
     r = _amd_small_m_gemv_route[.float32, .float32, .float32, 12, 2560](8)
     assert_equal(r[0], tier_admitted)
+    # The bf16-in/fp32-out beta tier mirrors the fp32 N<16 band: M 2..64
+    # at a static-K-tiled K, the M<=16 cached-load band otherwise, and
+    # nothing past the band.
+    r = _amd_small_m_gemv_route[.float32, .bfloat16, .bfloat16, 12, 7168](64)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.float32, .bfloat16, .bfloat16, 12, 7168](65)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.float32, .bfloat16, .bfloat16, 12, 2560](8)
+    assert_equal(r[0], tier_admitted)
+    r = _amd_small_m_gemv_route[.float32, .bfloat16, .bfloat16, 12, 2560](17)
+    assert_equal(r[0], False)
+    r = _amd_small_m_gemv_route[.float32, .bfloat16, .bfloat16, 8, 7168](32)
+    assert_equal(r[0], tier_admitted)
+    # A bf16 output keeps N >= 16: only the measured bf16-in/fp32-out
+    # variant takes the N<16 band.
+    r = _amd_small_m_gemv_route[.bfloat16, .bfloat16, .bfloat16, 12, 7168](32)
+    assert_equal(r[0], False)
 
     with DeviceContext() as ctx:
         # The N=896 cells check direct GEMV even though dispatch uses tiled GEMM.
@@ -1095,5 +1122,14 @@ def main() raises:
         _run_case[32, 12, 7168, True, .float32, .float32](ctx)
         _run_case[33, 12, 7168, True, .float32, .float32](ctx)
         _run_case[64, 12, 7168, True, .float32, .float32](ctx)
+        # The beta projection's bf16-in/fp32-out fold variant: the same
+        # static-K tier (128-thread tiling) at the tier's M boundaries.
+        _run_case[2, 12, 7168, True, .bfloat16, .float32](ctx)
+        _run_case[4, 12, 7168, True, .bfloat16, .float32](ctx)
+        _run_case[17, 12, 7168, True, .bfloat16, .float32](ctx)
+        _run_case[32, 12, 7168, True, .bfloat16, .float32](ctx)
+        _run_case[33, 12, 7168, True, .bfloat16, .float32](ctx)
+        _run_case[64, 12, 7168, True, .bfloat16, .float32](ctx)
+        _run_case[8, 8, 7168, True, .bfloat16, .float32](ctx)
 
     print("ALL TESTS PASSED")

@@ -152,6 +152,7 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
             Tensor(x_np, dtype=DType.float32),
             [Tensor(c, dtype=DType.float32) for c in block_residual_np],
         )
+        assert isinstance(out1, Tensor)
         out1_np = out1.to_numpy()
 
     devices = [Accelerator(0), Accelerator(1)]
@@ -165,6 +166,7 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
             Tensor(x_np, dtype=DType.float32),
             [Tensor(c, dtype=DType.float32) for c in block_residual_np],
         )
+        assert isinstance(out2, Tensor)
         out2_np = out2.to_numpy()
 
     err = _rel_error(out2_np, out1_np)
@@ -313,6 +315,7 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
             recurrent_row_id=Tensor(slot_idx_np, dtype=DType.uint32),
             input_row_offsets=Tensor(input_row_offsets_np, dtype=DType.uint32),
         )
+        assert isinstance(out1, Tensor)
         out1_np = out1.to_numpy()
 
     devices = [Accelerator(0), Accelerator(1)]
@@ -342,6 +345,7 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
             recurrent_row_id=Tensor(slot_idx_np, dtype=DType.uint32),
             input_row_offsets=Tensor(input_row_offsets_np, dtype=DType.uint32),
         )
+        assert isinstance(out2, Tensor)
         out2_np = out2.to_numpy()
 
     err = _rel_error(out2_np, out1_np)

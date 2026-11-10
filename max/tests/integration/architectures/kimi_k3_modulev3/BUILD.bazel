@@ -1060,6 +1060,28 @@ modular_eager_py_test(
 )
 
 modular_eager_py_test(
+    name = "kda_bproj_bf16_matmul_tests_gpu",
+    size = "small",
+    srcs = ["test_kda_bproj_bf16_matmul.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_eager_py_test(
     name = "attn_residual_tests_gpu",
     size = "enormous",
     srcs = ["test_attn_residual.py"],
