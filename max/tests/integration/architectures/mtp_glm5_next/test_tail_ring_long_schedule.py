@@ -14,7 +14,7 @@
 
 Each request prefills past 2048 tokens, then verifies windows of ``K + 1``
 keys in which every draft after the accepted ones carries a wrong key. The
-pooled-key writers run as :meth:`Indexer._select_pooled` runs them, with the
+pooled-key writers run as the ``PooledIndexer`` runs them, with the
 verify's tail seed deferred and replayed over the accepted rows. Every pool
 the accepted sequence completes must come out bit-identical to compressing
 that sequence in one shot, however many times a rejected draft wrote it on
@@ -30,13 +30,13 @@ import pytest
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
 from max.nn._graph_ops import (
     mla_kpool_compress,
     mla_kpool_ring_close,
     mla_kpool_seed_tail,
 )
-from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
+from max.pipelines.architectures.glm5_next.layers.indexer_inputs import (
     KpoolTailReplayInputs,
 )
 from max.pipelines.architectures.glm5_next.spec_state import (
@@ -46,7 +46,9 @@ from max.pipelines.architectures.glm5_next.spec_state import (
 from max.pipelines.speculative.gated_delta_rollback import (
     accepted_row_plan,
 )
-from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
+from max.pipelines.speculative.ragged_token_merger import shape_to_scalar
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
 
 KPOOL = 4
 HEAD_DIM = 128
@@ -91,22 +93,25 @@ def _compile(defer: bool) -> _Rig:
     ape = TensorType(DType.float32, [KPOOL, HEAD_DIM], gpu)
     offsets = TensorType(DType.uint32, ["batch_plus_one"], gpu)
     batch = TensorType(DType.uint32, ["batch"], gpu)
-    with Graph(
-        "speculative_kpool_step",
-        input_types=[
-            rows,
-            rows,
-            ape,
-            offsets,
-            offsets,
-            batch,
-            batch,
-            TensorType(DType.int64, ["batch"], gpu),
-            # Carries the verify width as its second dim; never read.
-            TensorType(DType.int64, ["batch", "num_steps"], gpu),
-            BufferType(DType.bfloat16, RING_SHAPE, gpu),
-        ],
-    ) as graph:
+    with (
+        Graph(
+            "speculative_kpool_step",
+            input_types=[
+                rows,
+                rows,
+                ape,
+                offsets,
+                offsets,
+                batch,
+                batch,
+                TensorType(DType.int64, ["batch"], gpu),
+                # Carries the verify width as its second dim; never read.
+                TensorType(DType.int64, ["batch", "num_steps"], gpu),
+                BufferType(DType.bfloat16, RING_SHAPE, gpu),
+            ],
+        ) as graph,
+        ensure_context(),
+    ):
         k, gate, ape_v, offs, pool_offs, clen, slots, accepted, drafts = (
             value.tensor for value in graph.inputs[:9]
         )
@@ -118,9 +123,15 @@ def _compile(defer: bool) -> _Rig:
         compressed = mla_kpool_compress(
             k, gate, ape_v, offs, pool_offs, clen, KPOOL
         )
-        (seed,) = deferred_seed_offsets(num_drafts, [offs]) if defer else [offs]
+        seed = (
+            TensorValue(
+                deferred_seed_offsets(num_drafts, Tensor.from_graph_value(offs))
+            )
+            if defer
+            else offs
+        )
         mla_kpool_seed_tail(tail, k, gate, seed, clen, slots, KPOOL)
-        k_scalar = _shape_to_scalar(num_drafts, gpu)
+        k_scalar = shape_to_scalar(num_drafts, gpu)
         row_indices, replay_offsets = accepted_row_plan(
             offs, accepted, k_scalar, k.shape[0], gpu
         )
@@ -128,19 +139,19 @@ def _compile(defer: bool) -> _Rig:
             [
                 [
                     KpoolTailReplayInputs(
-                        k=k,
-                        gate=gate,
-                        tail=tail,
-                        slot_idx=slots,
-                        cache_lengths=clen,
+                        k=Tensor.from_graph_value(k),
+                        gate=Tensor.from_graph_value(gate),
+                        tail=Tensor.from_graph_value(tail),
+                        slot_idx=Tensor.from_graph_value(slots),
+                        cache_lengths=Tensor.from_graph_value(clen),
                         kpool=KPOOL,
                     )
                 ]
             ],
-            row_indices,
-            replay_offsets,
-            k_scalar,
-            [],
+            Tensor.from_graph_value(row_indices),
+            Tensor.from_graph_value(replay_offsets),
+            Tensor.from_graph_value(k_scalar),
+            Tensor.from_graph_value(row_indices).mesh,
         )
         graph.output(ring_pooled, ring_closed, compressed)
 

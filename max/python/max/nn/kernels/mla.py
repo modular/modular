@@ -31,6 +31,13 @@ from max.nn._graph_ops import (
 from max.nn._graph_ops import (
     mla_fp8_index_top_k_physical_cp as _mla_fp8_index_top_k_physical_cp,
 )
+from max.nn._graph_ops import mla_kpool_append as _mla_kpool_append
+from max.nn._graph_ops import mla_kpool_compress as _mla_kpool_compress
+from max.nn._graph_ops import (
+    mla_kpool_expand_topk as _mla_kpool_expand_topk,
+)
+from max.nn._graph_ops import mla_kpool_ring_close as _mla_kpool_ring_close
+from max.nn._graph_ops import mla_kpool_seed_tail as _mla_kpool_seed_tail
 from max.nn._graph_ops import (
     mla_prefill_decode_graph as _mla_prefill_decode_graph,
 )
@@ -49,6 +56,11 @@ mla_prefill_decode_graph = F.functional(_mla_prefill_decode_graph)
 mla_fp8_index_top_k = F.functional(_mla_fp8_index_top_k)
 mla_fp8_index_top_k_physical = F.functional(_mla_fp8_index_top_k_physical)
 mla_fp8_index_top_k_physical_cp = F.functional(_mla_fp8_index_top_k_physical_cp)
+mla_kpool_append = F.functional(_mla_kpool_append)
+mla_kpool_compress = F.functional(_mla_kpool_compress)
+mla_kpool_expand_topk = F.functional(_mla_kpool_expand_topk)
+mla_kpool_ring_close = F.functional(_mla_kpool_ring_close)
+mla_kpool_seed_tail = F.functional(_mla_kpool_seed_tail)
 cp_merge_topk = F.functional(_cp_merge_topk)
 _mla_decode_graph_cp_per_device = F.functional(_mla_decode_graph_cp)
 
@@ -84,6 +96,11 @@ __all__ = [
     "mla_fp8_index_top_k",
     "mla_fp8_index_top_k_physical",
     "mla_fp8_index_top_k_physical_cp",
+    "mla_kpool_append",
+    "mla_kpool_compress",
+    "mla_kpool_expand_topk",
+    "mla_kpool_ring_close",
+    "mla_kpool_seed_tail",
     "mla_prefill_decode_graph",
     "mla_prefill_graph",
     "store_mla_latent_ragged",

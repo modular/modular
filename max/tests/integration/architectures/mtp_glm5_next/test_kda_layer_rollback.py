@@ -10,39 +10,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""One KDA layer's verify and rollback against decoding the accepted tokens.
+"""One ModuleV3 KDA layer's verify and rollback against decoding the accepted
+tokens.
 
-The speculative arm runs the layer over each request's ``K + 1`` window with
-the verify ring bound, then the rollback over the accepted count. The base arm
-runs the same layer on its own copy of the pools, one decode step per accepted
-token. Both pools must match exactly.
-
-The decode steps run the projections over fewer rows than the verify, and a
-float32 matmul here rounds its operands to a tensor-core mantissa with an
-accumulation order that can depend on the row count. So every projection is
-given exactly representable operands: inputs in ``{-1, 0, 1}`` and sparse
-weights of a few dyadic values, whose products and sums no rounding touches.
-The readouts pass through ``o_proj`` on non-dyadic inputs and are compared to
-a tolerance instead.
+The speculative arm runs the layer over each request's
+``K + 1`` window with the verify bound, then the rollback over the accepted
+count. The base arm runs the same layer on its own copy of the pools, one
+decode step per accepted token. Both pools must match exactly, which holds
+only if the layer's decode pins its ``fma``s as the verify ring and the fold
+do. Every projection is given exactly representable operands, so the row
+count a matmul sees cannot change its result; the readouts pass through
+``o_proj`` on non-dyadic inputs and are compared to a tolerance instead.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import functools
+from typing import Any
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn._graph_ops.state_space import verify_width_operand
-from max.pipelines.architectures.glm5_next.layers.kda import (
-    KdaReplayInputs,
-    KdaRing,
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    TensorType,
+    ops,
 )
-from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
+from max.nn import Module
+from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.pipelines.architectures.glm5_next.layers.kda import (
+    KdaStateAccess,
+    KdaVerify,
     KimiDeltaAttention,
+    verify_width_operand,
+)
+from max.pipelines.architectures.glm5_next.layers.kda_replay import (
+    KdaReplayInputs,
+)
+from max.pipelines.architectures.glm5_next.model_config import (
+    Glm5NextConfig,
 )
 from max.pipelines.architectures.glm5_next.spec_state import (
     fold_kda_state_pools,
@@ -53,13 +62,14 @@ from max.pipelines.architectures.glm5_next.state_cache import (
     with_verify_ring,
 )
 from max.pipelines.speculative.gated_delta_rollback import accepted_lengths
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 HIDDEN = 256
 HEADS = 2
 HEAD_DIM = 128
 KERNEL = 4
 QKV_DIM = HEADS * HEAD_DIM
-CONV_DIM = 3 * QKV_DIM
 NUM_DRAFTS = 3
 POOL_ROWS = 6
 READOUT_REL_RMS = 1e-4
@@ -102,13 +112,22 @@ def _sparse(
 
 def _weights() -> dict[str, np.ndarray]:
     rng = np.random.default_rng(29)
+
+    def conv() -> np.ndarray:
+        # The checkpoint's depthwise `[channels, 1, kernel]`.
+        return (
+            (rng.integers(-4, 5, size=(QKV_DIM, KERNEL)) / 8)
+            .astype(np.float32)
+            .reshape(QKV_DIM, 1, KERNEL)
+        )
+
     weights = {
         "q_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
         "k_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
         "v_proj.weight": _sparse(rng, QKV_DIM, HIDDEN, 0.5),
-        "conv1d.weight": (
-            rng.integers(-4, 5, size=(CONV_DIM, 1, KERNEL)) / 8
-        ).astype(np.float32),
+        "q_conv1d": conv(),
+        "k_conv1d": conv(),
+        "v_conv1d": conv(),
         "f_a_proj.weight": _sparse(rng, HEAD_DIM, HIDDEN, 0.25),
         "f_b_proj.weight": _sparse(rng, QKV_DIM, HEAD_DIM, 0.25),
         "dt_bias": (rng.integers(-8, 9, size=QKV_DIM) / 16).astype(np.float32),
@@ -119,36 +138,40 @@ def _weights() -> dict[str, np.ndarray]:
         "o_norm.weight": np.ones(HEAD_DIM, dtype=np.float32),
         "o_proj.weight": _sparse(rng, HIDDEN, QKV_DIM, 0.5),
     }
-    # The checkpoint's three conv tensors, in the layer's q, k, v order.
-    conv = np.split(weights.pop("conv1d.weight"), 3)
-    weights.update(
-        (f"{part}_conv1d.weight", np.ascontiguousarray(block))
-        for part, block in zip("qkv", conv, strict=True)
+    return {f"layer.{name}": value for name, value in weights.items()}
+
+
+def _config() -> Glm5NextConfig:
+    devices = [DeviceRef.GPU()]
+    leaf = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        page_size=128,
+        devices=devices,
+        num_q_heads=8,
     )
-    return weights
-
-
-def _layer() -> KimiDeltaAttention:
-    layer = KimiDeltaAttention(
-        hidden_size=HIDDEN,
-        num_heads=HEADS,
-        head_dim=HEAD_DIM,
-        conv_kernel_size=KERNEL,
+    return Glm5NextConfig(
         dtype=DType.float32,
-        device=DeviceRef.GPU(),
+        kv_params=MultiKVCacheParams.from_params(
+            {"mla": leaf, "indexer": leaf}
+        ),
+        devices=devices,
+        max_seq_len=1024,
+        hidden_size=HIDDEN,
+        num_hidden_layers=1,
+        qk_rope_head_dim=0,
         rms_norm_eps=1e-5,
-        lower_bound=-5.0,
+        linear_num_heads=HEADS,
+        linear_head_dim=HEAD_DIM,
+        linear_conv_kernel_dim=KERNEL,
+        linear_lower_bound=-5.0,
     )
-    layer.load_state_dict(
-        {name: Buffer.from_numpy(value) for name, value in _weights().items()},
-        weight_alignment=1,
-    )
-    return layer
 
 
 def _pools() -> dict[str, np.ndarray]:
     rng = np.random.default_rng(13)
-    conv = rng.integers(-2, 3, size=(POOL_ROWS, CONV_DIM, KERNEL - 1))
+    conv = rng.integers(-2, 3, size=(POOL_ROWS, 3 * QKV_DIM, KERNEL - 1))
     recurrent = rng.standard_normal((POOL_ROWS, HEADS, HEAD_DIM, HEAD_DIM))
     return {
         "conv": conv.astype(np.float32),
@@ -171,14 +194,131 @@ def _rel_rms(a: np.ndarray, b: np.ndarray) -> float:
     )
 
 
-_SpecResult = tuple[dict[str, np.ndarray], list[tuple[np.ndarray, np.ndarray]]]
+def _graph_value(value: Tensor) -> Any:
+    (graph_value,) = value.graph_values
+    return graph_value
 
 
-def _load_spec_against_decode(accepted: list[int]) -> Callable[[], _SpecResult]:
-    """Compiles the verify and rollback, then the accepted tokens one at a time.
+class _Rollback(Module[..., tuple[Tensor, ...]]):
+    """The verify and rollback beside the decode steps, in one graph."""
 
-    Returns a function that runs them and returns the four pools, and each
-    accepted token's readout from both arms.
+    def __init__(self, layer: KimiDeltaAttention, num_steps: int) -> None:
+        layer.pin_decode_fma = True
+        self.layer = layer
+        self.num_steps = num_steps
+
+    def forward(self, *inputs: Tensor) -> tuple[Tensor, ...]:
+        x, offsets, accepted, conv_rows, rec_rows, ring_rows = inputs[:6]
+        steps = inputs[6:-5]
+        conv, rec, ring, base_conv, base_rec = inputs[-5:]
+        mesh = self.layer.o_proj.weight.mesh
+        mapping = DeviceMapping.replicated(mesh)
+
+        def dist(value: Tensor) -> Tensor:
+            return Tensor.from_shard_values([_graph_value(value)], mapping)
+
+        layer_idx = F.constant(0, DType.int64, device=CPU())
+
+        def state(conv_pool: Tensor, rec_pool: Tensor) -> KdaStateAccess:
+            return KdaStateAccess(
+                conv_pool=dist(conv_pool),
+                conv_rows=dist(conv_rows),
+                recurrent_pool=dist(rec_pool),
+                recurrent_rows=dist(rec_rows),
+                layer=layer_idx,
+            )
+
+        verify_width = verify_width_operand(NUM_DRAFTS)
+        captures: list[KdaReplayInputs] = []
+        self.layer.verify = KdaVerify(
+            ring_pool=dist(ring),
+            ring_rows=dist(ring_rows),
+            verify_width=verify_width,
+            captures=[captures],
+        )
+        spec_out = self.layer(dist(x), state(conv, rec), dist(offsets))
+        self.layer.verify = None
+
+        gpu = DeviceRef.GPU()
+        offsets_v = _graph_value(offsets)
+        accepted_v = _graph_value(accepted)
+        num_drafts = ops.constant(NUM_DRAFTS, DType.int64, device=gpu)
+        fold_kda_state_pools(
+            dist(rec),
+            dist(rec_rows),
+            dist(ring),
+            dist(ring_rows),
+            dist(conv),
+            dist(conv_rows),
+            [captures],
+            Tensor.from_graph_value(
+                accepted_lengths(offsets_v, accepted_v, num_drafts)
+            ),
+            dist(offsets),
+            verify_width,
+        )
+        base_outs = [
+            self.layer(
+                dist(steps[2 * t]),
+                state(base_conv, base_rec),
+                dist(steps[2 * t + 1]),
+            )
+            for t in range(self.num_steps)
+        ]
+        return (spec_out, *base_outs)
+
+
+@functools.cache
+def _compile(batch: int, num_steps: int) -> Any:
+    """Compiles the verify, rollback and ``num_steps`` decode steps.
+
+    Each step's row count is symbolic, so batches that differ only in which
+    rows accept how many drafts share one compile.
+    """
+    device = Accelerator()
+    gpu = DeviceRef.GPU()
+    table = TensorType(DType.uint32, [1, "batch_size"], device=gpu)
+    pools = _pools()
+    ring_shape = (POOL_ROWS, *_ring_row_shape())
+    types: list[TensorType | BufferType] = [
+        TensorType(
+            DType.float32, [(NUM_DRAFTS + 1) * batch, HIDDEN], device=gpu
+        ),
+        TensorType(DType.uint32, [batch + 1], device=gpu),
+        TensorType(DType.int64, ["batch_size"], device=gpu),
+        table,
+        table,
+        table,
+    ]
+    for t in range(num_steps):
+        types.append(
+            TensorType(DType.float32, [f"step_{t}_rows", HIDDEN], device=gpu)
+        )
+        types.append(TensorType(DType.uint32, [batch + 1], device=gpu))
+    conv_type = BufferType(DType.float32, pools["conv"].shape, device=gpu)
+    rec_type = BufferType(DType.float32, pools["recurrent"].shape, device=gpu)
+    types += [
+        conv_type,
+        rec_type,
+        BufferType(DType.float32, ring_shape, device=gpu),
+        conv_type,
+        rec_type,
+    ]
+
+    mesh = DeviceMesh((device,), (1,), ("tp",))
+    with F.lazy(), default_dtype(DType.float32), default_device(mesh):
+        module = _Rollback(KimiDeltaAttention(_config()), num_steps)
+    return module.compile(*types, weights=_weights())
+
+
+@functools.cache
+def _run_spec_against_decode(
+    accepted: tuple[int, ...],
+) -> tuple[dict[str, np.ndarray], list[tuple[np.ndarray, np.ndarray]]]:
+    """Runs the verify and rollback, then the accepted tokens one at a time.
+
+    Returns the pools, and each accepted token's readout from both arms.
+    Cached, so a test reusing another's accepted counts compiles nothing.
     """
     batch = len(accepted)
     window = NUM_DRAFTS + 1
@@ -198,135 +338,62 @@ def _load_spec_against_decode(accepted: list[int]) -> Callable[[], _SpecResult]:
             )
         )
 
-    gpu = DeviceRef.GPU()
-    table = TensorType(DType.uint32, [1, "batch_size"], device=gpu)
+    device = Accelerator()
     pools = _pools()
     ring_shape = (POOL_ROWS, *_ring_row_shape())
-    types: list[TensorType | BufferType] = [
-        TensorType(DType.float32, list(x.shape), device=gpu),
-        TensorType(DType.uint32, [batch + 1], device=gpu),
-        TensorType(DType.int64, ["batch_size"], device=gpu),
-        table,
-        table,
-        table,
-    ]
-    for step_x, _, _ in steps:
-        types.append(TensorType(DType.float32, list(step_x.shape), device=gpu))
-        types.append(TensorType(DType.uint32, [batch + 1], device=gpu))
-    conv_type = BufferType(DType.float32, pools["conv"].shape, device=gpu)
-    rec_type = BufferType(DType.float32, pools["recurrent"].shape, device=gpu)
-    types += [
-        conv_type,
-        rec_type,
-        BufferType(DType.float32, ring_shape, device=gpu),
-        conv_type,
-        rec_type,
-    ]
+    compiled = _compile(batch, len(steps))
 
-    layer = _layer()
-    num_steps = len(steps)
-    with Graph("kda_layer_rollback", input_types=types) as graph:
-        x_v, offsets_v, accepted_v, conv_rows, rec_rows, ring_rows = (
-            value.tensor for value in graph.inputs[:6]
-        )
-        step_inputs = [value.tensor for value in graph.inputs[6:-5]]
-        conv, rec, ring, base_conv, base_rec = (
-            value.buffer for value in graph.inputs[-5:]
-        )
-        verify_width = verify_width_operand(NUM_DRAFTS)
-        captures: list[KdaReplayInputs] = []
-        spec_out = layer(
-            x_v,
-            conv,
-            conv_rows[0],
-            rec,
-            rec_rows[0],
-            offsets_v,
-            replay_capture=captures,
-            ring=KdaRing(ring, ring_rows[0]),
-            verify_width=verify_width,
-        )
-        num_drafts = ops.constant(NUM_DRAFTS, DType.int64, device=gpu)
-        fold_kda_state_pools(
-            [rec],
-            [rec_rows],
-            [ring],
-            [ring_rows],
-            [conv],
-            [conv_rows],
-            [captures],
-            accepted_lengths(offsets_v, accepted_v, num_drafts),
-            [offsets_v],
-            [],
-            verify_width,
-        )
-        base_outs = [
-            layer(
-                step_inputs[2 * t],
-                base_conv,
-                conv_rows[0],
-                base_rec,
-                rec_rows[0],
-                step_inputs[2 * t + 1],
-            )
-            for t in range(num_steps)
-        ]
-        graph.output(spec_out, *base_outs)
+    def put(value: np.ndarray) -> Buffer:
+        return Buffer.from_numpy(np.ascontiguousarray(value)).to(device)
 
-    device = Accelerator()
-    model = InferenceSession(devices=[device]).load(
-        graph, weights_registry=layer.state_dict()
+    buffers = {
+        "conv": put(pools["conv"]),
+        "recurrent": put(pools["recurrent"]),
+        "ring": put(np.zeros(ring_shape, dtype=np.float32)),
+        "base_conv": put(pools["conv"]),
+        "base_recurrent": put(pools["recurrent"]),
+    }
+    step_buffers = []
+    for step_x, step_offsets, _ in steps:
+        step_buffers += [put(step_x), put(step_offsets)]
+    outputs = compiled(
+        put(x),
+        put(offsets),
+        put(np.array(accepted, dtype=np.int64)),
+        put(_table(CONV_ROWS)),
+        put(_table(RECURRENT_ROWS)),
+        put(_table(RING_ROWS)),
+        *step_buffers,
+        *buffers.values(),
+    )
+    host = [
+        np.asarray(out.to(CPU()).driver_tensor.to_numpy()) for out in outputs
+    ]
+    spec, base = host[0], host[1:]
+    readouts = [
+        (spec[b * window + t], base[t][i])
+        for t, (_, _, members) in enumerate(steps)
+        for i, b in enumerate(members)
+    ]
+    return (
+        {
+            name: np.array(buf.to(CPU()).to_numpy())
+            for name, buf in buffers.items()
+        },
+        readouts,
     )
 
-    def run() -> _SpecResult:
-        def put(value: np.ndarray) -> Buffer:
-            return Buffer.from_numpy(np.ascontiguousarray(value)).to(device)
 
-        buffers = {
-            "conv": put(pools["conv"]),
-            "recurrent": put(pools["recurrent"]),
-            "ring": put(np.zeros(ring_shape, dtype=np.float32)),
-            "base_conv": put(pools["conv"]),
-            "base_recurrent": put(pools["recurrent"]),
-        }
-        step_buffers = []
-        for step_x, step_offsets, _ in steps:
-            step_buffers += [put(step_x), put(step_offsets)]
-        outputs = model.execute(
-            put(x),
-            put(offsets),
-            put(np.array(accepted, dtype=np.int64)),
-            put(_table(CONV_ROWS)),
-            put(_table(RECURRENT_ROWS)),
-            put(_table(RING_ROWS)),
-            *step_buffers,
-            *buffers.values(),
-        )
-        host = [np.array(out.to(CPU()).to_numpy()) for out in outputs]
-        spec, base = host[0], host[1:]
-        readouts = [
-            (spec[b * window + t], base[t][i])
-            for t, (_, _, members) in enumerate(steps)
-            for i, b in enumerate(members)
-        ]
-        return (
-            {
-                name: np.array(buf.to(CPU()).to_numpy())
-                for name, buf in buffers.items()
-            },
-            readouts,
-        )
-
-    return run
-
-
+# Each distinct decode-step count compiles its own graph: none accepted, then
+# all accepted and a mixed batch whose shorter row stops partway, which share
+# one.
 @pytest.mark.parametrize(
-    "accepted", [[0, 0], [1, 1], [NUM_DRAFTS, NUM_DRAFTS], [NUM_DRAFTS, 0]]
+    "accepted", [(0, 0), (NUM_DRAFTS, NUM_DRAFTS), (1, NUM_DRAFTS)]
 )
 def test_the_rollback_lands_where_decoding_the_accepted_tokens_does(
-    accepted: list[int],
+    accepted: tuple[int, ...],
 ) -> None:
-    pools, readouts = _load_spec_against_decode(accepted)()
+    pools, readouts = _run_spec_against_decode(accepted)
     np.testing.assert_array_equal(pools["conv"], pools["base_conv"])
     np.testing.assert_array_equal(pools["recurrent"], pools["base_recurrent"])
     spec = np.stack([s for s, _ in readouts])
@@ -336,9 +403,7 @@ def test_the_rollback_lands_where_decoding_the_accepted_tokens_does(
 
 def test_a_rejected_draft_changes_the_state() -> None:
     """Checks the fixture can tell an accepted count from another."""
-    run_rejected = _load_spec_against_decode([0, 0])
-    run_accepted = _load_spec_against_decode([NUM_DRAFTS, NUM_DRAFTS])
-    rejected, _ = run_rejected()
-    accepted, _ = run_accepted()
+    rejected, _ = _run_spec_against_decode((0, 0))
+    accepted, _ = _run_spec_against_decode((NUM_DRAFTS, NUM_DRAFTS))
     assert not np.array_equal(rejected["recurrent"], accepted["recurrent"])
     assert not np.array_equal(rejected["conv"], accepted["conv"])

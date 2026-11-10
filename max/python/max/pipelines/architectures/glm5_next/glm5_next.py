@@ -10,763 +10,351 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Graph assembly for GLM-5.3-Flash (``glm5_next``).
+"""The GLM-5.3-Flash decoder on ModuleV3.
 
-This module owns the parts of the decoder that belong to no single sublayer:
-the hybrid attention schedule, the residual-stream plumbing around it, the MLP
-choice per layer, and the head. The four sublayers are implemented by their own lanes and satisfy
-``Glm5NextDecoderLayer``'s ``Glm5NextSublayer`` protocol structurally, so this
-file constructs none of them: see ``tasks/glm53-scope/contracts/`` for the two
-published interfaces.
-
-The schedule, verified against the checkpoint's weight index rather than
-inferred from the config::
-
-    idx  0  1  2  3  4  5  6  7  8  9 10 11 ...  43 44 | 45
-         K  K  K  D  K  K  K  D  K  K  K  D      D  K  | MTP (D, no mHC)
-    mlp  d  d  d  S  S  S  S  S  S  S  S  S      S  S  | S
-
-    K = KDA linear attention (34)   D = sparse MLA + DSA indexer (11 + MTP)
-    d = dense MLP (3)               S = MoE (43, including MTP)
-
-Two structural facts drive the assembly:
-
-* **The residual carries four streams, not one.** ``[tokens, hc_mult, hidden]``
-  is created by :func:`~.layers.hyper_connection.expand_streams` and collapsed
-  at the end by :func:`~.layers.hyper_connection.mean_collapse_streams`, an
-  *unweighted* mean -- GLM's one change from DeepSeek-V4, which learns that
-  collapse. There is consequently no ``hc_head`` weight in the checkpoint, and
-  cloning DeepSeek-V4's learned head would try to load three tensors that do
-  not exist.
-* **The MTP draft layer at index 45 is the one structural exception.** It is
-  sparse MLA with its own indexer and its own MoE block, and it has no
-  hyper-connections: its residual is a plain add.
+The period-4 hybrid schedule -- three KDA layers, then one sparse-MLA layer --
+over a residual widened to ``hc_mult`` streams. The streams are created once
+after the embedding and collapsed by an unweighted mean before the final norm;
+GLM's collapse is not learned, unlike DeepSeek-V4's.
 """
 
 from __future__ import annotations
 
-import functools
-from collections.abc import Iterable, Sequence
-from pathlib import Path
-from typing import Any
-
+from max import functional as F
 from max import tree
+from max.driver import CPU
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    BufferValue,
-    DeviceRef,
-    Graph,
-    ShardingStrategy,
-    TensorType,
-    TensorValue,
-    Type,
-    Value,
-    ops,
-)
-from max.graph import Module as GraphModule
+from max.graph import BufferValue, TensorValue
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
-    PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import ColumnParallelLinear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.transformer import DecoderOutputs
-from max.nn.legacy.transformer.transformer import forward_sequential_layers
-from max.pipelines.architectures.deepseekV3.deepseekV3 import (
-    deepseek_logits_postprocess,
-)
-from max.pipelines.architectures.deepseekV3_2.layers import (
-    DeepseekV3_2TopKRouter,
-)
-from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
-from max.tree import Tree
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.sequential import ModuleList
+from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import VisionInputs
+from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, NamedMapping
 
+from .hybrid_layout import SPARSE_ATTENTION
 from .layers.decoder import Glm5NextDecoderLayer
-from .layers.hyper_connection import expand_streams, mean_collapse_streams
-from .layers.kda import kda_sublayer_inputs
-from .layers.kimi_delta_attention import Glm5NextKdaSublayer
-from .layers.mlp import (
-    Glm5NextMLP,
-    Glm5NextMlpSublayer,
-    Glm5NextMlpSublayerInputs,
-    Glm5NextMoE,
-)
-from .layers.sparse_mla import (
-    Glm5NextSparseMLASublayer,
-    SparseMLASublayerInputs,
-    nope_pad_rotary,
-)
-from .model_config import SPARSE_ATTENTION, Glm5NextConfig
+from .layers.indexer import KPoolTail
+from .layers.kda import KdaStateAccess, KimiDeltaAttention
+from .layers.mlp import build_mlp
+from .layers.norm import MultiplyBeforeCastRMSNorm
+from .layers.sparse_mla import Glm5NextSparseMLA
+from .logits import gather_last_tokens, project_to_logits
+from .model_config import Glm5NextConfig
 from .state_cache import (
+    CONV_LEAF_ID,
     INDEXER_CACHE_KEY,
     MLA_CACHE_KEY,
+    RECURRENT_LEAF_ID,
+    SPEC_STATE_LEAF_ORDER,
     STATE_CACHE_KEY,
     TAIL_RING_LEAF_ID,
-    leaf_inputs,
 )
 
-__all__ = ["Glm5Next"]
+__all__ = ["Glm5Next", "Glm5NextTextModel", "replicate", "state_leaf"]
 
 
-class Glm5Next(Module):
-    """The GLM-5.3-Flash language model graph.
+def replicate(value: Tensor, mesh: DeviceMesh) -> Tensor:
+    """Places a single-device tensor on every device of ``mesh``.
 
-    Assembles the period-4 hybrid schedule and the four-stream residual. The
-    attention sublayers and the hyper-connection sites are constructed through
-    the seam types, so this class is complete once the four lanes land their
-    modules and needs no edit to accommodate them.
+    The broadcast collective needs signal buffers, which only a multi-device
+    graph has. Onto one device, replicating is a placement.
     """
+    if mesh.num_devices > 1:
+        return F.distributed_broadcast(value, mesh)
+    return value.to(mesh)
+
+
+def state_leaf(
+    per_device: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
+    leaf_id: str,
+    mapping: DeviceMapping,
+    *,
+    head_sharded: bool,
+) -> tuple[Tensor, Tensor]:
+    """Builds one state leaf's pool and rows as distributed tensors.
+
+    A KDA pool holds the state of its own device's heads; the k-pool tail ring
+    is the same on every device, since the indexer is replicated. The rows of
+    a request are the same on every device. A speculative cache appends the
+    verify ring, head-split like the KDA state, after the live leaves.
+    """
+    index = SPEC_STATE_LEAF_ORDER.index(leaf_id)
+    pools = [device.leaves[index].pool for device in per_device]
+    pool_mapping: DeviceMapping = mapping
+    if head_sharded:
+        spec = (None, TP) + (None,) * (pools[0].rank - 2)
+        pool_mapping = NamedMapping(mapping.mesh, spec)
+    pool = Tensor.from_shard_values(pools, pool_mapping)
+    rows = Tensor.from_shard_values(
+        [device.leaves[index].live_row_ids for device in per_device], mapping
+    )
+    return pool, rows
+
+
+class Glm5NextTextModel(Module[..., Tensor]):
+    """Embedding, the hybrid layer stack and the head."""
 
     def __init__(
         self,
         config: Glm5NextConfig,
-        kv_params: KVCacheParamInterface | None = None,
+        ep_batch_manager: EPBatchManager | None,
     ) -> None:
-        super().__init__()
-        self.config = config
-        # The pipeline model's KV cache parameters, which :meth:`trace` reads.
-        self._kv_params = kv_params
-
         if not config.layer_types:
-            raise ValueError(
-                "Glm5NextConfig.layer_types is empty; the hybrid schedule "
-                "cannot be assembled. Glm5NextConfig.resolve_layer_types "
-                "reads it from the checkpoint."
-            )
-
-        embedding_output_dtype = config.compute_dtype
-        if embedding_output_dtype == DType.uint8:
-            embedding_output_dtype = DType.bfloat16
+            raise ValueError("Glm5NextConfig.layer_types is empty.")
+        self.config = config
+        self.mesh = config.mesh
         self.embed_tokens = VocabParallelEmbedding(
-            config.vocab_size,
-            config.hidden_size,
-            dtype=embedding_output_dtype,
-            devices=config.devices,
-            quantization_encoding=None,
+            config.vocab_size, dim=config.hidden_size
         )
-
-        # One manager per model, shared by every MoE layer: it owns the
-        # dispatch/combine buffers the EP kernels communicate through, so a
-        # per-layer instance would allocate a set nobody else can see.
-        self.ep_manager: EPBatchManager | None = None
-        if config.ep_config is not None:
-            self.ep_manager = EPBatchManager(config.ep_config)
-
-        # Populated by the lane modules through `attach_layers`. Kept as an
-        # explicit step rather than constructed here so that this file does not
-        # have to import four lanes' modules -- five engineers are editing this
-        # package concurrently, and an import here would serialise them.
-        self.layers = LayerList([])
-
-        self.norm = RMSNorm(
-            config.hidden_size,
-            dtype=config.compute_dtype,
-            eps=config.rms_norm_eps,
+        self.norm = MultiplyBeforeCastRMSNorm(
+            dim=config.hidden_size, eps=config.rms_norm_eps
         )
-        # The final norm runs per device: `ColumnParallelLinear` wants the full
-        # hidden vector on each rank, and the norm is replicated, not sharded.
-        self.norm.sharding_strategy = ShardingStrategy.replicate(
-            len(config.devices)
-        )
-        self.norm_shards = self.norm.shard(config.devices)
         self.lm_head = ColumnParallelLinear(
-            config.hidden_size,
-            config.vocab_size,
-            dtype=config.compute_dtype,
-            devices=config.devices,
-            tied_weight=(
-                self.embed_tokens.weight if config.tie_word_embeddings else None
-            ),
+            in_dim=config.hidden_size, out_dim=config.vocab_size, bias=False
         )
-        # A speculative verify reads only the variable logits, so it skips
-        # the last-token projection, a vocab-wide matmul per step.
-        self.emit_last_token_logits = True
+        # The padded MLA kernels read the rotary width off this table's shape.
+        # Its values are never used -- every column it rotates is zero -- so
+        # one table serves every sparse layer.
+        rope_width = config.mla_latent_pad_to - config.kv_lora_rank
+        self.rope = RotaryEmbedding(
+            dim=rope_width,
+            n_heads=config.num_attention_heads,
+            theta=10000.0,
+            max_seq_len=config.max_seq_len,
+            device=config.devices[0].to_device(),
+            head_dim=rope_width,
+            interleaved=False,
+        )
 
-    # ------------------------------------------------------------- schedule
-
-    def expand_streams(self, hidden: TensorValue) -> TensorValue:
-        """Broadcasts ``[T, hidden]`` into the ``[T, hc_mult, hidden]`` residual."""
-        return expand_streams(hidden, hc_mult=self.config.hc_mult)
-
-    def collapse_streams(self, streams: TensorValue) -> TensorValue:
-        """Collapses the streams back to ``[T, hidden]`` by unweighted mean."""
-        return mean_collapse_streams(streams)
-
-    def layer_type(self, layer_idx: int) -> str:
-        """Returns the attention family of ``layer_idx``.
-
-        The MTP draft layer sits at ``num_hidden_layers`` and beyond, past the
-        end of ``layer_types``; it is sparse MLA.
-        """
-        if layer_idx >= self.config.num_hidden_layers:
-            return SPARSE_ATTENTION
-        return self.config.layer_types[layer_idx]
-
-    def uses_hyper_connections(self, layer_idx: int) -> bool:
-        """Whether ``layer_idx`` has mHC sites rather than a plain residual add.
-
-        Layers 0-44 do; the MTP draft layer at 45 does not. ``hc_attn_fn``
-        appears 45 times in the checkpoint index while ``input_layernorm``
-        appears 46 times, which is how this is established.
-        """
-        return self.config.mhc and layer_idx < self.config.num_hidden_layers
-
-    @staticmethod
-    def uses_moe(config: Glm5NextConfig, layer_idx: int) -> bool:
-        """Whether ``layer_idx`` has an MoE block rather than a dense MLP.
-
-        Layers 0-2 are dense at width ``intermediate_size`` (12288); 3 onward,
-        the MTP layer included, are MoE at ``moe_intermediate_size`` (2048)
-        with one shared expert and eight of 288 routed.
-        """
-        return layer_idx >= config.first_k_dense_replace
-
-    def subgraph_layer_groups(self) -> list[list[int]]:
-        """Groups the decoder layers that can share one compiled subgraph.
-
-        A layer's subgraph signature is fixed by two things: which attention
-        family it belongs to, because that decides its per-step bundle, and
-        whether its feed-forward block is dense or MoE. Both come off the
-        schedule rather than off the period, so a sibling that retunes either
-        regroups itself. Nothing else varies -- every layer takes and returns
-        the same ``hc_mult``-wide residual, so unlike DeepSeek-V3.2 no layer
-        has to be peeled to keep a group's arity uniform.
-
-        DeepSeek-V3.2 additionally splits its MoE layers on ``indexer_types``,
-        because a ``"shared"`` layer declares no indexer weights.
-        GLM-5.3-Flash's ``indexer_types`` is ``"full"`` on all 45 layers, so
-        that split would produce one empty group and is not carried here.
-
-        Groups of one are dropped: a subgraph with a single call site costs a
-        boundary and saves no elaboration.
-
-        Returns:
-            One list of layer indices per group, or empty when subgraphs are
-            off. The MTP draft layer is never included -- it is the one layer
-            without hyper-connections, so its residual is rank 2 where every
-            other layer's is rank 3.
-        """
-        if not self.config.use_subgraphs:
-            return []
-        groups: dict[tuple[str, bool], list[int]] = {}
-        for layer_idx in range(self.config.num_hidden_layers):
-            key = (
-                self.layer_type(layer_idx),
-                self.uses_moe(self.config, layer_idx),
+        quant_scheme = config.quant_scheme
+        if quant_scheme is None:
+            raise ValueError(
+                "GLM-5.3-Flash needs a resolved quant scheme: its precision "
+                "map is read off the checkpoint's weight scales."
             )
-            groups.setdefault(key, []).append(layer_idx)
-        return [group for group in groups.values() if len(group) > 1]
-
-    def build_layers(self) -> LayerList:
-        """Constructs the decoder stack from the schedule.
-
-        One :class:`~.layers.decoder.Glm5NextDecoderLayer` per index, each
-        holding the attention sublayer its ``layer_types`` entry names and the
-        feed-forward sublayer its index implies. The MTP draft layer, when
-        built, is sparse MLA with ``mhc=False``.
-
-        The rotary table is built **once and shared by every sparse layer**.
-        GLM-5.3-Flash has no rotary embedding, but the 576-wide latent geometry
-        carries 64 rotary columns and the fused ops read that width off
-        ``freqs_cis.shape[1]``, so a table of that shape has to exist. Its
-        values are irrelevant -- every column it rotates is zero -- but its
-        leading dimension is ``max_seq_len``, which is 134 MB at 1M context.
-        Once, not eleven times.
-        """
-        config = self.config
-        rope = (
-            nope_pad_rotary(config)
-            if SPARSE_ATTENTION in config.layer_types
-            else None
-        )
-
-        # Heterogeneous by construction: each layer's bundle type is its own
-        # lane's, which is what `Glm5NextDecoderLayer`'s generics are for.
-        layers: list[Glm5NextDecoderLayer[Any, Any]] = []
-        for layer_idx in range(config.num_hidden_layers):
-            if self.layer_type(layer_idx) == SPARSE_ATTENTION:
-                assert rope is not None
-                self_attn: Module = Glm5NextSparseMLASublayer(
-                    config,
-                    layer_idx,
-                    rope=rope,
+        layers = []
+        for layer_idx, layer_type in enumerate(config.layer_types):
+            self_attn: Module[..., Tensor]
+            if layer_type == SPARSE_ATTENTION:
+                self_attn = Glm5NextSparseMLA(
+                    config, layer_idx, quant_scheme.attn_config(layer_idx)
                 )
             else:
-                self_attn = Glm5NextKdaSublayer(config, layer_idx)
+                self_attn = KimiDeltaAttention(config)
             layers.append(
                 Glm5NextDecoderLayer(
                     config,
-                    layer_idx,
                     self_attn=self_attn,
-                    mlp=self.build_mlp(config, layer_idx, self.ep_manager),
+                    mlp=build_mlp(config, layer_idx, ep_batch_manager),
                 )
             )
-        return LayerList(layers)
+        self.layers = ModuleList[Glm5NextDecoderLayer](layers)
 
-    @staticmethod
-    def build_mlp(
-        config: Glm5NextConfig,
-        layer_idx: int,
-        ep_manager: EPBatchManager | None,
-    ) -> Module:
-        """Returns the feed-forward sublayer for ``layer_idx``.
-
-        Dense at ``intermediate_size`` below ``first_k_dense_replace``, MoE at
-        ``moe_intermediate_size`` at and above it. Both clamp before the
-        activation; see :mod:`.layers.mlp` for why none of MAX's three existing
-        clamped-SwiGLU paths can be reused.
-
-        Static so that the MTP draft layer, which is built before its target,
-        can build its MoE the same way.
-        """
-        mlp = Glm5Next._mlp_module(config, layer_idx, ep_manager)
-        return Glm5NextMlpSublayer(mlp, config.devices, config, ep_manager)
-
-    @staticmethod
-    def _mlp_module(
-        config: Glm5NextConfig,
-        layer_idx: int,
-        ep_manager: EPBatchManager | None,
-    ) -> Glm5NextMLP | Glm5NextMoE:
-        """Returns the unwrapped dense MLP or MoE block for ``layer_idx``.
-
-        Mirrors DeepSeek-V3.2's construction, because GLM-5.3-Flash's MoE *is*
-        DeepSeek's apart from the activation: the same ``noaux_tc`` sigmoid
-        router with a learned correction bias, the same one shared expert, the
-        same float32 router math. Only ``gated_activation_fn`` differs, and
-        :class:`~.layers.mlp.Glm5NextMoE` supplies it.
-
-        Every MLP in this checkpoint is FP8 -- the three dense ones included --
-        so ``mlp_dtype`` follows the resolved encoding rather than the compute
-        dtype. Declaring the dense MLPs at the compute dtype instead is the
-        first thing weight loading rejects.
-        """
-        quant_cfg = config.quant_config
-        quantized = (
-            quant_cfg is not None
-            and layer_idx in quant_cfg.mlp_quantized_layers
-        )
-        mlp_dtype = config.dtype if quantized else config.compute_dtype
-        layer_quant_config = quant_cfg if quantized else None
-
-        if not Glm5Next.uses_moe(config, layer_idx):
-            dense_mlp = Glm5NextMLP(
-                dtype=mlp_dtype,
-                quantization_encoding=None,
-                hidden_dim=config.hidden_size,
-                feed_forward_length=config.intermediate_size,
-                devices=config.devices,
-                quant_config=layer_quant_config,
-                swiglu_limit=config.swiglu_limit,
-            )
-            # Mirrors DeepSeek-V3.2: the dense MLP is replicated unless EP is
-            # reducing through allreduce, in which case it is tensor-parallel.
-            # A strategy has to be set even at one device -- the sublayer
-            # wrapper produces one shard per device only via `shard()`.
-            if config.ep_config is not None and config.ep_config.use_allreduce:
-                dense_mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
-                    len(config.devices)
-                )
-            else:
-                dense_mlp.sharding_strategy = ShardingStrategy.replicate(
-                    len(config.devices)
-                )
-            return dense_mlp
-
-        ep_size = (
-            config.ep_config.n_gpus_per_node * config.ep_config.n_nodes
-            if config.ep_config is not None
-            else 1
-        )
-        moe = Glm5NextMoE(
-            devices=config.devices,
-            hidden_dim=config.hidden_size,
-            num_experts=config.n_routed_experts,
-            num_experts_per_token=config.num_experts_per_tok,
-            moe_dim=config.moe_intermediate_size,
-            gate_cls=functools.partial(
-                DeepseekV3_2TopKRouter,
-                routed_scaling_factor=config.routed_scaling_factor,
-                scoring_func=config.scoring_func,
-                topk_method=config.topk_method,
-                n_group=config.n_group,
-                topk_group=config.topk_group,
-                norm_topk_prob=config.norm_topk_prob,
-                # The router runs in float32 and its weight is not quantized:
-                # `modules_to_not_convert` excludes the gate on every GLM-5.x
-                # checkpoint, and `moe_router_dtype` is float32.
-                gate_dtype=DType.bfloat16,
-                correction_bias_dtype=config.correction_bias_dtype,
-            ),
-            # Bound: the MoE constructs the shared expert through `mlp_cls`
-            # and does not know about `swiglu_limit`.
-            mlp_cls=functools.partial(
-                Glm5NextMLP, swiglu_limit=config.swiglu_limit
-            ),
-            has_shared_experts=True,
-            shared_experts_dim=config.n_shared_experts
-            * config.moe_intermediate_size,
-            dtype=mlp_dtype,
-            ep_size=ep_size,
-            ep_batch_manager=ep_manager,
-            quant_config=layer_quant_config,
-            shared_experts_dtype=(
-                quant_cfg.shared_experts_dtype(mlp_dtype)
-                if quant_cfg is not None
-                else config.compute_dtype
-            ),
-            swiglu_limit=config.swiglu_limit,
-        )
-        # Mirrors DeepSeek-V3: expert-parallel when EP is on, tensor-parallel
-        # otherwise. Left unset entirely, the sublayer wrapper falls back to a
-        # single shard and the per-device forward sees one expert block for N
-        # inputs.
-        num_devices = len(config.devices)
-        if num_devices > 1:
-            if ep_size > 1:
-                moe.sharding_strategy = ShardingStrategy.expert_parallel(
-                    num_devices
-                )
-            else:
-                moe.sharding_strategy = ShardingStrategy.tensor_parallel(
-                    num_devices
-                )
-        return moe
-
-    def attach_layers(self, layers: LayerList) -> None:
-        """Installs the constructed decoder layers.
-
-        Args:
-            layers: One layer per index, ``num_hidden_layers`` plus
-                ``num_nextn_predict_layers`` when the MTP draft is built.
-
-        Raises:
-            ValueError: If the count does not match the schedule.
-        """
-        expected = (
-            self.config.num_hidden_layers,
-            self.config.num_hidden_layers
-            + self.config.num_nextn_predict_layers,
-        )
-        if len(layers) not in expected:
-            raise ValueError(
-                f"Expected {expected[0]} layers, or {expected[1]} with the MTP "
-                f"draft layer, got {len(layers)}."
-            )
-        self.layers = layers
-
-    # ------------------------------------------------------------ graph I/O
-
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> list[TensorType | BufferType]:
-        """Declares the graph's inputs, in the order ``execute`` supplies them.
-
-        Five groups, and the order is the contract:
-
-        1. ``tokens``, the per-device vision embeddings, the per-device vision
-           scatter indices, device row offsets, host row offsets,
-           ``return_n_logits``, ``data_parallel_splits``
-        2. the allreduce signal buffers
-        3. both KV cache leaves, flattened -- ``"mla"`` then ``"indexer"``
-        4. ``batch_context_lengths``, one per device
-
-        The sparse layers' cache indices are graph *constants* rather than
-        inputs, matching ``deepseekV3_2.py:840`` -- they are fixed by the
-        schedule, so nothing has to supply them per step.
-
-        Groups 1-4 are exactly ``Glm5NextInputs.buffers``. The recurrent
-        state needs no group of its own: it is a child of the multi-cache, so
-        its pools and row ids are already inside group 3.
-        """
-        devices = self.config.devices
-        device = devices[0]
-        types: list[TensorType | BufferType] = [
-            TensorType(DType.int64, shape=["total_seq_len"], device=device),
-            *(
-                TensorType(
-                    DType.bfloat16,
-                    shape=["vision_merged_seq_len", self.config.hidden_size],
-                    device=d,
-                )
-                for d in devices
-            ),
-            *(
-                TensorType(DType.int32, shape=["total_image_tokens"], device=d)
-                for d in devices
-            ),
-            TensorType(
-                DType.uint32, shape=["input_row_offsets_len"], device=device
-            ),
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef.CPU(),
-            ),
-            TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            ),
-        ]
-        # `data_parallel_splits` and `batch_context_lengths` are declared even
-        # though this graph does not read them yet: keeping the prefix
-        # identical to `DeepseekV3Inputs.buffers` means the inherited input
-        # preparation stays usable and only the GLM-specific groups are
-        # appended. Dropping them instead put the two out of step by exactly
-        # their count, which surfaces as an opaque arity error at execute.
-        types.append(
-            TensorType(
-                DType.int64,
-                shape=[self.config.data_parallel_degree + 1],
-                device=DeviceRef.CPU(),
-            )
-        )
-        types.extend(Signals(devices=self.config.devices).input_types())
-        types.extend(kv_params.flattened_kv_inputs())
-        types.extend(
-            TensorType(DType.int32, shape=[1], device=DeviceRef.CPU())
-            for _ in self.config.devices
-        )
-        if self.ep_manager is not None:
-            types.extend(self.ep_manager.input_types())
-        return types
-
-    def trace(
+    def forward(
         self,
-        *input_types: Type[Any],
-        name: str | None = None,
-        module: GraphModule | None = None,
-        custom_extensions: Iterable[Path] = (),
-        is_device_graph: bool = False,
-    ) -> Graph:
-        """Traces the graph, whose inputs are :meth:`input_types`.
-
-        The type list is the one for the KV cache parameters this module was
-        built with. The trace adapts the flat graph inputs to :meth:`__call__`:
-        it splits off the per-device vision rows and scatter indices and the
-        signal buffers, unflattens the MLA, indexer and recurrent state caches,
-        and skips ``batch_context_lengths``, which the graph does not read yet.
-
-        Adapts the flat graph inputs to :meth:`__call__`: splits off the
-        per-device vision rows and scatter indices and the signal buffers,
-        unflattens the MLA, indexer and recurrent state caches, and skips
-        ``batch_context_lengths``, which the graph does not read yet.
-
-        Args:
-            *input_types: The graph's input types.
-            name: The name of the graph. Defaults to the class's qualified
-                name.
-            module: The MLIR module to add the graph to. Defaults to a new
-                module.
-            custom_extensions: Paths to custom kernel libraries the graph
-                uses.
-            is_device_graph: Whether to build a device graph.
-
-        Returns:
-            The traced :class:`~max.graph.Graph`.
-        """
-        kv_params = self._kv_params
-        assert kv_params is not None, "trace needs the KV cache parameters"
-        num_devices = len(self.config.devices)
-
-        def forward(tokens: Value[Any], *rest: Value[Any]) -> DecoderOutputs:
-            vision_embeddings = [v.tensor for v in rest[:num_devices]]
-            vision_scatter_indices = [
-                v.tensor for v in rest[num_devices : 2 * num_devices]
-            ]
-            (
-                device_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                _data_parallel_splits,
-                *variadic,
-            ) = rest[2 * num_devices :]
-            it = iter(variadic)
-            signal_buffers = [next(it).buffer for _ in range(num_devices)]
-            # The recurrent state is a child of the multi-cache, so one
-            # unflatten resolves the attention leaves and the state together.
-            kv_tree = kv_params.unflatten_kv_inputs(it)
-            # A multi-cache unflattens to its children keyed by cache name.
-            # `Tree` is a recursive union that cannot say so, so narrow once
-            # here and read each child through `tree.leaves`, which types the
-            # per-device list the sublayers take.
-            assert isinstance(kv_tree, dict)
-            if STATE_CACHE_KEY not in kv_tree:
-                raise ValueError(
-                    "the GLM-5.3-Flash graph needs KDA layers; the cache"
-                    " declared no recurrent state child"
-                )
-            mla_kv = tree.leaves(
-                kv_tree[MLA_CACHE_KEY], leaf=KVCacheInputsPerDevice
-            )
-            indexer_kv = tree.leaves(
-                kv_tree[INDEXER_CACHE_KEY], leaf=KVCacheInputsPerDevice
-            )
-            state = tree.leaves(
-                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
-            )
-            # Consumed to keep the input prefix identical to
-            # `Glm5NextInputs.buffers`; this graph does not read them yet.
-            for _ in range(num_devices):
-                next(it)
-            ep_inputs = (
-                [next(it) for _ in self.ep_manager.input_types()]
-                if self.ep_manager is not None
-                else None
-            )
-            return self(
-                tokens.tensor,
-                vision_embeddings,
-                vision_scatter_indices,
-                signal_buffers,
-                mla_kv,
-                indexer_kv,
-                return_n_logits.tensor,
-                device_input_row_offsets.tensor,
-                host_input_row_offsets.tensor,
-                state,
-                ep_inputs,
-            )
-
-        return Graph(
-            type(self).__qualname__ if name is None else name,
-            forward,
-            input_types=input_types,
-            custom_extensions=list(custom_extensions),
-            module=module,
-            is_device_graph=is_device_graph,
-        )
-
-    def __call__(
-        self,
-        tokens: TensorValue,
-        vision_embeddings: list[TensorValue],
-        vision_scatter_indices: list[TensorValue],
-        signal_buffers: list[BufferValue],
-        mla_kv_collections: list[PagedCacheValues],
-        indexer_kv_collections: list[PagedCacheValues],
-        return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
-        host_input_row_offsets: TensorValue,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        mla: PagedCacheValues,
+        indexer: PagedCacheValues,
         state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
-        ep_inputs: Sequence[Any] | None = None,
-    ) -> DecoderOutputs:
-        """Runs the decoder and returns the logits tuple.
+        comm_buffers: EPCommBuffers | None,
+        vision: VisionInputs[Tensor] | None = None,
+    ) -> Tensor:
+        """Returns the logits at each request's last token."""
+        h = self.hidden_states(
+            tokens,
+            input_row_offsets,
+            mla,
+            indexer,
+            state,
+            comm_buffers,
+            vision=vision,
+        )
+        return project_to_logits(
+            gather_last_tokens(h, input_row_offsets),
+            self.norm,
+            self.lm_head,
+            self.mesh,
+            self.config.vocab_size,
+            None,
+        )
 
-        The residual is widened to ``hc_mult`` streams once after the embedding
-        and collapsed once before the final norm; every layer takes and returns
-        the widened form. Both attention families receive rank-2 sequences --
-        the widening is entirely inside the decoder layer's two mHC sites.
+    def hidden_states(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        mla: PagedCacheValues,
+        indexer: PagedCacheValues,
+        state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
+        comm_buffers: EPCommBuffers | None,
+        *,
+        vision: VisionInputs[Tensor] | None = None,
+        subgraphs: bool = True,
+    ) -> Tensor:
+        """Returns every token's collapsed residual, before the final norm.
 
-        Vision rows replace the embeddings at their placeholder positions
+        Image rows replace the embeddings at their placeholder positions
         before the widening, which is the whole vision-to-language interface:
         the decoder is NoPE, so no position ids change. The indices are
-        batch-global, which is right on every device because the embedding is
-        replicated and the token axis is split only inside the MLP.
+        batch-global, which holds on every device because the embedding is
+        replicated and the token axis is split only inside the feed-forward.
+
+        Args:
+            tokens: The batch's token ids, ragged by ``input_row_offsets``.
+            input_row_offsets: Offsets of each request's rows.
+            mla: The sparse layers' latent cache.
+            indexer: The sparse layers' indexer key cache.
+            state: Each device's recurrent-state leaves.
+            comm_buffers: The expert-parallel buffers, or ``None``.
+            vision: The batch's image rows and their token positions, when
+                the checkpoint ships a vision tower.
+            subgraphs: Whether layers of one kind share a subgraph. A
+                speculative verify turns it off: its rollback reads what each
+                layer captures, which cannot leave a subgraph.
         """
         config = self.config
-        devices = config.devices
-
-        if self.ep_manager is not None:
-            assert ep_inputs is not None, (
-                "ep_config is set, so the EP communication buffers must be "
-                "passed through from the graph inputs."
+        h = self.embed_tokens(tokens)
+        if vision is not None:
+            h = F_merge_multimodal_embeddings(
+                h, vision.embeddings, vision.scatter_indices
             )
-        h = [
-            merge_multimodal_embeddings(x, embeddings, indices)
-            for x, embeddings, indices in zip(
-                self.embed_tokens(tokens, signal_buffers),
-                vision_embeddings,
-                vision_scatter_indices,
-                strict=True,
+        mapping = tokens.mapping
+        conv_pool, conv_rows = state_leaf(
+            state, CONV_LEAF_ID, mapping, head_sharded=True
+        )
+        recurrent_pool, recurrent_rows = state_leaf(
+            state, RECURRENT_LEAF_ID, mapping, head_sharded=True
+        )
+        tail_pool, tail_rows = state_leaf(
+            state, TAIL_RING_LEAF_ID, mapping, head_sharded=False
+        )
+        freqs_cis = self.rope.freqs_cis.cast(h.dtype).to(mapping)
+
+        streams = h.unsqueeze(1).broadcast_to(
+            [h.shape[0], config.hc_mult, h.shape[1]]
+        )
+        kda_position = 0
+        sparse_position = 0
+        for layer_idx, (layer_type, layer) in enumerate(
+            zip(config.layer_types, self.layers, strict=True)
+        ):
+            attn_args: tuple[object, ...]
+            if layer_type == SPARSE_ATTENTION:
+                # The cache index, not the model index: only the sparse
+                # layers hold a KV cache, so model layer 3 is cache layer 0.
+                position = sparse_position
+                sparse_position += 1
+                attn_args = (
+                    mla,
+                    indexer,
+                    F.constant(position, DType.uint32, device=CPU()),
+                    input_row_offsets,
+                    freqs_cis,
+                    KPoolTail(
+                        pool=tail_pool,
+                        rows=tail_rows,
+                        layer=F.constant(position, DType.int64, device=CPU()),
+                    ),
+                )
+            else:
+                position = kda_position
+                kda_position += 1
+                attn_args = (
+                    KdaStateAccess(
+                        conv_pool=conv_pool,
+                        conv_rows=conv_rows,
+                        recurrent_pool=recurrent_pool,
+                        recurrent_rows=recurrent_rows,
+                        layer=F.constant(position, DType.int64, device=CPU()),
+                    ),
+                    input_row_offsets,
+                )
+            # Layers of one kind share a subgraph: the schedule fixes both the
+            # attention family and dense-vs-MoE, and each call resolves its
+            # own weights and passes its own cache and state positions.
+            moe = (
+                "moe" if layer_idx >= config.first_k_dense_replace else "dense"
             )
-        ]
-        row_offsets = ops.distributed_broadcast(
-            input_row_offsets.to(devices[0]), signal_buffers
-        )
-        # Handed to every feed-forward sublayer rather than bound once on the
-        # shared manager here: the MoE shards read the buffers off it while
-        # they are traced, and under subgraphs that trace happens inside a
-        # subgraph that cannot reference an outer-graph value.
-        mlp_inputs = Glm5NextMlpSublayerInputs(
-            ep_buffers=list(ep_inputs) if ep_inputs is not None else [],
-            signal_buffers=signal_buffers,
-            host_input_row_offsets=host_input_row_offsets,
-        )
-        streams = [expand_streams(x, hc_mult=config.hc_mult) for x in h]
-
-        kda_inputs = kda_sublayer_inputs(
-            kda_layers=config.kda_layers,
-            state=state,
-            signal_buffers=signal_buffers,
-            input_row_offsets=row_offsets,
-        )
-
-        # `layer_idx` for a sparse layer is its index within the *cached
-        # subset*: only the sparse layers hold a KV cache, so model layer 3 is
-        # cache layer 0.
-        ring = [leaf_inputs(device, TAIL_RING_LEAF_ID) for device in state]
-        sparse_inputs = {
-            layer_idx: SparseMLASublayerInputs(
-                signal_buffers=signal_buffers,
-                input_row_offsets=row_offsets,
-                mla_kv_collections=mla_kv_collections,
-                indexer_kv_collections=indexer_kv_collections,
-                # The cache index, not the model index: only the sparse layers
-                # hold a KV cache, so model layer 3 is cache layer 0.
-                layer_idx=ops.constant(
-                    cache_idx, DType.uint32, device=DeviceRef.CPU()
-                ),
-                # Every sparse layer shares one ring pool per device and
-                # differs only in the row it runs in. `cache_idx` is the
-                # ring's own layer set -- the indexer cache's -- so it is the
-                # column to read; the model index would bind one layer's ring
-                # to another and pass every shape check.
-                tail_pools=[leaf.pool for leaf in ring],
-                tail_row_ids=[leaf.live_row_id(cache_idx) for leaf in ring],
+            call = (
+                as_subgraph(layer, name=f"glm5_next_{layer_type}_{moe}")
+                if subgraphs
+                else layer
             )
-            for cache_idx, layer_idx in enumerate(
-                config.sparse_attention_layers
+            streams = call(streams, attn_args, comm_buffers)
+
+        return F.mean(streams, axis=1).squeeze(1)
+
+
+class Glm5Next(Module[..., ModuleV3Outputs]):
+    """GLM-5.3-Flash with the flattened cache inputs unpacked."""
+
+    def __init__(
+        self,
+        config: Glm5NextConfig,
+        kv_params: KVCacheParamInterface,
+        ep_batch_manager: EPBatchManager | None = None,
+    ) -> None:
+        super().__init__()
+        self.language_model = Glm5NextTextModel(config, ep_batch_manager)
+        self.config = config
+        self.kv_params = kv_params
+        self.ep_batch_manager = ep_batch_manager
+
+    def forward(
+        self,
+        tokens: Tensor,
+        return_n_logits: Tensor,
+        input_row_offsets: Tensor,
+        *variadic_args: Tensor,
+        vision: VisionInputs[Tensor] | None = None,
+    ) -> ModuleV3Outputs:
+        """Runs the language graph over tokens and the batch's image rows."""
+        del return_n_logits
+        mesh = self.config.mesh
+        assert mesh is not None
+        tokens = replicate(tokens, mesh)
+        input_row_offsets = replicate(input_row_offsets, mesh)
+
+        # The batch context length comes first; this graph does not read it.
+        kv_inputs = iter(kv_input_values(variadic_args[1:]))
+        kv_tree = self.kv_params.unflatten_kv_inputs(kv_inputs)
+        assert isinstance(kv_tree, dict)
+        if STATE_CACHE_KEY not in kv_tree:
+            raise ValueError(
+                "The GLM-5.3-Flash graph needs KDA layers; the cache declared "
+                "no recurrent state child."
             )
-        }
 
-        def inputs_for_layer(
-            layer_idx: int, streams: list[TensorValue]
-        ) -> list[Tree[Any]]:
-            attn_inputs = (
-                sparse_inputs[layer_idx]
-                if self.layer_type(layer_idx) == SPARSE_ATTENTION
-                else kda_inputs[layer_idx]
-            )
-            return [streams, attn_inputs, mlp_inputs]
+        def collection(name: str) -> PagedCacheValues:
+            leaves = tree.leaves(kv_tree[name], leaf=KVCacheInputsPerDevice)
+            return PagedCacheValues.from_upstream(leaves, tokens.mapping)
 
-        streams = forward_sequential_layers(
-            list(self.layers),
-            inputs_for_layer=inputs_for_layer,
-            initial_hidden_states=streams,
-            subgraph_layer_groups=self.subgraph_layer_groups(),
-            name_for_subgraph=lambda group: f"glm5_next_block_{group}",
-            weight_prefix_for_layer=lambda idx: f"layers.{idx}.",
+        state = tree.leaves(
+            kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
         )
-
-        hs = [mean_collapse_streams(s) for s in streams]
-        return deepseek_logits_postprocess(
-            h=hs,
-            input_row_offsets=row_offsets,
-            all_logits_input_row_offsets=None,
-            return_n_logits=return_n_logits,
-            norm_shards=self.norm_shards,
-            lm_head=self.lm_head,
-            signal_buffers=signal_buffers,
-            devices=devices,
-            is_data_parallel_attention=config.data_parallel_degree > 1,
-            return_logits=config.return_logits,
-            return_hidden_states=config.return_hidden_states,
-            emit_last_token_logits=self.emit_last_token_logits,
+        comm_buffers: EPCommBuffers | None = None
+        if self.ep_batch_manager is not None:
+            comm_buffers = self.ep_batch_manager.comm_buffers(list(kv_inputs))
+        logits = self.language_model(
+            tokens,
+            input_row_offsets,
+            collection(MLA_CACHE_KEY),
+            collection(INDEXER_CACHE_KEY),
+            state,
+            comm_buffers,
+            vision,
         )
+        return ModuleV3Outputs(next_token_logits=logits)

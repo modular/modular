@@ -121,7 +121,6 @@ def test_nightly_8xb200_pinned() -> None:
         "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
         "tencent/Hy4-preview-FP8",
         "tencent/Hy4-preview-FP8__mtp",
-        "zai-org/GLM-5.3-Flash__tpep",
     }
 
 
@@ -136,6 +135,7 @@ def test_nightly_4xb200_pinned() -> None:
     assert scheduled == {
         "deepseek-ai/DeepSeek-V4.1-Flash-1017",
         "reflection/Beam-1.0-501B-A23B-NVFP4",
+        "zai-org/GLM-5.3-Flash__tpep",
     }
 
 

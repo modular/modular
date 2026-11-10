@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# 2x MI355 recipe for GLM-5.3-Flash, text-only.
+# 2x MI355 recipe for GLM-5.3-Flash: text, image and video input.
 #
-# Same layout as the 8x B200 recipe at two ranks: TP2 attention, EP2 MoE.
+# TP2 attention, EP2 MoE.
 #   Weights: 306 GB / 2 = ~153 GB per GPU, out of 288 GiB.
 #   The KDA state is ~146 MiB per sequence regardless of context, and the
 #     4-stream residual makes activations 4x a single-stream model's. The
@@ -29,7 +29,6 @@ model:
     enable_prefix_caching: false  # prefix-cache determinism unverified on MI355
 
 runtime:
-  prefer_module_v3: false
   ep_size: 2
   max_batch_input_tokens: 8192
 

@@ -87,7 +87,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.pipelines.architectures.glm5_next_modulev3.layers.mlp import (
+from max.pipelines.architectures.glm5_next.layers.mlp import (
     Glm5NextExpertParallelMoE,
 )
 from max.tensor import Tensor, default_device, default_dtype

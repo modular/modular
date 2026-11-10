@@ -121,7 +121,7 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.1",
         timeout=120,
     ),
-    # Mirrors glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml.
+    # 8x B200: TP8 attention, EP8 MoE.
     PipelineEntry(
         pipeline="zai-org/GLM-5.3-Flash-FP8-ep-tp",
         model_path="zai-org/GLM-5.3-Flash",

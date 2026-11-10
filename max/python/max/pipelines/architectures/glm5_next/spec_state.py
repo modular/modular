@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GLM-5.3-Flash's per-request state across a speculative verify.
+"""GLM-5.3-Flash's per-request state across a speculative verify, on ModuleV3.
 
 Three state kinds advance with every verified token, and none has a length
 pointer to rewind:
@@ -36,6 +36,11 @@ pointer to rewind:
 A window with no drafts has nothing to reject, so its verify lands all three on
 the live pools and every rollback launch does nothing. The verify width that
 decides this is a shape, which the ops read without a device sync.
+
+The speculative driver hands its hooks one graph value per device; the
+rollback joins them into tensors on the target's mesh, broadcasts the
+batch-wide plan with :func:`~max.functional.distributed_broadcast`, and runs
+each device's launches under :func:`~max.functional.call_on_mesh`.
 """
 
 from __future__ import annotations
@@ -43,49 +48,59 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
+from max import functional as F
+from max.driver import Device
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
-from max.nn._graph_ops import mla_kpool_seed_tail
-from max.nn._graph_ops.state_space import verify_width_operand
-from max.nn._graph_ops.state_space.kimi_delta import (
-    STATE_LAYOUT,
-    kda_state_fold,
-)
-from max.nn.kv_cache import RecurrentLeafInputs, RecurrentStateInputsPerDevice
+from max.graph import BufferValue, DeviceRef, Dim, TensorValue
+from max.nn._graph_ops.state_space.kimi_delta import STATE_LAYOUT
+from max.nn.kernels import kda_state_fold, mla_kpool_seed_tail
+from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.pipelines.speculative.gated_delta_rollback import (
     accepted_lengths,
     accepted_row_plan,
 )
-from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
-from max.pipelines.speculative.unified_graph_ops import broadcast_per_device
+from max.pipelines.speculative.ragged_token_merger import shape_to_scalar
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
+from max.tensor.sharding.action import PerShard
 
-from ..deepseekV3_2.layers.indexer import KpoolTailReplayInputs
-from .glm5_next import Glm5Next
-from .layers.decoder import Glm5NextDecoderLayer
-from .layers.kda import KdaReplayInputs
-from .layers.kimi_delta_attention import Glm5NextKdaSublayer
-from .layers.sparse_mla import Glm5NextSparseMLASublayer
+from .glm5_next import Glm5Next, Glm5NextTextModel, replicate, state_leaf
+from .layers.indexer import PooledIndexer, TailDeferral
+from .layers.indexer_inputs import KpoolTailReplayInputs
+from .layers.kda import KdaVerify, KimiDeltaAttention, verify_width_operand
+from .layers.kda_replay import KdaReplayInputs
+from .layers.sparse_mla import Glm5NextSparseMLA
 from .state_cache import (
     CONV_LEAF_ID,
     RECURRENT_LEAF_ID,
     VERIFY_RING_LEAF_ID,
     has_verify_ring,
-    leaf_inputs,
 )
 
 __all__ = [
-    "Glm5NextRecurrentState",
-    "RecurrentStateRollback",
+    "Glm5NextSpecState",
     "deferred_seed_offsets",
     "fold_kda_state_pools",
     "replay_tail_seeds",
 ]
 
+_StateInputs = Sequence[RecurrentStateInputsPerDevice[TensorValue, BufferValue]]
 
-def deferred_seed_offsets(
-    num_draft_tokens: Dim, row_offsets: Sequence[TensorValue]
-) -> list[TensorValue]:
-    """Returns the row offsets a verify's tail seed reads, per device.
+
+def _dim_scalar(dim: Dim, device: Device, dtype: DType) -> Tensor:
+    """Returns ``dim`` as a scalar built on ``device``.
+
+    Built there rather than copied from the host, which a device graph
+    capture could not replay.
+    """
+    shape = F.shape_to_tensor([dim])
+    return F.range(
+        shape[0], shape[0] + 1, out_dim=1, dtype=dtype, device=device
+    )[0]
+
+
+def deferred_seed_offsets(num_draft_tokens: Dim, row_offsets: Tensor) -> Tensor:
+    """Returns the row offsets a verify's tail seed reads.
 
     The offsets themselves without drafts, so the forward lands the ring, and
     all zeros with them, which seeds no row and leaves the ring for the
@@ -93,30 +108,40 @@ def deferred_seed_offsets(
 
     Args:
         num_draft_tokens: The verify's draft width ``K``.
-        row_offsets: ``[batch + 1]`` uint32 offsets on each device.
+        row_offsets: ``[batch + 1]`` uint32 offsets, the same on every device.
     """
-    seeds = []
-    for offsets in row_offsets:
-        no_drafts = (
-            _shape_to_scalar(num_draft_tokens, offsets.device, DType.uint32)
-            == 0
+
+    def seed_offsets(offsets: Tensor) -> Tensor:
+        no_drafts = F.equal(
+            _dim_scalar(num_draft_tokens, offsets.device, DType.uint32), 0
         )
-        seeds.append(offsets.cast(DType.uint32) * no_drafts.cast(DType.uint32))
-    return seeds
+        return offsets.cast(DType.uint32) * no_drafts.cast(DType.uint32)
+
+    return F.call_on_mesh(
+        seed_offsets, row_offsets.mesh, out_specs=row_offsets.mapping
+    )(row_offsets)
+
+
+def _qkv_windows(captures: Sequence[KdaReplayInputs]) -> list[Tensor]:
+    """Returns one device's per-layer copies of the verify's conv input."""
+    windows = []
+    for capture in captures:
+        assert capture.qkv_window is not None, "a fold needs a verify"
+        windows.append(capture.qkv_window)
+    return windows
 
 
 def fold_kda_state_pools(
-    live_recurrent_pools: Sequence[BufferValue],
-    recurrent_row_ids: Sequence[TensorValue],
-    ring_pools: Sequence[BufferValue],
-    ring_row_ids: Sequence[TensorValue],
-    live_conv_pools: Sequence[BufferValue],
-    conv_row_ids: Sequence[TensorValue],
-    kda_captures: Sequence[Sequence[KdaReplayInputs]],
-    fold_accepted: TensorValue,
-    row_offsets: Sequence[TensorValue],
-    signal_buffers: Sequence[BufferValue],
-    verify_width: TensorValue,
+    recurrent_pool: Tensor,
+    recurrent_rows: Tensor,
+    ring_pool: Tensor,
+    ring_rows: Tensor,
+    conv_pool: Tensor,
+    conv_rows: Tensor,
+    captures: Sequence[Sequence[KdaReplayInputs]],
+    fold_accepted: Tensor,
+    row_offsets: Tensor,
+    verify_width: Tensor,
 ) -> None:
     """Applies the verify's accepted records to the live KDA pools.
 
@@ -125,52 +150,40 @@ def fold_kda_state_pools(
     verify width of zero.
 
     Args:
-        live_recurrent_pools: Per-device recurrent pool, still pre-verify.
-        recurrent_row_ids: Per-device ``[num_layers, batch_size]`` state rows.
-        ring_pools: Per-device verify ring.
-        ring_row_ids: Per-device ``[num_layers, batch_size]`` ring rows.
-        live_conv_pools: Per-device conv pool, still pre-verify.
-        conv_row_ids: Per-device ``[num_layers, batch_size]`` conv rows.
-        kda_captures: Per-device, per-layer verify captures; the fold reads
-            each layer's ``qkv_window``.
-        fold_accepted: ``[batch]`` records to fold.
-        row_offsets: Per-device ``[batch + 1]`` offsets of the verified
-            window, which bound each row's fold.
-        signal_buffers: Used only to place ``fold_accepted`` on each device.
+        recurrent_pool: The recurrent pool, still pre-verify.
+        recurrent_rows: ``[num_layers, batch_size]`` state rows.
+        ring_pool: The verify ring.
+        ring_rows: ``[num_layers, batch_size]`` ring rows.
+        conv_pool: The conv pool, still pre-verify.
+        conv_rows: ``[num_layers, batch_size]`` conv rows.
+        captures: Per-device, per-layer inputs the verify recorded; the fold
+            reads each layer's ``qkv_window``.
+        fold_accepted: ``[batch]`` records to fold, on one device.
+        row_offsets: ``[batch + 1]`` offsets of the verified window, which
+            bound each row's fold.
         verify_width: The verify's width operand.
     """
-    accepted_per_dev = broadcast_per_device(
-        fold_accepted.cast(DType.uint32),
-        list(signal_buffers),
-        len(live_recurrent_pools),
+    kda_state_fold(
+        recurrent_pool,
+        ring_pool,
+        recurrent_rows,
+        ring_rows,
+        replicate(fold_accepted.cast(DType.uint32), recurrent_pool.mesh),
+        row_offsets,
+        verify_width,
+        conv_pool=conv_pool,
+        conv_row_ids=conv_rows,
+        qkv_windows=PerShard(map(_qkv_windows, captures)),
+        state_layout=STATE_LAYOUT,
     )
-    for device_idx, state_pool in enumerate(live_recurrent_pools):
-        captures = kda_captures[device_idx]
-        windows = []
-        for capture in captures:
-            assert capture.qkv_window is not None, "a fold needs a verify"
-            windows.append(capture.qkv_window)
-        kda_state_fold(
-            state_pool,
-            ring_pools[device_idx],
-            recurrent_row_ids[device_idx],
-            ring_row_ids[device_idx],
-            accepted_per_dev[device_idx],
-            row_offsets[device_idx],
-            verify_width,
-            conv_pool=live_conv_pools[device_idx],
-            conv_row_ids=conv_row_ids[device_idx],
-            qkv_windows=windows,
-            state_layout=STATE_LAYOUT,
-        )
 
 
 def replay_tail_seeds(
     captures: Sequence[Sequence[KpoolTailReplayInputs]],
-    row_indices: TensorValue,
-    replay_offsets: TensorValue,
-    num_draft_tokens: TensorValue,
-    signal_buffers: Sequence[BufferValue],
+    row_indices: Tensor,
+    replay_offsets: Tensor,
+    num_draft_tokens: Tensor,
+    mesh: DeviceMesh,
 ) -> None:
     """Seeds each indexer tail ring with the verify's accepted rows.
 
@@ -184,45 +197,45 @@ def replay_tail_seeds(
         row_indices: Rows of the verify tensors the replay consumes.
         replay_offsets: ``[batch + 1]`` ragged offsets over those rows.
         num_draft_tokens: Scalar ``K`` on the device the plan lives on.
-        signal_buffers: Used only to place the plan on each device.
+        mesh: The mesh the captures were recorded on.
     """
     has_drafts = (num_draft_tokens > 0).cast(replay_offsets.dtype)
-    offsets = (replay_offsets * has_drafts).cast(DType.uint32)
-    n_devs = len(captures)
-    offsets_per_dev = broadcast_per_device(
-        offsets, list(signal_buffers), n_devs
-    )
-    rows_per_dev = broadcast_per_device(
-        row_indices, list(signal_buffers), n_devs
-    )
-    for device_idx, device_captures in enumerate(captures):
-        rows = rows_per_dev[device_idx]
-        for capture in device_captures:
+    offsets = replicate((replay_offsets * has_drafts).cast(DType.uint32), mesh)
+    rows = replicate(row_indices, mesh)
+
+    def seed(
+        layer_captures: Sequence[KpoolTailReplayInputs],
+        rows: Tensor,
+        offsets: Tensor,
+    ) -> None:
+        for capture in layer_captures:
             mla_kpool_seed_tail(
                 capture.tail,
-                ops.gather(capture.k, rows, axis=0),
-                ops.gather(capture.gate, rows, axis=0),
-                offsets_per_dev[device_idx],
+                F.gather(capture.k, rows, axis=0),
+                F.gather(capture.gate, rows, axis=0),
+                offsets,
                 capture.cache_lengths,
                 capture.slot_idx,
                 capture.kpool,
             )
 
+    F.call_on_mesh(seed, mesh)(PerShard(captures), rows, offsets)
 
-class RecurrentStateRollback:
-    """What a verify captures for the rollback, and the rollback itself.
 
-    A subclass binds the captures to its target's layers around the verify
-    and around the draft's first step; this half reads only what they
-    collected, so the graph-API and ModuleV3 targets share it. Used in this
-    order: the verify, :meth:`roll_forward` once the accepted count is known,
-    the draft's first step, then :meth:`replay_draft_tail`. Rolling forward
-    before the count settles lands the state on a prefix the row never
-    accepted, and seeding the draft's ring before its step has run lets that
-    step seed it again, both silently.
+class Glm5NextSpecState:
+    """The ModuleV3 target's state capture, and the rollback it feeds.
+
+    Used in this order: :meth:`capturing` around the target's verify,
+    :meth:`roll_forward` once the accepted count is known, then
+    :meth:`capturing_draft` around the draft's first step, which runs its own
+    indexer over the verified window, and :meth:`replay_draft_tail` after it.
+    Rolling forward before the count settles lands the state on a prefix the
+    row never accepted, and seeding the draft's ring before its step has run
+    lets that step seed it again, both silently.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, target: Glm5Next) -> None:
+        self.target = target
         self.kda_captures: list[list[KdaReplayInputs]] = []
         """Per-device, per-KDA-layer conv inputs the verify recorded."""
         self.tail_captures: list[list[KpoolTailReplayInputs]] = []
@@ -231,39 +244,136 @@ class RecurrentStateRollback:
         """Per-device tail-seed inputs of the draft's first step."""
         self.num_draft_tokens: Dim | None = None
         """The verify's draft width ``K``, set when the verify is bound."""
-        self.verify_width: TensorValue | None = None
+        self.verify_width: Tensor | None = None
         """The verify width operand the forward and the rollback share.
 
         Both must read the same one: a forward that lands a window the
         rollback then replays or folds advances the state twice.
         """
-        self._plan: tuple[TensorValue, TensorValue, TensorValue] | None = None
+        self._plan: tuple[Tensor, Tensor, Tensor] | None = None
         """The accepted rows, their offsets and ``K`` on the plan's device,
         which :meth:`roll_forward` builds and :meth:`replay_draft_tail`
         reuses."""
 
-    def _start_verify(self, num_draft_tokens: Dim, n_devs: int) -> None:
+    @property
+    def language_model(self) -> Glm5NextTextModel:
+        """The target's decoder stack and head."""
+        return self.target.language_model
+
+    @property
+    def mesh(self) -> DeviceMesh:
+        """The target's mesh, which every capture and rollback runs on."""
+        mesh = self.language_model.mesh
+        assert mesh is not None
+        return mesh
+
+    @contextmanager
+    def capturing(
+        self,
+        state: _StateInputs,
+        num_draft_tokens: Dim,
+        row_offsets: Tensor,
+    ) -> Iterator[None]:
+        """Binds the target's state capture for the verify inside.
+
+        Unwound on the way out, so the draft's own forward cannot append to
+        the target's captures.
+
+        Args:
+            state: Per-device state leaves, the verify ring included.
+            num_draft_tokens: The verify's draft width ``K``.
+            row_offsets: The verified window's offsets, replicated on the
+                target's mesh.
+
+        Raises:
+            ValueError: If the cache declares no verify ring.
+        """
+        if not all(map(has_verify_ring, state)):
+            raise ValueError(
+                "A GLM-5.3-Flash verify records its KDA recurrence into the"
+                " verify ring, and the cache declares none; build the cache"
+                " with the speculative config."
+            )
+        self._start_verify(num_draft_tokens)
+        assert self.verify_width is not None
+        ring_pool, ring_rows = state_leaf(
+            list(state),
+            VERIFY_RING_LEAF_ID,
+            row_offsets.mapping,
+            head_sharded=True,
+        )
+        kda = KdaVerify(
+            ring_pool=ring_pool,
+            ring_rows=ring_rows,
+            verify_width=self.verify_width,
+            captures=self.kda_captures,
+        )
+        tail = TailDeferral(
+            seed_row_offsets=deferred_seed_offsets(
+                num_draft_tokens, row_offsets
+            ),
+            captures=self.tail_captures,
+        )
+        attentions = [layer.self_attn for layer in self.language_model.layers]
+        for attention in attentions:
+            if isinstance(attention, KimiDeltaAttention):
+                attention.verify = kda
+            else:
+                assert isinstance(attention, Glm5NextSparseMLA)
+                attention.indexer.tail_deferral = tail
+        try:
+            yield
+        finally:
+            for attention in attentions:
+                if isinstance(attention, KimiDeltaAttention):
+                    attention.verify = None
+                else:
+                    assert isinstance(attention, Glm5NextSparseMLA)
+                    attention.indexer.tail_deferral = None
+
+    @contextmanager
+    def capturing_draft(
+        self, indexer: PooledIndexer, row_offsets: Tensor
+    ) -> Iterator[None]:
+        """Binds the draft's tail capture for its first step inside.
+
+        That step runs the draft's indexer over the same verified window, so
+        its ring defers to :meth:`replay_draft_tail` like the target's defers
+        to :meth:`roll_forward`.
+
+        Args:
+            indexer: The draft layer's indexer.
+            row_offsets: The verified window's offsets, replicated on the
+                target's mesh.
+        """
+        assert self.num_draft_tokens is not None, "draft before verify"
+        self.draft_tail_captures = [[] for _ in range(self.mesh.num_devices)]
+        indexer.tail_deferral = TailDeferral(
+            seed_row_offsets=deferred_seed_offsets(
+                self.num_draft_tokens, row_offsets
+            ),
+            captures=self.draft_tail_captures,
+        )
+        try:
+            yield
+        finally:
+            indexer.tail_deferral = None
+
+    def _start_verify(self, num_draft_tokens: Dim) -> None:
         """Resets the captures for a verify of width ``num_draft_tokens``."""
+        n_devs = self.mesh.num_devices
         self.kda_captures = [[] for _ in range(n_devs)]
         self.tail_captures = [[] for _ in range(n_devs)]
         self.num_draft_tokens = num_draft_tokens
         self.verify_width = verify_width_operand(num_draft_tokens)
 
-    def _start_draft(self, n_devs: int) -> None:
-        """Resets the draft's tail captures for its first step."""
-        assert self.num_draft_tokens is not None, "draft before verify"
-        self.draft_tail_captures = [[] for _ in range(n_devs)]
-
     def roll_forward(
         self,
-        state: Sequence[
-            RecurrentStateInputsPerDevice[TensorValue, BufferValue]
-        ],
+        state: _StateInputs,
         *,
         merged_offsets: TensorValue,
         merged_offsets_per_dev: Sequence[TensorValue],
         num_accepted: TensorValue,
-        signal_buffers: Sequence[BufferValue],
         device: DeviceRef,
     ) -> None:
         """Lands the target's state leaves on the accepted prefix.
@@ -276,24 +386,12 @@ class RecurrentStateRollback:
             merged_offsets: Ragged offsets over the verified window.
             merged_offsets_per_dev: ``merged_offsets`` on each device.
             num_accepted: ``[batch]`` accepted draft tokens per request.
-            signal_buffers: Used only to place the plan on each device.
             device: The device the batch-wide tensors live on.
         """
         assert self.verify_width is not None, "roll_forward before capturing"
         assert self.num_draft_tokens is not None
         assert all(map(has_verify_ring, state)), "the cache declares no ring"
-        num_draft_tokens = _shape_to_scalar(self.num_draft_tokens, device)
-
-        def leaves(
-            leaf_id: str,
-        ) -> list[RecurrentLeafInputs[TensorValue, BufferValue]]:
-            return [
-                leaf_inputs(device_state, leaf_id) for device_state in state
-            ]
-
-        conv = leaves(CONV_LEAF_ID)
-        recurrent = leaves(RECURRENT_LEAF_ID)
-        ring = leaves(VERIFY_RING_LEAF_ID)
+        num_draft_tokens = shape_to_scalar(self.num_draft_tokens, device)
         window = self.kda_captures[0][0].qkv_window
         assert window is not None
         # This verify never carries a prompt row, so every row is one
@@ -305,129 +403,41 @@ class RecurrentStateRollback:
             window.shape[0],
             device,
         )
-        self._plan = (row_indices, replay_offsets, num_draft_tokens)
-        # The fold places the conv windows in the same launch that folds the
-        # ring, so the rollback launches nothing per layer.
+        self._plan = (
+            Tensor.from_graph_value(row_indices),
+            Tensor.from_graph_value(replay_offsets),
+            Tensor.from_graph_value(num_draft_tokens),
+        )
+        replicated = DeviceMapping.replicated(self.mesh)
+        conv_pool, conv_rows = state_leaf(
+            list(state), CONV_LEAF_ID, replicated, head_sharded=True
+        )
+        recurrent_pool, recurrent_rows = state_leaf(
+            list(state), RECURRENT_LEAF_ID, replicated, head_sharded=True
+        )
+        ring_pool, ring_rows = state_leaf(
+            list(state), VERIFY_RING_LEAF_ID, replicated, head_sharded=True
+        )
         fold_kda_state_pools(
-            [leaf.pool for leaf in recurrent],
-            [leaf.live_row_ids for leaf in recurrent],
-            [leaf.pool for leaf in ring],
-            [leaf.live_row_ids for leaf in ring],
-            [leaf.pool for leaf in conv],
-            [leaf.live_row_ids for leaf in conv],
+            recurrent_pool,
+            recurrent_rows,
+            ring_pool,
+            ring_rows,
+            conv_pool,
+            conv_rows,
             self.kda_captures,
-            accepted_lengths(merged_offsets, num_accepted, num_draft_tokens),
-            merged_offsets_per_dev,
-            signal_buffers,
+            Tensor.from_graph_value(
+                accepted_lengths(merged_offsets, num_accepted, num_draft_tokens)
+            ),
+            Tensor.from_shard_values(merged_offsets_per_dev, replicated),
             self.verify_width,
         )
-        replay_tail_seeds(
-            self.tail_captures,
-            row_indices,
-            replay_offsets,
-            num_draft_tokens,
-            signal_buffers,
-        )
+        replay_tail_seeds(self.tail_captures, *self._plan, self.mesh)
 
-    def replay_draft_tail(self, signal_buffers: Sequence[BufferValue]) -> None:
+    def replay_draft_tail(self) -> None:
         """Seeds the draft's tail ring with the verify's accepted rows.
 
         Must run after :meth:`roll_forward` and after the draft's first step.
-
-        Args:
-            signal_buffers: Used only to place the plan on each device.
         """
         assert self._plan is not None, "draft tail replay before roll_forward"
-        row_indices, replay_offsets, num_draft_tokens = self._plan
-        replay_tail_seeds(
-            self.draft_tail_captures,
-            row_indices,
-            replay_offsets,
-            num_draft_tokens,
-            signal_buffers,
-        )
-
-
-class Glm5NextRecurrentState(RecurrentStateRollback):
-    """The graph-API target's state capture, bound around its verify.
-
-    Used in this order: :meth:`capturing` around the target's verify,
-    :meth:`roll_forward` once the accepted count is known, then
-    :meth:`capturing_draft` around the draft's first step, which runs its own
-    indexer over the verified window, and :meth:`replay_draft_tail` after it.
-    """
-
-    def __init__(self, target: Glm5Next) -> None:
-        super().__init__()
-        self.target = target
-
-    def _sublayers(self) -> Iterator[object]:
-        for layer in self.target.layers:
-            assert isinstance(layer, Glm5NextDecoderLayer)
-            yield layer.self_attn
-
-    @contextmanager
-    def capturing(
-        self, num_draft_tokens: Dim, row_offsets: Sequence[TensorValue]
-    ) -> Iterator[None]:
-        """Binds the target's state capture for the verify inside.
-
-        Unwound on the way out, so the draft's own forward cannot append to
-        the KDA captures.
-
-        Args:
-            num_draft_tokens: The verify's draft width ``K``.
-            row_offsets: The verified window's offsets on each device.
-        """
-        self._start_verify(num_draft_tokens, len(row_offsets))
-        assert self.verify_width is not None
-        seeds = deferred_seed_offsets(num_draft_tokens, row_offsets)
-        self._bind(self.kda_captures, self.verify_width, seeds)
-        try:
-            yield
-        finally:
-            self._bind(None, None, None)
-
-    def _bind(
-        self,
-        kda_captures: list[list[KdaReplayInputs]] | None,
-        verify_width: TensorValue | None,
-        seeds: list[TensorValue] | None,
-    ) -> None:
-        tail_captures = None if seeds is None else self.tail_captures
-        for sublayer in self._sublayers():
-            if isinstance(sublayer, Glm5NextKdaSublayer):
-                sublayer.replay_capture = kda_captures
-                sublayer.verify_width = verify_width
-            else:
-                assert isinstance(sublayer, Glm5NextSparseMLASublayer)
-                sublayer.tail_capture = tail_captures
-                sublayer.tail_seed_offsets = seeds
-
-    @contextmanager
-    def capturing_draft(
-        self,
-        draft_sublayer: Glm5NextSparseMLASublayer,
-        row_offsets: Sequence[TensorValue],
-    ) -> Iterator[None]:
-        """Binds the draft's tail capture for its first step inside.
-
-        That step runs the draft's indexer over the same verified window, so
-        its ring defers to :meth:`replay_draft_tail` like the target's defers
-        to :meth:`roll_forward`.
-
-        Args:
-            draft_sublayer: The draft layer's sparse-MLA sublayer.
-            row_offsets: The verified window's offsets on each device.
-        """
-        self._start_draft(len(row_offsets))
-        assert self.num_draft_tokens is not None
-        draft_sublayer.tail_capture = self.draft_tail_captures
-        draft_sublayer.tail_seed_offsets = deferred_seed_offsets(
-            self.num_draft_tokens, row_offsets
-        )
-        try:
-            yield
-        finally:
-            draft_sublayer.tail_capture = None
-            draft_sublayer.tail_seed_offsets = None
+        replay_tail_seeds(self.draft_tail_captures, *self._plan, self.mesh)

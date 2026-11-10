@@ -13,8 +13,7 @@
 
 # shellcheck disable=SC2034  # Variables are used when sourced
 
-# Mirrors max/pipelines/architectures/glm5_next/recipes/
-# glm_5_3_flash_fp8_tp_ep_8x_b200.yaml; the glm45 parsers are the arch default.
+# 8x B200: TP8 attention, EP8 MoE. The glm5_next parsers are the arch default.
 batch_size=32
 max_length=131072
 

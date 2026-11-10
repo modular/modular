@@ -43,7 +43,7 @@ def test_a_recurrent_target_commits_long_rows(
     ("target_arch", "method"),
     [
         # Its indexer tail ring has no proof for a long row.
-        ("Glm5NextForConditionalGeneration", "mtp"),
+        ("Glm5NextForConditionalGeneration_ModuleV3", "mtp"),
         ("LlamaForCausalLM", "eagle"),
         ("HYV4ForCausalLM", "mtp"),
     ],

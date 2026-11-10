@@ -977,7 +977,7 @@ def _swiglu_route(
             "NVFP4Activation",
         ),
         # deepseekV3_2_modulev3 accumulates the gate/up in float32 off the EP
-        # dispatch; glm5_next_modulev3 does too, and clamps the activation.
+        # dispatch; glm5_next does too, and clamps the activation.
         ("deepseekV3_2 TP", "fp8", False, DType.float32, 0.0, "Tensor"),
         ("deepseekV3_2 EP", "fp8", True, None, 0.0, "FP8BlockActivation"),
         ("glm5_next TP", "fp8", False, DType.float32, 10.0, "Tensor"),
