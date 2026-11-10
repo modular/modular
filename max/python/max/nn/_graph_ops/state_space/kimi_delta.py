@@ -44,6 +44,7 @@ __all__ = [
     "KdaStateLayout",
     "amd_kda_chunk_eligible",
     "amd_kda_chunk_workspace_bytes",
+    "amd_kda_long_row_scratch_bytes",
     "kda_chunk",
     "kda_chunk_predicate",
     "kda_chunk_rows",
@@ -440,6 +441,43 @@ def amd_kda_chunk_workspace_bytes(
         tokens = min(tokens, max_batch_size * max_length)
     sequences = min(max_batch_size or tokens, tokens)
     return kda_chunk_workspace_bytes(num_heads, head_dim, tokens, sequences)
+
+
+def amd_kda_long_row_scratch_bytes(
+    *,
+    num_heads: int,
+    head_dim: int,
+    lower_bound: float | None,
+    state_dtype: DType,
+    max_step_tokens: int,
+) -> int:
+    """Returns what a mixed verify's gfx950 long-row path allocates, or ``0``.
+
+    ``kda_verify_ring`` with ``chunk_long_rows`` gathers a mixed verify's
+    prompt rows into dense scratch sized by the step's tokens, outside the
+    graph's memory plan: bf16 q, k and v, fp32 gate and output, and an fp32
+    beta per head. One layer's call holds it at a time, so it is reserved
+    once.
+
+    Args:
+        num_heads: KDA heads the reservation sizes, as for
+            :func:`amd_kda_chunk_workspace_bytes`.
+        head_dim: Key and value head width.
+        lower_bound: The forget gate's lower bound, ``None`` for the
+            unbounded gate.
+        state_dtype: Dtype of the recurrent state pool.
+        max_step_tokens: Most tokens one verify step carries, drafts
+            included.
+
+    Returns:
+        Scratch bytes for ``num_heads``.
+    """
+    if not amd_kda_chunk_eligible(
+        head_dim, kda_gate_mode(lower_bound), state_dtype
+    ):
+        return 0
+    per_token_head = 3 * head_dim * 2 + 2 * head_dim * 4 + 4
+    return max_step_tokens * num_heads * per_token_head
 
 
 def _check_same_dim(axis: str, **dims: Dim) -> None:
@@ -1110,6 +1148,7 @@ def kda_verify_ring(
     gate_mode: KdaGateMode = "original",
     beta_mode: KdaBetaMode = "logits",
     state_layout: KdaStateLayout = "K_FIRST",
+    chunk_long_rows: bool = False,
 ) -> TensorValue:
     """Runs the KDA recurrence over a speculative verify window into a ring.
 
@@ -1122,6 +1161,13 @@ def kda_verify_ring(
     and no ring is written. A request longer than the ring's ``RING_LEN``
     records nothing and commits ``state_pool`` itself, the same contract as
     :func:`~max.nn._graph_ops.state_space.gated_delta_recurrence_verify_ring_fwd`.
+
+    With ``chunk_long_rows``, a mixed verify's prompt rows -- longer than one
+    token and its drafts -- run instead on the gfx950 chunk pipeline over
+    their tokens before the drafts, committing ``state_pool`` there and
+    recording nothing; their drafts' outputs are zeros. A decode-only verify
+    launches exactly what it does without it, and a mixed verify off gfx950
+    raises.
 
     Args:
         q: ``[total_tokens, num_key_heads, key_head_dim]``.
@@ -1147,6 +1193,8 @@ def kda_verify_ring(
         gate_mode: Forget-gate form, as for :func:`kda_decode`.
         beta_mode: Whether the kernel applies the sigmoid to ``beta_logits``.
         state_layout: Pool axis order; must match how the pool was allocated.
+        chunk_long_rows: Whether a mixed verify's prompt rows run on the
+            chunk pipeline, as above.
 
     Returns:
         ``[total_tokens, num_value_heads, value_head_dim]``.
@@ -1208,6 +1256,7 @@ def kda_verify_ring(
             "gate_mode": gate_mode,
             "beta_mode": beta_mode,
             "state_layout": state_layout,
+            "chunk_long_rows": chunk_long_rows,
         },
     )
     return ops.squeeze(results[0].tensor, 0)

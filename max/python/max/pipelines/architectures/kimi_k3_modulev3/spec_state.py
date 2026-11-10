@@ -24,7 +24,7 @@ pointer to rewind:
   state cache. The accepted records are folded into the live pool once the
   accepted count is known, with ``kda_state_fold`` -- whose record count is
   the TOKENS to fold, anchor included, not the accepted drafts
-  (:func:`~max.pipelines.speculative.gated_delta_rollback.accepted_lengths`
+  (:func:`~max.pipelines.speculative.gated_delta_rollback.ring_accepted_lengths`
   converts). A fold is the recurrence's own update over the same operands,
   so it lands bit for bit where the pinned-``fma`` ``kda_decode`` the base
   graph runs would have.
@@ -45,7 +45,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue
+from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
 from max.nn._graph_ops.state_space import verify_width_operand
 from max.nn._graph_ops.state_space.kimi_delta import (
     STATE_LAYOUT,
@@ -53,9 +53,9 @@ from max.nn._graph_ops.state_space.kimi_delta import (
 )
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.pipelines.speculative.gated_delta_rollback import (
-    accepted_lengths,
-    accepted_row_plan,
     replay_conv_pools,
+    ring_accepted_lengths,
+    window_row_plan,
 )
 from max.pipelines.speculative.ragged_token_merger import shape_to_scalar
 from max.pipelines.speculative.unified_graph_ops import broadcast_per_device
@@ -279,19 +279,14 @@ class KimiK3RecurrentState:
         merged_offsets = _value(merged_offsets)
         num_accepted = _value(num_accepted)
         num_draft_tokens = shape_to_scalar(self.num_draft_tokens, device)
-        # The verify copied its rows whenever it had drafts, which is whenever
-        # the rollback runs. Clamping to the copy keeps the gathers in bounds
-        # when it does not.
-        row_indices, replay_offsets = accepted_row_plan(
+        # A mixed verify's prompt rows were committed by the verify itself,
+        # so the plan replays and folds only the rows the window holds.
+        row_indices, replay_offsets = window_row_plan(
             merged_offsets,
             num_accepted,
             num_draft_tokens,
             self.captures[0][0].qkv_window.shape[0],
             device,
-            # Each row is one token and its drafts whenever the rollback
-            # runs, and the plan shrinks to a row per request when it does
-            # not.
-            plan_rows=Dim("batch_size") * (1 + self.num_draft_tokens),
         )
         conv = [
             leaf_inputs(device_state, CONV_LEAF_ID) for device_state in state
@@ -317,7 +312,14 @@ class KimiK3RecurrentState:
             [_value(leaf.live_row_ids) for leaf in recurrent],
             [_pool_value(leaf.pool) for leaf in ring],
             [_value(leaf.live_row_ids) for leaf in ring],
-            accepted_lengths(merged_offsets, num_accepted, num_draft_tokens),
+            ring_accepted_lengths(
+                ops.rebind(merged_offsets.cast(DType.int64)[1:], ["batch_size"])
+                - ops.rebind(
+                    merged_offsets.cast(DType.int64)[:-1], ["batch_size"]
+                ),
+                num_accepted,
+                num_draft_tokens,
+            ),
             [_value(offsets) for offsets in merged_offsets_per_dev],
             signal_buffers,
             self.verify_width,

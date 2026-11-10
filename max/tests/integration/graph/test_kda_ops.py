@@ -2121,3 +2121,158 @@ def test_kda_verify_ring_leaves_the_live_pool_alone(
     np.testing.assert_array_equal(
         torch.from_dlpack(conv_pool).cpu().numpy(), conv_init
     )
+
+
+# ---------------------------------------------------------------------------
+# kda_verify_ring over a mixed verify (chunk_long_rows, gfx950)
+# ---------------------------------------------------------------------------
+
+_MIXED_HEADS = 2
+_MIXED_DRAFTS = 7
+_MIXED_RING_LEN = _MIXED_DRAFTS + 1
+
+
+def _mixed_ring_graph(batch: int, slots: int) -> Graph:
+    """``kda_verify_ring`` with ``chunk_long_rows`` over bf16 q/k/v."""
+    gpu = DeviceRef.GPU()
+    kd = 128
+    h = _MIXED_HEADS
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    with Graph(
+        "kda_verify_ring_mixed",
+        input_types=[
+            TensorType(DType.bfloat16, ["total_t", h, kd], device=gpu),
+            TensorType(DType.bfloat16, ["total_t", h, kd], device=gpu),
+            TensorType(DType.bfloat16, ["total_t", h, kd], device=gpu),
+            TensorType(DType.float32, ["total_t", h, kd], device=gpu),
+            TensorType(DType.float32, ["total_t", h], device=gpu),
+            TensorType(DType.float32, [h], device=gpu),
+            TensorType(DType.float32, [h, kd], device=gpu),
+            TensorType(DType.int32, [batch + 1], device=gpu),
+            BufferType(DType.float32, [slots, h, kd, kd], device=gpu),
+            TensorType(DType.int32, [batch], device=gpu),
+            BufferType(
+                DType.float32,
+                [batch, h, _MIXED_RING_LEN, stride],
+                device=gpu,
+            ),
+            TensorType(DType.int32, [batch], device=gpu),
+        ],
+    ) as graph:
+        q, k, v, raw_gate, beta, a_log, dt_bias, cu = (
+            inp.tensor for inp in graph.inputs[:8]
+        )
+        graph.output(
+            kda_verify_ring(
+                q,
+                k,
+                v,
+                raw_gate,
+                beta,
+                a_log,
+                dt_bias,
+                cu,
+                graph.inputs[8].buffer,
+                graph.inputs[9].tensor,
+                graph.inputs[10].buffer,
+                graph.inputs[11].tensor,
+                verify_width_operand(_MIXED_DRAFTS),
+                output_dtype=DType.float32,
+                gate_mode="safe",
+                chunk_long_rows=True,
+            )
+        )
+    return graph
+
+
+@pytest.mark.skipif(
+    not _is_gfx950_gpu(), reason="a mixed verify's prompt rows are gfx950-only"
+)
+def test_kda_verify_ring_mixed_routes_each_row(
+    session: InferenceSession,
+) -> None:
+    """A mixed verify routes each row to its path, and leaves the rest alone.
+
+    The numerics of both paths are graded by the kernel tests
+    (`test_kda_amd_chunk_rows.mojo`, `test_kda_spec_ring.mojo`); this checks
+    the op's wiring. Decode rows record into the ring and leave the pool;
+    prompt rows commit the pool, record nothing and zero their drafts'
+    outputs; slots no row names are untouched.
+    """
+    kd = 128
+    h = _MIXED_HEADS
+    window = _MIXED_DRAFTS + 1
+    real = [0, 50, 0, 70]
+    lens = [window if r == 0 else r + _MIXED_DRAFTS for r in real]
+    batch = len(lens)
+    total_t = sum(lens)
+    slots = batch + 2
+    cu = np.concatenate([[0], np.cumsum(lens)]).astype(np.int32)
+    state_idx = np.array([4, 1, 5, 2], dtype=np.int32)
+
+    rng = np.random.default_rng(20261106)
+    q_t, k_t, v_t = (
+        torch.from_numpy(
+            rng.standard_normal((total_t, h, kd)).astype(np.float32)
+        ).to(torch.bfloat16)
+        for _ in range(3)
+    )
+    pool0 = (0.5 * rng.standard_normal((slots, h, kd, kd))).astype(np.float32)
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    ring0 = np.full(
+        (batch, h, _MIXED_RING_LEN, stride), _RING_POISON, dtype=np.float32
+    )
+
+    model = session.load(_mixed_ring_graph(batch, slots))
+    dev = model.input_devices[0]
+    pool = md.Buffer.from_numpy(pool0.copy()).to(dev)
+    ring = md.Buffer.from_numpy(ring0.copy()).to(dev)
+    (out_buf,) = model.execute(
+        md.Buffer.from_dlpack(q_t).to(dev),
+        md.Buffer.from_dlpack(k_t).to(dev),
+        md.Buffer.from_dlpack(v_t).to(dev),
+        md.Buffer.from_numpy(
+            (0.5 * rng.standard_normal((total_t, h, kd)) - 6.0).astype(
+                np.float32
+            )
+        ).to(dev),
+        md.Buffer.from_numpy(
+            rng.standard_normal((total_t, h)).astype(np.float32)
+        ).to(dev),
+        md.Buffer.from_numpy(np.zeros(h, dtype=np.float32)).to(dev),
+        md.Buffer.from_numpy(np.zeros((h, kd), dtype=np.float32)).to(dev),
+        md.Buffer.from_numpy(cu).to(dev),
+        pool,
+        md.Buffer.from_numpy(state_idx).to(dev),
+        ring,
+        md.Buffer.from_numpy(np.arange(batch, dtype=np.int32)).to(dev),
+    )
+    out = torch.from_dlpack(out_buf).cpu().numpy()
+    pool_after = torch.from_dlpack(pool).cpu().numpy()
+    ring_after = torch.from_dlpack(ring).cpu().numpy()
+
+    assert np.all(np.isfinite(out))
+    for b in range(batch):
+        s = state_idx[b]
+        if real[b] == 0:
+            assert not np.array_equal(ring_after[b], ring0[b]), (
+                f"decode row {b} recorded nothing"
+            )
+            np.testing.assert_array_equal(
+                pool_after[s], pool0[s], err_msg=f"decode row {b} committed"
+            )
+        else:
+            np.testing.assert_array_equal(
+                ring_after[b], ring0[b], err_msg=f"prompt row {b} recorded"
+            )
+            assert not np.array_equal(pool_after[s], pool0[s]), (
+                f"prompt row {b} committed nothing"
+            )
+            np.testing.assert_array_equal(
+                out[cu[b] + real[b] : cu[b + 1]],
+                0.0,
+                err_msg=f"prompt row {b}'s drafts",
+            )
+    for s in range(slots):
+        if s not in state_idx:
+            np.testing.assert_array_equal(pool_after[s], pool0[s])

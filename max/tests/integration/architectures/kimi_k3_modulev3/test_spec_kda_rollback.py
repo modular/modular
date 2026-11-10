@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import Accelerator
+from max.driver import Accelerator, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue
 from max.nn.kv_cache import (
@@ -136,8 +136,11 @@ def _ring_row_shape(num_devices: int) -> tuple[int, ...]:
     return ring.row_shape
 
 
-def _build_layers(mesh: DeviceMesh) -> list[KimiK3KDAAttention]:
-    """Two KDA layers with distinct dyadic weights, sharded over the mesh."""
+def _build_layers(
+    mesh: DeviceMesh, dtype: DType = DType.float32
+) -> list[KimiK3KDAAttention]:
+    """Two KDA layers with distinct dyadic weights in ``dtype``, sharded over
+    the mesh; ``a_log`` and ``dt_bias`` stay float32."""
     num_devices = mesh.num_devices
     rng = np.random.default_rng(20261103)
     qkv = [_sparse(rng, _INNER, _HIDDEN, 0.5) for _ in range(3)]
@@ -171,7 +174,7 @@ def _build_layers(mesh: DeviceMesh) -> list[KimiK3KDAAttention]:
                 else interleave_for_tp([*qkv, g_proj, b_proj], num_devices)
             ),
             dtype=DType.float32,
-        )
+        ).cast(dtype)
         layer.conv_weight = Tensor(
             (
                 conv_weight
@@ -179,19 +182,19 @@ def _build_layers(mesh: DeviceMesh) -> list[KimiK3KDAAttention]:
                 else interleave_for_tp(np.split(conv_weight, 3), num_devices)
             ),
             dtype=DType.float32,
-        )
+        ).cast(dtype)
         layer.f_a_proj.weight = Tensor(
             _sparse(rng, _HEAD_DIM, _HIDDEN, 0.25), dtype=DType.float32
-        )
+        ).cast(dtype)
         layer.f_b_proj.weight = Tensor(
             _sparse(rng, _INNER, _HEAD_DIM, 0.25), dtype=DType.float32
-        )
+        ).cast(dtype)
         layer.o_proj.weight = Tensor(
             _sparse(rng, _HIDDEN, _INNER, 0.5), dtype=DType.float32
-        )
+        ).cast(dtype)
         layer.o_norm.weight = Tensor(
             np.ones(_HEAD_DIM, dtype=np.float32), dtype=DType.float32
-        )
+        ).cast(dtype)
         layer.a_log = Tensor(
             (rng.integers(-4, 5, size=(_HEADS, _HEAD_DIM)) / 8).astype(
                 np.float32
@@ -466,6 +469,118 @@ def test_rollback_lands_the_pools_on_the_accepted_prefix(
                 ref_pools.recurrent.local_shards[d].to_numpy(),
                 err_msg=f"recurrent pool, device {device}",
             )
+
+
+@pytest.mark.compile_on_gpu(
+    "the verify, fold and conv replay mutate their pools in place"
+)
+@pytest.mark.skipif(
+    not accelerator_architecture_name().startswith("gfx950"),
+    reason="a mixed verify's prompt rows run on the gfx950 chunk pipeline",
+)
+def test_mixed_rollback_leaves_the_prompt_row_and_folds_the_decode_rows() -> (
+    None
+):
+    """In a mixed verify, the rollback leaves a prompt row's pools where the
+    verify committed them and folds the decode rows beside it as usual.
+
+    Request 0 carries five real tokens before its drafts; the engine accepts
+    none of them. The layers run in bfloat16, which the chunk pipeline
+    needs. The prompt row's reference is the same verify without the
+    rollback; the decode rows' is a decode-only verify and rollback of those
+    rows alone, the path the test above pins to the plain decode.
+    """
+    prompt_real = 5
+    lengths = [prompt_real + _WINDOW - 1] + [_WINDOW] * (_BATCH - 1)
+    accepted = [0, 3, 7, 1]
+    offsets_np = np.concatenate([[0], np.cumsum(lengths)]).astype(np.uint32)
+    rng = np.random.default_rng(20261110)
+    x = rng.integers(-1, 2, size=(int(offsets_np[-1]), _HIDDEN)).astype(
+        np.float32
+    )
+    live, ring_rows = _row_tables()
+    device = Accelerator()
+    mesh = DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("tp",))
+
+    def verify(
+        pools: _ArmPools,
+        members: list[int],
+        roll_forward: bool,
+    ) -> None:
+        pools.rows = [Tensor(live[:, members], dtype=DType.uint32).to(device)]
+        pools.ring_rows = [
+            Tensor(ring_rows[:, members], dtype=DType.uint32).to(device)
+        ]
+        tokens = np.concatenate(
+            [
+                np.arange(offsets_np[b], offsets_np[b + 1], dtype=np.int64)
+                for b in members
+            ]
+        )
+        offsets = Tensor(
+            np.concatenate(
+                [[0], np.cumsum([lengths[b] for b in members])]
+            ).astype(np.uint32),
+            dtype=DType.uint32,
+        ).to(device)
+        num_accepted = Tensor(
+            np.array([accepted[b] for b in members], dtype=np.int64),
+            dtype=DType.int64,
+        ).to(device)
+        x_window = Tensor(x[tokens], dtype=DType.float32).cast(DType.bfloat16)
+        live_rows = _row_table_tensors(live[:, members])
+        with ensure_context():
+            spec_state = KimiK3RecurrentState(layers)
+            state = pools.state()
+            with spec_state.capturing(Dim(_WINDOW - 1), state):
+                for position, layer in enumerate(layers):
+                    layer(
+                        x_window,
+                        pools.conv,
+                        live_rows[position],
+                        pools.recurrent,
+                        live_rows[position],
+                        offsets,
+                    )
+            if roll_forward:
+                spec_state.roll_forward(
+                    state,
+                    merged_offsets=offsets,
+                    merged_offsets_per_dev=[offsets],
+                    num_accepted=num_accepted,
+                    signal_buffers=[],
+                    device=DeviceRef.GPU(0),
+                )
+
+    with default_device(mesh):
+        layers = _build_layers(mesh, DType.bfloat16)
+        conv_init, rec_init = _pool_inits()
+        arms = {
+            name: _ArmPools(conv_init, rec_init, mesh, ring=True)
+            for name in ("mixed", "verify_only", "decode_only")
+        }
+        verify(arms["mixed"], list(range(_BATCH)), roll_forward=True)
+        verify(arms["verify_only"], list(range(_BATCH)), roll_forward=False)
+        verify(arms["decode_only"], list(range(1, _BATCH)), roll_forward=True)
+
+    prompt_rows = live[:, 0]
+    decode_rows = live[:, 1:].ravel()
+
+    def pool(arm: str, name: str) -> np.ndarray:
+        return getattr(arms[arm], name).local_shards[0].to_numpy()
+
+    for name in ("conv", "recurrent"):
+        got = pool("mixed", name)
+        np.testing.assert_array_equal(
+            got[prompt_rows],
+            pool("verify_only", name)[prompt_rows],
+            err_msg=f"{name} pool, prompt row",
+        )
+        np.testing.assert_array_equal(
+            got[decode_rows],
+            pool("decode_only", name)[decode_rows],
+            err_msg=f"{name} pool, decode rows",
+        )
 
 
 @pytest.mark.compile_on_gpu(

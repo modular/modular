@@ -43,9 +43,12 @@ The speculative-decoding VERIFY arm: when a binding is set on the layer
 ``gated_delta_conv1d_verify_fwd``, which leaves the live window unwritten
 and keeps a copy of its input for the conv replay, and the recurrence runs
 ``kda_verify_ring``, which reads the live pool without writing it and
-records each token's update in the ring. A width-0 window (no drafts)
-commits both live pools itself, the same arithmetic the plain forward uses,
-so one graph serves every step. Outside a verify the layer is unchanged.
+records each token's update in the ring. In a mixed verify, a prompt row
+skips both: the conv writes its window, and the recurrence commits its
+state on the chunk pipeline, each at the row's last real token, so the
+rollback leaves the row alone. A width-0 window (no drafts) commits both
+live pools itself, the same arithmetic the plain forward uses, so one graph
+serves every step. Outside a verify the layer is unchanged.
 
 Both gate-lower-bound arms V2 supports are kept (not scoped out): the
 "original" arm (``gate_lower_bound is None``, the kernel's own per-head
@@ -203,6 +206,9 @@ def _kda_verify_ring(
             "gate_mode": gate_mode,
             "beta_mode": "logits",
             "state_layout": STATE_LAYOUT,
+            # A mixed verify's prompt rows commit on the chunk pipeline at
+            # their last real token; a decode-only verify is unchanged.
+            "chunk_long_rows": True,
         },
     )[0]
     assert isinstance(out, TensorValue)
