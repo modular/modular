@@ -348,8 +348,8 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<GraphOp>(MAP::createRaiseBackContiguousViews());
 
   pm.addPass(MAP::createOutlineStructuredKernelBodies());
-  // Every kernel is a `map.iter.opaque` now, so a raised reshape can fuse into
-  // any kernel that reads it, not just one with a prologue.
+  // Every kernel is a `map.iter.opaque` now, so a raised view can fuse into any
+  // kernel that reads it, not just one with a prologue.
   pm.addNestedPass<GraphOp>(MAP::createFuseContiguousViews());
   // Uniques `map.iter.opaque` inputs and captures, and drops the inputs and
   // views nothing reads, so the lowered kernel's parameter list is minimal.

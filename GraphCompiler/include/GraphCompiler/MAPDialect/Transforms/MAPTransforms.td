@@ -295,15 +295,20 @@ def RaiseBackContiguousViews
 }
 
 def FuseContiguousViews : Pass<"map-fuse-contiguous-views", "MO::GraphOp"> {
-  let summary = "Fuse reshapes into the kernels that read them as stride views.";
+  let summary = "Fuse reshapes and contiguous slices into the kernels that read "
+                "them as stride views.";
   let description = [{
-    Replaces each kernel input that a `mo.static.reshape` produces with a
-    `map.index.reshape.stride` of the reshape's input, at the top of the
-    kernel's body. Assumes every kernel is a `map.iter.opaque`.
+    Replaces each kernel input that a `mo.static.reshape` or `mogg.slice`
+    produces with a `map.index.reshape.stride` or `map.index.slice.stride` of
+    the view's input, at the top of the kernel's body. Assumes every kernel is
+    a `map.iter.opaque`.
+
+    Fuses only a slice with static shapes and constant bounds.
   }];
 
   let dependentDialects = [
     "M::MAP::MAPDialect",
+    "M::MO::MODialect",
   ];
 
   let statistics = [

@@ -33,6 +33,11 @@ class IterElementwiseOp;
 /// never runs as a kernel.
 bool isRaisableViewChain(IterElementwiseOp op);
 
+/// The dimension a contiguous slice of an input of shape `inDims` cuts, as
+/// `mogg.slice` lowers it: the first dim of size other than 1, or the rank if
+/// there is none.
+int64_t findContiguousSliceDim(llvm::ArrayRef<int64_t> inDims);
+
 } // namespace M::MAP
 
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPTRANSFORMS_H
