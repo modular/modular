@@ -100,6 +100,7 @@ Outputs:
 
 import std.math
 from max.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
     lane_id,
@@ -114,6 +115,7 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.sync import barrier
 from std.math import ceildiv, fma, rsqrt
 from std.memory import unsafe_stack_allocation
+from std.utils.static_tuple import StaticTuple
 from layout import Idx, TensorEngine, TensorLayout, TileTensor, row_major
 
 
@@ -242,6 +244,11 @@ def _gated_delta_token_step[
 # ===----------------------------------------------------------------------=== #
 
 
+# Without a declared block size, the AMD backend assumes 1024 threads and
+# spills the 128-float state column to scratch.
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(VALUE_HEAD_DIM))
+)
 def gated_delta_recurrence_fwd_gpu[
     work_dtype: DType,  # for qkv/decay/beta/recurrence_output (fp32)
     state_dtype: DType,  # for the recurrent_state pool (bf16)
