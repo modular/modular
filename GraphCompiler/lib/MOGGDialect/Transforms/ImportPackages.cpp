@@ -390,6 +390,7 @@ static std::string formatRegistration(llvm::StringRef name,
 /// says about why it was needed.
 static constexpr UnfusedExecuteRegistration kUnfusedExecuteRegistrations[] = {
     {"mo.batch_matmul", R"(type("cpu"))"},
+    {"mo.batch_matmul", R"(type("gpu"))"},
     {"mo.conv", R"(type("gpu"))"},
     {"mo.conv_transpose", R"(type("cpu"))"},
     {"mo.conv_transpose", R"(type("gpu"))"},
