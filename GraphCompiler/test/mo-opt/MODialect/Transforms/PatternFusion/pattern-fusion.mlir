@@ -43,6 +43,22 @@ mo.graph @concat_gpu(%arg0: !mo.tensor<[2, 8], f32, gpu:0>) -> !mo.tensor<[4, 2,
   mo.output %3 : !mo.tensor<[4, 2, 4], f32, gpu:0>
 }
 
+// The rebind keeps canonicalization from merging the two transposes. Only the
+// outer one folds into transpose_b; folding the inner one too computes
+// input @ y^T instead of input @ y.
+// CHECK-LABEL: mo.graph @batch_matmul_transpose_b_rebind_transpose_cpu
+// CHECK: %[[T:.*]] = mo.transpose(
+// CHECK: %[[R:.*]] = mo.rebind(%[[T]])
+// CHECK: mo.batch_matmul(%{{.*}}, %[[R]]) [transpose_b = true]
+mo.graph @batch_matmul_transpose_b_rebind_transpose_cpu<seq>(%input: !mo.tensor<[10, 100, 1000], f32>, %y: !mo.tensor<[10, 1000, seq], f32>) -> !mo.tensor<[10, 100, 10000], f32> {
+  %perm = mo.constant <#M.dense_array<0, 2, 1> : tensor<3xsi32>> : !mo.tensor<[3], si32>
+  %inner = mo.transpose(%y, %perm): (!mo.tensor<[10, 1000, seq], f32>, !mo.tensor<[3], si32>) -> !mo.tensor<[10, seq, 1000], f32>
+  %rebind = mo.rebind(%inner) : !mo.tensor<[10, seq, 1000], f32> -> !mo.tensor<[10, 10000, 1000], f32>
+  %outer = mo.transpose(%rebind, %perm): (!mo.tensor<[10, 10000, 1000], f32>, !mo.tensor<[3], si32>) -> !mo.tensor<[10, 1000, 10000], f32>
+  %res = mo.batch_matmul(%input, %outer): (!mo.tensor<[10, 100, 1000], f32>, !mo.tensor<[10, 1000, 10000], f32>) -> !mo.tensor<[10, 100, 10000], f32>
+  mo.output %res : !mo.tensor<[10, 100, 10000], f32>
+}
+
 // CHECK-LABEL: mo.graph @batch_matmul_transpose_b_cpu
 // CHECK: mo.batch_matmul(%{{.*}}, %{{.*}}) [transpose_b = true]
 mo.graph @batch_matmul_transpose_b_cpu(%input: !mo.tensor<[10, 100, 1000], f32>, %weight: !mo.tensor<[10, 10000, 1000], f32>) -> !mo.tensor<[10, 100, 10000], f32> {

@@ -598,6 +598,11 @@ struct BatchMatmulAdjBPattern
     if (isBMMSmall(op))
       return rewriter.notifyMatchFailure(op, "BatchedMatmul is too small");
 
+    // The rewrite sets transpose_b instead of flipping it, so folding a second
+    // transpose (for example, one behind a rebind) would drop it.
+    if (op.getTransposeB())
+      return rewriter.notifyMatchFailure(op, "transpose_b is already set");
+
     auto weightTransP = m_Op<MO::TransposeOp>(rewriter.pushOp(), m_Any(&weight),
                                               m_MOVector(m_Any(&perm)));
     if (!m_Op<MO::BatchMatmulOp>(
