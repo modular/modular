@@ -45,6 +45,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
     interleave_for_tp,
 )
 from max.tensor import Tensor, default_device
@@ -119,9 +120,27 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
             v_head_dim=v_head,
             q_lora_rank=q_lora,
             kv_lora_rank=kv_lora,
+            tp_size=tp_size,
         )
-        for name, arr in weights.items():
-            getattr(attention, name).weight = Tensor(arr, dtype=DType.float32)
+        attention.qkv_a_g_proj.weight = Tensor(
+            fuse_qkv_a_g_for_tp(
+                weights["q_a_proj"],
+                weights["kv_a_proj_with_mqa"],
+                weights["g_proj"],
+                tp_size,
+            ),
+            dtype=DType.float32,
+        )
+        for name in (
+            "q_b_proj",
+            "kv_b_proj",
+            "o_proj",
+            "q_a_layernorm",
+            "kv_a_layernorm",
+        ):
+            getattr(attention, name).weight = Tensor(
+                weights[name], dtype=DType.float32
+            )
         ffn = KimiK3DenseMLP(
             hidden_size=hidden,
             intermediate_size=inter,

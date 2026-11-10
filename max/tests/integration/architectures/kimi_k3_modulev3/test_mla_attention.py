@@ -56,8 +56,8 @@ def _make_layer() -> KimiK3MLAAttention:
     "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_output_gate_zeroes_the_output() -> None:
-    """Forcing ``g_proj``'s weight to a saturating value must zero the
-    final output.
+    """Forcing the gate's rows of the fused projection to a saturating
+    value must zero the final output.
 
     ``gate = sigmoid(g_proj(x))``; a zero weight (and no bias, per
     ``bias=False``) makes every logit 0, so ``sigmoid(0) = 0.5`` -- not
@@ -79,11 +79,14 @@ def test_output_gate_zeroes_the_output() -> None:
         layer = _make_layer()
         # A large-magnitude negative weight saturates sigmoid(g_proj(x)) to
         # ~0, given a non-negative x (see docstring for why x's sign matters
-        # here).
-        layer.g_proj.weight = Tensor(
-            np.full((_NUM_HEADS * _V_HEAD, _HIDDEN), -50.0, dtype=np.float32),
-            dtype=DType.float32,
-        ).cast(layer.g_proj.weight.dtype)
+        # here). The gate is the fused weight's trailing rows; the q_a and
+        # kv_a rows ahead of it keep their random init.
+        fused = layer.qkv_a_g_proj.weight
+        weight = fused.cast(DType.float32).to_numpy().copy()
+        weight[_Q_LORA + _KV_LORA + _QK_ROPE :] = -50.0
+        layer.qkv_a_g_proj.weight = Tensor(weight, dtype=DType.float32).cast(
+            fused.dtype
+        )
 
         x = Tensor(
             np.abs(

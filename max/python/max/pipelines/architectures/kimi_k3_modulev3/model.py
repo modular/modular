@@ -411,6 +411,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         quant_config: QuantConfig | None = None,
         ep_config: EPConfig | None = None,
         max_tokens_per_expert: int = 8192,
+        tp_size: int = 1,
     ) -> None:
         """Builds the model's layers and weights.
 
@@ -458,6 +459,10 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             max_tokens_per_expert: Rows one forward can route to an expert
             (``KimiK3Config.max_tokens_per_expert``), a serving-time bound
             like ``mla_buffer_size``.
+            tp_size: The TP degree ``tensor_parallel_kimi_k3_model`` shards
+            the model over, 1 when it runs on one device or expert-parallel.
+            It sizes each MLA layer's fused input projection; see
+            :class:`KimiK3MLAAttention`.
         """
         super().__init__()
         self.config = config
@@ -507,6 +512,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     kv_lora_rank=config.kv_lora_rank,
                     kv_params=attn_params,
                     layer_idx=full_attn_idx,
+                    tp_size=tp_size,
                 )
                 full_attn_idx += 1
 
@@ -878,6 +884,18 @@ def _fuse_qkvgb_proj(
     return np.ascontiguousarray(np.concatenate([q, k, v, g, b], axis=0))
 
 
+def _fuse_qkv_a_g_proj(
+    q_a: np.ndarray, kv_a: np.ndarray, g: np.ndarray
+) -> np.ndarray:
+    """Merges an MLA layer's q_a, kv_a and gate projections into one weight.
+
+    ``KimiK3MLAAttention.qkv_a_g_proj`` takes the merged weight. This eager
+    loader is single-device, so a plain row concat is the TP-degree-1 case
+    of the weight adapter's per-rank ``[q_a | kv_a | g_r]`` blocks.
+    """
+    return np.ascontiguousarray(np.concatenate([q_a, kv_a, g], axis=0))
+
+
 def _fuse_qkv_conv_weight(
     q: np.ndarray, k: np.ndarray, v: np.ndarray
 ) -> np.ndarray:
@@ -1016,8 +1034,13 @@ def load_kimi_k3_weights(
             )
         else:
             assert isinstance(attn, KimiK3MLAAttention)
-            attn.q_a_proj.weight = Tensor(
-                get(f"{attn_src}.q_a_proj.weight"), dtype=DType.float32
+            attn.qkv_a_g_proj.weight = Tensor(
+                _fuse_qkv_a_g_proj(
+                    get(f"{attn_src}.q_a_proj.weight"),
+                    get(f"{attn_src}.kv_a_proj_with_mqa.weight"),
+                    get(f"{attn_src}.g_proj.weight"),
+                ),
+                dtype=DType.float32,
             )
             attn.q_a_layernorm.weight = Tensor(
                 get(f"{attn_src}.q_a_layernorm.weight"), dtype=DType.float32
@@ -1025,18 +1048,11 @@ def load_kimi_k3_weights(
             attn.q_b_proj.weight = Tensor(
                 get(f"{attn_src}.q_b_proj.weight"), dtype=DType.float32
             )
-            attn.kv_a_proj_with_mqa.weight = Tensor(
-                get(f"{attn_src}.kv_a_proj_with_mqa.weight"),
-                dtype=DType.float32,
-            )
             attn.kv_a_layernorm.weight = Tensor(
                 get(f"{attn_src}.kv_a_layernorm.weight"), dtype=DType.float32
             )
             attn.kv_b_proj.weight = Tensor(
                 get(f"{attn_src}.kv_b_proj.weight"), dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                get(f"{attn_src}.g_proj.weight"), dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 get(f"{attn_src}.o_proj.weight"), dtype=DType.float32

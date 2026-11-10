@@ -51,6 +51,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     kimi_k3_mla_prefill_plan,
     kimi_k3_nope_freqs_cis,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
+)
 from max.tensor import Tensor, compilation, default_device
 from max.tensor.sharding import BufferLayout, TensorLayout
 
@@ -101,9 +104,7 @@ def _weighted_latent_layer(
         ),
         layer_idx=0,
     )
-    layer.q_a_proj.weight = Tensor(
-        arr(_Q_LORA_RANK, _HIDDEN), dtype=DType.float32
-    ).cast(DType.bfloat16)
+    q_a = arr(_Q_LORA_RANK, _HIDDEN)
     layer.q_a_layernorm.weight = Tensor(
         np.ones(_Q_LORA_RANK, dtype=np.float32), dtype=DType.float32
     ).cast(DType.bfloat16)
@@ -114,9 +115,7 @@ def _weighted_latent_layer(
         ),
         dtype=DType.float32,
     ).cast(DType.bfloat16)
-    layer.kv_a_proj_with_mqa.weight = Tensor(
-        arr(_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN), dtype=DType.float32
-    ).cast(DType.bfloat16)
+    kv_a = arr(_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN)
     layer.kv_a_layernorm.weight = Tensor(
         np.ones(_KV_LORA_RANK, dtype=np.float32), dtype=DType.float32
     ).cast(DType.bfloat16)
@@ -124,8 +123,11 @@ def _weighted_latent_layer(
         arr(_NUM_HEADS * (_QK_NOPE_HEAD_DIM + _V_HEAD_DIM), _KV_LORA_RANK),
         dtype=DType.float32,
     ).cast(DType.bfloat16)
-    layer.g_proj.weight = Tensor(
-        arr(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), dtype=DType.float32
+    layer.qkv_a_g_proj.weight = Tensor(
+        fuse_qkv_a_g_for_tp(
+            q_a, kv_a, arr(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), 1
+        ),
+        dtype=DType.float32,
     ).cast(DType.bfloat16)
     layer.o_proj.weight = Tensor(
         arr(_HIDDEN, _NUM_HEADS * _V_HEAD_DIM), dtype=DType.float32

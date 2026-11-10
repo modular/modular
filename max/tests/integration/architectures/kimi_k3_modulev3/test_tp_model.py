@@ -47,6 +47,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.model import (
     tensor_parallel_kimi_k3_model,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
     interleave_for_tp,
 )
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -137,8 +138,14 @@ def _assign_weights(
             attn.dt_bias = Tensor(raw[f"{ap}.dt_bias"], dtype=DType.float32)
         else:
             assert isinstance(attn, KimiK3MLAAttention)
-            attn.q_a_proj.weight = Tensor(
-                raw[f"{ap}.q_a_proj.weight"], dtype=DType.float32
+            attn.qkv_a_g_proj.weight = Tensor(
+                fuse_qkv_a_g_for_tp(
+                    raw[f"{ap}.q_a_proj.weight"],
+                    raw[f"{ap}.kv_a_proj_with_mqa.weight"],
+                    raw[f"{ap}.g_proj.weight"],
+                    tp_size,
+                ),
+                dtype=DType.float32,
             )
             attn.q_a_layernorm.weight = Tensor(
                 raw[f"{ap}.q_a_layernorm.weight"], dtype=DType.float32
@@ -146,17 +153,11 @@ def _assign_weights(
             attn.q_b_proj.weight = Tensor(
                 raw[f"{ap}.q_b_proj.weight"], dtype=DType.float32
             )
-            attn.kv_a_proj_with_mqa.weight = Tensor(
-                raw[f"{ap}.kv_a_proj_with_mqa.weight"], dtype=DType.float32
-            )
             attn.kv_a_layernorm.weight = Tensor(
                 raw[f"{ap}.kv_a_layernorm.weight"], dtype=DType.float32
             )
             attn.kv_b_proj.weight = Tensor(
                 raw[f"{ap}.kv_b_proj.weight"], dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                raw[f"{ap}.g_proj.weight"], dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 raw[f"{ap}.o_proj.weight"], dtype=DType.float32
@@ -267,7 +268,7 @@ def test_model_tp1_matches_tp2() -> None:
         kv_params2, kv_inputs2 = kv_params_and_inputs(
             config, devices, prompt_lens
         )
-        model2 = KimiK3Model(config, kv_params=kv_params2)
+        model2 = KimiK3Model(config, kv_params=kv_params2, tp_size=len(devices))
         _assign_weights(model2, raw, len(devices))
         tensor_parallel_kimi_k3_model(model2, mesh)
         run2 = model2.compile(
