@@ -8,6 +8,7 @@
 // CHECK-NEXT:    var [[SQ:.*]] = builtin_kernels.elementwise.Mul.elementwise[{{.*}}]([[X2]], [[X2]])
 // CHECK-NEXT:    return [[SQ]]
 // CHECK:       var [[ROW2:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}](row_coords, Int({{.*}}[1].value()), row_ctx, {{.*}})
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
 // CHECK-NEXT:    return tile
 // CHECK:       def {{write_+[0-9]+}}(oc: {{.*}}) {var}:

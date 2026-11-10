@@ -1891,8 +1891,10 @@ static LogicalResult lowerPhaseBody(EmitMojoState &state,
   return success();
 }
 
-// Prints the kernel as a Row API body and launches it:
+// Prints the kernel as a Row API body and launches it. The body and its
+// closures are always inlined, so the row loop makes no call per row:
 //
+//   @inline(.always)
 //   def body[params](row_coords, mut row_ctx) {var}:                    (1)
 //     <each op of the body, in order: the cache prints the `load`       (2)
 //      closure and the Row; folds, map phases, per-row loads and the
@@ -1959,7 +1961,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
       "body_",
       {NamedMojoDef::asVerbatim("params", kStructRowwiseContextParams)},
       {NamedMojoDef::asVerbatim("row_coords", kStructCoord), rowCtxArg},
-      /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAutomatic,
+      /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAlways,
       /*isAsync=*/false, /*raises=*/false,
       /*captureConvention=*/"var", [&](const FunctionBody &) {
         EmitMojoState::ValueScope bodyScope(state);
@@ -2005,6 +2007,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
 // Prints the cache as the Row's `load` closure, and the Row, which reads the
 // row through it:
 //
+//   @inline(.always)
 //   def load[width, alignment](idx) -> SIMD[dtype, width]:              (1)
 //     <body at idx, each load at width and alignment>
 //     return <the yielded value>                                        (2)
@@ -2023,7 +2026,7 @@ LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
        NamedMojoDef::asVerbatim("alignment", kStructInt)},
       {NamedMojoDef::asVerbatim("idx", info.rowCoord)},
       MojoValue(kStructSIMD)[{info.dtype, MojoValue(kParameterWidth)}],
-      MojoBuilder::LambdaInline::kAutomatic, false, false, "var",
+      MojoBuilder::LambdaInline::kAlways, false, false, "var",
       [&](const FunctionBody &fb) {
         EmitMojoState::LambdaInfosGuard guard(
             state, {&state.builder, fb.parameters[0], fb.parameters[1]});
@@ -2091,6 +2094,7 @@ LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
 
 // Prints the fold:
 //
+//   @inline(.always)
 //   def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:     (1)
 //     <fold body, reading `tile` for the cached value>
 //   var acc = row.reduce[Monoid[..., W = params.simd_width]](           (2)
@@ -2109,7 +2113,7 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
            "tile", MojoValue(kStructSIMD)[{info.dtype, MojoValue("w")}]),
        NamedMojoDef::asVerbatim("idx", info.rowCoord)},
       MojoValue(kStructSIMD)[{info.accum, MojoValue("w")}],
-      MojoBuilder::LambdaInline::kAutomatic, false, false, "var",
+      MojoBuilder::LambdaInline::kAlways, false, false, "var",
       [&](const FunctionBody &fb) {
         EmitMojoState::ValueScope scope(state);
         if (failed(lowerPhaseBody(state, *this, fb.parameters[0], MojoValue(1),
@@ -2140,6 +2144,7 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
 
 // Prints the map phase:
 //
+//   @inline(.always)
 //   def elementwise[w](tile: SIMD[dtype, w], idx):                      (1)
 //     comptime al = Context[params].element_alignment[dtype, w]()
 //     <map body, reading row values as .slice[w]()>
@@ -2154,7 +2159,7 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
       {NamedMojoDef::asVerbatim(
            "tile", MojoValue(kStructSIMD)[{info.dtype, MojoValue("w")}]),
        NamedMojoDef::asVerbatim("idx", info.rowCoord)},
-      /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAutomatic, false,
+      /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAlways, false,
       false, "var", [&](const FunctionBody &fb) {
         EmitMojoState::ValueScope scope(state);
         // comptime al = Context[params].element_alignment[dtype, w]()
@@ -2174,6 +2179,7 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
 
 // Prints the per-row stores:
 //
+//   @inline(.always)
 //   def write(oc):                                                      (1)
 //     <the emit's ops at oc, reading row values as
 //      .slice[params.emit_tile_width]()>
@@ -2186,7 +2192,7 @@ LogicalResult RowwiseEmitOp::emitMojo(EmitMojoState &state) {
   bool failedToLower = false;
   MojoValue write = state.builder.lambda(
       "write_", {}, {NamedMojoDef::asVerbatim("oc", info.rowCoord)},
-      /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAutomatic, false,
+      /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAlways, false,
       false, "var", [&](const FunctionBody &) {
         EmitMojoState::LambdaInfosGuard guard(
             state, {&state.builder, emitWidth, MojoValue(1)});

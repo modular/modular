@@ -15,6 +15,7 @@
 // CHECK-NEXT:  var [[MS:.*]] = builtin_kernels.elementwise.Div.elementwise[dtype = DType.float32]([[ACC4]].acc, SIMD[DType.float32, params.simd_width](128.0))
 // CHECK-NEXT:  var [[V:.*]] = builtin_kernels.elementwise.Add.elementwise[dtype = DType.float32]([[MS]], SIMD[DType.float32, params.simd_width](9.99999997E-7))
 // CHECK-NEXT:  var [[INV:.*]] = builtin_kernels.elementwise.Rsqrt.elementwise[dtype = DType.float32]([[V]])
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def [[EW:elementwise_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], idx: {{.*}}) {var}:
 // CHECK-NEXT:    comptime [[AL:.*]] = algorithm.rowwise_types.Context[params].element_alignment[DType.float32, w]()
 // CHECK-NEXT:    var [[NX:.*]] = builtin_kernels.elementwise.Mul.elementwise[dtype = DType.float32](tile, [[INV]].slice[w]())
@@ -59,6 +60,7 @@ mo.graph @rmsNorm(%x: !mo.tensor<[8, 128], f32>, %g: !mo.tensor<[128], f32>) -> 
 // CHECK:       var [[ROW3:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, is_cached = True](row_coords, Int({{.*}}[1].value()), row_ctx, [[LOAD3:load_+[0-9]+]])
 // CHECK:       var [[ACC3:.*]] = [[ROW3]].reduce[
 // CHECK-NEXT:  var [[INV:.*]] = builtin_kernels.elementwise.Rsqrt.elementwise[{{.*}}]([[ACC3]].acc)
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def [[EW:elementwise_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var}:
 // CHECK-NEXT:    comptime [[AL:.*]] = algorithm.rowwise_types.Context[params].element_alignment[DType.float32, w]()
 // CHECK-NEXT:    var [[N:.*]] = builtin_kernels.elementwise.Mul.elementwise[{{.*}}](tile, [[INV]].slice[w]())
@@ -93,6 +95,7 @@ mo.graph @normalize<M, N>(%x: !mo.tensor<[M, N], f32>) -> !mo.tensor<[M, N], f32
 // CHECK-NEXT:  var [[S:.*]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = params.emit_tile_width{{.*}}algorithm.rowwise_types.at_axis[1]([[ROW5]].row_coord, 0)
 // CHECK-NEXT:  var [[SW:.*]] = {{.*}}._rowwise_splat_lane([[ROW5]], [[S]])
 // CHECK-NEXT:  var [[INV:.*]] = builtin_kernels.elementwise.Mul.elementwise[{{.*}}]([[ACC5]].acc, [[SW]])
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def [[EW:elementwise_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var}:
 // CHECK:         builtin_kernels.elementwise.Mul.elementwise[{{.*}}](tile, [[INV]].slice[w]())
 mo.graph @scaleByRow(%x: !mo.tensor<[8, 128], f32>, %s: !mo.tensor<[8, 1], f32>) -> !mo.tensor<[8, 128], f32> {

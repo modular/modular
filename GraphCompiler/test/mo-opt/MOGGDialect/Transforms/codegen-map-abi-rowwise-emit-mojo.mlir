@@ -2,23 +2,26 @@
 
 // A rowwise kernel prints as a Row API body: its cache as the `load` closure, a
 // `Row`, one `row.reduce` per fold, one `row.elementwise` per map phase, and
-// per-row stores in `row.emit`. The
-// launch parameters come from the op, and `mogg.call.rowwise` picks the SIMD
-// width.
+// per-row stores in `row.emit`, each always inlined. The launch parameters
+// come from the op, and `mogg.call.rowwise` picks the SIMD width.
 
 // A static axis gives the Row a compile-time length.
 // CHECK-LABEL: def __reduce_add(
 // CHECK:       comptime [[SPEC_X:.*]] = [[MTS_X:.*]].static_spec
 // CHECK:       comptime [[SPEC_O:.*]] = [[MTS_O:.*]].static_spec
-// CHECK:       def [[BODY:body_+[0-9]+]][params : algorithm.rowwise_types.ContextParams](row_coords: layout.Coord, mut row_ctx: algorithm.rowwise_types.Context[params]) {var}:
+// CHECK:       @inline(.always)
+// CHECK-NEXT:  def [[BODY:body_+[0-9]+]][params : algorithm.rowwise_types.ContextParams](row_coords: layout.Coord, mut row_ctx: algorithm.rowwise_types.Context[params]) {var}:
 // CHECK-NEXT:    comptime [[RANK:.*]] = row_coords.rank
+// CHECK-NEXT:    @inline(.always)
 // CHECK-NEXT:    def [[LOAD:load_+[0-9]+]][width : Int, alignment : Int](idx: std.utils.coord.DynamicCoord[DType.int, [[RANK]]]) {var} -> SIMD[DType.float32, width]:
 // CHECK-NEXT:      var [[X:.*]] = managed_tensor_slice.simd_load_from_tensor_pointer[static_spec = [[SPEC_X]], simd_width = width, element_alignment = alignment]({{.*}}idx{{.*}})
 // CHECK-NEXT:      return [[X]]
 // CHECK:         var [[ROW:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, [[RANK]], is_cached = False](row_coords, layout.Idx[128], row_ctx, [[LOAD]])
+// CHECK-NEXT:    @inline(.always)
 // CHECK-NEXT:    def [[ADD:contribute_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], idx: std.utils.coord.DynamicCoord[DType.int, [[RANK]]]) {var} -> SIMD[DType.float32, w]:
 // CHECK-NEXT:      return tile
 // CHECK:         var [[ACC:.*]] = [[ROW]].reduce[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = params.simd_width]]([[ADD]], [[LOAD]])
+// CHECK-NEXT:    @inline(.always)
 // CHECK-NEXT:    def [[WRITE:write_+[0-9]+]](oc: std.utils.coord.DynamicCoord[DType.int, [[RANK]]]) {var}:
 // CHECK-NEXT:      managed_tensor_slice.simd_store_into_tensor_pointer[static_spec = [[SPEC_O]], simd_width = params.emit_tile_width, element_alignment = 1]({{.*}}oc{{.*}}[[ACC]].acc.slice[params.emit_tile_width]()))
 // CHECK:         [[ROW]].emit([[WRITE]])
