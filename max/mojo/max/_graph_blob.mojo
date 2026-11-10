@@ -30,15 +30,20 @@ from max.gpu.host import Dim
 comptime _UNSUPPORTED = "graph blobs are not supported on this target"
 
 
+# TODO(GEX-4497): Once a member can run on blocks with gaps between them, or on
+# some of each block's threads, the encoding depends on the target. Take it
+# from the members' configuration type, which knows its target, rather than
+# from a lookup of the accelerator at run time.
 def active_threads(
     grid_dim: Dim, block_dim: Dim, launch_grid_dim: Dim, launch_block_dim: Dim
 ) raises -> Int32:
     """Returns what a graph blob's kernel needs to know about a member
     launched on `grid_dim` and `block_dim`, as a kernel argument.
 
-    The host computes it, where the device's MAX plugin doesn't apply, so it
-    is the same on every target: the member runs on the first blocks of the
-    launch, as many as its own grid has, and on every thread of each.
+    The host computes it, where the device's MAX plugin doesn't apply. For
+    now every target encodes it the same way, because a member runs on the
+    first blocks of the launch, as many as its own grid has, and on all
+    threads of each.
 
     Args:
         grid_dim: The grid of the member's own launch configuration.
