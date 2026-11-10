@@ -37,8 +37,7 @@ rebuild and re-test (see [Testing](#testing-after-an-update)).
 ## Bumping the Rust bindings in lockstep
 
 The Rust side consumes NIXL through the `nixl-sys` crate, pinned in
-the root `Cargo.toml` and locked in both the root `Cargo.lock` and
-`mach/Cargo.lock`.
+the root `Cargo.toml` and locked in the root `Cargo.lock`.
 Move it to the same version as `@nixl_upstream`, or the crate's headers and
 `libnixl.so` disagree at the symbol level.
 
