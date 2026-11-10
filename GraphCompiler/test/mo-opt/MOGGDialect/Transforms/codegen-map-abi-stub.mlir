@@ -19,13 +19,16 @@
 // than `--mogg-dump-mojo`, which needs a fully lowered `mgp.model`.
 
 // Plain output: static shape -> compile-time `Idx[N]` Coord, a raw-pointer
-// `mogg_tensor_init` per tensor, and a DPS execute call (output, input, ctx).
+// `mogg_tensor_init` per tensor wrapped in a `_MoggDenseTensorArg`, and a DPS
+// execute call (output, input, ctx).
 // CHECK: def {{__[A-Za-z0-9_]+}}({{.*}}: OpaquePointer[MutAnyOrigin], {{.*}}: OpaquePointer[MutAnyOrigin], [[PC:.*]]: {{.*}}DeviceContext) raises:
 // CHECK:   var [[PSHAPE:.*]] = layout.Coord(layout.Idx[2], layout.Idx[2])
 // CHECK:   var [[PLAYOUT:.*]] = layout.row_major([[PSHAPE]])
 // CHECK:   var [[PIN:.*]] = {{.*}}mogg_tensor_init[DType.float32, 2, False, extensibility.IO.Input, {{[0-9]+}}]({{.*}}.unsafe_bitcast[NoneType](), [[PLAYOUT]])
 // CHECK:   var [[POUT:.*]] = {{.*}}mogg_tensor_init[DType.float32, 2, True, extensibility.IO.Output, {{[0-9]+}}]({{.*}}.unsafe_bitcast[NoneType](), {{.*}})
-// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute([[POUT]], [[PIN]], [[PC]])
+// CHECK:   var [[PINARG:.*]] = _MoggDenseTensorArg[type_of([[PIN]]).dtype, {{.*}}, _MoggTensorIO.INPUT, False]({{.*}})
+// CHECK:   var [[POUTARG:.*]] = _MoggDenseTensorArg[type_of([[POUT]]).dtype, {{.*}}, _MoggTensorIO.OUTPUT, False]({{.*}})
+// CHECK:   {{.*}}.MapLowerOnePlainOutput.execute([[POUTARG]], [[PINARG]], [[PC]])
 
 mo.graph @plain(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.custom [symbol = "map_lower_one_plain_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
@@ -54,11 +57,9 @@ mo.graph @scalar(%a: !mo.tensor<[4], f32>, %s: !mo.tensor<[], f32>) -> !mo.tenso
 }
 
 // Variadic operands: `tuple.create` packs the run of tensors into a
-// `VariadicTensors` (pointer + shape tuples plus a comptime static-spec list).
+// `TensorTuple` of dense trait arguments.
 // CHECK: def {{__[A-Za-z0-9_]+}}(
-// CHECK:   var {{.*}} = std.utils.StaticTuple[size = 2]({{.*}}._ptr, {{.*}}._ptr)
-// CHECK:   var {{.*}} = std.utils.StaticTuple[size = 2]({{.*}}.shape(), {{.*}}.shape())
-// CHECK:   var [[VT:.*]] = extensibility.VariadicTensors[{{.*}}static_specs = {{.*}}]({{.*}}, {{.*}})
+// CHECK:   var [[VT:.*]] = extensibility.TensorTuple[{{.*}}]({{.*}}, {{.*}})
 // CHECK:   {{.*}}.MapLowerVariadic.execute({{.*}}, [[VT]], {{.*}})
 
 mo.graph @variadic(%a: !mo.tensor<[4], f32>, %b: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
