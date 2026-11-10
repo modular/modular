@@ -72,7 +72,8 @@ def write_quantization_config(
 ) -> None:
     """Writes ``dst/config.json`` from ``src``, with ``quantization_config`` set."""
     config_path = src / "config.json"
-    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+    assert config_path.exists()
+    config = json.loads(config_path.read_text())
     config["quantization_config"] = dict(quantization_config)
     (dst / "config.json").write_text(json.dumps(config, indent=2))
 
@@ -135,7 +136,7 @@ def _write_safetensors(
     return offset
 
 
-def _write_shards(dest: Path, tensors: list[tuple[str, _SavedTensor]]) -> None:
+def write_shards(dest: Path, tensors: list[tuple[str, _SavedTensor]]) -> None:
     """Writes ``tensors`` into new safetensors shards and an index."""
     groups: list[list[tuple[str, _SavedTensor]]] = []
     current: list[tuple[str, _SavedTensor]] = []

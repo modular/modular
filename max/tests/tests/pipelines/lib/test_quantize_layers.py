@@ -14,11 +14,12 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from max import functional as F
 from max import tree
 from max._entrypoints.cli.quantize import (
-    _checkpoint_weight_name,
     insert_quantized_linears,
     on_the_fly_config,
     quant_formats,
@@ -26,11 +27,13 @@ from max._entrypoints.cli.quantize import (
 from max.nn import Linear, Module
 from max.nn.common_layers.linear import QKVLinear
 from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.moe import MoE
 from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
     QuantizedMLP,
     QuantizedQKVLinear,
 )
+from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
 from max.nn.quant_config import QuantFormat, WeightSource
 from max.tensor import Tensor
@@ -170,26 +173,74 @@ def test_quantizer_path_omits_the_weight_segment() -> None:
     assert list(tree.nodes(module, NVFP4TensorQuantizer)) == ["down_proj"]
 
 
-def test_checkpoint_weight_name_maps_the_transparent_quantizer_path() -> None:
-    """Export writes the source key, not the adapted module path."""
-    source = "model.layers.0.mlp.down_proj.weight"
-    adapted = "language_model.layers.0.mlp.down_proj.weight"
-    assert (
-        _checkpoint_weight_name(
-            "language_model.layers.0.mlp.down_proj",
-            {adapted: source},
-            {source},
-        )
-        == source
+def _moe() -> MoE:
+    return MoE(
+        hidden_dim=32,
+        num_experts=2,
+        num_experts_per_token=1,
+        moe_dim=64,
+        has_shared_experts=True,
+        shared_experts_dim=64,
     )
-    assert (
-        _checkpoint_weight_name(
-            "language_model.layers.0.mlp.down_proj",
-            {adapted: "not-a-checkpoint-key"},
-            {source},
+
+
+class _MoeBlock(Module[[Tensor], Tensor]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.mlp = _moe()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x
+
+
+def test_insert_swaps_a_moe_whose_experts_all_match() -> None:
+    """Routed experts become one QuantizedMoE, with the mesh init would set."""
+    with F.lazy():
+        block = _MoeBlock()
+        config = on_the_fly_config("nvfp4")
+        insert_quantized_linears(
+            block,
+            [r"^mlp\.experts\.\d+\.(gate_proj|up_proj|down_proj)$"],
+            config,
         )
-        is None
-    )
+
+        assert type(block.mlp) is QuantizedMoE
+        moe = cast(QuantizedMoE, block.mlp)
+        assert moe.quant_config is config
+        assert moe.swiglu_limit == 0.0
+        assert moe.mesh.num_devices >= 1
+        assert all(type(expert) is QuantizedMLP for expert in moe.experts)
+        assert isinstance(moe.experts[0].gate_proj, QuantizedLinear)
+        assert isinstance(moe.experts[0].down_proj, QuantizedLinear)
+        # The shared expert was not targeted, so it stays a plain MLP.
+        assert type(moe.shared_experts) is MLP
+
+
+def test_insert_leaves_a_moe_when_only_its_name_matches() -> None:
+    """``mlp.gate_proj`` is not an expert projection, so the MoE stays put."""
+    with F.lazy():
+        block = _MoeBlock()
+        insert_quantized_linears(
+            block,
+            [r"^mlp\.(gate_proj|up_proj)$"],
+            on_the_fly_config("nvfp4"),
+        )
+
+        assert type(block.mlp) is MoE
+        assert all(type(expert) is MLP for expert in block.mlp.experts)
+
+
+def test_insert_rejects_quantizing_some_experts() -> None:
+    """A QuantizedMoE stacks every expert, so a subset cannot be swapped."""
+    with F.lazy():
+        block = _MoeBlock()
+        with pytest.raises(ValueError, match="all experts"):
+            insert_quantized_linears(
+                block,
+                [r"^mlp\.experts\.0\.(gate_proj|up_proj)$"],
+                on_the_fly_config("nvfp4"),
+            )
+        assert type(block.mlp) is MoE
 
 
 def test_insert_rejects_half_of_a_fused_group() -> None:

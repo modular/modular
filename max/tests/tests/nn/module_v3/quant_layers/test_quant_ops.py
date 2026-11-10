@@ -125,18 +125,16 @@ def test_only_nvfp4_needs_dispatch_scales_and_offsets(
 def test_dispatch_predicates_refuse_on_the_fly_weights(
     nvfp4_fake_quant_config: QuantConfig,
 ) -> None:
-    """A quantize-on-load config is refused rather than silently answered.
+    """EP dispatch refuses a quantize-on-load config.
 
-    Returning ``False`` would decide by default a case nobody has reasoned
-    about, and would surface as a wrong unpack arity in ``from_dispatch``
-    well below the decision that caused it.
+    The MoE index kernel does not. An on-the-fly NVFP4 weight is an
+    ``NVFP4Tensor``, and the grouped matmul requires the scale offsets.
+    Answering the EP predicate would decide ``from_dispatch``'s unpack
+    arity for weights that are still native precision at dispatch.
     """
-    for predicate in (
-        quant_ops.ep_requires_dispatch_scales,
-        quant_ops.moe_requires_scales_offsets,
-    ):
-        with pytest.raises(NotImplementedError, match="quantized on load"):
-            predicate(nvfp4_fake_quant_config)
+    with pytest.raises(NotImplementedError, match="quantized on load"):
+        quant_ops.ep_requires_dispatch_scales(nvfp4_fake_quant_config)
+    assert quant_ops.moe_requires_scales_offsets(nvfp4_fake_quant_config)
 
 
 def test_dispatch_predicates_answer_checkpoint_weights(

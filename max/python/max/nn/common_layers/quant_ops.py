@@ -258,33 +258,14 @@ class EPDispatchPayload:
 
 
 def _dispatch_format(quant_config: QuantConfig | None) -> QuantFormat | None:
-    """The weight format a dispatch kernel will see, or ``None`` if unquantized.
+    """The weight format a grouped matmul will see, or ``None`` if unquantized.
 
-    Routed-expert weights are stacked tensors rather than ``Linear``
-    submodules, and on-the-fly quantization only replaces ``Linear``, so it
-    cannot produce one through :func:`insert_quantized_linears`. Nothing
-    stops a QUANTIZE-sourced config reaching a MoE layer by another route,
-    though, and that case has not been reasoned about: whether such a
-    dispatch should carry scales is a real question, since its activations
-    still need quantizing for an FP4 matmul.
-
-    Answering it here would decide it by default, and the answer sets how
-    many columns :meth:`EPDispatchPayload.from_dispatch` unpacks -- so a
-    wrong one surfaces as a tuple-arity error well below the cause. Refuse
-    instead, at the point the assumption breaks.
-
-    Raises:
-        NotImplementedError: if the config quantizes weights on load.
+    A quantize-on-load config still becomes this format. The quantizer is
+    that format's container, and :func:`grouped_matmul` takes the
+    container's path.
     """
     if quant_config is None:
         return None
-    if quant_config.quantizes_on_load:
-        raise NotImplementedError(
-            "Dispatch does not support weights quantized on load; got "
-            f"source={quant_config.source.value} for "
-            f"{quant_config.format.value}. Load a pre-quantized checkpoint "
-            "for routed-expert weights."
-        )
     return quant_config.format
 
 
@@ -295,18 +276,28 @@ def ep_requires_dispatch_scales(quant_config: QuantConfig | None) -> bool:
     :meth:`EPDispatchPayload.from_dispatch` unpacks, so it describes the
     kernel's output shape rather than a preference.
 
-    Refuses a quantize-on-load config rather than answering -- see
-    :func:`_dispatch_format`.
+    Raises:
+        NotImplementedError: if the config quantizes weights on load. Those
+            weights are still native precision when the dispatch runs, and
+            answering would decide the payload shape by default.
     """
+    if quant_config is not None and quant_config.quantizes_on_load:
+        raise NotImplementedError(
+            "Dispatch does not support weights quantized on load; got "
+            f"source={quant_config.source.value} for "
+            f"{quant_config.format.value}. Load a pre-quantized checkpoint "
+            "for routed-expert weights."
+        )
     return _dispatch_format(quant_config) == QuantFormat.NVFP4
 
 
 def moe_requires_scales_offsets(quant_config: QuantConfig | None) -> bool:
-    """Return ``True`` if the MoE dispatch kernel needs scales offsets.
+    """Return ``True`` if the MoE index kernel needs scales offsets.
 
     The block-scaled grouped matmuls (NVFP4 and MXFP8) read the activation
-    scales at per-expert offsets. Refuses a quantize-on-load config rather
-    than answering -- see :func:`_dispatch_format`.
+    scales at per-expert offsets. That follows the format, including when
+    the weight is quantized on load: the quantizer is the format's container,
+    and :func:`grouped_matmul` requires the offsets for it.
     """
     return _dispatch_format(quant_config) in (
         QuantFormat.NVFP4,
