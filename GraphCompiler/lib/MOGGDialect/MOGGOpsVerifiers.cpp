@@ -294,6 +294,10 @@ LogicalResult CallRowwiseOp::verify() {
   // every element.
   if (afterMap && !body.getOps<RowwiseEmitOp>().empty())
     return emitOpError("has both per-row stores and a map phase");
+  // A body without a map phase launches as one phase, whose split-row tiers
+  // join one fold per row.
+  if (!afterMap && llvm::range_size(body.getOps<RowwiseReduceOp>()) > 1)
+    return emitOpError("has several folds and no map phase");
   return success();
 }
 

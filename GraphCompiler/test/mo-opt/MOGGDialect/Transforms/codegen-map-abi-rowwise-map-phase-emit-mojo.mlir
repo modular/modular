@@ -117,3 +117,44 @@ mo.graph @scaleByRow(%x: !mo.tensor<[8, 128], f32>, %s: !mo.tensor<[8, 1], f32>)
   }
   mo.output %r : !mo.tensor<[8, 128], f32>
 }
+
+// A softmax written as MAP IR: the second fold and the map phase read the
+// first fold's result as `.slice[w]()`, one phase per fold plus the map phase.
+// CHECK-LABEL: def __iter_opaque_2(
+// CHECK:       var [[ROW6:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, is_cached = True](row_coords, layout.Idx[128], row_ctx, [[LOAD6:load_+[0-9]+]])
+// CHECK:       var [[MAX6:.*]] = [[ROW6]].reduce[builtin_kernels.monoids.ReduceMax[dtype = DType.float32, W = params.simd_width]]
+// CHECK-NEXT:  @inline(.always)
+// CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:    var [[D6:.*]] = builtin_kernels.elementwise.Sub.elementwise[dtype = DType.float32](tile, [[MAX6]].acc.slice[w]())
+// CHECK-NEXT:    var [[E6:.*]] = builtin_kernels.elementwise.Exp.elementwise[dtype = DType.float32]([[D6]])
+// CHECK-NEXT:    return [[E6]]
+// CHECK:       var [[SUM6:.*]] = [[ROW6]].reduce[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = params.simd_width]]
+// CHECK:       def [[EW6:elementwise_+[0-9]+]][w : Int]
+// CHECK:         builtin_kernels.elementwise.Div.elementwise[dtype = DType.float32]({{.*}}, [[SUM6]].acc.slice[w]())
+// CHECK:       [[ROW6]].elementwise([[EW6]], [[LOAD6]])
+// CHECK:       _rowwise[{{.*}}num_phases = 3, computationally_expensive = True, dtype_size = 4]
+mo.graph @softmax(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    %max = map.iter.reduce @builtin_kernels.monoids.ReduceMax index (%i: !map.index<2>) -> f32 {
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      map.yield %v : f32
+    }
+    %sum = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      %d = map.call.elementwise @builtin_kernels.elementwise.Sub(%i, %v, %max) : !map.index<2>, f32, f32 -> f32
+      %e = map.call.elementwise @builtin_kernels.elementwise.Exp(%i, %d) : !map.index<2>, f32 -> f32
+      map.yield %e : f32
+    }
+    map.iter.map index (%j: !map.index<2>) {
+      %v = map.load %x[%j] : !mo.tensor<[8, 128], f32>
+      %d = map.call.elementwise @builtin_kernels.elementwise.Sub(%j, %v, %max) : !map.index<2>, f32, f32 -> f32
+      %e = map.call.elementwise @builtin_kernels.elementwise.Exp(%j, %d) : !map.index<2>, f32 -> f32
+      %y = map.call.elementwise @builtin_kernels.elementwise.Div(%j, %e, %sum) : !map.index<2>, f32, f32 -> f32
+      map.store %out[%j] = %y : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}

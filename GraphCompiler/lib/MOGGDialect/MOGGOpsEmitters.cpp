@@ -1930,11 +1930,6 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
 
   SmallVector<RowwiseReduceOp> folds =
       llvm::to_vector(body.getOps<RowwiseReduceOp>());
-  // TODO(GEX-3348): several folds need a phase each and per-row values that a
-  // later fold reads, which this printer doesn't produce yet.
-  if (folds.size() != 1)
-    return emitOpError("has ")
-           << folds.size() << " folds; only one is supported";
   auto simdFold = llvm::find_if(folds, [&](RowwiseReduceOp fold) {
     return fold.getMonoidAttr() == getSimdMonoidAttr();
   });
