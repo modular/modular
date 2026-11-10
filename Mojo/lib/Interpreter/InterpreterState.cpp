@@ -718,7 +718,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       int64_t index = coord.getRefSlot();
       int64_t offset = coord.getOffset();
       auto [ptrTab, ptrBlobIdx] = map.blobs[index];
-      int64_t addr = ptrTab->blobs[index].baseAddr + offset;
+      int64_t addr = ptrTab->blobs[ptrBlobIdx].baseAddr + offset;
       return PointerAttr::get(addr, coord.getType());
     });
     for (unsigned index = 0, numSymbols = model.getSymbols().size();
