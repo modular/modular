@@ -3863,7 +3863,7 @@ def tpool_patch_merger_shape(
 
 
 @extensibility.register("gated_delta_conv1d_fwd")
-struct GatedDeltaConv1dFwd[write_state: Bool = True]:
+struct GatedDeltaConv1dFwd[write_state: Bool = True, silu: Bool = False]:
     """Gated DeltaNet causal conv1d forward pass (Pass 1 of two-pass prefill).
 
     Reads/writes a single mutable conv-state pool of shape
@@ -3876,6 +3876,8 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
     Parameters:
         write_state: Whether to write the updated window back to
             `conv_state`. False only reads it for the look-back.
+        silu: Whether each output is `silu` of the fp32 convolution sum,
+            applied before the store rounds it to the output dtype.
 
     Tensor Shapes:
         - conv_output_ragged : [total_seq_len, conv_dim]                  (OUT)
@@ -4066,6 +4068,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                     qkv_input_ragged.Engine,
                     capture_input,
                     qkv_window.LayoutType,
+                    Self.silu,
                 ]
             ](
                 Int32(batch_size),
@@ -4140,7 +4143,7 @@ def gated_delta_conv1d_fwd_shape(
 
 
 @extensibility.register("gated_delta_conv1d_verify_fwd")
-struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
+struct GatedDeltaConv1dVerifyFwd[rollback: Bool, silu: Bool = False]:
     """`gated_delta_conv1d_fwd` in a speculative verify graph.
 
     The verify width `K` is the length of `verify_width`, whose contents are
@@ -4160,6 +4163,9 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
 
     Parameters:
         rollback: Whether this is the rollback's launch.
+        silu: Whether the forward launch stores its output through SiLU, as
+            `gated_delta_conv1d_fwd`'s `silu` does. The rollback launch's
+            output is never read, so it ignores this.
 
     Tensor Shapes:
         As `gated_delta_conv1d_fwd`, plus
@@ -4202,7 +4208,9 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
         if Self.rollback and committed:
             return
         if committed or Self.rollback:
-            GatedDeltaConv1dFwd[write_state=True].execute(
+            GatedDeltaConv1dFwd[
+                write_state=True, silu=Self.silu and not Self.rollback
+            ].execute(
                 conv_output_ragged,
                 qkv_input_ragged,
                 conv_weight,
@@ -4212,7 +4220,9 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 ctx,
             )
         else:
-            GatedDeltaConv1dFwd[write_state=False].launch[capture_input=True,](
+            GatedDeltaConv1dFwd[write_state=False, silu=Self.silu].launch[
+                capture_input=True
+            ](
                 conv_output_ragged.to_tile_tensor(),
                 qkv_input_ragged.to_tile_tensor[work_dtype](),
                 conv_weight.to_tile_tensor[work_dtype](),

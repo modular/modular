@@ -192,6 +192,7 @@ def _kda_core_graph(
             conv_state=conv_pool,
             slot_idx=conv_slots,
             input_row_offsets=input_row_offsets.cast(DType.uint32),
+            silu=True,
         )
     else:
         conv_out, qkv_window = gated_delta_conv1d_verify_fwd(
@@ -202,8 +203,8 @@ def _kda_core_graph(
             input_row_offsets=input_row_offsets.cast(DType.uint32),
             verify_width=verify_width,
             rollback=False,
+            silu=True,
         )
-    conv_out = ops.silu(conv_out)
     q, k, v = (
         ops.reshape(part, head_shape)
         for part in ops.split(conv_out, [qkv_dim] * 3, axis=-1)
@@ -330,17 +331,21 @@ def _kda_core_graph(
         # forward's chunked kernel. A verify stays on the sequential
         # recurrence, whose arithmetic the ring records and the fold replays.
         no_drafts = ops.equal(ops.shape_to_tensor(verify_width.shape)[0], 0)
-        # TODO(KERN-3879): the bf16 casts are made outside the cond because,
-        # made inside this branch, mo-hoist-param-exprs leaves the first
-        # cast's result on the outer token dim and the graph fails to verify.
-        # Every verify computes them and drops them; a 2xMI355 trace shows no
-        # standalone cast kernel, so they cost at most ~0.5% of kernel time.
-        # Move them back once the pass is fixed.
-        qkv_io = (
-            q.cast(DType.bfloat16),
-            k.cast(DType.bfloat16),
-            v.cast(DType.bfloat16),
-        )
+        # TODO(KERN-3879): the bf16 cast is made outside the cond because,
+        # made inside a branch, mo-hoist-param-exprs leaves its result on the
+        # outer token dim and the graph fails to verify. Every verify computes
+        # and drops it. One cast of the whole conv output rides in the q/k/v
+        # split's kernel, where casting q, k and v apart launches two more
+        # kernels per layer. Move it into the branch once the pass is fixed.
+        conv_bf16 = conv_out.cast(DType.bfloat16)
+
+        def qkv_io() -> tuple[TensorValue, TensorValue, TensorValue]:
+            q_io, k_io, v_io = (
+                ops.reshape(part, head_shape)
+                for part in ops.split(conv_bf16, [qkv_dim] * 3, axis=-1)
+            )
+            return q_io, k_io, v_io
+
         core = ops.cond(
             ops.logical_and(
                 no_drafts,
@@ -349,7 +354,7 @@ def _kda_core_graph(
                 ),
             ),
             [TensorType(DType.float32, out_shape, q.device)],
-            lambda: chunk(qkv_io),
+            lambda: chunk(qkv_io()),
             verify_ring,
         )[0]
     else:

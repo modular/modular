@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
+from std.math import ceildiv, exp
 
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -23,6 +23,7 @@ from layout import (
     row_major,
 )
 from layout.layout import Layout
+from nn.activations import silu
 from std.random import rand
 from state_space.gated_delta_conv1d import (
     CONV1D_TOKENS_PER_BLOCK,
@@ -632,7 +633,7 @@ def test_suppressing_the_window_write_spares_a_carry_forward_row() raises:
 
 
 def _launch_conv[
-    WRITE_STATE: Bool, CAPTURE_INPUT: Bool = False
+    WRITE_STATE: Bool, CAPTURE_INPUT: Bool = False, APPLY_SILU: Bool = False
 ](
     ctx: DeviceContext,
     qkv: DeviceBuffer[.float32],
@@ -681,6 +682,7 @@ def _launch_conv[
             qkv_tt.Engine,
             CAPTURE_INPUT,
             window_tt.LayoutType,
+            APPLY_SILU,
         ]
     ]()
     comptime tokens_per_block = 1
@@ -706,6 +708,123 @@ def _launch_conv[
         block_dim=(CONV1D_BLOCK_DIM,),
     )
     ctx.synchronize()
+
+
+def _graph_silu_kernel[
+    LT: TensorLayout, Engine: TensorEngine, block_size: Int
+](
+    x: TileTensor[.float32, LT, MutUntrackedOrigin, Engine=Engine],
+    y: TileTensor[.float32, LT, MutUntrackedOrigin, Engine=Engine],
+    n: Int32,
+):
+    """Applies the SiLU `mo.silu` lowers to, one element per thread."""
+    var i = Int(block_idx.x) * block_size + Int(thread_idx.x)
+    if i < Int(n):
+        y.store((i,), silu(rebind[Scalar[.float32]](x.load[width=1]((i,)))))
+
+
+def test_the_fused_silu_matches_the_graph_silu() raises:
+    """Checks `APPLY_SILU` stores what the graph's SiLU makes of the plain
+    output: bit for bit against `mo.silu`'s function on the GPU, and within
+    fp32 rounding of an fp64 SiLU. Two rows cover both the window and the
+    in-row taps.
+    """
+    comptime KERNEL_SIZE = 4
+    comptime CONV_DIM = 8
+    comptime SEQ = 9
+    comptime N = SEQ * CONV_DIM
+    comptime POOL_ELEMS = 2 * CONV_DIM * (KERNEL_SIZE - 1)
+    var ctx = DeviceContext()
+    var qkv_h = ctx.enqueue_create_host_buffer[.float32](N)
+    rand[.float32](qkv_h.unsafe_ptr(), N, min=-4, max=4)
+    var weight_h = ctx.enqueue_create_host_buffer[.float32](
+        CONV_DIM * KERNEL_SIZE
+    )
+    rand[.float32](weight_h.unsafe_ptr(), CONV_DIM * KERNEL_SIZE, min=-1, max=1)
+    var pool_h = ctx.enqueue_create_host_buffer[.float32](POOL_ELEMS)
+    rand[.float32](pool_h.unsafe_ptr(), POOL_ELEMS, min=-4, max=4)
+    var slot_h = ctx.enqueue_create_host_buffer[.uint32](2)
+    slot_h[0] = 1
+    slot_h[1] = 0
+    var offsets_h = ctx.enqueue_create_host_buffer[.uint32](3)
+    offsets_h[0] = 0
+    offsets_h[1] = 2
+    offsets_h[2] = UInt32(SEQ)
+
+    var qkv = ctx.enqueue_create_buffer[.float32](N)
+    var weight = ctx.enqueue_create_buffer[.float32](CONV_DIM * KERNEL_SIZE)
+    var pool = ctx.enqueue_create_buffer[.float32](POOL_ELEMS)
+    var slot = ctx.enqueue_create_buffer[.uint32](2)
+    var offsets = ctx.enqueue_create_buffer[.uint32](3)
+    var plain = ctx.enqueue_create_buffer[.float32](N)
+    var fused = ctx.enqueue_create_buffer[.float32](N)
+    var graph = ctx.enqueue_create_buffer[.float32](N)
+    var unused_window = ctx.enqueue_create_buffer[.float32](N)
+    ctx.enqueue_copy(qkv, qkv_h)
+    ctx.enqueue_copy(weight, weight_h)
+    ctx.enqueue_copy(pool, pool_h)
+    ctx.enqueue_copy(slot, slot_h)
+    ctx.enqueue_copy(offsets, offsets_h)
+    ctx.synchronize()
+
+    # Neither launch writes the window, so both read the same pool.
+    _launch_conv[False](
+        ctx,
+        qkv,
+        weight,
+        pool,
+        slot,
+        offsets,
+        plain,
+        SEQ,
+        unused_window,
+        window_row_len=1,
+        batch=2,
+    )
+    _launch_conv[False, APPLY_SILU=True](
+        ctx,
+        qkv,
+        weight,
+        pool,
+        slot,
+        offsets,
+        fused,
+        SEQ,
+        unused_window,
+        window_row_len=1,
+        batch=2,
+    )
+    var plain_tt = TileTensor(plain, row_major(N))
+    var graph_tt = TileTensor(graph, row_major(N))
+    comptime block_size = 128
+    var silu_kernel = ctx.compile_function[
+        _graph_silu_kernel[plain_tt.LayoutType, plain_tt.Engine, block_size]
+    ]()
+    ctx.enqueue_function(
+        silu_kernel,
+        plain_tt,
+        graph_tt,
+        Int32(N),
+        grid_dim=(ceildiv(N, block_size),),
+        block_dim=(block_size,),
+    )
+    var plain_h = ctx.enqueue_create_host_buffer[.float32](N)
+    var fused_h = ctx.enqueue_create_host_buffer[.float32](N)
+    var graph_h = ctx.enqueue_create_host_buffer[.float32](N)
+    ctx.enqueue_copy(plain_h, plain)
+    ctx.enqueue_copy(fused_h, fused)
+    ctx.enqueue_copy(graph_h, graph)
+    ctx.synchronize()
+    for i in range(N):
+        assert_equal(fused_h[i], graph_h[i], "output " + String(i))
+        var x = Float64(plain_h[i])
+        assert_almost_equal(
+            Float64(fused_h[i]),
+            x / (1 + exp(-x)),
+            rtol=1e-6,
+            atol=1e-30,
+            msg="output " + String(i),
+        )
 
 
 def run_deferred_window_write(accepted: Int) raises:

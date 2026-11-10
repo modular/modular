@@ -76,6 +76,7 @@ from max.gpu import (
     thread_idx,
 )
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
+from nn.activations import silu
 from state_space.gated_delta import pdl_enter, pdl_exit
 
 
@@ -87,6 +88,14 @@ comptime CONV1D_TOKENS_PER_BLOCK: Int = 8
 # ===----------------------------------------------------------------------=== #
 # GPU Kernel
 # ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def _activate[apply_silu: Bool](conv_sum: Float32) -> Float32:
+    comptime if apply_silu:
+        return silu(conv_sum)
+    else:
+        return conv_sum
 
 
 def gated_delta_conv1d_fwd_gpu[
@@ -104,6 +113,7 @@ def gated_delta_conv1d_fwd_gpu[
     Engine: TensorEngine,
     CAPTURE_INPUT: Bool = False,
     qkv_window_LT: TensorLayout = conv_output_ragged_LT,
+    APPLY_SILU: Bool = False,
 ](
     batch_size: Int32,
     total_seq_len: Int32,
@@ -147,6 +157,9 @@ def gated_delta_conv1d_fwd_gpu[
     real token, before the `num_draft_tokens` drafts every verify row ends
     with, so the rollback replays none of it. Both arguments are read only
     under `CAPTURE_INPUT`.
+
+    With `APPLY_SILU` every output is `silu(conv_sum)`, the graph's SiLU on
+    the fp32 sum, before the store rounds it to `work_dtype`.
 
     Every thread waits for the preceding grid before it reads any operand,
     since each of them (the input, the weight, the offsets) can be that
@@ -336,7 +349,7 @@ def gated_delta_conv1d_fwd_gpu[
                         UInt32(flat_token_idx) * output_row_stride
                         + output_channel_offset,
                     ),
-                    Scalar[work_dtype](conv_sum),
+                    Scalar[work_dtype](_activate[APPLY_SILU](conv_sum)),
                 )
             continue
 
@@ -397,7 +410,7 @@ def gated_delta_conv1d_fwd_gpu[
                         * output_row_stride
                         + output_channel_offset,
                     ),
-                    Scalar[work_dtype](conv_sum),
+                    Scalar[work_dtype](_activate[APPLY_SILU](conv_sum)),
                 )
 
         var writes_state = WRITE_STATE

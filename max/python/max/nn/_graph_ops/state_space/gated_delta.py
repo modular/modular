@@ -69,6 +69,7 @@ into a long-lived pool, no per-step pool allocation.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import NamedTuple, cast
 
 from max.dtype import DType
@@ -145,6 +146,14 @@ def verify_width_operand(num_draft_tokens: DimLike) -> TensorValue:
     )
 
 
+def _conv_parameters(
+    parameters: Mapping[str, bool], silu: bool
+) -> Mapping[str, bool]:
+    # Only a fused call names `silu`; every other graph omits it and takes the
+    # registration's default, `silu=False`.
+    return {**parameters, "silu": True} if silu else parameters
+
+
 def gated_delta_conv1d_fwd(
     qkv_input_ragged: TensorValue,
     conv_weight: TensorValue,
@@ -153,6 +162,7 @@ def gated_delta_conv1d_fwd(
     input_row_offsets: TensorValue,
     *,
     write_state: bool = True,
+    silu: bool = False,
 ) -> TensorValue:
     """Applies the causal conv1d pass.
 
@@ -174,6 +184,9 @@ def gated_delta_conv1d_fwd(
         input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
         write_state: Whether to write the updated window back to
             ``conv_state``. ``False`` only reads it for the look-back.
+        silu: Whether the kernel applies SiLU to each output, as
+            :func:`~max.graph.ops.silu` computes it on the fp32 sum, so the
+            caller needs no separate SiLU launch.
 
     Returns:
         The conv output, ``[total_seq_len, conv_dim]``.
@@ -305,7 +318,7 @@ def gated_delta_conv1d_fwd(
             offsets_uint32,
         ],
         [conv_output_ragged_type],
-        parameters={"write_state": write_state},
+        parameters=_conv_parameters({"write_state": write_state}, silu),
     )
     return cast(TensorValue, results[0])
 
@@ -319,6 +332,7 @@ def gated_delta_conv1d_verify_fwd(
     verify_width: TensorValue,
     *,
     rollback: bool,
+    silu: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Runs :func:`gated_delta_conv1d_fwd` in a speculative verify graph.
 
@@ -340,6 +354,9 @@ def gated_delta_conv1d_verify_fwd(
         input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
         verify_width: The operand :func:`verify_width_operand` returns.
         rollback: Whether this is the rollback's launch.
+        silu: Whether the forward launch applies SiLU to its output, as
+            :func:`gated_delta_conv1d_fwd` does. The copy is always the raw
+            input.
 
     Returns:
         The conv output, ``[total_seq_len, conv_dim]``, and the copy of the
@@ -371,7 +388,7 @@ def gated_delta_conv1d_verify_fwd(
                 device,
             ),
         ],
-        parameters={"rollback": rollback},
+        parameters=_conv_parameters({"rollback": rollback}, silu),
     )
     return cast(TensorValue, results[0]), cast(TensorValue, results[1])
 
