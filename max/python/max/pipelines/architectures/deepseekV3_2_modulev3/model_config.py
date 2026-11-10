@@ -223,7 +223,18 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     only each rank's positions (``kv_cache.context_parallel``), every rank
     attends all its replica's heads over its share, and the partial results
     merge by their log-sum-exp. Ranks own positions round-robin, one at a
-    time (interleave 1, the only layout the export contract describes).
+    time or in blocks of ``decode_context_parallel_interleave``.
+    """
+
+    decode_context_parallel_interleave: int = 1
+    """Consecutive positions a DCP rank owns before the next rank's turn.
+
+    Position ``p`` lives on rank ``(p // interleave) % dcp``. 1 stripes
+    tokens, which balances every request across ranks. The KV page size
+    (128) stripes whole pages, so disaggregated inference can move pages
+    between ranks without restriping. It must divide the KV page size, or a
+    logical page no longer lands in one physical page per rank, and it needs
+    ``decode_context_parallel_degree > 1``.
     """
 
     dcp_q_replicate: bool = True
@@ -246,6 +257,25 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             raise ValueError(
                 f"decode_context_parallel_degree must be positive (got {dcp})."
             )
+        interleave = self.decode_context_parallel_interleave
+        if interleave < 1:
+            raise ValueError(
+                "decode_context_parallel_interleave must be positive (got "
+                f"{interleave})."
+            )
+        if interleave > 1:
+            if dcp == 1:
+                raise ValueError(
+                    "decode_context_parallel_interleave > 1 needs "
+                    "decode_context_parallel_degree > 1."
+                )
+            page_size = self.mla_kv_params.page_size
+            if page_size % interleave:
+                raise ValueError(
+                    f"decode_context_parallel_interleave={interleave} must "
+                    f"divide the KV page size ({page_size}): a logical page "
+                    "then lands in one physical page on every rank."
+                )
         # MTP runs under DCP too: the NextN layer shards its own caches like
         # the target's, and each draft step runs its own indexer rather than
         # reusing a lagged selection, which the DCP attention path refuses
@@ -542,6 +572,9 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             data_parallel_degree=model_config.data_parallel_degree,
             decode_context_parallel_degree=(
                 model_config.decode_context_parallel_degree
+            ),
+            decode_context_parallel_interleave=(
+                model_config.decode_context_parallel_interleave
             ),
             dcp_q_replicate=resolve_dcp_q_replicate(
                 model_config.dcp_q_replicate

@@ -281,12 +281,22 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
             assert list(cp_out.shape) == [q.shape[0], num_heads, v_head_dim]
             assert cp_lse.dtype == DType.float32
             assert list(cp_lse.shape) == [q.shape[0], num_heads]
-            g.output(out, cp_out, cp_lse)
+            # Page striping changes no type, only the op's ownership map.
+            paged_out, paged_lse = mla_decode_graph_cp(
+                **{**cp_args, "dcp_interleave": 128}
+            )
+            assert paged_out.type == cp_out.type
+            assert paged_lse.type == cp_lse.type
+            with pytest.raises(ValueError, match="must be positive"):
+                mla_decode_graph_cp(**{**cp_args, "dcp_interleave": 0})
+            g.output(out, cp_out, cp_lse, paged_out, paged_lse)
         return g
 
     _ = attn.state_dict()
     ir = str(construct())
     assert '"attention.mla.graph.decode.paged.fp8.sparse.cp"' in ir
+    assert re.search(r"dcp_interleave = 1\b", ir)
+    assert re.search(r"dcp_interleave = 128\b", ir)
 
 
 def test_mla_sparse_graphs_nvfp4_cache_construction(
@@ -574,13 +584,16 @@ def test_mla_indexer_nvfp4_cache_rows_carry_scale_rows() -> None:
     assert '"attention.mla.indexer.ragged.float8.paged.remap"' in ir
 
 
-def test_mla_indexer_cp_and_merge_construction() -> None:
+@pytest.mark.parametrize("dcp_interleave", [1, 128])
+def test_mla_indexer_cp_and_merge_construction(dcp_interleave: int) -> None:
     """The DCP indexer and the top-k merge build with their declared types.
 
     ``mla_fp8_index_top_k_physical_cp`` returns ``[tokens, top_k]`` int32 rows
     and bfloat16 scores; after an all-gather of the scores (stood in for by a
     concat here), ``cp_merge_topk`` returns ``[tokens, top_k]`` rows and
-    ``[tokens]`` lengths.
+    ``[tokens]`` lengths. The interleave, 1 for token striping or the page
+    size for page striping, reaches the op unchanged and does not change any
+    type.
     """
     num_heads = 8
     index_head_dim = 128
@@ -644,10 +657,24 @@ def test_mla_indexer_cp_and_merge_construction() -> None:
             top_k,
             index_head_dim,
             dcp_size,
-            dcp_interleave=1,
+            dcp_interleave=dcp_interleave,
         )
         gathered = ops.concat([local_scores] * dcp_size, axis=1)
         rows, lengths = cp_merge_topk(local_rows, gathered, dcp_rank, dcp_size)
+        with pytest.raises(ValueError, match="must be positive"):
+            mla_fp8_index_top_k_physical_cp(
+                q,
+                q_s,
+                row_offsets,
+                indexer_collection,
+                mla_collection,
+                layer_idx,
+                dcp_rank,
+                top_k,
+                index_head_dim,
+                dcp_size,
+                dcp_interleave=0,
+            )
         g.output(local_rows, local_scores, rows, lengths)
 
     assert local_rows.dtype == DType.int32
@@ -659,6 +686,7 @@ def test_mla_indexer_cp_and_merge_construction() -> None:
     ir = str(g)
     assert '"attention.mla.indexer.ragged.float8.paged.remap.cp"' in ir
     assert '"attention.mla.cp_merge_topk"' in ir
+    assert re.search(rf"dcp_interleave = {dcp_interleave}\b", ir)
 
 
 def test_mla_indexer_cp_nvfp4_cache_rows_carry_scale_rows() -> None:

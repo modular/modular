@@ -902,14 +902,16 @@ def _bf16_owned_selection[
     """Token `t`'s selected cached positions that `rank` owns, in order.
 
     Token 0 selects nothing. Every other token selects `B_TOPK` distinct
-    cached positions in a scrambled order, which the group's ranks split by
-    ownership.
+    cached positions in a scrambled order spread over the whole cache, which
+    the group's ranks split by ownership.
     """
     var owned = List[Int]()
     if t == 0:
         return owned^
     var layout = ContextParallelLayout[dcp_size, dcp_interleave](rank)
-    var m = _coprime_multiplier(cache_len)
+    var m = max(cache_len // B_TOPK, 1)
+    while gcd(m, cache_len) != 1:
+        m += 1
     for i in range(B_TOPK):
         var pos = (i * m + 3 * t + 1) % cache_len
         if layout.owns(pos):
@@ -2132,6 +2134,20 @@ def main() raises:
             run_nvfp4_cp_owned_rows[4, 1](ctx, [1, 3, 2], cache_len=101)
             run_nvfp4_cp_owned_rows[8, 1](ctx, [2, 3, 1], cache_len=300)
             run_nvfp4_cp_owned_rows[2, PAGE_SIZE](ctx, [2, 3], cache_len=250)
+            # Page interleave over several pages. New tokens at 127..129 cross
+            # the first page edge from rank 0 to rank 1. At 2047..2050 an
+            # 8-rank group's last rank ends its page and rank 0 starts its
+            # third, while ranks 1 to 6 store nothing. Over 2051 cached keys
+            # the selections reach second-lap slots and rank 0's ragged tail;
+            # over 1000 rank 7 holds a partial page.
+            run_fused_cp_store[4, PAGE_SIZE](ctx, [2, 3], cache_len=127)
+            run_fused_cp_store[8, PAGE_SIZE](ctx, [1, 3, 4], cache_len=2047)
+            run_bf16_cp_store[8, PAGE_SIZE](ctx, [1, 3, 4], cache_len=2047)
+            run_bf16_cp_owned_rows[8, PAGE_SIZE](ctx, [1, 3, 2], cache_len=2051)
+            run_nvfp4_cp_store[8, PAGE_SIZE](ctx, [1, 3, 4], cache_len=2047)
+            run_nvfp4_cp_owned_rows[8, PAGE_SIZE](
+                ctx, [1, 3, 2], cache_len=1000
+            )
             # A DCP group smaller than TP attends its share of the heads:
             # TP8 x DCP4 runs 32 of GLM's 64 per device, TP8 x DCP2 16.
             run_bf16_cp_owned_rows[4, 1, heads=32](

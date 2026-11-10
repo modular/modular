@@ -921,3 +921,11 @@ def main() raises:
         var dec_seq: List[Int] = [1, 1, 1, 3]
         var dec_cache: List[Int] = [20000, 5000, 1500, 9000]
         test_cp_indexer[2048](dec_seq, dec_cache, ctx)
+        # Contexts at 128-token page edges (1, 127, 128, 129), past a lap of
+        # pages (1000), and wrapping past an 8-rank lap with a 4-token MTP
+        # tail (2048 to 2051), plus a 129-token prefill whose rows end on
+        # either side of the first page edge. Under the page interleave most
+        # ranks own nothing for the short rows and ranks get uneven shares.
+        var edge_seq: List[Int] = [1, 1, 1, 1, 1, 4, 129]
+        var edge_cache: List[Int] = [0, 126, 127, 128, 999, 2047, 0]
+        test_cp_indexer[256](edge_seq, edge_cache, ctx)

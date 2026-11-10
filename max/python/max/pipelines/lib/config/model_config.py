@@ -760,6 +760,20 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """The decode context parallel degree within each attention replica."""
 
+    decode_context_parallel_interleave: int = Field(
+        default=1,
+        description=(
+            "Under decode context parallelism, the number of consecutive "
+            "token positions a rank owns before the next rank's turn: "
+            "position p lives on rank (p // interleave) % degree. 1 stripes "
+            "tokens; the KV page size stripes whole pages, which lets "
+            "disaggregated inference move pages between ranks unchanged. "
+            "Must divide the KV page size and needs a degree above 1. Set "
+            "only by the gen-mef export, like decode_context_parallel_degree."
+        ),
+    )
+    """Consecutive positions a decode context parallel rank owns in turn."""
+
     dcp_q_replicate: bool | None = Field(
         default=None,
         description=(
