@@ -89,49 +89,51 @@ CoercionInfo SystemVABIInfo::classifyStructType(mlir::Type type,
   // Classify each member at its offset and merge the classes per eightbyte.
   EightbyteClass lo = EightbyteClass::NoClass; // Bytes 0-7
   EightbyteClass hi = EightbyteClass::NoClass; // Bytes 8-15
-  classifyMember(structType, /*offset=*/0, lo, hi);
+  llvm::SmallVector<CabiUtils::MemberAtOffset> members;
+  CabiUtils::flattenMembers(structType, /*offset=*/0, dataLayout, members);
+  for (const CabiUtils::MemberAtOffset &member : members)
+    classifyMember(member.type, member.offset, lo, hi);
 
   // Memory anywhere: the whole struct goes in memory.
   if (lo == EightbyteClass::Memory || hi == EightbyteClass::Memory)
     return useSRet ? CoercionInfo::sretReturn()
                    : CoercionInfo::indirectArgument(/*useByval=*/true);
 
-  CoercionInfo info;
-
   // A 128-bit vector: one SSE register. clang also uses <2 x double>; the
   // register is the same whatever the vector's element type.
   if (lo == EightbyteClass::SSE && hi == EightbyteClass::SSEUp) {
+    CoercionInfo info;
     info.argClass = ABIArgClass::SSE;
     info.coercedType = mlir::VectorType::get({2}, mlir::Float64Type::get(ctx));
     return info;
   }
 
-  // From here each eightbyte is one register, Integer or SSE. Bytes 0-7 always
-  // hold data: the first field with data starts at offset 0, and an empty
-  // struct returned above. Bytes 8-15 have no class only when they are tail
-  // padding, which needs extra alignment. clang then uses one register; this
-  // uses an integer register for them, as before.
-  if (hi == EightbyteClass::NoClass)
-    hi = EightbyteClass::Integer;
-
   // One eightbyte: one register. Two floats get f64 where clang uses
   // <2 x float>; the store/load in prepareCoercedArgument puts both in the
   // same SSE register.
   if (size <= 8) {
-    if (lo == EightbyteClass::Integer)
-      return CabiUtils::classifySmallIntegerStruct(size, ctx);
-    info.argClass = ABIArgClass::SSE;
+    CoercionInfo info;
+    if (lo == EightbyteClass::SSE)
+      info.argClass = ABIArgClass::SSE;
+    else
+      info.argClass = ABIArgClass::Integer;
     info.coercedType = getEightbyteType(lo, size);
     return info;
   }
 
-  // Two eightbytes: one register each.
-  if (lo != hi)
-    info.argClass = ABIArgClass::Mixed;
-  else if (lo == EightbyteClass::Integer)
+  // Two eightbytes: two registers. Bytes 8-15 have no class when they are
+  // only tail padding, which needs extra alignment. clang then uses one
+  // register; this uses an integer register for them.
+  if (hi == EightbyteClass::NoClass)
+    hi = EightbyteClass::Integer;
+
+  CoercionInfo info;
+  if (lo == EightbyteClass::SSE && hi == EightbyteClass::SSE)
+    info.argClass = ABIArgClass::SSEPair;
+  else if (lo == EightbyteClass::Integer && hi == EightbyteClass::Integer)
     info.argClass = ABIArgClass::IntegerPair;
   else
-    info.argClass = ABIArgClass::SSEPair;
+    info.argClass = ABIArgClass::Mixed;
   info.coercedType = getEightbyteType(lo, 8);
   info.coercedSecondType = getEightbyteType(hi, size - 8);
   return info;
@@ -175,85 +177,56 @@ SystemVABIInfo::mergeEightbyteClass(EightbyteClass accum,
   return EightbyteClass::SSE;
 }
 
-SystemVABIInfo::EightbyteClass
-SystemVABIInfo::classifyLeaf(mlir::Type type) const {
-  int64_t bits = dataLayout.getTypeSizeInBits(type);
-  if (auto vectorType = dyn_cast<mlir::VectorType>(type)) {
-    if (bits <= 32)
-      return EightbyteClass::Integer;
-    // gcc passes <1 x double> in memory, and clang follows it.
-    if (bits == 64 && !vectorType.getElementType().isF64())
-      return EightbyteClass::SSE;
-    if (bits == 128)
-      return EightbyteClass::SSE;
-    return EightbyteClass::Memory;
-  }
-  // Mojo has no float wider than 64 bits; Memory keeps a wider one safe.
-  if (isa<mlir::FloatType>(type))
-    return bits <= 64 ? EightbyteClass::SSE : EightbyteClass::Memory;
-  // This includes the explicit [N x i8] padding Mojo inserts before an
-  // aligned field: after KGEN→LLVM conversion it cannot be told apart from an
-  // i8 array holding data.
-  return EightbyteClass::Integer;
-}
-
 void SystemVABIInfo::classifyMember(mlir::Type type, int64_t offset,
                                     EightbyteClass &lo,
                                     EightbyteClass &hi) const {
-  if (auto arrayType = dyn_cast<mlir::LLVM::LLVMArrayType>(type)) {
-    mlir::Type elementType = arrayType.getElementType();
-    int64_t elementSize = dataLayout.getTypeAllocSize(elementType);
-    if (elementSize == 0)
-      return; // An array of empty structs.
-    for (int64_t i = 0, e = arrayType.getNumElements(); i < e; ++i)
-      classifyMember(elementType, offset + i * elementSize, lo, hi);
+  // A zero-length array holds no data, so it is in no eightbyte.
+  int64_t size = dataLayout.getTypeStoreSize(type);
+  if (size == 0)
+    return;
+  assert(offset + size <= 16 && "member outside a 16-byte struct");
+
+  // Only a 16-byte member at offset 0 may lie across both eightbytes. A
+  // smaller one there is misaligned, which happens because LLVMDataLayout
+  // aligns a vector only to its element;
+  // as in clang, an unaligned member sends the struct to memory.
+  if (size != 16 && offset < 8 && offset + size > 8) {
+    lo = EightbyteClass::Memory;
     return;
   }
-  if (auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
-    // Lay out the fields with the same steps getTypeSizeInBits uses for a
-    // struct: align each field, then add its alloc size. Every field is then
-    // aligned, so clang's unaligned-field rule never applies. A packed struct
-    // would break that; Mojo does not emit one.
-    // TODO(MOCO-3369): Add LLVMDataLayout::getStructFieldOffsets() to replace
-    // this manual accumulation with a single pre-computed offset array,
-    // mirroring llvm::DataLayout::getStructLayout()->getElementOffset().
-    assert(!structType.isPacked() &&
-           "packed structs are not classified; their fields may be unaligned");
-    int64_t fieldOffset = 0;
-    for (mlir::Type fieldType : structType.getBody()) {
-      fieldOffset =
-          llvm::alignTo(fieldOffset, dataLayout.getTypeABIAlign(fieldType));
-      classifyMember(fieldType, offset + fieldOffset, lo, hi);
-      fieldOffset += dataLayout.getTypeAllocSize(fieldType);
+
+  EightbyteClass &current = offset < 8 ? lo : hi;
+  if (auto vectorType = dyn_cast<mlir::VectorType>(type)) {
+    if (size <= 4) {
+      current = mergeEightbyteClass(current, EightbyteClass::Integer);
+    } else if (size == 8 && !vectorType.getElementType().isF64()) {
+      // gcc passes <1 x double> in memory, and clang follows it.
+      current = mergeEightbyteClass(current, EightbyteClass::SSE);
+    } else if (size == 16) {
+      // A 128-bit vector fills one SSE register.
+      lo = mergeEightbyteClass(lo, EightbyteClass::SSE);
+      hi = mergeEightbyteClass(hi, EightbyteClass::SSEUp);
+    } else {
+      current = EightbyteClass::Memory;
     }
     return;
   }
 
-  EightbyteClass leaf = classifyLeaf(type);
-  int64_t size = dataLayout.getTypeStoreSize(type);
-  int64_t end = offset + size;
-  assert(end <= 16 && "member outside a 16-byte struct");
+  if (isa<mlir::FloatType>(type)) {
+    // Mojo has no float wider than 64 bits; Memory keeps a wider one safe.
+    if (size <= 8)
+      current = mergeEightbyteClass(current, EightbyteClass::SSE);
+    else
+      current = EightbyteClass::Memory;
+    return;
+  }
 
-  // The leaf lies in bytes 0-7, in bytes 8-15, or across both.
-  if (end <= 8) {
-    lo = mergeEightbyteClass(lo, leaf);
-    return;
-  }
-  if (offset >= 8) {
-    hi = mergeEightbyteClass(hi, leaf);
-    return;
-  }
-  // Across both, only a 16-byte leaf at offset 0 is aligned: an i128, or a
-  // 128-bit vector, which fills one SSE register. A smaller leaf there is
-  // misaligned, which happens because LLVMDataLayout aligns a vector only to
-  // its element; as in clang, an unaligned member sends the struct to memory.
-  if (size != 16) {
-    lo = mergeEightbyteClass(lo, EightbyteClass::Memory);
-    return;
-  }
-  lo = mergeEightbyteClass(lo, leaf);
-  hi = mergeEightbyteClass(
-      hi, isa<mlir::VectorType>(type) ? EightbyteClass::SSEUp : leaf);
+  // Integers and pointers. This includes the explicit [N x i8] padding Mojo
+  // inserts before an aligned field: after KGEN→LLVM conversion it cannot be
+  // told apart from an i8 array holding data. An i128 fills both eightbytes.
+  current = mergeEightbyteClass(current, EightbyteClass::Integer);
+  if (size == 16)
+    hi = mergeEightbyteClass(hi, EightbyteClass::Integer);
 }
 
 //===----------------------------------------------------------------------===//

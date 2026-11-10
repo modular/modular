@@ -92,24 +92,16 @@ private:
   static EightbyteClass mergeEightbyteClass(EightbyteClass accum,
                                             EightbyteClass field);
 
-  /// Get the class of a member that is not a struct or array.
-  ///
-  /// Floats up to 64 bits are SSE. Vectors are classified by size: up to 32
-  /// bits Integer, 64 bits SSE, 128 bits SSE (the caller marks its upper half
-  /// SSEUp), other sizes Memory. Anything else is Integer.
-  ///
-  /// \param type A scalar or vector member type
-  /// \return The member's class
-  EightbyteClass classifyLeaf(mlir::Type type) const;
-
-  /// Classify one member of a struct of at most 16 bytes, as clang's
+  /// Classify one flattened member of a struct of at most 16 bytes and merge
+  /// its class into the eightbytes it covers, as clang's
   /// X86_64ABIInfo::classify does.
   ///
-  /// Structs and arrays are walked field by field. The class of each scalar
-  /// or vector inside (see classifyLeaf) is merged into the eightbytes it
-  /// covers.
+  /// Floats up to 64 bits are SSE. Vectors are classified by size: up to 32
+  /// bits Integer, 64 bits SSE, 128 bits SSE with SSEUp for the upper half,
+  /// other sizes Memory. Anything else is Integer. A member that is not
+  /// aligned is Memory.
   ///
-  /// \param type The member type
+  /// \param type The member type: a scalar, a vector, or a zero-length array
   /// \param offset Byte offset of the member in the struct
   /// \param lo The class of bytes 0-7, updated in place
   /// \param hi The class of bytes 8-15, updated in place
