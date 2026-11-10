@@ -232,6 +232,10 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
         return f"_DeviceChainMap({{{items}}})"
 
 
+def _analysis_key(analysis: _graph.Analysis) -> frozenset[str]:
+    return frozenset(str(p) for p in analysis.library_paths)
+
+
 class KernelLibrary:
     """Manages custom kernel libraries and operations for a graph.
 
@@ -243,6 +247,9 @@ class KernelLibrary:
 
     _analysis: _graph.Analysis
     _analysis_cache: dict[frozenset[str], _graph.Analysis] = {}
+    # Set once this library's analysis is in the cache, where other libraries
+    # with the same paths read it.
+    _shares_analysis: bool = False
 
     def __init__(self, paths: Iterable[Path] = ()) -> None:
         context = default_mlir_context()
@@ -266,7 +273,22 @@ class KernelLibrary:
             path: The :class:`pathlib.Path` to the kernel library to be added to the
                 current analysis.
         """
-        self._analysis.add_path(path)
+        if not self._shares_analysis:
+            self._analysis.add_path(path)
+            return
+        # Other libraries read the shared analysis, so this one moves to the
+        # analysis for its new paths rather than changing it.
+        analysis = _graph.Analysis(
+            default_mlir_context(), [*self._analysis.library_paths, path]
+        )
+        cached = KernelLibrary._analysis_cache.get(_analysis_key(analysis))
+        if cached is not None:
+            self._analysis = cached
+            return
+        # Built now, as the shared one was, so a bad package raises here.
+        _ = analysis.symbol_names
+        self._analysis = analysis
+        self._shares_analysis = False
 
     def load_paths(self, custom_extensions: Iterable[Path]) -> None:
         """Loads custom operations from provided library paths.
@@ -295,16 +317,39 @@ class KernelLibrary:
                     + f"Mojo source or binary package: {ext_path}"
                 )
 
+    def _shared_analysis(self) -> _graph.Analysis:
+        """Returns the analysis that every library with these paths reads.
+
+        Building an analysis parses its kernel libraries, which is slow, so
+        libraries with the same paths share one. That includes those with no
+        extra paths, which every eager op's graph has.
+        """
+        if self._shares_analysis:
+            return self._analysis
+        key = _analysis_key(self._analysis)
+        cached = KernelLibrary._analysis_cache.get(key)
+        if cached is None:
+            # Built before it's shared, so a bad package raises for this
+            # library alone.
+            _ = self._analysis.symbol_names
+            cached = KernelLibrary._analysis_cache.setdefault(
+                key, self._analysis
+            )
+        self._analysis = cached
+        self._shares_analysis = True
+        return cached
+
     def __getitem__(self, kernel: str):
-        if kernel not in self._analysis.symbol_names:
+        analysis = self._shared_analysis()
+        if kernel not in analysis.symbol_names:
             raise KeyError(kernel)
-        return self._analysis.kernel(kernel)
+        return analysis.kernel(kernel)
 
     def __contains__(self, kernel: str) -> bool:
-        return kernel in self._analysis.symbol_names
+        return kernel in self._shared_analysis().symbol_names
 
     def __iter__(self):
-        yield from sorted(self._analysis.symbol_names)
+        yield from sorted(self._shared_analysis().symbol_names)
 
     def verify_custom_op(self, custom_op: mlir.Operation) -> None:
         """Verifies that a custom operation is valid within the current context.
@@ -313,18 +358,7 @@ class KernelLibrary:
             custom_op: The :obj:`mlir.Operation` to be verified against the
                 current kernel library analysis.
         """
-        paths = self._analysis.library_paths
-        if paths:
-            cache_key = frozenset(str(p) for p in paths)
-            cached = KernelLibrary._analysis_cache.get(cache_key)
-            if cached is not None:
-                self._analysis = cached
-                self._analysis.verify_custom_op(custom_op)
-                return
-            self._analysis.verify_custom_op(custom_op)
-            KernelLibrary._analysis_cache[cache_key] = self._analysis
-        else:
-            self._analysis.verify_custom_op(custom_op)
+        self._shared_analysis().verify_custom_op(custom_op)
 
     def has_shape_function(self, kernel: str) -> bool:
         """Returns whether *kernel* registers a shape function.
@@ -344,7 +378,7 @@ class KernelLibrary:
         """
         if kernel not in self:
             raise KeyError(f"no kernel named {kernel!r} in the kernel library")
-        return self._analysis.has_shape_function(kernel)
+        return self._shared_analysis().has_shape_function(kernel)
 
 
 _default_custom_extensions: tuple[Path, ...] = ()
