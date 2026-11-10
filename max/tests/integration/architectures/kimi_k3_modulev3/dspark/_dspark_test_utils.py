@@ -159,7 +159,11 @@ def allocate_dspark_cache(
                             Tensor(
                                 storage=Buffer.from_numpy(
                                     np.array(
-                                        [attn_key.num_partitions], np.int64
+                                        [
+                                            attn_key.num_partitions,
+                                            attn_key.decode_num_partitions,
+                                        ],
+                                        np.int64,
                                     )
                                 )
                             )
