@@ -91,15 +91,23 @@ graph TD
 The runtime libraries (CompilerRT, libAsyncRTGlobals, and the runtime half of
 libmax) still depend on libLLVM and libMLIR. To remove that, in order:
 
-1. Remove MLIR from shared support code: move `configurePassManager` out of
+1. Introduce a `libLLVMSupport` shared library, defined in our tree, that holds
+   the parts of LLVM the runtimes use: `Support` and `TargetParser`, with their
+   dependencies. `libLLVM` links against it instead of containing its own copy,
+   so a process that loads both the runtime and the compiler still has one copy
+   of LLVM's global state. That dependency needs a patch to the LLVM overlay.
+   The patch is temporary: drop it once the runtime no longer uses LLVM's
+   `Support` library, or once no process loads both the runtime and the
+   compiler.
+2. Remove MLIR from shared support code: move `configurePassManager` out of
    `//Support:Base`, split the MLIR hashing out of `//Support:HashUtils`, and
    drop clang from `//Support:MArchTargetMinimal`.
-2. Move compiler libraries (`//Support:MDialect`, `//Support:MArchTarget`,
+3. Move compiler libraries (`//Support:MDialect`, `//Support:MArchTarget`,
    `//Support:Compiler`) out of libAsyncRTGlobals and into a compiler-side
    library.
-3. Split libmax into a runtime library and a compiler library.
-4. Give the runtime libraries the LLVM utilities they still use (filesystem,
+4. Split libmax into a runtime library and a compiler library.
+5. Give the runtime libraries the LLVM utilities they still use (filesystem,
    streams, JSON, `APFloat`) without libLLVM, checking every type that crosses
    into the compiler.
-5. Make CompilerRT independent of libLLVM, and decide whether standalone Mojo
+6. Make CompilerRT independent of libLLVM, and decide whether standalone Mojo
    programs need a fully static runtime.

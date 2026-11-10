@@ -113,11 +113,15 @@ modular_shared_library(
         "include/AsyncRT/ForwardDecls.h",
     ],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//Support:Globals",
+        "//bazel/internal:LLVMSupport",
     ] + select({
         "//bazel/internal:profiling_off": [],
-        "//conditions:default": ["@llvm-project//clang:clangBasic"],
+        # TimeProfiler describes the host with clang, in profiling builds only.
+        "//conditions:default": [
+            "@llvm-project//clang:clangBasic",
+            "@llvm-project//llvm:LLVM",
+        ],
     }),
     exports_filter = [
         "//Support:ExternalProfilerAnnotationHostGlue",

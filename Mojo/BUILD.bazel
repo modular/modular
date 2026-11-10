@@ -1009,9 +1009,9 @@ modular_shared_library(
         "include/Mojo/CompilerRT/*.h",
     ]),
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
+        "//bazel/internal:LLVMSupport",
     ],
     exports_filter = [
         "@fmt//:__subpackages__",
