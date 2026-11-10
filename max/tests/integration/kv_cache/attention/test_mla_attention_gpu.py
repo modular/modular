@@ -100,6 +100,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         return g
 
     g = construct()
+    model = session.load(g)
 
     input_row_offsets = Buffer(
         DType.uint32,
@@ -115,7 +116,6 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     kv_runtime_inputs = paged_kv_cache_inputs(
         kv_params, prompt_lens, total_num_pages=8
     )
-    model = session.load(g)
 
     input_tensor = Buffer.zeros(
         (total_seq_len, num_q_heads, q_head_dim), dtype=DType.bfloat16

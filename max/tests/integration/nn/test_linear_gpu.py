@@ -64,14 +64,12 @@ def linear_impl(
     input_tensor = torch.randn(
         size=(batch_size, sequence_length, in_features),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_linear = nn.Linear(
         in_features=in_features,
         out_features=out_features,
         bias=has_bias,
-        device=torch_device,
     )
 
     max_linear = Linear(
@@ -97,10 +95,6 @@ def linear_impl(
 
     max_linear.load_state_dict(state_dict)
 
-    # Get PyTorch output
-    with torch.no_grad():
-        torch_linear_result = torch_linear(input_tensor)
-
     # Get MAX output
     graph = Graph(
         "linear",
@@ -111,6 +105,13 @@ def linear_impl(
     )
 
     compiled = session.load(graph, weights_registry=max_linear.state_dict())
+
+    # Get PyTorch output
+    input_tensor = input_tensor.to(torch_device)
+    torch_linear = torch_linear.to(torch_device)
+    with torch.no_grad():
+        torch_linear_result = torch_linear(input_tensor)
+
     graph_api_linear_result = compiled.execute(input_tensor)[0]
     assert isinstance(graph_api_linear_result, Buffer)
 

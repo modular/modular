@@ -344,6 +344,7 @@ modular_py_test(
         "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],

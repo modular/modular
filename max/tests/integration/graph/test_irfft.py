@@ -18,34 +18,38 @@ import pytest
 import torch
 import torch.utils.dlpack
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def max_irfft(
+def load_max_irfft(
     session: InferenceSession,
-    input_tensor: torch.Tensor,
+    input_shape: tuple[int, ...],
     n: int | None,
     axis: int,
     normalization: str,
     input_is_complex: bool = False,
-) -> torch.Tensor:
+) -> Model:
     if input_is_complex:
-        input_tensor = torch.view_as_real(input_tensor)
+        input_shape = (*input_shape, 2)
     with Graph(
         "irfft",
-        input_types=(
-            TensorType(DType.float32, input_tensor.shape, DeviceRef.GPU()),
-        ),
+        input_types=(TensorType(DType.float32, input_shape, DeviceRef.GPU()),),
     ) as graph:
         output = ops.irfft(
             graph.inputs[0].tensor, n, axis, normalization, input_is_complex
         )
         graph.output(output)
-    model = session.load(graph)
+    return session.load(graph)
+
+
+def run_max_irfft(
+    model: Model, input_tensor: torch.Tensor, input_is_complex: bool
+) -> torch.Tensor:
+    if input_is_complex:
+        input_tensor = torch.view_as_real(input_tensor)
     output = model(input_tensor)
-    output = torch.utils.dlpack.from_dlpack(output[0])
-    return output
+    return torch.utils.dlpack.from_dlpack(output[0])
 
 
 def torch_irfft(
@@ -78,11 +82,12 @@ def test_irfft(
     assert md.accelerator_api() == "cuda", (
         "NVIDIA GPUs are required for this test."
     )
+    model = load_max_irfft(
+        session, input_shape, n, axis, normalization, input_is_complex
+    )
     dtype = torch.complex64 if input_is_complex else torch.float32
     input_tensor = torch.randn(*input_shape, dtype=dtype).to("cuda")
-    max_out = max_irfft(
-        session, input_tensor, n, axis, normalization, input_is_complex
-    )
+    max_out = run_max_irfft(model, input_tensor, input_is_complex)
     torch_out = torch_irfft(input_tensor, n, axis, normalization)
 
     torch.testing.assert_close(

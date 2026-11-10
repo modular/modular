@@ -280,6 +280,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -662,10 +663,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
