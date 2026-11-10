@@ -613,9 +613,6 @@ struct MLAKPoolAppendPaged:
 
     @staticmethod
     def execute[
-        cache_dtype: DType,
-        scale_dtype: DType,
-        //,
         *,
         head_dim: Int,
         kpool: Int,
@@ -630,15 +627,15 @@ struct MLAKPoolAppendPaged:
         input_row_offsets: Some[Input & Tensor],
         slot_idx: Some[Input & Tensor],
         scale_ub: Float32,
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_scales_blocks: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        k_scales_blocks: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        k_scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -649,8 +646,6 @@ struct MLAKPoolAppendPaged:
         the paged K and K-scale stores do together; see `kpool_append_ragged_paged`.
 
         Parameters:
-            cache_dtype: Element type of the pooled key cache (inferred).
-            scale_dtype: Element type of its scales (inferred).
             head_dim: Channels per key; also the kernel's block width.
             kpool: Tokens per pool.
             quantization_granularity: Cache values per scale.
@@ -687,11 +682,28 @@ struct MLAKPoolAppendPaged:
         comptime assert type_of(gate).rank == 2
         comptime assert type_of(ape).rank == 2
         comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
         comptime assert type_of(slot_idx).rank == 1
-        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
-        comptime cache_head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
-        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
-        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(k_scales_blocks).rank == 6
+        comptime cache_dtype = type_of(kv_blocks).dtype
+        comptime scale_dtype = type_of(k_scales_blocks).dtype
+        comptime page_size = type_of(kv_blocks)._shape_types[3].static_value
+        comptime cache_head_dim = type_of(kv_blocks)._shape_types[
+            5
+        ].static_value
+        comptime num_heads = type_of(kv_blocks)._shape_types[4].static_value
+        comptime is_mla = type_of(kv_blocks)._shape_types[1].static_value == 1
         comptime kv_params = KVCacheStaticParams(
             num_heads, cache_head_dim, is_mla
         )
@@ -703,15 +715,15 @@ struct MLAKPoolAppendPaged:
             page_size,
             quantization_granularity,
         ](
-            kv_blocks.to_tile_tensor(),
-            page_stride.to_tile_tensor(),
-            cache_lengths.to_tile_tensor(),
-            kv_lookup_table.to_tile_tensor(),
-            max_prompt_length.to_tile_tensor(),
-            max_cache_length.to_tile_tensor(),
-            k_scales_blocks.to_tile_tensor(),
-            scales_page_stride.to_tile_tensor(),
-            k_scales_lookup_table.to_tile_tensor(),
+            _mut_pointer_tile(kv_blocks.to_tile_tensor[cache_dtype]()),
+            _imm_pointer_tile(page_stride.to_tile_tensor[.int64]()),
+            _imm_pointer_tile(cache_lengths.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(kv_lookup_table.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(max_prompt_length.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(max_cache_length.to_tile_tensor[.uint32]()),
+            _mut_pointer_tile(k_scales_blocks.to_tile_tensor[scale_dtype]()),
+            _imm_pointer_tile(scales_page_stride.to_tile_tensor[.int64]()),
+            _imm_pointer_tile(k_scales_lookup_table.to_tile_tensor[.uint32]()),
         )
 
         kpool_append_ragged_paged[head_dim=head_dim, kpool=kpool](
@@ -720,7 +732,7 @@ struct MLAKPoolAppendPaged:
             gate.to_tile_tensor[type_of(k).dtype]().as_imm(),
             ape.to_tile_tensor[.float32]().as_imm(),
             input_row_offsets.to_tile_tensor[.uint32]().as_imm(),
-            cache_lengths.to_tile_tensor().as_imm(),
+            cache_lengths.to_tile_tensor[.uint32]().as_imm(),
             slot_idx.to_tile_tensor[.uint32]().as_imm(),
             k_collection.get_key_cache(Int(layer_idx)),
             scale_ub,
