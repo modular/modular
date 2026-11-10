@@ -159,7 +159,7 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         return (0.15, 5e-2, 2e-2) if half else (1e-2, 1e-3, 0.0)
     if op in ("reduce_mean", "row_mean_of_squares"):
         return (2e-2, 3e-2, 2e-2) if half else (1e-3, 1e-3, 0.0)
-    if op == "softmax":
+    if op in ("softmax", "softmax_spelled"):
         return (3e-3, 6e-2, 5e-3) if half else (1e-4, 1e-3, 0.0)
     if op == "logsoftmax":
         return (5e-2, 6e-2, 5e-3) if half else (1e-3, 1e-3, 0.0)
@@ -255,7 +255,7 @@ def _reference_and_check(
         ref = xf.amin(dim=axis).numpy()
     elif op == "reduce_mean":
         ref = xf.mean(dim=axis).numpy()
-    elif op == "softmax":
+    elif op in ("softmax", "softmax_spelled"):
         ref = torch.softmax(xf, dim=axis).numpy()
     elif op == "logsoftmax":
         ref = torch.log_softmax(xf, dim=axis).numpy()
@@ -320,6 +320,8 @@ def _fused_inputs(
             return [gamma]
         torch.manual_seed(2)
         return [torch.randn(rows, cols).to(_torch_dtype(dtype)), gamma]
+    if op == "softmax_spelled":
+        return []
     raise ValueError(f"no inputs for {op!r}")
 
 
