@@ -284,9 +284,6 @@ struct AllReduceTuningConfig(CommTuningConfig, TrivialRegisterPassable):
     def get_ngpus(self) -> Int:
         return self.ngpus
 
-    def get_algorithm(self) -> AllReduceAlgorithm:
-        return self.algorithm
-
     def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 
@@ -837,7 +834,7 @@ def _allreduce_2stage_kernel[
         in_layout: Layout of the input TileTensors.
         in_engine: Storage engine of the input TileTensors.
         out_layout: Layout of the output TileTensor.
-        BLOCK_SIZE: Number of threads per block.
+        BLOCK_SIZE: Maximum number of threads per block.
         OutputLambdaType: The type of `output_lambda`.
         use_multimem: If True, use multi-memory space buffers for input.
         domain_id: Barrier counter bank to use (0 for full-world; a distinct
@@ -861,7 +858,8 @@ def _allreduce_2stage_kernel[
     # --- Thread Indexing ---
     var global_tid = global_idx.x
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = grid_dim.x * BLOCK_SIZE
+    # The dispatch may launch fewer than `BLOCK_SIZE` threads per block.
+    var stride = grid_dim.x * block_dim.x
 
     var rs_config = ReduceScatterConfig[dtype, ngpus](_num_elements, stride)
 
@@ -953,15 +951,21 @@ def _allreduce_2stage_kernel[
             rs_config.rank_part(ngpus - 1),
             rs_config.stride,
         ):
+            # Issue every peer load before the first store: the output may
+            # alias the peers' buffers as far as the compiler knows, so an
+            # interleaved store would wait out each remote load in turn.
+            var vals = Array[SIMD[dtype, simd_width], ngpus](uninitialized=True)
             comptime for gpu_idx in range(ngpus):
-                var peer_rank = circular_add[ngpus](_my_rank, gpu_idx)
-
-                var dst_idx = rs_config.rank_start(peer_rank) + idx
-                output_lambda[width=simd_width, alignment=alignment](
-                    output_layout.idx2crd(dst_idx),
+                vals[gpu_idx] = (
                     tmps[gpu_idx]
                     .unsafe_address_space_cast[_target_address_space]()
-                    .unsafe_load[width=simd_width, alignment=alignment](idx),
+                    .unsafe_load[width=simd_width, alignment=alignment](idx)
+                )
+            comptime for gpu_idx in range(ngpus):
+                var peer_rank = circular_add[ngpus](_my_rank, gpu_idx)
+                var dst_idx = rs_config.rank_start(peer_rank) + idx
+                output_lambda[width=simd_width, alignment=alignment](
+                    output_layout.idx2crd(dst_idx), vals[gpu_idx]
                 )
 
         # Ragged tail - max 1 simd vector per gpu, spread work between threads
@@ -1874,13 +1878,20 @@ def _allreduce_p2p[
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
-        # Define grid size for 2-stage, which processes 1/group_size of the
-        # number of elements.
-        var grid_size = clamp(
-            ceildiv(num_elements // (simd_width * group_size), BLOCK_SIZE),
-            1,
-            max_num_blocks,
-        )
+        # Each 2-stage thread handles SIMD vectors of this rank's 1/group_size
+        # share. On CDNA4, narrow the blocks while the grid still covers every
+        # vector in one pass: a small share then spreads over more CUs, which
+        # keeps more peer reads in flight.
+        var rank_vecs = num_elements // (simd_width * group_size)
+        var block_size = BLOCK_SIZE
+        comptime if sm_version == "CDNA4":
+            comptime min_block_size = 64
+            while (
+                block_size > min_block_size
+                and ceildiv(rank_vecs, block_size // 2) <= max_num_blocks
+            ):
+                block_size //= 2
+        var grid_size = clamp(ceildiv(rank_vecs, block_size), 1, max_num_blocks)
 
         # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
         comptime kernel = _allreduce_2stage_kernel[
@@ -1902,7 +1913,7 @@ def _allreduce_p2p[
             Int32(loc_rank),
             host_args=(output_lambda,),
             grid_dim=grid_size,
-            block_dim=BLOCK_SIZE,
+            block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
 

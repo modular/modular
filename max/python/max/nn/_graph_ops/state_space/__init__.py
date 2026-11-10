@@ -41,6 +41,7 @@ from .kimi_delta import (
 from .mamba2_replay_fold import mamba2_replay_fold
 from .mamba2_ssd_scan import mamba2_ssd_chunk_scan_varlen_fwd_inplace
 from .short_conv_ring import short_conv_ring
+from .state_rows import read_state_rows, write_state_rows
 from .varlen_causal_conv1d import causal_conv1d_varlen_fwd
 
 __all__ = [
@@ -61,6 +62,8 @@ __all__ = [
     "kda_verify_ring",
     "mamba2_replay_fold",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace",
+    "read_state_rows",
     "short_conv_ring",
     "verify_width_operand",
+    "write_state_rows",
 ]

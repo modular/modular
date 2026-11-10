@@ -1059,6 +1059,16 @@ logit_verification_pipelines:
     tags: [manual]
 
   # TODO(MODELS-1339): Re-enable once transformers v4 tokenizer crash is fixed.
+  nvidia/Gemma-4-26B-A4B-NVFP4:
+    config_params_override: {"prefer_module_v3": false}
+    pre_submit_agents: []
+    pipeline: "nvidia/Gemma-4-26B-A4B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [manual, nvidia-only, no-h100]
+    torch_reference_is_unquantized_source: true
+
+  # TODO(MODELS-1339): Re-enable once transformers v4 tokenizer crash is fixed.
   google/gemma-4-31B-it-bfloat16:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []

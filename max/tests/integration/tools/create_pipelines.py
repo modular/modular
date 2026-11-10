@@ -1546,6 +1546,14 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "nvidia/Gemma-4-26B-A4B-NVFP4": GenericOracle(
+        model_path="nvidia/Gemma-4-26B-A4B-NVFP4",
+        torch_model_path="google/gemma-4-26B-A4B-it",
+        config_params={
+            "max_batch_size": 128,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     "google/gemma-4-31B-it": GenericOracle(
         model_path="google/gemma-4-31B-it",
         config_params={

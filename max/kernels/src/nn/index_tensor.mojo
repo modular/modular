@@ -13,6 +13,7 @@
 """Implements numpy-style advanced tensor indexing (getitem and setitem) for CPU and GPU."""
 
 from std.math import ceildiv
+from std.os import abort
 from std.sys import simd_width_of
 
 from nn.reshape import reshape
@@ -345,17 +346,19 @@ def _index_tensor_impl[
                 cpu_ctx,
             )
     else:
-        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        var cuda_ctx = ctx.value()
-        if use_simd:
-            elementwise[target_simd_width,](
-                index_tensor_elementwise_fn,
-                output.layout.shape_coord(),
-                cuda_ctx,
-            )
-        else:
-            elementwise[1,](
-                index_tensor_elementwise_fn,
-                output.layout.shape_coord(),
-                cuda_ctx,
-            )
+        match ctx:
+            case .Some(cuda_ctx):
+                if use_simd:
+                    elementwise[target_simd_width](
+                        index_tensor_elementwise_fn,
+                        output.layout.shape_coord(),
+                        cuda_ctx,
+                    )
+                else:
+                    elementwise[1](
+                        index_tensor_elementwise_fn,
+                        output.layout.shape_coord(),
+                        cuda_ctx,
+                    )
+            case .None:
+                abort("Must provide DeviceContext if executing on GPU.")

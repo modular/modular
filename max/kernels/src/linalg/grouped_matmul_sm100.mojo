@@ -90,7 +90,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -2328,8 +2328,9 @@ def _grouped_matmul_sm100_persistent[
     var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
     var c_desc_ptr = c_ptr
     comptime if has_epilogue_fn:
-        c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
-        c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
+        var scratch = ctx.enqueue_create_buffer[c_type](1)
+        c_desc_ptr = scratch.unsafe_ptr().as_unsafe_any_origin()
+        c_desc_scratch = scratch^
     var c_device = TileTensor(c_desc_ptr, row_major(M_runtime, Idx[expert_m]))
 
     var M = M_runtime

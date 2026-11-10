@@ -40,12 +40,6 @@ from max.pipelines.architectures.qwen3_5.qwen3_5 import (
     Qwen3_5LinearAttentionBlock,
 )
 from max.pipelines.architectures.qwen3_5.spec_adapters import (
-    LIVE_CONV_POOLS,
-    LIVE_CONV_ROW_IDS,
-    LIVE_RECURRENT_POOLS,
-    LIVE_RECURRENT_ROW_IDS,
-    RING_POOLS,
-    RING_ROW_IDS,
     Qwen3_5RecurrentState,
 )
 from max.pipelines.architectures.qwen3_5.state_cache import (
@@ -188,15 +182,15 @@ class _Harness:
                 dtype=DType.uint32,
             ).reshape([1, "batch_size"])
             state = Qwen3_5RecurrentState(target, regions)
-            extra: dict[str, Any] = {
-                LIVE_CONV_POOLS: [conv],
-                LIVE_RECURRENT_POOLS: [rec],
-                LIVE_CONV_ROW_IDS: [conv_rows],
-                LIVE_RECURRENT_ROW_IDS: [rec_rows],
-                RING_POOLS: [ring],
-                RING_ROW_IDS: [ring_rows],
-            }
-            leaves = state.verify_state(extra, 1)
+            leaves = [
+                RecurrentStateInputsPerDevice(
+                    leaves=(
+                        RecurrentLeafInputs(pool=conv, live_row_ids=conv_rows),
+                        RecurrentLeafInputs(pool=rec, live_row_ids=rec_rows),
+                        RecurrentLeafInputs(pool=ring, live_row_ids=ring_rows),
+                    )
+                )
+            ]
             with state.capturing(1, Dim(forward_width)):
                 spec_out = block(
                     [x], [signals], layer_state_access(leaves, 0), [offsets]
@@ -205,7 +199,7 @@ class _Harness:
                 state.num_draft_tokens = Dim(rollback_width)
                 state.verify_width = verify_width_operand(rollback_width)
             state.roll_forward(
-                extra,
+                leaves,
                 merged_offsets=offsets,
                 num_accepted=accepted,
                 num_draft_tokens=ops.constant(0, DType.int64, device=gpu),

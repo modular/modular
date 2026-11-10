@@ -19,6 +19,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/StringExtras.h"
 #include "Support/max_license/Tracy/Tracy.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -36,6 +37,7 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <tuple>
 
 // Helpers for logging.
 #define TWINE(val) (llvm::Twine(val))
@@ -1002,6 +1004,8 @@ static const char *vmmOomCategoryTag(VmmOomCategory c) {
     return "out of memory";
   case VmmOomCategory::Avoidable:
     return "avoidable";
+  case VmmOomCategory::Retained:
+    return "retained by graph capture";
   case VmmOomCategory::Unaccounted:
     return "unaccounted";
   case VmmOomCategory::VaFragmentation:
@@ -1264,6 +1268,22 @@ void MemoryManagerFreeList::dumpFragmentationDiagnostic(
       }
     }
     cur = cur->parent_;
+  }
+
+  // Every holder of pending memory, not just the chain above: the list the
+  // allocation missed on is often empty while a sibling holds the budget, and
+  // the chain walk cannot reach a sibling. Uncapped here, unlike the surfaced
+  // message, because the long tail is free to print in the log.
+  if (snapshot != nullptr) {
+    for (const VmmPendingOwner &owner : snapshot->pendingOwners) {
+      std::string s;
+      llvm::raw_string_ostream os(s);
+      os << "oom log pending_owner=[" << owner.label
+         << "] bytes=" << humanMemorySize(owner.bytes)
+         << " blocks=" << owner.blocks
+         << " retained=" << (owner.neverFlushes ? 1 : 0);
+      logLine(os.str());
+    }
   }
 
   // Per-chunk layout. The killer fragmentation signal: if largest_free per
@@ -1649,12 +1669,15 @@ VmmOomSnapshot MemoryManager::computeVmmOomSnapshot(size_t needed) const {
   }
 
   // One desc walk: mark per-granule occupancy (in-use / pending, the latter
-  // split by whether a queued record will drain it), sum pending bytes, and
-  // track the largest contiguous root-free region (the VA a request is carved
-  // from). State comes from descs; backing comes from the bitvector.
+  // split by whether a queued record will drain it and by whether its holder
+  // ever releases), sum pending bytes, group them by holder, and track the
+  // largest contiguous root-free region (the VA a request is carved from).
+  // State comes from descs; backing comes from the bitvector.
   llvm::BitVector inUse(n, false);
   llvm::BitVector freeing(n, false);
   llvm::BitVector stuck(n, false);
+  llvm::BitVector retained(n, false);
+  llvm::SmallDenseMap<const MemoryManagerFreeList *, size_t> ownerIndex;
   for (const Desc *d = c->descs_; d != nullptr; d = d->next_) {
     const bool descInUse = d->isInUse();
     const bool descPending = d->isFree() && d->owner() != freeList_.get();
@@ -1669,6 +1692,29 @@ VmmOomSnapshot MemoryManager::computeVmmOomSnapshot(size_t needed) const {
       s.largestRootFreeVA = descSize; // root-free
     if (!descInUse && !descPending)
       continue;
+    const MemoryManagerFreeList *owner = d->owner();
+    // `disableFlush` is the structural fact: this list never migrates to its
+    // parent, so nothing it holds returns while it lives. Today the only such
+    // lists are the graph-capture pools, which is why the message phrases the
+    // hold as a captured graph and the advice as capturing fewer shapes. A
+    // second no-flush list built for some other reason would keep the figures
+    // right and make that prose wrong, so it needs revisiting here. No flag
+    // distinguishes the two cases yet.
+    const bool descRetained = descPending && owner->disableFlush_;
+    if (descPending) {
+      // Reachable from a live desc, so the pointer is good: a freelist's
+      // destructor migrates its blocks to the parent, which re-owns them.
+      auto [it, inserted] =
+          ownerIndex.try_emplace(owner, s.pendingOwners.size());
+      if (inserted)
+        s.pendingOwners.push_back(
+            VmmPendingOwner{owner->label_, 0, 0, descRetained});
+      VmmPendingOwner &entry = s.pendingOwners[it->second];
+      entry.bytes += descSize;
+      ++entry.blocks;
+      if (descRetained)
+        s.retainedBytes += descSize;
+    }
     const size_t first = (static_cast<const char *>(d->ptr_) - base) / ps;
     const size_t last =
         (static_cast<const char *>(d->ptr_) + descSize - 1 - base) / ps;
@@ -1681,7 +1727,16 @@ VmmOomSnapshot MemoryManager::computeVmmOomSnapshot(size_t needed) const {
       freeing.set(first, end);
     else
       stuck.set(first, end);
+    if (descRetained)
+      retained.set(first, end);
   }
+  // Label breaks a tie so two equal holders print in the same order every
+  // time. Desc order would otherwise decide it, and a diagnostic that reorders
+  // between runs is one nobody can diff.
+  llvm::sort(s.pendingOwners,
+             [](const VmmPendingOwner &a, const VmmPendingOwner &b) {
+               return std::tie(b.bytes, a.label) < std::tie(a.bytes, b.label);
+             });
 
   // Classify each backed granule by strongest occupant (in-use > pending >
   // root-free). Unbacked granules are pooled or uncommitted, tracked by count.
@@ -1701,6 +1756,38 @@ VmmOomSnapshot MemoryManager::computeVmmOomSnapshot(size_t needed) const {
     // A single straggler pins it just as an in-use desc would.
     if (freeing[g] && !inUse[g] && !stuck[g])
       ++s.drainableGranules;
+    // Another subset, counted the other way round: one desc from a list that
+    // never releases is enough to keep the granule out of a synchronize's
+    // reach, whatever else shares it. Spelled as a subset of the pending test
+    // above rather than relying on `retained` implying `stuck`, so
+    // `recoverableBySync()` cannot be handed a difference it has to clamp.
+    if (retained[g] && !inUse[g] && (freeing[g] || stuck[g]))
+      ++s.retainedGranules;
+  }
+
+  // Second pass, over the retained descs only: how much of each lies on a
+  // granule a live allocation also occupies. Needs `inUse` complete, which it
+  // is not until the walk above finishes, and needs the overlap in bytes
+  // rather than granules, so it clips each desc to each granule it spans.
+  // `trapped()` subtracts the total; without that those bytes keep the
+  // page-size advice they cannot act on.
+  for (const Desc *d = c->descs_; d != nullptr; d = d->next_) {
+    if (!d->isFree() || d->owner() == freeList_.get() ||
+        !d->owner()->disableFlush_)
+      continue;
+    const char *lo = static_cast<const char *>(d->ptr_);
+    const char *hi = lo + d->size_;
+    const size_t first = (lo - base) / ps;
+    const size_t last = (hi - 1 - base) / ps;
+    for (size_t g = first; g <= last && g < n; ++g) {
+      if (!inUse[g])
+        continue;
+      const char *granuleLo = base + g * ps;
+      const char *overlapLo = std::max(lo, granuleLo);
+      const char *overlapHi = std::min(hi, granuleLo + ps);
+      if (overlapHi > overlapLo)
+        s.retainedTrappedBytes += overlapHi - overlapLo;
+    }
   }
 
   const size_t budgetGranules = maxCacheSize_ / ps;
@@ -1773,7 +1860,47 @@ VmmOomCategory classifyVmmOom(const VmmOomSnapshot &s,
   // apply), so callers phrase them as suggestions.
   if (s.available() + s.recoverableBySync() + s.trapped() >= s.needed)
     return VmmOomCategory::Avoidable;
+  // Tested after the working levers, so a miss that a wait would have fixed
+  // keeps the advice that fixes it. Reaching here means waiting and repaging
+  // both fall short and the retained pool is what covers the rest.
+  if (s.available() + s.recoverableBySync() + s.trapped() + s.retained() >=
+      s.needed)
+    return VmmOomCategory::Retained;
   return VmmOomCategory::Genuine;
+}
+
+// The largest holder that never releases, for the message to name. Null when
+// no retained bytes were seen.
+static const VmmPendingOwner *largestRetainedOwner(const VmmOomSnapshot &s) {
+  for (const VmmPendingOwner &owner : s.pendingOwners)
+    if (owner.neverFlushes)
+      return &owner; // sorted by bytes, so the first match is the largest
+  return nullptr;
+}
+
+// Names the pool holding the retained bytes and what moves it, appended to
+// any category whose figures would otherwise leave them unexplained. Leads
+// with the bytes rather than `retained()`, because a pool whose every block
+// shares a page with a live allocation has whole-page figure zero and is the
+// case most worth naming.
+static void describeRetained(llvm::raw_ostream &os, const VmmOomSnapshot &s) {
+  os << humanMemorySize(s.retainedBytes)
+     << " is held by a free list that never "
+        "releases it";
+  if (const VmmPendingOwner *owner = largestRetainedOwner(s))
+    os << " (largest: " << owner->label << " with "
+       << humanMemorySize(owner->bytes) << " in " << owner->blocks
+       << " blocks)";
+  // The difference is bytes on pages a live allocation pins, which releasing
+  // the graphs does not hand back. Printed only when there is one, so the
+  // common case stays short.
+  if (s.retained() < s.retainedBytes)
+    os << ", of which " << humanMemorySize(s.retained())
+       << " is whole pages a release returns";
+  os << ". No synchronize recovers that memory: a captured graph may still "
+        "read it, so it comes back only when the graphs holding it are "
+        "released. Capture fewer shapes, or capture them largest first so a "
+        "later capture reuses a retained block instead of carving a new one";
 }
 
 std::string describeVmmOom(const VmmOomSnapshot &s, VmmOomCategory category) {
@@ -1794,19 +1921,38 @@ std::string describeVmmOom(const VmmOomSnapshot &s, VmmOomCategory category) {
   case VmmOomCategory::Genuine:
     os << " (out of memory: no combination of synchronizing and reducing the "
           "page size closes the gap)";
+    // Short of the request on its own, but large enough to be the reason the
+    // budget ran out. Saying nothing here reads as "the model needs this much
+    // memory", which is the wrong conclusion to hand a reader.
+    if (s.retainedBytes > 0) {
+      os << ". Of the budget, ";
+      describeRetained(os, s);
+    }
+    break;
+  case VmmOomCategory::Retained:
+    os << ". Not an exhaustion, and not something waiting fixes: ";
+    describeRetained(os, s);
     break;
   case VmmOomCategory::Avoidable:
     os << ". Not an exhaustion: the shortfall is covered by";
     if (s.recoverableBySync() > 0)
       os << " up to " << humanMemorySize(s.recoverableBySync())
          << " that synchronizing would free ("
-         << humanMemorySize(s.pendingTotalBytes) << " pending in total)";
+         << humanMemorySize(s.syncPendingBytes())
+         << " waiting on stream frees in total)";
     if (s.recoverableBySync() > 0 && s.trapped() > 0)
       os << " and";
     if (s.trapped() > 0)
       os << " up to " << humanMemorySize(s.trapped())
          << " trapped in partially-used " << humanMemorySize(s.pageSize)
          << " pages, which lowering memory_manager_vmm_page_mb may recover";
+    // A wait closes this particular gap, so the retained pool is not the
+    // headline. It is still why the gap was there, so it is still worth a
+    // clause.
+    if (s.retainedBytes > 0) {
+      os << ". Separately, ";
+      describeRetained(os, s);
+    }
     break;
   case VmmOomCategory::Unaccounted:
     if (s.available() >= s.neededPhysicalBytes())
@@ -1849,6 +1995,9 @@ std::string dumpVmmOom(const VmmOomSnapshot &s) {
      << " recoverable_by_sync=" << humanMemorySize(s.recoverableBySync())
      << " drainable=" << humanMemorySize(s.drainableGranules * s.pageSize)
      << " drainable_bytes=" << humanMemorySize(s.drainableBytes)
+     << " retained=" << humanMemorySize(s.retained())
+     << " retained_bytes=" << humanMemorySize(s.retainedBytes)
+     << " retained_trapped=" << humanMemorySize(s.retainedTrappedBytes)
      << " trapped=" << humanMemorySize(s.trapped())
      << " pending_total=" << humanMemorySize(s.pendingTotalBytes)
      << " largest_root_free_va=" << humanMemorySize(s.largestRootFreeVA)
@@ -1860,6 +2009,25 @@ std::string dumpVmmOom(const VmmOomSnapshot &s) {
      << " reclaimable=" << s.reclaimableGranules
      << " pooled=" << s.pooledGranules
      << " uncommitted=" << s.uncommittedGranules << "]";
+  // The holders, largest first. The allocating free list the error names is
+  // routinely not one of them, so without this the pending figure points at
+  // nobody. Capped: a long tail of small holders would push the fields above
+  // off the end of a log line, and the tail is never the answer.
+  if (!s.pendingOwners.empty()) {
+    os << " pending_by_owner[";
+    constexpr size_t kMaxOwners = 3;
+    const size_t shown = std::min(kMaxOwners, s.pendingOwners.size());
+    for (size_t i = 0; i < shown; ++i) {
+      const VmmPendingOwner &owner = s.pendingOwners[i];
+      if (i != 0)
+        os << " ";
+      os << owner.label << "=" << humanMemorySize(owner.bytes) << "/"
+         << owner.blocks << (owner.neverFlushes ? "(retained)" : "");
+    }
+    if (s.pendingOwners.size() > shown)
+      os << " +" << (s.pendingOwners.size() - shown) << " more";
+    os << "]";
+  }
   return out;
 }
 

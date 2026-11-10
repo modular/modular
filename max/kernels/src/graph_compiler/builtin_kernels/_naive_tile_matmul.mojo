@@ -55,6 +55,13 @@ from extensibility import (
 
 from ._tile_fusion import _tile_store_consumer
 
+comptime SM100 = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & extensibility.arch("sm_100a")
+)
+"""Holds for CUDA devices with the `sm_100a` architecture."""
+
 
 @fieldwise_init
 struct _ComputeFusionTileOp[
@@ -249,7 +256,7 @@ struct _NaiveMatmulTileAdapter[
 # resolves to the generic SIMD `mo.matmul` and only the tile-codegen path
 # (flag on) selects this kernel. Expected to be removed once the real tile
 # matmul lands and the tile-codegen transition completes (see GEX-3919).
-@extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")
+@extensibility.register("mo.matmul", SM100)
 struct MatmulTileSM100:
     @staticmethod
     def execute[

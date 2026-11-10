@@ -1448,6 +1448,8 @@ struct ConvDirectNHWC[
                     left_pad_impact_end,
                     right_pad_impact_start,
                 )
+            case _:
+                pass
 
     def output_space_loop_1d[
         micro_kernel_height: Int,

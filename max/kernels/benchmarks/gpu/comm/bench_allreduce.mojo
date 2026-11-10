@@ -179,16 +179,15 @@ def bench_reduce[
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
 
         # All GPUs use the same multicast pointer
-        multi_ptr = (
+        var ptr = (
             multicast_buf.multicast_buffer_for(list_of_ctx[0])
             .unsafe_ptr()
             .unsafe_mut_cast[True]()
             .as_unsafe_any_origin()
         )
+        multi_ptr = ptr
         in_tensors[0] = TileTensor(
-            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                multi_ptr.unsafe_value()
-            ),
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](ptr),
             row_major(length),
         )
     else:
@@ -244,7 +243,7 @@ def bench_reduce[
                 # multi_ptr is set when use_multimem == True
                 in_tensors[0] = TileTensor(
                     rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                        multi_ptr.unsafe_value().unsafe_offset(
+                        multi_ptr[].unsafe_offset(
                             cb_template.offset(cache_iter)
                         )
                     ),

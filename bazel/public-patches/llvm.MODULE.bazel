@@ -22,13 +22,6 @@ llvm_source.configure(
         # be bridged, so wholesale AGPR reclassification would be illegal.
         # Tracking: MOCO-4155.
         "//bazel/public-patches:llvm-mfma-allow-non-mai-users.patch",
-        # MLIR timers are keyed by the pass instance pointer, so a pass at a
-        # recycled address inherits the previous pass's timer and reports its
-        # time under that pass's name. Under --mlir-timing, mojo runs several
-        # pass managers into one root scope, and LowerKGENToLLVM intermittently
-        # vanishes from the report. The MLIR counterpart of the --llvm-timing
-        # fix in llvm/llvm-project#218492.
-        "//bazel/public-patches:llvm-mlir-timing-recycled-key.patch",
     ],
 )
 

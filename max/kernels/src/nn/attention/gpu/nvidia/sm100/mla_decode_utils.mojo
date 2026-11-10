@@ -39,13 +39,11 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,
-    mma_arrive_multicast,
 )
 
 from max.gpu.sync import named_barrier, syncwarp
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
-    tcgen05_fence_before,
     tcgen05_ld,
     tcgen05_load_wait,
     tcgen05_st,
@@ -73,7 +71,6 @@ from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.mla_common import (
     SparseRowLayout,
-    _sparse_row_packed,
     assert_sparse_row_packed,
 )
 from std.utils.numerics import get_accum_type, min_or_neg_inf
@@ -94,7 +91,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     sub_ftz,
     bulk_mma,
     bulk_mma_ws,
-    bulk_mma_ws_ts,
     st_shared_v4_b32,
     opaque_nonneg_i32,
     opaque_u32,
@@ -2969,29 +2965,6 @@ struct DecodeSProducer(TrivialRegisterPassable):
         self.pipe.step()
 
 
-########## Consumer of the S slot ##########
-struct DecodeSConsumer(TrivialRegisterPassable):
-    """Consumer side of the two-stage S pipeline between MMA and softmax."""
-
-    comptime SNumStages = 2
-    var pipe: ConsumerPipeline[Self.SNumStages]
-
-    @inline(.always)
-    def __init__(out self, pipe: ConsumerPipeline[Self.SNumStages]):
-        self.pipe = pipe
-
-    @inline(.always)
-    def wait(self) -> UInt32:
-        # Block until MMA has filled the current S slot
-        self.pipe.wait()
-        return self.pipe.state.index()
-
-    @inline(.always)
-    def release(mut self):
-        # Mark this S slot as "consumed" so MMA can reuse it
-        self.pipe.release()
-
-
 # Parameterized versions for N-stage S pipeline (used by native FP8 with 3 stages)
 struct DecodeSProducerN[num_stages: Int](TrivialRegisterPassable):
     """N-stage parameterized producer side of the S pipeline between MMA and softmax.
@@ -3048,36 +3021,6 @@ struct DecodeSConsumerN[num_stages: Int](TrivialRegisterPassable):
 # ------------------------------------------------------------------------------
 # MLA decoding P Pipeline between Softmax and MMA
 # ------------------------------------------------------------------------------
-########## Producer of the P slot ##########
-struct DecodePProducer(TrivialRegisterPassable):
-    """Producer side of the two-stage P pipeline between softmax and MMA."""
-
-    comptime PNumStages = 2
-    var pipe: ProducerPipeline[Self.PNumStages]
-
-    @inline(.always)
-    def __init__(out self, pipe: ProducerPipeline[Self.PNumStages]):
-        self.pipe = pipe
-
-    # Softmax threads collectively wait until MMA has released P
-    @inline(.always)
-    def acquire(self):
-        self.pipe.acquire()
-        # -> consumer_mbar.wait(phase), all 128 threads see the same phase
-
-    # After writing P, all 128 threads call commit()
-    @inline(.nodebug)
-    def commit(mut self):
-        self.pipe.commit()
-        # -> producer_mbar.arrive() (128 arrivals total)
-        # -> state.step() (phase toggles for next iteration)
-
-    # optional helper
-    @inline(.always)
-    def stage_index(self) -> UInt32:
-        return self.pipe.state.index()
-
-
 ########## Consumer of the P slot ##########
 struct DecodePConsumer(TrivialRegisterPassable):
     """Consumer side of the two-stage P pipeline between softmax and MMA."""
@@ -3723,81 +3666,6 @@ struct DecodeSM100PVSS[
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
         ](Self.UMMAPVSS, a, b, c, c_scale, elect)
-
-
-# ------------------------------------------------------------------------------
-# MLA decoding Tensor AccumulatorTS for QKT (TMEM Q, SMEM K)
-# ------------------------------------------------------------------------------
-struct DecodeSM100QKTTS[
-    operand_type: DType,
-    accum_type: DType,
-    *,
-    config: MLA_SM100_Decode_Config,
-](TrivialRegisterPassable):
-    """Tensor accumulator for the QK^T MMA with Q in TMEM and K in SMEM.
-
-    Parameters:
-        operand_type: Element type of the Q (in TMEM) and K (in SMEM)
-            operands.
-        accum_type: Accumulator dtype used for the QK^T MMA result in TMEM.
-        config: Decode config supplying MMA tile dimensions and swizzle
-            modes.
-    """
-
-    comptime MMA_M = Self.config.MMA_M  # 64 rows
-    comptime MMA_N = Self.config.MMA_QK_N  # 64 cols
-    comptime MMA_K = Self.config.MMA_K  # 16
-    comptime BK = Self.config.BK_QK  # 576
-    comptime num_k_mmas = Self.BK // Self.MMA_K
-    comptime operand_size = size_of[Self.operand_type]()
-
-    # ----- Instruction descriptor -----
-    comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
-        Self.accum_type,
-        Self.operand_type,
-        Self.operand_type,
-        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
-        transpose_b=True,  # QKᵀ
-    ]()
-
-    @staticmethod
-    @inline(.always)
-    def descriptor_k_block(
-        kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
-    ) -> MMASmemDescriptorPair:
-        var base = kv_smem
-        # Layout is 64 x 576, k-major, same swizzle as k_tma
-        return smem_descriptor[
-            BMN=Self.config.BN_QK,  # 64 rows
-            BK=Self.BK,  # 576 columns
-            swizzle_mode=Self.config.kv_mma_swizzle_mode,
-            is_k_major=True,
-        ](base)
-
-    @staticmethod
-    @inline(.always)
-    def mma[
-        *, stage_idx: Int = 0
-    ](
-        a: UInt32,
-        b: MMASmemDescriptorPair,
-        c: UInt32,
-        *,
-        c_scale: UInt32,
-        elect: Int32,
-    ):
-        comptime assert stage_idx == 0, "stage_idx should be 0"
-        bulk_mma_ws_ts[
-            UMMAKind.KIND_F16,
-            Self.operand_type,
-            b_BMN=Self.config.BN_QK,
-            b_BK=Self.BK,
-            b_swizzle=Self.config.kv_mma_swizzle_mode,
-            b_is_k_major=True,
-            num_k_mmas=Self.num_k_mmas,
-            operand_size=Self.operand_size,
-            tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
-        ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
 
 # ------------------------------------------------------------------------------
@@ -5228,14 +5096,12 @@ struct MLA_SM100_Decode_Common[
         # A zero-filled gathered row is still a softmax slot. Exclude its
         # padding index without interpreting physical row IDs as positions.
         comptime if SparsePhysicalSentinels:
-            if physical_sentinel_indices:
+            if case .Some(sentinel_ptr) = physical_sentinel_indices:
                 var readable = max(
                     min(logical_indices_len - col_base, chunk), 0
                 )
-                var raw_row = (
-                    physical_sentinel_indices.unsafe_value().unsafe_offset(
-                        (q_token_idx * logical_indices_stride + col_base)
-                    )
+                var raw_row = sentinel_ptr.unsafe_offset(
+                    (q_token_idx * logical_indices_stride + col_base)
                 )
                 comptime use_ballot = (
                     _MLA_SPARSE_SENTINEL_BALLOT != 0
@@ -5782,30 +5648,31 @@ struct MLA_SM100_Decode_Common[
         var fast_idx_lane: Int32 = -1
         var fast_idx_lane_hi: Int32 = -1
         comptime if sentinel_check:
-            if Bool(physical_sentinel_indices) and num_k_tiles > tiles_done:
-                var first_col_base = kv_start_row + col0
-                comptime if windowed:
-                    first_col_base = kv_start_row + (col0 & ~31)
-                var first_readable = max(
-                    min(logical_indices_len - first_col_base, sent_slots), 0
-                )
-                if first_readable > 0:
-                    var first_row = (
-                        physical_sentinel_indices.unsafe_value().unsafe_offset(
+            if case .Some(sentinel_ptr) = physical_sentinel_indices:
+                if num_k_tiles > tiles_done:
+                    var first_col_base = kv_start_row + col0
+                    comptime if windowed:
+                        first_col_base = kv_start_row + (col0 & ~31)
+                    var first_readable = max(
+                        min(logical_indices_len - first_col_base, sent_slots), 0
+                    )
+                    if first_readable > 0:
+                        var first_row = sentinel_ptr.unsafe_offset(
                             (
                                 offset_position.q_token_idx
                                 * logical_indices_stride
                                 + first_col_base
                             )
                         )
-                    )
-                    fast_idx_lane = _sparse_physical_sentinel_lane[
-                        Self.role_local_lane
-                    ](first_row, first_readable)
-                    comptime if half_load > 32:
-                        fast_idx_lane_hi = _sparse_physical_sentinel_lane_hi[
+                        fast_idx_lane = _sparse_physical_sentinel_lane[
                             Self.role_local_lane
                         ](first_row, first_readable)
+                        comptime if half_load > 32:
+                            fast_idx_lane_hi = (
+                                _sparse_physical_sentinel_lane_hi[
+                                    Self.role_local_lane
+                                ](first_row, first_readable)
+                            )
         var _sb = stamp_begin[0]()
         # FA4's split loop: the prefix lies wholly inside the bound, so it runs
         # the mask-free body with no per-tile test and only the tail is tested.
@@ -5972,7 +5839,7 @@ struct MLA_SM100_Decode_Common[
                             <= smx_fast_lim
                         )
                     comptime if sentinel_check:
-                        if Bool(physical_sentinel_indices):
+                        if case .Some(sentinel_ptr) = physical_sentinel_indices:
                             # Same column and read bound as `apply_mask`'s
                             # `SparsePhysicalSentinels` block.
                             var fast_col_base = (
@@ -6061,7 +5928,7 @@ struct MLA_SM100_Decode_Common[
                                     0,
                                 )
                                 if next_readable > 0:
-                                    var next_row = physical_sentinel_indices.unsafe_value().unsafe_offset(
+                                    var next_row = sentinel_ptr.unsafe_offset(
                                         (
                                             offset_position.q_token_idx
                                             * logical_indices_stride
@@ -6833,10 +6700,11 @@ struct MLA_SM100_Decode_Common[
             min(logical_indices_len - col_base16, Self.config.BN_QK >> 2), 0
         )
         var pos: Int32 = -1
-        if logical_indices and tile < num_k_tiles and j < n_readable:
-            pos = logical_indices.unsafe_value()[
-                q_token_idx * logical_indices_stride + col_base16 + j
-            ]
+        if case .Some(indices) = logical_indices:
+            if tile < num_k_tiles and j < n_readable:
+                pos = indices[
+                    q_token_idx * logical_indices_stride + col_base16 + j
+                ]
         return pos
 
     @staticmethod

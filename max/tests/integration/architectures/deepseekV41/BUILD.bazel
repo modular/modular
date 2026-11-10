@@ -274,6 +274,7 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
@@ -479,6 +480,8 @@ modular_py_test(
         "//:b200_gpu",
         "//:has_multi_gpu",
     ],
+    precompile_device_count = 2,
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
@@ -549,6 +552,7 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -567,6 +571,7 @@ modular_py_test(
         "test.resources:gpu-memory": "4",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -735,6 +740,7 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [

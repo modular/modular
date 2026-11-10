@@ -20,7 +20,6 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from layout import (
-    Coord,
     TensorLayout,
     TensorEngine,
     TileTensor,

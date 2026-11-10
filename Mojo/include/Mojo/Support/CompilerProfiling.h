@@ -85,7 +85,6 @@ private:
   void initialize(int timeTraceGranularity);
 
   std::optional<TimeTraceProfiler> profiler;
-  std::filesystem::path outputFilePath;
 };
 
 } // namespace M::KGEN

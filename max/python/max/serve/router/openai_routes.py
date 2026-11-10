@@ -2381,6 +2381,9 @@ async def openai_create_chat_completion(
             | getattr(tokenizer, "extra_chat_roles", frozenset()),
             preprocessed_image_mask=preprocessed_image_probe(tokenizer),
         )
+        accepts_token_prompt_media = bool(
+            getattr(tokenizer, "accepts_token_prompt_media", False)
+        )
 
         pipeline_config = get_app_pipeline_config(request.app)
 
@@ -2605,6 +2608,14 @@ async def openai_create_chat_completion(
         # exclusive on TextGenerationRequest, so omit ``messages`` in that
         # case. If both are sent on the wire, ``prompt_tokens`` wins.
         prompt_token_ids = completion_request.prompt_tokens
+        token_prompt_media = bool(prompt_token_ids) and bool(
+            request_images or request_videos
+        )
+        if token_prompt_media and not accepts_token_prompt_media:
+            raise InputError(
+                "prompt_tokens cannot carry images or videos for this model; "
+                "send them in messages"
+            )
         chat_template_options = completion_request.resolved_chat_template_kwargs
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
@@ -2614,6 +2625,10 @@ async def openai_create_chat_completion(
             images=request_images,
             decoded_images=request_decoded_images,
             videos=request_videos,
+            token_prompt_media_validated=token_prompt_media,
+            token_prompt_messages=request_messages
+            if token_prompt_media
+            else [],
             max_decoded_bytes=request_max_decoded_bytes,
             tools=tools,
             timestamp_ns=request.state.request_timer.start_ns,

@@ -91,8 +91,9 @@ mo.graph @gpuDynamic<M, N>(%x: !mo.tensor<[M, N], f32, gpu:0>, %w: !mo.tensor<[N
 // -----
 
 // A kernel registered only for another device doesn't keep it on this one.
+!pred = !kgen.generator<!lit.generator<<"label": string, "api": string, "arch": string, "model": string>scalar<bool>>>
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
-mogg.kernel.decl @tpu_rms_norm registration = "mo.composite.reduce.rms_norm" device_info = <"tpu", "", "", ""> execute = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @tpu_rms_norm registration = "mo.composite.reduce.rms_norm" platform_predicate = #kgen.gen<identical(:string *(0,0), "tpu")> : !pred execute = #kf struct_params = [] is_user_defined = false
 
 // CHECK-LABEL: mo.graph @otherDevice
 // CHECK-NOT:     mo.composite.reduce.rms_norm
@@ -106,7 +107,7 @@ mo.graph @otherDevice(%x: !mo.tensor<[8, 128], f32>, %w: !mo.tensor<[128], f32>)
 
 // A target that registers a kernel for rms_norm keeps running it.
 #kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
-mogg.kernel.decl @plugin_rms_norm registration = "mo.composite.reduce.rms_norm" device_info = <"", "", "", ""> execute = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @plugin_rms_norm registration = "mo.composite.reduce.rms_norm" execute = #kf struct_params = [] is_user_defined = false
 
 // CHECK-LABEL: mo.graph @implemented
 // CHECK:         mo.composite.reduce.rms_norm

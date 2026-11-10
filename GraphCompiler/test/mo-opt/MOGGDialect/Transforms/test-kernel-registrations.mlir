@@ -36,13 +36,13 @@ module attributes {
     #M.device_info<"gpu", "hip", "gfx942", "AMD Instinct MI300X">
   ]
 } {
-  mogg.kernel.decl @Cpu registration = "op" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<identical(:string *(0,0), "cpu")> : !pred struct_params = [] is_user_defined = false
-  mogg.kernel.decl @Accelerator registration = "op" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<identical(:string *(0,0), "gpu")> : !pred struct_params = [] is_user_defined = false
-  mogg.kernel.decl @Cuda registration = "op" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<and(identical(:string *(0,0), "gpu"), identical(:string *(0,1), "cuda"))> : !pred struct_params = [] is_user_defined = false
-  mogg.kernel.decl @CudaReordered registration = "op" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<and(identical(:string *(0,1), "cuda"), identical(:string *(0,0), "gpu"))> : !pred struct_params = [] is_user_defined = false
-  mogg.kernel.decl @Blackwell registration = "op" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<and(or(identical(:string *(0,2), "sm_100a"), identical(:string *(0,2), "sm_103a")), identical(:string *(0,0), "gpu"), identical(:string *(0,1), "cuda"))> : !pred struct_params = [] is_user_defined = false
-  mogg.kernel.decl @HopperBlackwell registration = "op" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<and(or(identical(:string *(0,2), "sm_90a"), identical(:string *(0,2), "sm_100a")), identical(:string *(0,0), "gpu"), identical(:string *(0,1), "cuda"))> : !pred struct_params = [] is_user_defined = false
-  mogg.kernel.decl @B200 registration = "op" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<and(identical(:string *(0,0), "gpu"), identical(:string *(0,1), "cuda"), identical(:string *(0,2), "sm_100a"), identical(:string *(0,3), "NVIDIA B200"))> : !pred struct_params = [] is_user_defined = false
-  mogg.kernel.decl @FieldToField registration = "invalid_op" device_info = <"", "", "", ""> platform_predicate = #kgen.gen<identical(:string *(0,0), *(0,1))> : !pred struct_params = [] is_user_defined = false
-  mogg.kernel.decl @NoPlatform registration = "no_platform_op" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+  mogg.kernel.decl @Cpu registration = "op" platform_predicate = #kgen.gen<identical(:string *(0,0), "cpu")> : !pred struct_params = [] is_user_defined = false
+  mogg.kernel.decl @Accelerator registration = "op" platform_predicate = #kgen.gen<identical(:string *(0,0), "gpu")> : !pred struct_params = [] is_user_defined = false
+  mogg.kernel.decl @Cuda registration = "op" platform_predicate = #kgen.gen<and(identical(:string *(0,0), "gpu"), identical(:string *(0,1), "cuda"))> : !pred struct_params = [] is_user_defined = false
+  mogg.kernel.decl @CudaReordered registration = "op" platform_predicate = #kgen.gen<and(identical(:string *(0,1), "cuda"), identical(:string *(0,0), "gpu"))> : !pred struct_params = [] is_user_defined = false
+  mogg.kernel.decl @Blackwell registration = "op" platform_predicate = #kgen.gen<and(or(identical(:string *(0,2), "sm_100a"), identical(:string *(0,2), "sm_103a")), identical(:string *(0,0), "gpu"), identical(:string *(0,1), "cuda"))> : !pred struct_params = [] is_user_defined = false
+  mogg.kernel.decl @HopperBlackwell registration = "op" platform_predicate = #kgen.gen<and(or(identical(:string *(0,2), "sm_90a"), identical(:string *(0,2), "sm_100a")), identical(:string *(0,0), "gpu"), identical(:string *(0,1), "cuda"))> : !pred struct_params = [] is_user_defined = false
+  mogg.kernel.decl @B200 registration = "op" platform_predicate = #kgen.gen<and(identical(:string *(0,0), "gpu"), identical(:string *(0,1), "cuda"), identical(:string *(0,2), "sm_100a"), identical(:string *(0,3), "NVIDIA B200"))> : !pred struct_params = [] is_user_defined = false
+  mogg.kernel.decl @FieldToField registration = "invalid_op" platform_predicate = #kgen.gen<identical(:string *(0,0), *(0,1))> : !pred struct_params = [] is_user_defined = false
+  mogg.kernel.decl @NoPlatform registration = "no_platform_op" struct_params = [] is_user_defined = false
 }

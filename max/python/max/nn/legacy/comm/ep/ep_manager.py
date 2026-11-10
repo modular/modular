@@ -662,6 +662,8 @@ class EPBatchManager:
                 "eplb_count_expert_load needs the MoE layer index of each"
                 " dispatch"
             )
+        if layer_idx.rank == 0:
+            layer_idx = layer_idx.reshape([1])
         return ExpertLoad(
             self._eplb_expert_load_per_device[device_id], layer_idx
         )

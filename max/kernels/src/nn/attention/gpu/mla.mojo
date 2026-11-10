@@ -31,7 +31,6 @@ from std.sys import (
     size_of,
     is_nvidia_gpu,
     is_amd_gpu,
-    CompilationTarget,
 )
 
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D

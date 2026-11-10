@@ -45,6 +45,7 @@ comptime test_lengths = (
     8 * 1024 + 8,  # SIMD-multiple +8 from 8*1024 (chunk-ragged vs base)
     8 * 1024 + 24,  # Larger SIMD-multiple offset
     128 * 1024,  # Larger latency bound
+    160 * 1024 + 8,  # Ragged 2-stage; 64-thread blocks on CDNA4 (8 GPUs, bf16)
     256 * 1024,  # Smallest bandwidth bound
     256 * 1024 + 5,  # Non-multimem: mid size, +5 non-zero rem mod simd_width
     16 * 1024 * 1024,  # Bandwidth bound

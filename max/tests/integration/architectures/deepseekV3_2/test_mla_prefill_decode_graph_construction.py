@@ -659,3 +659,100 @@ def test_mla_indexer_cp_and_merge_construction() -> None:
     ir = str(g)
     assert '"attention.mla.indexer.ragged.float8.paged.remap.cp"' in ir
     assert '"attention.mla.cp_merge_topk"' in ir
+
+
+def test_mla_indexer_cp_nvfp4_cache_rows_carry_scale_rows() -> None:
+    """The DCP indexer over an NVFP4 MLA cache keeps each scale row paired.
+
+    An NVFP4 latent pages its scales apart from its values, so the DCP
+    indexer returns ``[tokens, 2 * top_k]`` rows, value rows then scale-pool
+    rows, from the ``.cp.nvfp4`` registration, with ``[tokens, top_k]``
+    scores; ``cp_merge_topk`` with ``halves=2`` keeps both halves and passes
+    ``halves`` to its op. A merge that cannot split its rows refuses.
+    """
+    num_heads = 8
+    index_head_dim = 128
+    top_k = 8
+    dcp_size = 4
+    gpu = DeviceRef.GPU()
+
+    indexer_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=index_head_dim,
+        num_layers=1,
+        page_size=128,
+        devices=[gpu],
+        num_q_heads=num_heads,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=index_head_dim
+        ),
+    )
+    mla_params = MLAKVCacheParams(
+        dtype=DType.uint8,
+        head_dim=576,
+        num_layers=1,
+        page_size=128,
+        devices=[gpu],
+        num_q_heads=num_heads,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn,
+            quantization_granularity=16,
+            fp8_tail_dim=64,
+        ),
+    )
+    assert mla_params.is_nvfp4_kv_cache
+    input_types = [
+        TensorType(
+            DType.float8_e4m3fn,
+            ["total_tokens", num_heads, index_head_dim],
+            gpu,
+        ),
+        TensorType(DType.float32, ["total_tokens", num_heads], gpu),
+        TensorType(DType.uint32, ["row_offsets_len"], gpu),
+        TensorType(DType.int32, [1], gpu),
+        *tree.leaves(indexer_params.get_symbolic_inputs()[0]),
+        *tree.leaves(mla_params.get_symbolic_inputs()[0]),
+    ]
+    num_indexer_inputs = len(
+        tree.leaves(indexer_params.get_symbolic_inputs()[0])
+    )
+
+    with Graph("mla_indexer_cp_nvfp4", input_types=input_types) as g:
+        q, q_s, row_offsets, dcp_rank = (x.tensor for x in g.inputs[:4])
+        flat = list(g.inputs[4:])
+        indexer_collection = paged_kv_from_flat_graph_inputs(
+            indexer_params, flat[:num_indexer_inputs]
+        )
+        mla_collection = paged_kv_from_flat_graph_inputs(
+            mla_params, flat[num_indexer_inputs:]
+        )
+        layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
+        local_rows, local_scores = mla_fp8_index_top_k_physical_cp(
+            q,
+            q_s,
+            row_offsets,
+            indexer_collection,
+            mla_collection,
+            layer_idx,
+            dcp_rank,
+            top_k,
+            index_head_dim,
+            dcp_size,
+            dcp_interleave=1,
+        )
+        gathered = ops.concat([local_scores] * dcp_size, axis=1)
+        rows, lengths = cp_merge_topk(
+            local_rows, gathered, dcp_rank, dcp_size, halves=2
+        )
+        with pytest.raises(ValueError, match="halves must be 1 or 2"):
+            cp_merge_topk(local_rows, gathered, dcp_rank, dcp_size, halves=3)
+        g.output(local_rows, local_scores, rows, lengths)
+
+    assert int(local_rows.shape[1]) == 2 * top_k
+    assert int(local_scores.shape[1]) == top_k
+    assert rows.shape == local_rows.shape
+    assert lengths.rank == 1 and lengths.shape[0] == local_rows.shape[0]
+    ir = str(g)
+    assert '"attention.mla.indexer.ragged.float8.paged.remap.cp.nvfp4"' in ir
+    assert '"attention.mla.cp_merge_topk"' in ir
+    assert re.search(r"halves = 2\b", ir)

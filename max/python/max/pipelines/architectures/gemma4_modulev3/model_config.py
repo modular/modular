@@ -66,14 +66,32 @@ class Gemma4Config(Gemma4ForConditionalGenerationConfig, DeploymentConfig):
             huggingface_config, dict(state_dict), outputs.return_logits
         )
         self.text_config.return_hidden_states = outputs.return_hidden_states
+        text = self.text_config
         n_devices = len(self.devices)
         if n_devices > 1 and (
-            self.text_config.num_key_value_heads % n_devices
-            or self.text_config.num_global_key_value_heads % n_devices
+            text.num_key_value_heads % n_devices
+            or text.num_global_key_value_heads % n_devices
         ):
             raise ValueError(
                 "Gemma4 ModuleV3 tensor parallelism requires the device count "
                 "to divide both local and global KV head counts"
+            )
+        if not text.enable_moe_block:
+            return
+        # Each device takes a whole number of every expert's NVFP4 scale
+        # blocks.
+        block = 1
+        quant_config = text.quant_config
+        if quant_config is not None and quant_config.is_nvfp4:
+            block_size = quant_config.weight_scale.block_size
+            assert block_size is not None
+            block = block_size[1]
+        if text.moe_intermediate_size % (n_devices * block):
+            raise ValueError(
+                f"Gemma4 ModuleV3 tensor parallelism over {n_devices} devices"
+                f" requires moe_intermediate_size"
+                f" ({text.moe_intermediate_size}) to split into multiples of"
+                f" {block} per device"
             )
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:

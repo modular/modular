@@ -67,7 +67,7 @@ from layout.tensor_core_async import (
     tile_sf_layout_k_major_typed,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS

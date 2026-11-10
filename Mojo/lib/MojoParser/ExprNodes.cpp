@@ -52,6 +52,7 @@
 #include "Support/AssertStream.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Target/TargetTraits.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -2833,8 +2834,11 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Check for an unregistered operation, because otherwise MLIR will crash when
   // assertions are enabled.
+  // Targets allow unregistered dialects, so an unregistered op needs an owner.
   if (!state.name.getDialect() &&
-      !emitter.getContext()->allowsUnregisteredDialects()) {
+      !(emitter.getContext()->allowsUnregisteredDialects() &&
+        TargetTraitsRegistry::get().isKnownDialect(
+            emitter.getContext(), state.name.getDialectNamespace()))) {
     emitter.emitError(call.getLoc(), "use of unregistered MLIR operation ")
         << unboundOp.getName() << call.getRange();
     return {};
@@ -3709,6 +3713,33 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
   return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
 }
 
+/// Return the method to try on the right operand when the left operand cannot
+/// perform a comparison. This allows "1 < x" to fall back to "x.__gt__(1)" when
+/// 1 needs to be promoted to the type of x for the comparison to succeed.
+static SpecialFunctionInfo
+getReflectedComparisonSpecialFunction(ExprNode::Kind kind) {
+  switch (kind) {
+  case ExprNode::Kind::kCmpLT:
+    kind = ExprNode::Kind::kCmpGT;
+    break;
+  case ExprNode::Kind::kCmpLE:
+    kind = ExprNode::Kind::kCmpGE;
+    break;
+  case ExprNode::Kind::kCmpGT:
+    kind = ExprNode::Kind::kCmpLT;
+    break;
+  case ExprNode::Kind::kCmpGE:
+    kind = ExprNode::Kind::kCmpLE;
+    break;
+  case ExprNode::Kind::kCmpEQ:
+  case ExprNode::Kind::kCmpNE:
+    break;
+  default:
+    return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
+  }
+  return getOpSpecialFunctions(kind, /*isReversed=*/false);
+}
+
 /// Emit the binary operation (with a `lhs`, `rhs` and `kind`) as a special
 /// function call.
 /// A special function call is one where the` kind` must corresponds to a valid
@@ -3804,6 +3835,24 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     }
 
     // Swap these back so we emit the right error.
+    std::swap(operands[0], operands[1]);
+    operands.syntax = CallSyntax::kOperator;
+  }
+
+  // Python-style comparisons are reflected through the corresponding ordered
+  // operator: `a < b` can fall back to `b.__gt__(a)`. Unlike arithmetic
+  // operators, comparisons do not have separately named reverse methods.
+  auto reflectedComparisonFnInfo = getReflectedComparisonSpecialFunction(kind);
+  if (reflectedComparisonFnInfo.kind != SpecialFunctionKind::kNormal) {
+    std::swap(operands[0], operands[1]);
+    operands.syntax = CallSyntax::kReversedOperator;
+    if (auto rhsCV = rhs.ir.getIfCValue()) {
+      if (PValue callee = OverloadSet::lookupAndResolve(
+              rhsCV.getRValueType(), reflectedComparisonFnInfo.name, operands,
+              emitter))
+        return emitter.emitIndirectCall(callee, std::move(operands));
+    }
+
     std::swap(operands[0], operands[1]);
     operands.syntax = CallSyntax::kOperator;
   }
@@ -5445,6 +5494,63 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
   else
     result = MBValue(resultRef);
   return emitter.emitCResult(result, this, dest);
+}
+
+// Split an rvalue tuple into independently owned element references before
+// disarming the aggregate. For `var (a, b) = get_tuple()`, this preserves the
+// children for the bindings while preventing the aggregate destructor from
+// destroying them a second time.
+LogicalResult
+TupleNode::getConsumedElements(CValue tuple, const ExprNode *expr,
+                               IREmitter &emitter,
+                               SmallVectorImpl<CValue> &elements) {
+  auto tupleRef = tuple.getMValueReference();
+  assert(tupleRef && "consuming a tuple requires an MRValue");
+
+  ASTType tupleType = tuple.getRValueType();
+  auto tupleElements = tupleType.getParamBindings().size() == 2
+                           ? sugarDynCastIfPresent<ParamListAttr>(
+                                 tupleType.getParamBindings()[0])
+                           : ParamListAttr();
+  assert(tupleElements && "consuming a tuple requires a Tuple type");
+
+  Location loc = expr->getLocation(emitter);
+  elements.clear();
+  elements.reserve(tupleElements.getValues().size());
+  for (size_t index = 0, e = tupleElements.getValues().size(); index < e;
+       ++index) {
+    CValue intIndex = emitter.emitInt(index, expr->getLoc(), EC_CallParamValue);
+    if (!intIndex)
+      return failure();
+
+    SyntheticNode baseNode(expr->getLoc(), tuple);
+    SyntheticNode indexNode(expr->getLoc(), intIndex);
+    Operand indexOperand(&indexNode, expr->getLoc(),
+                         ArgUnpackStyle::kPositional);
+    SubscriptNode subscript(&baseNode, expr->getLoc(), indexOperand,
+                            expr->getLoc());
+    CValue child = emitter.emitExprCValue(&subscript, EC_TupleElement);
+    Value childRef = child.getMValueReference();
+    if (!childRef)
+      return failure();
+
+    // The subscript is a borrow derived from the aggregate. Round-trip it
+    // through a pointer to create an independently owned reference to the same
+    // storage: this steals responsibility for destroying the element without
+    // moving or copying its bytes.
+    Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
+    auto origin = cast<RefType>(tupleRef.getType()).getOrigin();
+    Value owned = RefFromPointerOp::create(
+        *emitter.builder, loc, pointer, origin,
+        StringAttr::get(emitter.getContext(), "(tuple element)"),
+        /*startsUninit=*/false, /*endsUninit=*/true);
+    elements.push_back(MRValue(owned));
+  }
+
+  // Each element now owns its storage. Disable the aggregate owner so its
+  // destructor cannot destroy the stolen elements a second time.
+  OwnershipMarkDestroyedOp::create(*emitter.builder, loc, tupleRef);
+  return success();
 }
 
 LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,

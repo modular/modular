@@ -45,7 +45,6 @@ from max.gpu import (
     WARP_SIZE,
     block_idx,
     grid_dim,
-    lane_id,
     thread_idx,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -64,7 +63,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import (
     TMADescriptor,
     TensorMapSwizzle,

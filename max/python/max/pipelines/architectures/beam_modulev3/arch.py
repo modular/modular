@@ -45,4 +45,6 @@ beam_modulev3_arch = SupportedArchitecture(
     memory_planner=BeamMemoryPlanner,
     multi_gpu_supported=True,
     format_spec=Path(__file__).parent / "formatspec.json",
+    # The name Mach finds the fused DFlash2 graph by.
+    spec_decode_graph_names={"dflash2": "unified_dflash2_beam"},
 )

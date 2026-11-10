@@ -628,14 +628,14 @@ def fused_token_sampling_cpu[
         # `_top_k_sampling` resolves a row's -1 to the output width, which an
         # explicit k above the cap widens, so resolve those rows to the cap.
         var resolved_k = List[Int64]()
-        if max_k == -1 and k:
-            var k_in = k.value()
-            var cap = bound_max_k
-            for i in range(k_in.num_elements()):
-                var k_raw = Int(k_in[i])
-                var row_k = cap if k_raw == -1 else k_raw
-                resolved_k.append(Int64(row_k))
-                bound_max_k = max(bound_max_k, row_k)
+        if max_k == -1:
+            if case .Some(k_in) = k:
+                var cap = bound_max_k
+                for i in range(k_in.num_elements()):
+                    var k_raw = Int(k_in[i])
+                    var row_k = cap if k_raw == -1 else k_raw
+                    resolved_k.append(Int64(row_k))
+                    bound_max_k = max(bound_max_k, row_k)
 
         # materialize the out_vals which is of shape [input[:-1]] + [k]
         var out_vals_shape = _dynamic_shape_of(

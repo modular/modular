@@ -39,11 +39,11 @@ from max.graph import Graph, Type
 from max.graph import Module as GraphModule
 from max.nn import Module as ModuleV3
 from max.nn.legacy import Module
-from max.nn.legacy.graph_groups import HiddenStates, Logits
+from max.nn.legacy.graph_groups import HiddenStates, Logits, TPSignals
 from max.nn.module import InputType
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable, StagedGraph
-from max.tensor.sharding import TensorLayout
+from max.tensor.sharding import BufferLayout, TensorLayout
 from max.tensor.sharding.types import as_layout
 
 
@@ -221,7 +221,8 @@ def compile_and_init_graphs(
     so the host weights can be released after initialization. A ModuleV3
     role's callable instead takes and returns what the module's ``forward``
     does, adds the signal buffers a multi-device graph takes, and keeps its
-    weight registry.
+    weight registry. Its exported signature names the signal buffers as a
+    :class:`~max.nn.legacy.graph_groups.TPSignals` group.
 
     Args:
         session: The session that compiles and initializes the graphs.
@@ -298,7 +299,7 @@ def compile_and_init_graphs(
                 # returns what ``forward`` does and adds any signal buffers.
                 staged, registry = spec._staged
                 callables[role] = CompiledCallable.from_engine_model(
-                    staged, compiled, model, registry
+                    staged, compiled, model, registry, signals_group=tp_signals
                 )
             else:
                 callables[role] = graph_callable(
@@ -307,6 +308,20 @@ def compile_and_init_graphs(
                 _check_inputs(role, callables[role].in_tree)
                 _check_outputs(role, callables[role].out_tree)
     return callables
+
+
+def tp_signals(
+    signals: tuple[BufferLayout, ...],
+) -> TPSignals[tuple[BufferLayout, ...]]:
+    """Returns the signal buffers as a ``TPSignals`` group.
+
+    Pass it as a :class:`~max.tensor.compilation.CompiledCallable`'s
+    ``signals_group``.
+
+    Args:
+        signals: The signal buffers' layouts, one per device.
+    """
+    return TPSignals(signal=signals)
 
 
 def _check_inputs(role: str, in_tree: tree.TreeDef) -> None:

@@ -77,14 +77,6 @@ private:
   }
 };
 
-namespace {
-struct ValueParamCompare {
-  bool operator()(const Operation *lhs, const Operation *rhs) const {
-    return hash_value(lhs) < hash_value(rhs);
-  }
-};
-} // namespace
-
 // Returns the connected components of the undirected subgraph.
 static SmallVector<Subgraph> getSubgraphComponents(const Subgraph &subgraph) {
   if (subgraph.ops.empty())

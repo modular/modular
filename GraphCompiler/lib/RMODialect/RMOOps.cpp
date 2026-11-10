@@ -178,19 +178,6 @@ static SmallVector<TypedAttr> getShapesOf(ValueRange values) {
   return llvm::map_to_vector(values, getShapeOf);
 }
 
-// Error for a tensor shape that contains a disallowed `?`.
-std::string unknownDimError(const StringRef opName, const StringRef tensorName,
-                            ShapeAttr tensorShape) {
-  std::string errorMsg;
-  llvm::raw_string_ostream os(errorMsg);
-  StreamAsmPrinter printer(os);
-  printer << opName << " does not allow for " << tensorName << " (shape ";
-  MOSH::printShapeTypedAttr(printer, tensorShape);
-  printer << ") to contain dynamic dimensions. Please rebind the dimensions to "
-             "give them names or integer values.";
-  return errorMsg;
-}
-
 /// Broad dtype classes used for promotion.
 enum DTypeCategory {
   kBool,

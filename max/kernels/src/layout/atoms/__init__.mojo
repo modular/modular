@@ -88,8 +88,9 @@ comptime INDEX_VALUE = 0
 comptime INDEX_LANE = 32
 """The lowest index bit that picks the thread within its warp."""
 
-comptime INDEX_WARP = 37
-"""The lowest index bit that picks the warp."""
+comptime INDEX_WARP = 38
+"""The lowest index bit that picks the warp, leaving room for 64-lane AMD
+wavefronts."""
 
 comptime TMEM_COLUMN = 0
 """The lowest TMEM address bit that picks a column."""
@@ -243,7 +244,7 @@ def vector_map(values: Int, element_bytes: Int) -> OperandMap:
 trait AtomCompletion:
     """Advertises how an instruction family's results complete."""
 
-    comptime Result: Movable
+    comptime Result: Movable & Deinitable
     """What each call returns: the instruction's handle for a
     `HandleCompletion`, else `NoneType`."""
 

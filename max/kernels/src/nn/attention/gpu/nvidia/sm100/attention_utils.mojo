@@ -99,21 +99,6 @@ comptime LocalTensor[
     Engine=Engine,
     address_space=.LOCAL,
 ]
-comptime SharedMemTensor[
-    dtype: DType,
-    layout: InternalLayout,
-    Engine: TensorEngine,
-] = TileTensor[
-    dtype,
-    InternalLayout[
-        shape_types=layout.shape_types,
-        stride_types=layout.stride_types,
-    ],
-    MutUntrackedOrigin,
-    Engine=Engine,
-    address_space=.SHARED,
-]
-
 comptime SharedMemPointer[type: AnyType] = Pointer[
     type, MutAnyOrigin, address_space=.SHARED
 ]

@@ -11,6 +11,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+#include "GraphCompiler/MODialect/MODevices.h"
+#include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "GraphCompiler/MOGGDialect/Support/PlatformPredicate.h"
@@ -64,15 +66,20 @@ struct TestKernelRegistrationsPass
       }
     }
 
+    // Registrations that have at least one `cond=` decl, with all their decls.
     llvm::MapVector<StringAttr, SmallVector<KernelDeclOp>> registrations;
     for (KernelDeclOp decl : module.getOps<KernelDeclOp>())
-      if (decl.getPlatformPredicateAttr())
-        registrations[decl.getRegistrationAttr()].push_back(decl);
+      registrations[decl.getRegistrationAttr()].push_back(decl);
+    registrations.remove_if([](const auto &entry) {
+      return llvm::none_of(entry.second, [](KernelDeclOp decl) {
+        return static_cast<bool>(decl.getPlatformPredicateAttr());
+      });
+    });
 
     for (auto &[registration, decls] : registrations) {
       for (KernelDeclOp decl : decls) {
         ErrorOr<PlatformPredicate> platform =
-            PlatformPredicate::fromGenerator(decl.getPlatformPredicateAttr());
+            getRegistrationPlatformPredicate(decl);
         llvm::errs() << "platform @" << decl.getSymName() << " = ";
         if (platform.isError()) {
           llvm::errs() << "error: " << platform.getError() << "\n";
@@ -92,10 +99,10 @@ struct TestKernelRegistrationsPass
 
       for (size_t i = 0; i < decls.size(); ++i) {
         for (size_t j = i + 1; j < decls.size(); ++j) {
-          ErrorOr<PlatformPredicate> first = PlatformPredicate::fromGenerator(
-              decls[i].getPlatformPredicateAttr());
-          ErrorOr<PlatformPredicate> second = PlatformPredicate::fromGenerator(
-              decls[j].getPlatformPredicateAttr());
+          ErrorOr<PlatformPredicate> first =
+              getRegistrationPlatformPredicate(decls[i]);
+          ErrorOr<PlatformPredicate> second =
+              getRegistrationPlatformPredicate(decls[j]);
           if (first.isError() || second.isError())
             continue;
           PlatformPredicateComparison comparison =
@@ -104,6 +111,28 @@ struct TestKernelRegistrationsPass
                        << decls[j].getSymName() << " = "
                        << getOrderName(comparison.order) << "\n";
         }
+      }
+    }
+
+    auto mapping =
+        module->getAttrOfType<DictionaryAttr>(MO::DeviceInfoMapping::kAttrName);
+    if (!mapping)
+      return;
+    MojoRegistry registry(module);
+    for (auto &entry : registrations) {
+      StringAttr registration = entry.first;
+      for (NamedAttribute device : mapping) {
+        StringRef label = device.getName().getValue();
+        auto deviceRef = DeviceRefAttr::get(module.getContext(), label, 0);
+        ErrorOr<KernelDeclOp> decl =
+            registry.getResolvedKernel(registration.getValue(), deviceRef);
+        llvm::errs() << "resolve \"" << registration.getValue() << "\" on \""
+                     << label << "\" -> ";
+        if (decl.isError())
+          llvm::errs() << "error: " << decl.getError();
+        else
+          llvm::errs() << "@" << decl.takeValue().getSymName();
+        llvm::errs() << "\n";
       }
     }
   }

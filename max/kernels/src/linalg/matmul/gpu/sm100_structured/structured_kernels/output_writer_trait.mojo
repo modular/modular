@@ -65,7 +65,7 @@ from layout.tma_async import TMATensorTile
 
 from linalg.utils import ElementwiseComputeFn, ElementwiseEpilogueFn
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 
 from structured_kernels.tile_types import SMemTileArray2DRowMajor
 

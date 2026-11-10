@@ -45,11 +45,9 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    ImmTileTensor,
     RowMajorLayout,
     TileTensor,
     TensorLayout,
-    coord_to_index_list,
     row_major,
 )
 from linalg.matmul import matmul

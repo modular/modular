@@ -35,7 +35,7 @@ from typing import Any, TypeVar
 
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
-from max.nn.kv_cache import MultiKVCacheParams, RecurrentStateInputsPerDevice
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.legacy.layer import Module
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
@@ -67,8 +67,6 @@ __all__ = [
     "sequential_proposer",
     "signal_buffer_index",
     "speculates_on_last_stage",
-    "tail_buffers",
-    "tail_kv",
     "trailing_buffers",
     "trailing_input_tree",
     "trailing_input_types",
@@ -80,6 +78,7 @@ VerifyFn = Callable[[SequentialBatch | BlockBatch], Verified[Any]]
 """Verifies a driver batch on the target."""
 
 _TARGET_ADAPTERS: Mapping[str, str] = {
+    "BeamForCausalLM_ModuleV3": ".beam_modulev3.spec_adapters",
     "DeepseekV3ForCausalLM": ".deepseekV3.spec_adapters",
     "DeepseekV4ForCausalLM": ".deepseekV4.spec_adapters",
     "DeepseekV41ForCausalLM": ".deepseekV41.spec_adapters",
@@ -227,26 +226,6 @@ def speculates_on_last_stage(target_arch: str, method: str) -> bool:
     The answer covers the target's fused graph.
     """
     return _adapter(target_arch, method).speculates_on_last_stage
-
-
-def tail_kv(target_arch: str) -> str | None:
-    """Returns the target's KV child declared past the canonical tail.
-
-    The graph declares it there rather than among its KV inputs. The result is
-    none when it declares no such child.
-    """
-    return _adapter(target_arch).tail_kv
-
-
-def tail_buffers(
-    target_arch: str,
-    tail: Sequence[RecurrentStateInputsPerDevice[Buffer, Buffer]],
-) -> list[Buffer]:
-    """Returns the inputs of the :func:`tail_kv` child.
-
-    They come in the order the graph's tail declares them.
-    """
-    return _adapter(target_arch).tail_buffers(tail)
 
 
 def check(

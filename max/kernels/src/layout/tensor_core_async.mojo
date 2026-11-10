@@ -198,10 +198,6 @@ comptime _CM_NUM_ROWS = 8
 
 comptime _CM_ROW_BYTES = 16
 
-# WGMMA's K dim has 32 bytes.
-comptime WGMMA_K_BYTES = 32
-"""Size of WGMMA K dimension in bytes."""
-
 
 @inline(.always)
 def warpgroup_fence[

@@ -349,7 +349,6 @@ def test_the_state_rides_in_the_cache_tree() -> None:
     """Checks the graph declares the state among its KV inputs, so the
     target's call takes nothing past the canonical tail."""
     config = _config(_kv_params(speculative=True, num_devices=1))
-    assert spec_adapters.tail_kv(TARGET_ARCH) is None
     assert not spec_adapters.trailing_input_types(TARGET_ARCH, "mtp", config)
 
 

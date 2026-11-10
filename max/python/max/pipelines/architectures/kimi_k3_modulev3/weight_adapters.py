@@ -15,7 +15,7 @@
 The tree is the ModuleV3 registry's layout for the text tower
 (:class:`~.model.KimiK3Model`). Builds the
 ``dict[str, Weights] -> dict[str, WeightData]`` the registry loads from,
-applying the same shape transforms (fused qkv projection, fused qkv conv,
+applying the same shape transforms (fused qkvg projection, fused qkv conv,
 fused gate/up, de-padded ``A_log``) that ``model.py``'s
 ``load_kimi_k3_weights`` applies to a live module -- re-derived locally
 here rather than imported, to avoid a dependency on V2's package. Layer,
@@ -69,9 +69,7 @@ _DIRECT_ATTN_WEIGHTS = {
     "kda": (
         "f_a_proj",
         "f_b_proj",
-        "b_proj",
         "o_norm",
-        "g_proj",
         "o_proj",
     ),
     "mla": (
@@ -90,15 +88,19 @@ _PACKED = "weight_packed"
 
 # Weights whose MAX parameter is explicitly declared fp32 regardless of the
 # model's working dtype: KDA's `a_log`/`dt_bias` gate parameters
-# (`kda_attention.py`), and the router's `gate_score`/`e_score_correction_bias`
-# (built inside a `default_dtype(float32)` context in `moe_router.py`).
-# `b_proj`/`conv_weight`/`o_norm.weight` only get cast to fp32 transiently at
+# (`kda_attention.py`), and the router's `e_score_correction_bias` (built
+# from the explicit `correction_bias_dtype` in `moe_router.py`). The
+# router's `gate_score.weight` follows the working dtype like everything
+# else: the checkpoint stores it bf16 and the gate GEMV computes
+# bf16 x bf16 -> fp32, so pinning it fp32 would only double the replicated
+# weight. `conv_weight`/`o_norm.weight` only get cast to fp32 transiently at
 # compute time -- their parameters themselves follow the model's working
 # dtype like everything else, so they are deliberately not pinned here.
+# `b_proj` rides inside the fused qkvg weight and takes its dtype from the
+# fuse's cast.
 _FP32_SUFFIXES = (
     ".a_log",
     ".dt_bias",
-    ".gate.gate_score.weight",
     ".gate.e_score_correction_bias",
 )
 
@@ -207,32 +209,38 @@ def _fuse_gate_up(
     return _rewrap(fused, gate, name)
 
 
-def _fuse_qkv_proj(
+def _fuse_qkvgb_proj(
     q: WeightData,
     k: WeightData,
     v: WeightData,
+    g: WeightData,
+    b: WeightData,
     name: str,
     tp_size: int,
     dtype: DType | None = None,
 ) -> WeightData:
-    """Merges q, k and v into one ``[3 * inner, hidden]`` projection weight.
+    """Merges q, k, v, g and beta into one ``[4 * inner + heads, hidden]`` weight.
 
-    ``KimiK3KDAAttention.qkv_proj`` takes the merged weight, interleaved per
-    TP rank like the conv weight that consumes its output. Castable float
-    parts are cast to ``dtype`` first (the dtype the final cast pass would
-    give each), so parts stored in different float dtypes still merge.
+    Every block reads the same layer input, so one GEMM can produce them
+    all. The per-rank row order is ``[q_r | k_r | v_r | g_r | b_r]``: the
+    qkv prefix keeps the interleave the packed conv weight expects, and
+    beta rides along as one more row-sharded block. Beta leaves the GEMM
+    rounded once to the weight dtype; the layer widens it back to fp32 for
+    the kda op.
 
     Raises:
-        ValueError: If the parts differ in shape, or still differ in dtype
-            after the cast.
+        ValueError: If q/k/v/g disagree in shape or dtype, if beta shares
+            neither the merged dtype nor the input width, or if a block's
+            width does not split over the TP degree.
     """
-    parts = [q, k, v]
+    parts = [q, k, v, g]
     if dtype is not None:
         parts = [
             part.astype(dtype) if part.dtype in _CASTABLE_DTYPES else part
             for part in parts
         ]
-    for axis, part in zip(("q", "k", "v"), parts, strict=True):
+        b = b.astype(dtype) if b.dtype in _CASTABLE_DTYPES else b
+    for axis, part in zip(("q", "k", "v", "g"), parts, strict=True):
         if part.dtype != parts[0].dtype or tuple(part.shape) != tuple(
             parts[0].shape
         ):
@@ -241,7 +249,17 @@ def _fuse_qkv_proj(
                 f" {tuple(part.shape)}, but must match q_proj's"
                 f" {parts[0].dtype} and {tuple(parts[0].shape)}."
             )
-    fused = interleave_for_tp([_elements(part) for part in parts], tp_size)
+    if b.dtype != parts[0].dtype or b.shape[1] != parts[0].shape[1]:
+        raise ValueError(
+            f"Kimi K3: b_proj has dtype {b.dtype} and shape"
+            f" {tuple(b.shape)}, but must share the weight dtype and the"
+            f" input width of q_proj's {parts[0].dtype} and"
+            f" {tuple(parts[0].shape)}."
+        )
+    fused = interleave_for_tp(
+        [*(_elements(part) for part in parts), _elements(b)],
+        tp_size,
+    )
     return _rewrap(fused, parts[0], name)
 
 
@@ -410,11 +428,13 @@ def convert_kimi_k3_state_dict(
                 state_dict, f"{attn_src}.{name}.weight"
             )
         if is_kda:
-            out[f"{attn_dst}.qkv_proj.weight"] = _fuse_qkv_proj(
+            out[f"{attn_dst}.qkvg_proj.weight"] = _fuse_qkvgb_proj(
                 _wd(state_dict, f"{attn_src}.q_proj.weight"),
                 _wd(state_dict, f"{attn_src}.k_proj.weight"),
                 _wd(state_dict, f"{attn_src}.v_proj.weight"),
-                f"{attn_dst}.qkv_proj.weight",
+                _wd(state_dict, f"{attn_src}.g_proj.weight"),
+                _wd(state_dict, f"{attn_src}.b_proj.weight"),
+                f"{attn_dst}.qkvg_proj.weight",
                 tp_size,
                 dtype,
             )

@@ -17,7 +17,6 @@ This package provides GPU tensor core and matrix multiplication operations:
 - **mma**: Unified warp matrix-multiply-accumulate (WMMA) operations
 - **mma_util**: Utility functions for loading/storing MMA operands
 - **mma_operand_descriptor**: Operand descriptor types for MMA
-- **tensor_ops**: Tensor core-based reductions and operations
 - **arch/**: Architecture-specific MMA implementations (internal)
   - `mma_nvidia`: NVIDIA tensor cores (SM70-SM90)
   - `mma_nvidia_sm100`: NVIDIA Blackwell (SM100)

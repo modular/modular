@@ -1077,8 +1077,8 @@ def LowerHLCFToSCF : Pass<"lower-hlcf-to-scf", "ModuleOp"> {
     }
     ```
 
-    An exit one region deeper does not lower, including the `hlcf.if` exit
-    test that a Mojo `while ...: ... break` produces. Reaching the loop's
+    An exit one region deeper does not lower, such as the `break` of an
+    `if ...: break` in the loop body. Reaching the loop's
     yield from there means threading the loop state out through the
     `scf.if` results, which this pass does not do at this moment:
 
@@ -1095,8 +1095,30 @@ def LowerHLCFToSCF : Pass<"lower-hlcf-to-scf", "ModuleOp"> {
     }
     ```
 
-    A `continue`/`break` inside a *nested* loop belongs to that loop and is
-    lowered with it.
+    The exception is the exit check of a `while cond:` loop. The loop splits
+    there into the two regions of an `scf.while`. In pseudo-IR, for
+    `while 8 * j < n: use(8 * j); j += 1`:
+
+    ```
+    hlcf.loop (%j = %init) {       scf.while (%j = %init) {
+      %k = %j * 8                    %k = %j * 8
+      %c = %k < %n                   %c = %k < %n
+      hlcf.if %c {                   scf.condition(%c) %j
+        hlcf.yield                 } do {
+      } else {                     ^bb0(%j2):
+        hlcf.break                   %k2 = %j2 * 8
+      }                              use(%k2)
+      use(%k)                        scf.yield %j2 + 1
+      hlcf.continue %j + 1         }
+    }
+    ```
+
+    A pure op such as `%k` is recomputed after the check instead of passed
+    through `scf.condition`.
+
+    A `continue`/`break` inside a nested loop is lowered with that loop,
+    unless its label names an outer loop. It then exits the outer loop from
+    a nested region, which is rejected.
 
     Rejected the same way: a loop whose bound is inclusive (`sle`/`sge`),
     which `scf.for` would run one iteration short; a `for` whose yielded

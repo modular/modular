@@ -22,7 +22,6 @@ from std.sys import bit_width_of
 
 comptime _mIsSigned = __mlir_attr.`#kgen.simd<1> : !kgen.scalar<ui8>`
 comptime _mIsInteger = __mlir_attr.`#kgen.simd<128> : !kgen.scalar<ui8>`
-comptime _mIsNotInteger = __mlir_attr.`#kgen.simd<127> : !kgen.scalar<ui8>`
 comptime _mIsFloat = __mlir_attr.`#kgen.simd<64> : !kgen.scalar<ui8>`
 
 
@@ -491,8 +490,8 @@ struct DType(
 
             case .float64:
                 return writer.write_string("float64")
-
-        return writer.write_string("<<unknown>>")
+            case _:
+                return writer.write_string("<<unknown>>")
 
     @inline(.nodebug)
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -1010,47 +1009,3 @@ def _uint_type_of_width[width: Int]() -> DType:
         DType.uint256
     )
     # fmt: on
-
-
-# ===-------------------------------------------------------------------===#
-# printf format
-# ===-------------------------------------------------------------------===#
-
-
-@inline(.always)
-def _index_printf_format() -> StaticString:
-    comptime if bit_width_of[Int]() == 32:
-        return "%d"
-    else:
-        return "%ld"
-
-
-@inline(.always)
-def _get_dtype_printf_format[dtype: DType]() -> StaticString:
-    comptime if dtype in (DType.bool, DType.int, DType.uint):
-        return _index_printf_format()
-
-    elif dtype == DType.uint8:
-        return "%hhu"
-    elif dtype == DType.int8:
-        return "%hhi"
-    elif dtype == DType.uint16:
-        return "%hu"
-    elif dtype == DType.int16:
-        return "%hi"
-    elif dtype == DType.uint32:
-        return "%u"
-    elif dtype == DType.int32:
-        return "%i"
-    elif dtype == DType.int64:
-        return "%ld"
-    elif dtype == DType.uint64:
-        return "%lu"
-
-    elif dtype.is_floating_point():
-        return "%.17g"
-
-    else:
-        comptime assert False, "invalid dtype"
-
-    return ""

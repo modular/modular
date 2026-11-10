@@ -90,13 +90,11 @@ struct AddFusionTile(ElementwiseFusionTile):
         )
         copier.copy(rhs, b_tile.address_space_cast[Copier.src_address_space]())
 
-        # `Add.elementwise` operates on GENERIC / `MutAnyOrigin` tiles; `dst` is
+        # `Add.elementwise` operates on GENERIC-address-space tiles; `dst` is
         # already one, so only `rhs` needs a generic view. Add writes into `dst`
         # in place and returns it.
         var rhs_g = TileTensor(
-            rhs._storage.unsafe_address_space_cast[
-                .GENERIC
-            ]().unsafe_origin_cast[MutAnyOrigin](),
+            rhs._storage.unsafe_address_space_cast[.GENERIC](),
             dst.layout,
         )
         return Add.elementwise[dtype, LayoutType](dst, rhs_g)

@@ -294,12 +294,6 @@ using CacheProfilerEntry =
 // Operation Transformations
 //===----------------------------------------------------------------------===//
 
-/// Transformation and cache functions that operate on a given operation.
-using OpTransformFn = llvm::unique_function<AsyncRT::AnyAsyncValueRef(
-    Operation *, WriteableBufferRef, AsyncRT::AnyAsyncValueRef)>;
-using OpCacheHitFn =
-    llvm::unique_function<AsyncRT::AnyAsyncValueRef(Operation *, BufferRef)>;
-
 /// Helper method to write the given operation to the provided cache key.
 MODULAR_CXX_EXPORT LogicalResult
 writeOperationToCacheKey(Operation *op, const WriteableBufferRef &key);

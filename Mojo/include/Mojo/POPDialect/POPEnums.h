@@ -15,6 +15,7 @@
 #define KGEN_POPDIALECT_POPENUMS_H
 
 #include "Support/LogicalResult.h"
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/bit.h"

@@ -1509,31 +1509,28 @@ def reducescatter[
         global_rank,
         _max_num_blocks,
     )
-    if not plan:
-        return
-    var axis_size, unit_numel, max_num_blocks = plan.value()
-
-    # Hand the collective the whole world plus the group width, and let it
-    # derive the group-local slice, rank, and barrier domain itself.
-    _reducescatter_p2p[
-        dtype,
-        ngpus,
-        axis=axis,
-        has_residual=has_residual,
-        pdl_level=pdl_level,
-        use_multimem=use_multimem,
-        group_size=group_size,
-    ](
-        input_buffers,
-        output_buffers,
-        rank_sigs,
-        max_num_blocks,
-        ctx,
-        global_rank,
-        axis_size,
-        unit_numel,
-        residuals,
-    )
+    if case .Some((axis_size, unit_numel, max_num_blocks)) = plan:
+        # Hand the collective the whole world plus the group width, and let it
+        # derive the group-local slice, rank, and barrier domain itself.
+        _reducescatter_p2p[
+            dtype,
+            ngpus,
+            axis=axis,
+            has_residual=has_residual,
+            pdl_level=pdl_level,
+            use_multimem=use_multimem,
+            group_size=group_size,
+        ](
+            input_buffers,
+            output_buffers,
+            rank_sigs,
+            max_num_blocks,
+            ctx,
+            global_rank,
+            axis_size,
+            unit_numel,
+            residuals,
+        )
 
 
 def reducescatter[
@@ -1616,25 +1613,22 @@ def reducescatter[
         global_rank,
         _max_num_blocks,
     )
-    if not plan:
-        return
-    var axis_size, unit_numel, max_num_blocks = plan.value()
-
-    _reducescatter_launch[
-        dtype,
-        ngpus,
-        axis=axis,
-        pdl_level=pdl_level,
-        use_multimem=use_multimem,
-        group_size=group_size,
-    ](
-        input_buffers,
-        output_layouts[global_rank],
-        output_lambda,
-        rank_sigs,
-        max_num_blocks,
-        ctx,
-        global_rank,
-        axis_size,
-        unit_numel,
-    )
+    if case .Some((axis_size, unit_numel, max_num_blocks)) = plan:
+        _reducescatter_launch[
+            dtype,
+            ngpus,
+            axis=axis,
+            pdl_level=pdl_level,
+            use_multimem=use_multimem,
+            group_size=group_size,
+        ](
+            input_buffers,
+            output_layouts[global_rank],
+            output_lambda,
+            rank_sigs,
+            max_num_blocks,
+            ctx,
+            global_rank,
+            axis_size,
+            unit_numel,
+        )

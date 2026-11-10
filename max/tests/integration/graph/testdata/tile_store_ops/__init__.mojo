@@ -38,6 +38,13 @@ from extensibility import (
 
 from builtin_kernels._tile_fusion import _tile_store_consumer
 
+comptime SM100 = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & extensibility.arch("sm_100a")
+)
+"""Holds for CUDA devices with the `sm_100a` architecture."""
+
 
 @fieldwise_init
 struct _NaiveRMSNormTileAdapter[
@@ -143,7 +150,7 @@ struct RMSNormTileFallback:
 # Registered for sm_100a (B200) only, with the tile fused-output IOSpec
 # (`_FusedOutputTileTensor`): the graph compiler selects it only when the
 # target has `tile_based_fusion` set.
-@extensibility.register("tile_rms_norm", type="gpu", api="cuda", arch="sm_100a")
+@extensibility.register("tile_rms_norm", SM100)
 struct RMSNormTileSM100:
     @staticmethod
     def execute[

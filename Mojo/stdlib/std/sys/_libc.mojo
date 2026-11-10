@@ -113,19 +113,6 @@ def setvbuf(
     return external_call["setvbuf", c_int](stream, buffer)
 
 
-struct BufferMode:
-    """
-    Modes for use in `setvbuf` to control buffer output.
-    """
-
-    comptime buffered = 0
-    """Equivalent to `_IOFBF`."""
-    comptime line_buffered = 1
-    """Equivalent to `_IOLBF`."""
-    comptime unbuffered = 2
-    """Equivalent to `_IONBF`."""
-
-
 # ===-----------------------------------------------------------------------===#
 # spawn.h - Spawn process
 # ===-----------------------------------------------------------------------===#
@@ -450,6 +437,10 @@ comptime MAP_ANONYMOUS: c_int = platform_map[
     T=c_int, "MAP_ANONYMOUS", linux=c_int(0x20), macos=c_int(0x1000)
 ]()
 """The mapping is zero-filled memory rather than a file."""
+comptime MAP_POPULATE: c_int = platform_map[
+    T=c_int, "MAP_POPULATE", linux=c_int(0x08000)
+]()
+"""Prefault the mapping's pages. Linux only."""
 
 comptime MS_ASYNC: c_int = 0x1
 """Schedule the writes and return without waiting for them."""

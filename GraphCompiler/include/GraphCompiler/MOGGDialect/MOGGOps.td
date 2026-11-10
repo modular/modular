@@ -491,8 +491,8 @@ def MOGG_FuncOp : MOGG_Op<"func", [
                               "::M::MOGG::DispatchKind::Immediate">:$dispatch,
     DefaultValuedAttr<ArrayAttr, "{}">:$constantResources,
     MOGG_ABIKindAttr:$abi,
-    // Execution-device label for each kernel's `target` parameter. A string
-    // rather than `#M.device_ref` because only the label matters.
+    // Execution-device label of the stub. A string rather than `#M.device_ref`
+    // because only the label matters.
     StrAttr:$device,
     OptionalAttr<ArrayAttr>:$trait_stub_buffer_capture,
     OptionalAttr<ArrayAttr>:$trait_stub_arg_bounds,
@@ -912,9 +912,12 @@ def MOGG_KernelDeclOp
     built-ins with the same registration. The shape function lives in a
     separate `mogg.shape_func.decl`.
 
-    `platform_predicate` is the set of devices that the decl applies to, as a
-    `#kgen.gen` over the device's label, API, architecture, and model (see
-    `PlatformPredicate`).
+    `platform_predicate` is the `cond` of `register(name, cond)`. It is
+    a `#kgen.gen` over the device's label, API, architecture, and model, and
+    the decl applies to the devices for which it holds. A decl without a
+    `platform_predicate` comes from `register(name)` and applies to all
+    devices.
+    `MojoRegistry::getResolvedKernel` describes how a decl is selected.
 
     `build_graph` has the same tensor signature as `execute` but takes a
     `DeviceGraphBuilder` in place of the `DeviceContext`.
@@ -940,7 +943,6 @@ def MOGG_KernelDeclOp
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     StrAttr:$registration,
-    M_DeviceInfoAttr:$registration_device_info,
     OptionalAttr<KGEN_GeneratorAttr>:$platform_predicate,
     OptionalAttr<MOGG_KernelFunctionAttr>:$execute,
     OptionalAttr<MOGG_KernelFunctionAttr>:$elementwise,
@@ -958,7 +960,6 @@ def MOGG_KernelDeclOp
   let assemblyFormat = [{
     custom<SymbolVisibility>($sym_visibility) `` $sym_name
     `registration` `=` $registration
-    `device_info` `=` $registration_device_info
     (`platform_predicate` `=` qualified($platform_predicate)^)?
     (`execute` `=` $execute^)?
     (`elementwise` `=` $elementwise^)?

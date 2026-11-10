@@ -189,6 +189,7 @@ modular_cc_test(
     name = "HashUtilsTest",
     srcs = ["HashUtilsTest.cpp"],
     deps = [
+        "//Support:BytecodeHash",
         "//Support:HashUtils",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
@@ -329,7 +330,6 @@ modular_cc_test(
     name = "HostTest",
     srcs = ["HostTest.cpp"],
     deps = [
-        "//Support:MArchTarget",
         "//Support:MArchTargetMinimal",
         "//Support:Threading",
         "@llvm-project//llvm:Support",

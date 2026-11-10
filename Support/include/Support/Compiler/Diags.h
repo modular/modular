@@ -359,9 +359,6 @@ public:
   bool isValid() const { return start != nullptr; }
   bool isByteLevel() const { return byteLevel; }
 
-  /// Return an SMRange that corresponds to this source range.
-  llvm::SMRange getSMRange() const;
-
 private:
   const char *start = nullptr, *end = nullptr;
   bool byteLevel = false;

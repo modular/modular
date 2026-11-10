@@ -28,11 +28,12 @@ Its AMD W4A8 validation (``validate_amd_tp_w4a8``, ``validate_amd_packed_k``)
 is copied from ``kimi_k3.layers.moe_latent`` rather than imported, so this
 port has no build dependency on V2.
 
-``tensor_parallel_latent_moe`` shards the per-expert FFN width across the
-``tp`` mesh axis. Unlike the other sharded layers, this block returns a
-complete value: ``routed_expert_norm`` cannot read a partial sum, so
-``forward()`` reduces the routed branch before the norm and the shared
-branch before adding it.
+``tensor_parallel_latent_moe`` shards the per-expert FFN width and the
+latent exit's input dim across the ``tp`` mesh axis. Unlike the other
+sharded layers, this block returns a complete value:
+``routed_expert_norm`` cannot read a partial sum, so ``forward()`` reduces
+the expert output before the norm, then reduces the exit's and the shared
+branch's partial sums together.
 
 ``expert_parallel_latent_moe`` gives each device whole experts instead,
 exchanging tokens through :mod:`ep` (mirroring ``minimax_m3_modulev3/ep.py``).
@@ -80,6 +81,7 @@ from max.nn._graph_ops import (
     amd_mega_ffn_workspace_words,
     grouped_dynamic_block_scaled_matmul_amd,
     grouped_ffn_block_scaled_amd,
+    moe_sort_gather_quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled,
     stack_a8w4_mega_ffn_b,
 )
@@ -201,6 +203,33 @@ def _quantize_mxfp8(activations: Tensor) -> tuple[TensorValue, TensorValue]:
 
 
 quantize_mxfp8 = F.functional(_quantize_mxfp8)
+
+
+def _moe_sort_gather_quantize_mxfp8(
+    latent: Tensor, flat_idx: Tensor, topk: int, num_experts: int
+) -> tuple[TensorValue, ...]:
+    """The fused expert sort + fan-out gather + MXFP8 quantize.
+
+    Replaces the ``moe_create_indices`` + ``F.gather`` + ``quantize_mxfp8``
+    triple on the W4A8 path with one graph node. The serving graph builds
+    once over a dynamic token count, so the op picks its arm at execution
+    by the real slot count: decode-sized launches run everything in one
+    kernel, larger ones fall back to ``moe_create_indices`` plus the
+    source-major scatter+quantize. ``expert_start_indices``,
+    ``expert_ids`` and the usage stats stay byte-identical to
+    ``moe_create_indices``'s; the order is a valid grouping whose
+    intra-expert positions were never load-bearing.
+    """
+    return moe_sort_gather_quantize_dynamic_block_scaled(
+        TensorValue(latent),
+        TensorValue(flat_idx),
+        sf_vector_size=_SF_VECTOR_SIZE,
+        topk=topk,
+        num_experts=num_experts,
+    )
+
+
+moe_sort_gather_quantize_mxfp8 = F.functional(_moe_sort_gather_quantize_mxfp8)
 
 
 def _amd_w4a8_grouped_matmul(
@@ -590,24 +619,9 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         latent = self.routed_expert_down_proj(hidden_states)
 
         flat_idx = F.cast(F.reshape(topk_idx, [-1]), DType.int32)
-        (
-            token_expert_order,
-            expert_start_indices,
-            restore_token_order,
-            expert_ids,
-            expert_usage_stats,
-        ) = moe_create_indices(flat_idx, self.num_experts)
 
-        permuted = F.gather(
-            latent,
-            F.cast(
-                token_expert_order // self.num_experts_per_token,
-                DType.int32,
-            ),
-            axis=0,
-        )
         if self.amd_tp_w4a8:
-            mesh = permuted.mesh
+            mesh = latent.mesh
 
             # Custom ops have no sharding rule, so every output's placement
             # is restated immediately after the call -- same convention as
@@ -622,11 +636,37 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             # leaves its own on device. See `_amd_moe_usage_stats`. Lives on
             # the CPU, off the GPU mesh entirely -- not rebound, like the
             # dense path's own `expert_start_indices`/`expert_ids`.
+            (
+                token_expert_order,
+                expert_start_indices,
+                restore_token_order,
+                expert_ids,
+                expert_usage_stats,
+                quantized,
+                act_scales,
+            ) = moe_sort_gather_quantize_mxfp8(
+                latent,
+                flat_idx,
+                self.num_experts_per_token,
+                self.num_experts,
+            )
             usage_stats = amd_moe_usage_stats(
                 expert_ids, latent, self.max_tokens_per_expert
             )
-            quantized, act_scales = quantize_mxfp8(permuted)
-            quantized, act_scales = (
+            (
+                token_expert_order,
+                expert_start_indices,
+                restore_token_order,
+                expert_ids,
+                expert_usage_stats,
+                quantized,
+                act_scales,
+            ) = (
+                replicated(token_expert_order),
+                replicated(expert_start_indices),
+                replicated(restore_token_order),
+                replicated(expert_ids),
+                replicated(expert_usage_stats),
                 replicated(quantized),
                 replicated(act_scales),
             )
@@ -689,6 +729,21 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 DeviceMapping(mesh, (Partial(),))
             )
         else:
+            (
+                token_expert_order,
+                expert_start_indices,
+                restore_token_order,
+                expert_ids,
+                expert_usage_stats,
+            ) = moe_create_indices(flat_idx, self.num_experts)
+            permuted = F.gather(
+                latent,
+                F.cast(
+                    token_expert_order // self.num_experts_per_token,
+                    DType.int32,
+                ),
+                axis=0,
+            )
             gate_up = grouped_matmul_ragged(
                 permuted,
                 self.experts_gate_up_proj,
@@ -732,14 +787,20 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             )
         else:
             normed = self.routed_expert_norm(combined)
+        if sharded:
+            # The exit is row-parallel: each device multiplies its local
+            # slice of the replicated latent by its slice of the weight's
+            # input axis. The routed and shared partial sums then share one
+            # allreduce.
+            normed = normed.to(NamedMapping(mesh, (None, TP)))
         routed = self.routed_expert_up_proj(normed)
 
         # The shared branch reads the ORIGINAL full-width input, not the
-        # latent, and is added last.
-        shared = self.shared_experts(hidden_states)
+        # latent.
+        out = routed + self.shared_experts(hidden_states)
         if sharded:
-            shared = F.allreduce_sum(shared, mesh_axis=TP)
-        return routed + shared
+            out = F.allreduce_sum(out, mesh_axis=TP)
+        return out
 
     def expert_parallel_forward(
         self,
@@ -797,10 +858,12 @@ class KimiK3LatentMoE(Module[..., Tensor]):
 def tensor_parallel_latent_moe(
     layer: KimiK3LatentMoE, mesh: DeviceMesh
 ) -> KimiK3LatentMoE:
-    """Shards a latent MoE block's FFN widths along the ``tp`` mesh axis.
+    """Shards a latent MoE block along the ``tp`` mesh axis.
 
-    The router and the latent entry, exit and norm stay replicated: they
-    work at the hidden or latent width, not the FFN width.
+    The FFN widths shard, and so does the latent exit, on its input (latent)
+    dim. The router, the latent entry and the norm stay replicated: sharding
+    the entry would need an allgather before the experts. ``forward()``
+    reduces internally, so the block returns a complete value.
     """
     tp_size = mesh.axis_size(TP)
     if tp_size == 1:
@@ -811,6 +874,7 @@ def tensor_parallel_latent_moe(
         layer.shared_experts.intermediate_size,
         tp_size,
     )
+    check_divisible("MoE latent width", layer.latent_size, tp_size)
     if layer.mxfp4:
         # The down weight is packed two values per byte along the expert FFN
         # axis and carries one E8M0 scale per 32 of those values, so a shard
@@ -821,6 +885,9 @@ def tensor_parallel_latent_moe(
             latent_size=layer.latent_size,
             per_device_ffn=layer.moe_intermediate_size // tp_size,
         )
+    layer.routed_expert_up_proj.weight = layer.routed_expert_up_proj.weight.to(
+        NamedMapping(mesh, (None, TP))
+    )
     # The routed experts stay per-expert on the host; `_stacked` gives each
     # device its share.
     tensor_parallel_dense_mlp(layer.shared_experts, mesh)

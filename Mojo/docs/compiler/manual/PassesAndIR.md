@@ -575,7 +575,6 @@ To see that last one, you can run this program through
 `kgen-translate -import-mojo main.mojo`:
 
 ```mojo
-@explicit_destroy("Can't destroy a MyTrait")
 trait MyTrait(TrivialRegisterPassable):
     def bork(self):
         ...

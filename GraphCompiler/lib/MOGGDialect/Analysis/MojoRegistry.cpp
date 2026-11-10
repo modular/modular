@@ -23,6 +23,7 @@
 #include "GraphCompiler/MOGGDialect/MojoParameters.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
+#include "GraphCompiler/MOGGDialect/Support/PlatformPredicate.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENPogUtils.h"
@@ -44,7 +45,6 @@
 #include <memory>
 #include <optional>
 #include <set>
-#include <tuple>
 
 using namespace M;
 using namespace M::MOGG;
@@ -146,27 +146,11 @@ bool MojoRegistry::containsShapeFunction(llvm::StringRef name) const {
   return shapeFuncByName.contains(name);
 }
 
-static bool deviceInfoMatches(DeviceInfoAttr kernelInfo,
-                              DeviceInfoAttr deviceInfo) {
-  auto matches = [](llvm::StringRef kernelField, llvm::StringRef runtimeField) {
-    return kernelField.empty() || kernelField == runtimeField;
-  };
-  return matches(kernelInfo.getLabel(), deviceInfo.getLabel()) &&
-         matches(kernelInfo.getApi(), deviceInfo.getApi()) &&
-         matches(kernelInfo.getArch(), deviceInfo.getArch()) &&
-         matches(kernelInfo.getModel(), deviceInfo.getModel());
-}
-
-static int deviceInfoSpecificity(DeviceInfoAttr infos) {
-  return !infos.getLabel().empty() + !infos.getApi().empty() +
-         !infos.getArch().empty() + !infos.getModel().empty();
-}
-
 ErrorOr<PlatformPredicate>
 M::MOGG::getRegistrationPlatformPredicate(KernelDeclOp decl) {
   if (KGEN::GeneratorAttr generator = decl.getPlatformPredicateAttr())
     return PlatformPredicate::fromGenerator(generator);
-  return PlatformPredicate::fromDeviceInfo(decl.getRegistrationDeviceInfo());
+  return PlatformPredicate();
 }
 
 ErrorOr<const PlatformPredicate *>
@@ -201,11 +185,11 @@ MojoRegistry::getOrder(KernelDeclOp first, KernelDeclOp second) const {
   ErrorOr<const PlatformPredicate *> firstPlatform =
       getPlatformPredicate(first);
   if (firstPlatform.isError())
-    return Error(firstPlatform.getError());
+    return firstPlatform.takeError();
   ErrorOr<const PlatformPredicate *> secondPlatform =
       getPlatformPredicate(second);
   if (secondPlatform.isError())
-    return Error(secondPlatform.getError());
+    return secondPlatform.takeError();
   PlatformPredicateComparison comparison =
       comparePlatformPredicates(**firstPlatform, **secondPlatform);
 
@@ -239,7 +223,7 @@ MojoRegistry::getSurvivors(llvm::ArrayRef<KernelDeclOp> matches) const {
         continue;
       ErrorOr<PlatformPredicateOrder> order = getOrder(other, candidate);
       if (order.isError())
-        return Error(order.getError());
+        return order.takeError();
       if (*order == PlatformPredicateOrder::FirstNarrower) {
         beaten = true;
         break;
@@ -317,13 +301,6 @@ std::string MojoRegistry::describeAmbiguity(
   return msg;
 }
 
-// The order candidates win in, compared lexicographically: a user-defined
-// kernel beats a built-in one, then more matching device fields beat fewer.
-static std::tuple<bool, int> resolutionRank(KernelDeclOp decl) {
-  return {decl.getIsUserDefined(),
-          deviceInfoSpecificity(decl.getRegistrationDeviceInfo())};
-}
-
 ErrorOr<KernelDeclOp>
 MojoRegistry::getResolvedKernel(llvm::StringRef name,
                                 DeviceRefAttr device) const {
@@ -337,43 +314,45 @@ MojoRegistry::getResolvedKernel(llvm::StringRef name,
   ASSERT_STREAM(it != kernelByName.end(),
                 "no kernel registered for '" << name << "'");
 
-  llvm::SmallVector<KernelDeclOp> candidates;
+  DeviceFields fields = getDeviceFields(deviceInfo);
+  llvm::SmallVector<KernelDeclOp> matches;
   for (KernelDeclOp decl : it->second) {
-    if (!deviceInfoMatches(decl.getRegistrationDeviceInfo(), deviceInfo))
+    ErrorOr<const PlatformPredicate *> platform = getPlatformPredicate(decl);
+    if (platform.isError())
+      return platform.takeError();
+    if (!(*platform)->holdsFor(fields))
       continue;
     // TODO(GEX-3941): on non-tile devices, skip tile-output candidates so the
     // generic (SIMD) registration is selected.
     if (!deviceInfo.getTileBasedFusion() && kernelDeclaresTileOutput(decl))
       continue;
-    candidates.push_back(decl);
+    matches.push_back(decl);
   }
 
-  if (candidates.empty()) {
+  if (matches.empty()) {
     std::string msg;
     llvm::raw_string_ostream os(msg);
     os << "no kernel matching device info for '" << name << "' on device "
        << mlir::Attribute(deviceInfo) << "; candidates:";
-    for (KernelDeclOp decl : it->second)
-      os << "\n  - " << mlir::Attribute(decl.getRegistrationDeviceInfo())
-         << " (" << decl.getSymName() << ")";
+    for (KernelDeclOp decl : it->second) {
+      os << "\n  - " << decl.getSymName() << ": cond=";
+      ErrorOr<const PlatformPredicate *> platform = getPlatformPredicate(decl);
+      if (platform.isError())
+        os << "<" << platform.getError() << ">";
+      else
+        (*platform)->print(os);
+    }
     return Error(os.str());
   }
 
-  KernelDeclOp best =
-      *llvm::max_element(candidates, [](KernelDeclOp a, KernelDeclOp b) {
-        return resolutionRank(a) < resolutionRank(b);
-      });
-  ASSERT_STREAM(llvm::count_if(candidates,
-                               [&](KernelDeclOp decl) {
-                                 return resolutionRank(decl) ==
-                                        resolutionRank(best);
-                               }) == 1,
-                "ambiguous kernel resolution for '"
-                    << name << "': multiple "
-                    << (best.getIsUserDefined() ? "user-defined" : "built-in")
-                    << " registrations match the runtime device with equal "
-                       "specificity");
-  return best;
+  ErrorOr<llvm::SmallVector<KernelDeclOp>> survivors = getSurvivors(matches);
+  if (survivors.isError())
+    return survivors.takeError();
+  if (survivors->size() == 1)
+    return survivors->front();
+  return Error(describeAmbiguity(name, *survivors, [&](llvm::raw_ostream &os) {
+    os << mlir::Attribute(deviceInfo);
+  }));
 }
 
 ErrorOrSuccess MojoRegistry::findAmbiguousSelections(

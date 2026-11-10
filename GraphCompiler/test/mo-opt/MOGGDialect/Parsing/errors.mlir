@@ -84,7 +84,7 @@ func.func @execute_device_missing_decl(%ctx: !mogg.context) {
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
 
-mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 func.func @execute_device_not_declarative(%ctx: !mogg.context) {
   mogg.graph_blob {

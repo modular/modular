@@ -19,16 +19,11 @@ model:
   device_specs: [0, 1]
   quantization_encoding: float8_e4m3fn
   # Sizes the compressed-attention candidate axis, which is a graph shape.
-  # TODO: derive max_length automatically. The prefill arena is now planned
-  # (#100629, MXSERV-569), but two planner gaps remain: the weight estimate
-  # counts the unloaded mtp.* tensors (~10 GiB), and the KV budget ignores
-  # Jenga huge-page granularity (4.72 GiB pages, >= 8 per device). With the
-  # defaults max_length is clamped to 1 and KV allocation fails.
+  # TODO(MXSERV-569): derive max_length automatically.
   max_length: 4096
 
 runtime:
   prefer_module_v3: false
-  max_batch_size: 32
   # An 8192-token CE batch does not fit on 2x B200: per device, weights
   # (~79 GiB) + Jenga KV floor (37.8 GiB) + prefill arena (38.5 GiB) is
   # about 155 of the 160 GiB budget, so KV planning fails at startup.

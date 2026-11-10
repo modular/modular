@@ -491,6 +491,253 @@ struct _MoggTransformFusionTensor[
         ](idx, value)
 )mojo";
 
+// Inline Mojo definitions for the trait tensor-argument struct, emitted once
+// per module (guarded by `EmitMojoState::emittedTensorArgDefs`). One struct
+// serves every execute lane. `_Engine` names how the storage is referenced: a
+// raw pointer under `DefaultEngine`, a stable address slot under
+// `StableAddrEngine`. `_is_device_passable` selects whether it crosses to the
+// device (as the projected `TileTensor`, itself `DevicePassable`). The
+// `_MoggDenseTensorArg` and `_MoggStableTensorArg`
+// aliases bind the engine, so a stub names the lane rather than the engine.
+static constexpr llvm::StringLiteral kTensorArgDefs = R"mojo(
+from layout import Coord, DefaultEngine, TensorEngine, TensorLayout, TileTensor
+from extensibility import (
+    Input,
+    MutableInput,
+    Output,
+    Stable,
+    StableAddrEngine,
+    StableStorage,
+    TileTensorable,
+)
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.memory import AddressSpace
+
+
+@fieldwise_init("implicit")
+struct _MoggTensorIO(Equatable, ImplicitlyCopyable, TrivialRegisterPassable):
+    var value: Int
+
+    comptime INPUT = _MoggTensorIO(0)
+    comptime OUTPUT = _MoggTensorIO(1)
+    comptime MUTABLE_INPUT = _MoggTensorIO(2)
+
+    @always_inline("builtin")
+    def __eq__(self, other: Self) -> Bool:
+        return self.value == other.value
+
+    @always_inline("builtin")
+    def __ne__(self, other: Self) -> Bool:
+        return self.value != other.value
+
+    @always_inline("builtin")
+    def is_input(self) -> Bool:
+        return self == _MoggTensorIO.INPUT or self == _MoggTensorIO.MUTABLE_INPUT
+
+    @always_inline("builtin")
+    def is_mut(self) -> Bool:
+        return self == _MoggTensorIO.OUTPUT or self == _MoggTensorIO.MUTABLE_INPUT
+
+
+struct _MoggTensorArg[
+    _dtype: DType,
+    _LayoutType: TensorLayout,
+    _alignment: Int,
+    _io: _MoggTensorIO,
+    _is_device_passable: Bool,
+    _Engine: TensorEngine = DefaultEngine[element_width=1],
+](
+    # A storage handle and a layout, so copies alias the same buffer, as
+    # `TileTensor` copies do. `TensorTuple` holds its elements by value.
+    Copyable,
+    DevicePassable where _is_device_passable,
+    Input where _io == _MoggTensorIO.INPUT,
+    MutableInput where _io == _MoggTensorIO.MUTABLE_INPUT,
+    Movable,
+    # An output is written through a live pointer, never through a slot.
+    Output where _io == _MoggTensorIO.OUTPUT
+    and _Engine == DefaultEngine[element_width=1],
+    Stable where _Engine == StableAddrEngine[element_width=1],
+    TileTensorable,
+):
+    comptime mut = Self._io.is_mut()
+    comptime dtype = Self._dtype
+    comptime LayoutType = Self._LayoutType
+    comptime _shape_types = Self.LayoutType._shape_types
+    comptime __shape_types = Self.LayoutType.__shape_types
+    comptime rank = Self.LayoutType.rank
+    comptime alignment = Self._alignment
+    comptime Engine = Self._Engine
+    comptime Origin = UntrackedOrigin[mut = Self.mut]
+    # The projection names its engine explicitly instead of inheriting the
+    # pointer-backed default, so the arg's engine stays a per-target choice.
+    comptime TileTensorType = TileTensor[
+        dtype = Self.dtype,
+        LayoutType = Self.LayoutType,
+        origin = Self.Origin,
+        Engine = Self.Engine,
+    ]
+    var _storage: Self.Engine.StorageType[
+        Self.dtype, Self.Origin, AddressSpace.GENERIC
+    ]
+    var _layout: Self.LayoutType
+
+    # `ptr` is whatever the stub received as the buffer's data pointer, and the
+    # engine decides what that is: the data itself under `DefaultEngine`, the
+    # slot's address under `StableAddrEngine` (the same reinterpretation
+    # `mogg_stable_tensor_init` performs for the legacy lane). The storage
+    # field's type is opaque behind the `TensorEngine` bound, hence the
+    # `rebind` once the engine is pinned.
+    @inline(.always)
+    def __init__(
+        out self,
+        ptr: Pointer[NoneType, MutAnyOrigin],
+        layout: Self.LayoutType,
+    ) where Self.Engine == DefaultEngine[element_width=1]:
+        self._storage = rebind[type_of(self._storage)](
+            ptr.unsafe_bitcast[Scalar[Self.dtype]]()
+            .unsafe_mut_cast[Self.mut]()
+            .unsafe_origin_cast[Self.Origin]()
+        )
+        self._layout = layout
+
+    @inline(.always)
+    def __init__(
+        out self,
+        ptr: Pointer[NoneType, MutAnyOrigin],
+        layout: Self.LayoutType,
+    ) where Self.Engine == StableAddrEngine[element_width=1]:
+        self._storage = rebind[type_of(self._storage)](
+            StableStorage[Self.dtype, Self.Origin, AddressSpace.GENERIC](ptr)
+        )
+        self._layout = layout
+
+    # A declarative launch passes the argument to the device as its projection,
+    # and the device rebuilds it here.
+    @inline(.always)
+    def __init__(out self, tile: Self.TileTensorType):
+        self._storage = tile._storage
+        self._layout = tile.layout
+
+    # The device representation is the projected `TileTensor`: the device
+    # kernel receives a real tile (Coord-indexed load/store), not this arg. The
+    # encoder copies the storage handle bit-for-bit, so the graph must have
+    # transferred the buffer to the device (see the GPU e2e tests'
+    # `mo.transfer`) for a pointer handle to be a valid device address. A slot
+    # handle's two pointer layers are device addresses already. `DeviceType`
+    # names it with its conformances, for a declarative launch's kernel to take
+    # the argument as.
+    comptime DeviceType = Self.TileTensorType
+    comptime device_type: AnyType = Self.DeviceType
+
+    @inline(.always)
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ) where Self._is_device_passable:
+        encoder.encode(Self.TileTensorType(self._storage, self._layout), target)
+
+    @staticmethod
+    def get_type_name() -> String where Self._is_device_passable:
+        var name = String("_MoggTensorArg[Engine=")
+        Self.Engine.write_type_name_to(name)
+        name += "]"
+        return name^
+
+    @inline(.always)
+    def shape(self) -> Coord[*Self._shape_types]:
+        return self._layout.shape_coord()
+
+    @inline(.always)
+    def layout(self) -> Self.LayoutType:
+        return self._layout
+
+    @inline(.always)
+    def _to_tile_tensor(
+        self,
+    ) -> Self.TileTensorType:
+        return {self._storage, self._layout}
+
+
+comptime _MoggDenseTensorArg = _MoggTensorArg[
+    _Engine=DefaultEngine[element_width=1], ...
+]
+
+# A `Stable` argument is GPU only, so the alias pins it device-passable.
+comptime _MoggStableTensorArg = _MoggTensorArg[
+    _is_device_passable=True,
+    _Engine=StableAddrEngine[element_width=1],
+    ...,
+]
+)mojo";
+
+// The host-only `_MoggShapeTensorArg`, which backs every shape-function
+// trait tensor argument (see `kShapeTensorArgStructName` in MOGGOps.cpp).
+static constexpr llvm::StringLiteral kShapeTensorArgDefs = R"mojo(
+from layout import Coord, CurrentTensorEngine, TensorLayout, TileTensor
+from extensibility import Tensor, TileTensorable
+
+
+struct _MoggShapeTensorArg[
+    _dtype: DType,
+    _LayoutType: TensorLayout,
+    _alignment: Int,
+    _data_visible: Bool,
+](
+    Copyable,
+    Movable,
+    Tensor,
+    # `_data_visible` gates `TileTensorable` off for a bare `Tensor` bound, so
+    # such an argument cannot reach element values and AddFallbackShapeFuncs
+    # leaves it on its device.
+    TileTensorable where _data_visible,
+):
+    comptime mut = False
+    comptime dtype = Self._dtype
+    comptime LayoutType = Self._LayoutType
+    comptime _shape_types = Self.LayoutType._shape_types
+    comptime __shape_types = Self.LayoutType.__shape_types
+    comptime rank = Self.LayoutType.rank
+    comptime alignment = Self._alignment
+    comptime Engine = CurrentTensorEngine[Self.LayoutType]
+    var handle: Pointer[Scalar[Self.dtype], UntrackedOrigin[mut = Self.mut]]
+    var _layout: Self.LayoutType
+
+    @inline(.always)
+    def __init__(
+        out self,
+        ptr: Pointer[NoneType, MutAnyOrigin],
+        layout: Self.LayoutType,
+    ):
+        self.handle = ptr.unsafe_bitcast[Scalar[Self.dtype]]().unsafe_mut_cast[
+            Self.mut
+        ]().unsafe_origin_cast[UntrackedOrigin[mut = Self.mut]]()
+        self._layout = layout
+
+    @inline(.always)
+    def shape(self) -> Coord[*Self._shape_types]:
+        return self.layout().shape_coord()
+
+    @inline(.always)
+    def layout(self) -> Self.LayoutType:
+        return self._layout
+
+    @inline(.always)
+    def _to_tile_tensor(
+        self,
+    ) -> TileTensor[
+        dtype = Self.dtype,
+        LayoutType = Self.LayoutType,
+        origin = UntrackedOrigin[mut = Self.mut],
+        Engine = Self.Engine,
+    ]:
+        return TileTensor[
+            dtype = Self.dtype,
+            LayoutType = Self.LayoutType,
+            origin = UntrackedOrigin[mut = Self.mut],
+            Engine = Self.Engine,
+        ](ptr=self.handle, layout=self.layout())
+)mojo";
+
 } // namespace M::MOGG
 
 #endif // GENERICML_GRAPHCOMPILER_MOGGDIALECT_SUPPORT_MOJOTRAITS_H

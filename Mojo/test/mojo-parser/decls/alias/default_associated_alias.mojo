@@ -102,3 +102,17 @@ struct ConformsToChild(Child, Movable where False):
     # CHECK-NEXT:   kgen.witness "A" : !alias_Int1 = rebind(:!Int {:scalar<index> 1})
     # CHECK-NEXT:   kgen.witness "B" : !alias_Int1 = sugar_member_alias(!ConformsToChild, "A", rebind(:!Int {:scalar<index> 1}))
     pass
+
+
+# COM: A call that projects the associated alias through the abstract parent
+# COM: must resolve to the default the refining trait supplied.
+
+def take_token[X: C](t: X.T):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"use_refined_default()"
+def use_refined_default():
+    # CHECK: kgen.param.constant: !kgen.param<:!AnyType sugar_member_alias(!Bar, "T", !Int)> = <rebind(:!Int {:scalar<index> 0})>
+    # CHECK: lit.call @{{.*}}::@"take_token[{{.*}}]($0.T)"{{.*}}<:!{{.*}} !Bar>
+    take_token[Bar](0)

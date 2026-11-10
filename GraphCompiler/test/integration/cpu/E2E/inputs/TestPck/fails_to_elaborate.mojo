@@ -29,7 +29,7 @@ def constrained[cond: Bool, msg: StaticString]():
 @extensibility.register("fails_to_elaborate")
 struct InvalidOwnedArgConvention:
     @staticmethod
-    def execute[target: StaticString](output: Some[Output & Tensor]):
+    def execute(output: Some[Output & Tensor]):
         comptime assert (
             False
         ), "oops"  # expected-error {{call expansion failed}}

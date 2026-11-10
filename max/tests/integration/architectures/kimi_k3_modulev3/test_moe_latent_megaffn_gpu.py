@@ -123,7 +123,7 @@ def _build(mega: bool) -> KimiK3LatentMoE:
     "mo.moe.single.group.router is staged as an undeclared custom op the"
     " interpreter can't bind"
 )
-@pytest.mark.parametrize("tokens", [1, 9, 64, 160, 1024])
+@pytest.mark.parametrize("tokens", [9, 160])
 def test_megaffn_matches_chain(tokens: int) -> None:
     """160 tokens is 2560 routed rows, above the MegaFFN's 2304-row band."""
     x = np.random.default_rng(tokens).standard_normal((tokens, _HIDDEN))

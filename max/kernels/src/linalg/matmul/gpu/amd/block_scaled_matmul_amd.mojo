@@ -1662,6 +1662,8 @@ struct BlockScaledMatmulAMD[
                                 schedule_group_barrier(
                                     AMDScheduleBarrierMask.MFMA, Int32(wait), 0
                                 )
+                            case _:
+                                pass
 
             # Prologue.
             comptime for i in range(len(schedule.prologue)):
@@ -3335,61 +3337,6 @@ def _preshuffle_a_scale_4d_kernel[
     dst.reshape(row_major(total)).store(Coord(byte_off), value)
 
 
-def _launch_block_scaled_preb[
-    BM: Int,
-    BN: Int,
-    BK_ELEMS: Int,
-    WN: Int,
-    matrix_format: CDNA4F8F6F4MatrixFormat,
-](
-    c: TileTensor[mut=True, ...],
-    a: TileTensor[mut=False, DType.uint8, ...],
-    b_pre: TileTensor[mut=False, DType.uint8, ...],
-    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    b_scales_pre: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    M: Int,
-    ctx: DeviceContext,
-) raises:
-    """Launch the preshuffled-B dense matmul (`BlockScaledMatmulAMD_PreB`).
-
-    `b_pre` and `b_scales_pre` must already be in the plane-split /
-    packed-scale layouts `Shuffler` produces (a one-time, load-time cost for
-    the static weight -- see `Shuffler.preshuffle_b_planes` /
-    `preshuffle_scale_4d`). `a` stays row-major (it is the caller's
-    per-request activation). `a_scales` is per-request too, so this
-    preshuffles it into a scratch buffer on every call -- cheap relative to
-    the matmul (M rows x K//32 bytes), but not free; a caller issuing many
-    back-to-back calls with the same `a_scales` shape may want to hoist that
-    scratch allocation out of the hot loop in a future revision.
-
-    Parameters:
-        BM: CTA tile size along M (locked to WM; single warp along M).
-        BN: CTA tile size along N.
-        BK_ELEMS: K tile size in FP6 elements per outer-K iteration.
-        WN: Per-warp tile size along N.
-        matrix_format: FP6 encoding of both operands.
-    """
-    _launch_block_scaled_preb_impl[
-        BM,
-        BN,
-        BK_ELEMS,
-        WN,
-        matrix_format,
-        has_epilogue_fn=False,
-        has_compute_fn=False,
-    ](
-        c,
-        a,
-        b_pre,
-        a_scales,
-        b_scales_pre,
-        M,
-        no_epilogue_fn,
-        no_compute_fn,
-        ctx,
-    )
-
-
 def _launch_block_scaled_preb_impl[
     EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
@@ -3413,9 +3360,9 @@ def _launch_block_scaled_preb_impl[
     compute_fn: ComputeFnType,
     ctx: DeviceContext,
 ) raises:
-    """`_launch_block_scaled_preb`, optionally routing the output through
-    `epilogue_fn` or `compute_fn` (selected by `has_epilogue_fn` and
-    `has_compute_fn`)."""
+    """Launches the preshuffled-B dense matmul (`BlockScaledMatmulAMD_PreB`),
+    optionally routing the output through `epilogue_fn` or `compute_fn`
+    (selected by `has_epilogue_fn` and `has_compute_fn`)."""
     comptime N = type_of(c).static_shape[1]
     comptime K_BYTES = type_of(a).static_shape[1]
     comptime SCALE_K = type_of(a_scales).static_shape[1]
@@ -3617,7 +3564,7 @@ def mxfp6_block_scaled_matmul_amd[
             / packed-scale layouts from `Shuffler.preshuffle_b_planes` /
             `preshuffle_scale_4d` -- a one-time, load-time cost for the
             static weight. `a_scales` (per-request) is preshuffled on every
-            call by `_launch_block_scaled_preb` itself. Ignored (falls back
+            call inside the launcher. Ignored (falls back
             to the row-major dispatch) when `M <= DECODE_M_MAX`, where the
             existing split-K tile already performs well and preshuffling has
             not been validated. Incompatible with `num_splits > 1`.

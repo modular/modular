@@ -33,7 +33,8 @@ comptime _COLS = 4
 
 
 def static_index_kernel(
-    src: Pointer[Float32, ImmutAnyOrigin], dst: Pointer[Float32, MutAnyOrigin]
+    src: Pointer[Float32, ImmUntrackedOrigin],
+    dst: Pointer[Float32, MutUntrackedOrigin],
 ):
     var owned = OwnedGPUTensor[.float32, .LOCAL](row_major[_ROWS, _COLS]())
     var tile = TileTensor(owned)
@@ -49,8 +50,8 @@ def static_index_kernel(
 
 
 def dynamic_index_kernel(
-    src: Pointer[Float32, ImmutAnyOrigin],
-    dst: Pointer[Float32, MutAnyOrigin],
+    src: Pointer[Float32, ImmUntrackedOrigin],
+    dst: Pointer[Float32, MutUntrackedOrigin],
     row: Int,
 ):
     var owned = OwnedGPUTensor[.float32, .LOCAL](row_major[_ROWS, _COLS]())

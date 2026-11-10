@@ -61,8 +61,82 @@ def my_add_shape(
     raise "NotImplemented"
 
 
-@extensibility.register("my_add_cpu_api", type="cpu", api="cpu")
+comptime CPU_API = extensibility.CPU & extensibility.api("cpu")
+
+
+@extensibility.register("my_add_cpu_api", CPU_API)
 struct MyAddCpuApi:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
+        y: Some[Input & Tensor],
+    ):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(y), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(y).dtype == dtype
+        comptime assert type_of(x).rank == type_of(output).rank
+        comptime assert type_of(y).rank == type_of(output).rank
+        var x_tt = x.to_tile_tensor[dtype]().as_imm()
+        var y_tt = y.to_tile_tensor[dtype]().as_imm()
+        output.to_tile_tensor[dtype]().store[width=1](
+            Coord(0),
+            x_tt.load[width=1](Coord(0)) + y_tt.load[width=1](Coord(0)),
+        )
+
+
+# Each of these registrations covers an architecture that the other does not,
+# and both hold on Blackwell, so selecting a kernel for a Blackwell GPU is
+# ambiguous.
+comptime HOPPER_AND_BLACKWELL = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & (
+        extensibility.arch("sm_90a")
+        | extensibility.arch("sm_100a")
+        | extensibility.arch("sm_103a")
+    )
+)
+comptime AMPERE_AND_BLACKWELL = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & (
+        extensibility.arch("sm_80")
+        | extensibility.arch("sm_100a")
+        | extensibility.arch("sm_103a")
+    )
+)
+
+
+@extensibility.register("my_add_ambiguous", HOPPER_AND_BLACKWELL)
+struct MyAddHopperBlackwell:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
+        y: Some[Input & Tensor],
+    ):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(y), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(y).dtype == dtype
+        comptime assert type_of(x).rank == type_of(output).rank
+        comptime assert type_of(y).rank == type_of(output).rank
+        var x_tt = x.to_tile_tensor[dtype]().as_imm()
+        var y_tt = y.to_tile_tensor[dtype]().as_imm()
+        output.to_tile_tensor[dtype]().store[width=1](
+            Coord(0),
+            x_tt.load[width=1](Coord(0)) + y_tt.load[width=1](Coord(0)),
+        )
+
+
+@extensibility.register("my_add_ambiguous", AMPERE_AND_BLACKWELL)
+struct MyAddAmpereBlackwell:
     @staticmethod
     def execute(
         output: Some[Output & Tensor],

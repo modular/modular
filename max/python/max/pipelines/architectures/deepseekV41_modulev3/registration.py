@@ -26,7 +26,7 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 from max import tree
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, TensorType
 from max.nn.ep_config import EPConfig
@@ -418,7 +418,9 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
         )
         return ConstantInputs(
             input_types=declarations,
-            buffers=OrderedDict(
+            buffers=OrderedDict()
+            if is_virtual_device_mode()
+            else OrderedDict(
                 (name, config.engram_static_inputs[name])
                 for name in declarations
             ),

@@ -22,6 +22,17 @@ This version is still a work in progress.
   statements to work with non-movable and linear types, and reduces copies in
   general.
 
+- You can destructure a tuple of transferred non-copyable values into a `var`
+  pattern without copies, such as `var (x, y) = (a^, b^)`. This includes
+  movable types that are not `Copyable`.
+
+- Comparisons now try the reflected method on the right operand when the left
+  operand does not support the comparison. For example, `0 < value` can call
+  `value.__gt__(0)`.
+
+- `match` now warns when literal cases do not include a catch-all pattern,
+  helping identify unmatched values.
+
 - Auto-parameterization now reaches `_` holes nested inside other parameterized
   types, so an unbound parameter at any depth of an argument's type becomes an
   an implicit parameter of the function:
@@ -61,6 +72,9 @@ This version is still a work in progress.
   conformance is now reported when a value is abandoned for parameters that
   don't satisfy the condition. Previously, only an always-false conformance's
   message was reported.
+
+- `@explicit_destroy("<message>")` on a trait is deprecated and now emits a
+  warning. Only structs support a custom linear type error message.
 
 - Precompiled packages now no longer leak names and provide the same surface as
   the same packages compiled from source. This may break your code (especially
@@ -138,6 +152,11 @@ This version is still a work in progress.
   var codepoint = ord(text)  # 128293; raises if `text` isn't one codepoint
   comptime letter = ord("a")  # 97; never raises
   ```
+
+- `pow()` now takes a modulus as a third argument, like Python's `pow()`:
+  `pow(base, exp, mod)` computes `base ** exp % mod` for integers of up to 64
+  bits without overflowing. The result has the sign of `mod`, and a negative
+  `exp` uses the modular inverse of `base`, so `pow(3, -1, 7)` is `5`.
 
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
@@ -382,3 +401,7 @@ This version is still a work in progress.
 
 - A `comptime if conforms_to(T, Deinitable)` guard now correctly refines `T`
   and deinits it after its last use.
+
+- Building a `SIMD` value from a list literal with the wrong number of elements
+  is now a compile-time error. Previously, `var x: Int = [1, 2, 3, 4]` compiled
+  and kept only the first element.

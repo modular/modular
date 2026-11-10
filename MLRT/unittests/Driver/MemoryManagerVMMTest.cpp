@@ -227,6 +227,59 @@ TEST_F(MemoryManagerVMMTest, NoDeferredFreeRecordedDuringGraphCapture) {
   cache->clear();
 }
 
+// A `disableFlush` free list -- how the graph-capture pools are built -- never
+// migrates its frees to its parent, so nothing it holds comes back while the
+// list lives. The snapshot must attribute those bytes to it and keep them out
+// of `recoverable_by_sync`: counting them there made DRIV-690 read as
+// `avoidable` and offer a synchronize against ~50 GB no wait could free.
+TEST_F(MemoryManagerVMMTest, GraphPoolFreesAreRetainedNotSyncRecoverable) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const size_t kBudget = 4 * kGiB;
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, kBudget);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+
+  {
+    MemoryManagerFreeList pool(ctx.getPointer(), *cache, cache->freeList(),
+                               /*disableFlush=*/true, /*label=*/"graphPool");
+    std::vector<void *> bufs;
+    for (int i = 0; i < 3; ++i) {
+      ASSIGN_NO_ERR(void *, p, pool.allocate(1 * kGiB, mode));
+      bufs.push_back(p);
+    }
+    for (void *p : bufs)
+      EXPECT_NO_ERR(pool.free(p));
+    // Everything a wait could do has been done, so what remains held is held
+    // for good.
+    EXPECT_NO_ERR(ctx->synchronize());
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+
+    const VmmOomSnapshot held = cache->oomSnapshotForTesting(0);
+    EXPECT_EQ(held.retainedBytes, 3 * kGiB);
+    EXPECT_EQ(held.retained(), 3 * kGiB);
+    EXPECT_EQ(held.recoverableBySync(), 0u)
+        << "a synchronize returns nothing a disableFlush list holds";
+    ASSERT_EQ(held.pendingOwners.size(), 1u);
+    EXPECT_EQ(held.pendingOwners.front().label, "graphPool");
+    EXPECT_TRUE(held.pendingOwners.front().neverFlushes);
+
+    // A request the remaining budget cannot serve: the verdict names the pool
+    // rather than offering a wait.
+    const VmmOomSnapshot miss = cache->oomSnapshotForTesting(2 * kGiB);
+    ASSERT_LT(miss.available(), miss.neededPhysicalBytes());
+    EXPECT_EQ(classifyVmmOom(miss, VmmBackingFailure::None),
+              VmmOomCategory::Retained);
+    EXPECT_NE(describeVmmOom(miss, VmmOomCategory::Retained).find("graphPool"),
+              std::string::npos);
+    // Nothing is queued, so a drain-and-retry stall would buy nothing.
+    EXPECT_FALSE(pendingRetryWorthwhile(miss));
+  }
+  // The destructor's flush is the only thing that returns a retained block.
+  EXPECT_EQ(cache->oomSnapshotForTesting(0).retainedBytes, 0u);
+  cache->clear();
+}
+
 // A queued deferred free holds an event and a free-list pointer, never a
 // DeviceContextRef. Were it to hold one, a context whose gating event cannot
 // fire -- a trapped kernel, say -- would never be destroyed.

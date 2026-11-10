@@ -43,10 +43,6 @@ def _show_cursor():
     print("\x1b[?25h", end="")
 
 
-def _clear_line():
-    print("\033[A\33[2K")
-
-
 def _del():
     print("\r\33[2K", end="")
 

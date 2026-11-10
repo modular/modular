@@ -63,7 +63,7 @@ from linalg.utils import (
     no_epilogue_fn,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 
 # TileTensor-based types for C tiles
 from structured_kernels.tile_types import SMemTileArray2DRowMajor

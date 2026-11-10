@@ -25,7 +25,7 @@ from std.math.uutils import udivmod
 from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 
 from ...utils_gpu import block_swizzle

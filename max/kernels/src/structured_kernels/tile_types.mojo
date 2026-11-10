@@ -133,14 +133,6 @@ comptime internal_k_major_128B[
     dtype: DType, BM: Int, BK: Int
 ] = internal_k_major[dtype, BM, BK, 128]
 
-comptime internal_k_major_64B[
-    dtype: DType, BM: Int, BK: Int
-] = internal_k_major[dtype, BM, BK, 64]
-
-comptime internal_k_major_32B[
-    dtype: DType, BM: Int, BK: Int
-] = internal_k_major[dtype, BM, BK, 32]
-
 # Internal row-major layout (no swizzle) - just delegates to row_major
 comptime internal_k_major_none[
     dtype: DType,
@@ -337,18 +329,6 @@ def _to_coord[
 # TMA descriptor layouts have the same shape as tile layouts except the
 # last dimension is replaced with swizzle_bytes // element_size. All
 # strides are 1 (flat layout for the TMA descriptor).
-comptime tma_desc_layout_2d[
-    dtype: DType,
-    tile_dim0: Int,
-    swizzle: TensorMapSwizzle,
-] = Layout[
-    Coord[
-        ComptimeInt[tile_dim0], ComptimeInt[swizzle.bytes() // size_of[dtype]()]
-    ].element_types,
-    Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
-]
-"""2D TMA descriptor layout: [dim0, swizzle_elems], strides [1, 1]."""
-
 comptime tma_desc_layout_3d[
     dtype: DType,
     tile_dim0: Int,

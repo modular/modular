@@ -386,6 +386,10 @@ def engram_static_inputs(
 
     Pinned against ``device``, the pipeline's first.
     """
+    if is_virtual_device_mode():
+        # Compile-only: a virtual device cannot allocate, and nothing ever
+        # feeds these inputs. The ModuleV2 model skips the same work.
+        return {}
     static: dict[str, Buffer] = {}
     for ordinal, table in enumerate(tables):
         weight_name, scale_name = table.table_names(ordinal)

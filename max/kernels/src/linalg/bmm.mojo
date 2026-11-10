@@ -53,7 +53,7 @@ from layout import (
     row_major,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from layout.layout import Layout
 from std.logger import Logger
 from std.memory import dealloc
@@ -61,7 +61,7 @@ from std.memory.alloc import Alignment, Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from max.gpu.host.info import H100, MI355X, _is_sm10x_gpu
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from .matmul.cpu.apple_accelerate import (

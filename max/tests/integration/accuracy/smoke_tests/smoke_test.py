@@ -101,11 +101,13 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V4.1-Flash-NVFP4": "max/pipelines/architectures/deepseekV41/recipes/flash_nvfp4_dp4_ep4_dspark_4x_b200.yaml",
     "google/gemma-4-12B-it__device_graph_synthesis": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_device_graph_synthesis.yaml",
     "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
+    "google/gemma-4-26B-A4B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_26b_a4b.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
     "google/gemma-4-31B-it__cascade": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_cascade.yaml",
     "google/gemma-4-31B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_31b.yaml",
     "google/gemma-4-31B-it__rust_tiered_kvconnector": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_rust_tiered_kvconnector.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
+    "nvidia/Gemma-4-26B-A4B-NVFP4__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_26b_a4b_nvfp4.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
     "google/gemma-3-27b-it__modulev3": "max/pipelines/architectures/gemma3_modulev3/recipes/gemma3_27b.yaml",
@@ -146,6 +148,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
+    "reflection/Beam-1.0-501B-A23B-NVFP4": "max/pipelines/architectures/beam_modulev3/recipes/beam_1_0_nvfp4_tp4_ep4_4x_b200.yaml",
     "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_rust_tiered_kvconnector.yaml",
 })
 # fmt: on

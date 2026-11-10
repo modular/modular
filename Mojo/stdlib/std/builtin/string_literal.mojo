@@ -25,7 +25,7 @@ from std.collections.string.string_span import (
 )
 from std.os import PathLike
 from std.ffi import c_char, CStringSpan
-from std.python import ConvertibleToPython, PythonObject
+from std.python import PythonObject
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral

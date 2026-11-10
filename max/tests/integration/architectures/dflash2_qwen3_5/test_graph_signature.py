@@ -42,10 +42,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.architectures.qwen3_5.spec_adapters import state_tail_types
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _Inputs,
-    _without_tail,
 )
 
 # Three linear-attention layers and one full-attention layer: the pool tail is
@@ -75,10 +73,10 @@ def test_slot_count_matches_the_declared_formula(
 ) -> None:
     """``15 + 25D`` at ``D = 1``.
 
-    Five ragged/host inputs, signals, two 8-slot KV leaves,
-    batch_context_lengths, the eight-entry sampling tail, the bitmask triple,
-    then a pool and a row table for each of the three state leaves, the ring
-    included. The layer count does not enter.
+    Five ragged/host inputs, signals, the target's 8-slot KV leaf, a pool and
+    a row table for each of its three state leaves, the ring included, the
+    draft's 8-slot KV leaf, batch_context_lengths, the eight-entry sampling
+    tail and the bitmask triple. The layer count does not enter.
     """
     assert len(types) == 15 + 25 * 1
 
@@ -99,7 +97,7 @@ def test_the_prefix_and_sampling_tail_are_the_canonical_ones(
     assert types[2].device == cpu and types[3].device == cpu
 
     # draft_tokens .. in_thinking_phase, then the bitmask triple.
-    tail = [(t.dtype, tuple(str(d) for d in t.shape)) for t in types[23:34]]
+    tail = [(t.dtype, tuple(str(d) for d in t.shape)) for t in types[29:40]]
     assert tail == [
         (DType.int64, ("batch_size", "num_steps")),
         (DType.uint64, ("batch_size",)),
@@ -121,19 +119,19 @@ def test_the_prefix_and_sampling_tail_are_the_canonical_ones(
     ]
 
 
-def test_the_draft_leaf_follows_the_target_leaf(
+def test_the_draft_leaf_follows_the_target_state(
     types: list[TensorType | BufferType],
 ) -> None:
-    """Slot 14: the draft leaf's blocks, right after the target leaf's eight.
+    """Slot 20: the draft leaf's blocks, after the target's leaf and state.
 
     Five drafter layers at the drafter's own head geometry. The leaf's
     derivation is checked in ``test_pairing_cache``; this checks the graph
     declares it where Mach's registry looks for it.
     """
-    # Each leaf ends with its split record, the target's just before.
-    for record in (types[13], types[21]):
+    # Each leaf ends with its split record.
+    for record in (types[13], types[27]):
         assert record == TensorType(DType.uint32, [7], device=DeviceRef.CPU())
-    blocks = types[14]
+    blocks = types[20]
     assert isinstance(blocks, BufferType)
     assert blocks.dtype == GEOMETRY.dtype
     assert [str(d) for d in blocks.shape[1:]] == [
@@ -145,18 +143,28 @@ def test_the_draft_leaf_follows_the_target_leaf(
     ]
 
 
-def test_the_state_pool_tail_is_the_one_the_qwen3_5_graphs_declare(
+def test_the_state_follows_the_target_leaf(
     fused: FusedGraph, types: list[TensorType | BufferType]
 ) -> None:
-    """Checks the state tail is declared slot for slot as every speculative
-    Qwen3.5 graph declares it, so one engine-side layout binds them all."""
+    """Slots 14 to 19: each state leaf's pool, then its row table.
+
+    The state is the target's KV child after its attention leaf, so the graph
+    declares it among the KV inputs, in the cache's region order.
+    """
     regions = state_regions(fused.target)
-    expected = state_tail_types(regions, [GEOMETRY.device])
-    tail = types[len(types) - len(expected) :]
-    assert len(tail) == 2 * len(regions)
-    for got, want in zip(tail, expected, strict=True):
-        assert got.dtype == want.dtype
-        assert [str(d) for d in got.shape] == [str(d) for d in want.shape]
+    state = types[14 : 14 + 2 * len(regions)]
+    for region, pool, rows in zip(
+        regions, state[::2], state[1::2], strict=True
+    ):
+        assert isinstance(pool, BufferType)
+        assert pool.dtype == region.dtype
+        assert [str(d) for d in pool.shape] == [
+            str(d) for d in (region.rows_dim, *region.row_shape)
+        ]
+        assert isinstance(rows, TensorType)
+        assert rows.dtype == DType.uint32
+        assert rows.device == GEOMETRY.device
+        assert str(rows.shape[0]) == str(region.num_layers)
 
 
 def test_the_rollback_replays_the_conv_windows_per_layer(
@@ -198,7 +206,6 @@ def test_the_shared_batch_fills_every_slot_the_graph_declares(
     M-RoPE positions here, so the packed buffers and the signature have to
     agree on length alone.
     """
-    view = _without_tail(fused.kv_tree, "state")
 
     def dummy() -> Buffer:
         return Buffer.zeros(shape=[1], dtype=DType.int64)
@@ -214,9 +221,9 @@ def test_the_shared_batch_fills_every_slot_the_graph_declares(
         # Only the leaf count matters.
         kv_cache_inputs=cast(
             "KVCacheInputs[Buffer, Buffer]",
-            {"kv": [dummy() for _ in view.flattened_kv_inputs()]},
+            {"kv": [dummy() for _ in fused.kv_tree.flattened_kv_inputs()]},
         ),
-        trailing=[dummy() for _ in range(2 * len(state_regions(fused.target)))],
+        trailing=[],
         draft_tokens=dummy(),
         seed=dummy(),
         temperature=dummy(),

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MOGGDialect/Support/PlatformPredicate.h"
+#include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "llvm/ADT/STLExtras.h"
 
@@ -107,26 +108,6 @@ PlatformPredicate::fromGenerator(KGEN::GeneratorAttr generator) {
   if (root.isError())
     return Error(root.getError());
   return PlatformPredicate(root.takeValue());
-}
-
-PlatformPredicate PlatformPredicate::fromDeviceInfo(DeviceInfoAttr device) {
-  Node conjunction;
-  conjunction.kind = Node::Kind::And;
-  DeviceFields fields = getDeviceFields(device);
-  for (unsigned i = 0; i < kNumDeviceFields; ++i) {
-    if (fields[i].empty())
-      continue;
-    Node equals;
-    equals.kind = Node::Kind::Equals;
-    equals.field = static_cast<DeviceField>(i);
-    equals.literal = fields[i].str();
-    conjunction.operands.push_back(std::move(equals));
-  }
-  if (conjunction.operands.empty())
-    return PlatformPredicate();
-  if (conjunction.operands.size() == 1)
-    return PlatformPredicate(std::move(conjunction.operands.front()));
-  return PlatformPredicate(std::move(conjunction));
 }
 
 ErrorOr<PlatformPredicate::Node> PlatformPredicate::parse(TypedAttr expr) {
@@ -343,4 +324,33 @@ M::MOGG::comparePlatformPredicates(const PlatformPredicate &first,
   else
     result.order = PlatformPredicateOrder::Equivalent;
   return result;
+}
+
+bool M::MOGG::isSatisfiable(const PlatformPredicate &platform) {
+  bool satisfiable = false;
+  const PlatformPredicate *platforms[] = {&platform};
+  forEachRepresentativeDevice(platforms, [&](const SymbolicDevice &d) {
+    satisfiable |= platform.holdsFor(d);
+  });
+  return satisfiable;
+}
+
+KGEN::GeneratorAttr M::MOGG::getRegisterPlatformPredicate(TypedAttr decorator) {
+  auto apply = KGEN::sugarDynCast<KGEN::ParamOperatorAttr>(decorator);
+  if (!apply || apply.getOpcode() != KGEN::POC::Apply ||
+      apply.getOperands().empty())
+    return {};
+
+  auto callee = KGEN::FuncSymbolGenerator::dynCast(apply.getOperand(0));
+  if (!callee || !callee.isFullyBound() || callee.getParamValues().empty())
+    return {};
+
+  // `register(name)` has no parameters.
+  if (!callee.getSymbol().getLeafReference().strref().starts_with(
+          kRegisterCondDecoratorPrefix))
+    return {};
+
+  TypedAttr platform = KGEN::ParamOperatorAttr::stripRebind(
+      KGEN::getCanonicalAttr(callee.getParamValues().front()));
+  return KGEN::sugarDynCast<KGEN::GeneratorAttr>(platform);
 }

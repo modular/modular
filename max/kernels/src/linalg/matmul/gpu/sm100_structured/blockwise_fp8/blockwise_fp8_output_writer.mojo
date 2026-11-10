@@ -40,7 +40,7 @@ from layout import (
 from layout.swizzle import make_swizzle
 from layout.layout import Layout, UpcastLayout, ZippedDivideLayout
 from layout.tma_async import TMATensorTile
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 
 from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
 from ..structured_kernels.epilogue_components import (

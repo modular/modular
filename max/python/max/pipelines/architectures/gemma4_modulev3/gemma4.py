@@ -19,6 +19,7 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
+from max.nn.activation import GatedActivation
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mlp import MLP
@@ -46,6 +47,7 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from .layers.attention import Gemma4Attention
+from .layers.moe import Gemma4MoE
 from .layers.rms_norm import Gemma4RMSNorm
 from .layers.rotary_embedding import ProportionalRotaryEmbedding
 from .layers.transformer_block import Gemma4TransformerBlock
@@ -143,9 +145,24 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
                 and i in nvfp4_config.attn_quantized_layers
             )
 
+            moe_block: Gemma4MoE | None = None
+            if text_config.enable_moe_block:
+                moe_block = Gemma4MoE(
+                    hidden_dim=text_config.hidden_size,
+                    num_experts=text_config.num_experts,
+                    num_experts_per_token=text_config.top_k_experts,
+                    moe_dim=text_config.moe_intermediate_size,
+                    eps=text_config.rms_norm_eps,
+                    activation=GatedActivation(text_config.hidden_activation),
+                    quant_config=nvfp4_config,
+                )
+
+            # An NVFP4 MoE checkpoint quantizes only the experts; its dense
+            # MLP stays BF16.
             mlp: Module[[Tensor], Tensor]
             if (
                 nvfp4_config is not None
+                and moe_block is None
                 and i in nvfp4_config.mlp_quantized_layers
             ):
                 quantized_mlp = QuantizedMLP(
@@ -189,6 +206,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
                     mlp=mlp,
                     hidden_size=text_config.hidden_size,
                     rms_norm_eps=text_config.rms_norm_eps,
+                    moe_block=moe_block,
                 )
             )
         self.layers = ModuleList(layers)

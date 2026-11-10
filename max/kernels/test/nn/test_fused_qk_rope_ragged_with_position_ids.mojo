@@ -90,30 +90,29 @@ def test_fused_qk_rope[
     var kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    comptime Collection = PagedKVCacheCollection[
+    # The origins below are placeholders: only the origin-independent
+    # blocks_tt_layout is queried from this alias. The collection itself is
+    # built at its constructor call below, with origins inferred from the
+    # argument tensors.
+    comptime BlocksLayout = PagedKVCacheCollection[
         dtype,
         kv_params,
         page_size,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
-    ]
-    comptime BlocksLayout = Collection.blocks_tt_layout
+        MutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
+        MutUntrackedOrigin,
+    ].blocks_tt_layout
     var blocks_shape = Coord[*BlocksLayout.shape_types]()
     blocks_shape[0] = Int64(num_paged_blocks)
     blocks_shape[2] = Int64(num_layers)
     var blocks_strides = Coord[*BlocksLayout.stride_types]()
     blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
     blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
-    var kv_cache_block = (
-        TileTensor(
-            Span(kv_cache_block_buffer),
-            row_major(len(kv_cache_block_buffer)),
-        )
-        .reshape(BlocksLayout(blocks_shape, blocks_strides))
-        .as_unsafe_any_origin()
-    )
+    var kv_cache_block = TileTensor(
+        Span(kv_cache_block_buffer),
+        row_major(len(kv_cache_block_buffer)),
+    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
 
     var lookup_table_buffer = List[UInt32](
         length=batch_size * pages_per_seq, fill=0
@@ -161,10 +160,15 @@ def test_fused_qk_rope[
     var cache_lengths = TileTensor(
         Span(start_positions_dyn), row_major(len(start_positions_dyn))
     ).reshape(Coord(Int64(len(start_positions_dyn))))
-    var kv_collection = Collection(
+    var kv_collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        scales_origin=MutUntrackedOrigin,
+    ](
         blocks=kv_cache_block,
-        cache_lengths=cache_lengths.as_imm().as_unsafe_any_origin(),
-        lookup_table=lookup_table.as_imm().as_unsafe_any_origin(),
+        cache_lengths=cache_lengths.as_imm(),
+        lookup_table=lookup_table.as_imm(),
         max_seq_length=seq_len,
         max_cache_length=UInt32(max_cache_len_in_batch),
     )
@@ -190,7 +194,8 @@ def test_fused_qk_rope[
     )
 
     # Create position_ids tensor for testing explicit position encoding using TileTensor.
-    # The function expects TileTensor with Scalar layout and ImmutAnyOrigin.
+    # fused_qk_rope_ragged's position_ids parameter erases the tensor origin,
+    # so the origin is cast to match.
     var position_ids_input_buffer = position_ids_input[.uint32]()
     var position_ids_static = TileTensor(
         position_ids_input_buffer, position_ids_layout

@@ -184,8 +184,9 @@ def grouped_matmul_sm90[
     var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
     var c_desc_ptr = c.ptr.as_unsafe_any_origin()
     comptime if epilogue_owns_stores:
-        c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
-        c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
+        var scratch = ctx.enqueue_create_buffer[c_type](1)
+        c_desc_ptr = scratch.unsafe_ptr().as_unsafe_any_origin()
+        c_desc_scratch = scratch^
     var c_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=c_swizzle](
         ctx, TileTensor(c_desc_ptr, c.layout)
     )

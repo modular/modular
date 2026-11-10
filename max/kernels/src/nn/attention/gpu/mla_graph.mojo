@@ -235,11 +235,11 @@ def _mla_sparse_prefill_topk_lengths[
     into `full_topk`; the caller holds that buffer for the launch.
     """
     comptime if TopkLengthsPtrType.is_null:
-        full_topk = ctx.enqueue_create_buffer[DType.int32](seq_len)
-        full_topk.value().enqueue_fill(
-            Int32(_mla_sparse_row_topk[cache_t](indices_stride))
-        )
-        return full_topk.value().unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+        var buf = ctx.enqueue_create_buffer[DType.int32](seq_len)
+        buf.enqueue_fill(Int32(_mla_sparse_row_topk[cache_t](indices_stride)))
+        var ptr = buf.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+        full_topk = buf^
+        return ptr
     else:
         return rebind[MutPointer[Int32, MutAnyOrigin]](
             as_optional_reg(topk_lengths).value()
@@ -4740,37 +4740,39 @@ def mla_decode_branch_bf16[
             "the AMD sparse MLA arm reads paged physical rows; the graph op"
             " remaps logical indices before calling it"
         )
-        if d_indices is None:
+        if case .Some(indices) = d_indices:
+            var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+            var topk_lengths_ptr = rebind[MutPointer[Int32, MutAnyOrigin]](
+                as_optional_reg(topk_lengths).value()
+            )
+            var compact_buf = ctx.enqueue_create_buffer[DType.int32](
+                seq_len * indices_stride
+            )
+            var valid_lengths_buf = ctx.enqueue_create_buffer[DType.uint32](
+                seq_len
+            )
+            var zero_row_buf = ctx.enqueue_create_buffer[
+                type_of(k_cache).dtype
+            ](k_cache_dim)
+            _amd_sparse_mla_bf16_rows[num_heads, k_cache_dim, kv_latent_dim](
+                raw_output,
+                mla_decode_input,
+                k_cache,
+                indices,
+                topk_lengths_ptr,
+                indices_stride,
+                compact_buf.unsafe_ptr().as_unsafe_any_origin(),
+                valid_lengths_buf.unsafe_ptr().as_unsafe_any_origin(),
+                zero_row_buf.unsafe_ptr().as_unsafe_any_origin(),
+                scale,
+                ctx,
+                scalar_args_buf,
+            )
+            _ = compact_buf^
+            _ = valid_lengths_buf^
+            _ = zero_row_buf^
+        else:
             raise Error("AMD sparse MLA decode requires d_indices.")
-
-        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-        var topk_lengths_ptr = rebind[MutPointer[Int32, MutAnyOrigin]](
-            as_optional_reg(topk_lengths).value()
-        )
-        var compact_buf = ctx.enqueue_create_buffer[DType.int32](
-            seq_len * indices_stride
-        )
-        var valid_lengths_buf = ctx.enqueue_create_buffer[DType.uint32](seq_len)
-        var zero_row_buf = ctx.enqueue_create_buffer[type_of(k_cache).dtype](
-            k_cache_dim
-        )
-        _amd_sparse_mla_bf16_rows[num_heads, k_cache_dim, kv_latent_dim](
-            raw_output,
-            mla_decode_input,
-            k_cache,
-            d_indices.value(),
-            topk_lengths_ptr,
-            indices_stride,
-            compact_buf.unsafe_ptr().as_unsafe_any_origin(),
-            valid_lengths_buf.unsafe_ptr().as_unsafe_any_origin(),
-            zero_row_buf.unsafe_ptr().as_unsafe_any_origin(),
-            scale,
-            ctx,
-            scalar_args_buf,
-        )
-        _ = compact_buf^
-        _ = valid_lengths_buf^
-        _ = zero_row_buf^
     else:
         generic_flare_mla_decode_kv_cache_ragged[
             mask_str=mask_str,

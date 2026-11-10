@@ -17,9 +17,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 from max import functional as F
 from max.dtype import DType
+from max.graph import Graph
+from max.nn.activation import GatedActivation
 from max.nn.common_layers.quant_moe import (
+    ExpertParallelMoE,
     QuantizedMoE,
 )
 from max.nn.common_layers.quant_tensor import (
@@ -262,6 +266,53 @@ def test_moe_forward_with_shared_experts(mock_accelerator: MagicMock) -> None:
 
         assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
         assert out.dtype == DType.bfloat16
+
+
+@pytest.mark.parametrize(
+    ("activation", "expected"),
+    [(None, "silu"), (GatedActivation("gelu_tanh"), "gelu_tanh")],
+    ids=["default_silu", "gelu_tanh"],
+)
+def test_moe_routed_experts_run_the_given_activation(
+    mock_accelerator: MagicMock,
+    activation: GatedActivation | None,
+    expected: str,
+) -> None:
+    """The routed experts' fused activation is the one the layer was given."""
+    device = mock_accelerator()
+    with F.lazy():
+        layer = QuantizedMoE(
+            hidden_dim=_HIDDEN_DIM,
+            num_experts=_NUM_EXPERTS,
+            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+            moe_dim=_MOE_DIM,
+            activation=activation,
+        ).to(device)
+        layer(
+            Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+            )
+        )
+        ir = str(Graph.current._mlir_op)
+
+    assert ir.count('"ep.fused_silu"') == 1
+    assert f'activation = "{expected}"' in ir
+
+
+def test_expert_parallel_moe_rejects_an_activation(
+    mock_accelerator: MagicMock,
+) -> None:
+    """EP would silently run SiLU, so a non-default activation is refused."""
+    device = mock_accelerator()
+    with F.lazy(), pytest.raises(ValueError, match="activation"):
+        ExpertParallelMoE(
+            hidden_dim=_HIDDEN_DIM,
+            num_experts=_NUM_EXPERTS,
+            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+            moe_dim=_MOE_DIM,
+            activation=GatedActivation("gelu_tanh"),
+            ep_batch_manager=MagicMock(),
+        ).to(device)
 
 
 # --------------------------------------------------------------------------- #

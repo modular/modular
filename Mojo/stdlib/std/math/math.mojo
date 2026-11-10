@@ -33,7 +33,12 @@ from std.sys.info import is_32bit
 
 from std.algorithm import vectorize
 from std.bit import count_leading_zeros, count_trailing_zeros
-from std.builtin.dtype import _integral_type_of
+from std.builtin.dtype import (
+    _int_type_of_width,
+    _integral_type_of,
+    _uint_type_of_width,
+)
+from std.os import abort
 from std.simd import _modf, _simd_apply
 from std.collections import Span
 from std.complex import ComplexSIMD
@@ -41,6 +46,7 @@ from . import pi, inf, isfinite, isinf, isnan, nan, nextafter
 
 from std.utils.numerics import FPUtils, isnan, nan
 from std.memory import bitcast
+from std.utils.fast_div import FastDiv
 from std.utils.static_tuple import StaticTuple
 
 from std._plugin import CurrentPlugin
@@ -3417,6 +3423,148 @@ def pow(base: SIMD, exp: FloatLiteral) -> type_of(base):
     return base.__pow__(exp)
 
 
+def pow[
+    dtype: DType, width: SIMDLength, //
+](
+    base: SIMD[dtype, width],
+    exp: SIMD[dtype, width],
+    mod: SIMD[dtype, width],
+) -> SIMD[dtype, width] where dtype.is_integral():
+    """Computes `base` raised to the power of `exp`, modulo `mod`, elementwise.
+
+    For example, `pow(3, 4, 5)` is `1`, `pow(2, 3, -5)` is `-2`, and
+    `pow(3, -1, 7)` is `5`, because `3 * 5 % 7 == 1`.
+
+    Constraints:
+        The `dtype` must be an integral type of at most 64 bits.
+
+    Parameters:
+        dtype: The `dtype` of the inputs and the result.
+        width: The width of the inputs and the result.
+
+    Args:
+        base: The base of the power operation.
+        exp: The exponent of the power operation.
+        mod: The modulus.
+
+    Returns:
+        The `base` raised to the power of `exp`, modulo `mod`. Aborts if
+        `mod` is zero, or if `exp` is negative and `base` has no inverse
+        modulo `mod`.
+    """
+    comptime assert (
+        bit_width_of[dtype]() <= 64
+    ), "pow() with a modulus supports integers of at most 64 bits"
+
+    var result = SIMD[dtype, width]()
+    comptime for i in range(width):
+        result[i] = _pow_mod(base[i], exp[i], mod[i])
+    return result
+
+
+def _pow_mod[
+    dtype: DType
+](base: Scalar[dtype], exp: Scalar[dtype], mod: Scalar[dtype]) -> Scalar[dtype]:
+    # Follows CPython's `long_pow` for the semantics and Julia's `powermod` for
+    # the square-and-multiply loop and the sign of the result.
+    #
+    # The signed type twice as wide holds |x| of the most negative input, and
+    # its unsigned twin the extended Euclid coefficients for a 64-bit `mod`.
+    comptime wide = _int_type_of_width[2 * bit_width_of[dtype]()]()
+    comptime uwide = _uint_type_of_width[2 * bit_width_of[dtype]()]()
+
+    if mod == 0:
+        abort("pow() 3rd argument cannot be 0")
+
+    var m_abs = abs(mod.cast[wide]())
+    if m_abs == 1:
+        return 0
+    var m = m_abs.cast[.uint64]()
+
+    var b = abs(base.cast[wide]()).cast[.uint64]() % m
+    if base < 0 and b != 0:
+        b = m - b
+    if exp < 0:
+        b = _inverse_mod(b.cast[uwide](), m.cast[uwide]()).cast[.uint64]()
+    var e = abs(exp.cast[wide]()).cast[.uint64]()
+
+    var r: UInt64
+    # Products of residues below 2^32 fit in 64 bits; larger ones need a
+    # 128-bit `%`, which is a library call.
+    comptime is_64_bit = bit_width_of[dtype]() == 64
+    if is_64_bit and m > UInt32.MAX.cast[.uint64]():
+        r = _pow_mod_loop(
+            b.cast[.uint128](), e.cast[.uint128](), m.cast[.uint128]()
+        ).cast[.uint64]()
+    elif is_64_bit and not is_32bit() and e >= 1 << 34:
+        r = _pow_mod_reciprocal(b, e, m)
+    else:
+        r = _pow_mod_loop(b, e, m)
+
+    if mod < 0 and r != 0:
+        return (r.cast[wide]() - m_abs).cast[dtype]()
+    return r.cast[dtype]()
+
+
+def _pow_mod_loop[
+    dtype: DType
+](
+    var base: Scalar[dtype], var exp: Scalar[dtype], mod: Scalar[dtype]
+) -> Scalar[dtype]:
+    var result = Scalar[dtype](1)
+    while exp != 0:
+        if (exp & 1) != 0:
+            result = result * base % mod
+        exp >>= 1
+        if exp == 0:
+            break
+        base = base * base % mod
+    return result
+
+
+@inline(.never)
+def _pow_mod_reciprocal(base: UInt64, var exp: UInt64, mod: UInt64) -> UInt64:
+    # `FastDiv` divides by multiplying with a reciprocal of `mod`. Its setup is
+    # one 128-bit division, which exponents below about 2^34 don't repay.
+    comptime U = Scalar[FastDiv[DType.uint64].uint_type]
+    var m = FastDiv[DType.uint64](Int(mod))
+    var b = U(base)
+    var result = U(1)
+    while exp != 0:
+        if (exp & 1) != 0:
+            result = result * b % m
+        exp >>= 1
+        if exp == 0:
+            break
+        b = b * b % m
+    return result.cast[.uint64]()
+
+
+def _inverse_mod[
+    dtype: DType
+](a: Scalar[dtype], m: Scalar[dtype]) -> Scalar[dtype]:
+    # The extended Euclidean algorithm, keeping only the Bezout coefficient of
+    # `a`.
+    comptime signed = _int_type_of_width[bit_width_of[dtype]()]()
+    var t = Scalar[signed](0)
+    var new_t = Scalar[signed](1)
+    var r = m.cast[signed]()
+    var new_r = a.cast[signed]()
+    while new_r != 0:
+        var q = r // new_r
+        var next_t = t - q * new_t
+        t = new_t
+        new_t = next_t
+        var next_r = r - q * new_r
+        r = new_r
+        new_r = next_r
+    if r != 1:
+        abort("base is not invertible for the given modulus")
+    if t < 0:
+        t += m.cast[signed]()
+    return t.cast[dtype]()
+
+
 # ===----------------------------------------------------------------------=== #
 # round
 # ===----------------------------------------------------------------------=== #
@@ -4948,48 +5096,6 @@ def _expm1_accurate[
     return (isnan(x) | abs(x).lt(tiny)).select(x, res)
 
 
-def _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
-    """This computes the `atanh` of the inputs for float32. It uses the same
-    approximation used by Eigen library."""
-
-    comptime nan_val = nan[x.dtype]()
-    comptime inf_val = inf[x.dtype]()
-    comptime neg_inf_val = -inf[x.dtype]()
-
-    var is_neg = x.lt(0)
-    var x_abs = abs(x)
-    var x2 = x * x
-    var x3 = x2 * x
-
-    # When x is in the range [0, 0.5], we use a polynomial approximation.
-    # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
-    var p = polynomial_evaluate[
-        [
-            Scalar[x.dtype](0.3333373963832855224609375),
-            0.1997792422771453857421875,
-            0.14672131836414337158203125,
-            8.2311116158962249755859375e-2,
-            0.1819281280040740966796875,
-        ]
-    ](x2)
-    p = x3.fma(p, x)
-
-    # For |x| in the range (0.5, 1), we use the identity:
-    # atanh(x) = 0.5 * log((1 + x) / (1 - x))
-    var r = 0.5 * log((1.0 + x) / (1.0 - x))
-
-    # If x is 1, then the result is +infinity, and -infinity if x is -1.
-    # If |x| > 1, NaN is returned. Otherwise, if |x| > 0.5, we use the r
-    # approximation, otherwise we use the p polynomial approximation.
-    return x_abs.eq(1).select(
-        is_neg.select(neg_inf_val, inf_val),
-        x_abs.ge(1).select(
-            is_neg.select(nan_val, -nan_val),
-            x_abs.gt(0.5).select(r, p),
-        ),
-    )
-
-
 @inline(.never)
 def _bessel_is_zero_bits[
     dtype: DType, width: SIMDLength, //
@@ -5621,51 +5727,6 @@ def _log10_impl[
     return ((bits.lt(0) & ~is_zero) | isnan(x)).select(nan[dtype](), result)
 
 
-def _log1p_impl[
-    dtype: DType, width: SIMDLength, //
-](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
-    # This uses the approximation from cephes to compute log1p via the approximation
-    # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
-    # in the domain 1/sqrt(2) <= x < sqrt(2)
-
-    comptime P: List[Scalar[dtype]] = [
-        2.0039553499201281259648e1,
-        5.7112963590585538103336e1,
-        6.0949667980987787057556e1,
-        2.9911919328553073277375e1,
-        6.5787325942061044846969e0,
-        4.9854102823193375972212e-1,
-        4.5270000862445199635215e-5,
-    ]
-    comptime Q: List[Scalar[dtype]] = [
-        6.0118660497603843919306e1,
-        2.1642788614495947685003e2,
-        3.0909872225312059774938e2,
-        2.2176239823732856465394e2,
-        8.3047565967967209469434e1,
-        1.5062909083469192043167e1,
-    ]
-
-    # Sqrt(1/2)
-    comptime sqrt2_div_2 = 0.70710678118654752440
-    # Sqrt(2)
-    comptime sqrt2 = 1.41421356237309504880
-
-    var z = 1.0 + x
-    var log1x = log(z)
-
-    var in_domain_mask = z.lt(sqrt2_div_2) | z.gt(sqrt2)
-    if all(in_domain_mask):
-        return log1x
-
-    z = x * x
-    z = -0.5 * z + x * (
-        z * polynomial_evaluate[P](x) / polynomial_evaluate[Q](x)
-    )
-
-    return in_domain_mask.select(log1x, x + z)
-
-
 def _narrow_from_f32[
     width: SIMDLength, //, dtype: DType
 ](x: SIMD[.float32, width]) -> SIMD[dtype, width]:
@@ -6014,96 +6075,6 @@ def _log_accurate[
     """Computes the natural log of positive finite `x` to within about 1 ulp."""
     var exponent, fraction = _log_reduce(x)
     return _log_combine(exponent, fraction, 0)
-
-
-def _cbrtf(x: Float32) -> Float32:
-    """Compute the cube root of a 32-bit floating-point number.
-
-    This function implements an efficient algorithm for computing the cube root (∛x)
-    of a single-precision floating-point value. The algorithm works by:
-
-    1. Extracting the binary exponent `e` from the input `x` such that x = 2^e * mantissa.
-    2. Normalizing the input by scaling `x` by 2^(-e) to obtain a mantissa in [0.5, 1).
-    3. Dividing the exponent `e` by 3 to obtain the cube root exponent, and computing the remainder.
-    4. Applying a correction factor based on the remainder to improve accuracy.
-    5. Reconstructing the result by scaling the cube root of the mantissa by 2^(e/3) and the correction factor.
-
-    Args:
-        x: Input value (Float32) for which to compute the cube root.
-
-    Returns:
-        The cube root of `x` as a Float32.
-    """
-    # Initialize correction factor q (may be adjusted based on exponent remainder)
-    var q = Float32(1.0)
-
-    # Extract exponent e such that x = 2^e * mantissa
-    # Add 1 to exponent for normalization purposes
-    var e = _ilogb(abs(x)) + 1  # Get binary exponent
-
-    # Normalize input: scale x by 2^(-e) to get mantissa in [0.5, 1)
-    var d = ldexp(x, -e)
-
-    # Compute exponent division by 3 with remainder
-    # We need to split e into: e = 3*qu + re where re ∈ {0, 1, 2}
-    # Add offset 6144 to ensure positive values for easier integer division
-    var t = Float32(e) + 6144.0
-    var qu = Int(t / 3.0)  # Quotient: e // 3
-    var re = Int(t - Float32(qu) * 3.0)  # Remainder: e % 3
-
-    comptime CBRT_2 = 1.2599210498948731647672106
-    comptime CBRT_4 = 1.5874010519681994747517056
-
-    # Apply correction factors based on remainder
-    # If e % 3 == 1: need to multiply by 2^(1/3) = cbrt(2)
-    if re == 1:
-        q = CBRT_2
-    # If e % 3 == 2: need to multiply by 2^(2/3) = cbrt(4)
-    elif re == 2:
-        q = CBRT_4
-
-    # Scale q by 2^(qu - 2048) to reconstruct proper exponent
-    # Subtract 2048 to compensate for the 6144 offset used earlier
-    q = ldexp(q, Int32(qu - 2048))
-
-    # Apply sign to correction factor (cube root preserves sign)
-    q = copysign(q, x)
-
-    # Work with absolute value for polynomial approximation
-    d = abs(d)
-
-    # Polynomial approximation for cbrt(d) where d ∈ [0.5, 1)
-    # Using Horner's method for efficient evaluation
-    var poly = polynomial_evaluate[
-        [
-            Scalar[x.dtype](2.2241256237030029296875),
-            -3.8095417022705078125,
-            5.898262500762939453125,
-            -5.532182216644287109375,
-            2.8208892345428466796875,
-            -0.601564466953277587890625,
-        ]
-    ](d)
-
-    # Newton-Raphson refinement step
-    # Formula: y_new = y - (y³ - d) / (3y²)
-    # Rearranged as: y_new = (2y³ + d) / (3y²)
-    var y = d * poly * poly  # d * (poly ** 2), where poly ≈ cbrt(d)
-
-    # Apply Newton iteration: y = y - (2/3) * y * (y*x - 1)
-    # This refines the approximation
-    y = y - (2.0 / 3.0) * y * (y * poly - 1.0)
-
-    # Multiply by the correction factor q to get final result
-    y = y * q
-
-    # Handle special cases
-    if isinf(x):
-        y = copysign(Float32.MAX, x)  # cbrt(±∞) = ±∞
-    if x == 0.0:
-        y = copysign(Float32(0.0), x)  # cbrt(±0) = ±0
-
-    return y
 
 
 @inline(.always)

@@ -103,6 +103,11 @@ class EplbRuntime:
         Raises:
             ValueError: If the snapshot does not match the model.
         """
+        if self._runtime.eplb_count_expert_load:
+            # The tally indexes rows the way the routing histogram does: one
+            # per profiled layer, dense layers left at zero.
+            ep_config.eplb_count_expert_load = True
+            ep_config.num_moe_layers = self.metadata.num_layers
         path = os.environ.get(EPLB_STATS_ENV)
         if not path:
             return None

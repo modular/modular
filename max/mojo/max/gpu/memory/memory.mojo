@@ -3642,8 +3642,8 @@ def _get_type_mnemonic[dtype: DType]() -> StaticString:
             return "e4m3"
         case .float8_e5m2:
             return "e5m2"
-
-    return "unknown dtype mnemonic"
+        case _:
+            return "unknown dtype mnemonic"
 
 
 def _int_to_str[val: Int]() -> StaticString:

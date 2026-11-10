@@ -156,10 +156,6 @@ struct float8_e3m4_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E3M4> {
   using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E3M4>;
   using Base::Base;
 };
-struct float8_e4m3_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3> {
-  using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3>;
-  using Base::Base;
-};
 struct float8_e4m3fn_t
     : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FN> {
   using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FN>;

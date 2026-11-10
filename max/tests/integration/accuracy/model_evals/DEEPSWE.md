@@ -39,7 +39,11 @@ gh workflow run minimaxM3AgentClassDatasetEval.yaml --ref <branch> \
 
 `run_deepswe_local.sh` documents every environment variable. Results land in
 `$OUT/deepswe/<trial>/` (agent trajectory with per-turn token counts, verifier
-output, `result.json`) and `$OUT/score.json`; `pier view $OUT` browses them. The
+output, `result.json`) and `$OUT/score.json`; `pier view $OUT` browses them.
+`$OUT/results.jsonl` (a row per trial) and `$OUT/config.json` are what
+`internal/upload_results.py` loads into S3 and BigQuery, as the weekly
+eval in `mcloudEvalMaxModel.yaml` does; that workflow also packs the
+scrubbed `$OUT/deepswe` into `trials.tar.gz`, which S3 keeps beside them. The
 agent can print its environment, so the endpoint's API key is scrubbed from
 everything under `$OUT` when the run exits (`deepswe_redact.py`). A file that
 cannot be scrubbed even as root is deleted and listed in

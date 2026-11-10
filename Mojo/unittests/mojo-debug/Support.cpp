@@ -178,20 +178,6 @@ static CommandResult runCommandForContext(StringRef command, Ctx context) {
   return {result.Succeeded(), output, error};
 }
 
-/// Similar to runCommandForContext, but the output and error are printed
-/// right away.
-///
-/// Returns true if and only if the command succeeded.
-template <typename Ctx>
-static bool dumpCommandForContext(StringRef command, Ctx context) {
-  CommandResult result = runCommandForContext(command, context);
-  if (!result.output.empty())
-    llvm::outs() << result.output << "\n";
-  if (!result.error.empty())
-    llvm::outs() << result.error << "\n";
-  return result.success;
-}
-
 /// Traverses the input file looking for the `# breakpoint` comment, and
 /// places a breakpoint at the lines where it appears.
 static void setBreakpointsForComments(const MojoSource &source,

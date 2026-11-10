@@ -32,7 +32,7 @@ from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn._graph_ops import (
     hyper_connection_gates,
     mhc_post,
-    mhc_post_preferred,
+    mhc_post_supports,
     mhc_pre,
     mhc_pre_supports,
 )
@@ -292,8 +292,8 @@ class HyperConnection(Module, Shardable):
     ) -> TensorValue:
         """Places a sublayer output back into the residual streams.
 
-        ``streams' = post * y + comb^T @ streams``. On AMD GPUs, for shapes
-        it supports, the :func:`~max.nn._graph_ops.mhc_post` kernel evaluates it
+        ``streams' = post * y + comb^T @ streams``. On a GPU, for shapes it
+        supports, the :func:`~max.nn._graph_ops.mhc_post` kernel evaluates it
         in float32 and rounds once to the streams' dtype; elsewhere it is an
         outer product in the stream axis plus a small batched matmul, both in
         the streams' dtype.
@@ -322,7 +322,9 @@ class HyperConnection(Module, Shardable):
                 f"{self.hc_mult}, {self.hidden_size}] and y [total_tokens, "
                 f"{self.hidden_size}], got {streams.shape} and {y.shape}."
             )
-        if mhc_post_preferred(self.hc_mult, self.hidden_size, streams.dtype):
+        if streams.device.is_gpu() and mhc_post_supports(
+            self.hc_mult, self.hidden_size, streams.dtype
+        ):
             return mhc_post(streams, y, mixing.post, mixing.comb)
         dtype = streams.dtype
         placed = ops.unsqueeze(

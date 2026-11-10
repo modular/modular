@@ -117,6 +117,7 @@ struct MojoTypeSystem::Impl {
 
     // Set up the dialects in the context.
     mlirContext.appendDialectRegistry(registry);
+    configureKGENContext(&mlirContext);
 
     // Compute the target information for the expression.
     compilationOptions.targetTriple = archSpec.GetTriple().str();

@@ -428,21 +428,6 @@ private:
   Shared<llvm::SetVector<CompileOffloadOp>> compileOffloadOps;
 
   friend class ParametricIREvaluator;
-
-public:
-  std::atomic<uint64_t> paramReplacerCacheTlsHits = 0;
-  std::atomic<uint64_t> paramReplacerCacheGlobalHits = 0;
-  std::atomic<uint64_t> paramReplacerCacheMisses = 0;
-
-  std::atomic<uint64_t> applyCacheMisses = 0;
-  std::atomic<uint64_t> applyCacheTlsHit = 0;
-  std::atomic<uint64_t> applyCacheGlobalHit = 0;
-  std::atomic<uint64_t> applyCacheDuplicates = 0;
-
-  Shared<llvm::DenseMap<uint64_t, uint64_t>> cacheSizes;
-
-  Shared<llvm::DenseMap<const void *, std::tuple<Attribute, Type, uint64_t>>>
-      replacerStats;
 };
 
 } // namespace M::KGEN

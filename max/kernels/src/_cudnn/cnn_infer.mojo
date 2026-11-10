@@ -27,7 +27,6 @@ from .infer import (
     cudnnDeterminism_t,
     cudnnMathType_t,
     cudnnStatus_t,
-    cudnnTensorFormat_t,
     AnyOpaquePointer,
     DoubleNestedPointer,
 )

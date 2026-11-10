@@ -242,13 +242,16 @@ def random_weights(config: KimiK3ModelConfig) -> dict[str, np.ndarray]:
     return w
 
 
-def kv_params_and_inputs(
+def kv_params_only(
     config: KimiK3ModelConfig,
     devices: Sequence[Accelerator],
-    prompt_lens: list[int],
-) -> tuple[MultiKVCacheParams, list[Tensor]]:
-    """Builds a real, per-device cache tree (MLA leaf + KDA state) and its
-    flattened inputs, for exactly this batch at this device count."""
+) -> MultiKVCacheParams:
+    """Builds the per-device cache tree metadata, allocating nothing.
+
+    The params alone describe every symbolic input the model's graphs take,
+    so a graph can be traced and compiled against them before any cache
+    buffer exists.
+    """
     tp = len(devices)
     device_refs = [DeviceRef.from_device(d) for d in devices]
     num_kda = len(config.kda_layer_indices)
@@ -275,9 +278,26 @@ def kv_params_and_inputs(
         ),
         devices=device_refs,
     )
-    kv_params = MultiKVCacheParams.from_params(
+    return MultiKVCacheParams.from_params(
         {ATTN_CACHE_KEY: attn_params, STATE_CACHE_KEY: state_params}
     )
+
+
+def kv_cache_inputs(
+    config: KimiK3ModelConfig,
+    kv_params: MultiKVCacheParams,
+    devices: Sequence[Accelerator],
+    prompt_lens: list[int],
+) -> list[Tensor]:
+    """Allocates the real, per-device cache buffers for exactly this batch.
+
+    The buffers match the tree ``kv_params`` describes, so they bind to the
+    graph inputs compiled against those params.
+    """
+    tp = len(devices)
+    num_kda = len(config.kda_layer_indices)
+    kda_inner = config.kda_num_heads * config.kda_head_dim
+    attn_params = kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
 
     attn_per_device = [
         build_paged_cache(attn_params, prompt_lens, d) for d in devices
@@ -296,7 +316,17 @@ def kv_params_and_inputs(
         )
         for d in devices
     ]
-    kv_inputs = tree.leaves(
+    return tree.leaves(
         {ATTN_CACHE_KEY: attn_per_device, STATE_CACHE_KEY: state_per_device}
     )
-    return kv_params, kv_inputs
+
+
+def kv_params_and_inputs(
+    config: KimiK3ModelConfig,
+    devices: Sequence[Accelerator],
+    prompt_lens: list[int],
+) -> tuple[MultiKVCacheParams, list[Tensor]]:
+    """Builds a real, per-device cache tree (MLA leaf + KDA state) and its
+    flattened inputs, for exactly this batch at this device count."""
+    kv_params = kv_params_only(config, devices)
+    return kv_params, kv_cache_inputs(config, kv_params, devices, prompt_lens)

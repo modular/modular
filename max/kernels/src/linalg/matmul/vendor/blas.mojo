@@ -207,9 +207,7 @@ def _resolve_backend[
         return Backend.HIPBLASLT
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
-    elif (
-        dtype.value().is_float8() if dtype else False
-    ) or dtype == DType.uint8:
+    elif dtype.map(DType.is_float8).or_else(False) or dtype == DType.uint8:
         return Backend.CUBLASLT
     return Backend.CUBLAS
 
@@ -283,16 +281,6 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
             return
 
         raise Error("the backend is not currently supported")
-
-    def _is_null(self) -> Bool:
-        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
-            return self._get_cublas() == Self._cublas_type()
-        elif Self.resolved_backend is Backend.ROCBLAS:
-            return self._get_rocblas() == Self._rocblas_type()
-        elif Self.resolved_backend is Backend.HIPBLASLT:
-            return self._get_hipblaslt() == Self._hipblaslt_type()
-
-        return False
 
     def _get_cublas(self) -> Self._cublas_type:
         comptime assert Self.resolved_backend in (

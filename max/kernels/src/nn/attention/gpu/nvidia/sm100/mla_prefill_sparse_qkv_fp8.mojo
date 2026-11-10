@@ -2019,22 +2019,24 @@ struct MLAPrefillSparseQKVFP8[
 
         var output_scale: Float32
         var sink_row = idx_in_wg % UInt32(64)
-        if attn_sink_ptr and sink_row < UInt32(Self.NUM_Q_HEADS_PER_CTA):
-            # At cg2 this CTA owns heads [cta_id*NUM_Q_HEADS_PER_CTA, ...).
-            var sink_head_idx = (
-                cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA) + sink_row
-            )
-            var attn_sink_val = attn_sink_ptr.unsafe_value()[
-                Int(sink_head_idx)
-            ] * Float32(log2e)
-            # `li` carries the +P_FP8_BIAS lift (see the P numerators); the sink
-            # term must carry the SAME bias so the exp2(P_FP8_BIAS) factor
-            # cancels in output_scale (MHA's fp8-bias path simply has no sink).
-            output_scale = 1.0 / (
-                li + exp2(attn_sink_val - mi + Self.P_FP8_BIAS)
-            )
-        else:
-            output_scale = 1.0 / li
+        match attn_sink_ptr:
+            case .Some(sink_ptr) if sink_row < UInt32(Self.NUM_Q_HEADS_PER_CTA):
+                # At cg2 this CTA owns heads [cta_id*NUM_Q_HEADS_PER_CTA, ...).
+                var sink_head_idx = (
+                    cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA) + sink_row
+                )
+                var attn_sink_val = sink_ptr[Int(sink_head_idx)] * Float32(
+                    log2e
+                )
+                # `li` carries the +P_FP8_BIAS lift (see the P numerators); the
+                # sink term must carry the SAME bias so the exp2(P_FP8_BIAS)
+                # factor cancels in output_scale (MHA's fp8-bias path simply has
+                # no sink).
+                output_scale = 1.0 / (
+                    li + exp2(attn_sink_val - mi + Self.P_FP8_BIAS)
+                )
+            case _:
+                output_scale = 1.0 / li
 
         var have_valid_indices = warp.vote[.uint32](
             li != Float32(0.0)

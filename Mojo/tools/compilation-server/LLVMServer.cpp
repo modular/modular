@@ -43,6 +43,7 @@ private:
     registerKGENToLLVMTranslation(registry);
     registerContext(registry, globalCtx, /*enableThreadPool=*/true);
     mlirCtx.appendDialectRegistry(registry);
+    configureKGENContext(&mlirCtx);
     mlirCtx.allowUnregisteredDialects(true);
   }
 

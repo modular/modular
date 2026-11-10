@@ -227,8 +227,6 @@ std::optional<SmallVector<bool>> tryGetConstantBoolVector(TensorValue val);
 /// If `val` comes from a list.create op whose inputs are all scalar
 /// constants, return their values, else None.
 std::optional<SmallVector<int64_t>> tryGetConstantIntVector(ListValue val);
-std::optional<SmallVector<APFloat>> tryGetConstantAPFloatVector(ListValue val);
-std::optional<SmallVector<APInt>> tryGetConstantAPIntVector(ListValue val);
 
 /// Extract the `MOSH::ShapeAttr` represented by `val` if possible, else return
 /// `null`.
@@ -241,13 +239,6 @@ TypedAttr tryGetDimAttr(Value val);
 /// If any of the input/output tensor type's metadata changed, update the given
 /// GraphOp's function type and signature to reflect those changes as well.
 void synchronizeMetadataUpdates(GraphOp op);
-
-/// Return the set of MO ops which are expected to only run on host.
-///
-/// TODO: Temporary deny-list of ops without CUDA kernels and MOGG entry
-/// points; remove entries as ops gain kernels or
-/// MODeviceConstraintsInterface.
-const llvm::DenseSet<mlir::TypeID> &getHostOnlyMOOps();
 } // namespace M::MO
 
 #endif // GENERICML_GRAPHCOMPILER_MODIALECT_MOOPS_H

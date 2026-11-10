@@ -40,8 +40,7 @@ import math
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
-from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.mesh_axis import TP, dcp_axis
 from max.nn.kernels import cp_merge_topk
 from max.tensor import Tensor
 from max.tensor.sharding import (
@@ -58,23 +57,6 @@ _LN2 = math.log(2.0)
 # exactly 0 next to any real LSE, and a row no rank has keys for merges to 0
 # instead of NaN (``-inf - -inf``).
 _LSE_FLOOR = -1e30
-
-
-def dcp_axis(mesh: DeviceMesh) -> int:
-    """Returns the index of the mesh axis a DCP group spans.
-
-    It is the ``tp`` axis, or the only axis of a one-axis mesh.
-
-    Raises:
-        NotImplementedError: If a mesh of several axes has no ``tp`` axis.
-    """
-    if TP in mesh.axis_names:
-        return mesh.axis_names.index(TP)
-    if mesh.ndim == 1:
-        return 0
-    raise NotImplementedError(
-        f"decode context parallelism needs a {TP!r} mesh axis, got {mesh}."
-    )
 
 
 def check_dcp_mesh(mesh: DeviceMesh, dcp: int) -> None:
@@ -134,24 +116,20 @@ def dcp_rank_tensor(mesh: DeviceMesh, dcp: int) -> Tensor:
     stores take it as a host scalar instead (:func:`dcp_ranks`).
     """
 
-    def _rank(rank: int, device: Device) -> TensorValue:
-        return ops.constant(
-            [rank], DType.int32, device=DeviceRef.from_device(device)
-        )
+    def _rank(rank: int, device: Device) -> Tensor:
+        return F.constant([rank], DType.int32, device=device)
 
     return F.call_on_mesh(_rank, mesh)(
         dcp_ranks(mesh, dcp), PerShard(mesh.devices)
     )
 
 
-def _pack_selection(rows: TensorValue, lengths: TensorValue) -> TensorValue:
-    return ops.concat([rows, ops.unsqueeze(lengths, 1)], axis=1)
+def _pack_selection(rows: Tensor, lengths: Tensor) -> Tensor:
+    return F.concat([rows, F.unsqueeze(lengths, 1)], axis=1)
 
 
-def _unpack_selection(
-    selection: TensorValue, top_k: int
-) -> tuple[TensorValue, TensorValue]:
-    return selection[:, :top_k], selection[:, top_k]
+def _unpack_selection(selection: Tensor, width: int) -> tuple[Tensor, Tensor]:
+    return selection[:, :width], selection[:, width]
 
 
 def merge_topk(local_rows: Tensor, local_scores: Tensor, dcp: int) -> Tensor:
@@ -164,18 +142,28 @@ def merge_topk(local_rows: Tensor, local_scores: Tensor, dcp: int) -> Tensor:
     compacted to the front, with their count in a last column: an int32
     ``[T, k + 1]`` selection (see :func:`split_selection`). The packed form
     lets ``shared`` indexer layers reuse it like a plain top-k.
+
+    Over an NVFP4 MLA cache ``local_rows`` is ``[T, 2 * k]``, each
+    selection's value row then its scale-pool row, and the selection is
+    ``[T, 2 * k + 1]``: both halves compacted the same way, then the count.
     """
     mesh = local_rows.mesh
+    k = int(local_scores.shape[1])
+    halves = int(local_rows.shape[1]) // k
     gathered = gather_topk_scores(local_scores, dcp)
     rows, lengths = cp_merge_topk(
-        local_rows, gathered, dcp_rank_tensor(mesh, dcp), dcp
+        local_rows, gathered, dcp_rank_tensor(mesh, dcp), dcp, halves
     )
     return F.call_on_mesh(_pack_selection, mesh)(rows, lengths)
 
 
-def split_selection(selection: Tensor, top_k: int) -> tuple[Tensor, Tensor]:
-    """Splits a packed selection into its ``[T, k]`` rows and ``[T]`` counts."""
-    return F.call_on_mesh(_unpack_selection, selection.mesh)(selection, top_k)
+def split_selection(selection: Tensor, width: int) -> tuple[Tensor, Tensor]:
+    """Splits a packed selection into its rows and ``[T]`` counts.
+
+    ``width`` is the rows' width: the top-k, or twice it over an NVFP4 MLA
+    cache, whose rows are the value rows then the scale-pool rows.
+    """
+    return F.call_on_mesh(_unpack_selection, selection.mesh)(selection, width)
 
 
 def combine_partial_attention(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
@@ -204,7 +192,7 @@ def combine_partial_attention(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
     return _combine_a2a(out, lse, dcp)
 
 
-def _lse_lanes(lse: TensorValue, dtype: DType) -> list[TensorValue]:
+def _lse_lanes(lse: Tensor, dtype: DType) -> list[Tensor]:
     """Encodes a float32 LSE exactly as ``dtype`` lanes beside the output.
 
     The graph has no bitcast, so a bfloat16 output carries each LSE as three
@@ -222,60 +210,73 @@ def _lse_lanes(lse: TensorValue, dtype: DType) -> list[TensorValue]:
     lanes = []
     rest = lse
     for _ in range(3):
-        lane = ops.cast(rest, dtype)
+        lane = F.cast(rest, dtype)
         lanes.append(lane)
-        rest = rest - ops.cast(lane, DType.float32)
+        rest = rest - F.cast(lane, DType.float32)
     return lanes
 
 
-def _pack_partials(out: TensorValue, lse: TensorValue) -> TensorValue:
-    """Packs one rank's ``[T, H, D]`` output and ``[T, H]`` LSE together.
+def _pack_partials(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
+    """Packs one rank's partials into one chunk per destination rank.
 
-    Returns ``[T, H, D + lanes]`` in the output's dtype: every head's row
-    carries its LSE lanes (:func:`_lse_lanes`), so splitting the head axis
-    gives each destination its heads' outputs and LSEs in one chunk.
+    Returns ``[T, dcp, (D + lanes) * h]`` in the output's dtype, ``h = H /
+    dcp``: chunk ``r`` holds destination ``r``'s heads as ``[D + lanes, h]``
+    rows, the output's ``D`` features and then the LSE lanes
+    (:func:`_lse_lanes`), each row one value per head. Splitting axis 1
+    gives each destination its heads' partials in one piece.
+
+    Head-minor rows keep the pack a concat of whole rows: the output moves
+    as row vectors and each lane is one more row. Appending 1-wide lanes to
+    every head's 512-wide row instead left the concat one element per
+    thread: 19 us per layer at batch 64 on B200.
     """
-    lse = ops.cast(lse, DType.float32)
+    lse = F.cast(lse, DType.float32)
     # A rank with no keys returns a -inf LSE and zero output; the floor gives
     # it weight 0, or an equal share of zeros when no rank has keys, and
     # keeps the lane split finite.
-    lse = ops.max(
-        lse, ops.constant(_LSE_FLOOR, DType.float32, device=lse.device)
-    )
-    lanes = [ops.unsqueeze(lane, -1) for lane in _lse_lanes(lse, out.dtype)]
-    return ops.concat([out, *lanes], axis=-1)
+    lse = F.max(lse, F.constant(_LSE_FLOOR, DType.float32, device=lse.device))
+    tokens = out.shape[0]
+    heads, depth = int(out.shape[1]), int(out.shape[2])
+    h = heads // dcp
+    rows = F.permute(F.reshape(out, [tokens, dcp, h, depth]), [0, 1, 3, 2])
+    lanes = [
+        F.reshape(lane, [tokens, dcp, 1, h])
+        for lane in _lse_lanes(lse, out.dtype)
+    ]
+    packed = F.concat([rows, *lanes], axis=2)
+    return F.reshape(packed, [tokens, dcp, (depth + len(lanes)) * h])
 
 
-def _merge_received(
-    received: TensorValue, partial: TensorValue, dcp: int
-) -> TensorValue:
+def _merge_received(received: Tensor, partial: Tensor, dcp: int) -> Tensor:
     """Merges the ``dcp`` partials of this rank's heads.
 
-    ``received`` is ``[T, H, D + lanes]``: its head axis holds every source
-    rank's partials for this rank's ``H / dcp`` heads, source-major.
-    ``partial`` is this rank's own ``[T, H, D]`` output, for ``D`` and the
-    dtype. Returns ``[T, H / dcp, D]``.
+    ``received`` is ``[T, dcp, (D + lanes) * h]``: chunk ``s`` holds source
+    rank ``s``'s ``[D + lanes, h]`` partials for this rank's ``h = H / dcp``
+    heads (:func:`_pack_partials`). ``partial`` is this rank's own
+    ``[T, H, D]`` output, for ``H``, ``D`` and the dtype. Returns
+    ``[T, h, D]``.
     """
-    depth = partial.shape[2]
-    heads = received.shape[1] // dcp
-    width = received.shape[2]
-    split = ops.reshape(received, [received.shape[0], dcp, heads, width])
-    outs = ops.cast(split[:, :, :, :depth], DType.float32)
-    lanes = ops.cast(split[:, :, :, depth:], DType.float32)
-    lse = ops.squeeze(ops.sum(lanes, axis=-1), -1)  # [T, dcp, h]
+    tokens = received.shape[0]
+    depth = int(partial.shape[2])
+    heads = int(partial.shape[1]) // dcp
+    width = int(received.shape[2]) // heads
+    split = F.reshape(received, [tokens, dcp, width, heads])
+    outs = F.cast(split[:, :, :depth, :], DType.float32)
+    lanes = F.cast(split[:, :, depth:, :], DType.float32)
+    lse = F.sum(lanes, axis=2)  # [T, dcp, 1, h]
     # Max-shift before exponentiating.
-    peak = ops.max(lse, axis=1)  # [T, 1, h]
-    weight = ops.exp((lse - peak) * _LN2)
-    weight = weight / ops.sum(weight, axis=1)
-    merged = ops.sum(outs * ops.unsqueeze(weight, -1), axis=1)  # [T,1,h,D]
-    return ops.cast(ops.squeeze(merged, 1), partial.dtype)
+    peak = F.max(lse, axis=1)  # [T, 1, 1, h]
+    weight = F.exp((lse - peak) * _LN2)
+    weight = weight / F.sum(weight, axis=1)
+    merged = F.squeeze(F.sum(outs * weight, axis=1), 1)  # [T, D, h]
+    return F.cast(F.permute(merged, [0, 2, 1]), partial.dtype)
 
 
 def _combine_a2a(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
     """Merges by one packed all-to-all, as vLLM's and SGLang's a2a do.
 
-    Each rank packs its partial outputs and LSEs per head
-    (:func:`_pack_partials`); the all-to-all splits the head axis, so rank
+    Each rank packs its partial outputs and LSEs per destination rank
+    (:func:`_pack_partials`); the all-to-all splits that axis, so rank
     ``j`` receives every rank's partials for heads
     ``[j * H / dcp, (j + 1) * H / dcp)``, and merges them locally
     (:func:`_merge_received`). One collective per layer, where an LSE
@@ -286,10 +287,13 @@ def _combine_a2a(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
     # The packed partials claim nothing on the other axes: a replica's
     # tokens are its own.
     packed = F.call_on_mesh(
-        _pack_partials,
+        lambda out, lse: _pack_partials(out, lse, dcp),
         mesh,
         out_specs=_on_dcp_axis(out, Unknown(), Unknown()),
     )(out, lse)
+    # The packed partials are Unknown on the DCP axis, so the exchange
+    # claims nothing either: each rank holds every rank's partials for its
+    # heads, not a slice of one tensor.
     received = F.all_to_all(packed, split_axis=1, concat_axis=1, mesh_axis=axis)
     return F.call_on_mesh(
         lambda received, partial: _merge_received(received, partial, dcp),

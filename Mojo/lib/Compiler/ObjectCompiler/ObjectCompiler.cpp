@@ -818,11 +818,13 @@ ErrorOr<std::unique_ptr<llvm::Module>>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   CompilerTimeTraceScope traceScope("lower-to-llvm");
 
+  // Declared before `mgr` so it outlives the pass manager reporting into it.
+  mlir::TimingScope timing = pmOptions.nestTimingScope("Lower to LLVM");
   mlir::PassManager mgr = createPassManager(pmOptions.operationName, &context);
 
   // Ignore potential error that could happen when `mojo` tool is called,
   // which does not register pass manager options.
-  (void)pmOptions.configurePassManager(mgr);
+  (void)pmOptions.configurePassManager(mgr, timing);
 
   backend.prepareModuleForLowering(module, options);
 

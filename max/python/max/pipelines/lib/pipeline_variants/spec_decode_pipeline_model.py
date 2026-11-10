@@ -29,7 +29,6 @@ share, until each moves onto :class:`SpecDecodePipelineModel`.
 from __future__ import annotations
 
 import logging
-from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
@@ -111,6 +110,7 @@ from ..graph_specs import (
     GraphSpec,
     compile_and_init_graphs,
     graph_callable,
+    tp_signals,
 )
 from ..interfaces.arch_config import ArchConfigWithVisionCache
 from ..interfaces.batch_processor import (
@@ -1136,15 +1136,6 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             inputs = self._distributed_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
-        # Split off after the target's batching, which may read the tail
-        # child's leaves into the inputs it prepares.
-        tail_key = spec_adapters.tail_kv(arch)
-        if tail_key is not None:
-            assert inputs.kv_cache_inputs is not None
-            inputs.kv_cache_inputs, tail = _split_tail(
-                inputs.kv_cache_inputs, tail_key
-            )
-            inputs.trailing[:0] = spec_adapters.tail_buffers(arch, tail)
         inputs.trailing += spec_adapters.trailing_buffers(
             arch,
             self._method,
@@ -2327,7 +2318,6 @@ def _driver_call(
     else:
         nn_model = SequentialDriver(verify, proposer, **driver_kwargs)
 
-    kv_params = _without_tail(kv_params, spec_adapters.tail_kv(target_arch))
     input_types = nn_model.input_types(kv_params)
     return _DriverCall(
         driver=nn_model,
@@ -2547,6 +2537,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
             weights=modules.weights,
             name=_graph_name(self.pairing, call.method),
             signal_buffer_index=call.driver.input_spec.signal_buffer_index,
+            signals_group=tp_signals,
         )
         config.input_spec = call.driver.input_spec
         self.export_input_types = call.input_types
@@ -2682,46 +2673,6 @@ class _EPRuntime:
                 "EP node ID is not set. Please check if the EP initialization"
                 " is successful."
             )
-
-
-def _without_tail(
-    kv_params: MultiKVCacheParams, tail: str | None
-) -> MultiKVCacheParams:
-    """Returns the KV tree the graph declares among its KV inputs.
-
-    All of it but the target's child it declares in its tail.
-    """
-    if tail is None:
-        return kv_params
-    target = kv_params.children["target"]
-    assert isinstance(target, MultiKVCacheParams)
-    return MultiKVCacheParams.from_params(
-        {
-            **kv_params.children,
-            "target": MultiKVCacheParams.from_params(
-                {k: v for k, v in target.children.items() if k != tail}
-            ),
-        }
-    )
-
-
-def _split_tail(
-    kv_inputs: KVCacheInputs[Buffer, Buffer], tail: str
-) -> tuple[KVCacheInputs[Buffer, Buffer], Any]:
-    """Splits the target's ``tail`` child off a batch's KV inputs.
-
-    The rest stays an ``OrderedDict``, which flattens in declaration order.
-    """
-    assert isinstance(kv_inputs, Mapping)
-    target = kv_inputs["target"]
-    assert isinstance(target, Mapping)
-    rest = OrderedDict((k, v) for k, v in target.items() if k != tail)
-    return (
-        OrderedDict(
-            (k, rest if k == "target" else v) for k, v in kv_inputs.items()
-        ),
-        target[tail],
-    )
 
 
 def _named_leaves(node: Any) -> dict[str, list[Any]]:

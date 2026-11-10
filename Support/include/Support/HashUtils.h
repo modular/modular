@@ -14,10 +14,8 @@
 #ifndef SUPPORT_HASHUTILS_H
 #define SUPPORT_HASHUTILS_H
 
-#include "Support/LogicalResult.h"
 #include "Support/SymbolExport.h"
 
-#include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/raw_ostream.h"
 #include <array>
 #include <cstddef>
@@ -38,10 +36,6 @@
 // its XXH3_*_update macro rewrites do not leak into consumers of this header.
 #define XXH_STATIC_LINKING_ONLY
 #include "xxhash.h"
-
-namespace mlir {
-class Operation;
-} // namespace mlir
 
 namespace M {
 
@@ -83,15 +77,6 @@ public:
 
   uint64_t current_pos() const override { return 0; }
 };
-
-/// Compute the xxhash for the given MLIR operation.
-/// The hash ignores source location information.
-FailureOr<std::string> getBytecodeHash(mlir::Operation *op);
-
-/// This function computes the bytecode hash similar to getBytecodeHash, but
-/// does so by hashing each individual operation in the module in parallel
-/// (via BytecodeHasher) and then combining the results into a single hash.
-FailureOr<std::string> getModuleBytecodeHash(mlir::ModuleOp module);
 
 } // namespace M
 #endif // SUPPORT_HASHUTILS_H

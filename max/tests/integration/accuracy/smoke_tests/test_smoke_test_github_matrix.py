@@ -135,6 +135,7 @@ def test_nightly_4xb200_pinned() -> None:
     scheduled = {job["model"] for job in json.loads(result.output)["include"]}
     assert scheduled == {
         "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "reflection/Beam-1.0-501B-A23B-NVFP4",
     }
 
 

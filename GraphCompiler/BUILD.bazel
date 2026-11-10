@@ -142,6 +142,7 @@ modular_cc_library(
         "//MLRT:GraphRT/MLIRToMEF",
         "//Support:Base",
         "//Support:CacheLog",
+        "//Support:Config",
         "//Support:Context",
     ],
 )
@@ -1740,6 +1741,7 @@ modular_shared_library(
     ]),
     hdrs = glob(["include/GraphCompiler/MGPDialect/RT/*.h"]),
     dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/DeviceContext",
@@ -1776,14 +1778,22 @@ modular_shared_library(
         "//Mojo:TransformUtils",
         "//Support:Base64",
         "//Support:CommonCLOptions",
+        "//Support:Compiler",
+        "//Support:Config",
+        "//Support:Context",
         "//Support:CrashReporting",
         "//Support:DebugInfoDialect",
         "//Support:Driver",
         "//Support:IPInt",
         "//Support:IPRational",
+        "//Support:MDialect",
         "//Support:Telemetry",
         "//Support:URI",
-    ],
+    ] + select({
+        # Profiling builds link it into RuntimeGlobals, which exports it.
+        "//bazel/internal:profiling_off": ["//Support:MArchTargetMinimal"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":Support",
         "//Init",

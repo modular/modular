@@ -21,8 +21,15 @@ import extensibility
 from extensibility import InputTensor, _FusedOutputTileTensor
 from max.gpu.host import DeviceContext
 
+comptime SM100 = (
+    extensibility.ACCELERATOR
+    & extensibility.CUDA
+    & extensibility.arch("sm_100a")
+)
+"""Holds for CUDA devices with the `sm_100a` architecture."""
 
-@extensibility.register("tile_rms_norm", type="gpu", api="cuda", arch="sm_100a")
+
+@extensibility.register("tile_rms_norm", SM100)
 struct TileRMSNormStub:
     @staticmethod
     def execute[

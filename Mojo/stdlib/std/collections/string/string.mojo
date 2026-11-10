@@ -2822,17 +2822,6 @@ def _identify_base(str_slice: StringSpan, start: Int) -> Tuple[Int, Int]:
     return 10, start
 
 
-def _atof_error[reason: StaticString = ""](str_ref: StringSpan) -> Error:
-    comptime if reason:
-        return Error(
-            "String is not convertible to float: '",
-            str_ref,
-            "' because ",
-            reason,
-        )
-    return Error("String is not convertible to float: '", str_ref, "'")
-
-
 def atof(str_slice: StringSpan) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
@@ -2856,16 +2845,6 @@ def atof(str_slice: StringSpan) raises -> Float64:
 # ===----------------------------------------------------------------------=== #
 # Other utilities
 # ===----------------------------------------------------------------------=== #
-
-
-def _toggle_ascii_case(char: UInt8) -> UInt8:
-    """Assuming char is a cased ASCII character, this function will return the
-    opposite-cased letter.
-    """
-
-    # ASCII defines A-Z and a-z as differing only in their 6th bit,
-    # so converting is as easy as a bit flip.
-    return char ^ (1 << 5)
 
 
 def _calc_initial_buffer_size_int32(n0: Int) -> Int:
@@ -2947,17 +2926,3 @@ def _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
             return sign + _calc_initial_buffer_size_int64(n.cast[.uint64]()) + 1
 
     return 128 + 1  # Add 1 for the terminator
-
-
-def _calc_format_buffer_size[dtype: DType]() -> Int:
-    """Returns a buffer size in bytes that is large enough to store a formatted
-    number of the specified dtype.
-    """
-
-    # TODO:
-    #   Use a smaller size based on the `dtype`, e.g. we don't need as much
-    #   space to store a formatted int8 as a float64.
-    comptime if dtype.is_integral():
-        return 64 + 1
-    else:
-        return 128 + 1  # Add 1 for the terminator

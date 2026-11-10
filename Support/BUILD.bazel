@@ -43,7 +43,6 @@ modular_cc_library(
     srcs = [
         "lib/AlignedAlloc.cpp",
         "lib/BumpAllocator.cpp",
-        "lib/Config.cpp",
         "lib/Debugger.cpp",
         "lib/Error.cpp",
         "lib/ErrorOr.cpp",
@@ -58,7 +57,6 @@ modular_cc_library(
         "include/Support/AssertStream.h",
         "include/Support/BumpAllocator.h",
         "include/Support/CommandLine.h",
-        "include/Support/Config.h",
         "include/Support/Debugger.h",
         "include/Support/Error.h",
         "include/Support/ErrorOr.h",
@@ -94,9 +92,18 @@ modular_cc_library(
         "//Config",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:config",
+        "@llvm-project//mlir:SupportLLVM",
+    ],
+)
+
+modular_cc_library(
+    name = "Config",
+    srcs = ["lib/Config.cpp"],
+    hdrs = ["include/Support/Config.h"],
+    deps = [
+        ":SymbolExport",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
-        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -105,15 +112,25 @@ modular_cc_library(
     srcs = ["lib/HashUtils.cpp"],
     hdrs = ["include/Support/HashUtils.h"],
     deps = [
+        ":SymbolExport",
+        "@llvm-project//llvm:Support",
+        "@xxhash",
+    ],
+)
+
+modular_cc_library(
+    name = "BytecodeHash",
+    srcs = ["lib/BytecodeHash.cpp"],
+    hdrs = ["include/Support/BytecodeHash.h"],
+    deps = [
         ":Base",
         ":Compiler",
-        ":SymbolExport",
+        ":HashUtils",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
-        "@xxhash",
     ],
 )
 
@@ -168,6 +185,7 @@ modular_cc_library(
     local_defines = CONFIG_SECTION_LOCAL_DEFINES,
     deps = [
         ":Base",
+        ":Config",
         ":Configuration",
         ":Filesystem",
         ":SymbolExport",
@@ -378,7 +396,7 @@ modular_cc_library(
         ":Base",
         ":SymbolExport",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:SupportFileUtilities",
     ],
 )
 
@@ -437,7 +455,6 @@ modular_cc_library(
         ":Base",
         ":SymbolExport",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -460,11 +477,14 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Globals.static",
-        ":MArchTargetMinimal",
         ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:Support",
-    ],
+    ] + select({
+        # Profiling builds write the host's description into the trace header.
+        "//bazel/internal:profiling_off": [],
+        "//conditions:default": [":MArchTargetMinimal"],
+    }),
 )
 
 # Minimal range-annotation and profiler-control API: per-copy
@@ -609,7 +629,6 @@ PROFILING_DEPS = [
     # Range.cpp reads at enable()/disable() time.
     ":Configuration",
     ":Globals.static",
-    ":MArchTargetMinimal",
     ":SymbolExport",
     "//Config",
     "@llvm-project//llvm:Support",
@@ -709,10 +728,6 @@ modular_cc_library(
         ":SymbolExport",
         ":Threading",
         "@llvm-project//clang:basic",
-        "@llvm-project//llvm:AllTargetsAsmParsers",
-        "@llvm-project//llvm:AllTargetsCodeGens",
-        "@llvm-project//llvm:AllTargetsDisassemblers",
-        "@llvm-project//llvm:AllTargetsMCAs",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
     ],
@@ -770,7 +785,6 @@ modular_cc_library(
         ":Base",
         ":Configuration",
         ":Filesystem",
-        ":MArchTarget",
         ":MArchTargetMinimal",
         ":SymbolExport",
         ":Threading",

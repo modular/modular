@@ -512,7 +512,7 @@ struct _ConvAttrs[spatial_rank: Int]:
         self.padding = _index_list[2 * Self.spatial_rank](paddings)
 
 
-@extensibility.register("mo.conv", type="cpu")
+@extensibility.register("mo.conv", extensibility.CPU)
 struct ConvCPU:
     """Registers the `mo.conv` graph op for CPU devices."""
 
@@ -566,6 +566,8 @@ struct ConvCPU:
                 pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
                 pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
                 pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
+            case _:
+                pass
 
         comptime input_shape_val = (
             input.static_spec.static_layout._shape_types[
@@ -660,7 +662,7 @@ def _conv_gpu[
     )
 
 
-@extensibility.register("mo.conv", type="gpu")
+@extensibility.register("mo.conv", extensibility.ACCELERATOR)
 struct ConvGPU:
     """Registers the `mo.conv` graph op for GPU devices.
 
@@ -1026,7 +1028,7 @@ def _conv_transpose_cpu[
     )
 
 
-@extensibility.register("mo.conv_transpose", type="cpu")
+@extensibility.register("mo.conv_transpose", extensibility.CPU)
 struct ConvTransposeCPU:
     """Registers the `mo.conv_transpose` graph op for CPU devices.
 
@@ -1164,7 +1166,7 @@ def _conv_transpose_gpu_attrs[
     )
 
 
-@extensibility.register("mo.conv_transpose", type="gpu")
+@extensibility.register("mo.conv_transpose", extensibility.ACCELERATOR)
 struct ConvTransposeGPU:
     """Registers the `mo.conv_transpose` graph op for GPU devices.
 

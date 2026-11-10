@@ -83,6 +83,7 @@ MODELS: Mapping[str, set[str]] = {
     "google/gemma-4-12B-it__device_graph_synthesis": VARIANT | _1xB200 | _1xMI355,
     "google/gemma-4-12B-it__dspark": NIGHTLY | VARIANT | _1xB200 | _1xMI355,
     "google/gemma-4-26B-A4B-it": NIGHTLY | _1xB200 | _1xMI355,
+    "google/gemma-4-26B-A4B-it__modulev3": VARIANT | _1xB200,
     "google/gemma-4-26B-A4B-it__tuned": NIGHTLY | VARIANT | _1xB200,
     "google/gemma-4-31B-it": NIGHTLY | _1xB200 | _1xMI355,
     "google/gemma-4-31B-it__cascade": NIGHTLY | VARIANT | _1xB200,
@@ -117,6 +118,7 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/DeepSeek-V4.1-Flash-NVFP4": _4xB200,
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
     "nvidia/Gemma-4-26B-A4B-NVFP4": NIGHTLY | _1xB200,
+    "nvidia/Gemma-4-26B-A4B-NVFP4__modulev3": VARIANT | _1xB200,
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": NIGHTLY | VARIANT | _1xB200,
     "nvidia/Gemma-4-31B-IT-NVFP4": NIGHTLY | _1xB200 | _2xB200,
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": NIGHTLY | VARIANT | _1xB200,
@@ -147,6 +149,7 @@ MODELS: Mapping[str, set[str]] = {
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": NIGHTLY | VARIANT | _1xB200,
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": _1xB200 | _1xMI355,  # TODO(MODELS-1021)
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": _4xMI355 | _8xB200,
+    "reflection/Beam-1.0-501B-A23B-NVFP4": NIGHTLY | _4xB200,
     "tencent/Hy4-preview-FP8": NIGHTLY | _8xB200,
     "tencent/Hy4-preview-FP8__mtp": NIGHTLY | VARIANT | _8xB200,
     "thinkingmachines/Inkling-Small-NVFP4": NIGHTLY | _2xB200,

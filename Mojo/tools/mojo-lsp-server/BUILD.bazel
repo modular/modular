@@ -38,6 +38,7 @@ modular_cc_binary(
         "//Mojo:ToolCommon",
         "//Mojo/tools/common/lsp-protocol",
         "//Support:Base",
+        "//Support:Config",
         "//Support:Context",
         "//Support:Globals.static",
         "//Support:Telemetry",

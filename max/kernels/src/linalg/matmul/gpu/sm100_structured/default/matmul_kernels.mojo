@@ -79,11 +79,10 @@ from layout.layout import _IntToComptimeInt
 from layout.layout import row_major as tt_row_major
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
 )
 from layout.tma_async import SharedMemBarrier
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple

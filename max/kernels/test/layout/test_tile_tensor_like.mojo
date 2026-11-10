@@ -19,7 +19,7 @@ from layout import DefaultEngine, TileTensor, row_major
 from layout.tile_tensor import _TileTensorLike
 
 comptime _Layout = type_of(row_major[128, 1]())
-comptime _Tile = TileTensor[DType.float32, _Layout, MutAnyOrigin]
+comptime _Tile = TileTensor[DType.float32, _Layout, MutUntrackedOrigin]
 
 
 def test_tile_tensor_is_tile_tensor_like() raises:

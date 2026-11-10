@@ -50,6 +50,7 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.sampling import SamplingConfig
 from test_common.fake_weights import (
@@ -390,6 +391,79 @@ class TestArchitectureEncodingResolution:
             with _pipeline_resolve_mocks():
                 config = _plan_memory(config)
             assert _model(config).quantization_encoding == "float32"
+
+
+class TestModuleV3EncodingFallback:
+    """``prefer_module_v3`` falls back when ModuleV3 cannot serve the encoding.
+
+    A ModuleV3 architecture is often brought up on bfloat16 before its
+    quantized encodings, so preferring it unconditionally would reject
+    checkpoints the graph API architecture still serves.
+    """
+
+    @staticmethod
+    def _modulev3_arch(
+        supported_encodings: set[SupportedEncoding],
+    ) -> SupportedArchitecture:
+        return SupportedArchitecture(
+            name="LlamaForCausalLM_ModuleV3",
+            task=PipelineTask.TEXT_GENERATION,
+            example_repo_ids=["test/model"],
+            default_encoding="bfloat16",
+            supported_encodings=supported_encodings,
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=DUMMY_LLAMA_ARCH.default_weights_format,
+            config=DummyLlamaArchConfig,
+        )
+
+    @prepare_registry
+    def test_fp8_checkpoint_falls_back_to_graph_api_arch(self) -> None:
+        """An FP8 checkpoint resolves against the graph API architecture."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        PIPELINE_REGISTRY.register(self._modulev3_arch({"bfloat16"}))
+        with _temp_repo_dir() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                safetensors_files={"model.safetensors": {"w": "F8_E4M3"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            assert _model(config).quantization_encoding == "float8_e4m3fn"
+            # Cleared on the frozen config, so the registry's own lookup
+            # selects the same architecture construction resolved against.
+            assert config.runtime.prefer_module_v3 is False
+            arch = PIPELINE_REGISTRY.architecture_for_config(config)
+            assert arch is not None
+            assert arch.name == "LlamaForCausalLM"
+
+    @prepare_registry
+    def test_bf16_checkpoint_keeps_modulev3(self) -> None:
+        """An encoding ModuleV3 serves keeps the preference."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        PIPELINE_REGISTRY.register(self._modulev3_arch({"bfloat16"}))
+        with _temp_repo_dir() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            config = _make_pipeline_config(tmpdir)
+            assert config.runtime.prefer_module_v3 is True
+            arch = PIPELINE_REGISTRY.architecture_for_config(config)
+            assert arch is not None
+            assert arch.name == "LlamaForCausalLM_ModuleV3"
+
+    @prepare_registry
+    def test_encoding_neither_arch_serves_still_raises(self) -> None:
+        """No fallback target means the unsupported-encoding error survives."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        PIPELINE_REGISTRY.register(
+            self._modulev3_arch({"bfloat16", "float8_e4m3fn"})
+        )
+        with _temp_repo_dir() as tmpdir:
+            _make_local_repo(tmpdir, gguf_files=["model-Q4_K_M.gguf"])
+            with pytest.raises(ValueError, match="not supported by MAX engine"):
+                _make_pipeline_config(tmpdir, device_specs=[CPU_DEVICE_SPEC])
 
 
 # ---------------------------------------------------------------------------

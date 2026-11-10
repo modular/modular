@@ -38,7 +38,8 @@
 #                        for up to 3 hours)
 #   SAMPLE_SIZE          run N sampled tasks (--n-tasks N --sample-seed 0)
 #   OUT                  results dir (default $DEEPSWE_HOME/results/<timestamp>);
-#                        trials land in $OUT/deepswe, the score in $OUT/score.json
+#                        trials land in $OUT/deepswe, the score in $OUT/score.json,
+#                        and a results.jsonl and config.json for upload_results
 #   DEEPSWE_MODEL_PORTS  ports the egress proxy admits (must match setup.sh)
 #   DOCKER_HOST          engine socket (default unix:///tmp/podman.sock, which is
 #                        started with `podman system service` if dead; any other

@@ -347,19 +347,19 @@ def test_exceeds_deadline_none_is_unbounded() -> None:
     assert exceeds_deadline(3600.0, None) is False
 
 
-def test_exceeds_deadline_false_when_sleep_fits() -> None:
-    deadline = time.perf_counter_ns() + int(10 * 1e9)
-    assert exceeds_deadline(0.1, deadline) is False
-
-
-def test_exceeds_deadline_true_when_sleep_overshoots() -> None:
-    deadline = time.perf_counter_ns() + int(0.05 * 1e9)
-    assert exceeds_deadline(5.0, deadline) is True
-
-
-def test_exceeds_deadline_zero_seconds_does_not_overshoot() -> None:
-    deadline = time.perf_counter_ns() + int(0.001 * 1e9)
-    assert exceeds_deadline(0.0, deadline) is False
+@pytest.mark.parametrize(
+    ("sleep_s", "deadline_in_s", "expected"),
+    [
+        pytest.param(0.1, 10, False, id="false_when_sleep_fits"),
+        pytest.param(5.0, 0.05, True, id="true_when_sleep_overshoots"),
+        pytest.param(0.0, 0.001, False, id="zero_seconds_does_not_overshoot"),
+    ],
+)
+def test_exceeds_deadline(
+    sleep_s: float, deadline_in_s: float, expected: bool
+) -> None:
+    deadline = time.perf_counter_ns() + int(deadline_in_s * 1e9)
+    assert exceeds_deadline(sleep_s, deadline) is expected
 
 
 # ---- wait_for_server_ready ----

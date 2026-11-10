@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace llvm {
@@ -38,13 +39,28 @@ namespace M::Driver {
 
 class MemoryManagerFreeList;
 
+// Child-owned free bytes grouped by the free list that holds them. A desc walk
+// alone cannot say which free list a pending byte sits in, and the allocating
+// list named in the error is often not the holder, so the breakdown is what
+// turns "50GB is pending" into "50GB is in graphFreeList".
+struct VmmPendingOwner {
+  std::string label;
+  size_t bytes = 0;
+  size_t blocks = 0;
+  // The list never migrates its frees to its parent (`disableFlush`), so its
+  // bytes come back only when the list itself is destroyed. Graph-capture
+  // pools are built this way so a replay cannot read memory a later
+  // allocation owns.
+  bool neverFlushes = false;
+};
+
 // Physical/VA accounting captured when a VMM allocation fails, used to classify
 // the failure and build an accurate diagnostic. The granule-state counts
 // partition the budget's whole pages: a budget that is not a whole multiple of
 // the page size leaves its trailing partial page outside the partition, so the
 // counts sum to `budget / pageSize` pages rather than to `budget` bytes. The
 // derived accessors form the "lever" partition (used / available /
-// sync-recoverable / trapped) the category is built from.
+// sync-recoverable / retained / trapped) the category is built from.
 struct VmmOomSnapshot {
   size_t pageSize = 0;
   size_t budget = 0; // maxCacheSize_
@@ -80,6 +96,25 @@ struct VmmOomSnapshot {
   // granules that keep other child-owned bytes releases none.
   size_t drainableGranules = 0;
 
+  // The part of the pending total that no wait reaches: bytes on free lists
+  // that never migrate to their parent. Counted apart from the rest because
+  // the two want opposite advice -- one asks the caller to wait, the other to
+  // hold less. Granules, as elsewhere, because only a whole page is allocatable
+  // again; a retained byte sharing a granule with an ordinary pending one
+  // pins the granule all the same, so it counts here rather than there.
+  size_t retainedGranules = 0;
+  size_t retainedBytes = 0;
+  // The rest of `retainedBytes`: the part lying on granules a live allocation
+  // also occupies, which `retainedGranules` cannot count because those
+  // granules stay pinned. Tracked because `trapped()` would otherwise sweep
+  // them up and offer the page-size lever for them. A smaller page does
+  // separate them from the live allocation, but it leaves them retained, so
+  // neither lever frees them on its own.
+  size_t retainedTrappedBytes = 0;
+
+  // Pending bytes by holder, largest first. Empty when nothing is pending.
+  llvm::SmallVector<VmmPendingOwner, 4> pendingOwners;
+
   // Free descs seen in the walk, root-owned and child-owned. freeCount_ is not
   // maintained in VMM mode, so this is the free-block count the diagnostics
   // report.
@@ -111,13 +146,35 @@ struct VmmOomSnapshot {
   }
   // Would become allocatable after a synchronize. Whole granules only, so a
   // pending byte sharing a granule with an in-use desc does not count: that
-  // granule stays pinned.
-  size_t recoverableBySync() const { return pendingGranules * pageSize; }
-  // Free/pending bytes stuck inside in-use granules; only a smaller page size
-  // recovers them.
+  // granule stays pinned. Retained granules are excluded for the same reason
+  // one step further out: their holder returns nothing when the device goes
+  // idle, so offering a synchronize for them sends the reader after memory no
+  // wait can free.
+  size_t recoverableBySync() const {
+    return pendingGranules > retainedGranules
+               ? (pendingGranules - retainedGranules) * pageSize
+               : 0;
+  }
+  // Held by a free list that never releases it. Recovered by holding fewer of
+  // whatever the list caches -- captured graphs, today -- not by waiting.
+  size_t retained() const { return retainedGranules * pageSize; }
+  // The pending bytes a wait really is waiting on. `pendingTotalBytes` counts
+  // the retained ones too, so quoting it beside a synchronize overstates what
+  // the synchronize will produce.
+  size_t syncPendingBytes() const {
+    return pendingTotalBytes > retainedBytes ? pendingTotalBytes - retainedBytes
+                                             : 0;
+  }
+  // Free/pending bytes stuck inside in-use granules that a smaller page size
+  // recovers. Retained bytes sharing those granules are excluded: a smaller
+  // page would hand them to their holder rather than to the allocator, so
+  // counting them here would offer the page-size lever for memory it cannot
+  // free -- the same mistake, one bucket over, that keeping them out of
+  // `recoverableBySync()` avoids.
   size_t trapped() const {
     const size_t inUseBytes = inUseGranules * pageSize;
-    return inUseBytes > usedBytes ? inUseBytes - usedBytes : 0;
+    const size_t free = inUseBytes > usedBytes ? inUseBytes - usedBytes : 0;
+    return free > retainedTrappedBytes ? free - retainedTrappedBytes : 0;
   }
 };
 
@@ -141,6 +198,11 @@ enum class VmmOomCategory {
   // partially-used pages. One category, not one per lever: the message reports
   // both figures and leaves the choice to the caller.
   Avoidable,
+  // Also not an exhaustion, but no wait and no page size reaches it: the
+  // shortfall is covered by memory on a free list that never returns what it
+  // holds. Separate from `Avoidable` because the advice inverts -- nothing the
+  // allocator does recovers this, only holding fewer captured graphs.
+  Retained,
   // The accounting shows no shortfall, yet the allocation was refused: the
   // physical is held somewhere this manager does not account for.
   Unaccounted,
@@ -320,7 +382,6 @@ private:
                             const std::string *backdoorError = nullptr,
                             bool duringCapture = false) const;
   bool allocateChunk();
-  bool freeLocked(void *buf);
 
   // ---- VMM (defragmenting allocator) ----
   //

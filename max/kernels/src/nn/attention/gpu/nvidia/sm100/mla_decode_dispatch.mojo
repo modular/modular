@@ -31,7 +31,6 @@ from layout import (
     Idx,
     RowMajorLayout,
     TileTensor,
-    coord,
     row_major,
 )
 from layout.tile_tensor import NullableTileTensor
@@ -790,7 +789,7 @@ comptime _SPARSE_PAIR_NO_SPLIT_KEYS = 512
 def _sparse_pair_form[q_type: DType, kv_type: DType, num_heads: Int]() -> Bool:
     """Returns whether these dtypes and head count select the h=128 CTA pair,
     before the cache's scaling and the launch's options are checked
-    (`_sparse_pair_eligible`).
+    (`_sparse_pair_eligible_form`).
     """
     var fp8 = q_type == .float8_e4m3fn and kv_type == .float8_e4m3fn
     var bf16 = (
@@ -838,25 +837,6 @@ def _sparse_pair_eligible_form[
     )
 
 
-def _sparse_pair_eligible[
-    q_type: DType,
-    k_t: MHAOperand,
-    num_heads: Int,
-    per_token_scale_rope_aware: Bool,
-    fold_shared_index: Bool,
-]() -> Bool:
-    """Returns `_sparse_pair_eligible_form` for the KV operand `k_t`."""
-    return _sparse_pair_eligible_form[
-        q_type,
-        k_t.dtype,
-        k_t.quantization_enabled,
-        mla_kv_is_nvfp4[k_t](),
-        num_heads,
-        per_token_scale_rope_aware,
-        fold_shared_index,
-    ]()
-
-
 def _sparse_pair_keys(
     topk_stride: Int, extra_topk: Int, effective_max_cache_len: Int
 ) -> Int:
@@ -900,7 +880,7 @@ def _sparse_pair_launches[
 
     Parameters:
         eligible: Whether the launch's form takes the pair
-            (`_sparse_pair_eligible`).
+            (`_sparse_pair_eligible_form`).
         walk_threshold: The critical CTA's walk above which the pair wins.
 
     Args:

@@ -3852,14 +3852,20 @@ def mla_fp8_index_top_k_physical_cp(
     and also returns each selection's score. All-gather the scores over the
     group (rank-major) and pass them to :func:`cp_merge_topk`.
 
+    Over an NVFP4 ``mla_collection``, whose scales are paged apart from its
+    values, each row of ``rows`` is ``2 * top_k`` wide: the selections'
+    value rows, then their scale-pool rows, as
+    :func:`mla_fp8_index_top_k_physical` writes them. Merge them with
+    ``cp_merge_topk(..., halves=2)``.
+
     Args:
         q: Query tensor of shape [total_seq_len, num_heads, head_dim] in FP8.
         q_s: Query scales tensor of shape [total_seq_len, num_heads] in float32.
         input_row_offsets: Input row offsets tensor of shape [batch_size + 1].
         k_collection: This rank's paged indexer K cache. Must be FP8 with
             scales.
-        mla_collection: This rank's MLA cache the physical rows index. Must
-            not be NVFP4.
+        mla_collection: This rank's MLA cache the physical rows index. An
+            NVFP4 cache must carry its scale operands.
         layer_idx: Layer index for cache lookup.
         dcp_rank: This rank in ``[0, dcp_size)``, int32 ``[1]`` on the
             device of ``q``.
@@ -3871,21 +3877,33 @@ def mla_fp8_index_top_k_physical_cp(
 
     Returns:
         ``(rows, scores)``: ``[total_seq_len, top_k]`` int32 physical rows in
-        ``mla_collection``, ``-1`` past a token's local candidates or where a
-        page is unmapped, and ``[total_seq_len, top_k]`` bfloat16 scores,
-        ``-inf`` past a token's local candidates.
+        ``mla_collection`` (``[total_seq_len, 2 * top_k]``, value rows then
+        scale-pool rows, over an NVFP4 cache), ``-1`` past a token's local
+        candidates or where a page is unmapped, and ``[total_seq_len,
+        top_k]`` bfloat16 scores, ``-inf`` past a token's local candidates.
 
     Raises:
-        ValueError: If an argument is out of range, ``mla_collection`` is
-            NVFP4, or ``mask_variant`` is neither NULL nor CAUSAL.
+        ValueError: If an argument is out of range, an NVFP4
+            ``mla_collection`` lacks its scale operands, or ``mask_variant``
+            is neither NULL nor CAUSAL.
     """
     if dcp_size < 1 or dcp_interleave < 1:
         raise ValueError(
             "dcp_size and dcp_interleave must be positive, got"
             f" {dcp_size} and {dcp_interleave}"
         )
-    if mla_collection.kv_blocks.dtype == DType.uint8:
-        raise ValueError("the context-parallel indexer has no NVFP4 remap")
+    # An NVFP4 MLA cache pages its scales apart from its values, so its rows
+    # carry each selection's scale-pool row after the value row.
+    nvfp4_mla = mla_collection.kv_blocks.dtype == DType.uint8
+    if nvfp4_mla and (
+        mla_collection.kv_scales is None
+        or mla_collection.scales_page_stride is None
+        or mla_collection.scales_lookup_table is None
+    ):
+        raise ValueError(
+            "an NVFP4 MLA cache must carry its scale operands (kv_scales,"
+            " scales_page_stride and scales_lookup_table)"
+        )
     _validate_argument_tensor(
         "dcp_rank", dcp_rank, dtype=DType.int32, rank=1, device=q.device
     )
@@ -3900,21 +3918,35 @@ def mla_fp8_index_top_k_physical_cp(
         kpool=1,
     )
     rows_type = TensorType(
-        dtype=DType.int32, shape=(q.shape[0], top_k), device=q.device
-    )
-    results = ops.inplace_custom(
-        "attention.mla.indexer.ragged.float8.paged.remap.cp",
+        dtype=DType.int32,
+        shape=(q.shape[0], 2 * top_k if nvfp4_mla else top_k),
         device=q.device,
-        values=[
-            q,
-            q_s,
-            input_row_offsets,
-            *k_collection.flatten_without_attention_dispatch_metadata(),
-            layer_idx,
-            mla_collection.kv_blocks,
-            mla_collection.lookup_table,
-            dcp_rank,
-        ],
+    )
+    op_name = "attention.mla.indexer.ragged.float8.paged.remap.cp"
+    values: list[Value[Any]] = [
+        q,
+        q_s,
+        input_row_offsets,
+        *k_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+        mla_collection.kv_blocks,
+        mla_collection.lookup_table,
+    ]
+    if nvfp4_mla:
+        op_name += ".nvfp4"
+        assert mla_collection.kv_scales is not None
+        assert mla_collection.scales_page_stride is not None
+        assert mla_collection.scales_lookup_table is not None
+        values += [
+            mla_collection.kv_scales,
+            mla_collection.scales_page_stride,
+            mla_collection.scales_lookup_table,
+        ]
+    values.append(dcp_rank)
+    results = ops.inplace_custom(
+        op_name,
+        device=q.device,
+        values=values,
         out_types=[
             # The logical slots are not written, so they have no rows.
             TensorType(dtype=DType.int32, shape=(0, top_k), device=q.device),
@@ -3943,6 +3975,7 @@ def cp_merge_topk(
     scores: TensorValue,
     dcp_rank: TensorValue,
     dcp_size: int,
+    halves: int = 1,
 ) -> tuple[TensorValue, TensorValue]:
     """Keeps this rank's indexer selections that are in its group's top-k.
 
@@ -3954,23 +3987,30 @@ def cp_merge_topk(
     them. The result is exact up to ties: a token in the group's top-k is in
     its owner's local top-k.
 
+    Over an NVFP4 MLA cache each selection is a value row and its scale-pool
+    row ``k`` columns later (``halves=2``); the scale rows move with their
+    value rows, so both halves of the result are compacted the same way.
+
     Args:
-        local_rows: ``[T, k]`` int32 this rank's local selections.
+        local_rows: ``[T, halves * k]`` int32 this rank's local selections,
+            then (with ``halves=2``) their scale-pool rows.
         scores: ``[T, dcp_size * k]`` bfloat16 every rank's selection scores,
             rank-major (rank ``r``'s at columns ``[r * k, (r + 1) * k)``), as
             an all-gather over the group's ranks produces them.
         dcp_rank: This rank in ``[0, dcp_size)``, int32 ``[1]`` on the
             device of ``local_rows``.
         dcp_size: Ranks in the decode context-parallel group.
+        halves: Rows per selection: 1, or 2 for a value row and its scale
+            row (an NVFP4 MLA cache).
 
     Returns:
-        ``(rows, lengths)``: ``[T, k]`` int32 this rank's selected rows,
-        compacted to the front of each row, then ``-1``; and ``[T]`` int32
-        how many of each row are selected.
+        ``(rows, lengths)``: ``[T, halves * k]`` int32 this rank's selected
+        rows, compacted to the front of each half, then ``-1``; and ``[T]``
+        int32 how many of each half are selected.
 
     Raises:
-        ValueError: If a shape, dtype or device disagrees, or ``dcp_size *
-            k`` exceeds 16384.
+        ValueError: If a shape, dtype or device disagrees, ``halves`` is
+            not 1 or 2, or ``dcp_size * k`` exceeds 16384.
     """
     _validate_argument_tensor(
         "local_rows",
@@ -3993,7 +4033,14 @@ def cp_merge_topk(
         rank=1,
         device=local_rows.device,
     )
-    k = int(local_rows.shape[1])
+    if halves not in (1, 2):
+        raise ValueError(f"halves must be 1 or 2, got {halves}")
+    if int(local_rows.shape[1]) % halves:
+        raise ValueError(
+            f"local_rows must be [T, halves * k] with halves={halves}, got"
+            f" {local_rows.shape}"
+        )
+    k = int(local_rows.shape[1]) // halves
     if dcp_size < 1:
         raise ValueError(f"dcp_size must be positive, got {dcp_size}")
     if dcp_size * k > 16384:
@@ -4005,6 +4052,13 @@ def cp_merge_topk(
             f"scores must be [T, dcp_size * k] = [T, {dcp_size * k}], got"
             f" {scores.shape}"
         )
+    parameters: dict[str, bool | int | str | DType] = {
+        "dcp_size": dcp_size,
+        "k": k,
+    }
+    # Emitted only when set, so the plain op is unchanged.
+    if halves != 1:
+        parameters["halves"] = halves
     rows, lengths = ops.custom(
         "attention.mla.cp_merge_topk",
         device=local_rows.device,
@@ -4021,7 +4075,7 @@ def cp_merge_topk(
                 device=local_rows.device,
             ),
         ],
-        parameters={"dcp_size": dcp_size, "k": k},
+        parameters=parameters,
     )
     return rows.tensor, lengths.tensor
 
@@ -8835,7 +8889,11 @@ def _router_gate_mixed_gemv(
     """
     _check_rank(2, hidden_states=hidden_states, gate_weight=gate_weight)
     _check_dtype(DType.bfloat16, hidden_states=hidden_states)
-    _check_dtype(DType.float32, gate_weight=gate_weight)
+    if gate_weight.dtype not in (DType.float32, DType.bfloat16):
+        raise ValueError(
+            "expected gate_weight to have dtype float32 or bfloat16, was"
+            f" {gate_weight.dtype}"
+        )
     _check_same_device(hidden_states=hidden_states, gate_weight=gate_weight)
 
     n_dim = gate_weight.shape[0]
@@ -13363,6 +13421,227 @@ def quantize_dynamic_block_scaled(
     return result[0].tensor, result[1].tensor
 
 
+def moe_gather_quantize_dynamic_block_scaled(
+    input: TensorValue,
+    token_expert_order: TensorValue,
+    *,
+    sf_vector_size: int = 32,
+    topk: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Fused MoE fan-out gather + MXFP8 quantize (AMD CDNA4).
+
+    Sorted row ``p`` reads source token row
+    ``token_expert_order[p] // topk`` from ``input`` and quantizes it as
+    :func:`quantize_dynamic_block_scaled` does on AMD CDNA4, so the fused
+    op's payload and scale bytes match the ``F.gather`` +
+    ``quantize_dynamic_block_scaled`` pair it replaces. One launch instead
+    of two, and the bf16 fan-out copy never materializes.
+
+    Args:
+        input: The per-token activations to quantize. Shape:
+            ``[num_tokens, K]``, dtype ``bfloat16``.
+        token_expert_order: ``moe_create_indices``'s sorted slot order.
+            Shape: ``[num_tokens * topk]``, dtype ``uint32``.
+        sf_vector_size: The block size for the scaling factors (32 for
+            MXFP8).
+        topk: Experts per token; must be positive.
+
+    Returns:
+        The quantized tensor ``[num_tokens * topk, K]`` and its rank-2
+        ``[num_tokens * topk, K // sf_vector_size]`` E8M0 scales,
+        row-major.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2 tensor")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if token_expert_order.rank != 1:
+        raise ValueError("token_expert_order must be rank 1")
+
+    if token_expert_order.dtype != DType.uint32:
+        raise ValueError("token_expert_order dtype must be uint32")
+
+    if sf_vector_size != 32:
+        raise ValueError("sf_vector_size must be 32 for MXFP8")
+
+    if topk < 1:
+        raise ValueError(f"topk must be positive, got {topk}")
+
+    cols = input.shape[1]
+    if isinstance(cols, StaticDim) and int(cols) % sf_vector_size != 0:
+        raise ValueError(
+            f"input.shape[1] must be a multiple of {sf_vector_size}"
+        )
+
+    # Static shapes are checked here; the kernel's launcher re-checks the
+    # slot count against the real sizes on every launch, which covers the
+    # dynamic-dim graph.
+    slots = token_expert_order.shape[0]
+    rows = input.shape[0]
+    if isinstance(slots, StaticDim) and isinstance(rows, StaticDim):
+        if int(slots) != int(rows) * topk:
+            raise ValueError(
+                f"token_expert_order holds {int(slots)} slots but input has"
+                f" {int(rows)} tokens at topk {topk}"
+            )
+
+    result = ops.custom(
+        "mo.moe.gather.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[input, token_expert_order],
+        out_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[slots, cols],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[slots, ceildiv(cols, Dim(sf_vector_size))],
+                device=input.device,
+            ),
+        ],
+        parameters={"SF_VECTOR_SIZE": sf_vector_size, "TOPK": topk},
+    )
+    return result[0].tensor, result[1].tensor
+
+
+def moe_sort_gather_quantize_dynamic_block_scaled(
+    input: TensorValue,
+    topk_ids: TensorValue,
+    *,
+    sf_vector_size: int = 32,
+    topk: int,
+    num_experts: int,
+) -> tuple[TensorValue, ...]:
+    """Fused MoE expert sort + fan-out gather + MXFP8 quantize (AMD CDNA4).
+
+    Produces :func:`moe_create_indices`'s five index outputs plus the fused
+    gather+quantize's two, in one graph node. At execution the op picks the
+    arm by the real slot count: small launches run the one-launch
+    sort+gather+quantize kernel, and the rest run ``moe_create_indices``
+    followed by the source-major scatter+quantize, falling back to the
+    sorted-row :func:`moe_gather_quantize_dynamic_block_scaled` only on
+    rows too wide for the source-major CTA -- the serving graph builds
+    once over a dynamic token count, so the slot count is only known at
+    execution.
+
+    ``expert_start_indices``, ``expert_ids`` and ``expert_usage_stats``
+    match :func:`moe_create_indices`'s byte for byte. ``token_expert_order``
+    and ``restore_token_order`` hold a stable grouping -- per-group
+    membership, bijection, and ``restore == order^-1`` -- whose intra-expert
+    positions were never load-bearing (the reference kernel's follow a
+    relaxed-atomic cursor).
+
+    Args:
+        input: The per-token activations to quantize. Shape:
+            ``[num_tokens, K]``, dtype ``bfloat16``.
+        topk_ids: The flat expert assignments. Shape:
+            ``[num_tokens * topk]``, dtype ``int32``.
+        sf_vector_size: The block size for the scaling factors (32 for
+            MXFP8).
+        topk: Experts per token; must be positive.
+        num_experts: The expert count.
+
+    Returns:
+        A tuple of seven tensors, in :func:`moe_create_indices`'s order
+        followed by the quantized pair: ``token_expert_order``
+        ``[num_tokens * topk]`` uint32, ``expert_start_indices``
+        ``[num_experts + 1]`` uint32, ``restore_token_order``
+        ``[num_tokens * topk]`` uint32, ``expert_ids`` ``[num_experts]``
+        int32, ``expert_usage_stats`` ``[2]`` uint32, then the quantized
+        ``[num_tokens * topk, K]`` float8_e4m3fn activations and their
+        ``[num_tokens * topk, K // sf_vector_size]`` float8_e8m0fnu scales.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2 tensor")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if topk_ids.rank != 1:
+        raise ValueError("topk_ids must be rank 1")
+
+    if topk_ids.dtype != DType.int32:
+        raise ValueError("topk_ids dtype must be int32")
+
+    if sf_vector_size != 32:
+        raise ValueError("sf_vector_size must be 32 for MXFP8")
+
+    if topk < 1:
+        raise ValueError(f"topk must be positive, got {topk}")
+
+    if num_experts < 1:
+        raise ValueError(f"num_experts must be positive, got {num_experts}")
+
+    cols = input.shape[1]
+    if not isinstance(cols, StaticDim):
+        raise ValueError(
+            "input.shape[1] must be a static multiple of 32 for the fused"
+            " MoE sort+gather+quantize"
+        )
+    if int(cols) % sf_vector_size != 0:
+        raise ValueError(
+            f"input.shape[1] must be a multiple of {sf_vector_size}"
+        )
+
+    # Static shapes are checked here; the kernel's launcher re-checks the
+    # slot count against the real sizes on every launch, which covers the
+    # dynamic-dim graph.
+    slots = topk_ids.shape[0]
+    rows = input.shape[0]
+    if isinstance(slots, StaticDim) and isinstance(rows, StaticDim):
+        if int(slots) != int(rows) * topk:
+            raise ValueError(
+                f"topk_ids holds {int(slots)} slots but input has"
+                f" {int(rows)} tokens at topk {topk}"
+            )
+
+    result = ops.custom(
+        "mo.moe.sort.gather.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[input, topk_ids],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32, shape=[slots], device=input.device
+            ),  # token_expert_order
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_experts + 1],
+                device=input.device,
+            ),  # expert_start_indices
+            TensorType(
+                dtype=DType.uint32, shape=[slots], device=input.device
+            ),  # restore_token_order
+            TensorType(
+                dtype=DType.int32, shape=[num_experts], device=input.device
+            ),  # expert_ids
+            TensorType(
+                dtype=DType.uint32, shape=[2], device=input.device
+            ),  # expert_usage_stats
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[slots, cols],
+                device=input.device,
+            ),  # quantized
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[slots, ceildiv(cols, Dim(sf_vector_size))],
+                device=input.device,
+            ),  # scales
+        ],
+        parameters={
+            "SF_VECTOR_SIZE": sf_vector_size,
+            "TOPK": topk,
+            "NUM_EXPERTS": num_experts,
+            "NUM_COLS": int(cols),
+        },
+    )
+    return tuple(t.tensor for t in result)
+
+
 def swiglu_quantize_dynamic_block_scaled(
     gate_up: TensorValue,
     activation: GatedActivation | None = None,
@@ -17355,25 +17634,6 @@ def mhc_post_supports(hc_mult: int, hidden_size: int, dtype: DType) -> bool:
         and hc_mult & (hc_mult - 1) == 0
         and hidden_size % _mhc_post_block_width(dtype) == 0
     )
-
-
-def mhc_post_preferred(hc_mult: int, hidden_size: int, dtype: DType) -> bool:
-    """Returns whether a mHC write-back should run on :func:`mhc_post`.
-
-    Every mHC write-back routes through this one predicate, so the graph-API
-    and ModuleV3 layers switch together.
-
-    Args:
-        hc_mult: The number of residual streams.
-        hidden_size: The width of one stream.
-        dtype: The streams' dtype.
-
-    Returns:
-        True on AMD GPUs for shapes :func:`mhc_post_supports` accepts.
-    """
-    # TODO(KERN-3765): prefer mhc_post on every GPU once it is timed on
-    # NVIDIA, where the batched-matmul fallback also lands on the naive kernel.
-    return _is_amd_gpu() and mhc_post_supports(hc_mult, hidden_size, dtype)
 
 
 def mhc_post(

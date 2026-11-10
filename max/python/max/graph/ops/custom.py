@@ -85,7 +85,8 @@ def custom(
         out_types: The list of op function's return type.
         parameters: Dictionary of extra parameters expected by the kernel.
         device: Device that the op is assigned to.
-            This becomes a `target` parameter to the kernel.
+            The kernel reads it as `ctx.target` from its `DeviceContext`
+            argument.
 
     Returns:
         Symbolic values representing the outputs of the op in the graph.
@@ -145,7 +146,8 @@ def inplace_custom(
     Args:
         name: The op name provided to ``@extensibility.register``.
         device: Device that the op is assigned to.
-            This becomes a `target` parameter to the kernel.
+            The kernel reads it as `ctx.target` from its `DeviceContext`
+            argument.
         values: The op function's arguments.
         out_types: Optional sequence of output types for the op.
         parameters: Dictionary of extra parameters expected by the kernel.

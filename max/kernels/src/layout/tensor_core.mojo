@@ -115,8 +115,6 @@ def num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
 
 
 # shapes
-comptime shape_null = DynamicCoord[.int, 3](0, 0, 0)
-"""Null tensor core shape (0x0x0)."""
 comptime shape_16x8x4 = DynamicCoord[.int, 3](16, 8, 4)
 """Tensor core shape 16x8x4."""
 comptime shape_16x8x8 = DynamicCoord[.int, 3](16, 8, 8)

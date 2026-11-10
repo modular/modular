@@ -122,43 +122,6 @@ def _build() -> Step:
             if drafts is None
             else np.array(drafts, dtype=np.int64).reshape(batch, num_steps)
         )
-        args = [
-            b(toks),
-            b(np.array([0, active], np.uint32)),
-            h(np.array([0, active], np.uint32)),
-            h(np.array([num_steps + 1], np.int64)),
-            h(np.array([0, 1], np.int64)),
-            *sig,
-            tblocks,
-            b(np.array([cached] * batch, np.uint32)),
-            b(lut),
-            h(np.array([target_width], np.uint32)),
-            h(np.array([abs_max_cache], np.uint32)),
-            h(np.array([PACKED_PAGE_STRIDE], np.int64)),
-            h(np.array([batch, target_width, 1, abs_max_cache], np.int64)),
-            # Each leaf ends with its split record; one row never splits.
-            h(np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)),
-            dblocks,
-            b(np.array([cached] * batch, np.uint32)),
-            b(lut),
-            h(np.array([target_width], np.uint32)),
-            h(np.array([abs_max_cache], np.uint32)),
-            h(np.array([PACKED_PAGE_STRIDE], np.int64)),
-            h(np.array([batch, target_width, 1, abs_max_cache], np.int64)),
-            h(np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)),
-            h(np.array([0], np.int32)),
-            b(dtv),
-            b(np.array([7], np.uint64)),
-            b(np.zeros(batch, np.float32)),
-            b(np.ones(batch, np.int64)),
-            h(np.array(1, np.int64).reshape(())),
-            b(np.ones(batch, np.float32)),
-            h(np.array(1.0, np.float32).reshape(())),
-            b(np.zeros(batch, np.bool_)),
-            pinned_bitmask,
-            wait_payload,
-            bitmask_scratch,
-        ]
 
         def conv_pool() -> Buffer:
             # One pool per leaf now: a block's layers are consecutive rows,
@@ -187,7 +150,51 @@ def _build() -> Step:
                 .T
             )
         )
-        args += [conv_pool(), rec_pool(), ring_pool(), rows, rows, rows]
+        args = [
+            b(toks),
+            b(np.array([0, active], np.uint32)),
+            h(np.array([0, active], np.uint32)),
+            h(np.array([num_steps + 1], np.int64)),
+            h(np.array([0, 1], np.int64)),
+            *sig,
+            tblocks,
+            b(np.array([cached] * batch, np.uint32)),
+            b(lut),
+            h(np.array([target_width], np.uint32)),
+            h(np.array([abs_max_cache], np.uint32)),
+            h(np.array([PACKED_PAGE_STRIDE], np.int64)),
+            h(np.array([batch, target_width, 1, abs_max_cache], np.int64)),
+            # Each leaf ends with its split record; one row never splits.
+            h(np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)),
+            # The target's state: each leaf's pool, then its rows.
+            conv_pool(),
+            rows,
+            rec_pool(),
+            rows,
+            ring_pool(),
+            rows,
+            dblocks,
+            b(np.array([cached] * batch, np.uint32)),
+            b(lut),
+            h(np.array([target_width], np.uint32)),
+            h(np.array([abs_max_cache], np.uint32)),
+            h(np.array([PACKED_PAGE_STRIDE], np.int64)),
+            h(np.array([batch, target_width, 1, abs_max_cache], np.int64)),
+            h(np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)),
+            h(np.array([0], np.int32)),
+            b(dtv),
+            b(np.array([7], np.uint64)),
+            b(np.zeros(batch, np.float32)),
+            b(np.ones(batch, np.int64)),
+            h(np.array(1, np.int64).reshape(())),
+            b(np.ones(batch, np.float32)),
+            h(np.array(1.0, np.float32).reshape(())),
+            b(np.zeros(batch, np.bool_)),
+            pinned_bitmask,
+            wait_payload,
+            bitmask_scratch,
+        ]
+
         o = model.execute(*args)
         return [np.array(x.to(CPU()).to_numpy()) for x in o]
 

@@ -18,9 +18,9 @@ needs a target of its own: the knobs are set at import, before anything below
 reaches a device. The graphs are plain CPU graphs -- the stand-in is about
 whether the process can execute at all, not about which arch it compiled for.
 
-Eager tensors are out of scope: realizing one under virtual devices cannot work
-at all, since the eager interpreter falls back to an artifact it loads by path
-and ``init_all`` cannot name the graphs in one. That predates the stand-in.
+Eager tensors are out of scope: realizing one needs the device, which is what
+the stand-in refuses. The artifact the eager interpreter loads by path is covered
+here, though: ``init_all`` names its graphs from the artifact itself.
 """
 
 from __future__ import annotations
@@ -158,6 +158,31 @@ def test_an_attribute_no_model_has_stays_an_attribute_error(
     missing = "not_a_member_of_any_model"
     with pytest.raises(AttributeError):
         getattr(stand_in, missing)
+
+
+def test_init_all_names_the_graphs_of_a_path_compiled_artifact(
+    tmp_path: Path,
+) -> None:
+    # The eager interpreter, and anyone replaying a recorded MEF, loads an
+    # artifact by path. There is no source module to read graph names from,
+    # so the stand-ins are keyed by the names the artifact itself carries.
+    # A body unlike `_graph`'s: the compile cache keys on the body and would
+    # otherwise hand back the `add_one` artifact under this name.
+    dtype = TensorType(DType.float32, [4], device=DeviceRef.CPU())
+    with Graph("exported", input_types=[dtype]) as graph:
+        graph.output(graph.inputs[0].tensor * 2.0)
+    session = InferenceSession(devices=[CPU()])
+    path = tmp_path / "exported.mef"
+    session.compile(graph).export_mef(path)
+
+    models = session.init_all(session.compile(path))
+
+    assert list(models) == ["exported"]
+    stand_in = models["exported"]
+    assert isinstance(stand_in, CompileOnlyModel)
+    assert [(s.shape, s.dtype) for s in stand_in.input_metadata] == [
+        ([4], DType.float32)
+    ]
 
 
 @pytest.fixture

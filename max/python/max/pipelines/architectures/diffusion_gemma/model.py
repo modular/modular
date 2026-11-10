@@ -27,7 +27,7 @@ accepted-canvas commits reuse the donor paths unchanged.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from max import tree
@@ -66,6 +66,11 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
     """
 
     decoder_model: Model
+
+    # The Gemma4 config reads fields the DiffusionGemma HF config removes.
+    model_config_cls: ClassVar[type[Any]] = (
+        DiffusionGemmaForBlockDiffusionConfig
+    )
 
     # The donor mixes in ``LogProbabilitiesMixin``, which claims the
     # capability by overriding ``compute_log_probabilities``. This port

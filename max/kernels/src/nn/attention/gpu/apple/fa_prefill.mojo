@@ -127,7 +127,6 @@ comptime FA_PREFILL_APPLE_MAX_HEAD_DIM = 256
 # (NUM_M_MMAS*((depth/16) + NUM_N_MMAS) fp32 fragments) binds occupancy: a narrow
 # 1x2 tile keeps them resident while a wider score tile collapses occupancy.
 # NUM_N_MMAS=2 measured fastest.
-comptime DEFAULT_NUM_M_MMAS = 1
 comptime DEFAULT_NUM_N_MMAS = 2
 comptime MMA_DIM = 16
 

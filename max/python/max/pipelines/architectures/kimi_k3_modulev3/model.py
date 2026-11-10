@@ -831,14 +831,20 @@ def _fuse_gate_up(gate: np.ndarray, up: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(np.concatenate([gate, up], axis=0))
 
 
-def _fuse_qkv_proj(q: np.ndarray, k: np.ndarray, v: np.ndarray) -> np.ndarray:
-    """Merges q, k and v into one ``[3 * inner, hidden]`` projection weight.
+def _fuse_qkvgb_proj(
+    q: np.ndarray,
+    k: np.ndarray,
+    v: np.ndarray,
+    g: np.ndarray,
+    b: np.ndarray,
+) -> np.ndarray:
+    """Merges q, k, v, g and beta into one ``[4 * inner + heads, hidden]`` weight.
 
-    ``KimiK3KDAAttention.qkv_proj`` takes the merged weight. This eager
+    ``KimiK3KDAAttention.qkvg_proj`` takes the merged weight. This eager
     loader is single-device, so a plain row concat is the TP-degree-1 case
     of the weight adapter's per-rank interleave.
     """
-    return np.ascontiguousarray(np.concatenate([q, k, v], axis=0))
+    return np.ascontiguousarray(np.concatenate([q, k, v, g, b], axis=0))
 
 
 def _fuse_qkv_conv_weight(
@@ -934,11 +940,13 @@ def load_kimi_k3_weights(
         attn = layer.attention
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            attn.qkv_proj.weight = Tensor(
-                _fuse_qkv_proj(
+            attn.qkvg_proj.weight = Tensor(
+                _fuse_qkvgb_proj(
                     get(f"{attn_src}.q_proj.weight"),
                     get(f"{attn_src}.k_proj.weight"),
                     get(f"{attn_src}.v_proj.weight"),
+                    get(f"{attn_src}.g_proj.weight"),
+                    get(f"{attn_src}.b_proj.weight"),
                 ),
                 dtype=DType.float32,
             )
@@ -947,12 +955,6 @@ def load_kimi_k3_weights(
             )
             attn.f_b_proj.weight = Tensor(
                 get(f"{attn_src}.f_b_proj.weight"), dtype=DType.float32
-            )
-            attn.b_proj.weight = Tensor(
-                get(f"{attn_src}.b_proj.weight"), dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                get(f"{attn_src}.g_proj.weight"), dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 get(f"{attn_src}.o_proj.weight"), dtype=DType.float32
@@ -1024,7 +1026,7 @@ def load_kimi_k3_weights(
             assert isinstance(ffn, KimiK3LatentMoE)
             moe = f"{src}.block_sparse_moe"
             ffn.gate.gate_score.weight = Tensor(
-                get(f"{moe}.gate.weight"), dtype=DType.float32
+                get(f"{moe}.gate.weight"), dtype=DType.bfloat16
             )
             ffn.gate.e_score_correction_bias = Tensor(
                 get(f"{moe}.gate.e_score_correction_bias"), dtype=DType.float32

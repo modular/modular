@@ -236,6 +236,7 @@ static int precompile(const State &subcommandState) {
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
   registerContext(precompileArgs.ctx, ctx);
+  configureKGENContext(&precompileArgs.ctx);
 
   //===--------------------------------------------------------------------===//
   // Build the package

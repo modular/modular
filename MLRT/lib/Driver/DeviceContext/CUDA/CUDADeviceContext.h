@@ -46,14 +46,12 @@ class CUDADeviceMulticastBuffer;
 class CUDADeviceStream;
 class CUDADeviceTimer;
 
-using CUDADeviceRef = RCRef<CUDADevice>;
 using CUDADeviceContextRef = RCRef<CUDADeviceContext>;
 using CUDAStreamPoolRef = RCRef<CUDAStreamPool>;
 using CUDADeviceEventRef = RCRef<CUDADeviceEvent>;
 using CUDADeviceGraphRef = RCRef<CUDADeviceGraph>;
 using CUDAModuleFunctionRef = RCRef<const CUDAModuleFunction>;
 using CUDADeviceFunctionRef = RCRef<CUDADeviceFunction>;
-using CUDADeviceFunctionArgumentsRef = RCRef<const CUDADeviceFunctionArguments>;
 using CUDADeviceMulticastBufferRef = RCRef<CUDADeviceMulticastBuffer>;
 using CUDADeviceStreamRef = RCRef<CUDADeviceStream>;
 using CUDADeviceTimerRef = RCRef<CUDADeviceTimer>;

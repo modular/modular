@@ -13,7 +13,7 @@
 """Helpers for dispatching collective operations across devices."""
 
 from std.collections import Array, Optional
-from std.runtime._asyncrt import TaskGroup
+from std.runtime._asyncrt import TaskGroup, create_task
 from std.sys.info import CompilationTarget
 
 from max.gpu.host import DeviceContext, DeviceContextArray
@@ -71,10 +71,6 @@ def _launch_device_collective[
         worker_ids[i] = task_id_for_device(Int(dev_ctxs[i].device().id))
 
     var gate = CollectiveGate(dev_ctxs[0], num_devices)
-    var tg = TaskGroup()
-    # The deferred dispatch adds tasks to the group it runs in. The group
-    # outlives it, which the origin checker cannot see through the capture.
-    var group = Pointer(to=tg).unsafe_origin_cast[MutUntrackedOrigin]()
 
     # The tasks run on other threads; while a device graph is being captured
     # they adopt the dispatching thread's op, so the kernels they launch are
@@ -97,26 +93,30 @@ def _launch_device_collective[
 
     # Dispatch to the worker threads that have affinity for each device.
     @inline(.always)
-    def dispatch() {imm}:
+    def dispatch(mut group: TaskGroup) {imm}:
         comptime for i in range(num_devices):
-            group[]._create_task(wrapper[i](), desired_worker_id=worker_ids[i])
+            group._create_task(wrapper[i](), desired_worker_id=worker_ids[i])
 
     @inline(.always)
     __async def dispatch_when_granted() {imm} -> None:
         __await gate
-        dispatch()
+        var group = TaskGroup()
+        dispatch(group)
+        __await group
 
+    # Each wait holds nothing, so a task it runs may take the gate.
     if gate.try_acquire():
-        dispatch()
+        var group = TaskGroup()
+        dispatch(group)
+        # A group drops its tasks' origins, so the wait names what they borrow
+        # to keep it alive until they finish.
+        # TODO(MOCO-771): Drop the explicit origins once `TaskGroup` tracks its
+        # tasks' origins, which would also spare other callers this step.
+        group.wait[origin_of(gate, dev_ctxs)._mlir_origin]()
     else:
-        # Counted by the group from now, so the wait below also covers the
-        # tasks it adds once granted.
-        tg.create_task(dispatch_when_granted())
-
-    # Holds nothing while it waits, so a task this wait runs may take the gate.
-    tg.wait()
-    # The tasks reference `gate` until the last of them releases it.
-    _ = gate.grant
+        # A task keeps its origins, which cover its group's tasks too.
+        var dispatcher = create_task(dispatch_when_granted())
+        dispatcher.wait()
 
     # Re-raise the first error encountered.
     comptime for i in range(num_devices):

@@ -293,6 +293,17 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    eplb_count_expert_load: bool = Field(
+        default=False,
+        description=(
+            "When True, every expert-parallel dispatch adds each local expert "
+            "slot's routed-token count to a per-GPU running tally, one row "
+            "per routing-histogram layer, that the serving engine reads "
+            "back. Unlike ``eplb_profile`` it adds no per-token graph work; "
+            "it needs a model that passes its layer index to the dispatch."
+        ),
+    )
+
     eplb_fold_router: bool = Field(
         default=True,
         description=(

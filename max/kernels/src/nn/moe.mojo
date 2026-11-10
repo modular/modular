@@ -333,6 +333,15 @@ def moe_create_indices_kernel[
                     - base
                 )
                 if e < 0 or e >= chunk_experts:
+                    # An id outside [0, num_experts) lands in no chunk, so
+                    # the scatter never writes the pair's restore entry; pin
+                    # it to the out-of-range sentinel instead of leaving it
+                    # uninitialized. An id inside another chunk's range takes
+                    # its real position there.
+                    if e + base < 0 or e + base >= num_experts:
+                        restore_token_order[i] = UInt32(total_tokens).cast[
+                            restore_type
+                        ]()
                     continue
                 var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
                     ordering=Ordering.RELAXED
@@ -513,6 +522,11 @@ def _moe_scatter_kernel[
         for i in range(begin + tid, end, block_threads):
             var e = Int(topk_ids[unsafe_offset=i])
             if e < 0 or e >= num_experts:
+                # An out-of-range id lands in no expert's CSR range, so the
+                # scatter below never writes the pair's restore entry; pin it
+                # to the out-of-range sentinel instead of leaving it
+                # uninitialized.
+                restore_token_order[unsafe_offset=i] = UInt32(total_tokens)
                 continue
             var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
                 ordering=Ordering.RELAXED

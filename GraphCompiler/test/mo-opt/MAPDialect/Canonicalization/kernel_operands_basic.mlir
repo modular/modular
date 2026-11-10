@@ -1,7 +1,7 @@
 // RUN: mo-opt %s --canonicalize | FileCheck %s
 
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
-mogg.kernel.decl @kernels.add registration = "kernels.add" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.add registration = "kernels.add" struct_params = [] is_user_defined = false
 
 // CHECK-LABEL: mo.graph @drops_unused_input
 // CHECK:       map.iter.opaque

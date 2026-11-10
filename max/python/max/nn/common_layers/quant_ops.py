@@ -1381,10 +1381,9 @@ def grouped_matmul_silu(
     # down matmul quantize.
     prequantized = isinstance(tokens, (FP8BlockActivation, NVFP4Activation))
     # The down matmul quantizes from bf16 only, so a float32 SwiGLU output has
-    # to be packed by the fused quantized SiLU. A bf16 output does not need it
-    # and must not take it. That kernel gives each expert group a share of the
-    # GPU's SMs, so it cannot be built for a model with more experts than the
-    # GPU has SMs.
+    # to be packed by the fused quantized SiLU. A bf16 output does not need
+    # it since the down matmul quantizes bf16 itself, with the same static
+    # per-expert input scale, and lands on the same result.
     requant_weight = (
         down
         if prequantized

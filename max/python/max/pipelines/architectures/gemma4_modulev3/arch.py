@@ -36,6 +36,8 @@ gemma4_modulev3_arch = SupportedArchitecture(
     example_repo_ids=[
         "google/gemma-4-31B-it",
         "nvidia/Gemma-4-31B-IT-NVFP4",
+        "google/gemma-4-26B-A4B-it",
+        "nvidia/Gemma-4-26B-A4B-NVFP4",
     ],
     default_encoding="bfloat16",
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},

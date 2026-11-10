@@ -543,6 +543,8 @@ struct AMDMatmul[
                             schedule_group_barrier(
                                 AMDScheduleBarrierMask.MFMA, Int32(wait), 0
                             )
+                        case _:
+                            pass
 
         # The pipeline always consumes at least two K tiles. When K is shorter
         # than that, or ends in a partial tile, the loads of those tiles zero

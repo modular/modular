@@ -292,7 +292,6 @@ def _ctopk_nbar[in_dtype: DType]() -> Int:
 # so nothing may write it again, and every later round bins into `HIST`.
 # `WSUM` carries round 0's 32-bin group totals to the peers the same way
 # before it is threshold-scan scratch again.
-comptime _CTOPK_OFF_HIST = 0
 comptime _CTOPK_OFF_HIST0 = 4 * _CTOPK_BINS
 comptime _CTOPK_OFF_WSUM = 8 * _CTOPK_BINS
 comptime _CTOPK_OFF_MTCH = _CTOPK_OFF_WSUM + 4 * WARP_SIZE

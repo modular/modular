@@ -190,3 +190,233 @@ kgen.func @elif_carried_values(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>,
   }
   hlcf.return %r : index
 }
+
+// A `while j < n:` that `raise-for-loops` left alone splits at its exit check:
+// the ops up to the check become the before region and the rest the after
+// region, which reads the loop state `scf.condition` forwards.
+// CHECK-LABEL: kgen.func @while_loop
+// CHECK:         scf.while (%[[J:.*]] = %arg0) : (index) -> index {
+// CHECK:           %[[CMP:.*]] = index.cmp slt(%[[J]], %arg1)
+// CHECK:           %[[C:.*]] = pop.cast_from_builtin %[[CMP]] : i1 to !kgen.scalar<bool>
+// CHECK:           %[[C_I1:.*]] = builtin.unrealized_conversion_cast %[[C]] : !kgen.scalar<bool> to i1
+// CHECK:           scf.condition(%[[C_I1]]) %[[J]] : index
+// CHECK:         } do {
+// CHECK:         ^bb0(%[[JA:.*]]: index):
+// CHECK-NEXT:      "use"(%[[JA]])
+// CHECK-NEXT:      %[[NEXT:.*]] = index.add %[[JA]], %arg2
+// CHECK-NEXT:      scf.yield %[[NEXT]] : index
+// CHECK:         hlcf.return
+kgen.func @while_loop(%init: index, %n: index, %step: index) {
+  hlcf.loop (%j = %init : index) {
+    %cmp = index.cmp slt(%j, %n)
+    %c = pop.cast_from_builtin %cmp : i1 to !kgen.scalar<bool>
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    "use"(%j) : (index) -> ()
+    %next = index.add %j, %step
+    hlcf.continue %next : index
+  }
+  hlcf.return
+}
+
+// A pure value of the before region that the after region also reads is
+// recomputed there rather than forwarded, so `scf.condition` carries only the
+// loop state.
+// CHECK-LABEL: kgen.func @while_loop_remat
+// CHECK:         %[[TWO:.*]] = index.constant 2
+// CHECK:         scf.while (%[[J:.*]] = %arg0) : (index) -> index {
+// CHECK:           %[[J2:.*]] = index.mul %[[J]], %[[TWO]]
+// CHECK:           index.cmp slt(%[[J2]], %arg1)
+// CHECK:           scf.condition(%{{.*}}) %[[J]] : index
+// CHECK:         } do {
+// CHECK:         ^bb0(%[[JA:.*]]: index):
+// CHECK-NEXT:      %[[J2A:.*]] = index.mul %[[JA]], %[[TWO]]
+// CHECK-NEXT:      "use"(%[[J2A]])
+kgen.func @while_loop_remat(%init: index, %n: index) {
+  %two = index.constant 2
+  %one = index.constant 1
+  hlcf.loop (%j = %init : index) {
+    %j2 = index.mul %j, %two
+    %cmp = index.cmp slt(%j2, %n)
+    %c = pop.cast_from_builtin %cmp : i1 to !kgen.scalar<bool>
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    "use"(%j2) : (index) -> ()
+    %next = index.add %j, %one
+    hlcf.continue %next : index
+  }
+  hlcf.return
+}
+
+// A value of the before region that cannot be recomputed is forwarded.
+// CHECK-LABEL: kgen.func @while_loop_impure_head
+// CHECK:         scf.while
+// CHECK:           %[[V:.*]] = "read"()
+// CHECK:           scf.condition(%{{.*}}) {{.*}}%[[V]]{{.*}} : index, index
+// CHECK:         } do {
+// CHECK:         ^bb0(%{{.*}}: index, %{{.*}}: index):
+kgen.func @while_loop_impure_head(%init: index, %c: !kgen.scalar<bool>) {
+  %one = index.constant 1
+  hlcf.loop (%j = %init : index) {
+    %v = "read"() : () -> index
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    "use"(%v) : (index) -> ()
+    %next = index.add %j, %one
+    hlcf.continue %next : index
+  }
+  hlcf.return
+}
+
+// A value live after the loop leaves through the exit check's `break`, so it
+// is forwarded too and becomes the `scf.while` result.
+// CHECK-LABEL: kgen.func @while_loop_live_out
+// CHECK:         %[[R:.*]] = scf.while (%[[J:.*]] = %arg0) : (index) -> index {
+// CHECK:           scf.condition(%{{.*}}) %[[J]] : index
+// CHECK:         hlcf.return %[[R]] : index
+kgen.func @while_loop_live_out(%init: index, %n: index) -> index {
+  %one = index.constant 1
+  %r = hlcf.loop (%j = %init : index) -> index {
+    %cmp = index.cmp slt(%j, %n)
+    %c = pop.cast_from_builtin %cmp : i1 to !kgen.scalar<bool>
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break %j : index
+    }
+    %next = index.add %j, %one
+    hlcf.continue %next : index
+  }
+  hlcf.return %r : index
+}
+
+// A `while` loop nested in another lowers on its own. Its uses of the outer
+// loop's state read the value the outer `scf.condition` forwards.
+// CHECK-LABEL: kgen.func @nested_while_loops
+// CHECK:         scf.while (%[[I:.*]] = %arg0) : (index) -> index {
+// CHECK:           scf.condition(%{{.*}}) %[[I]] : index
+// CHECK:         } do {
+// CHECK:         ^bb0(%[[IA:.*]]: index):
+// CHECK:           scf.while (%[[J:.*]] = %arg0) : (index) -> index {
+// CHECK:             index.cmp slt(%[[J]], %[[IA]])
+// CHECK:             scf.condition(%{{.*}}) %[[J]] : index
+// CHECK:           } do {
+// CHECK:           ^bb0(%[[JA:.*]]: index):
+// CHECK:             "use"(%[[IA]], %[[JA]])
+// CHECK:             scf.yield
+// CHECK:           }
+// CHECK:           scf.yield
+// CHECK-NOT:     hlcf.loop
+// CHECK:         hlcf.return
+kgen.func @nested_while_loops(%init: index, %n: index) {
+  %one = index.constant 1
+  hlcf.loop "outer" (%i = %init : index) {
+    %ci = index.cmp slt(%i, %n)
+    %c = pop.cast_from_builtin %ci : i1 to !kgen.scalar<bool>
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    hlcf.loop "inner" (%j = %init : index) {
+      %cj = index.cmp slt(%j, %i)
+      %d = pop.cast_from_builtin %cj : i1 to !kgen.scalar<bool>
+      hlcf.if %d {
+        hlcf.yield
+      } else {
+        hlcf.break
+      }
+      "use"(%i, %j) : (index, index) -> ()
+      %jn = index.add %j, %one
+      hlcf.continue %jn : index
+    }
+    %in = index.add %i, %one
+    hlcf.continue %in : index
+  }
+  hlcf.return
+}
+
+// A loop before the exit check lands in the before region, so it still runs
+// on every iteration ahead of the check. It has a region, so its result is
+// forwarded through `scf.condition` rather than recomputed.
+// CHECK-LABEL: kgen.func @while_loop_inner_loop_before_check
+// CHECK:         scf.while (%[[I:.*]] = %arg0) : (index) -> (index, index) {
+// CHECK:           %[[R:.*]] = scf.while (%[[J:.*]] = %arg0) : (index) -> index {
+// CHECK:             index.cmp slt(%[[J]], %[[I]])
+// CHECK:             scf.condition(%{{.*}}) %[[J]] : index
+// CHECK:           } do {
+// CHECK:           }
+// CHECK:           index.cmp slt(%[[I]], %arg1)
+// CHECK:           scf.condition(%{{.*}}) %[[I]], %[[R]] : index, index
+// CHECK:         } do {
+// CHECK:         ^bb0(%{{.*}}: index, %[[RA:.*]]: index):
+// CHECK-NOT:       scf.while
+// CHECK:           "use"(%[[RA]])
+// CHECK:           scf.yield
+// CHECK-NOT:     hlcf.loop
+// CHECK:         hlcf.return
+kgen.func @while_loop_inner_loop_before_check(%init: index, %n: index) {
+  %one = index.constant 1
+  hlcf.loop "outer" (%i = %init : index) {
+    %r = hlcf.loop "inner" (%j = %init : index) -> index {
+      %cj = index.cmp slt(%j, %i)
+      %d = pop.cast_from_builtin %cj : i1 to !kgen.scalar<bool>
+      hlcf.if %d {
+        hlcf.yield
+      } else {
+        hlcf.break %j : index
+      }
+      %jn = index.add %j, %one
+      hlcf.continue %jn : index
+    }
+    %ci = index.cmp slt(%i, %n)
+    %c = pop.cast_from_builtin %ci : i1 to !kgen.scalar<bool>
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    "use"(%r) : (index) -> ()
+    %in = index.add %i, %one
+    hlcf.continue %in : index
+  }
+  hlcf.return
+}
+
+// A loop-carried value whose type converts is bridged into both regions, and
+// back to its HLCF type for the ops that read it.
+// CHECK-LABEL: kgen.func @while_loop_converted_type
+// CHECK:         %[[INIT:.*]] = builtin.unrealized_conversion_cast %arg0 : !kgen.scalar<si32> to i32
+// CHECK:         %[[R:.*]] = scf.while (%[[X:.*]] = %[[INIT]]) : (i32) -> i32 {
+// CHECK:           scf.condition(%{{.*}}) %[[X]] : i32
+// CHECK:         } do {
+// CHECK:         ^bb0(%[[XA:.*]]: i32):
+// CHECK-NEXT:      %[[XS:.*]] = builtin.unrealized_conversion_cast %[[XA]] : i32 to !kgen.scalar<si32>
+// CHECK-NEXT:      "use"(%[[XS]])
+// CHECK-NEXT:      %[[Y:.*]] = "next"(%[[XS]])
+// CHECK-NEXT:      %[[YI:.*]] = builtin.unrealized_conversion_cast %[[Y]] : !kgen.scalar<si32> to i32
+// CHECK-NEXT:      scf.yield %[[YI]] : i32
+// CHECK:         %[[RS:.*]] = builtin.unrealized_conversion_cast %[[R]] : i32 to !kgen.scalar<si32>
+// CHECK:         hlcf.return %[[RS]] : !kgen.scalar<si32>
+kgen.func @while_loop_converted_type(%init: !kgen.scalar<si32>, %c: !kgen.scalar<bool>) -> !kgen.scalar<si32> {
+  %r = hlcf.loop (%x = %init : !kgen.scalar<si32>) -> !kgen.scalar<si32> {
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      hlcf.break %x : !kgen.scalar<si32>
+    }
+    "use"(%x) : (!kgen.scalar<si32>) -> ()
+    %y = "next"(%x) : (!kgen.scalar<si32>) -> !kgen.scalar<si32>
+    hlcf.continue %y : !kgen.scalar<si32>
+  }
+  hlcf.return %r : !kgen.scalar<si32>
+}
