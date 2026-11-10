@@ -537,16 +537,15 @@ modular_py_test(
     ],
 )
 
-# Kept out of `cpu_tests` so it does not inherit "external-exclusive". Every
-# case compiles its own graph, which times the file out as one shard.
+# Kept out of `cpu_tests` so it does not inherit "external-exclusive". Not
+# sharded: the file compiles all its graphs in one `load_all`, which each
+# shard would repeat.
 modular_py_test(
     name = "test_view_fusion",
-    size = "large",
     srcs = [
         "conftest.py",
         "test_view_fusion.py",
     ],
-    shard_count = 4,
     deps = [
         ":fusion_utils",
         "//max/python/max/driver",

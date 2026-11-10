@@ -59,12 +59,26 @@ def load_and_verify_fusion(
             ``fused``.
     """
     model = session.load(graph)
+    check_fusion(model, fused)
+    return model
+
+
+def check_fusion(model: Model, fused: str = "") -> None:
+    """Checks the fusion structure of an already compiled ``model``.
+
+    Args:
+        model: The compiled graph to check.
+        fused: As :func:`load_and_verify_fusion`.
+
+    Raises:
+        AssertionError: If no summary in ``model.kernel_summaries`` matches
+            ``fused``.
+    """
     if not any(re.search(fused, summary) for summary in model.kernel_summaries):
         raise AssertionError(
             f"expected a kernel summary matching {fused!r}, got: "
             f"{model.kernel_summaries}"
         )
-    return model
 
 
 def execute(model: Model, *inputs: np.ndarray) -> tuple[np.ndarray, ...]:
