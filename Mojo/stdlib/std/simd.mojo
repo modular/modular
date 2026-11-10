@@ -2477,7 +2477,9 @@ struct SIMD[dtype: DType, length: SIMDLength](
         return SIMD(mlir_value=res)
 
     @always_inline("builtin")
-    def is_power_of_two(self) -> SIMD[.bool, Self.length]:
+    def is_power_of_two(
+        self,
+    ) -> SIMD[.bool, Self.length] where Self.dtype.is_integral():
         """Checks if the input value is a power of 2 for each element of a SIMD vector.
 
         Constraints:
@@ -2487,7 +2489,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A SIMD value where the element at position `i` is True if the integer at
             position `i` of the input value is a power of 2, False otherwise.
         """
-        comptime assert Self.dtype.is_integral(), "must be integral"
 
         return self.gt(0) & (self & (self - 1)).eq(0)
 
