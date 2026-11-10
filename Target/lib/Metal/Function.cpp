@@ -238,10 +238,16 @@ M_driver_function_set_attribute([[maybe_unused]] M_driver_context_t context,
 }
 
 M_driver_status_t M_driver_function_occupancy_max_active_blocks(
-    [[maybe_unused]] M_driver_context_t context,
-    [[maybe_unused]] M_driver_function_t function,
+    M_driver_context_t context, M_driver_function_t function,
     [[maybe_unused]] int32_t block_size,
     [[maybe_unused]] uint64_t dynamic_shared_memory_bytes,
     [[maybe_unused]] int32_t *num_blocks) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+  if (context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  if (function == nullptr)
+    return M_DRIVER_STATUS_BAD_FUNCTION;
+  // Metal publishes no per-core residency limits, and from M3 on (Dynamic
+  // Caching) residency depends on runtime register and memory use, so there
+  // is no static answer.
+  return M_DRIVER_STATUS_UNSUPPORTED;
 }
