@@ -631,7 +631,6 @@ modular_cc_library(
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
-    alwayslink = True,
 )
 
 # The DeviceContext runtime shared library. Toolchain-side consumers
@@ -918,7 +917,6 @@ modular_cc_library(
         "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ],
-    alwayslink = True,
 )
 
 modular_cc_library(
@@ -944,7 +942,6 @@ modular_cc_library(
         "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ],
-    alwayslink = True,
 )
 
 modular_cc_library(
@@ -1043,7 +1040,6 @@ modular_cc_library(
         "@platforms//os:macos": ["@metal-cpp//:metal-cpp"],
         "//conditions:default": [],
     }),
-    alwayslink = True,
 )
 
 # The kernel-compilation target abstraction (CompilationDevice) plus the
@@ -1095,7 +1091,6 @@ modular_cc_library(
         "//Target:DriverPlugin",
         "@llvm-project//llvm:Support",
     ],
-    alwayslink = True,
 )
 
 # The legacy driver code that needs no device: arch detection with the vendor
