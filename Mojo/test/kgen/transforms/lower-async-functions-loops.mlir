@@ -1,5 +1,4 @@
 // RUN: kgen-opt -lower-async-functions -split-input-file %s | FileCheck %s
-// RUN: kgen-opt -lower-async-functions='use-liveness-frame-evaluation=true' -split-input-file %s | FileCheck %s
 
 // COM: Verify Ramp + Resume + Async Calls are transformed correctly.
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
@@ -223,7 +222,7 @@ kgen.func @coroutine3(%arg0: i1, %arg1: index, %arg3: index) async -> index {
     // CHECK-NEXT: [[V15:%.*]] = kgen.struct.gep %arg0[[[#FRAME11 + 1]]]
     // CHECK-NEXT: [[V16:%.*]] = pop.load [[V15]] : !kgen.pointer<index>
     // CHECK-NEXT: [[V17:%.*]] = kgen.call @bar([[NIF]], [[V16]]) : (index, index) -> index
-    // CHECK-NEXT: [[V18:%.*]] = kgen.struct.gep %arg0[[[#FRAME11 - 3]]]
+    // CHECK-NEXT: [[V18:%.*]] = kgen.struct.gep %arg0[[[#RESULT4:]]]
     // CHECK-NEXT: pop.store [[V17]], [[V18]] : !kgen.pointer<index>
     // CHECK-NEXT: kgen.param.constant
     // CHECK-NEXT: kgen.struct.gep
@@ -231,7 +230,7 @@ kgen.func @coroutine3(%arg0: i1, %arg1: index, %arg3: index) async -> index {
     // CHECK-NEXT: co.suspend {
     // CHECK-NEXT:   co.suspend.end
     // CHECK-NEXT: }
-    // CHECK-NEXT: [[V19:%.*]] = kgen.struct.gep %arg0[[[#FRAME11 - 3]]]
+    // CHECK-NEXT: [[V19:%.*]] = kgen.struct.gep %arg0[[[#RESULT4]]]
     // CHECK-NEXT: [[V20:%.*]] = pop.load [[V19]] : !kgen.pointer<index>
     // CHECK-NEXT: [[V21:%.*]] = kgen.struct.gep %arg0[[[#FRAME11 + 1]]]
     // CHECK-NEXT: [[V22:%.*]] = pop.load [[V21]] : !kgen.pointer<index>
@@ -365,9 +364,9 @@ kgen.func @coroutine_block_args3(%arg0: index) async -> index {
   // CHECK-NEXT:    }
   // CHECK-NEXT:    hlcf.yield
   // CHECK-NEXT:  } else {
-  // CHECK-NEXT:    [[V14:%.*]] = kgen.struct.gep %arg0[[[#FRAME6 - 1]]]
-  // CHECK-NEXT:    [[V15:%.*]] = pop.load [[V14]] : !kgen.pointer<index>
-  // CHECK-NEXT:    hlcf.break [[V15]] : index
+  // COM: No suspend lies between the loop head and the break, so the frame
+  // COM: evaluation reads %arg1 directly.
+  // CHECK-NEXT: hlcf.break %arg1 : index
   // CHECK-NEXT:  }
   // CHECK-NEXT:  [[V12:%.*]] = kgen.struct.gep %arg0[[[#FRAME6 - 1]]]
   // CHECK-NEXT:  [[V13:%.*]] = pop.load [[V12]] : !kgen.pointer<index>
@@ -872,8 +871,10 @@ kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<
 
 // -----
 
+// COM: Verify a value defined before a loop is not passed to a nested loop directly across a suspend.
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async -> index {
+  // CHECK-LABEL: kgen.func @coroutine_resume
   // CHECK: [[V2:%.*]] = kgen.call @doSomething({{.*}}) : (index) -> index
   // CHECK-NOT: hlcf.loop "_loop_1" (%arg2 = [[V2]] : index) {
   %x = kgen.call @doSomething(%arg1) : (index) -> index
@@ -902,6 +903,42 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
 kgen.func @triggerCold(%arg0: i1, %arg1: index) {
    %coro = co.invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @coroutine](%arg0, %arg1)
    hlcf.return
+}
+
+}
+
+// -----
+
+// COM: Verify that a loop operand defined in an earlier state is a use of that
+// COM: value, so the value is framed and seeded into the resume.
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+kgen.func @block_arg_seed(%arg0: index) async -> index {
+  // CHECK-LABEL: kgen.func @block_arg_seed_hot_ramp
+  // CHECK: [[SEED:%.*]] = index.add
+  // CHECK-NEXT: kgen.struct.gep
+  // CHECK-NEXT: pop.store [[SEED]]
+  %x = index.add %arg0, %arg0
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  hlcf.loop "_loop_0" (%lc = %x : index) {
+    co.suspend (%hdl) {
+      co.suspend.end
+    }
+    kgen.call @print(%lc) : (index) -> ()
+    hlcf.continue %lc : index
+  }
+  %c0 = index.constant 0
+  hlcf.return %c0 : index
+}
+
+// CHECK-LABEL: kgen.func @block_arg_seed_resume
+// CHECK: [[SEED_SLOT:%.*]] = kgen.struct.gep %arg0[8]
+// CHECK-NEXT: [[SEED:%.*]] = pop.load [[SEED_SLOT]] : !kgen.pointer<index>
+// CHECK-NEXT: hlcf.loop "_loop_0" ([[BLOCK_ARG:%.*]] = [[SEED]] : index)
+kgen.func @trigger(%arg0: index) async {
+  %coro = co.hot_invoke[(index) async -> index: @block_arg_seed](%arg0)
+  hlcf.return
 }
 
 }
