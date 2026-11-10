@@ -50,10 +50,15 @@ __all__ = ["Glm5NextSparseMLA"]
 
 
 def _zero_pad_last(x: Tensor, width: int) -> Tensor:
-    """Appends ``width`` zero columns to ``x``'s last axis."""
+    """Appends ``width`` zero columns to ``x``'s last axis.
+
+    A concat with a broadcast zero runs as one kernel; a pad fills the
+    whole output first, a second launch per pad on every step.
+    """
     if width == 0:
         return x
-    return F.pad(x, [0, 0] * (x.rank - 1) + [0, width])
+    zeros = F.full([*x.shape[:-1], width], 0, dtype=x.dtype, device=x.mapping)
+    return F.concat([x, zeros], axis=-1)
 
 
 class Glm5NextSparseMLA(QuantizedLatentAttention):

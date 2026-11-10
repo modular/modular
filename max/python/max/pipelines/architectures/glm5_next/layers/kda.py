@@ -80,6 +80,10 @@ class KdaStateAccess:
     recurrent_rows: Tensor
     layer: Tensor
     """int64 CPU scalar: this layer's position among the KDA layers."""
+    position: int | None = None
+    """``layer`` as a Python int, set when the layers do not share a
+    subgraph. The layer then reads its rows by a static slice, which the
+    compiler passes as a view of the table rather than a kernel."""
 
 
 _Captured = TypeVar("_Captured")
@@ -137,8 +141,15 @@ def verify_width_operand(num_draft_tokens: DimLike) -> Tensor:
     )
 
 
-def layer_rows(rows: Tensor, layer: Tensor) -> Tensor:
-    """Row ``layer`` of a ``[num_layers, batch_size]`` table, as ``[batch]``."""
+def layer_rows(
+    rows: Tensor, layer: Tensor, position: int | None = None
+) -> Tensor:
+    """Row ``layer`` of a ``[num_layers, batch_size]`` table, as ``[batch]``.
+
+    A static ``position`` takes the row by a static slice instead.
+    """
+    if position is not None:
+        return rows[position]
     return rows[(slice(layer, layer + 1), 1), :].squeeze(0)
 
 
@@ -183,6 +194,7 @@ def kda_core(
     verify_width: Tensor | None = None,
     capture: CaptureSink[KdaReplayInputs] | None = None,
     pin_decode_fma: bool = False,
+    position: int | None = None,
 ) -> Tensor:
     """Runs one device's heads: conv, recurrence, gated norm.
 
@@ -207,7 +219,7 @@ def kda_core(
         .reshape([-1, q_conv.shape[-1]])
         .cast(DType.float32)
     )
-    conv_slots = layer_rows(conv_rows, layer).cast(DType.uint32)
+    conv_slots = layer_rows(conv_rows, layer, position).cast(DType.uint32)
     qkv_window: Tensor | None = None
     if verify_width is None:
         conv_out = gated_delta_conv1d_fwd(
@@ -242,7 +254,9 @@ def kda_core(
     a_log = a_log.cast(DType.float32)
     dt_bias = dt_bias.reshape(head_shape[1:])
     cu_seqlens = input_row_offsets.cast(DType.int32)
-    state_indices = layer_rows(recurrent_rows, layer).cast(DType.int32)
+    state_indices = layer_rows(recurrent_rows, layer, position).cast(
+        DType.int32
+    )
     out_shape: list[DimLike] = [q.shape[0], *head_shape[1:]]
     if capture is not None:
         capture.items.append(
@@ -309,7 +323,9 @@ def kda_core(
     # Sliced here rather than in the branch: mo-symbolic-optimize merges the
     # layers' slices of one row table into a single split, which must not sit
     # in one layer's branch.
-    ring_indices = None if ring_rows is None else layer_rows(ring_rows, layer)
+    ring_indices = (
+        None if ring_rows is None else layer_rows(ring_rows, layer, position)
+    )
 
     def verify_ring() -> Tensor:
         assert verify_width is not None
@@ -463,6 +479,7 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
             norm_eps=self.norm_eps,
             gate_mode=self.gate_mode,
             pin_decode_fma=self.pin_decode_fma,
+            position=state.position,
         )
         qkv = F.call_on_mesh(_qkv_projection, x.mesh, out_specs=head_split)(
             x, self.q_proj.weight, self.k_proj.weight, self.v_proj.weight

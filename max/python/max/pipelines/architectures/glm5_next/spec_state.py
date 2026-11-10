@@ -304,7 +304,9 @@ class Glm5NextSpecState:
         )
         kda = KdaVerify(
             ring_pool=ring_pool,
-            ring_rows=ring_rows,
+            # The ring reads int32 rows: one cast of the table here, rather
+            # than one per layer.
+            ring_rows=ring_rows.cast(DType.int32),
             verify_width=self.verify_width,
             captures=self.kda_captures,
         )

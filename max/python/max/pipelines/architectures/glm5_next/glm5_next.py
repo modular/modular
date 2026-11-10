@@ -238,6 +238,11 @@ class Glm5NextTextModel(Module[..., Tensor]):
         recurrent_pool, recurrent_rows = state_leaf(
             state, RECURRENT_LEAF_ID, mapping, head_sharded=True
         )
+        if not subgraphs:
+            # The recurrence reads int32 rows. Cast once here, every layer's
+            # row is a static slice of the table, which costs no kernel; a
+            # per-layer cast costs one each.
+            recurrent_rows = recurrent_rows.cast(DType.int32)
         tail_pool, tail_rows = state_leaf(
             state, TAIL_RING_LEAF_ID, mapping, head_sharded=False
         )
@@ -279,6 +284,7 @@ class Glm5NextTextModel(Module[..., Tensor]):
                         recurrent_pool=recurrent_pool,
                         recurrent_rows=recurrent_rows,
                         layer=F.constant(position, DType.int64, device=CPU()),
+                        position=None if subgraphs else position,
                     ),
                     input_row_offsets,
                 )

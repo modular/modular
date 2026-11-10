@@ -36,9 +36,10 @@ from max.driver import CPU
 from max.dtype import DType
 from max.pipelines.architectures.glm5_next.layers.kda import (
     KimiDeltaAttention,
+    layer_rows,
 )
 from max.pipelines.architectures.glm5_next.model_config import Glm5NextConfig
-from max.tensor import default_device, default_dtype
+from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 
 HIDDEN = 32
@@ -122,3 +123,18 @@ def test_conv_shards_split_heads_within_each_projection(
         for i in range(num_devices)
     )
     assert disagreeing >= num_devices - 1
+
+
+def test_static_layer_rows_match_the_dynamic_slice() -> None:
+    """Each KDA layer's static row is the row its dynamic slice takes."""
+    num_layers, batch = 5, 3
+    table = np.arange(num_layers * batch, dtype=np.int32).reshape(
+        num_layers, batch
+    )
+    rows = Tensor.constant(table, device=CPU())
+    for position in range(num_layers):
+        layer = Tensor.constant(position, dtype=DType.int64, device=CPU())
+        dynamic = layer_rows(rows, layer).to_numpy()
+        static = layer_rows(rows, layer, position).to_numpy()
+        np.testing.assert_array_equal(dynamic, table[position])
+        np.testing.assert_array_equal(static, dynamic)
