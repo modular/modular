@@ -217,13 +217,28 @@ def model_artifact(
 
     Returns:
         The artifact to serialize.
+
+    Raises:
+        ArtifactError: If the model declares only one of its vision metadata
+            and its image preprocessing graph, since a serving engine needs
+            both to serve the ``vision`` graph.
     """
     vision = None
     if pipeline_model is not None and GraphRole.VISION in modules.roles:
-        modules = PipelineModules(
-            {**modules.roles, **vision_preprocess_modules(pipeline_model)}
-        )
+        preprocess = vision_preprocess_modules(pipeline_model)
         vision = pipeline_model.vision_metadata()
+        has_preprocess = GraphRole.VISION_PREPROCESS.value in preprocess
+        if has_preprocess != (vision is not None):
+            missing = (
+                "vision metadata"
+                if has_preprocess
+                else "vision_preprocess graph"
+            )
+            raise ArtifactError(
+                f"{type(pipeline_model).__qualname__} exports a vision graph"
+                f" with no {missing}; a serving engine needs both to serve it"
+            )
+        modules = PipelineModules({**modules.roles, **preprocess})
     return ModelArtifact(
         model=modules,
         tokenizer=tokenizer,

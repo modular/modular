@@ -200,7 +200,7 @@ This version is still a work in progress.
   uses the filter of Pillow's `BICUBIC` and matches PyTorch's
   `interpolate(mode="bicubic", antialias=True)` to float32 rounding. The
   antialiased resize runs on the CPU, on a float32 input, or on a uint8 input
-  that it resizes to uint8, rounding and clamping once at the end.
+  that it resizes to uint8 bit for bit as Pillow's `BICUBIC` does.
   `ops.resize_bicubic()` also takes its output size as a runtime int64
   tensor, with `out_dims` declaring the output's dimensions.
 

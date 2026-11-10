@@ -26,6 +26,7 @@ from typing import Any
 import huggingface_hub
 import pytest
 from max._artifact import ArtifactError, HuggingFaceRef
+from max._artifact import export as export_module
 from max._artifact.batch_processor import BatchProcessorDims
 from max._artifact.engine_config import (
     EngineConfig,
@@ -311,6 +312,40 @@ def test_export_adds_the_vision_preprocess_roles(tmp_path: Path) -> None:
         )
         == {}
     )
+
+
+def test_a_vision_graph_needs_its_metadata_and_preprocessing_together(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A serving engine needs both the media layout and the image
+    preprocessing graph to serve a vision graph, so a model that declares
+    only one of them is refused. A model that declares neither exports its
+    vision graph alone."""
+    graphs = PipelineModules({"decoder": _fake(), "vision": _fake()})
+    no_preprocessing = _fake(
+        vision_preprocess_spec=lambda: None,
+        vision_preprocess_video_spec=lambda: None,
+        vision_metadata=lambda: _VISION,
+    )
+    with pytest.raises(ArtifactError, match="no vision_preprocess graph"):
+        model_artifact(graphs, no_preprocessing, None)
+
+    no_metadata = _fake(vision_metadata=lambda: None)
+    monkeypatch.setattr(
+        export_module,
+        "vision_preprocess_modules",
+        lambda model: {"vision_preprocess": _fake()},
+    )
+    with pytest.raises(ArtifactError, match="no vision metadata"):
+        model_artifact(graphs, no_metadata, None)
+
+    monkeypatch.setattr(
+        export_module, "vision_preprocess_modules", lambda model: {}
+    )
+    artifact = model_artifact(graphs, no_metadata, None)
+    assert artifact.vision is None
+    assert artifact.model is not None
+    assert set(artifact.model.roles) == {"decoder", "vision"}
 
 
 def test_spec_decoder_pipeline_is_exported() -> None:

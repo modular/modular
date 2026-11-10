@@ -195,7 +195,7 @@ class VisionHostMax(GraphGroup[str, _VisionInput]):
     kind = "vision_host_max"
 
 
-class VisionEmbeddings(GraphGroup[str, tuple[TensorValue, ...]]):
+class VisionEmbeddings(GraphGroup[str, tuple[_TensorT, ...]]):
     """A vision encoder's ``image_embeddings``, one per device.
 
     They feed the decoder's :class:`VisionMerge` group.
@@ -205,8 +205,8 @@ class VisionEmbeddings(GraphGroup[str, tuple[TensorValue, ...]]):
 
 
 def vision_outputs(
-    image_embeddings: Sequence[TensorValue],
-) -> OrderedDict[str, VisionEmbeddings]:
+    image_embeddings: Sequence[_TensorT],
+) -> OrderedDict[str, VisionEmbeddings[_TensorT]]:
     """Returns a vision encoder graph's named outputs.
 
     The kinded group sits under a plain root, as a decoder's do, since a

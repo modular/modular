@@ -61,7 +61,18 @@ pixel layouts differ by architecture: it implements
 :class:`VisionBatchProcessor`. A registered ``VISION`` class constructs from
 the config like any role, and also has ``input_types()``, the vision graph's
 inputs, and ``embedding_dtype`` and ``embedding_dim``, the type of each
-embedding row it produces. Registration checks the combination up front: a
+embedding row it produces. ``input_types()`` returns one type per argument of
+its ``forward``, or, so that an exported graph names its inputs and outputs
+for a serving engine, a named tree of vision groups (such as
+:class:`~max.nn.legacy.graph_groups.VisionRows`) whose fields are those
+arguments' names. It can also have the classmethods
+``vision_metadata(pipeline_config, config)`` and
+``vision_preprocess_spec(pipeline_config, config)``, which take the config
+the module is constructed with. The pipeline model's ``vision_metadata_for``
+and ``vision_preprocess_spec_for`` return them, so that ``max export``
+records the media layout and the image preprocessing graph a serving engine
+needs, both for the registration alone and for a fused speculative-decoding
+graph whose target it is. Registration checks the combination up front: a
 ``VISION`` module needs a decoder that consumes the embeddings and a batch
 processor that prepares them, and a decoder that consumes them needs a
 ``VISION`` module.
@@ -87,6 +98,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import (
+    TYPE_CHECKING,
     Any,
     ClassVar,
     Protocol,
@@ -98,6 +110,7 @@ from typing import (
 import numpy as np
 from max import functional as F
 from max import tree
+from max._artifact.vision import VisionMetadata
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -113,7 +126,10 @@ from max.nn.legacy.graph_groups import (
     DecoderGraphInputs,
     HiddenStates,
     Logits,
+    VisionEmbeddings,
     VisionMerge,
+    group_fields,
+    vision_outputs,
 )
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
 from max.nn.outputs import ReturnHiddenStates
@@ -199,6 +215,9 @@ from .weight_transform import (
     WeightRenaming,
     WeightTransform,
 )
+
+if TYPE_CHECKING:
+    from .config import PipelineConfig
 
 __all__ = [
     "DecoderBatchProcessor",
@@ -1115,6 +1134,7 @@ class ModuleV3DecoderPipelineModel(
     _session: InferenceSession
     _runtime: ModuleRuntime
     _vision_module: Any = None
+    _vision_config: object | None = None
 
     batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = (
         DecoderBatchProcessor
@@ -1193,6 +1213,8 @@ class ModuleV3DecoderPipelineModel(
 
         A checkpoint that loads through rules names each module's weights.
         """
+        if naming := _registered_weight_naming(type(self), self.adapter):
+            self.weight_naming = naming
         if getattr(
             type(self).model_config_cls, "preserve_checkpoint_keys", False
         ):
@@ -1200,8 +1222,6 @@ class ModuleV3DecoderPipelineModel(
                 name: weight.data() for name, weight in self.weights.items()
             }
             return self._checkpoint
-        if naming := _registered_weight_naming(type(self), self.adapter):
-            self.weight_naming = naming
         return super()._load_state_dict()
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
@@ -1332,16 +1352,91 @@ class ModuleV3DecoderPipelineModel(
         if vision_cls is None or (stage is not None and not stage.is_first):
             return None
         if not _vision_enabled(vision_cls, model_config):
-            self._vision_module = None
+            self._vision_module = self._vision_config = None
             return None
-        spec = _vision_spec(
-            vision_cls,
+        vision = _build_vision(vision_cls, model_config, self.devices[0])
+        self._vision_module = vision
+        self._vision_config = model_config
+        return _vision_spec(
+            vision,
             model_config,
             self._checkpoint if checkpoint is None else checkpoint,
-            self.devices[0],
         )
-        self._vision_module = spec.module
-        return spec
+
+    def vision_metadata(self) -> VisionMetadata | None:
+        """Returns the built ``VISION`` module's media layout.
+
+        It reads :meth:`vision_metadata_for` with the config the module is
+        built with. ``None`` before the module is built, or when it isn't.
+        """
+        if self._vision_config is None:
+            return None
+        return self.vision_metadata_for(
+            self.pipeline_config, self._vision_config
+        )
+
+    def vision_preprocess_spec(self) -> GraphSpec | None:
+        """Returns the built ``VISION`` module's image preprocessing graph.
+
+        It reads :meth:`vision_preprocess_spec_for` with the config the
+        module is built with. ``None`` before the module is built, or when
+        it isn't.
+        """
+        if self._vision_config is None:
+            return None
+        return self.vision_preprocess_spec_for(
+            self.pipeline_config, self._vision_config
+        )
+
+    @classmethod
+    def vision_metadata_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> VisionMetadata | None:
+        """Returns the ``VISION`` module's ``vision_metadata`` for ``config``.
+
+        A fused speculative-decoding pipeline, which never builds this
+        pipeline model, reads its target's metadata here.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The finalized config the ``VISION`` module is built with.
+
+        Returns:
+            The media layout, or ``None`` when no ``VISION`` module serves
+            ``config`` or it declares no ``vision_metadata``.
+        """
+        hook = cls._vision_hook("vision_metadata", config)
+        return None if hook is None else hook(pipeline_config, config)
+
+    @classmethod
+    def vision_preprocess_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
+        """Returns the ``VISION`` module's ``vision_preprocess_spec``.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The finalized config the ``VISION`` module is built with.
+
+        Returns:
+            The image preprocessing graph, or ``None`` when no ``VISION``
+            module serves ``config`` or it declares no
+            ``vision_preprocess_spec``.
+        """
+        hook = cls._vision_hook("vision_preprocess_spec", config)
+        return None if hook is None else hook(pipeline_config, config)
+
+    @classmethod
+    def _vision_hook(cls, name: str, config: object) -> Any:
+        """Returns the ``VISION`` class's hook ``name`` that serves ``config``.
+
+        ``None`` without a ``VISION`` class, when its ``is_enabled`` turns it
+        off for ``config``, or when it declares no such hook.
+        """
+        vision_cls = cls.vision_cls
+        if vision_cls is None or not _vision_enabled(vision_cls, config):
+            return None
+        return getattr(vision_cls, name, None)
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
         """Returns the decoder graph, and the vision graph when registered.
@@ -1681,24 +1776,65 @@ def _vision_enabled(
     return enabled is None or bool(enabled(model_config))
 
 
-def _vision_spec(
-    vision_cls: type[Module[..., Any]],
-    model_config: Any,
-    checkpoint: Mapping[str, Any],
-    device: Device,
-) -> GraphSpec:
-    """Returns a registered ``VISION`` module's graph, built on ``device``."""
+class _VisionGraph(
+    Module[
+        [Mapping[str, Mapping[str, Tensor]]],
+        OrderedDict[str, VisionEmbeddings[Tensor]],
+    ]
+):
+    """Calls a vision encoder with the fields of its named input tree.
+
+    The graph takes the tree as its one argument and returns the embeddings
+    in a ``vision_embeddings`` group, so an exported graph names both, as a
+    graph-API encoder's does. It is name-transparent to the encoder, so the
+    weight names are the encoder's own.
+    """
+
+    def __init__(self, encoder: Module[..., Tensor]) -> None:
+        super().__init__()
+        encoder.name_transparent = True
+        self.model = encoder
+
+    def forward(
+        self, inputs: Mapping[str, Mapping[str, Tensor]]
+    ) -> OrderedDict[str, VisionEmbeddings[Tensor]]:
+        """Passes each field as the encoder's argument of that name."""
+        return vision_outputs((self.model(**group_fields(inputs)),))
+
+
+def _build_vision(
+    vision_cls: type[Module[..., Any]], model_config: Any, device: Device
+) -> Any:
+    """Constructs a registered ``VISION`` module on ``device``."""
     # A registered module takes its config, which type[Module] can't say.
     constructor: Any = vision_cls
     with F.lazy():
         vision = constructor(model_config)
         vision.to(device)
+    return vision
+
+
+def _vision_spec(
+    vision: Any,
+    model_config: Any,
+    checkpoint: Mapping[str, Any],
+) -> GraphSpec:
+    """Returns a registered ``VISION`` module's graph.
+
+    An encoder whose ``input_types()`` is a named tree takes it through a
+    :class:`_VisionGraph`, which names the graph's outputs too.
+    """
+    input_types = vision.input_types()
+    graph: Module[..., Any] = vision
+    if isinstance(input_types, Mapping):
+        graph = _VisionGraph(vision)
+        input_types = (input_types,)
     return GraphSpec(
-        vision,
-        graph_name(vision_cls),
-        tuple(vision.input_types()),
+        graph,
+        graph_name(type(vision)),
+        tuple(input_types),
         weights=_cast_to_parameter_dtypes(
-            vision, role_weights(checkpoint, model_config, GraphRole.VISION)
+            graph, role_weights(checkpoint, model_config, GraphRole.VISION)
         ),
     )
 
@@ -1709,20 +1845,27 @@ def _registered_weight_naming(
 ) -> dict[str, tuple[WeightEntry, ...]]:
     """Returns the entry that names each registered module's weights, by role.
 
-    Empty unless the checkpoint loads through rules into the modules' names:
-    a config that keeps the checkpoint's keys or prepares the weights
-    transforms them itself. A module that takes its weights from under a
-    prefix gets them with the prefix stripped.
+    A config that keeps the checkpoint's keys or prepares the weights names
+    them itself, in its :meth:`~DeploymentConfig.weight_entries`. Otherwise
+    the checkpoint loads through the rules into the modules' names, or is
+    named by none. A module that takes its weights from under a prefix gets
+    them with the prefix stripped.
     """
     config_cls = pipeline_model.model_config_cls
     if (
-        not isinstance(adapter, WeightTransform)
-        or getattr(config_cls, "preserve_checkpoint_keys", False)
-        or getattr(
-            config_cls, "prepare_weights", DeploymentConfig.prepare_weights
+        isinstance(config_cls, type)
+        and issubclass(config_cls, DeploymentConfig)
+        and (
+            config_cls.preserve_checkpoint_keys
+            or config_cls.prepare_weights
+            is not DeploymentConfig.prepare_weights
         )
-        is not DeploymentConfig.prepare_weights
     ):
+        return {
+            role: tuple(entries)
+            for role, entries in config_cls.weight_entries().items()
+        }
+    if not isinstance(adapter, WeightTransform):
         return {}
     roles = [GraphRole.DECODER]
     if pipeline_model.vision_cls is not None:
@@ -1850,7 +1993,9 @@ class RegisteredDecoderBuilder:
         if vision_cls is None or not _vision_enabled(vision_cls, config):
             return None
         checkpoint = prepare_weights(self._state_dict(context), config)
-        return _vision_spec(vision_cls, config, checkpoint, device)
+        return _vision_spec(
+            _build_vision(vision_cls, config, device), config, checkpoint
+        )
 
     def checkpoint_weights(
         self, context: ModelLoadContext, config: object
