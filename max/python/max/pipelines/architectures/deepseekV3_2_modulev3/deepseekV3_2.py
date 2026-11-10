@@ -24,7 +24,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.quant_moe import QuantizedMoE
@@ -537,7 +537,7 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         else:
             batch_context_lengths_tensor = batch_context_lengths[0]
 
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+        kv_inputs = iter(kv_input_values(variadic_args))
         # A ``MultiKVCacheParams`` tree unflattens to a dict keyed by child
         # name, so the two caches are addressed by name rather than position.
         kv_tree = self.kv_params.unflatten_kv_inputs(kv_inputs)
@@ -637,7 +637,7 @@ class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
         else:
             batch_context_length = inputs.batch_context_lengths[0]
 
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         # A ``MultiKVCacheParams`` tree unflattens to a dict keyed by child
         # name, so the two caches are addressed by name rather than position.
         kv_tree = self.kv_params.unflatten_kv_inputs(kv_inputs)

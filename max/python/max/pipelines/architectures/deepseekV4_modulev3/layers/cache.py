@@ -31,7 +31,7 @@ from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.kernels import store_k_cache_ragged, store_v_cache_ragged
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.tensor import Tensor
@@ -195,7 +195,7 @@ class DeepseekV4Cache:
     ) -> DeepseekV4Cache:
         """Unpacks the forward's flattened cache inputs, one leaf per key."""
         kv_tree = kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in kv_inputs)
+            iter(kv_input_values(kv_inputs))
         )
         assert isinstance(kv_tree, dict)
         return cls.from_values(

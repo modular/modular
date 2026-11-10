@@ -57,7 +57,11 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue
 from max.nn import Embedding, Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import (
@@ -611,7 +615,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             assert self.kv_params is not None, (
                 "KimiK3Model needs kv_params to serve a real kv_inputs tensor"
             )
-            graph_values = iter(x._graph_value for x in kv_inputs)
+            graph_values = iter(kv_input_values(kv_inputs))
             if isinstance(self.kv_params, MultiKVCacheParams):
                 kv_tree = self.kv_params.unflatten_kv_inputs(graph_values)
                 attn_tree = kv_tree[ATTN_CACHE_KEY]
@@ -637,7 +641,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     kv_collection=kv_collection,
                     input_row_offsets=input_row_offsets,
                     buffer_size=self.mla_buffer_size,
-                    buffer_length=Tensor.from_graph_value(next(graph_values)),
+                    buffer_length=cache_tensor([next(graph_values)]),
                 )
                 mla_freqs_cis = kimi_k3_nope_freqs_cis(
                     max_seq_len=self.mla_rope_table_rows,
@@ -658,21 +662,21 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                 # `counters` is one graph value per device; the other six
                 # leaves share a single CPU-resident pointer table.
                 mesh = self.embed_tokens.weight.mesh
-                counters = Tensor.from_shard_values(
+                counters = cache_tensor(
                     [next(graph_values) for _ in range(mesh.num_devices)],
                     DeviceMapping(mesh, (Sharded(axis=0),) * mesh.ndim),
                 )
                 ep_buffers = ep.EPBuffers(
                     counters=counters,
                     dispatch=ep.Tables(
-                        send=Tensor.from_graph_value(next(graph_values)),
-                        recv=Tensor.from_graph_value(next(graph_values)),
-                        count=Tensor.from_graph_value(next(graph_values)),
+                        send=cache_tensor([next(graph_values)]),
+                        recv=cache_tensor([next(graph_values)]),
+                        count=cache_tensor([next(graph_values)]),
                     ),
                     combine=ep.Tables(
-                        send=Tensor.from_graph_value(next(graph_values)),
-                        recv=Tensor.from_graph_value(next(graph_values)),
-                        count=Tensor.from_graph_value(next(graph_values)),
+                        send=cache_tensor([next(graph_values)]),
+                        recv=cache_tensor([next(graph_values)]),
+                        count=cache_tensor([next(graph_values)]),
                     ),
                 )
 

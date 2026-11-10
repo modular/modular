@@ -30,7 +30,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn import Module, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
@@ -106,7 +106,7 @@ class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
         else:
             batch_context_length = inputs.batch_context_lengths[0]
 
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         kv_collections = tree.leaves(
             self.kv_params.unflatten_kv_inputs(kv_inputs),
             leaf=KVCacheInputsPerDevice,

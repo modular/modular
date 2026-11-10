@@ -27,7 +27,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
 from max.nn import Module, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
@@ -337,7 +337,7 @@ class NemotronH(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
         row_offsets = input_row_offsets
         tokens, input_row_offsets = self._place(tokens, input_row_offsets)
         kv_tree = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in kv_inputs)
+            iter(kv_input_values(kv_inputs))
         )
         kv_collection = PagedCacheValues.from_upstream(
             tree.leaves(kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice),

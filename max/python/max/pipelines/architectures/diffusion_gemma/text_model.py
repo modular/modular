@@ -37,7 +37,7 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Linear, Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
@@ -478,7 +478,7 @@ def unflatten_kv(
     Each device owns a whole KV cache, so the shards are replicated over
     the mesh rather than sharded over it.
     """
-    kv_inputs = iter(x._graph_value for x in variadic_args)
+    kv_inputs = iter(kv_input_values(variadic_args))
     sliding_inputs, global_inputs = kv_params.unflatten_basic_kv_tree(kv_inputs)
     kv_mapping = DeviceMapping.replicated(mesh)
     sliding_kv = PagedCacheValues.from_upstream(sliding_inputs, kv_mapping)

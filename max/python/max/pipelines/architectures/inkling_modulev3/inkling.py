@@ -25,7 +25,7 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.kv_cache import (
@@ -370,7 +370,7 @@ class Inkling(Module[..., ModuleV3Outputs]):
         replicated = tokens.mapping
 
         kv_tree = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in kv_inputs)
+            iter(kv_input_values(kv_inputs))
         )
         kv_collections = {
             key: PagedCacheValues.from_upstream(

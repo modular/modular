@@ -19,10 +19,10 @@ import math
 from typing import ClassVar
 
 from max import functional as F
-from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
+from max.nn.common_layers.kv_cache import per_device_caches
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.moe import MoE
 from max.nn.common_layers.multi_latent_attention import (
@@ -30,7 +30,6 @@ from max.nn.common_layers.multi_latent_attention import (
 )
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
@@ -216,11 +215,7 @@ class DeepseekV2(Module[..., ModuleV3Outputs]):
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
         """Runs the model over its variadic graph inputs."""
-        kv_inputs = iter(x._graph_value for x in variadic_args)
-        symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        kv_collections = tree.leaves(
-            symbolic_inputs, leaf=KVCacheInputsPerDevice
-        )
+        kv_collections = per_device_caches(self.kv_params, variadic_args)
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )
@@ -242,11 +237,7 @@ class DeepseekV2Decoder(Module[[DecoderInputs], DecoderOutputs]):
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Unflattens the KV leaves, then runs the text model."""
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
-        kv_collections = tree.leaves(
-            self.kv_params.unflatten_kv_inputs(kv_inputs),
-            leaf=KVCacheInputsPerDevice,
-        )
+        kv_collections = per_device_caches(self.kv_params, inputs.kv)
         return self.language_model(
             inputs.tokens,
             kv_collections[0],

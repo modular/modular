@@ -27,7 +27,7 @@ from max.dtype import DType
 from max.graph import BufferValue, TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
@@ -300,7 +300,7 @@ class Glm5Next(Module[..., ModuleV3Outputs]):
             input_row_offsets = input_row_offsets.to(mesh)
 
         # The batch context length comes first; this graph does not read it.
-        kv_inputs = iter(x._graph_value for x in variadic_args[1:])
+        kv_inputs = iter(kv_input_values(variadic_args[1:]))
         kv_tree = self.kv_params.unflatten_kv_inputs(kv_inputs)
         assert isinstance(kv_tree, dict)
         if STATE_CACHE_KEY not in kv_tree:
