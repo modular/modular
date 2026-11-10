@@ -400,9 +400,22 @@ void OperationEffects::analyzeCallOp(Operation &op) {
       // Find all the references getting passed into the list/pack so we can
       // process them individually.
       TypedAttr extraOrigin;
-      for (auto elt :
-           OriginTrackable::decodeIndividualVariadicArguments(arg, extraOrigin))
-        addArgument(elt, argConvention);
+      for (auto elt : OriginTrackable::decodeIndividualVariadicArguments(
+               arg, extraOrigin)) {
+        if (!isa<RefPackType>(getCanonicalType(elt.getType()))) {
+          addArgument(elt, argConvention);
+          continue;
+        }
+        // An unpacked pack is a register value. Its accesses are the origins
+        // in its type. The element convention of the callee decides if they
+        // are mutated. A `mut` pack of the caller can go into a `read` pack.
+        operands.push_back({elt, OperandEffect::regUse});
+        for (TypedAttr origin : originFinder.findOriginsIn({elt.getType()})) {
+          if (originsAccessesAreReadOnly || argConvention != ArgConvention::Mut)
+            origin = OriginMutCastAttr::get(origin, false);
+          origins.push_back({origin, elt});
+        }
+      }
 
       // This hack makes sure we extend the lifetime of the VarDecl containing
       // the variadic list. VariadicList itself should capture the origin.
@@ -768,6 +781,25 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
     // original origin.
     for (auto elt : pack.getOperands())
       result.push_back(RefImmutOp::stripRebinds(elt));
+    return result;
+  }
+
+  if (auto concat =
+          ctorArg ? ctorArg.getDefiningOp<RefPackConcatOp>() : nullptr) {
+    // A call such as `f(a, *p, b)`. Each plain operand (`a`, `b`) is one
+    // entry. An unpacked pack (`*p`) has no separate element values here, so
+    // the `!lit.ref.pack` value is one entry. The checker treats it as an
+    // access to the origin of `p`. The access is mutable if the callee takes a
+    // `mut` pack. Thus, `f(*p, *p)` and `f(p[0], *p)` into a `mut` pack are
+    // aliasing errors.
+    for (Value segment : concat.getPacks()) {
+      if (auto run = segment.getDefiningOp<RefPackCreateOp>()) {
+        for (auto elt : run.getOperands())
+          result.push_back(RefImmutOp::stripRebinds(elt));
+      } else {
+        result.push_back(RefImmutOp::stripRebinds(segment));
+      }
+    }
     return result;
   }
 

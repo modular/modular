@@ -55,8 +55,23 @@ This version is still a work in progress.
   comptime Partial = NestedDeps[_]
 
   # Bound = NestedDeps[3, depend_on_a[3]()]
-  comptime Bound = Partial[3]  
+  comptime Bound = Partial[3]
   ```
+
+- A call to a function that takes a variadic pack (`*args: *Ts`) can now mix
+  arguments and unpacked packs. The callee receives one pack with all the
+  elements in order:
+
+  ```mojo
+  def show[*Ts: Writable](*args: *Ts): ...
+
+  def wrap[*Ts: Writable](*args: *Ts):
+      show("[", *args, "]")
+      show(*args, *args)
+  ```
+
+  Unpacking the same pack twice into a `mut` pack argument, such as
+  `update(*args, *args)`, is an aliasing error.
 
 ## Language changes
 

@@ -41,6 +41,7 @@ def forward_reassigned_local[*Ts: AnyType](*pack: *Ts):
 def forward_out_initialized_local[*Ts: AnyType](*pack: *Ts):
     var local = make_pack(*pack)
     takes_pack(*local)
+    takes_pack(0, *local)
 
 
 def forward_ctor_from_reassigned_raw[*Ts: AnyType](*pack: *Ts):
@@ -49,3 +50,4 @@ def forward_ctor_from_reassigned_raw[*Ts: AnyType](*pack: *Ts):
     v = pack._value
     var p = type_of(pack)(v)
     takes_pack(*p)
+    takes_pack(0, *p)

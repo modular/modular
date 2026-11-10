@@ -214,6 +214,13 @@ private:
   LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
                                 size_t argIdx, ASTType expectedType,
                                 ArgConvention expectedConvention);
+
+  /// Check that the `*operand` unpack can go into the variadic pack
+  /// `expectedPackType`. The operand must be a VariadicPack with the same
+  /// ownership, and at least the mutability, of the expected pack. Return the
+  /// `!lit.ref.pack` of the operand, or null after a diagnostic.
+  RefPackType checkUnpackedPack(const OperandValue &operand,
+                                ASTType expectedPackType);
 };
 
 } // namespace M::KGEN::LIT
