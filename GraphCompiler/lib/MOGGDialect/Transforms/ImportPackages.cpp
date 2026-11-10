@@ -392,6 +392,7 @@ static constexpr UnfusedExecuteRegistration kUnfusedExecuteRegistrations[] = {
     {"mo.conv", R"(type("gpu"))"},
     {"mo.conv_transpose", R"(type("cpu"))"},
     {"mo.conv_transpose", R"(type("gpu"))"},
+    {"matmul.dynamic.block.scaled"},
     {"matmul.grouped.ragged"},
     {"mo.matmul"},
     {"mo.matmul", R"(type("cpu"))"},

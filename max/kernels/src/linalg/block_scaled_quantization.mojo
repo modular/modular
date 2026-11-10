@@ -3039,7 +3039,8 @@ def block_scaled_matmul[
         tensor_sf: Scalar multiplier applied to the matmul result.
         ctx: Device context used to enqueue kernels.
         epilogue_fn: With `has_epilogue_fn`, stores each output value at
-            its `(m, n)`. `c_device` still backs the vendor fallback.
+            its `(m, n)`. `c_device` may then be null, and the vendor
+            fallback stages the product through a scratch buffer.
         compute_fn: With `has_compute_fn`, maps each output value before it
             is stored into `c_device`.
     """
@@ -3280,6 +3281,36 @@ def block_scaled_matmul[
         # NVFP4 large-M shapes as well as MXFP8 shapes the heuristic config
         # table does not enumerate (e.g. the 30k-token prefill in KERN-3024,
         # whose M exceeds the table's M<=8192 build range).
+        #
+        # A store-epilogue caller may pass a null `c`, since its closure owns
+        # every output store, but this fallback writes the product into `c`
+        # and reads it back, so it stages through scratch instead.
+        #
+        # TODO(GEX-4431): the scratch is an unplanned M x N allocation per
+        # fallback call (hundreds of MB on large-M prefill) that the memory
+        # planner cannot see. Take it from a graph-planned accumulator once
+        # store-epilogue callers can provide one.
+        comptime if has_epilogue_fn:
+            if Int(c.unsafe_ptr()) == 0:
+                var scratch = ctx.enqueue_create_buffer[c_type](m * n)
+                block_scaled_matmul_with_epilogue[
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    transpose_b=transpose_b,
+                    has_epilogue_fn=True,
+                ](
+                    TileTensor(ptr=scratch.unsafe_ptr(), layout=c.layout),
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    tensor_sf,
+                    ctx,
+                    epilogue_fn,
+                    compute_fn,
+                )
+                _ = scratch^
+                return
+
         block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
