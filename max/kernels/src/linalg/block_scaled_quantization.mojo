@@ -1505,6 +1505,39 @@ def quantize_dynamic_scaled_fp4_async[
     )
 
 
+def _expert_search_width(num_experts: Int, search_round: Int) -> Int:
+    """Returns how many experts `_scale_tile_expert` has left before a round.
+
+    Args:
+        num_experts: Number of experts searched.
+        search_round: The round, from zero.
+
+    Returns:
+        The width of the expert range that round searches.
+    """
+    var width = num_experts
+    for _ in range(search_round):
+        width = ceildiv(width, WARP_SIZE)
+    return width
+
+
+def _expert_search_rounds(num_experts: Int) -> Int:
+    """Returns how many rounds `_scale_tile_expert` takes.
+
+    Args:
+        num_experts: Number of experts searched.
+
+    Returns:
+        The rounds that narrow `num_experts` to one.
+    """
+    var rounds = 0
+    var width = num_experts
+    while width > 1:
+        width = ceildiv(width, WARP_SIZE)
+        rounds += 1
+    return rounds
+
+
 @inline(.always)
 def _scale_tile_expert[
     num_experts: Int
@@ -1524,9 +1557,10 @@ def _scale_tile_expert[
     `ceildiv(row_offsets[e + 1] - row_offsets[e], SF_MN_GROUP_SIZE)` tiles
     before using it.
 
-    One warp does the search in two rounds and puts the result in shared
-    memory. Call this from all threads of the block, because it contains a
-    barrier.
+    One warp does the search and puts the result in shared memory. Each
+    round splits the experts left into one stride per lane, so it takes
+    `ceil(log32(num_experts))` rounds. Call this from all threads of the
+    block, because it contains a barrier.
 
     Parameters:
         num_experts: Number of experts in `scales_offsets`.
@@ -1540,20 +1574,13 @@ def _scale_tile_expert[
         The index of that expert.
 
     Constraints:
-        `row_offsets` and `scales_offsets` must be rank 1, and
-        `ceildiv(num_experts, WARP_SIZE)` must not exceed `WARP_SIZE`.
+        `row_offsets` and `scales_offsets` must be rank 1.
     """
     comptime assert row_offsets.flat_rank == 1, "row_offsets must be rank 1"
     comptime assert (
         scales_offsets.flat_rank == 1
     ), "scales_offsets must be rank 1"
-    comptime probe_stride = uceildiv(num_experts, WARP_SIZE)
-    # The second round gives one lane to each expert in a stride. A wider
-    # stride skips experts and returns the wrong one.
-    comptime assert probe_stride <= WARP_SIZE, (
-        "expert count exceeds what a two-round warp search covers; add a"
-        " round or widen the stride handling"
-    )
+    comptime rounds = _expert_search_rounds(num_experts)
     # Keep this slot in its own 16 bytes. No barrier separates its read from
     # the next shared-memory write of the caller.
     var search_smem = unsafe_stack_allocation[
@@ -1562,35 +1589,27 @@ def _scale_tile_expert[
     if thread_idx.x < WARP_SIZE:
         var lane = thread_idx.x
         var target = scale_tile_idx
-
-        var coarse = lane * probe_stride
         # Expert 0 always qualifies. This keeps the span at zero or more when
         # the offsets do not start at zero.
-        var best = 0 if lane == 0 else -1
-        if coarse < num_experts:
-            if (
-                ufloordiv(
-                    Int(row_offsets.load[width=1]((coarse,))),
-                    SF_MN_GROUP_SIZE,
-                )
-                + Int(scales_offsets.load[width=1]((coarse,)))
-            ) <= target:
-                best = coarse
-        var span = Int(lane_group_max[WARP_SIZE](Int32(best)))
-
-        comptime if probe_stride > 1:
-            var fine = span + lane
-            var refined = span
-            if lane < probe_stride and fine < num_experts:
+        var span = 0
+        comptime for search_round in range(rounds):
+            # The answer lies in [span, span + width). Lane i probes the
+            # start of stride i, and the last qualifying probe is the new
+            # span, with one stride left as the new width.
+            comptime width = _expert_search_width(num_experts, search_round)
+            comptime stride = uceildiv(width, WARP_SIZE)
+            var probe = span + lane * stride
+            var best = span
+            if lane * stride < width and probe < num_experts:
                 if (
                     ufloordiv(
-                        Int(row_offsets.load[width=1]((fine,))),
+                        Int(row_offsets.load[width=1]((probe,))),
                         SF_MN_GROUP_SIZE,
                     )
-                    + Int(scales_offsets.load[width=1]((fine,)))
+                    + Int(scales_offsets.load[width=1]((probe,)))
                 ) <= target:
-                    refined = fine
-            span = Int(lane_group_max[WARP_SIZE](Int32(refined)))
+                    best = probe
+            span = Int(lane_group_max[WARP_SIZE](Int32(best)))
 
         if thread_idx.x == 0:
             search_smem.unsafe_store(0, Int32(span))
@@ -2070,6 +2089,12 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         row_indices_dtype.is_integral()
     ), "row_indices must hold integers"
     comptime assert row_index_divisor > 0, "row_index_divisor must be positive"
+
+    # A replica with no rows in this step has no scale tiles to fill. The
+    # TMA descriptor and the grid below assume at least one row tile, and a
+    # zero-height grid faults the launch, so a 0-row input is a no-op.
+    if Int(input_tensor.dim(0)) == 0:
+        return
 
     # The kernel masks columns at 8-element lane granularity, so a column
     # count that is not a multiple of 8 would still load and store partially

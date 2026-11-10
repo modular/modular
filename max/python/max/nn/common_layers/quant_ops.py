@@ -1043,13 +1043,18 @@ def interleave_grouped_scales(
     Args:
         scales: The ``[experts, M, K // sf_vector_size]`` block scales, maybe
             sharded on ``M`` or ``K``, in which case each device interleaves
-            its share.
+            its share. Rank-6 scales are already interleaved and pass through.
         sf_vector_size: Elements per block: 16 for NVFP4, 32 for MXFP8.
 
     Returns:
         The ``[experts, ceildiv(M, 128), ceildiv(K // sf_vector_size, 4), 32,
         4, 4]`` scales.
     """
+    # The interleave below is one op per expert, which a graph over thousands
+    # of experts cannot afford to compile or run, so such callers store their
+    # scales interleaved.
+    if scales.rank == 6:
+        return scales
     num_experts = int(scales.shape[0])
     m = scales.shape[1]
     k = scales.shape[2]

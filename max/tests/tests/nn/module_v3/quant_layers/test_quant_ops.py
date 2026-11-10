@@ -1336,3 +1336,14 @@ def test_matmul_mxfp4_builds_the_amd_graph(
 
         assert out.dtype == DType.bfloat16
         assert list(out.shape) == [8, 128]
+
+
+def test_interleave_grouped_scales_passes_interleaved_scales_through() -> None:
+    """Scales already in the rank-6 TCGEN layout come back unchanged."""
+    with F.lazy():
+        scales = Tensor.zeros(
+            (_NUM_EXPERTS, 1, _HIDDEN_DIM // 64, 32, 4, 4),
+            dtype=DType.float8_e4m3fn,
+        )
+
+        assert quant_ops.interleave_grouped_scales(scales) is scales

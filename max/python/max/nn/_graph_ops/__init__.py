@@ -10839,7 +10839,9 @@ def grouped_matmul_block_scaled(
             packed ``uint8`` or ``[num_experts, N, K]`` for
             ``float8_e4m3fn``. Sized independently of ``hidden_states``, so
             W4A8 combines a ``[total_tokens, K]`` activation with a
-            ``[num_experts, N, K/2]`` weight.
+            ``[num_experts, N, K/2]`` weight. With static shapes,
+            ``num_experts`` may exceed the number of groups, for a pool that
+            ``expert_ids`` index into.
         a_scales: Scaling factors for inputs with shape
             ``[num_scale_rows, K_groups, 32, 4, 4]``, where ``K_groups`` is
             ``ceildiv(K, 4 * group_size)`` for the combination's K group size.
@@ -10937,10 +10939,23 @@ def grouped_matmul_block_scaled(
     weight_k_factor = 2 if is_w4a8 else 1
     weight_k = weight.shape[2] * weight_k_factor
     hidden_k = hidden_states.shape[1]
-    if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
+    if weight_k != hidden_k:
         raise ValueError(
             "expected weight is of shape [num_experts, *, "
             f"{hidden_k // weight_k_factor}] but got {weight.shape}"
+        )
+    # A pool, such as an expert cache, holds more experts than there are
+    # groups. A symbolic count cannot be bounded, so it must match exactly.
+    num_groups, num_experts = expert_ids.shape[0], weight.shape[0]
+    if isinstance(num_groups, StaticDim) and isinstance(num_experts, StaticDim):
+        experts_fit = int(num_groups) <= int(num_experts)
+    else:
+        experts_fit = num_groups == num_experts
+    if not experts_fit:
+        raise ValueError(
+            f"expert_ids has {num_groups} groups but the weight has"
+            f" {num_experts} experts; groups may not exceed experts, and a"
+            " symbolic count must equal them"
         )
 
     SF_ATOM_M = [32, 4]

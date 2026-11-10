@@ -366,8 +366,93 @@ def test_grouped_nvfp4_quantization[
     tile_starts.unsafe_free()
 
 
+def test_grouped_nvfp4_zero_rows(ctx: DeviceContext) raises:
+    """A DP replica with no rows in a step: no launch and no writes.
+
+    The grouped quantize builds a TMA descriptor and a grid from the row
+    tiles; an empty replica has none, and the launch used to fault.
+    """
+    comptime dtype = DType.bfloat16
+    comptime N = 256
+    comptime K_tiles = ceildiv(N, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+    comptime output_N = ceildiv(N, 2)
+    comptime num_experts = 2
+    comptime SENTINEL = 0xEE
+
+    var row_offsets_host = unsafe_alloc[UInt32](num_experts + 1)
+    var scales_offsets_host = unsafe_alloc[UInt32](num_experts)
+    var expert_ids_host = unsafe_alloc[Int32](num_experts)
+    var sf_host = unsafe_alloc[Float32](num_experts)
+    for i in range(num_experts):
+        row_offsets_host[i] = 0
+        scales_offsets_host[i] = 0
+        expert_ids_host[i] = Int32(i)
+        sf_host[i] = 1.0
+    row_offsets_host[num_experts] = 0
+
+    var dev_input = ctx.enqueue_create_buffer[dtype](1)
+    var dev_output = ctx.enqueue_create_buffer[DType.uint8](1)
+    var dev_scales = ctx.enqueue_create_buffer[NVFP4_SF_DTYPE](1)
+    var dev_row_offsets = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var dev_scales_offsets = ctx.enqueue_create_buffer[.uint32](num_experts)
+    var dev_expert_ids = ctx.enqueue_create_buffer[.int32](num_experts)
+    var dev_sf = ctx.enqueue_create_buffer[.float32](num_experts)
+    var sentinel = unsafe_alloc[UInt8](1)
+    sentinel[0] = SENTINEL
+    ctx.enqueue_copy(dev_output, sentinel)
+    ctx.enqueue_copy(dev_row_offsets, row_offsets_host)
+    ctx.enqueue_copy(dev_scales_offsets, scales_offsets_host)
+    ctx.enqueue_copy(dev_expert_ids, expert_ids_host)
+    ctx.enqueue_copy(dev_sf, sf_host)
+
+    var input_tensor = TileTensor(dev_input, row_major(Coord(0, Idx[N])))
+    var output_tensor = TileTensor(
+        dev_output, row_major(Coord(0, Idx[output_N]))
+    )
+    var scales_tensor = TileTensor(
+        dev_scales,
+        row_major(
+            Coord(
+                0,
+                Idx[K_tiles],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
+            )
+        ),
+    )
+    var row_offsets_tensor = TileTensor(
+        dev_row_offsets, row_major(Idx[num_experts + 1])
+    )
+    var scales_offsets_tensor = TileTensor(
+        dev_scales_offsets, row_major(Idx[num_experts])
+    )
+    var expert_ids_tensor = TileTensor(
+        dev_expert_ids, row_major(Idx[num_experts])
+    )
+    var sf_tensor_device = TileTensor(dev_sf, row_major(Idx[num_experts]))
+
+    grouped_quantize_dynamic_scaled_fp4_async(
+        output_tensor,
+        scales_tensor,
+        input_tensor,
+        row_offsets_tensor,
+        scales_offsets_tensor,
+        expert_ids_tensor,
+        sf_tensor_device,
+        ctx,
+    )
+    ctx.synchronize()
+
+    var host_output = unsafe_alloc[UInt8](1)
+    ctx.enqueue_copy(host_output, dev_output)
+    ctx.synchronize()
+    assert_equal(host_output[0], UInt8(SENTINEL))
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        test_grouped_nvfp4_zero_rows(ctx)
         # Aligned expert counts.
         test_grouped_nvfp4_quantization[
             DType.bfloat16,
@@ -448,3 +533,29 @@ def main() raises:
             N=23 * 128 + 32,
             num_experts=160,
         ](ctx, spread_counts, spread_scales)
+
+        # More experts than two rounds of the warp expert search cover, as in
+        # an expert pool indexed by slot. Three rounds narrow 6000 experts
+        # with strides 188, 6 and 1. Rows sit on those boundaries, at both
+        # ends, and scattered.
+        var pool_counts = List[Int]()
+        var pool_scales = List[Float32]()
+        for i in range(6000):
+            var boundary = (
+                i == 0
+                or i == 187
+                or i == 188
+                or i == 189
+                or i == 1023
+                or i == 1024
+                or i == 5999
+            )
+            pool_counts.append(130 if boundary else (1 if i % 97 == 0 else 0))
+            pool_scales.append(Float32(1.0) if i % 2 == 0 else Float32(0.5))
+        test_grouped_nvfp4_quantization[
+            DType.bfloat16,
+            NVFP4_SF_DTYPE,
+            SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
+            N=11 * 64,
+            num_experts=6000,
+        ](ctx, pool_counts, pool_scales)
