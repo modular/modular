@@ -373,32 +373,13 @@ def _compile_kda(
     return execute
 
 
-@pytest.mark.parametrize(
-    "accepted",
-    [
-        pytest.param([0], id="nothing-accepted"),
-        pytest.param([1], id="one-draft-accepted"),
-        pytest.param([NUM_DRAFTS], id="every-draft-accepted"),
-    ],
-)
-def test_the_fold_lands_the_kda_state_and_conv_on_the_accepted_prefix(
-    accepted: list[int],
-) -> None:
-    pools = _compile_kda([RING_LEN], accepted)()
-    np.testing.assert_array_equal(pools["live"], pools["reference"])
-    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
-
-
-def test_each_request_folds_its_own_kda_length() -> None:
-    pools = _compile_kda([RING_LEN] * 3, [NUM_DRAFTS, 1, 0])()
-    np.testing.assert_array_equal(pools["live"], pools["reference"])
-    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
-
-
-def test_a_request_longer_than_the_ring_still_places_its_conv_window() -> None:
-    """The fold skips the long row's state, which the verify committed, but
-    still places its conv window."""
-    pools = _compile_kda([RING_LEN, RING_LEN + 2], [1, NUM_DRAFTS])()
+def test_the_fold_lands_the_kda_state_and_conv_on_the_accepted_prefix() -> None:
+    """Checks one batch of nothing, one, and every draft accepted, plus a
+    request longer than the ring: the fold skips its state, which the verify
+    committed, but still places its conv window."""
+    pools = _compile_kda(
+        [RING_LEN] * 3 + [RING_LEN + 2], [0, 1, NUM_DRAFTS, NUM_DRAFTS]
+    )()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
     np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
 
@@ -409,17 +390,10 @@ def test_the_kda_verify_leaves_the_live_pool_alone() -> None:
     np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
 
 
-@pytest.mark.parametrize(
-    "seq_lengths",
-    [
-        pytest.param([1], id="one-token-row"),
-        pytest.param([5], id="row-past-the-ring"),
-        pytest.param([1, 9], id="decode-row-riding-a-prompt"),
-    ],
-)
-def test_a_committed_kda_window_lands_on_the_forward(
-    seq_lengths: list[int],
-) -> None:
+def test_a_committed_kda_window_lands_on_the_forward() -> None:
+    """Covers a row past the ring at the head of the batch, a one-token row,
+    and a decode row riding a prompt."""
+    seq_lengths = [5, 1, 9]
     pools = _compile_kda(seq_lengths, [0] * len(seq_lengths), num_drafts=0)()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
     np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
@@ -538,41 +512,20 @@ def _compile_conv(
     }
 
 
-@pytest.mark.parametrize(
-    "accepted",
-    [
-        pytest.param([0], id="nothing-accepted"),
-        pytest.param([2], id="two-drafts-accepted"),
-        pytest.param([NUM_DRAFTS], id="every-draft-accepted"),
-    ],
-)
-def test_the_conv_replay_lands_on_the_accepted_prefix(
-    accepted: list[int],
-) -> None:
-    pools = _compile_conv([RING_LEN], accepted, num_drafts=NUM_DRAFTS)()
-    np.testing.assert_array_equal(pools["live"], pools["reference"])
-
-
-def test_each_request_replays_its_own_conv_length() -> None:
-    pools = _compile_conv(
-        [RING_LEN] * 3, [NUM_DRAFTS, 1, 0], num_drafts=NUM_DRAFTS
+def test_the_conv_replay_lands_on_the_accepted_prefix() -> None:
+    """Checks one batch of every draft, two drafts, and nothing accepted. With
+    every row as long as the window, the copy slots also tile the input row
+    for row."""
+    run = _compile_conv(
+        [RING_LEN] * 3, [NUM_DRAFTS, 2, 0], num_drafts=NUM_DRAFTS
     )()
-    np.testing.assert_array_equal(pools["live"], pools["reference"])
+    np.testing.assert_array_equal(run["output_0"], run["qkv"])
+    np.testing.assert_array_equal(run["live"], run["reference"])
 
 
 def test_a_committed_conv_window_lands_on_the_forward() -> None:
     pools = _compile_conv([5, 2], [0, 0], num_drafts=0)()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
-
-
-def test_a_decode_copy_with_a_window_per_row_is_the_whole_input() -> None:
-    # With every row as long as the window, the slots tile the input row
-    # for row.
-    run = _compile_conv(
-        [RING_LEN] * 3, [NUM_DRAFTS, 1, 0], num_drafts=NUM_DRAFTS
-    )()
-    np.testing.assert_array_equal(run["output_0"], run["qkv"])
-    np.testing.assert_array_equal(run["live"], run["reference"])
 
 
 def test_a_decode_window_shorter_than_the_ring_replays_from_its_slots() -> None:
@@ -749,27 +702,16 @@ def _compile_tail(
     return lambda: _run(graph, inputs, {"live": init, "reference": init})
 
 
-@pytest.mark.parametrize(
-    ("cache_length", "accepted"),
-    [
-        # Pending member at 8; the window 9..12 seeds 12 into its slot.
-        pytest.param(9, 0, id="pending-member-nothing-accepted"),
-        pytest.param(9, 2, id="pending-member-two-accepted"),
-        pytest.param(9, 3, id="pending-member-every-draft-accepted"),
-        # The window starts on a pool boundary.
-        pytest.param(8, 1, id="pool-boundary-one-accepted"),
-        pytest.param(10, 3, id="past-boundary-every-draft-accepted"),
-    ],
-)
-def test_the_tail_ring_lands_on_the_accepted_prefix(
-    cache_length: int, accepted: int
-) -> None:
-    rings = _compile_tail([cache_length], [accepted], num_drafts=NUM_DRAFTS)()
+def test_the_tail_ring_lands_on_the_accepted_prefix() -> None:
+    """Checks each request seeds its own tail. The pending member is at 8; the
+    window 9..12 seeds 12 into its slot."""
+    rings = _compile_tail([9, 9, 9], [0, 2, 3], num_drafts=NUM_DRAFTS)()
     np.testing.assert_array_equal(rings["live"], rings["reference"])
 
 
-def test_each_request_seeds_its_own_tail() -> None:
-    rings = _compile_tail([9, 10, 8], [0, 3, 1], num_drafts=NUM_DRAFTS)()
+def test_a_tail_window_at_a_pool_boundary_lands_on_the_prefix() -> None:
+    """Covers a window that starts on a pool boundary and one past it."""
+    rings = _compile_tail([8, 10], [1, 3], num_drafts=NUM_DRAFTS)()
     np.testing.assert_array_equal(rings["live"], rings["reference"])
 
 
