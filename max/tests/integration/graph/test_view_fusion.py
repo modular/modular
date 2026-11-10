@@ -178,7 +178,7 @@ def test_view_fuses_into_existing_prologue(session: InferenceSession) -> None:
     loop-invariant-view-motion-prologue.mlir), and for the `EmitMojo` fix
     letting a fused prologue/epilogue capture a view (not just a plain
     materialized tensor) -- `collectFusedCaptureInfos`
-    (GraphCompiler/lib/MOGGDialect/MOGGOps.cpp) now reads a capture's layout
+    (GraphCompiler/lib/MOGGDialect/MOGGOpsEmitters.cpp) now reads a capture's layout
     off its own already-emitted `ManagedTensorSlice.to_tile_tensor()` instead
     of assuming it's always a plain `mogg.tensor.create` result.
     """
@@ -209,7 +209,7 @@ def test_broadcast_fuses_into_existing_epilogue(
     `broadcastIntoExistingEpilogue` in
     GraphCompiler/test/mo-opt/MAPDialect/Transforms/ViewFusion/
     view_fusion_into_epilogue.mlir) and for the `EmitMojo` fused-capture fix
-    (`collectFusedCaptureInfos` in GraphCompiler/lib/MOGGDialect/MOGGOps.cpp)
+    (`collectFusedCaptureInfos` in GraphCompiler/lib/MOGGDialect/MOGGOpsEmitters.cpp)
     reading a capture's layout off its own `ManagedTensorSlice.to_tile_tensor()`
     instead of assuming every capture is a plain `mogg.tensor.create` result:
     `EpilogueFuser` first fuses the bias-add into the reduction's epilogue,

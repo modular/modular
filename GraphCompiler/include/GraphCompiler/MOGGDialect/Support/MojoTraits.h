@@ -671,7 +671,8 @@ comptime _MoggStableTensorArg = _MoggTensorArg[
 )mojo";
 
 // The host-only `_MoggShapeTensorArg`, which backs every shape-function
-// trait tensor argument (see `kShapeTensorArgStructName` in MOGGOps.cpp).
+// trait tensor argument (see `kShapeTensorArgStructName` in
+// MOGGOpsEmitters.cpp).
 static constexpr llvm::StringLiteral kShapeTensorArgDefs = R"mojo(
 from layout import Coord, CurrentTensorEngine, TensorLayout, TileTensor
 from extensibility import Tensor, TileTensorable

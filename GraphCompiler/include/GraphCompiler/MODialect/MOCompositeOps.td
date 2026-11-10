@@ -1077,7 +1077,7 @@ def MOComposite_GroupedMatmulBlockScaledOp
 
 def MOComposite_MegaFFNNvfp4Op : MO_CompositeOp<"mega_ffn_nvfp4", [
   // Not `Pure`: writes `arrival_count` in place. `getEffects` is hand-written
-  // in MOOps.cpp.
+  // in MOOpsTraits.cpp.
   DeclareOpInterfaceMethods<MO_MutableOpInterface>,
   DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
   MO_SingleDeviceWithHostOperands<[
