@@ -40,6 +40,7 @@ from max.nn.quant_config import (
 from max.tensor import Tensor
 
 from ..model_config import HYV4Config
+from . import mxfp8
 from .functional_kernels import (
     mla_fp8_index_top_k,
     rope_ragged,
@@ -166,9 +167,11 @@ class HYV4Indexer(Module[..., Tensor]):
                 rope_first=True,
             ).rebind_mapping(t.mapping)
 
-        q = self.wq_b(qr).reshape([-1, self.n_heads, self.head_dim])
+        q = mxfp8.matmul(qr, self.wq_b.weight).reshape(
+            [-1, self.n_heads, self.head_dim]
+        )
         q_fp8, q_scale = _quantize_rows(rope(q))
-        k = rope(self.k_norm(self.wk(x)).unsqueeze(1))
+        k = rope(self.k_norm(mxfp8.matmul(x, self.wk.weight)).unsqueeze(1))
         k_fp8, k_scale = _quantize_rows(k)
 
         store_k_cache_ragged(k_cache, k_fp8, input_row_offsets, cache_layer)
