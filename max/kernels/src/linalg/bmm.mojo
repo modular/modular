@@ -14,7 +14,7 @@
 """Provides batched matrix multiplication (BMM) for CPU and GPU targets."""
 
 from std.math import align_up, ceildiv, gcd
-from std.sys import size_of
+from std.sys import has_amd_rdna_gpu_accelerator, size_of
 from std.sys.info import (
     _is_amd_rdna,
     is_amd_gpu,
@@ -1202,7 +1202,15 @@ def _batched_matmul_gpu_impl[
             block_dim=kernels.ampere_128x128_4.block_dim(),
             shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
         )
-    elif has_static_NK and ctx.target.is_amd_gpu() and transpose_b:
+    elif (
+        has_static_NK
+        and ctx.target.is_amd_gpu()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+        # AMDMatmul loads K in 4-byte units and stores 4-wide along N.
+        and a_k * size_of[a_type]() % 4 == 0
+        and c_n % 4 == 0
+    ):
 
         @inline(.always)
         def kernel_helper[block_m: Int, block_n: Int]() raises {imm}:
