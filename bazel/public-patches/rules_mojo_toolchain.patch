@@ -87,7 +87,7 @@ diff --git a/mojo/private/toolchain.BUILD b/mojo/private/toolchain.BUILD
 index 9fc4509..f16eea3 100644
 --- a/mojo/private/toolchain.BUILD
 +++ b/mojo/private/toolchain.BUILD
-@@ -11,15 +11,15 @@ _INTERNAL_LIBRARIES = [
+@@ -11,15 +11,18 @@ _INTERNAL_LIBRARIES = [
      for library in glob(
          [
              # Globbed to allow .so or .dylib
@@ -99,8 +99,11 @@ index 9fc4509..f16eea3 100644
          allow_empty = False,
      ) + glob(
 -        ["lib/libNVPTX.so"],  # buildifier: disable=constant-glob
-+        # Empty in compiler packages that predate the standalone driver library.
-+        ["lib/libMDriver.*"],
++        # Empty in compiler packages that predate the standalone driver libraries.
++        [
++            "lib/libMDriver.*",
++            "lib/libMDriverCompilation.*",
++        ],
          allow_empty = True,
      )
  ]

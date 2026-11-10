@@ -98,7 +98,7 @@ alias(
 
 _MOJO_DYNAMIC_DEPS = [
     "//AsyncRT:RuntimeGlobals",
-    "//MLRT:Driver/Runtime",
+    "//MLRT:Driver/Compilation",
     "//Support:Globals",
     "@llvm-project//mlir:MLIR",
     "@llvm-project//clang:clangBasic",

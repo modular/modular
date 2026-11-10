@@ -37,10 +37,12 @@ entrypoints, default to linking once into a shared library, but you may wish to
 statically link into multiple binaries either for performance or to avoid larger
 dependencies in some cases (i.e. runtimes).
 
-The C++ driver is one such library: libMDriver owns the DeviceContext
-implementation, kernel compilation, and the driver registries, and everything
-else links it. A static copy in a second image gets its own mutexes and device
-caches, and objects created through one copy are then used through another.
+The C++ driver is two such libraries. libMDriverCompilation owns kernel
+compilation, plugin loading, and accelerator detection, and the compiler links
+only it. libMDriver owns the DeviceContext implementation and the runtime
+registries, and everything that runs kernels links it. A static copy in a second
+image gets its own mutexes and device caches, and objects created through one
+copy are then used through another.
 
 Use `-Wl,-Bsymbolic-functions` where appropriate. This flag causes functions to
 always resolve in the same shared library as the caller, which can improve
@@ -63,14 +65,17 @@ graph TD
     libKGENCompilerRTShared
     libAsyncRTMojoBindings
     libMDriver
+    libMDriverCompilation
     libMGPRT
     libmax
     mojo
 
     mojo --> libAsyncRTGlobals
-    mojo --> libMDriver
+    mojo --> libMDriverCompilation
     libAsyncRTGlobals --> libMSupportGlobals
     libKGENCompilerRTShared --> libAsyncRTGlobals
+    libMDriverCompilation --> libAsyncRTGlobals
+    libMDriver --> libMDriverCompilation
     libMDriver --> libKGENCompilerRTShared
     libAsyncRTMojoBindings --> libMDriver
     libmax --> libMGPRT

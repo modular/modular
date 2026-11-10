@@ -20,6 +20,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/Preprocessor.h"
+#include "Support/SymbolExport.h"
 #include "Support/max_license/Tracy/Tracy.h"
 
 #include <stddef.h>
@@ -901,7 +902,7 @@ public:
                                  : 1;
   }
 
-  static ErrorOr<const HIPDriver &> get();
+  MODULAR_CXX_EXPORT static ErrorOr<const HIPDriver &> get();
 
   // HIPDriver object lifetime is tied to a static unique_ptr.
   HIPDriver() = default;

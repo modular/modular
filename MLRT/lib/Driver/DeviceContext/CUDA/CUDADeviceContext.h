@@ -130,8 +130,6 @@ public:
   static const CUDADevice &cast(const Device &device);
   static CUDADevice &cast(Device &device);
 
-  static ErrorOr<std::string> getFirstArchName();
-
   static ErrorOr<int> numberOfGPUs();
   static ErrorOr<CUDADevice &> get(int id);
 

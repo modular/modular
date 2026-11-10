@@ -106,7 +106,6 @@ public:
   static ErrorOr<int> numberOfGPUs();
 
   ErrorOr<const char *> getArchName() const override;
-  static ErrorOr<std::string> getArchName(MTL::Device *d = nullptr);
 
   DLDevice getDLDevice(bool pinned) const override {
     // Metal has no pinned-memory DLPack variant; pinned buffers are plain CPU.
@@ -143,8 +142,8 @@ private:
   mutable DriverVersion driverVersion_;
 
   // Lazily-populated cache of the architecture name string returned by the
-  // virtual `getArchName() const` override. The static `getArchName(MTL::Device
-  // *)` form is expensive (autorelease pool + MTL device introspection + Metal4
+  // virtual `getArchName() const` override. `getMetalArchName(MTL::Device *)`
+  // is expensive (autorelease pool + MTL device introspection + Metal4
   // feature detection), so the cache is computed on first call rather than at
   // construction. `mutable` because the override is `const`.
   mutable std::string arch_;

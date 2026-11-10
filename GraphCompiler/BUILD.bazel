@@ -1744,6 +1744,7 @@ modular_shared_library(
         "@llvm-project//clang:clangBasic",
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/DeviceContext",
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",

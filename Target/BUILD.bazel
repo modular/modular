@@ -18,7 +18,7 @@ modular_cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextHeaders",
         "//SDK:HAL",
         "//Support:Base",
         "//Support:SymbolExport",

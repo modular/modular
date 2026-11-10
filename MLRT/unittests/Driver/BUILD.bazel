@@ -632,6 +632,7 @@ modular_cc_test(
     dynamic_deps = [
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/DeviceContext",
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
@@ -881,6 +882,7 @@ modular_cc_test(
     dynamic_deps = [
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/DeviceContext",
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",

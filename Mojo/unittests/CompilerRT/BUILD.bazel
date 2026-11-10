@@ -9,6 +9,7 @@ modular_cc_test(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Mojo:CompilerRT",
+        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/Runtime",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",

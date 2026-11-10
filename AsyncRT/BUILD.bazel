@@ -137,16 +137,21 @@ modular_shared_library(
         ":consumers",
         "//mach/crates/max-sys-internal:__pkg__",
     ],
+    # Shared by CompilerRT and //MLRT:Driver/Compilation, which can load
+    # without each other.
     exports = [
         ":Support",
         "//Config",
         "//Support:ADT",
         "//Support:Base",
         "//Support:BazelRunfiles",
+        "//Support:Buffer",
         "//Support:CPUCache",
         "//Support:Configuration",
+        "//Support:DLFcn",
         "//Support:DeviceSpecs",
         "//Support:Filesystem",
+        "//Support:Profiling",
         "//Support:ProfilingRanges",
         "//Support:Threading",
         "//Support:TimeProfiler",

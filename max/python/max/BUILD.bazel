@@ -94,6 +94,7 @@ modular_nanobind_extension(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/DeviceContext",
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",

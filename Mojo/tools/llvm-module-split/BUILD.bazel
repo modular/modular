@@ -7,7 +7,7 @@ modular_cc_binary(
     srcs = glob(["*.cpp"]),
     dynamic_deps = [
         "@llvm-project//llvm:LLVM",
-        "//MLRT:Driver/Runtime",
+        "//MLRT:Driver/Compilation",
         "//Support:Globals",
     ],
     deps = [

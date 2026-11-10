@@ -947,14 +947,9 @@ modular_cc_library(
     name = "ToolCommon.headers",
     hdrs = glob(["include/Mojo/ToolCommon/*.h"]),
     defines = ["MLRT_ACCELERATOR_SUPPORT=1"],
-    internal_deps = select({
-        # Under --config=hal-device-context the tools link CompilationDevice and
-        # the HAL-only CompilerDeviceArch, not a DeviceContext runtime.
-        "//:hal_device_context_enabled": ["//MLRT:Driver/DeviceContextAPI"],
-        # Linked through //MLRT:Driver/Runtime by targets that list it in
-        # dynamic_deps, and statically by the rest.
-        "//conditions:default": ["//MLRT:Driver/Runtime.static"],
-    }),
+    # Linked through //MLRT:Driver/Compilation by targets that list it in
+    # dynamic_deps, and statically by the rest.
+    internal_deps = ["//MLRT:Driver/Compilation.static"],
     tags = ["no-clang-tidy-headers"],
     visibility = [
         "//Mojo:consumers",
@@ -1055,13 +1050,10 @@ modular_shared_library(
     exports = [
         "//AsyncRT:Runtime",
         "//MLRT:Core",
-        "//Support:Buffer",
-        "//Support:DLFcn",
         "//Support:HashUtils",
         "//Support:Log",
         "//Support:LogFFI",
         "//Support:ML",
-        "//Support:Profiling",
     ],
     deps = [
         "//AsyncRT:Runtime",
@@ -1660,7 +1652,7 @@ modular_shared_library(
         "@llvm-project//clang:clangBasic",
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
-        "//MLRT:Driver/Runtime",
+        "//MLRT:Driver/Compilation",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],
@@ -1675,6 +1667,7 @@ modular_shared_library(
         ":KGENDialect",
         ":MojoTooling",
         "//AsyncRT:CompilerSupport",
+        "//AsyncRT:Runtime",
         "//Cache",
         "//Init",
         "//Support:Base64",
@@ -1683,8 +1676,10 @@ modular_shared_library(
         "//Support:CrashReporting",
         "//Support:DebugInfoDialect",
         "//Support:Driver",
+        "//Support:HashUtils",
         "//Support:IPInt",
         "//Support:IPRational",
+        "//Support:Log",
         "//Support:Telemetry",
         "//Support:URI",
     ],

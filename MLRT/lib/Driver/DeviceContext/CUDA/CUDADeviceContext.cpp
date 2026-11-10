@@ -22,6 +22,7 @@
 #include "MLRT/Driver/DeviceContext/KernelLoadGate.h"
 
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
+#include "MLRT/lib/Driver/DeviceContext/AcceleratorArch.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "MLRT/lib/Driver/DeviceContext/PinnedCompletionFlag.h"
@@ -254,19 +255,6 @@ static Error formatCUDAError(const char *file, int line, const char *func,
 }
 
 static int cudaCCMonolithic(int major, int minor) { return major * 10 + minor; }
-
-static std::string cudaCCToSM(int major, int minor) {
-  std::string sm = "sm_";
-  int cc = cudaCCMonolithic(major, minor);
-  sm += std::to_string(cc);
-
-  // For architectures above 90 we use the "a" variants to enable hardware
-  // specific features at the cost of backward and forward compatibility.
-  if (cc >= 90)
-    sm += "a";
-
-  return sm;
-}
 
 // Finds the NVML handle describing `cuDevice` by matching PCI location.
 //
@@ -2689,19 +2677,4 @@ CUDADeviceContext &CUDADeviceContext::cast(DeviceContext &ctx) {
 const CUDADeviceContext *
 CUDADeviceContext::verified_cast(const DeviceContext *ctx) {
   return DeviceContext::cast<CUDADeviceContext>(ctx);
-}
-
-ErrorOr<std::string> CUDADevice::getFirstArchName() {
-  DEFINE_OR_RETURN_ERROR(const NVML &, nvml, NVML::get());
-
-  nvmlDevice_t device;
-  if (nvml.nvmlDeviceGetHandleByIndex(0, &device) != NVML::SUCCESS)
-    RETURN_ERROR("NVML: Unable to get device index");
-
-  int major, minor;
-  if (nvml.nvmlDeviceGetCudaComputeCapability(device, &major, &minor) !=
-      NVML::SUCCESS)
-    RETURN_ERROR("NVML: Unable to get compute capability");
-
-  return cudaCCToSM(major, minor);
 }
