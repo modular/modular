@@ -14,7 +14,7 @@
 // CHECK:   comptime [[OUT_T:[A-Za-z0-9_]+]] = type_of([[OUT]])
 // CHECK:   comptime [[IN_T:[A-Za-z0-9_]+]] = type_of([[IN]])
 // CHECK:   comptime [[CACHE_T:[A-Za-z0-9_]+]] = type_of([[CACHE]])
-// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT_T]].DeviceType, [[A1:[A-Za-z0-9_]+]]: [[IN_T]].DeviceType, [[A2:[A-Za-z0-9_]+]]: [[CACHE_T]].DeviceType):
+// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT_T]].device_type, [[A1:[A-Za-z0-9_]+]]: [[IN_T]].device_type, [[A2:[A-Za-z0-9_]+]]: [[CACHE_T]].device_type):
 // CHECK-NEXT: {{.*}}.MapLowerDeclarativeInplace.execute_device([[OUT_T]]([[A0]]), [[IN_T]]([[A1]]), [[CACHE_T]]([[A2]]))
 // CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[CONFIG]], [[OUT]], [[IN]], [[CACHE]])
 

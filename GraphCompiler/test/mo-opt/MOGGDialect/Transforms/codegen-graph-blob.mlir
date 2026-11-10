@@ -25,7 +25,7 @@
 // CHECK:   comptime [[IN1_T:[A-Za-z0-9_]+]] = type_of([[IN1]])
 // CHECK:   comptime [[CONFIG_T:[A-Za-z0-9_]+]] = type_of([[CONFIG0]])
 // CHECK:   var [[LAUNCH:[A-Za-z0-9_]+]] = [[CONFIG_T]].all_cores()
-// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].DeviceType, [[A1:[A-Za-z0-9_]+]]: [[IN0_T]].DeviceType, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].DeviceType, [[A3:[A-Za-z0-9_]+]]: [[IN1_T]].DeviceType, [[ACTIVE0:[A-Za-z0-9_]+]]: Int32, [[ACTIVE1:[A-Za-z0-9_]+]]: Int32):
+// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].device_type, [[A1:[A-Za-z0-9_]+]]: [[IN0_T]].device_type, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].device_type, [[A3:[A-Za-z0-9_]+]]: [[IN1_T]].device_type, [[ACTIVE0:[A-Za-z0-9_]+]]: Int32, [[ACTIVE1:[A-Za-z0-9_]+]]: Int32):
 // CHECK-NEXT: if {{\(?}}_graph_blob.is_thread_active([[ACTIVE0]]){{\)?}}:
 // CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT0_T]]([[A0]]), [[IN0_T]]([[A1]]))
 // CHECK: _graph_blob.barrier()

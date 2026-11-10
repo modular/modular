@@ -1838,6 +1838,19 @@ bool CallOpaqueOp::isThrows() {
 }
 
 namespace {
+// How the kernel receives an operand, which the launch passes as itself and
+// encodes as its device type. See `emitDeviceKernel`.
+enum class DeviceArgKind {
+  // As is.
+  Scalar,
+  // As its `TileTensor` projection, which the kernel rebuilds the tensor or
+  // buffer from.
+  Tile,
+  // As the access-enabled view on which its fusion runs, which the kernel uses
+  // as is.
+  Fused,
+};
+
 // Holds state for emitting a call to a device-side entry point.
 struct DeclarativeCall {
   using Callee = std::function<MojoValue(ArrayRef<MojoValue>)>;
@@ -1850,9 +1863,8 @@ struct DeclarativeCall {
   SmallVector<Value> values;
   // List of operands for both calls.
   SmallVector<MojoValue> operands;
-  // Tracks whether operands[i] is a Tensor, which the kernel rebuilds from its
-  // device type.
-  SmallVector<bool> isTensor;
+  // How the kernel receives each of `operands`.
+  SmallVector<DeviceArgKind> kinds;
 };
 
 // The arguments of a device kernel, and the values the launch passes for them:
@@ -1863,31 +1875,35 @@ struct DeviceKernelArgs {
   SmallVector<NamedMojoDef> parameters;
   SmallVector<MojoValue> launchArgs;
   SmallVector<MojoValue> types;
-  SmallVector<bool> isTensor;
+  SmallVector<DeviceArgKind> kinds;
   // Maps an operand's IR value to the index of the argument that carries it, so
   // an operand shared by several calls crosses the launch once.
   llvm::DenseMap<Value, unsigned> indexOf;
 
   // Adds `call`'s operands as arguments and returns their indices. Emits each
   // operand's type, and records the kernel argument for it and the value the
-  // launch passes. For a tensor `operand0` and a scalar `operand1`:
+  // launch passes. For a tensor `operand0`, a scalar `operand1` and a fused
+  // tensor `operand2`:
   //
-  //   comptime T0 = type_of(operand0)  # argument a0: T0.DeviceType,
+  //   comptime T0 = type_of(operand0)  # argument a0: T0.device_type,
   //                                    # passed operand0
   //   comptime T1 = type_of(operand1)  # argument a1: T1, passed operand1
+  //   comptime T2 = type_of(operand2)  # argument a2: T2.device_type,
+  //                                    # passed operand2
   SmallVector<unsigned> add(MojoBuilder &builder, const DeclarativeCall &call) {
     SmallVector<unsigned> indices;
-    for (auto [value, operand, tensor] :
-         llvm::zip_equal(call.values, call.operands, call.isTensor)) {
+    for (auto [value, operand, kind] :
+         llvm::zip_equal(call.values, call.operands, call.kinds)) {
       auto [it, inserted] = indexOf.try_emplace(value, parameters.size());
       indices.push_back(it->second);
       if (!inserted)
         continue;
       MojoValue type = builder.comptime(MojoValue("type_of")({}, {operand}));
       types.push_back(type);
-      isTensor.push_back(tensor);
-      parameters.emplace_back("operand",
-                              tensor ? type.get("DeviceType") : type);
+      kinds.push_back(kind);
+      parameters.emplace_back("operand", kind == DeviceArgKind::Scalar
+                                             ? type
+                                             : type.get("device_type"));
       launchArgs.push_back(operand);
     }
     return indices;
@@ -1897,22 +1913,23 @@ struct DeviceKernelArgs {
   // returns its index.
   unsigned addScalar(const MojoValue &value, const MojoValue &type) {
     types.push_back(type);
-    isTensor.push_back(false);
+    kinds.push_back(DeviceArgKind::Scalar);
     parameters.emplace_back("operand", type);
     launchArgs.push_back(value);
     return parameters.size() - 1;
   }
 
   // Rebuilds, inside the kernel, the operands at `indices`: a tensor from its
-  // device type, a scalar as is. For the operands above:
+  // device type, a scalar or a fused tensor as is. For the operands above:
   //
-  //   T0(a0), a1
+  //   T0(a0), a1, a2
   SmallVector<MojoValue> rebuild(const FunctionBody &body,
                                  ArrayRef<unsigned> indices) const {
     SmallVector<MojoValue> operands;
     for (unsigned i : indices)
-      operands.push_back(isTensor[i] ? types[i]({}, {body.arguments[i]})
-                                     : body.arguments[i]);
+      operands.push_back(kinds[i] == DeviceArgKind::Tile
+                             ? types[i]({}, {body.arguments[i]})
+                             : body.arguments[i]);
     return operands;
   }
 };
@@ -1940,8 +1957,29 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
           << value.getType();
       return failure();
     }
-    call.isTensor.push_back(
-        isa<MOGG::TensorType, MOGG::BufferType>(value.getType()));
+    if (isa<MOGG::ScalarType>(value.getType())) {
+      call.kinds.push_back(DeviceArgKind::Scalar);
+      continue;
+    }
+    // A fused operand against a trait bound carries the contract that makes
+    // its create op build a device-passable trait tensor.
+    Operation *def = value.getDefiningOp();
+    bool traitFused = false;
+    if (auto epilogue = dyn_cast_or_null<TensorCreateEpilogueOp>(def))
+      traitFused = static_cast<bool>(epilogue.getContract());
+    else if (auto prologue = dyn_cast_or_null<TensorCreatePrologueOp>(def))
+      traitFused = static_cast<bool>(prologue.getContract());
+    if (traitFused) {
+      call.kinds.push_back(DeviceArgKind::Fused);
+      continue;
+    }
+    if (isa_and_nonnull<TensorCreateEpilogueOp, TensorCreatePrologueOp,
+                        TileCreateEpilogueOp>(def)) {
+      op->emitOpError("a declarative launch passes a fused tensor only to a "
+                      "trait-bound operand");
+      return failure();
+    }
+    call.kinds.push_back(DeviceArgKind::Tile);
   }
   call.values = std::move(operandValues);
 
@@ -1983,11 +2021,14 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
 // launch passes each operand the host built, and encodes it as its device type.
 // A tensor's device type is its `TileTensor` projection, which carries no
 // `Input`/`Output` role, so the wrapper rebuilds the operand from it and
-// `execute_device` sees the operand types and roles the host built. `body`
-// emits the kernel's statements:
+// `execute_device` sees the operand types and roles the host built. A fused
+// tensor has no single buffer to project: it holds a fusion functor over the
+// tensors it captures. Its device type is the access-enabled view on which the
+// fusion runs, which `execute_device` takes as is. `body` emits the kernel's
+// statements:
 //
-//   def execute_device_N(a0: T0.DeviceType, a1: T1):
-//       Kernel[...].execute_device[...](T0(a0), a1)
+//   def execute_device_N(a0: T0.device_type, a1: T1, a2: T2.device_type):
+//       Kernel[...].execute_device[...](T0(a0), a1, a2)
 static MojoValue
 emitDeviceKernel(MojoBuilder &builder, const DeviceKernelArgs &args,
                  std::function<void(const FunctionBody &)> &&body) {
@@ -2016,7 +2057,7 @@ static void emitLaunch(EmitMojoState &state, const MojoValue &ctx,
 //
 //   var config = Kernel[...].execute_configuration[...](operands...)
 //   comptime T0 = type_of(operand0)  # one per operand
-//   def execute_device_N(a0: T0.DeviceType, a1: T1, ...):
+//   def execute_device_N(a0: T0.device_type, a1: T1, ...):
 //       Kernel[...].execute_device[...](T0(a0), a1, ...)
 //   mogg_launch_declarative[execute_device_N](ctx, config, operand0,
 //                                             operand1, ...)
@@ -2238,7 +2279,7 @@ LogicalResult GraphBlobOp::verifyRegions() {
 //   comptime T0 = type_of(operand0)  # one per distinct operand
 //   comptime C = type_of(config0)
 //   var launch = C.all_cores()
-//   def execute_device_N(a0: T0.DeviceType, ..., a5: Int32, a6: Int32):
+//   def execute_device_N(a0: T0.device_type, ..., a5: Int32, a6: Int32):
 //       if _graph_blob.is_thread_active(a5):
 //           Kernel0[...].execute_device[...](T0(a0), ...)
 //       _graph_blob.barrier()

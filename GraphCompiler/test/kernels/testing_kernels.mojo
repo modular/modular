@@ -3708,6 +3708,41 @@ struct MapLowerDeclarativeInplace:
         pass
 
 
+# Declarative kernels with a fused output and a fused input. The launch passes
+# a fused operand as itself, which the device kernel receives as the fused
+# tensor's device type.
+@extensibility.register("map_lower_declarative_fused_store")
+struct MapLowerDeclarativeFusedStore:
+    @staticmethod
+    def execute_configuration(
+        res: Some[Tensor], a: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(4))
+
+    @staticmethod
+    def execute_device(
+        res: Some[Output & Fused & Storable],
+        a: Some[Input & TileTensorable],
+    ):
+        pass
+
+
+@extensibility.register("map_lower_declarative_fused_load")
+struct MapLowerDeclarativeFusedLoad:
+    @staticmethod
+    def execute_configuration(
+        res: Some[Tensor], a: Some[Tensor]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(4))
+
+    @staticmethod
+    def execute_device(
+        res: Some[Output & TileTensorable],
+        a: Some[Input & Fused & Loadable],
+    ):
+        pass
+
+
 # A signature-only in-place kernel with a mutable destination and a plain
 # (non-fused) immutable input, mirroring `InplaceMemcpy`. Used to check that
 # `FuseMutableLoads` fusing a `mo.mutable.load` into the immutable `src` operand
