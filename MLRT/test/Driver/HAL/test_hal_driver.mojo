@@ -20,7 +20,18 @@ from std.os import getenv
 
 from max._driver import Host
 from max._driver import Driver
-from max._driver.max_license.hal.extensions.traits import SupportsPeerAccessV1
+from max._driver.max_license.hal.extensions.completion_flag import (
+    FlagCondition,
+)
+from max._driver.max_license.hal.extensions.cuda import CUDAHALExtensions
+from max._driver.max_license.hal.extensions.hip import HIPHALExtensions
+from max._driver.max_license.hal.extensions.metal import MetalHALExtensions
+from max._driver.max_license.hal.extensions.traits import (
+    SupportsCompletionFlagAddressV1,
+    SupportsCompletionFlagResetV1,
+    SupportsCompletionFlagV1,
+    SupportsPeerAccessV1,
+)
 from max._driver.max_license.hal.status import HALError, STATUS_INVALID_ARG
 from std.testing import assert_equal, assert_false, assert_true
 
@@ -85,6 +96,76 @@ def test_peer_access() raises:
         print("extension set has no peer access; skipping")
 
 
+def test_completion_flag_tiers() raises:
+    # Pins each in-tree vendor set's flag tiers, so dropping one fails here.
+    comptime assert conforms_to(
+        CUDAHALExtensions, SupportsCompletionFlagResetV1
+    )
+    comptime assert conforms_to(HIPHALExtensions, SupportsCompletionFlagResetV1)
+    comptime assert conforms_to(
+        MetalHALExtensions, SupportsCompletionFlagResetV1
+    )
+    comptime assert not conforms_to(
+        MetalHALExtensions, SupportsCompletionFlagAddressV1
+    )
+    comptime assert conforms_to(
+        CUDAHALExtensions, SupportsCompletionFlagAddressV1
+    )
+    comptime assert conforms_to(
+        HIPHALExtensions, SupportsCompletionFlagAddressV1
+    )
+    comptime assert FlagCondition.eq in CUDAHALExtensions.FlagConditions
+    comptime assert FlagCondition.eq in HIPHALExtensions.FlagConditions
+    comptime assert FlagCondition.eq not in MetalHALExtensions.FlagConditions
+
+
+def test_completion_flag_round_trip() raises:
+    var host = Host()
+    var dev = host.accelerator(0)
+    comptime Ext = type_of(dev[].extensions())
+    comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+        ref ext = dev[].extensions()
+        var flags: Ext.FlagGroup
+        if case .Some(f) = ext.completion_flag():
+            flags = f
+        else:
+            raise Error("in-tree plugin lacks completion flags")
+        var raw = dev[].raw_driver()
+        var ctx = dev[].get_context()
+        var queue = ctx[].create_queue()
+
+        # The loaded plugin reports the conditions its vendor set promises.
+        var conds = ext.flag_conditions(raw[], dev[].handle())
+        assert_true(FlagCondition.geq in conds)
+        assert_equal(
+            FlagCondition.eq in conds,
+            FlagCondition.eq in Ext.FlagConditions,
+        )
+
+        var flag = ext.create_flag(raw[], ctx[].handle())
+        assert_equal(flags.load(raw[], flag), 0)
+        flags.signal(raw[], flag, 5)
+        flags.wait(raw[], queue[]._handle, flag, 3, FlagCondition.geq)
+        queue[].synchronize()
+        assert_equal(flags.load(raw[], flag), 5)
+
+        comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
+            if case .Some(reset) = ext.completion_flag_reset():
+                reset.reset(raw[], flag)
+                assert_equal(flags.load(raw[], flag), 0)
+            else:
+                raise Error("reset tier lacks the reset symbol")
+        comptime if conforms_to(Ext, SupportsCompletionFlagAddressV1):
+            if case .Some(address) = ext.completion_flag_address():
+                assert_true(address.device_address(raw[], flag) != 0)
+            else:
+                raise Error("address tier lacks the address symbol")
+
+        ext.destroy_flag(raw[], ctx[].handle(), flag)
+    else:
+        print("extension set has no completion flags; skipping")
+
+
 def main() raises:
     try:
         test_driver_create()
@@ -92,3 +173,5 @@ def main() raises:
         raise Error(String(e))
     test_device_get()
     test_peer_access()
+    test_completion_flag_tiers()
+    test_completion_flag_round_trip()
