@@ -294,6 +294,24 @@ def RaiseBackContiguousViews
   ];
 }
 
+def FuseContiguousViews : Pass<"map-fuse-contiguous-views", "MO::GraphOp"> {
+  let summary = "Fuse reshapes into the kernels that read them as stride views.";
+  let description = [{
+    Replaces each kernel input that a `mo.static.reshape` produces with a
+    `map.index.reshape.stride` of the reshape's input, at the top of the
+    kernel's body. Assumes every kernel is a `map.iter.opaque`.
+  }];
+
+  let dependentDialects = [
+    "M::MAP::MAPDialect",
+  ];
+
+  let statistics = [
+    Statistic<"numViewsFused", "num-views-fused",
+              "Number of kernel inputs read through a fused view">
+  ];
+}
+
 def FuseMutableLoads : Pass<"map-fuse-mutable-loads", "MO::GraphOp"> {
   let summary = "'Fuse' mo.mutable.load ops with map.iter.elementwise ops.";
   let description = [{

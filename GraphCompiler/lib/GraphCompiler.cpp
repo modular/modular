@@ -342,14 +342,17 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
   // (plus a pre-cast accumulation buffer for mixed-precision accumulation).
   pm.addNestedPass<GraphOp>(MAP::createAllocateAccumulatingBuffers());
 
-  // An unfused reshape has no MAPToMOGG lowering (its hoisted stride op isn't
-  // LowerableToMOGGInterface yet), and an unfused contiguous slice can take the
-  // zero-copy path. Raise both back before outlining commits to MAP.
+  // An unfused reshape or contiguous slice would otherwise run as a copy
+  // kernel. Raise both back to views, which MGP lowers without a copy, before
+  // outlining commits to MAP.
   pm.addNestedPass<GraphOp>(MAP::createRaiseBackContiguousViews());
 
   pm.addPass(MAP::createOutlineStructuredKernelBodies());
-  // Uniques `map.iter.opaque` inputs and captures so the lowered kernel's
-  // parameter list is minimal.
+  // Every kernel is a `map.iter.opaque` now, so a raised reshape can fuse into
+  // any kernel that reads it, not just one with a prologue.
+  pm.addNestedPass<GraphOp>(MAP::createFuseContiguousViews());
+  // Uniques `map.iter.opaque` inputs and captures, and drops the inputs and
+  // views nothing reads, so the lowered kernel's parameter list is minimal.
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GraphOp>(MAP::createLoopInvariantViewMotion());
   // CSE before canonicalize: two loads hoisting the same view create identical
