@@ -62,6 +62,7 @@
 /bazel/public-patches/nixl-libfabric-src-addr-peer-limit.patch @modular/runtime
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
 /bazel/public-patches/rules_mojo_bitcode_libs.patch @modular/stdlib
+/bazel/public-patches/llvm-hexagon-qfp-pair-refill.patch @modular/mojo-compiler
 /bazel/public-patches/libkineto-record-window-end-track.patch @modular/max-sdk
 /bazel/public-patches/tracy-cuda-kernel-annotations.patch @modular/max-sdk
 /bazel/public-patches/tracy-port-logging.patch @modular/max-sdk
