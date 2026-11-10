@@ -48,6 +48,7 @@ _EXTRA_CONSTRAINTS = {
 # memory.
 _CPU_TESTS = [
     "test_amd_gfx1250_sync.mojo",
+    "test_amd_gfx1250_wmma.mojo",
 ]
 
 [
