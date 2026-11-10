@@ -37,6 +37,30 @@ kgen.func @hlcf_for_iter_arg(%lb: index, %ub: index, %step: index, %init: !kgen.
   hlcf.return %r : !kgen.scalar<f32>
 }
 
+// `raise-for-loops` keeps the range iterator's advance, which stops at the
+// bound. A half-open loop never runs its body at the bound, so this is a
+// plain `step` advance.
+// CHECK-LABEL: kgen.func @hlcf_for_saturating_advance
+// CHECK:         scf.for
+// CHECK-NOT:     hlcf.for
+kgen.func @hlcf_for_saturating_advance() {
+  %lb = kgen.param.constant = <0>
+  %ub = kgen.param.constant = <4>
+  %step = kgen.param.constant = <1>
+  %ub_s = kgen.param.constant: scalar<index> = <4>
+  %one_s = kgen.param.constant: scalar<index> = <1>
+  hlcf.for [%lb to %ub step %step slt add] (%iv = %lb : index) {
+    %cur = pop.cast_from_builtin %iv : index to !kgen.scalar<index>
+    %inc = pop.add %cur, %one_s : !kgen.scalar<index>
+    %done = pop.cmp eq(%cur, %ub_s) : <1, index>
+    %next = pop.select %done, %cur, %inc : !kgen.scalar<index>
+    "use"(%iv) : (index) -> ()
+    %next_idx = pop.cast_to_builtin %next : !kgen.scalar<index> to index
+    hlcf.for.yield [induction_var (%next_idx : index)] [retvals ()] [iterargs ()]
+  }
+  hlcf.return
+}
+
 // Mojo's downcounting `range(n)` shape maps to an ascending loop whose body
 // recovers the original induction value.
 // CHECK-LABEL: kgen.func @hlcf_for_downcounting
