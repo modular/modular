@@ -235,7 +235,10 @@ class _LatentPool:
                 ),
                 mla_num_partitions=Tensor(
                     storage=Buffer.from_numpy(
-                        np.array([key.num_partitions], np.int64)
+                        np.array(
+                            [key.num_partitions, key.decode_num_partitions],
+                            np.int64,
+                        )
                     )
                 ),
                 # Every paged leaf declares the record; zeros mean no split.
