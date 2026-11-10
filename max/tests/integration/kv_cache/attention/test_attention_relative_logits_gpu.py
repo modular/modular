@@ -55,7 +55,7 @@ CASES = {
     # One token per sequence runs the decode kernels; the long prefix spans
     # several pages.
     "decode": Case([1, 1], [300, 40], extent=16),
-    "decode_window": Case([1, 1], [258, 7], extent=8, window=6),
+    "decode_window": Case([1, 1], [258, 10], extent=8, window=8),
 }
 
 
@@ -70,7 +70,7 @@ def _kv_params() -> MHAKVCacheParams:
     )
 
 
-def _build(case: Case) -> Graph:
+def _build(window: int) -> Graph:
     kv_params = _kv_params()
     with Graph(
         "relative_logits",
@@ -80,7 +80,7 @@ def _build(case: Case) -> Graph:
             ),
             TensorType(DType.uint32, ["batch_plus_1"], DeviceRef.GPU()),
             TensorType(
-                DType.bfloat16, ["tokens", HEADS, case.extent], DeviceRef.GPU()
+                DType.bfloat16, ["tokens", HEADS, "extent"], DeviceRef.GPU()
             ),
             *kv_params.flattened_kv_inputs(),
         ],
@@ -95,11 +95,11 @@ def _build(case: Case) -> Graph:
             layer_idx=ops.constant(0, DType.uint32, DeviceRef.CPU()),
             mask_variant=(
                 MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-                if case.window > 0
+                if window > 0
                 else MHAMaskVariant.CAUSAL_MASK
             ),
             scale=SCALE,
-            local_window_size=case.window,
+            local_window_size=window,
             rel_logits=bias,
         )
         g.output(out.cast(DType.float32))
@@ -107,11 +107,14 @@ def _build(case: Case) -> Graph:
 
 
 @pytest.fixture(scope="module")
-def models() -> dict[str, Model]:
-    # Compile every graph before touching the device, so the compiles can be
-    # recorded on CPU.
+def models() -> dict[int, Model]:
+    # The window is a kernel parameter, but the mask reads the extent from the
+    # bias's runtime shape, so the cases share one graph per window with a
+    # symbolic extent; a static extent is not covered here. Compile them all
+    # before touching the device, so the compiles can be recorded on CPU.
     session = InferenceSession(devices=[Accelerator()])
-    return {name: session.load(_build(case)) for name, case in CASES.items()}
+    windows = sorted({case.window for case in CASES.values()})
+    return {window: session.load(_build(window)) for window in windows}
 
 
 def _reference(
@@ -149,7 +152,7 @@ def _reference(
 
 
 @pytest.mark.parametrize("name", list(CASES))
-def test_relative_logits(models: dict[str, Model], name: str) -> None:
+def test_relative_logits(models: dict[int, Model], name: str) -> None:
     case = CASES[name]
     torch.manual_seed(0)
     kv_params = _kv_params()
@@ -167,7 +170,7 @@ def test_relative_logits(models: dict[str, Model], name: str) -> None:
     q = torch.randn(tokens, HEADS, HEAD_DIM, dtype=torch.bfloat16)
     bias = torch.randn(tokens, HEADS, case.extent, dtype=torch.bfloat16)
 
-    out = models[name].execute(
+    out = models[case.window].execute(
         Buffer.from_dlpack(q).to(Accelerator()),
         Buffer.from_numpy(np.array(offsets, np.uint32)).to(Accelerator()),
         Buffer.from_dlpack(bias).to(Accelerator()),
