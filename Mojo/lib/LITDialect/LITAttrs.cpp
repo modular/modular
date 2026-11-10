@@ -1051,6 +1051,24 @@ StructTypeGenerator StructTypeGenerator::dynCast(Attribute attr) {
   return {};
 }
 
+StructTypeGenerator StructTypeGenerator::dynCast(Type type) {
+  if (auto paramType = sugarDynCastIfPresent<ParamType>(type))
+    return dynCast(paramType.getParam());
+  return {};
+}
+
+StructTypeGenerator StructTypeGenerator::cast(Attribute attr) {
+  StructTypeGenerator gen = dynCast(attr);
+  assert(gen && "expected a GeneratorAttr wrapping a struct type");
+  return gen;
+}
+
+StructTypeGenerator StructTypeGenerator::cast(Type type) {
+  StructTypeGenerator gen = dynCast(type);
+  assert(gen && "expected a ParamType over a struct type generator");
+  return gen;
+}
+
 GeneratorType StructTypeGenerator::getType() const {
   return ::cast<GeneratorType>(storage.getType());
 }
@@ -1075,6 +1093,12 @@ TypedAttr StructTypeGenerator::getBodyWithUnboundInputs() const {
     evaluator.appendIndexBinding(
         UnboundAttr::get(evaluator.getReboundType(type)));
   return evaluator.getReboundAttribute(getBody());
+}
+
+Type StructTypeGenerator::bindAll(ArrayRef<TypedAttr> paramValues,
+                                  ParameterEvaluationContext *evalCtx) const {
+  return ParamType::get(
+      BindParamsAttr::get(storage.getContext(), storage, paramValues, evalCtx));
 }
 
 //===----------------------------------------------------------------------===//

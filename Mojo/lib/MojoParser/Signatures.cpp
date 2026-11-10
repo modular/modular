@@ -2342,12 +2342,10 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
     // We build StringDict[ValType].
     ASTType dictType = shared.getStandardCollectionType(arg.loc, "StringDict");
 
-    auto dictDecl = cast<LIT::StructType>(dictType.mlirType);
-    // We know these are all UnboundAttrs created by
-    // StructDeclOp::legacyBindReference. The correct way is to have
-    // legacyBindReference return a GeneratorType.
-    ArrayRef<TypedAttr> inputUnboundParams = dictDecl.getParamValues();
-    if (inputUnboundParams.size() != 1) {
+    auto dictGen = StructTypeGenerator::dynCast(dictType);
+    ArrayRef<Type> dictParamTypes =
+        dictGen ? dictGen.getInputParamTypes() : ArrayRef<Type>();
+    if (dictParamTypes.size() != 1) {
       shared.emitError(arg.loc)
           << "internal compiler error: StringDict type has unexpected "
              "parameter signature; please file a bug";
@@ -2359,7 +2357,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
     if (arg.isErroneous)
       return;
 
-    auto collectionElement = cast<TraitType>(inputUnboundParams[0].getType());
+    auto collectionElement = cast<TraitType>(dictParamTypes[0]);
     SyntheticNode typeExpr(arg.loc);
     auto typeExprToUse = arg.typeExpr ? arg.typeExpr : &typeExpr;
     auto binding = typeEmitter.emitPValue({fullType, typeExprToUse}, EC_Type,
@@ -2368,7 +2366,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
       arg.isErroneous = true;
       return;
     }
-    fullType = cast<LIT::StructType>(dictType).bindAll(binding.get());
+    fullType = dictGen.bindAll({binding.get()}, &shared.getEvaluationContext());
 
     // StringDict is memory only and since only the callee can access it,
     // we pass it as owned.

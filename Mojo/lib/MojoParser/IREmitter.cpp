@@ -1434,7 +1434,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
   }
 
   // This should be the only representation of a partially bound struct type
-  if (auto gen = StructTypeGenerator::dynCast(PValue(type));
+  if (auto gen = StructTypeGenerator::dynCast(type);
       gen && !gen.getInputParamTypes().empty()) {
     auto diag = emitError(value.expr->getLoc())
                 << type
@@ -1884,8 +1884,7 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
     bindings.add(&tmpExpr, PValue(elt));
 
   // Check the bindings.
-  auto metaType = cast<StructMetaType>(tupleType.extractMetaType());
-  TypeSignatureType sig = metaType.getSignature();
+  TypeSignatureType sig = cast<StructASTDecl>(typeDecl)->getOp().getSignature();
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, typeDecl,
                      /*discardError=*/false,
@@ -2141,15 +2140,14 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   ASTType originType = shared.lookupBuiltinType("Origin", declScope, loc);
   if (sugarIsa<TypeCheckErrorType>(originType))
     return {}; // Sanity check the returned declaration.
-  auto originStructType = sugarCast<LIT::StructType>(originType);
 
   // Get the mutability as a Bool.
   auto resultMutability =
       sugarCast<OriginType>(litOrigin.getType()).getIsMutable();
   std::tuple<StringAttr, TypedAttr> field = {
       StringAttr::get(getContext(), "_mlir_value"), resultMutability};
-  auto boolStructType =
-      cast<LIT::StructType>(originStructType.getSignature().getParamTypes()[0]);
+  auto boolStructType = cast<LIT::StructType>(
+      StructTypeGenerator::cast(originType).getInputParamTypes()[0]);
   PValue mutBool = LITStructAttr::get({field}, boolStructType);
 
   ASTDecl *decl = originType.getDecl(shared);

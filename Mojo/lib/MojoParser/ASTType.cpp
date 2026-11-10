@@ -599,7 +599,7 @@ TypeSignatureType ASTType::getSignature() const {
 
 bool ASTType::isUnresolvedParam(size_t idx) const {
   TypedAttr param = getParamBindings()[idx];
-  if (!LIT::StructTypeGenerator::dynCast(PValue(*this)))
+  if (!LIT::StructTypeGenerator::dynCast(*this))
     return isa<UnboundAttr>(param);
 
   ParamIndexRefAttrFinder paramFinder;

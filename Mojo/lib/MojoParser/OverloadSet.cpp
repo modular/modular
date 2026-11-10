@@ -86,7 +86,7 @@ static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
                                                 const ExprNode *expr) {
   ParamBindings paramBindings(declScope, expr);
   // We need to do extra work to forward a generator's parameters.
-  if (auto gen = LIT::StructTypeGenerator::dynCast(PValue(type))) {
+  if (auto gen = LIT::StructTypeGenerator::dynCast(type)) {
     GeneratorType genType = gen.getType();
     auto pogs = genType.getParamListAttrs().getPogs();
     for (auto [type, pog] : llvm::zip_equal(gen.getInputParamTypes(), pogs))
@@ -210,7 +210,7 @@ OverloadSet::getCallee(ASTDecl *fnDecl,
     // Bindings inferred through a struct type generator are in the
     // generator's parameter space, so bind the callee to it first.
     if (ctxType && isa<DefASTDecl>(fnDecl)) {
-      if (auto genCtx = LIT::StructTypeGenerator::dynCast(PValue(ctxType)))
+      if (auto genCtx = LIT::StructTypeGenerator::dynCast(ctxType))
         return getCtxBoundConstAttrForFn(
             *fnDecl, paramBindings.shared, genCtx, verifiedBindings,
             paramBindings.declScope, paramBindings.getExprLoc());

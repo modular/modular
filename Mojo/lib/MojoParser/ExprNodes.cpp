@@ -2597,7 +2597,7 @@ static LogicalResult decodeMLIRResultTypes(TypedAttr value, SMLoc loc,
     ASTType tupleType =
         emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, loc);
     if (valueMetaType.getSymbol() ==
-        sugarCast<StructMetaType>(tupleType.extractMetaType()).getSymbol()) {
+        StructTypeGenerator::cast(tupleType).getStructType().getSymbol()) {
       auto tca = sugarCast<TypeParamAttr>(value);
       auto drt = sugarCast<LIT::StructType>(tca.getMlirType());
       ArrayRef<TypedAttr> paramValues = drt.getParamValues();
@@ -5630,8 +5630,10 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
   SmallVector<ASTType> eltTypes;
 
   ASTType expectedType = toUnpack.getType();
-  ASTType tupleType = emitter.shared.lookupBuiltinType(
-      "Tuple", emitter.getDeclScope(), getLoc());
+  ASTType tupleType =
+      emitter.shared
+          .lookupBuiltinType("Tuple", emitter.getDeclScope(), getLoc())
+          .getWithoutParameters(emitter.shared);
 
   if (!tupleType.isEqualCanon(
           expectedType.getWithoutParameters(emitter.shared))) {
@@ -5748,6 +5750,7 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, getLoc());
   if (sugarIsa<TypeCheckErrorType>(tupleType))
     return {};
+  tupleType = tupleType.getWithoutParameters(emitter.shared);
 
   // If the tuple has an inferred type, as in `(a, b)=foo()`, propagate the
   // element types into the subexpressions if possible to enable implicit var
@@ -5807,10 +5810,6 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   // TODO: Add support for list LValues as well.
   if (allEltsLValue)
     return formTupleDLValue(elements);
-
-  // The ASTType will carry around parameters bound, we want to unbind them so
-  // they can be inferred from the elements.
-  tupleType = tupleType.getWithoutParameters(emitter.shared);
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.

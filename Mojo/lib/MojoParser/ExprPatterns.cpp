@@ -506,8 +506,10 @@ TupleNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                           const PatternPath *path,
                           SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
+  // TODO: kill `getWithoutParameters` as well.
   ASTType tupleType =
-      builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc());
+      builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc())
+          .getWithoutParameters(builder.shared);
 
   if (!tupleType.isEqualCanon(
           subjectType.getWithoutParameters(builder.shared))) {
@@ -2006,7 +2008,8 @@ static bool isTupleType(PatternMatchBuilder &builder, ASTType type, SMLoc loc) {
       builder.shared.lookupBuiltinType("Tuple", builder.declScope, loc);
   if (!tupleType)
     return false;
-  return tupleType.isEqualCanon(type.getWithoutParameters(builder.shared));
+  return tupleType.getWithoutParameters(builder.shared)
+      .isEqualCanon(type.getWithoutParameters(builder.shared));
 }
 
 /// Append EnumLike leaf dimensions under `path`. Returns false if any leaf is

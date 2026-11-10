@@ -1042,7 +1042,7 @@ ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
 static ASTType typeForResolvedTypeDecl(SharedState &state, ASTDecl *decl,
                                        SMLoc loc) {
   if (auto *structDecl = dyn_cast_if_present<StructASTDecl>(decl))
-    return structDecl->getOp().legacyBindReference();
+    return structDecl->getOp().bindReference(&state.getEvaluationContext());
   if (auto *aliasDecl = dyn_cast<AliasASTDecl>(decl)) {
     if (failed(state.declResolver->resolveBody(*decl, loc)))
       return state.getTypeCheckErrorType();
