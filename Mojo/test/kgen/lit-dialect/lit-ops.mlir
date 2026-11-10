@@ -226,6 +226,49 @@ kgen.generator @ref_pack_from_pointer_pack(
   hlcf.return
 }
 
+// CHECK-LABEL: @ref_pack_concat
+kgen.generator @ref_pack_concat<Ts: param_list<type>>(
+    %a: !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+    %b: !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>) {
+  // CHECK: %0 = lit.ref.pack.concat(%arg0, %arg1) : !lit.ref.pack<:param_list<type> [index], imm #lit.any.origin>, !lit.ref.pack<:param_list<type> Ts, imm #lit.any.origin> -> <:param_list<type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+  %0 = lit.ref.pack.concat(%a, %b)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+      !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+  hlcf.return
+}
+
+// The producer rebinds each operand to the common origin of the result.
+// CHECK-LABEL: @ref_pack_concat_union_origin
+kgen.generator @ref_pack_concat_union_origin<a: origin<true>, b: origin<true>, Ts: param_list<type>>(
+    %x: !lit.ref.pack<:param_list<!kgen.type> [index], mut a>,
+    %y: !lit.ref.pack<:param_list<!kgen.type> Ts, mut b>) {
+  // CHECK: %[[X:.*]] = kgen.rebind %arg0 : !lit.ref.pack<:param_list<type> [index], mut a> to !lit.ref.pack<:param_list<type> [index], mut {a, b}>
+  // CHECK: %[[Y:.*]] = kgen.rebind %arg1 : !lit.ref.pack<:param_list<type> Ts, mut b> to !lit.ref.pack<:param_list<type> Ts, mut {a, b}>
+  // CHECK: lit.ref.pack.concat(%[[X]], %[[Y]]) : !lit.ref.pack<:param_list<type> [index], mut {a, b}>, !lit.ref.pack<:param_list<type> Ts, mut {a, b}> -> <:param_list<type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, mut {a, b}>
+  %0 = kgen.rebind %x : !lit.ref.pack<:param_list<!kgen.type> [index], mut a> to !lit.ref.pack<:param_list<!kgen.type> [index], mut {a, b}>
+  %1 = kgen.rebind %y : !lit.ref.pack<:param_list<!kgen.type> Ts, mut b> to !lit.ref.pack<:param_list<!kgen.type> Ts, mut {a, b}>
+  %2 = lit.ref.pack.concat(%0, %1)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], mut {a, b}>,
+      !lit.ref.pack<:param_list<!kgen.type> Ts, mut {a, b}>
+   -> !lit.ref.pack<:param_list<!kgen.type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, mut {a, b}>
+  hlcf.return
+}
+
+// The verifier compares origins canonically. Thus, the order of the members
+// of a union is not important.
+// CHECK-LABEL: @ref_pack_concat_union_order
+kgen.generator @ref_pack_concat_union_order<a: origin<true>, b: origin<true>>(
+    %x: !lit.ref.pack<:param_list<!kgen.type> [index], mut {b, a}>,
+    %y: !lit.ref.pack<:param_list<!kgen.type> [f32], mut {a, b}>) {
+  // CHECK: lit.ref.pack.concat(%arg0, %arg1)
+  %0 = lit.ref.pack.concat(%x, %y)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], mut {b, a}>,
+      !lit.ref.pack<:param_list<!kgen.type> [f32], mut {a, b}>
+   -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], mut {a, b}>
+  hlcf.return
+}
+
 // -----
 
 // CHECK-LABEL: lit.struct.decl @A

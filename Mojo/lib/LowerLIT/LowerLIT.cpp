@@ -2271,6 +2271,15 @@ static Value lowerOp(RefPackFromPointerPackOp op,
   return adaptor.getPack();
 }
 
+// lit.ref.pack.concat => kgen.struct.concat
+static Value lowerOp(RefPackConcatOp op, RefPackConcatOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  auto typeOr = b.asType.replace(op.getType());
+  if (failed(typeOr))
+    return nullptr;
+  return StructConcatOp::create(b, op.getLoc(), *typeOr, adaptor.getPacks());
+}
+
 static Value lowerVersionOp(Operation *op, int64_t number, LITTypeLowerer &b) {
   return ParamConstantOp::create(
       b, op->getLoc(),
@@ -2372,7 +2381,7 @@ static LogicalResult lowerLITTypes(ModuleOp module, StructDecls &state,
               RefFromPointerREPLOp, RefToKgenPtrOp, RefFromKgenPtrOp,
               RefStructGEROp, RefLoadOp, RefStoreOp, MemcpyOp, RebindOp,
               RefPackCreateOp, RefPackExtractOp, RefPackFromPointerPackOp,
-              VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp,
+              RefPackConcatOp, VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp,
               MojoVersionMajorOp, MojoVersionMinorOp, MojoVersionPatchOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
