@@ -33,6 +33,7 @@ from max.benchmark.benchmark_shared.metrics import (
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
+    interactivity_from_per_request_durations,
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncOutput,
@@ -321,8 +322,14 @@ def calculate_metrics(
     record_request_text: bool = False,
     all_outputs: Sequence[RequestFuncOutput] | None = None,
     goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
 ) -> BenchmarkResult:
-    """Computes serving metrics from the finished requests."""
+    """Computes serving metrics from the finished requests.
+
+    ``num_gpus`` is the number of GPUs the server used; it derives
+    ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
+    result. ``None`` leaves both unreported.
+    """
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -331,6 +338,15 @@ def calculate_metrics(
     step_tpots: list[float] = []
     ttfts: list[float] = []
     latencies: list[float] = []
+    # Content-bounded per-request inter-token latency,
+    # ``sum(itl) / (output_len - 1)``: first content chunk to last content
+    # chunk, TTFT excluded -- the latency basis of ``interactivity_tok_s``.
+    content_itls: list[float] = []
+    # Content-bounded per-request e2e latency,
+    # ``(ttft + sum(itl)) / output_len``: request start to last content
+    # chunk, TTFT included -- the latency basis of
+    # ``e2e_normalized_interactivity_tok_s``.
+    e2e_norm_latencies: list[float] = []
     input_throughputs: list[float] = []
     output_throughputs: list[float] = []
     per_turn_cached_token_rates: list[float] = []
@@ -459,6 +475,10 @@ def calculate_metrics(
         if (o.latency - o.ttft) > 0:
             output_throughputs.append((output_len - 1) / (o.latency - o.ttft))
         latencies.append(o.latency)
+        if output_len > 1:
+            content_itls.append(sum(o.itl) / (output_len - 1))
+        if output_len > 0:
+            e2e_norm_latencies.append((o.ttft + sum(o.itl)) / output_len)
         if o.server_token_stats.prompt_tokens:
             per_turn_cached_token_rates.append(
                 o.server_token_stats.cached_tokens
@@ -582,6 +602,54 @@ def calculate_metrics(
         else None
     )
 
+    # Interactivity, from the unrejected per-request series: the published
+    # figures apply no outlier rejection, so they must not inherit the
+    # steady-state path's. ``tpots`` here is still the raw series; the
+    # rejection block below rebinds it for ``tpot_ms``. Like the other
+    # per-request metrics these cover the measured (skip-trimmed) requests,
+    # while the per-GPU throughput below spans all successful requests.
+    interactivity = interactivity_from_per_request_durations(content_itls)
+    full_response_interactivity = interactivity_from_per_request_durations(
+        tpots
+    )
+    e2e_interactivity = interactivity_from_per_request_durations(
+        e2e_norm_latencies
+    )
+
+    # Per-GPU total token throughput over the whole run: first submit to last
+    # complete across every successful request, ignoring the skip trim and the
+    # steady-state window, to match the untrimmed tput_per_gpu that agentic
+    # serving benchmarks publish. ``None`` when the GPU count is unknown (see
+    # ``BenchmarkResult.num_gpus``).
+    per_gpu_requests: list[RequestFuncOutput] = (
+        [o for o in all_outputs if o.success and not o.cancelled]
+        if all_outputs is not None
+        else [o for o, _ in successful]
+    )
+    full_span = measured_window_duration(
+        per_gpu_requests, fallback=measured_duration
+    )
+    # Per request, so one request with server usage cannot zero out the
+    # client counts of the requests without it.
+    full_input = sum(
+        o.server_token_stats.prompt_tokens
+        if o.server_token_stats.prompt_tokens is not None
+        else o.prompt_len
+        for o in per_gpu_requests
+    )
+    counted_output_lens = {id(o): output_len for o, output_len in successful}
+    full_output = sum(
+        counted_output_lens[id(o)]
+        if id(o) in counted_output_lens
+        else compute_output_len(tokenizer, o)
+        for o in per_gpu_requests
+    )
+    total_tokens_per_second_per_gpu = (
+        (full_input + full_output) / full_span / num_gpus
+        if num_gpus and per_gpu_requests and full_span > 0
+        else None
+    )
+
     # Per-request outlier rejection via Iglewicz-Hoaglin modified z-score.
     # Applied independently to each latency series so one noisy metric
     # doesn't mask a clean one. Only active when the caller opts in
@@ -691,6 +759,10 @@ def calculate_metrics(
         itl_ms=StandardPercentileMetrics(itls, scale_factor=1000.0, unit="ms")
         if itls
         else None,
+        interactivity_tok_s=interactivity,
+        full_response_interactivity_tok_s=full_response_interactivity,
+        e2e_normalized_interactivity_tok_s=e2e_interactivity,
+        total_tokens_per_second_per_gpu=total_tokens_per_second_per_gpu,
         max_input=max_input,
         max_output=max_output,
         max_total=max_total,
@@ -710,6 +782,7 @@ def calculate_metrics(
     return BenchmarkResult(
         task_type="text",
         max_concurrency=max_concurrency or len(outputs),
+        num_gpus=num_gpus,
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
@@ -876,6 +949,7 @@ def build_text_generation_result(
     outputs_by_session: Mapping[str, Sequence[RequestFuncOutput]] | None = None,
     steady_state_filtering: bool = True,
     goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result for text-generation tasks.
 
@@ -911,6 +985,10 @@ def build_text_generation_result(
     With ``goodput_targets``, the result also reports ``request_goodput`` and
     ``goodput_attainment`` over the same requests and duration as
     ``request_throughput``.
+
+    ``num_gpus`` (the number of GPUs the server used) derives
+    ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
+    result; ``None`` leaves both unreported.
     """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
@@ -1016,6 +1094,7 @@ def build_text_generation_result(
             record_request_text=record_request_text,
             all_outputs=outputs,
             goodput_targets=goodput_targets,
+            num_gpus=num_gpus,
         )
 
         # Diagnostic: number of per-request TTFT outliers rejected in the
@@ -1069,6 +1148,7 @@ def build_text_generation_result(
             record_request_text=record_request_text,
             all_outputs=outputs,
             goodput_targets=goodput_targets,
+            num_gpus=num_gpus,
         )
 
     for warn in text_metrics.confidence_warnings():

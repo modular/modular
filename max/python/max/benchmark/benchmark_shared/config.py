@@ -536,6 +536,21 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
+    num_gpus: int | None = Field(
+        default=None,
+        # The value divides total throughput, so anything non-positive would
+        # surface as a zero or negative per-GPU figure instead of failing at
+        # the config boundary.
+        gt=0,
+        description=(
+            "Number of GPUs the target server uses. The sweep harness sets"
+            " this from the backend's parallel sizes; set it manually when"
+            " benchmarking an external endpoint so per-GPU throughput is"
+            " reported."
+        ),
+        json_schema_extra={"group": "Backend and API Configuration"},
+    )
+
     # Request configuration (serving-specific)
     max_concurrency: Sequence[int | None] = Field(
         default=[None],

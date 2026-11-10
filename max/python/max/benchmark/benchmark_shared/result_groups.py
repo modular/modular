@@ -35,7 +35,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from max.benchmark.benchmark_shared.percentile_metrics import PercentileMetrics
+from max.benchmark.benchmark_shared.percentile_metrics import (
+    InteractivityMetrics,
+    PercentileMetrics,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 # Keep in sync with ``metrics.BenchmarkType`` (defined there to avoid a
@@ -54,6 +57,9 @@ class SummaryGroup(BaseModel):
 
     task_type: BenchmarkType | None = None
     max_concurrency: int | None = None
+    # GPUs the server used; the divisor behind
+    # ``total_tokens_per_second_per_gpu``. ``None`` when unknown.
+    num_gpus: int | None = None
     duration: float | None = None
     completed: int | None = None
     failures: int | None = None
@@ -67,6 +73,10 @@ class SummaryGroup(BaseModel):
     goodput_tpot_ms: float | None = None
     goodput_e2el_ms: float | None = None
     aggregate_tokens_per_minute: float | None = None
+    # (input + output) tokens/s over the measured window per GPU the server
+    # used. ``None`` when the GPU count is unknown or the window carried no
+    # tokens.
+    total_tokens_per_second_per_gpu: float | None = None
     mean_ttft_ms: float | None = None
     mean_tpot_ms: float | None = None
     mean_itl_ms: float | None = None
@@ -137,6 +147,14 @@ class ThroughputStatsGroup(BaseModel):
 
     input_throughput: PercentileMetrics | None = None
     output_throughput: PercentileMetrics | None = None
+    # Per-user interactivity, in tokens/s. ``interactivity_tok_s`` is
+    # content-bounded (first to last content chunk, TTFT excluded);
+    # ``full_response_interactivity_tok_s`` spans to request completion on
+    # the TPOT basis; ``e2e_normalized_interactivity_tok_s`` is content
+    # bounded with TTFT included.
+    interactivity_tok_s: InteractivityMetrics | None = None
+    full_response_interactivity_tok_s: InteractivityMetrics | None = None
+    e2e_normalized_interactivity_tok_s: InteractivityMetrics | None = None
 
 
 class CacheStatsGroup(BaseModel):

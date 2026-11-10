@@ -821,6 +821,7 @@ async def benchmark(
             outputs_by_session=outputs_by_session,
             steady_state_filtering=args.steady_state_filtering,
             goodput_targets=args.goodput_targets,
+            num_gpus=args.num_gpus,
         )
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics

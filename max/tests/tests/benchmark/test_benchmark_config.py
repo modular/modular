@@ -389,6 +389,32 @@ class TestSeedDefaultAndOverride:
         assert parse_args(["--model", "m", "--seed", value]).seed is None
 
 
+class TestNumGpusValidation:
+    """``num_gpus`` divides total throughput, so only positive counts parse."""
+
+    def test_positive_count_is_kept(self) -> None:
+        """A real GPU count parses and round-trips."""
+        assert ServingBenchmarkConfig(num_gpus=4).num_gpus == 4
+
+    def test_unset_stays_none(self) -> None:
+        """The default leaves per-GPU throughput unreported, not divided."""
+        assert ServingBenchmarkConfig().num_gpus is None
+
+    @pytest.mark.parametrize("value", [0, -1, -8])
+    def test_non_positive_count_is_rejected(self, value: int) -> None:
+        """Zero or negative counts fail at the config boundary rather than
+        dividing through into a degenerate per-GPU figure."""
+        with pytest.raises(ValidationError):
+            ServingBenchmarkConfig(num_gpus=value)
+
+    def test_assignment_is_revalidated(self) -> None:
+        """Workload YAML application assigns fields, so the bound must hold
+        there too, not only at construction."""
+        config = ServingBenchmarkConfig(num_gpus=2)
+        with pytest.raises(ValidationError):
+            config.num_gpus = 0
+
+
 class TestRenamedWarmupOption:
     """``--warmup-to-steady-state`` became ``--warmup-multiturn``; the old name
     keeps its meaning everywhere an option can be set, with a warning."""

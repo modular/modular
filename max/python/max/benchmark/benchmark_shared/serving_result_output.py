@@ -59,6 +59,7 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.percentile_metrics import (
+    InteractivityMetrics,
     json_safe,
 )
 from max.benchmark.benchmark_shared.server_metrics import print_server_metrics
@@ -420,6 +421,13 @@ class PercentileRow(NamedTuple):
     metrics: _PercentileLike
 
 
+class InteractivityRow(NamedTuple):
+    """A labeled interactivity metric for the interactivity summary table."""
+
+    label: str
+    metrics: InteractivityMetrics
+
+
 def format_gpu_statistics_title(n_devices: int) -> str:
     """Section title stating GPU rows are derived across the sampled devices."""
     assert n_devices > 0, "GPU statistics title requires at least one device"
@@ -444,6 +452,40 @@ def format_percentile_table(rows: Sequence[PercentileRow]) -> str:
             f"{row.metrics.p90:.2f}",
             f"{row.metrics.p95:.2f}",
             f"{row.metrics.p99:.2f}",
+        ]
+        for row in rows
+    ]
+    return tabulate(
+        table,
+        headers=headers,
+        tablefmt="simple_outline",
+        colalign=("left", *("right",) * (len(headers) - 1)),
+        disable_numparse=True,
+    )
+
+
+def format_interactivity_table(rows: Sequence[InteractivityRow]) -> str:
+    """Render interactivity stats as one table, one row per metric.
+
+    Interactivity carries the mean and the 50th/75th/90th/95th/99th
+    percentiles but no std, so it gets its own column set rather than the
+    Mean/Std/P50/P90/P95/P99 layout of the percentile table.
+    """
+    headers = ["Metric", "Mean", "P50", "P75", "P90", "P95", "P99"]
+    table = [
+        [
+            row.label,
+            *(
+                f"{value:.2f}"
+                for value in (
+                    row.metrics.mean,
+                    row.metrics.p50,
+                    row.metrics.p75,
+                    row.metrics.p90,
+                    row.metrics.p95,
+                    row.metrics.p99,
+                )
+            ),
         ]
         for row in rows
     ]
@@ -562,6 +604,13 @@ def print_benchmark_summary(
                 summary.aggregate_tokens_per_minute,
             )
         )
+    if summary.total_tokens_per_second_per_gpu is not None:
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Total throughput per GPU (tok/s):",
+                summary.total_tokens_per_second_per_gpu,
+            )
+        )
 
     # Each line prints only when its feature was used: a run without it would
     # otherwise carry a permanent "0.00%" for something it never sent.
@@ -631,12 +680,35 @@ def print_benchmark_summary(
             )
             if pm is not None
         ]
-        if throughput_rows:
+        interactivity_rows = [
+            InteractivityRow(label, im)
+            for label, im in (
+                ("Interactivity (tok/s)", throughput.interactivity_tok_s),
+                (
+                    "Full-response interactivity (tok/s)",
+                    throughput.full_response_interactivity_tok_s,
+                ),
+                (
+                    "E2E normalized interactivity (tok/s)",
+                    throughput.e2e_normalized_interactivity_tok_s,
+                ),
+            )
+            if im is not None
+        ]
+        if throughput_rows or interactivity_rows:
             print_section(title="Throughput Stats")
+        if throughput_rows:
             print(format_percentile_table(throughput_rows))
             print(
                 "  Throughput P90/P95/P99 are reversed"
                 " (bottom 10/5/1%; higher is better)"
+            )
+        if interactivity_rows:
+            print(format_interactivity_table(interactivity_rows))
+            print(
+                "  Interactivity is content-bounded (first to last content"
+                " chunk); full-response spans to request completion; E2E"
+                " normalized is content-bounded with TTFT included"
             )
 
     cache = groups.cache_stats

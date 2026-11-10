@@ -40,6 +40,7 @@ from max.benchmark.benchmark_shared.backend_metric_names import (
 from max.benchmark.benchmark_shared.percentile_metrics import (
     ConfidenceInfo,
     ConfidenceLevel,
+    InteractivityMetrics,
     Metrics,
     PercentileMetrics,
     _is_finite_and_positive,
@@ -61,6 +62,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 __all__ = [
     "ConfidenceInfo",
     "ConfidenceLevel",
+    "InteractivityMetrics",
     "Metrics",
     "PercentileMetrics",
     "build_result_groups",
@@ -269,6 +271,50 @@ class RatePercentileMetrics(StandardPercentileMetrics):
         if m < 0 or m > upper_bound:
             return False, [f"Mean {m} outside [0, {upper_bound}]"]
         return True, []
+
+
+def interactivity_from_per_request_durations(
+    durations_s: list[float],
+) -> InteractivityMetrics | None:
+    """Builds interactivity stats by inverting per-request duration statistics.
+
+    ``durations_s`` holds one per-request seconds-per-token value (a
+    per-request inter-token latency, or an end-to-end latency divided by the
+    request's output token count). Each statistic of the returned
+    :class:`InteractivityMetrics` is the reciprocal of the same statistic
+    over the values -- ``mean`` is ``1 / mean(x)``, ``p90`` is ``1 / p90(x)``
+    -- which yields tokens per second. The published interactivity
+    definition is this reciprocal of a statistic, never a statistic of
+    per-request rates: ``1 / mean(x)`` differs from ``mean(1 / x)`` whenever
+    the per-request values differ.
+
+    Percentiles use linear interpolation (numpy's default method), matching
+    the ``percentile`` helper of the public InferenceX repository
+    (github.com/SemiAnalysisAI/InferenceX,
+    ``inferencex-e2e/infx/results/agentic/common.py``).
+
+    Non-finite and non-positive values are dropped, as InferenceX drops them
+    per record. Returns ``None`` when nothing remains.
+    """
+    values = [v for v in durations_s if math.isfinite(v) and v > 0.0]
+    if not values:
+        return None
+    stats = {
+        "mean": float(np.mean(values)),
+        "p50": float(np.percentile(values, 50)),
+        "p75": float(np.percentile(values, 75)),
+        "p90": float(np.percentile(values, 90)),
+        "p95": float(np.percentile(values, 95)),
+        "p99": float(np.percentile(values, 99)),
+    }
+    return InteractivityMetrics(
+        mean=1.0 / stats["mean"],
+        p50=1.0 / stats["p50"],
+        p75=1.0 / stats["p75"],
+        p90=1.0 / stats["p90"],
+        p95=1.0 / stats["p95"],
+        p99=1.0 / stats["p99"],
+    )
 
 
 @dataclass
@@ -608,6 +654,24 @@ class TextGenAggregates(_CompletedRunBase):
     itl_ms: StandardPercentileMetrics | None = Field(
         default=None, json_schema_extra={"phase": "decode"}
     )
+    # Per-user decode interactivity, from the content-bounded per-request
+    # inter-token latency (``sum(itl) / (output_tokens - 1)``): tokens/s,
+    # TTFT excluded. ``None`` when no request produced a sample.
+    # Decode-phase: absent on prefill-only runs.
+    interactivity_tok_s: InteractivityMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
+    )
+    # Full-response interactivity, from the per-request TPOT basis
+    # (``(latency - TTFT) / (output_tokens - 1)``, which spans first token to
+    # request completion): tokens/s, TTFT excluded. ``None`` when no request
+    # produced a sample. Decode-phase: absent on prefill-only runs.
+    full_response_interactivity_tok_s: InteractivityMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
+    )
+    # End-to-end normalized interactivity, from the content-bounded
+    # per-request e2e latency (``(TTFT + sum(itl)) / output_tokens``):
+    # tokens/s, TTFT included. ``None`` when no request produced a sample.
+    e2e_normalized_interactivity_tok_s: InteractivityMetrics | None = None
 
     # ``ttft_ms`` / ``tpot_ms`` restricted to the requests that carried a
     # ``response_format`` and to those that did not; the constrained-decoding
@@ -662,6 +726,12 @@ class TextGenAggregates(_CompletedRunBase):
     # rather than existing only inside ``to_result_dict``. ``nan`` when
     # duration is non-positive (degenerate / fully-skipped runs).
     aggregate_tokens_per_minute: float = float("nan")
+    # (input + output) tokens/s over the full span of all successful
+    # requests (skip trims and the steady-state window ignored), divided by
+    # the number of GPUs the server used -- the per-GPU total token
+    # throughput published by agentic serving benchmarks. ``None`` when the
+    # GPU count is unknown (see ``BenchmarkResult.num_gpus``).
+    total_tokens_per_second_per_gpu: float | None = None
 
     # Global: SUM(cached_tokens) / SUM(prompt_tokens).
     global_cached_token_rate: float
@@ -777,6 +847,23 @@ class TextGenAggregates(_CompletedRunBase):
         if self.step_tpot_ms is not None:
             d.update(self.step_tpot_ms.to_flat_dict("step_tpot_ms"))
             d.update(self.step_tpot_ms.confidence_to_flat_dict("step_tpot_ms"))
+        for name, im in [
+            ("interactivity_tok_s", self.interactivity_tok_s),
+            (
+                "full_response_interactivity_tok_s",
+                self.full_response_interactivity_tok_s,
+            ),
+            (
+                "e2e_normalized_interactivity_tok_s",
+                self.e2e_normalized_interactivity_tok_s,
+            ),
+        ]:
+            if im is not None:
+                d.update(im.to_flat_dict(name))
+        if self.total_tokens_per_second_per_gpu is not None:
+            d["total_tokens_per_second_per_gpu"] = (
+                self.total_tokens_per_second_per_gpu
+            )
         if self.per_turn_cached_token_rate is not None:
             d.update(
                 self.per_turn_cached_token_rate.to_flat_dict(
@@ -816,6 +903,15 @@ class TextGenAggregates(_CompletedRunBase):
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
             ("step_tpot_ms", self.step_tpot_ms),
+            ("interactivity_tok_s", self.interactivity_tok_s),
+            (
+                "full_response_interactivity_tok_s",
+                self.full_response_interactivity_tok_s,
+            ),
+            (
+                "e2e_normalized_interactivity_tok_s",
+                self.e2e_normalized_interactivity_tok_s,
+            ),
             ("ttft_ms_constrained", self.ttft_ms_constrained),
             ("ttft_ms_unconstrained", self.ttft_ms_unconstrained),
             ("tpot_ms_constrained", self.tpot_ms_constrained),
@@ -912,6 +1008,12 @@ class BenchmarkResult(BaseModel):
     )
     task_type: BenchmarkType
     max_concurrency: int
+    # Number of GPUs the server used. The sweep harness sets it from the
+    # backend's parallel sizes (and a single-GPU server that omitted them
+    # counts as one); a run against an external endpoint takes it from
+    # ``--num-gpus``. ``None`` when unknown, which leaves
+    # ``text_data.total_tokens_per_second_per_gpu`` unreported.
+    num_gpus: int | None = None
 
     # Common per-iteration sampling. Populated regardless of success.
     peak_gpu_memory_mib: list[float] = Field(default_factory=list)
@@ -1155,6 +1257,8 @@ class BenchmarkResult(BaseModel):
             "available_gpu_memory_mib": self.available_gpu_memory_mib,
             "gpu_utilization": self.gpu_utilization,
         }
+        if self.num_gpus is not None:
+            d["num_gpus"] = self.num_gpus
         if self.gpu_utilization_by_group:
             d["gpu_utilization_by_group"] = self.gpu_utilization_by_group
         if self.cpu_metrics is not None:
@@ -1263,6 +1367,7 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
     summary = SummaryGroup(
         task_type=result.task_type,
         max_concurrency=result.max_concurrency,
+        num_gpus=result.num_gpus,
         duration=agg.duration if agg else None,
         completed=agg.completed if agg else None,
         failures=agg.failures if agg else None,
@@ -1276,6 +1381,9 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         goodput_e2el_ms=text_data.goodput_e2el_ms if text_data else None,
         aggregate_tokens_per_minute=(
             text_data.aggregate_tokens_per_minute if text_data else None
+        ),
+        total_tokens_per_second_per_gpu=(
+            text_data.total_tokens_per_second_per_gpu if text_data else None
         ),
         mean_ttft_ms=(
             text_data.ttft_ms.mean if text_data and text_data.ttft_ms else None
@@ -1335,6 +1443,13 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         throughput_stats = ThroughputStatsGroup(
             input_throughput=text_data.input_throughput,
             output_throughput=text_data.output_throughput,
+            interactivity_tok_s=text_data.interactivity_tok_s,
+            full_response_interactivity_tok_s=(
+                text_data.full_response_interactivity_tok_s
+            ),
+            e2e_normalized_interactivity_tok_s=(
+                text_data.e2e_normalized_interactivity_tok_s
+            ),
         )
         cache_stats = CacheStatsGroup(
             global_cached_token_rate=text_data.global_cached_token_rate,
