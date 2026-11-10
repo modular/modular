@@ -59,6 +59,8 @@ from std.sys import (
 from std.sys.info import _TargetType
 from std.sys.info import is_gpu
 from std.time import monotonic
+from std.runtime import parallelism_level
+from std.runtime._asyncrt import TaskGroup
 from ..hal import (
     Buffer,
     Context,
@@ -245,29 +247,58 @@ def _driver_satisfies_api(driver_name: String, api: String) -> Bool:
     return d == a
 
 
-def _load_gpu_driver() -> Optional[ArcPointer[Driver]]:
-    """Loads the accelerator plugin named by `MODULAR_DRIVER_PLUGINS`.
+def _load_driver[api: StaticString]() -> Optional[ArcPointer[Driver]]:
+    """Loads the first plugin in `MODULAR_DRIVER_PLUGINS` that satisfies `api`.
 
-    Used as the one-time initializer for `_GPU_DRIVER`; see that global. It
-    backs a `_Global` initializer, so it must not raise: a missing or
-    unloadable plugin is reported as an empty `Optional`.
+    The one-time initializer for `_GPU_DRIVER` and `_CPU_DRIVER`. It backs a
+    `_Global` initializer, so it must not raise: a missing or unloadable plugin
+    is reported as an empty `Optional`.
+
+    Parameters:
+        api: `"gpu"` for the accelerator plugin, `"cpu"` for the CPU plugin.
     """
     var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
     if not plugin_spec:
         return None
     try:
-        # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so"); load the
-        # first accelerator (non-CPU) entry.
+        # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so").
         for entry in plugin_spec.split(";"):
             var name = String(entry.split("@")[0])
-            if _driver_satisfies_api(name, "gpu"):
+            if _driver_satisfies_api(name, api):
                 return Optional(Driver.create(String(entry)))
         return None
     except:
         return None
 
 
-comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_gpu_driver]
+comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_driver["gpu"]]
+
+# CPU kernels create a CPU context per call (`sync_parallelize` does when it is
+# given none), so loading the plugin per context would put a `dlopen` and a
+# symbol lookup per entry point on every CPU kernel launch.
+comptime _CPU_DRIVER = _Global["MODULAR_HAL_CPU_DRIVER", _load_driver["cpu"]]
+
+
+def _load_cpu_device() -> (
+    Optional[ArcPointer[_HALDevice[get_device_spec[0]()]]]
+):
+    """Opens device 0 of the CPU plugin; the initializer for `_CPU_DEVICE`.
+
+    It backs a `_Global` initializer, so it must not raise: a missing plugin or
+    device is reported as an empty `Optional`.
+    """
+    try:
+        var maybe_driver = _CPU_DRIVER.get_or_create_ptr()
+        if case .Some(driver) = maybe_driver[]:
+            return Optional(driver[].get_device[0]())
+        return None
+    except:
+        return None
+
+
+# Opening a device also resolves its extension symbols, so a CPU context per
+# kernel call would repeat those lookups too.
+comptime _CPU_DEVICE = _Global["MODULAR_HAL_CPU_DEVICE", _load_cpu_device]
 
 
 def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
@@ -664,7 +695,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         self._handle = None
         if not _driver_satisfies_api(String(chosen.split("@")[0]), "gpu"):
-            self._driver = Driver.create(chosen)
+            var maybe_cpu_driver = _CPU_DRIVER.get_or_create_ptr()
+            if case .Some(driver) = maybe_cpu_driver[]:
+                self._driver = driver
+            else:
+                # `_Global` init drops the load error; reload to raise it.
+                _ = Driver.create(chosen)
+                raise Error(String(t"failed to load CPU plugin '{chosen}'"))
 
             # Validate that the loaded plugin satisfies the requested api (its
             # concrete vendor name, or the generic accelerator alias "gpu").
@@ -676,7 +713,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                         t" {driver_name}"
                     )
                 )
-            self._device = self._driver[].get_device[0]()
+            var maybe_cpu_device = _CPU_DEVICE.get_or_create_ptr()
+            if case .Some(device) = maybe_cpu_device[]:
+                self._device = device
+            else:
+                # `_Global` init drops the open error; reopen to raise it.
+                self._device = self._driver[].get_device[0]()
         else:
             # Shared so peer calls get both contexts from one driver.
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
@@ -2246,11 +2288,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """Runs a function closure over a 1D range on a CPU `DeviceContext`.
 
         The function is called as `func(i)` for each `i` in `range(count)`.
+        Instances run in parallel on the AsyncRT worker threads, but it is not
+        guaranteed that all instances run at the same time.
 
         The HAL backend has no host-function enqueue plugin entry, so the range
-        runs serially and synchronously here; `synchronize()` is then a no-op
-        for this work. Results match the legacy backend; only the parallelism
-        differs.
+        runs synchronously here: it returns when every instance is done, and
+        `synchronize()` is then a no-op for this work.
 
         Parameters:
             FuncType: The type of function to execute.
@@ -2266,8 +2309,24 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             raise Error(
                 "enqueue_cpu_range is only supported on CPU DeviceContexts"
             )
-        for i in range(count):
+        if count <= 0:
+            return
+        if count == 1:
+            func(0)
+            return
+
+        @inline(.always)
+        __async def run(i: Int) {imm} -> None:
             func(i)
+
+        # Spread instances over the workers the way the legacy CPU context
+        # does. Running one on this thread instead measured slower: a worker
+        # that waits here leaves its own queued instance to be stolen late.
+        var num_workers = max(parallelism_level(), 1)
+        var group = TaskGroup()
+        for i in range(count):
+            group._create_task(run(i), desired_worker_id=i % num_workers)
+        group.wait[origin_of(func)._mlir_origin]()
 
     @inline(.always)
     def execution_time[
