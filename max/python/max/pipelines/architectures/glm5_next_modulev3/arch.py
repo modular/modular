@@ -19,13 +19,6 @@ the same checkpoint and the same cache tree.
 from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.glm5_1.reasoning import (  # noqa: F401  registers "glm45"
-    GlmReasoningParser,
-)
-from max.pipelines.architectures.glm5_1.tokenizer import GlmTokenizer
-from max.pipelines.architectures.glm5_1.tool_parser import (  # noqa: F401  registers "glm45"
-    GlmToolParser,
-)
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
@@ -33,6 +26,9 @@ from max.pipelines.modeling.types import PipelineTask
 from .memory_planner import Glm5NextMemoryPlanner
 from .model_config import Glm5NextConfig
 from .modules import Glm5NextDecoder
+from .reasoning import GlmReasoningParser  # noqa: F401  registers "glm5_next"
+from .text_tokenizer import GlmTokenizer
+from .tool_parser import GlmToolParser  # noqa: F401  registers "glm5_next"
 from .weight_adapters import glm5_next_weight_rules
 
 __all__ = ["glm5_next_modulev3_arch"]
@@ -62,8 +58,8 @@ glm5_next_modulev3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
-    tool_parser="glm45",
-    reasoning_parser="glm45",
+    tool_parser="glm5_next",
+    reasoning_parser="glm5_next",
     default_structured_output_backend="xgrammar",
     default_structured_output_any_whitespace=True,
     supports_device_graph_capture=True,

@@ -20,10 +20,8 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.pipelines.architectures.glm5_next.quantization import (
-    Glm5NextQuantScheme,
-    parse_quant_scheme,
-)
+
+from .quantization import Glm5NextQuantScheme, parse_quant_scheme
 
 _HC_FN_SUFFIX = ".hc_fn"
 _V3_SCALE = re.compile(

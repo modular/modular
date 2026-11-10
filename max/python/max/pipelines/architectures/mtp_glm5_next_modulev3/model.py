@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from max import functional as F
+from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MultiKVCacheParams
@@ -50,7 +51,6 @@ from ..glm5_next_modulev3.mtp import Glm5NextMTP
 from ..glm5_next_modulev3.weight_adapters import (
     glm5_next_with_mtp_weight_rules,
 )
-from ..mtp_glm5_next.model import MTPGlm5NextDraftArchConfig
 
 __all__ = ["MTPGlm5NextModuleV3DraftArchConfig"]
 
@@ -59,9 +59,9 @@ __all__ = ["MTPGlm5NextModuleV3DraftArchConfig"]
 class MTPGlm5NextModuleV3DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
     """The ModuleV3 draft's config, which builds its module.
 
-    Its sequence bound and its lack of a KV leaf are the graph-API draft's:
-    the layer writes the last slot of the target's latent, indexer and tail
-    ring caches.
+    It records the draft's sequence bound and declares no KV leaf: the layer
+    writes the last slot of the target's latent, indexer and tail ring
+    caches.
     """
 
     max_seq_len: int
@@ -87,20 +87,28 @@ class MTPGlm5NextModuleV3DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> None:
-        """Returns ``None``, as the graph-API draft does.
+        """Returns ``None``, because the layer writes into the target's caches.
 
-        It does so on the accelerators the draft builds for.
+        It writes the last slot of the target's latent, indexer and tail ring
+        caches, which the target's config declares when it speculates.
 
         Raises:
             ValueError: If the accelerator is neither an NVIDIA GPU nor a
-                gfx950 AMD GPU.
+                gfx950 AMD GPU, the only AMD target the KDA ops build for.
         """
-        MTPGlm5NextDraftArchConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
+        del huggingface_config, pipeline_config, devices
+        del kv_cache_config, cache_dtype
+        api = accelerator_api()
+        if api == "cuda":
+            return
+        if api == "hip" and accelerator_architecture_name().startswith(
+            "gfx950"
+        ):
+            return
+        raise ValueError(
+            "GLM-5.3-Flash MTP runs only on NVIDIA and gfx950 GPUs, and this"
+            f" host's accelerator API is {api!r}. Serve it without"
+            " --speculative-method."
         )
 
     @classmethod

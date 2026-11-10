@@ -14,12 +14,14 @@
 
 The ModuleV3 arch must default the same serving-layer request-handling
 features as its graph counterpart: tool-call parsing, reasoning parsing, and
-the structured-output (constrained decoding) backend. The parsers themselves
-live at the serving layer and are shared; only the ``SupportedArchitecture``
-defaults differ per registration.
+the structured-output (constrained decoding) backend. The parsers live at the
+serving layer, where most pairs share them; GLM-5.3-Flash's ModuleV3 arch
+registers its own copies of the GLM-5.x parsers.
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 from max.pipelines.architectures.deepseekV3_2.arch import deepseekV3_2_arch
@@ -56,7 +58,6 @@ from max.pipelines.lib.registry import SupportedArchitecture
             deepseekV3_2_modulev3_arch,
             id="deepseekV3_2",
         ),
-        pytest.param(glm5_next_arch, glm5_next_modulev3_arch, id="glm5_next"),
     ],
 )
 def test_request_handling_parity(
@@ -132,8 +133,42 @@ def test_glm5_next_modulev3_registration_parity() -> None:
         "multi_gpu_supported",
         "supports_empty_batches",
         "requires_max_batch_context_length",
+        "default_structured_output_backend",
         "default_structured_output_any_whitespace",
     ):
         assert getattr(glm5_next_modulev3_arch, field) == getattr(
             glm5_next_arch, field
         ), field
+
+
+def test_glm5_next_modulev3_parsers_are_its_own() -> None:
+    """The ModuleV3 arch registers its own copies of the GLM-5.x parsers.
+
+    They parse the format the graph arch's "glm45" parsers do, under a name
+    of their own, so neither registration replaces the other's.
+    """
+    assert glm5_next_modulev3_arch.tool_parser == "glm5_next"
+    assert glm5_next_modulev3_arch.reasoning_parser == "glm5_next"
+    assert reasoning.get_parser_cls("glm5_next") is not None
+    response = (
+        "Checking.<tool_call>get_weather"
+        "<arg_key>city</arg_key><arg_value>Paris</arg_value>"
+        "<arg_key>days</arg_key><arg_value>3</arg_value>"
+        "</tool_call>"
+    )
+    parsed = []
+    for name in ("glm5_next", "glm45"):
+        parser_cls = tool_parsing.get_parser_cls(name)
+        assert parser_cls is not None
+        result = parser_cls().parse_complete(response)
+        parsed.append(
+            (
+                result.content,
+                [(c.name, json.loads(c.arguments)) for c in result.tool_calls],
+            )
+        )
+    assert parsed[0] == parsed[1]
+    assert parsed[0] == (
+        "Checking.",
+        [("get_weather", {"city": "Paris", "days": 3})],
+    )

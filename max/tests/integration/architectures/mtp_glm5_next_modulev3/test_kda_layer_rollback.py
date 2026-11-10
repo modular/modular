@@ -13,8 +13,7 @@
 """One ModuleV3 KDA layer's verify and rollback against decoding the accepted
 tokens.
 
-The graph-API test's (``mtp_glm5_next/test_kda_layer_rollback.py``) on the
-ModuleV3 layer. The speculative arm runs the layer over each request's
+The speculative arm runs the layer over each request's
 ``K + 1`` window with the verify bound, then the rollback over the accepted
 count. The base arm runs the same layer on its own copy of the pools, one
 decode step per accepted token. Both pools must match exactly, which holds
@@ -44,22 +43,24 @@ from max.graph import (
 from max.nn import Module
 from max.nn._graph_ops.state_space import verify_width_operand
 from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
-from max.pipelines.architectures.glm5_next.layers.kda import KdaReplayInputs
-from max.pipelines.architectures.glm5_next.spec_state import (
-    fold_kda_state_pools,
-)
-from max.pipelines.architectures.glm5_next.state_cache import (
-    VERIFY_RING_LEAF_ID,
-    state_regions,
-    with_verify_ring,
-)
 from max.pipelines.architectures.glm5_next_modulev3.layers.kda import (
     KdaStateAccess,
     KdaVerify,
     KimiDeltaAttention,
 )
+from max.pipelines.architectures.glm5_next_modulev3.layers.kda_replay import (
+    KdaReplayInputs,
+)
 from max.pipelines.architectures.glm5_next_modulev3.model_config import (
     Glm5NextConfig,
+)
+from max.pipelines.architectures.glm5_next_modulev3.spec_state import (
+    fold_kda_state_pools,
+)
+from max.pipelines.architectures.glm5_next_modulev3.state_cache import (
+    VERIFY_RING_LEAF_ID,
+    state_regions,
+    with_verify_ring,
 )
 from max.pipelines.speculative.gated_delta_rollback import accepted_lengths
 from max.tensor import Tensor, default_device, default_dtype

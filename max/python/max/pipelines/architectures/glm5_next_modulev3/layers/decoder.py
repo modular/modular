@@ -29,8 +29,8 @@ from max.nn.legacy.comm.ep import EPCommBuffers
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Sharded, auto_reshard
 
-from ...deepseekV3_2_modulev3.layers.moe import DeepseekV3_2TensorParallelMoE
 from ..model_config import Glm5NextConfig
+from .mlp import Glm5NextTensorParallelMoE
 
 __all__ = ["Glm5NextDecoderLayer", "feed_forward", "write_back"]
 
@@ -65,7 +65,7 @@ def feed_forward(
 ) -> Tensor:
     """Runs a feed-forward block on the normalized ``h``, replicated out."""
     replicated = DeviceMapping.replicated(h.mesh)
-    if isinstance(mlp, DeepseekV3_2TensorParallelMoE):
+    if isinstance(mlp, Glm5NextTensorParallelMoE):
         # Its experts are split by columns, so every device needs every
         # row. Its float32 combine is a sum of per-device partials, and
         # casting it back to bfloat16 needs the sum: let that cast

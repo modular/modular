@@ -12,13 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Kimi Delta Attention, GLM-5.3-Flash's 34 linear-attention layers.
 
-The graph-API layer
-(:mod:`max.pipelines.architectures.glm5_next.layers.kimi_delta_attention`)
-documents the math and the three orderings that are wrong silently. This module
-keeps all three: the conv channels are q, k, v in that order, the gated norm
-normalizes before it gates, and tensor parallelism splits heads *within* each
-of q, k and v -- which is why the three conv weights stay separate tensors here
-and are concatenated per device, not sharded as one.
+Three orderings are wrong silently, and this module keeps all three: the conv
+channels are q, k, v in that order, the gated norm normalizes before it gates,
+and tensor parallelism splits heads *within* each of q, k and v -- which is why
+the three conv weights stay separate tensors here and are concatenated per
+device, not sharded as one.
 """
 
 from __future__ import annotations
@@ -48,12 +46,12 @@ from max.nn._graph_ops.state_space.kimi_delta import (
 )
 from max.nn.common_layers.linear import col_parallel, row_parallel
 from max.nn.common_layers.mesh_axis import TP
-from max.pipelines.architectures.glm5_next.layers.kda import KdaReplayInputs
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
 from max.tensor.sharding.action import PerShard
 
 from ..model_config import Glm5NextConfig
+from .kda_replay import KdaReplayInputs
 
 __all__ = ["CaptureSink", "KdaStateAccess", "KdaVerify", "KimiDeltaAttention"]
 

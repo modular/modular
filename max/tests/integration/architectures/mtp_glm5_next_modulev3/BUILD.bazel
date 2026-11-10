@@ -28,9 +28,12 @@ modular_py_test(
     name = "test_arch_selection",
     srcs = ["test_arch_selection.py"],
     # The architecture registry imports them by name, so pydeps sees them as
-    # unused.
+    # unused. The graph-API pair is here for the pairing test that checks it
+    # is unchanged.
     ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_glm5_next_modulev3",
     ],
     target_compatible_with = select({
@@ -39,7 +42,9 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_glm5_next_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -70,7 +75,6 @@ modular_py_test(
         "//max/python/max/nn:core",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
         "//max/python/max/pipelines/architectures/mtp_glm5_next_modulev3",
         "//max/python/max/pipelines/lib",
@@ -107,9 +111,12 @@ modular_py_test(
         "//:nvidia_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # The architecture registry imports it by name, so pydeps sees it as
-    # unused.
+    # The architecture registry imports them by name, so pydeps sees them as
+    # unused. It resolves the ModuleV3 target and draft through the
+    # graph-API names, so the graph-API pair is imported too.
     ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_glm5_next_modulev3",
     ],
     # The MTP run's graphs compile in a CPU build action. The record stops
@@ -132,6 +139,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_glm5_next_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -161,7 +169,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/kv_cache",
-        "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/glm5_next_modulev3",
         "//max/python/max/pipelines/speculative",
         requirement("numpy"),

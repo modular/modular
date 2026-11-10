@@ -36,18 +36,15 @@ from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.outputs import ReturnHiddenStates
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
-from max.pipelines.architectures.glm5_next.model_config import (
-    Glm5NextConfig as GraphGlm5NextConfig,
-)
-from max.pipelines.architectures.glm5_next.quantization import (
-    Glm5NextQuantScheme,
-)
 from max.pipelines.architectures.glm5_next_modulev3.glm5_next import Glm5Next
 from max.pipelines.architectures.glm5_next_modulev3.layers import kda
 from max.pipelines.architectures.glm5_next_modulev3.model_config import (
     Glm5NextConfig,
 )
 from max.pipelines.architectures.glm5_next_modulev3.mtp import Glm5NextMTP
+from max.pipelines.architectures.glm5_next_modulev3.quantization import (
+    Glm5NextQuantScheme,
+)
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _driver_call,
@@ -87,7 +84,7 @@ def _kv_params() -> MultiKVCacheParams:
     pipeline_config = Mock()
     pipeline_config.model.data_parallel_degree = 1
     pipeline_config.speculative = _speculative()
-    params = GraphGlm5NextConfig.construct_kv_params(
+    params = Glm5NextConfig.construct_kv_params(
         huggingface_config=SimpleNamespace(
             num_hidden_layers=len(LAYER_TYPES),
             num_attention_heads=HEADS,

@@ -13,10 +13,9 @@
 """GLM-5.3-Flash with MTP on ModuleV3 decodes the tokens greedy decoding
 without it does.
 
-The graph-API test's (``mtp_glm5_next/test_greedy_equivalence.py``) on the
-ModuleV3 pairing: a random-weight checkpoint, four layers deep, served through
-the pipeline registry twice on two GPUs, with tensor-parallel attention and an
-expert-parallel MoE. First with MTP at three drafts and device graph capture,
+A random-weight checkpoint, four layers deep, is served through the pipeline
+registry twice on two GPUs, with tensor-parallel attention and an
+expert-parallel MoE: first with MTP at three drafts and device graph capture,
 then plainly. Each token the MTP run emits must be the plain model's greedy
 choice given the MTP run's own prefix, up to a near-tie of
 :data:`NEAR_TIE_ULPS`, after which the check resumes from the MTP run's token.
@@ -46,17 +45,14 @@ from max.graph.weights import WeightData, Weights
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
-from max.pipelines.architectures.glm5_next.model_config import (
-    Glm5NextConfig as GraphGlm5NextConfig,
-)
-from max.pipelines.architectures.glm5_next.quantization import (
-    Glm5NextQuantScheme,
-)
 from max.pipelines.architectures.glm5_next_modulev3.glm5_next import Glm5Next
 from max.pipelines.architectures.glm5_next_modulev3.model_config import (
     Glm5NextConfig,
 )
 from max.pipelines.architectures.glm5_next_modulev3.mtp import Glm5NextMTP
+from max.pipelines.architectures.glm5_next_modulev3.quantization import (
+    Glm5NextQuantScheme,
+)
 from max.pipelines.architectures.glm5_next_modulev3.weight_adapters import (
     glm5_next_mtp_weight_rules,
     glm5_next_weight_rules,
@@ -253,7 +249,7 @@ def _shapes() -> tuple[
     pipeline_config.speculative = SpeculativeConfig(
         speculative_method="mtp", num_speculative_tokens=NUM_DRAFTS
     )
-    kv_params = GraphGlm5NextConfig.construct_kv_params(
+    kv_params = Glm5NextConfig.construct_kv_params(
         huggingface_config=SimpleNamespace(text_config=text_config),
         pipeline_config=pipeline_config,
         devices=[DeviceRef.GPU()],

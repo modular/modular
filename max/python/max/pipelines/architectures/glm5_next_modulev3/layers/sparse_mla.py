@@ -12,9 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """NoPE sparse MLA for GLM-5.3-Flash's 11 sparse layers, on ModuleV3.
 
-GLM-5.2's block with two changes, which the graph-API layer
-(:mod:`max.pipelines.architectures.glm5_next.layers.sparse_mla`) explains in
-full:
+GLM-5.2's block with two changes:
 
 * **NoPE.** The latent is 512 wide, but every MLA kernel compiles against 576,
   so the query and the latent are zero-padded to that geometry on the way into

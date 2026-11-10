@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """GLM-5.3-Flash's call on ModuleV3, and the MTP layer its checkpoint ships.
 
-The verify and its rollback are the graph-API model's (see
-:mod:`~max.pipelines.architectures.glm5_next.spec_adapters`): verifying K draft
-tokens advances 34 KDA recurrences and every sparse layer's indexer tail ring,
-none of which a length pointer rewinds, so the verify defers all of them and
+Verifying K draft tokens advances 34 KDA recurrences and every sparse layer's
+indexer tail ring, none of which a length pointer rewinds, so the verify defers
+all of them and
 :class:`~.spec_state.Glm5NextSpecState` rolls them onto the accepted prefix.
 The verify runs on graph values, as the driver hands them; the proposer runs on
 ``Tensor`` values, as the ModuleV3 draft takes them.
@@ -35,12 +34,6 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.outputs import ReturnHiddenStates
-from max.pipelines.architectures.glm5_next.state_cache import (
-    INDEXER_CACHE_KEY,
-    MLA_CACHE_KEY,
-    STATE_CACHE_KEY,
-    TAIL_RING_LEAF_ID,
-)
 from max.pipelines.speculative._tensor_compat import as_graph_values
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig
@@ -60,13 +53,18 @@ from max.pipelines.speculative.spec_target import DistributedVerify, Verified
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 
-from ..deepseekV3_2_modulev3.deepseekV3_2 import project_to_logits
-from ..deepseekV3_modulev3.deepseekV3 import gather_last_tokens
 from .glm5_next import Glm5Next, state_leaf
 from .layers.indexer import KPoolTail, PooledIndexer
+from .logits import gather_last_tokens, project_to_logits
 from .modules import Glm5NextDecoder
 from .mtp import Glm5NextMTP
 from .spec_state import Glm5NextSpecState
+from .state_cache import (
+    INDEXER_CACHE_KEY,
+    MLA_CACHE_KEY,
+    STATE_CACHE_KEY,
+    TAIL_RING_LEAF_ID,
+)
 
 if TYPE_CHECKING:
     from max.pipelines.speculative.driver import SequentialProposer

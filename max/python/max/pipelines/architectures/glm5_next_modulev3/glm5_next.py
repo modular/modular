@@ -38,8 +38,20 @@ from max.nn.kv_cache import (
 )
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.sequential import ModuleList
-from max.pipelines.architectures.glm5_next.model_config import SPARSE_ATTENTION
-from max.pipelines.architectures.glm5_next.state_cache import (
+from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, NamedMapping
+
+from .hybrid_layout import SPARSE_ATTENTION
+from .layers.decoder import Glm5NextDecoderLayer
+from .layers.indexer import KPoolTail
+from .layers.kda import KdaStateAccess, KimiDeltaAttention
+from .layers.mlp import build_mlp
+from .layers.norm import MultiplyBeforeCastRMSNorm
+from .layers.sparse_mla import Glm5NextSparseMLA
+from .logits import gather_last_tokens, project_to_logits
+from .model_config import Glm5NextConfig
+from .state_cache import (
     CONV_LEAF_ID,
     INDEXER_CACHE_KEY,
     MLA_CACHE_KEY,
@@ -48,19 +60,6 @@ from max.pipelines.architectures.glm5_next.state_cache import (
     STATE_CACHE_KEY,
     TAIL_RING_LEAF_ID,
 )
-from max.pipelines.lib import ModuleV3Outputs
-from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping, NamedMapping
-
-from ..deepseekV3_2_modulev3.deepseekV3_2 import project_to_logits
-from ..deepseekV3_2_modulev3.layers.rms_norm import MultiplyBeforeCastRMSNorm
-from ..deepseekV3_modulev3.deepseekV3 import gather_last_tokens
-from .layers.decoder import Glm5NextDecoderLayer
-from .layers.indexer import KPoolTail
-from .layers.kda import KdaStateAccess, KimiDeltaAttention
-from .layers.mlp import build_mlp
-from .layers.sparse_mla import Glm5NextSparseMLA
-from .model_config import Glm5NextConfig
 
 __all__ = ["Glm5Next", "Glm5NextTextModel", "state_leaf"]
 

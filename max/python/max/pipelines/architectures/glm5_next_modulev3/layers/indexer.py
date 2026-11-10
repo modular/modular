@@ -19,11 +19,12 @@ incomplete ones ride in a per-request tail ring between steps.
 
 The pooling pipeline -- close the ring's pending pool, compress whole new
 pools, stash the remainder, cache, score, expand -- is per-device graph code
-around the k-pool kernels, the same sequence the graph-API indexer
-(``deepseekV3_2.layers.indexer.Indexer._select_pooled``) runs; see it for why
-each writer runs unconditionally and in this order. The indexer is replicated:
-its head scores are summed before the top-k, so every device must select the
-same tokens.
+around the k-pool kernels. Every writer runs on every call, in that order: one
+batch mixes decode steps, almost never pool-aligned, with ragged chunked-prefill
+continuations, so no batch-wide branch can pick one writer for every request,
+and each writer acts only on its own share of each request's tokens. The
+indexer is replicated: its head scores are summed before the top-k, so every
+device must select the same tokens.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from max import functional as F
 from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue, ops
-from max.nn import Module
+from max.nn import Module, kernels
 from max.nn._graph_ops import (
     mla_fp8_index_top_k,
     mla_kpool_append,
@@ -46,22 +47,29 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_linear import QuantizedLinear
 from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
 from max.nn.norm import LayerNorm
-from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
-    KpoolTailReplayInputs,
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping
+from max.tensor.sharding import DeviceMapping, Sharded
 from max.tensor.sharding.action import PerShard
 
-from ...deepseekV3_2_modulev3.layers.indexer import (
-    act_quant,
-    indexer_act_quant_config,
-)
 from ..model_config import Glm5NextConfig
+from .indexer_inputs import KpoolTailReplayInputs
 from .kda import CaptureSink
 
-__all__ = ["KPoolTail", "PooledIndexer", "TailDeferral"]
+__all__ = [
+    "KPoolTail",
+    "PooledIndexer",
+    "TailDeferral",
+    "act_quant",
+    "indexer_act_quant_config",
+]
 
 
 @tree.dataclass(frozen=True)
@@ -299,3 +307,96 @@ class PooledIndexer(Module[..., Tensor]):
             ),
         )
         return selection.rebind_mapping(DeviceMapping.replicated(x.mesh))
+
+
+def _scales_mapping(mapping: DeviceMapping) -> DeviceMapping:
+    """The placements of the scales for an activation mapped as ``mapping``.
+
+    ``quantize_dynamic_scaled_float8`` returns scales as
+    ``[head_dim // block_size, M_padded]``, so the extent that varies from one
+    rank to the next is axis 1, not axis 0. Copying the activation's mapping
+    claims the wrong axis once ``M`` is sharded, as it is under data
+    parallelism. ``Replicated`` is kept as it is: there every rank's scales
+    buffer holds every column, which is the tensor-parallel case.
+    """
+    return DeviceMapping(
+        mapping.mesh,
+        tuple(
+            Sharded(1) if placement == Sharded(0) else placement
+            for placement in mapping.placements
+        ),
+    )
+
+
+def act_quant(
+    x: Tensor, quant_config: QuantConfig, block_size: int = 128
+) -> tuple[Tensor, Tensor]:
+    """Quantizes the activation's last axis and returns its scales."""
+    *x_dims, head_dim = x.shape
+    x = x.reshape((-1, head_dim))
+    assert int(head_dim) % block_size == 0
+
+    x_q, x_scales = kernels.quantize_dynamic_scaled_float8(
+        x,
+        quant_config.input_scale,
+        quant_config.weight_scale,
+        scales_type=DType.float8_e8m0fnu,
+        group_size_or_per_token=block_size,
+        out_type=DType.float8_e4m3fn,
+    )
+    # Both outputs take the input's placements; the scales have a different
+    # shape than the quantized tensor, which a placements-only mapping allows.
+    # The scales' per-rank extent is axis 1, so a shard of ``M`` moves there.
+    x_scales = x_scales.rebind_mapping(_scales_mapping(x.mapping))
+    x = x_q.rebind_mapping(x.mapping)
+    rows = x
+
+    # Scales layout from ``quantize_dynamic_scaled_float8`` is
+    # ``[head_dim // block_size, M_padded]``; ``M`` is padded for TMA (16-byte
+    # alignment of the scale row length). Slice to ``num_rows``, then fold
+    # multiple K-block scale rows into one per token when ``head_dim > block_size``.
+    if x_scales.is_distributed:
+        # Each device trims its own scales to its own rows. On a ``(dp, tp)``
+        # mesh a per-device row count is not a bound the slice rule can
+        # place, so the slice runs per device.
+        x_scales = F.call_on_mesh(
+            lambda scales, local: scales[:, : local.shape[0]],
+            x_scales.mesh,
+            out_specs=x_scales.mapping,
+        )(x_scales, rows)
+    else:
+        x_scales = x_scales[:, : rows.shape[0]]
+    x = x.reshape((*x_dims, head_dim))
+    num_k_groups = int(head_dim) // block_size
+    if num_k_groups > 1:
+        x_scales = F.max(x_scales, axis=0)
+    x_scales = x_scales.reshape((*x_dims, 1))
+
+    return x, x_scales
+
+
+def indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
+    """Returns the quant config used for dynamic FP8 activation quant in the indexer.
+
+    Full FP8 checkpoints reuse the model quant config. Mixed-precision paths
+    (for example NVFP4 MoE with bf16 MLA) still dynamic-quantize indexer
+    activations with block size 128.
+    """
+    if quant_config.format == QuantFormat.BLOCKSCALED_FP8:
+        return quant_config
+    return QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 128),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float32,
+            block_size=(128, 128),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        format=QuantFormat.BLOCKSCALED_FP8,
+    )

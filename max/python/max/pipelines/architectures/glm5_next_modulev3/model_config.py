@@ -12,27 +12,56 @@
 # ===----------------------------------------------------------------------=== #
 """Config for GLM-5.3-Flash (``glm5_next``) on the ModuleV3 API.
 
-The ModuleV3 configs are their own hierarchy, so this derives from the
-ModuleV3 DeepSeek-V3.2 config and carries GLM-5.3-Flash's KDA, mHC and k-pool
-fields on top. Everything that does not depend on the module API -- the hybrid
-schedule, the KDA dimensions, the three-child cache tree and the state and
-batch sizing -- is read through the graph-API
-:mod:`~max.pipelines.architectures.glm5_next.model_config` so the two
-architectures cannot size their caches or batches differently.
+Everything that does not depend on the module API -- the hybrid schedule, the
+KDA dimensions, the three-child cache tree and the state and batch sizing -- is
+read through :mod:`.hybrid_layout`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+    spec_decode_cache_slack,
+)
 from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.glm5_next.model_config import (
+from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ModelOutputConfig,
+)
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelDeploymentConfig,
+    ModuleRuntime,
+)
+from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
+from max.pipelines.weights import resolve_hf_quant_config
+from max.tensor.sharding import DeviceMesh
+from transformers import AutoConfig
+from typing_extensions import Self, override
+
+from . import hybrid_layout
+from .checkpoint import (
+    _stored_hc_fn_dtype,
+    check_raw_projections,
+    checkpoint_quant_scheme,
+)
+from .hybrid_layout import (
     LINEAR_ATTENTION,
     MLA_KERNEL_LATENT_WIDTH,
     SPARSE_ATTENTION,
@@ -41,30 +70,7 @@ from max.pipelines.architectures.glm5_next.model_config import (
     residual_bytes_per_token,
     state_bounded_batch_size,
 )
-from max.pipelines.architectures.glm5_next.model_config import (
-    Glm5NextConfig as _GraphGlm5NextConfig,
-)
-from max.pipelines.architectures.glm5_next.quantization import (
-    Glm5NextQuantScheme,
-)
-from max.pipelines.kv_cache import cache_dtype_for_encoding
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
-from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
-from max.pipelines.modeling.config_enums import (
-    SupportedEncoding,
-    supported_encoding_dtype,
-)
-from max.pipelines.weights import resolve_hf_quant_config
-from transformers import AutoConfig
-from typing_extensions import Self, override
-
-from ..deepseekV3_2_modulev3.model_config import DeepseekV3_2Config
-from .checkpoint import (
-    _stored_hc_fn_dtype,
-    check_raw_projections,
-    checkpoint_quant_scheme,
-)
+from .quantization import Glm5NextQuantScheme
 
 __all__ = ["Glm5NextConfig"]
 
@@ -85,11 +91,103 @@ def _declared_dtype(text_config: AutoConfig) -> DType | None:
 
 
 @dataclass(kw_only=True)
-class Glm5NextConfig(DeepseekV3_2Config):
+class Glm5NextConfig(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     """Configuration for GLM-5.3-Flash on ModuleV3."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"float8_e4m3fn"}
+
+    takes_batch_context_lengths: ClassVar[bool] = True
+
+    # MAX specific fields
+    dtype: DType
+    kv_params: KVCacheParamInterface
+    """A ``MultiKVCacheParams`` tree with an ``mla`` and an ``indexer`` leaf."""
+    devices: list[DeviceRef]
+    quantization_encoding: SupportedEncoding | None = None
+
+    mesh: DeviceMesh | None = None
+    """Device mesh for sharding across multiple devices."""
+
+    ep_config: EPConfig | None = None
+    """Expert-parallel configuration, or ``None`` for replicated/TP experts.
+
+    Set by :meth:`apply_runtime` when ``--ep-size > 1``.
+    """
+
+    data_parallel_degree: int = 1
+    """Number of data-parallel attention replicas. Selects the decoder layer's
+    parallelism mode together with :attr:`ep_config`."""
+
+    vocab_size: int = 129280
+    hidden_size: int = 7168
+    intermediate_size: int = 18432
+    moe_intermediate_size: int = 2048
+    moe_layer_freq: int = 1
+    num_hidden_layers: int = 61
+    num_attention_heads: int = 128
+    num_key_value_heads: int = 128
+    n_shared_experts: int = 1
+    n_routed_experts: int = 256
+    routed_scaling_factor: float = 2.5
+    kv_lora_rank: int = 512
+    q_lora_rank: int = 1536
+    qk_rope_head_dim: int = 64
+    v_head_dim: int = 128
+    qk_nope_head_dim: int = 128
+    topk_method: str = "noaux_tc"
+    n_group: int = 8
+    topk_group: int = 4
+    num_experts_per_tok: int = 8
+    first_k_dense_replace: int = 3
+    norm_topk_prob: bool = True
+    hidden_act: str = "silu"
+
+    max_position_embeddings: int = 4096
+    """Maximum positional embeddings as defined by the original model."""
+    max_seq_len: int
+    """Maximum sequence length as defined by the MAX Engine pipeline
+    configuration."""
+
+    rms_norm_eps: float = 1e-6
+    tie_word_embeddings: bool = False
+    rope_theta: float = 10000.0
+    rope_scaling: dict[str, Any] | None = None
+    rope_interleave: bool = True
+    scoring_func: str = "sigmoid"
+    attention_bias: bool = False
+    attention_dropout: float = 0.0
+
+    correction_bias_dtype: DType | None = None
+    max_batch_context_length: int = 131072
+    graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
+
+    quant_config: QuantConfig | None = None
+    """Block-scaled quantization config when the checkpoint is FP8/FP4.
+
+    Set from the checkpoint by :meth:`finalize`; ``None`` for bf16
+    checkpoints.
+    """
+
+    mla_o_proj_quantized: bool = True
+    """Whether the MLA output projection is quantized."""
+
+    dense_mlp_layers_without_quant: frozenset[int] = frozenset()
+    """Dense prefix layers (indices ``< first_k_dense_replace``) that skip MLP quant."""
+
+    unpadded_vocab_size: int | None = None
+    """Logical vocab size when the checkpoint pads ``lm_head``.
+
+    The padded tail is masked to ``-inf`` so it cannot be sampled.
+    """
+
+    # Added parameters for the Indexer used in DeepSeek Sparse Attention.
+    index_head_dim: int = 128
+    index_n_heads: int = 64
+    index_topk: int = 2048
+    indexer_types: list[str] = field(default_factory=list)
+    # GLM-5.x sets indexer_rope_interleave=true.
+    indexer_rope_interleave: bool = False
 
     layer_types: list[str] = field(default_factory=list)
     """Per-layer attention family: KDA or sparse MLA."""
@@ -157,7 +255,32 @@ class Glm5NextConfig(DeepseekV3_2Config):
         return self
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        if self.hidden_act != "silu":
+            raise ValueError(
+                "'silu' is the only hidden_act currently supported"
+            )
+
+        rope_type = self.rope_scaling and self.rope_scaling.get(
+            "rope_type", self.rope_scaling.get("type")
+        )
+        if rope_type and rope_type != "yarn":
+            raise ValueError(
+                "'yarn' is the only rope_scaling type currently supported"
+            )
+
+        if self.tie_word_embeddings:
+            raise ValueError("tie_word_embeddings is not supported yet")
+
+        # A ``shared`` layer reuses the top-k from the most recent ``full``
+        # layer, so the first layer must be ``full``. An empty schedule means
+        # every layer is full.
+        if self.indexer_types and self.indexer_types[0] != "full":
+            raise ValueError(
+                "indexer_types[0] must be 'full': the first layer cannot be "
+                "'shared' because no preceding full indexer layer exists to "
+                f"reuse a top-k selection from (got {self.indexer_types[0]!r})."
+            )
+
         if self.data_parallel_degree != 1:
             raise ValueError(
                 "GLM-5.3-Flash is tensor-parallel only: data_parallel_degree "
@@ -173,6 +296,81 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 f"layer_types has {len(self.layer_types)} entries but "
                 f"num_hidden_layers is {self.num_hidden_layers}."
             )
+
+    @override
+    def get_kv_params(self) -> KVCacheParamInterface:
+        return self.kv_params
+
+    def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
+        return self.max_seq_len
+
+    @override
+    @classmethod
+    def calculate_max_seq_len(
+        cls, huggingface_config: AutoConfig, model_config: MAXModelConfig
+    ) -> int:
+        """Bounds against the *text* config's ``max_position_embeddings``."""
+        return upper_bounded_default(
+            upper_bound=hybrid_layout.get_text_config(
+                huggingface_config
+            ).max_position_embeddings,
+            default=model_config.max_length,
+        )
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        """Sizes the expert-parallel buffers for ``runtime``.
+
+        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
+        quantized, else in bf16. The shared expert fuses with the routed ones
+        only when it has their shape and weight layout.
+        """
+        quant_config = self.quant_config
+        quantized_dispatch = quant_config is not None and (
+            self.dtype.is_float8() or quant_config.is_nvfp4
+        )
+        n_devices = len(runtime.mesh.devices)
+        return EPConfig(
+            dispatch_dtype=self.dtype if quantized_dispatch else DType.bfloat16,
+            dispatch_quant_config=quant_config if quantized_dispatch else None,
+            combine_dtype=DType.bfloat16,
+            hidden_size=self.hidden_size,
+            top_k=self.num_experts_per_tok,
+            n_experts=self.n_routed_experts,
+            max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=runtime.max_batch_input_tokens,
+                ep_size=runtime.ep_size,
+                data_parallel_degree=runtime.data_parallel_degree,
+                use_allreduce=runtime.ep_use_allreduce,
+            ),
+            n_gpus_per_node=n_devices,
+            n_nodes=runtime.ep_size // n_devices,
+            fused_shared_expert=self.n_shared_experts == 1
+            and (
+                quant_config is None
+                or quant_config.shared_experts_use_quant(self.dtype)
+            ),
+            use_allreduce=runtime.ep_use_allreduce,
+        )
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Returns the config placed on the deployment's mesh."""
+        return replace(
+            self,
+            mesh=runtime.mesh,
+            ep_config=runtime.ep,
+            max_batch_context_length=(
+                runtime.max_batch_total_tokens or self.max_batch_context_length
+            ),
+        )
+
+    @property
+    def mla_kv_params(self) -> KVCacheParams:
+        """The MLA leaf of the cache tree."""
+        assert isinstance(self.kv_params, MultiKVCacheParams)
+        mla = self.kv_params.children["mla"]
+        assert isinstance(mla, KVCacheParams)
+        return mla
 
     @property
     def compute_dtype(self) -> DType:
@@ -191,24 +389,13 @@ class Glm5NextConfig(DeepseekV3_2Config):
         """Indices of the sparse-MLA layers."""
         return layer_indices(self.layer_types, SPARSE_ATTENTION)
 
-    @override
-    @classmethod
-    def calculate_max_seq_len(
-        cls, huggingface_config: AutoConfig, model_config: MAXModelConfig
-    ) -> int:
-        """Bounds against the *text* config's ``max_position_embeddings``."""
-        return super().calculate_max_seq_len(
-            _GraphGlm5NextConfig._get_text_config(huggingface_config),
-            model_config,
-        )
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """How many layers the text tower has."""
-        return _GraphGlm5NextConfig.get_num_layers(huggingface_config)
+        return hybrid_layout.get_num_layers(huggingface_config)
 
     @staticmethod
-    def construct_kv_params(  # type: ignore[override]
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -216,7 +403,7 @@ class Glm5NextConfig(DeepseekV3_2Config):
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         """Builds the MLA, indexer and recurrent-state children of the cache."""
-        return _GraphGlm5NextConfig.construct_kv_params(
+        return hybrid_layout.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -229,9 +416,9 @@ class Glm5NextConfig(DeepseekV3_2Config):
     ) -> QuantConfig | None:
         """Builds the mixed-precision map from the checkpoint's weight scales.
 
-        The precision map is read off which weights carry a scale, the same
-        derivation the graph-API model uses; only the names differ, so they are
-        mapped to the ones that derivation reads.
+        The precision map is read off which weights carry a scale, by
+        :mod:`.quantization`'s derivation; the checkpoint's names are mapped to
+        the ones that derivation reads.
         """
         self.quant_scheme = checkpoint_quant_scheme(
             self.hf_quantization_config, self.declared_dtype, state_dict
@@ -260,8 +447,7 @@ class Glm5NextConfig(DeepseekV3_2Config):
     ) -> int:
         """Returns a memory-safe default ``max_batch_size``.
 
-        See
-        :func:`~max.pipelines.architectures.glm5_next.model_config.state_bounded_batch_size`.
+        See :func:`~.hybrid_layout.state_bounded_batch_size`.
         """
         return state_bounded_batch_size(
             self.per_request_state_bytes(),
@@ -287,7 +473,7 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 f"HuggingFace config is required for "
                 f"'{model_config.model_path}', but config could not be loaded."
             )
-        text_config = _GraphGlm5NextConfig._get_text_config(huggingface_config)
+        text_config = hybrid_layout.get_text_config(huggingface_config)
 
         kv_cache_config = model_config.kv_cache
         quantization_encoding = _select_quantization_encoding(
@@ -308,8 +494,8 @@ class Glm5NextConfig(DeepseekV3_2Config):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
-        kda_dims = _GraphGlm5NextConfig.declared_kda_dims(text_config)
-        read_linear = _GraphGlm5NextConfig._linear_attn_field
+        kda_dims = hybrid_layout.declared_kda_dims(text_config)
+        read_linear = hybrid_layout.linear_attn_field
 
         return cls(
             dtype=dtype,
@@ -357,14 +543,14 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 getattr(text_config, "indexer_types", None)
                 or ["full"] * text_config.num_hidden_layers
             ),
-            layer_types=_GraphGlm5NextConfig.resolve_layer_types(text_config),
+            layer_types=hybrid_layout.resolve_layer_types(text_config),
             linear_num_heads=kda_dims.num_heads,
             linear_head_dim=kda_dims.head_dim,
             linear_conv_kernel_dim=kda_dims.conv_kernel_dim,
             linear_lower_bound=read_linear(
                 text_config, "gate_lower_bound", -5.0
             ),
-            state_pool_dtype=_GraphGlm5NextConfig.declared_state_dtype(
+            state_pool_dtype=hybrid_layout.declared_state_dtype(
                 kv_cache_config
             ),
             hc_mult=getattr(text_config, "hc_mult", 4),

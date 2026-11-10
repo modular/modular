@@ -16,7 +16,7 @@ The checkpoint's layer ``num_hidden_layers`` is the target's own sparse-MLA
 block and MoE with a plain residual in place of the hyper-connections, so it is
 built from this package's sublayers. It owns the last slot of the target's
 latent, indexer and tail ring caches, which the target's config declares when
-speculating; see the graph-API :mod:`~max.pipelines.architectures.glm5_next.mtp`.
+speculating.
 """
 
 from __future__ import annotations
