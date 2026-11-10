@@ -871,7 +871,7 @@ def cli_pipeline(
     "--export-path",
     type=click.Path(file_okay=False, path_type=Path),
     default=None,
-    help="After generation, write an NVFP4 checkpoint to this directory.",
+    help="After generation, write a quantized checkpoint to this directory.",
 )
 @click.option(
     "--prompt",

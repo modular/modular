@@ -20,6 +20,7 @@ import pytest
 from max import functional as F
 from max import tree
 from max._entrypoints.cli.quantize import (
+    checkpoint_quantization_config,
     insert_quantized_linears,
     on_the_fly_config,
     quant_formats,
@@ -34,7 +35,11 @@ from max.nn.common_layers.quant_linear import (
     QuantizedQKVLinear,
 )
 from max.nn.common_layers.quant_moe import QuantizedMoE
-from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
+from max.nn.common_layers.quant_tensor import (
+    MXFP4Quantizer,
+    MXFP8Quantizer,
+    NVFP4TensorQuantizer,
+)
 from max.nn.quant_config import QuantFormat, WeightSource
 from max.tensor import Tensor
 
@@ -95,6 +100,49 @@ def test_every_offered_format_builds_a_quantize_on_load_config(
     assert config.source is WeightSource.QUANTIZE
     assert config.quantizes_on_load
     assert config.format.value == name
+
+
+@pytest.mark.parametrize(
+    ("name", "quantizer_cls", "block_k"),
+    [
+        ("nvfp4", NVFP4TensorQuantizer, 16),
+        ("mxfp8", MXFP8Quantizer, 32),
+        ("mxfp4", MXFP4Quantizer, 32),
+    ],
+)
+def test_insert_builds_the_formats_quantizer(
+    name: str, quantizer_cls: type[object], block_k: int
+) -> None:
+    """Each offered format wraps the linear in that format's quantizer."""
+    with F.lazy():
+        block = _Block()
+        insert_quantized_linears(block, [r"mlp"], on_the_fly_config(name))
+
+    weight = cast(
+        NVFP4TensorQuantizer | MXFP8Quantizer | MXFP4Quantizer, block.mlp.weight
+    )
+    assert isinstance(weight, quantizer_cls)
+    assert weight.block_size == (1, block_k)
+
+
+def test_export_configs_use_the_keys_the_loaders_read() -> None:
+    """MXFP8 nests ``ignore`` where the modelopt parser looks for it."""
+    ignored = ["model.layers.0.self_attn*"]
+    mxfp8 = checkpoint_quantization_config("mxfp8", ignored)
+    assert mxfp8["quant_method"] == "modelopt"
+    section = mxfp8["quantization"]
+    assert isinstance(section, dict)
+    assert section["quant_algo"] == "MXFP8"
+    assert section["ignore"] == ignored
+
+    assert checkpoint_quantization_config("mxfp4", ignored) == {
+        "quant_method": "mxfp4"
+    }
+
+    nvfp4 = checkpoint_quantization_config("nvfp4", ignored)
+    assert nvfp4["quant_method"] == "modelopt"
+    assert nvfp4["quant_algo"] == "NVFP4"
+    assert nvfp4["ignore"] == ignored
 
 
 def test_an_unknown_format_names_the_ones_that_work() -> None:

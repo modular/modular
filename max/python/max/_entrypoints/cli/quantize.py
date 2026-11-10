@@ -18,7 +18,7 @@ import dataclasses
 import functools
 import logging
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -41,7 +41,11 @@ from max.nn.common_layers.quant_linear import (
     QuantizedQKVLinear,
 )
 from max.nn.common_layers.quant_moe import QuantizedMoE
-from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
+from max.nn.common_layers.quant_tensor import (
+    MXFP4Quantizer,
+    MXFP8Quantizer,
+    NVFP4TensorQuantizer,
+)
 from max.nn.quant_config import QuantConfig, QuantFormat, WeightSource
 from max.pipelines import PIPELINE_REGISTRY, TextGenerationPipelineInterface
 from max.pipelines.context import (
@@ -261,16 +265,52 @@ def insert_quantized_linears(
     logger.info(f"Quantizing {count} weight tensors.")
 
 
-def nvfp4_host_tensors(
+# Leaves each on-the-fly quantizer writes, in checkpoint order. The name is
+# the safetensors suffix: ``weight`` becomes ``{path}.weight``.
+_QUANTIZER_LEAVES: tuple[tuple[type[Any], tuple[str, ...]], ...] = (
+    (
+        NVFP4TensorQuantizer,
+        ("weight", "weight_scale", "weight_scale_2", "input_scale"),
+    ),
+    (MXFP8Quantizer, ("weight", "weight_scale")),
+    (MXFP4Quantizer, ("weight", "weight_scale")),
+)
+
+
+def quantized_host_tensors(
     path: str, leaves: Mapping[str, Tensor]
 ) -> list[tuple[str, _SavedTensor]]:
-    """Packed weight and the three scale tensors, under ``path``."""
+    """The quantized weight and its scale tensors, under ``path``."""
     return [
-        (f"{path}.weight", _host_tensor(leaves["weight"])),
-        (f"{path}.weight_scale", _host_tensor(leaves["weight_scale"])),
-        (f"{path}.weight_scale_2", _host_tensor(leaves["weight_scale_2"])),
-        (f"{path}.input_scale", _host_tensor(leaves["input_scale"])),
+        (f"{path}.{name}", _host_tensor(tensor))
+        for name, tensor in leaves.items()
     ]
+
+
+def checkpoint_quantization_config(
+    fmt: str, ignored: Sequence[str]
+) -> dict[str, object]:
+    """The ``quantization_config`` block ``fmt``'s loader already reads.
+
+    MXFP8 is modelopt: encoding detection reads ``quantization.quant_algo``,
+    and the layer parser reads ``ignore`` from that same nested section.
+    MXFP4's parser keys only on ``quant_method`` and quantizes every MLP,
+    leaving attention in bf16.
+    """
+    if fmt == "nvfp4":
+        return nvfp4_quantization_config(FP4Format.NVFP4, ignored)
+    if fmt == "mxfp8":
+        patterns = list(ignored)
+        return {
+            "quant_method": "modelopt",
+            "quantization": {"quant_algo": "MXFP8", "ignore": patterns},
+        }
+    if fmt == "mxfp4":
+        return {"quant_method": "mxfp4"}
+    raise ValueError(
+        f"unknown quantization format {fmt!r}; this command can "
+        f"produce {', '.join(quant_formats())}"
+    )
 
 
 def _materialize_quantizers(
@@ -287,16 +327,12 @@ def _materialize_quantizers(
 
     def export_quants() -> dict[str, dict[str, Tensor]]:
         exported: dict[str, dict[str, Tensor]] = {}
-        for path, quantizer in tree.nodes(
-            declared, NVFP4TensorQuantizer
-        ).items():
-            quantized = quantizer.quant_tensor
-            exported[path] = {
-                "weight": quantized.weight,
-                "weight_scale": quantized.weight_scale,
-                "weight_scale_2": quantized.weight_scale_2,
-                "input_scale": quantized.input_scale,
-            }
+        for cls, names in _QUANTIZER_LEAVES:
+            for path, quantizer in tree.nodes(declared, cls).items():
+                quantized = quantizer.quant_tensor
+                exported[path] = {
+                    name: getattr(quantized, name) for name in names
+                }
         return exported
 
     # ``compile`` returns a function of input types. This graph takes none.
@@ -304,7 +340,9 @@ def _materialize_quantizers(
     return compiled()
 
 
-def export_quantized_checkpoint(model: Any, dest: Path) -> None:
+def export_quantized_checkpoint(
+    model: Any, dest: Path, quantization_format: str
+) -> None:
     """Writes a new sharded checkpoint from the quantizers on ``model``.
 
     Quantized tensors and the weights left beside them are written under
@@ -328,7 +366,7 @@ def export_quantized_checkpoint(model: Any, dest: Path) -> None:
         checkpoint_path = state_dict[f"{path}.weight"].name.removesuffix(
             ".weight"
         )
-        saved.extend(nvfp4_host_tensors(checkpoint_path, leaves))
+        saved.extend(quantized_host_tensors(checkpoint_path, leaves))
 
     ignore = set()
     for name, value in state_dict.items():
@@ -345,7 +383,9 @@ def export_quantized_checkpoint(model: Any, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     write_shards(dest, saved)
     write_quantization_config(
-        src, dest, nvfp4_quantization_config(FP4Format.NVFP4, list(ignore))
+        src,
+        dest,
+        checkpoint_quantization_config(quantization_format, list(ignore)),
     )
     copy_auxiliary_files(src, dest)
     logger.info("Exported %d quantized weights to %s", len(ready), dest)
@@ -654,4 +694,6 @@ def quantize_pipeline(
         logger.info(f"Wrote {error_report_dir / JSON_NAME}")
     if export_path is not None:
         assert isinstance(pipeline, TextGenerationPipelineInterface)
-        export_quantized_checkpoint(pipeline._pipeline_model, export_path)
+        export_quantized_checkpoint(
+            pipeline._pipeline_model, export_path, quantization_format
+        )
