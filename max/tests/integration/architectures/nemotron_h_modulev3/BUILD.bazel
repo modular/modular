@@ -32,6 +32,7 @@ modular_py_test(
             "test_mixed_verify_state.py",
         ],
     ),
+    data = ["testdata/lightning_checkpoints.json"],
     # The layout tests each compile and run their weight preparation on the
     # CPU.
     per_test_shard_count = {
@@ -52,6 +53,7 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/weights",
         requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 

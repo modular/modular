@@ -109,6 +109,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "MiMoV2ForCausalLM_ModuleV3": ".mimo_v2_modulev3.spec_adapters",
     "MuseSparkForConditionalGeneration_ModuleV3": ".muse_spark.spec_adapters",
     "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
+    "NemotronHForCausalLM_ModuleV3": ".nemotron_h_modulev3.spec_adapters",
     "Qwen3_5ForCausalLM": ".qwen3_5.spec_adapters",
     "Qwen3_5ForConditionalGeneration": ".qwen3_5.spec_adapters",
     "Qwen4ExpForConditionalGeneration": "qwen4_exp_spec",
@@ -117,7 +118,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
 
 def _target_adapter(target_arch: str) -> TargetAdapter:
     # A ModuleV3 variant without an adapter of its own is its target's only
-    # variant, as Nemotron-H is, and takes the adapter named for the target.
+    # variant, and takes the adapter named for the target.
     if target_arch not in _TARGET_ADAPTERS:
         target_arch = target_arch.removesuffix("_ModuleV3")
     if target_arch not in _TARGET_ADAPTERS:

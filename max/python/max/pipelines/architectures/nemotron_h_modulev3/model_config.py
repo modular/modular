@@ -14,12 +14,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 import enum
 import logging
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
@@ -38,11 +39,16 @@ from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
+from max.pipelines.lib.registration_runtime import DeploymentConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights import resolve_hf_quant_config
 from max.support.math import ceildiv
 from transformers import AutoConfig
 from typing_extensions import Self
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 
 from .quantization import (
     NVFP4_GROUP_SIZE,
@@ -189,7 +195,9 @@ def _runs_fused_router(
 
 
 @dataclass(kw_only=True)
-class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
+class NemotronHConfig(
+    ArchConfigWithStoredKVParams, ArchConfigWithKVCache, DeploymentConfig
+):
     """Configuration for a Nemotron-H hybrid decoder.
 
     Every layer is a pre-norm residual block around one mixer: Mamba-2,
@@ -243,18 +251,73 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Whether the MoE router computes its gate scores with a bfloat16
     tensor-core matmul (float32 accumulation) and keeps its gate weight in
     bfloat16, instead of a float32 gate GEMV or matmul."""
+    checkpoint_router_gate_dtype: DType | None = None
+    """The dtype the checkpoint stores the MoE router's gate weight in, as
+    :meth:`finalize` reads it. ``None`` before then."""
     capture_mamba_replay: bool = False
     """Whether each Mamba block also returns the inputs of its state updates,
     so that a speculative verify can replay the accepted prefix onto the live
     state afterwards (see :mod:`.state_rollback`)."""
 
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig | None = None,
+    ) -> None:
+        """Checks the checkpoint's quantized weights and sets the outputs.
+
+        It also reads the dtype the checkpoint stores the router gates in,
+        so that the router declares the gate as stored. A draft names the
+        layers whose outputs it reads, and Nemotron-H taps layer inputs: a
+        layer's output is the next layer's input.
+        """
+        del huggingface_config
+        self.quant_scheme.check_weights(state_dict.keys())
+        for mixer in sorted(self.mixers(LayerKind.MOE)):
+            gate = state_dict.get(f"{mixer}.gate.weight")
+            if gate is not None:
+                self.checkpoint_router_gate_dtype = gate.dtype
+                break
+        outputs = outputs or ModelOutputConfig()
+        self.return_logits = outputs.return_logits
+        self.return_hidden_states = outputs.return_hidden_states
+        self.target_layer_ids = tuple(
+            i + 1 for i in outputs.target_layer_ids or ()
+        )
+
+    def apply_model_load_context(self, context: ModelLoadContext) -> Self:
+        """Captures each Mamba layer's replay inputs under speculation."""
+        return dataclasses.replace(
+            self,
+            capture_mamba_replay=(
+                context.pipeline_config.speculative is not None
+            ),
+        )
+
     @property
     def router_gate_dtype(self) -> DType:
         """The dtype of the MoE router's gate weight.
 
-        Both the module and the state dict it loads use it.
+        The router's matmul reads it; the graph casts the stored gate to
+        it once, at init.
         """
         return DType.bfloat16 if self.bf16_router_gate else DType.float32
+
+    @property
+    def router_gate_stored_dtype(self) -> DType:
+        """The dtype the checkpoint stores the MoE router's gate weight in.
+
+        The module declares the stored dtype, so the gate loads as the
+        checkpoint stores it. Before :meth:`finalize` reads it, which is
+        when the memory planner runs, it is the published checkpoints'
+        dtype: BF16 in the BF16 checkpoint, and float32 in the
+        modelopt-quantized one, whose values are exactly representable in
+        BF16.
+        """
+        if self.checkpoint_router_gate_dtype is not None:
+            return self.checkpoint_router_gate_dtype
+        return DType.float32 if self.quant_scheme.quantized else DType.bfloat16
 
     def w4a4_mixers(self) -> frozenset[str]:
         """Returns the MoE mixers whose routed experts are NVFP4, run W4A4."""

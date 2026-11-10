@@ -249,21 +249,26 @@ class CausalConv1d(
                 across devices, or none to split the channels as one part.
         """
         self.segments = tuple(segments)
+        # The checkpoint stores the depthwise window as [dim, 1, kernel];
+        # the graph reshapes it to the [dim, kernel] the conv kernel reads.
         if self.segments:
             # A plain split would give a device whole parts. The weights
             # stay on the host, for the graph to cut each device's share.
-            self.weight = Tensor.zeros([dim, kernel_size], device=CPU())
+            self.weight = Tensor.zeros([dim, 1, kernel_size], device=CPU())
             self.bias = Tensor.zeros([dim], device=CPU())
         else:
-            self.weight = shard_axis(Tensor.zeros([dim, kernel_size]))
+            self.weight = shard_axis(Tensor.zeros([dim, 1, kernel_size]))
             self.bias = shard_axis(Tensor.zeros([dim]))
 
     def placed(self, mesh: DeviceMesh) -> tuple[Tensor, Tensor]:
         """Returns the weight and bias, each device holding its channels."""
+        weight = F.reshape(
+            self.weight, [int(self.weight.shape[0]), int(self.weight.shape[2])]
+        )
         if not self.segments:
-            return self.weight, self.bias
+            return weight, self.bias
         return (
-            shard_segments(self.weight, self.segments, mesh),
+            shard_segments(weight, self.segments, mesh),
             shard_segments(self.bias, self.segments, mesh),
         )
 

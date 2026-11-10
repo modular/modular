@@ -106,7 +106,13 @@ def hf_config(layers: list[str], dims: Mapping[str, int]) -> HFNemotronHConfig:
 def model_config(
     layers: list[str], dims: Mapping[str, int], n_devices: int = 1
 ) -> NemotronHConfig:
-    hf = hf_config(layers, dims)
+    return config_from_hf(hf_config(layers, dims), n_devices)
+
+
+def config_from_hf(
+    hf: HFNemotronHConfig, n_devices: int = 1
+) -> NemotronHConfig:
+    """Returns the config of ``hf`` on ``n_devices`` CPU devices."""
     pipeline = Mock()
     pipeline.model.data_parallel_degree = 1
     pipeline.speculative = None

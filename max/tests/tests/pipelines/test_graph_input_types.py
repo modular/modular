@@ -58,6 +58,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     MultiKVCacheParams,
     RecurrentStateParams,
+    RecurrentStateRegion,
 )
 from max.nn.legacy import graph_groups
 from max.nn.legacy.comm.ep import EPBatchManager
@@ -86,6 +87,11 @@ from max.pipelines.architectures.llama3.distributed_llama import (
 )
 from max.pipelines.architectures.llama3.llama3 import Llama3
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
+from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
+    CONV_LEAF_ID,
+    SSM_LEAF_ID,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.nemotron_h import NemotronH
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     VisionTransformer as Qwen2_5VLVisionTransformer,
 )
@@ -235,6 +241,39 @@ def _llama3(
 def _registered_decoder() -> tuple[_InputTree, _InputTypes]:
     """A decoder registered by role, whose graph takes its fields by name."""
     types = decoder_input_types(_kv_params(_gpus(1)), DeviceRef.GPU(0))
+    return types, tuple(tree.leaves(types))
+
+
+def _nemotron_h(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
+    """Nemotron-H registered by role: attention beside the Mamba state.
+
+    Its tokens and row offsets sit on the first device, and the graph keeps
+    the input order its pre-registration MEFs take.
+    """
+    n = len(devices)
+    state = RecurrentStateParams(
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=CONV_LEAF_ID,
+                num_layers=2,
+                row_shape=(64 // n, 3),
+                dtype=DType.bfloat16,
+            ),
+            RecurrentStateRegion(
+                leaf_id=SSM_LEAF_ID,
+                num_layers=2,
+                row_shape=(4 // n, 16, 16),
+                dtype=DType.float32,
+            ),
+        ),
+        devices=devices,
+    )
+    kv_params = MultiKVCacheParams.from_params(
+        {ATTN_CACHE_KEY: _kv_params(devices), STATE_CACHE_KEY: state}
+    )
+    types = decoder_input_types(
+        kv_params, devices[0], input_layout=NemotronH.input_layout
+    )
     return types, tuple(tree.leaves(types))
 
 
@@ -406,6 +445,8 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
     "deepseekV4_multi_device": lambda: _deepseekV4(_gpus(2)),
     "registered_decoder": _registered_decoder,
+    "nemotron_h_single_device": lambda: _nemotron_h(_gpus(1)),
+    "nemotron_h_multi_device": lambda: _nemotron_h(_gpus(2)),
 }
 
 

@@ -233,7 +233,7 @@ def replica_weights(
             weights[name] = _bf16(rng.normal(0.0, _ROUTER_STD, shape))
         elif name.endswith("e_score_correction_bias"):
             weights[name] = _filled(0.0, shape, parameter.dtype)
-        elif name.endswith(("up_weight", "down_weight", "proj.weight")):
+        elif name.endswith("proj.weight"):
             weights[name] = _bf16(rng.normal(0.0, _EXPERT_STD, shape))
         else:
             raise AssertionError(f"no replica weight rule for {name!r}")

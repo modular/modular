@@ -41,6 +41,7 @@ from max.nn.norm import RMSNorm
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, NamedMapping
 
@@ -264,8 +265,12 @@ class NemotronHBackbone(
         )
 
 
-class NemotronH(Module[..., ModuleV3Outputs]):
-    """Nemotron-H for causal language modeling."""
+class NemotronH(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
+    """Nemotron-H for causal language modeling, registered as the decoder."""
+
+    # The graph keeps the input order it had before registration, which the
+    # bare MEFs Mach boots from its registry are compiled with.
+    input_layout = ("tokens", "return_n_logits", "input_row_offsets", "kv")
 
     def __init__(self, config: NemotronHConfig) -> None:
         if any(
@@ -314,14 +319,12 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             )
         return tokens.to(mesh), input_row_offsets.to(mesh)
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *kv_inputs: Tensor,
-    ) -> ModuleV3Outputs:
+    def forward(self, inputs: DecoderInputs[Tensor]) -> DecoderOutputs:
         """Runs the decoder stack over the tokens."""
+        tokens = inputs.tokens
+        return_n_logits = inputs.return_n_logits
+        input_row_offsets = inputs.input_row_offsets
+        kv_inputs = tree.leaves(inputs.kv)
         if self.return_logits == ReturnLogits.VARIABLE:
             # Only `verify` builds the variable-logits range, from a host
             # count. This graph's count would land on the device, which
