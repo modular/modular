@@ -470,6 +470,10 @@ def hip_mha_decoding_num_partitions(
     return min(_bucket_partitions(num_partitions), partition_cap)
 
 
+# AMD MLA decode key-tile height (`BN` in `flare_mla_decoding_dispatch`).
+comptime MLA_DECODE_KEY_TILE_ROWS = 128
+
+
 def amd_sparse_mla_decode_num_partitions(
     batch_size: Int,
     topk: Int,
@@ -522,8 +526,6 @@ def amd_sparse_mla_decode_num_partitions(
         A power-of-two partition count, at most `MAX_HIP_PARTITIONS`, for
         `num_heads <= 16`.
     """
-    # AMD MLA decode key-tile height (`BN` in `flare_mla_decoding_dispatch`).
-    comptime ROWS_PER_TILE = 128
     if num_heads > 16:
         return hip_mha_decoding_num_partitions(
             batch_size,
@@ -534,7 +536,9 @@ def amd_sparse_mla_decode_num_partitions(
             block_m=block_m,
         )
     var two_wave = max(1, (2 * sm_count) // max(1, batch_size))
-    var tiles = next_power_of_two(max(1, ceildiv(topk, ROWS_PER_TILE)))
+    var tiles = next_power_of_two(
+        max(1, ceildiv(topk, MLA_DECODE_KEY_TILE_ROWS))
+    )
     return min(prev_power_of_two(min(two_wave, tiles)), MAX_HIP_PARTITIONS)
 
 
@@ -596,8 +600,18 @@ def amd_sparse_mla_bf16_num_partitions(
     """Returns the split-K partition count for the AMD BF16 sparse MLA arm.
 
     The arm reads each token's compacted selection in place with the BF16
-    decode kernel, so the count is `amd_sparse_mla_decode_num_partitions`
-    at that kernel's block-M.
+    decode kernel. Above 16 heads the count is
+    `amd_sparse_mla_decode_num_partitions` at that kernel's block-M.
+
+    At 16 heads or fewer each token is one workgroup per partition, and the
+    kernel holds a whole 128-row key tile in LDS, so one workgroup fits per
+    CU, and a workgroup costs about one tile of fixed work (query load,
+    softmax state, stats store) plus its tiles. The count minimizes waves of
+    workgroups times that cost, preferring fewer partitions on a tie (less
+    reduce work), and never leaves a partition empty. For example, with
+    17 tiles per selection and 48 query tokens on 256 CUs, the previous
+    rule's 8 partitions take 2 waves of 3 tiles, while 5 take one wave of
+    4.
 
     Args:
         seq_len: Query tokens across the batch (flattened query rows).
@@ -608,13 +622,32 @@ def amd_sparse_mla_bf16_num_partitions(
     Returns:
         The partition count to launch with.
     """
-    return amd_sparse_mla_decode_num_partitions(
-        seq_len,
-        indices_stride,
-        num_heads,
-        sm_count,
-        block_m=AMD_MLA_BF16_DECODE_BLOCK_M,
-    )
+    if num_heads > AMD_MLA_BF16_DECODE_BLOCK_M:
+        return amd_sparse_mla_decode_num_partitions(
+            seq_len,
+            indices_stride,
+            num_heads,
+            sm_count,
+            block_m=AMD_MLA_BF16_DECODE_BLOCK_M,
+        )
+    var tokens = max(1, seq_len)
+    # A full wave of tokens already fills every CU; the model below was only
+    # measured up to 96 tokens, so larger launches stay unsplit as before.
+    if tokens >= sm_count:
+        return 1
+    var tiles = max(1, ceildiv(indices_stride, MLA_DECODE_KEY_TILE_ROWS))
+    var best_np = 1
+    var best_cost = tiles + 1
+    for np in range(2, min(tiles, MAX_HIP_PARTITIONS) + 1):
+        var tiles_per_part = ceildiv(tiles, np)
+        # Tile-aligned splits leave the partitions past this one empty.
+        if ceildiv(tiles, tiles_per_part) != np:
+            continue
+        var cost = ceildiv(tokens * np, sm_count) * (tiles_per_part + 1)
+        if cost < best_cost:
+            best_cost = cost
+            best_np = np
+    return best_np
 
 
 def mha_decoding_num_partitions(

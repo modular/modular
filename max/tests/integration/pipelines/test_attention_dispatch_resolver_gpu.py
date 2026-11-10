@@ -35,18 +35,20 @@ def gpu_device_ref() -> DeviceRef:
 # (batch_size, num_heads, sparse_indices_stride, AMD partitions for an FP8
 # cache, AMD partitions for a BF16 cache). The counts hold for 256 and 304
 # compute units alike. FP8 reads the rows in place, one wave of CTAs of at
-# least 32 rows; BF16 gathers them, two waves of 128-row tiles, so a
-# 2051-row selection (k-pool tail, 17 tiles) takes 32 partitions below batch
-# 32. 65536 rows at batch 1 clamp to the reducer's 256.
+# least 32 rows. BF16 decodes one 128-row tile per workgroup at a time and
+# minimizes waves times per-workgroup cost without empty partitions, so a
+# 2051-row selection (k-pool tail, 17 tiles) takes 17 partitions at batch 8
+# and 4 at batch 64.
+# 65536 rows at batch 1 clamp to the reducer's 256.
 SPARSE_MLA_CASES = [
     (1, 8, 2048, 64, 16),
     (16, 8, 2048, 16, 16),
-    (32, 8, 2048, 8, 16),
-    (64, 8, 2048, 4, 8),
-    (128, 8, 2048, 2, 4),
+    (32, 8, 2048, 8, 8),
+    (64, 8, 2048, 4, 4),
+    (128, 8, 2048, 2, 2),
     (16, 16, 2048, 16, 16),
-    (16, 8, 2051, 16, 32),
-    (32, 8, 2051, 8, 16),
+    (8, 8, 2051, 32, 17),
+    (64, 8, 2051, 4, 4),
     (1, 8, 65536, 256, 256),
 ]
 SPARSE_MLA_CACHE_LENGTHS = [128, 2048, 8192, 100_000]

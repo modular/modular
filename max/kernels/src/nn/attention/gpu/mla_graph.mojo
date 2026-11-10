@@ -2475,22 +2475,24 @@ def _amd_sparse_mla_compact_indices[
     var tid = thread_idx.x
     var scan_len = min(max(Int(topk_lengths[row]), 0), stride)
 
-    var written = Int32(0)
-    for chunk in range(0, scan_len, BLOCK_SIZE):
-        var col = chunk + tid
-        var index = Int32(-1)
-        if col < scan_len:
-            index = d_indices[base + col]
-        var is_valid = Int32(1) if index >= 0 else Int32(0)
-        var offset = block.prefix_sum[block_size=BLOCK_SIZE, exclusive=True](
-            is_valid
-        )
-        var chunk_valid = block.sum[block_size=BLOCK_SIZE, broadcast=True](
-            is_valid
-        )
-        if is_valid == 1:
-            compact_indices[base + Int(written + offset)] = index
-        written += chunk_valid
+    # Each thread owns one contiguous run of the row, so a single block scan
+    # places every index. Scanning BLOCK_SIZE-wide chunks instead costs two
+    # block reductions per chunk, which makes the launch latency-bound.
+    var run = ceildiv(scan_len, BLOCK_SIZE)
+    var begin = min(tid * run, scan_len)
+    var end = min(begin + run, scan_len)
+    var count = Int32(0)
+    for col in range(begin, end):
+        if d_indices[unsafe_offset=base + col] >= 0:
+            count += 1
+    var offset = block.prefix_sum[block_size=BLOCK_SIZE, exclusive=True](count)
+    var written = block.sum[block_size=BLOCK_SIZE, broadcast=True](count)
+    var dst = base + Int(offset)
+    for col in range(begin, end):
+        var index = d_indices[unsafe_offset=base + col]
+        if index >= 0:
+            compact_indices[unsafe_offset=dst] = index
+            dst += 1
 
     for col in range(Int(written) + tid, stride, BLOCK_SIZE):
         compact_indices[base + col] = -1

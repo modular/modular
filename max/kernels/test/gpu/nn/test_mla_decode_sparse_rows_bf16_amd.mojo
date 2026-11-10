@@ -727,14 +727,18 @@ def main() raises:
             comptime assert (
                 num_heads == 32 or num_heads == 16
             ), "expected splits are pinned for 16 and 32 heads"
-            comptime split_np8 = 16 if num_heads == 32 else 32
-            comptime split_np32 = 4 if num_heads == 32 else 16
+            comptime split_np8 = 16 if num_heads == 32 else 17
+            comptime split_np32 = 4 if num_heads == 32 else 6
             check_correctness(
                 ctx, b, 8, 2, [0, 3, 7], "split_batch8", split_np8
             )
             check_correctness(
                 ctx, b, 32, 2, [0, 13, 31], "split_batch32", split_np32
             )
+            # MTP verify flattens 6 query tokens per sequence (5 drafts + 1)
+            # into rows, so 8 and 16 sequences give 48 and 96 rows.
+            check_correctness(ctx, b, 48, 2, [0, 5, 6, 47], "mtp_verify_batch8")
+            check_correctness(ctx, b, 96, 32, [0, 11, 95], "mtp_verify_batch16")
             var big: List[Int] = [
                 0,
                 255,
