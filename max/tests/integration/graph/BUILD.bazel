@@ -30,6 +30,7 @@ _CPU_ONLY_TESTS = [
     "test_rowwise_fusion.py",
     "test_shard_and_stack.py",
     "test_symbolic_dimension_validation.py",
+    "test_view_fusion.py",
 ]
 
 # Tests with their own targets due to special configurations
@@ -533,6 +534,27 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+# Kept out of `cpu_tests` so it does not inherit "external-exclusive". Every
+# case compiles its own graph, which times the file out as one shard.
+modular_py_test(
+    name = "test_view_fusion",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_view_fusion.py",
+    ],
+    shard_count = 4,
+    deps = [
+        ":fusion_utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 
