@@ -19,6 +19,7 @@ from std.traits import (
     IsTriviallyMovable,
 )
 from std.sys import size_of
+from std.utils._nicheable import UnsafeNicheable
 
 from std.testing import *
 from std.testing import TestSuite
@@ -385,6 +386,46 @@ def test_optional_to_optional_reg_implicit_conversion() raises:
     var optional = Optional[Int](42)
     var optional_reg: OptionalReg[Int] = optional
     assert_equal(optional_reg.value(), 42)
+
+
+def test_optional_reg_to_optional_implicit_conversion() raises:
+    comptime IntType = Int
+    assert_false(conforms_to(IntType, UnsafeNicheable))
+
+    var some: Optional[IntType] = OptionalReg[IntType](42)
+    assert_equal(some, Optional(42))
+
+    var none: Optional[IntType] = OptionalReg[IntType]()
+    assert_true(none is None)
+
+
+def test_optional_reg_to_optional_implicit_conversion_nicheable() raises:
+    var target = 5
+    comptime PointerType = Pointer[Int, origin_of(target)]
+    assert_true(conforms_to(PointerType, UnsafeNicheable))
+
+    var some: Optional[PointerType] = OptionalReg(PointerType(to=target))
+    if case .Some(ptr) = some:
+        assert_equal(ptr[], 5)
+    else:
+        raise Error("expected a pointer")
+
+    var none: Optional[PointerType] = OptionalReg[PointerType]()
+    assert_true(none is None)
+
+
+def test_optional_reg_to_optional_return_conversion() raises:
+    def optional_from_optional_reg(value: OptionalReg[Int]) -> Optional[Int]:
+        return value
+
+    assert_equal(optional_from_optional_reg(OptionalReg(7)), Optional(7))
+    assert_true(optional_from_optional_reg(OptionalReg[Int]()) is None)
+
+
+def test_optional_reg_round_trip() raises:
+    var optional_reg: OptionalReg[Int] = Optional(42)
+    var optional: Optional[Int] = optional_reg
+    assert_equal(optional, Optional(42))
 
 
 struct NotEquatable(Movable):
