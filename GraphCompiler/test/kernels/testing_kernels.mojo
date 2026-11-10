@@ -1745,38 +1745,34 @@ struct TraitFusedTransformHostNegative:
         _ = z.compute[1](Coord(0), SIMD[type_of(z).dtype, 1](0))
 
 
-# Kernel with both a struct-level (`flip`) and fn-level (`dtype`) compile-time
-# parameter, where an argument type references the fn-level param. Exercises
-# two MOToMOGG paths that broke in different ways during the
-# MojoLibraryAnalysis migration:
-#   1. `validateCustomOpParameters` rejected legitimate calls passing a
-#      struct-level param because the validation only walked fn-level params.
-#   2. EmitMojo's `inferByInputs` collection mapped depth-0 `ParamIndexRefAttr`s
-#      into `fnLevelParams` alone, but Mojo lays out the generator's param
-#      list as `structLevelParams + fnLevelParams`, so the lookup was off by
-#      `structLevelParams.size()` -- e.g. for a kernel with struct param
-#      `flip` and fn params `[dtype, target]`, an arg referencing `dtype` is
-#      `*(0, 1)`, which mapped to `target` (`fnLevelParams[1]`) instead of
-#      `dtype` (`(struct + fn)[1]`).
+# A kernel with a struct-level parameter (`flip`) and fn-level parameters
+# (`Z`, `X`) that the argument types name. Mojo puts the struct-level
+# parameters first in the generator's parameter list, so a depth-0
+# `ParamIndexRefAttr` in an argument type indexes the merged list. MOToMOGG
+# must accept `flip` as a call parameter, and `inferByInputs` must resolve
+# `*(0, 1)` to `Z` in the merged list. An index into the fn-level parameters
+# alone is off by the number of struct-level parameters.
 @extensibility.register("imposter_add_struct_param")
 struct FooWithStructParam[flip: Bool]:
     @staticmethod
     def execute[
-        dtype: DType,
+        Z: Output & Tensor,
+        X: Input & Tensor,
         //,
-    ](
-        z: OutputTensor[dtype=dtype, ...],
-        x: InputTensor[dtype=dtype, ...],
-        ctx: DeviceContext,
-    ) raises:
-        @inline(.always)
-        def func[width: Int](idx: Coord) {var} -> SIMD[z.dtype, width]:
-            var v = rebind[SIMD[z.dtype, width]](x.load[width](idx))
-            comptime if Self.flip:
-                return -v
-            return v
+    ](z: Z, x: X, ctx: DeviceContext) raises:
+        comptime assert conforms_to(Z, TileTensorable)
+        comptime assert conforms_to(X, TileTensorable)
+        var zt = z.to_tile_tensor()
+        var xt = x.to_tile_tensor[Z.dtype]().as_imm()
 
-        foreach(func, z, ctx)
+        @inline(.always)
+        def func[width: Int, alignment: Int = 1](idx: Coord) {var zt, var xt}:
+            var v = xt.load[width=width](idx)
+            comptime if Self.flip:
+                v = -v
+            zt.store[width=width](idx, v)
+
+        elementwise[1](func, z.shape(), ctx)
 
 
 @extensibility.register_shape_function("imposter_add_struct_param")
@@ -1880,63 +1876,6 @@ struct PrintTensor:
             return rebind[SIMD[outp.dtype, width]](input.load[width](idx))
 
         foreach(func, outp, ctx)
-
-
-@extensibility.register("print_tensor_spec_fused")
-struct PrintTensorSpecFusedOp:
-    @staticmethod
-    def execute(
-        outp: FusedOutputTensor,
-        x: FusedInputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        print("x.shape =", x._static_shape_tuple)
-        print("x.strides =", x._static_strides_tuple)
-        print("x.alignment =", x.alignment)
-        print("x.address_space =", x.address_space)
-
-        @inline(.always)
-        def func[width: Int](idx: Coord) {var} -> SIMD[outp.dtype, width]:
-            return rebind[SIMD[outp.dtype, width]](x._fused_load[width](idx))
-
-        foreach(func, outp, ctx)
-
-
-@extensibility.register_shape_function("print_tensor_spec_fused")
-def print_tensor_spec_fused_shape(
-    x: Some[Tensor],
-) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
-
-
-@extensibility.register("print_output_shape_strides_fused")
-struct PrintOutputShapeStridesFusedOp:
-    @staticmethod
-    def execute(
-        output: FusedOutputTensor,
-        x: FusedInputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        print("output._static_shape_tuple = ", output._static_shape_tuple)
-        print("output._static_strides_tuple = ", output._static_strides_tuple)
-        print("output._runtime_shape = ", output.shape())
-        print("output._runtime_strides = ", output.strides())
-
-        @inline(.always)
-        def func[width: Int](idx: Coord) {var} -> SIMD[output.dtype, width]:
-            return (
-                rebind[SIMD[output.dtype, width]](x._fused_load[width](idx))
-                * 2.0
-            )
-
-        foreach(func, output, ctx)
-
-
-@extensibility.register_shape_function("print_output_shape_strides_fused")
-def print_output_shape_strides_fused_shape(
-    x: Some[Tensor],
-) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
 
 
 @extensibility.register("test_monoid_mixed_fields")
@@ -2799,30 +2738,6 @@ struct TensorOpaqueTensorKernel:
         input: InputTensor,
     ) raises:
         pass
-
-
-@extensibility.register("test_same_rank_dtype")
-struct TestSameRankDtype:
-    @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-    ):
-        output[0] = input[0]
-
-
-@extensibility.register("test_fix_rank")
-struct TestFixRank:
-    @staticmethod
-    def execute[
-        dtype: DType
-    ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        input: InputTensor[dtype=dtype, rank=2, ...],
-    ):
-        output[0] = input[0]
 
 
 @extensibility.register("test_simd_input_size_1")
