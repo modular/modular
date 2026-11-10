@@ -518,11 +518,9 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
       .def(nb::new_(&Python::getCpuDevice), "id"_a = 0);
 
   nb::class_<Python::CompletionFlag>(m, "CompletionFlag", R"nbdoc(
-          An 8-byte completion flag in pinned host memory mapped into a device's address space.
+          A 64-bit completion flag that the host signals and a device queue waits on.
 
-          Lets a CPU thread signal a GPU queue (or vice versa) by writing a
-          64-bit value to a single location that is visible to both. Pair
-          with :meth:`DeviceQueue.wait_for_host_value` or the
+          Pair with :meth:`DeviceQueue.wait_for_host_value` or the
           ``runtime.wait_host_value`` graph op to gate downstream GPU work on a
           host-produced result without a second queue or a blocking host
           callback.
@@ -551,15 +549,16 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
            R"nbdoc(
               Clears the flag back to ``0``.
 
-              Don't reset while a queue is still waiting on the flag, and
-              don't signal a lower value without a reset.
+              Don't reset while a wait on the flag is pending; doing so is
+              undefined behavior. Don't signal a lower value without a reset
+              in between.
             )nbdoc")
       .def("signal", &Python::CompletionFlag::signal, "value"_a,
            R"nbdoc(
               Release-ordered store of ``value`` to the flag.
 
-              Pairs with the GPU-side ``cuStreamWaitValue64`` (or a
-              host-side acquire ``load``).
+              Pairs with a queued device wait on the flag (or a host-side
+              acquire ``load``).
 
               Primary intended use is priming the flag at setup time so
               the first captured-graph replay's ``runtime.wait_host_value``

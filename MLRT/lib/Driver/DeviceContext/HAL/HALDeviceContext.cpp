@@ -38,6 +38,7 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
+#include <string>
 #include <utility>
 
 extern "C" {
@@ -157,18 +158,20 @@ void MojoHAL_DeviceContextScope_pop(MojoHALScopeBox *scope);
 bool MojoHAL_DeviceContext_getDLPackStream(MojoHALStreamBox **out_stream,
                                            MojoHALContextBox *ctx);
 const char *MojoHAL_DeviceContext_allocateCompletionFlag(
-    MojoHALCompletionFlagBox **out_flag, void **out_host_ptr,
-    uint64_t *out_dev_addr, MojoHALContextBox *ctx);
+    MojoHALCompletionFlagBox **out_flag, MojoHALContextBox *ctx);
+bool MojoHAL_DeviceContext_supportsCompletionFlags(MojoHALContextBox *ctx);
 void MojoHAL_CompletionFlag_release(MojoHALCompletionFlagBox *flag);
-void MojoHAL_CompletionFlag_signal(void *host_ptr, uint64_t value);
-uint64_t MojoHAL_CompletionFlag_load(void *host_ptr);
-void MojoHAL_CompletionFlag_reset(void *host_ptr);
+const char *MojoHAL_CompletionFlag_signal(MojoHALCompletionFlagBox *flag,
+                                          uint64_t value);
+const char *MojoHAL_CompletionFlag_load(MojoHALCompletionFlagBox *flag,
+                                        uint64_t *out_value);
+const char *MojoHAL_CompletionFlag_reset(MojoHALCompletionFlagBox *flag);
 const char *MojoHAL_DeviceStream_launchHostFunc(MojoHALStreamBox *stream,
                                                 void (*fn)(void *),
                                                 void *userData);
-const char *MojoHAL_DeviceStream_waitOnHostValue(MojoHALStreamBox *stream,
-                                                 uint64_t device_addr,
-                                                 uint64_t value);
+const char *MojoHAL_DeviceStream_waitOnFlag(MojoHALStreamBox *stream,
+                                            MojoHALCompletionFlagBox *flag,
+                                            uint64_t value);
 }
 
 namespace M {
@@ -989,15 +992,39 @@ DeviceContextScope::~DeviceContextScope() {
 
 CompletionFlag::~CompletionFlag() { MojoHAL_CompletionFlag_release(mojoFlag_); }
 
-void CompletionFlag::reset() { MojoHAL_CompletionFlag_reset(hostPtr_); }
+namespace {
+/// Dropping the error instead would turn a misuse, such as a lower signal on
+/// Metal, into a wait that never passes.
+[[noreturn]] void reportFlagError(const char *op, const char *err) {
+  std::string msg = (llvm::Twine("CompletionFlag::") + op + ": " + err).str();
+  MojoHAL_strfree(err);
+  llvm::report_fatal_error(llvm::Twine(msg));
+}
+} // namespace
+
+void CompletionFlag::reset() {
+  if (const char *err = MojoHAL_CompletionFlag_reset(mojoFlag_))
+    reportFlagError("reset", err);
+}
 
 void CompletionFlag::signal(uint64_t value) {
-  MojoHAL_CompletionFlag_signal(hostPtr_, value);
+  if (const char *err = MojoHAL_CompletionFlag_signal(mojoFlag_, value))
+    reportFlagError("signal", err);
 }
 
 uint64_t CompletionFlag::load() const {
-  return MojoHAL_CompletionFlag_load(hostPtr_);
+  uint64_t value = 0;
+  if (const char *err = MojoHAL_CompletionFlag_load(mojoFlag_, &value))
+    reportFlagError("load", err);
+  return value;
 }
+
+/// Lets `AsyncRT_CompletionFlag_mojoBox` reach the box.
+struct CompletionFlagMojoAccess {
+  static MojoHALCompletionFlagBox *box(const CompletionFlag &flag) {
+    return flag.mojoFlag_;
+  }
+};
 
 // ===-- DeviceStream ----------------------------------------------------=== //
 
@@ -1046,8 +1073,8 @@ ErrorOrSuccess DeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
                                                uint64_t value) const {
   if (device_->isVirtual())
     return virtualDeviceError("host-value waits");
-  if (const char *err = MojoHAL_DeviceStream_waitOnHostValue(
-          mojoStream_, flag.devicePtr(), value))
+  if (const char *err =
+          MojoHAL_DeviceStream_waitOnFlag(mojoStream_, flag.mojoFlag_, value))
     return takeError(err);
   return {};
 }
@@ -1246,13 +1273,20 @@ Error DeviceContext::formatError(const char *file, int line, const char *func,
 ErrorOr<CompletionFlagRef> DeviceContext::allocateCompletionFlag() {
   if (device_->isVirtual())
     return virtualDeviceError("completion flags");
+  if (!supportsCompletionFlags())
+    return Error("completion flags are not supported on this device");
   MojoHALCompletionFlagBox *flag = nullptr;
-  void *hostPtr = nullptr;
-  uint64_t devAddr = 0;
-  if (const char *err = MojoHAL_DeviceContext_allocateCompletionFlag(
-          &flag, &hostPtr, &devAddr, mojoCtx_))
+  if (const char *err =
+          MojoHAL_DeviceContext_allocateCompletionFlag(&flag, mojoCtx_))
     return takeError(err);
-  return CompletionFlagRef::take(new CompletionFlag(flag, hostPtr, devAddr));
+  return CompletionFlagRef::take(new CompletionFlag(flag));
+}
+
+bool DeviceContext::supportsCompletionFlags() const {
+  // A CPU context is boxed as the accelerator's Mojo context, whose extension
+  // lookup would read past the CPU device, so never reach it.
+  return !device_->isVirtual() && device_->api() != Device::cpuAPI &&
+         MojoHAL_DeviceContext_supportsCompletionFlags(mojoCtx_);
 }
 
 // ===-- Device graphs (unsupported) --------------------------------------===
@@ -1414,35 +1448,11 @@ using M::AsyncRT::CPUDevice;
 using M::Driver::DeviceBuffer;
 using M::Driver::DeviceBufferRef;
 
-// Backs the HAL Mojo `DeviceStream.wait_for_flag`.
-MODULAR_EXPORT uint64_t
-AsyncRT_CompletionFlag_devicePtr(M::Driver::CompletionFlag *flag) {
-  return flag->devicePtr();
-}
-
-MODULAR_EXPORT void
-AsyncRT_CompletionFlag_retain(M::Driver::CompletionFlag *flag) {
-  M::Driver::CompletionFlagRef::lowLevelAddRef(flag);
-}
-
-MODULAR_EXPORT void
-AsyncRT_CompletionFlag_release(M::Driver::CompletionFlag *flag) {
-  M::Driver::CompletionFlagRef::lowLevelDropRef(flag);
-}
-
-MODULAR_EXPORT void
-AsyncRT_CompletionFlag_signal(M::Driver::CompletionFlag *flag, uint64_t value) {
-  flag->signal(value);
-}
-
-MODULAR_EXPORT uint64_t
-AsyncRT_CompletionFlag_load(M::Driver::CompletionFlag *flag) {
-  return flag->load();
-}
-
-MODULAR_EXPORT void
-AsyncRT_CompletionFlag_reset(M::Driver::CompletionFlag *flag) {
-  flag->reset();
+// Backs the HAL Mojo `CompletionFlag(unsafe_from_address=)`, which a graph op
+// uses to share the flag a C++ caller allocated.
+MODULAR_EXPORT MojoHALCompletionFlagBox *
+AsyncRT_CompletionFlag_mojoBox(M::Driver::CompletionFlag *flag) {
+  return M::Driver::CompletionFlagMojoAccess::box(*flag);
 }
 
 // Backs the HAL Mojo `DeviceBuffer.take_handle()`, so `takeRCRef` consumers

@@ -253,15 +253,6 @@ M_DriverStatus mixedBackends(const char *what) {
   return fail(M_DRIVER_INVALID_ARGUMENT, message);
 }
 
-#if MODULAR_HAL_DEVICE_CONTEXT
-/// Only the CUDA and HIP HAL plugins can wait on a flag.
-// TODO(DRIV-688): Metal, once its plugin gets the completion-flag extension.
-bool halSupportsCompletionFlags(const DeviceContext &context) {
-  const Device::API api = context.device().api();
-  return api == Device::cudaAPI || api == Device::hipAPI;
-}
-#endif
-
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -1022,10 +1013,10 @@ M_DriverStatus M_DriverCompletionFlagCreate(const M_DriverDevice *device,
     return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
   *out = nullptr;
 #if MODULAR_HAL_DEVICE_CONTEXT
-  if (!halSupportsCompletionFlags(contextOf(*device)))
+  if (!contextOf(*device).supportsCompletionFlags())
     return fail(M_DRIVER_NOT_SUPPORTED,
-                "M_DriverCompletionFlagCreate: a HAL device context build "
-                "supports completion flags on CUDA and HIP devices only");
+                "M_DriverCompletionFlagCreate: this device's HAL plugin has "
+                "no completion flags");
 #endif
   ErrorOr<M::Driver::CompletionFlagRef> flag =
       contextOf(*device).allocateCompletionFlag();
@@ -1046,6 +1037,11 @@ M_DriverStatus M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag,
                                             uint64_t value) {
   if (flag == nullptr)
     return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  // HAL Metal aborts on a lower value, and this entry point can report it.
+  if (value < flag->flag->load())
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "M_DriverCompletionFlagSignal: value is lower than the flag's "
+                "current value");
   flag->flag->signal(value);
   return succeed();
 }
@@ -1058,10 +1054,10 @@ M_DriverStatus M_DriverStreamWaitFlag(const M_DriverStream *stream,
   if (!sameApi(*stream->ctx, *flag->ctx))
     return mixedBackends("M_DriverStreamWaitFlag");
 #if MODULAR_HAL_DEVICE_CONTEXT
-  if (!halSupportsCompletionFlags(*stream->ctx))
+  if (!stream->ctx->supportsCompletionFlags())
     return fail(M_DRIVER_NOT_SUPPORTED,
-                "M_DriverStreamWaitFlag: a HAL device context build supports "
-                "completion flags on CUDA and HIP streams only");
+                "M_DriverStreamWaitFlag: this stream's HAL plugin has no "
+                "completion flags");
 #endif
   if (isExternal(*stream))
     return reportIfError(

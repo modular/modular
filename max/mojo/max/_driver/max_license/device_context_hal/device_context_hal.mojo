@@ -77,7 +77,13 @@ from ..hal._machine import DeviceRef, DeviceSpec
 from ..hal._plugin._impl import HalPluginForTarget
 from ..hal._plugin._trait import HalLaunchOptions
 from ..hal.event import EVENT_FLAG_CPU_VISIBLE
-from ..hal.extensions.traits import SupportsPeerAccessV1
+from ..hal.extensions.completion_flag import FlagCondition
+from ..hal.extensions.traits import (
+    SupportsCompletionFlagResetV1,
+    SupportsCompletionFlagV1,
+    SupportsPeerAccessV1,
+)
+from ..hal.plugins import FlagHandle
 from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
@@ -1053,18 +1059,30 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             The new flag.
 
         Raises:
-            Always, until the HAL supports completion flags.
+            If the device's plugin has no completion flags.
         """
-        # TODO(DRIV-688): allocate through the completion-flag extension.
-        raise Error("completion flags are not supported by the HAL yet")
+        return CompletionFlag(
+            _inner=ArcPointer(_CompletionFlagBox(self.assert_default_target()))
+        )
 
     def supports_flag_wait(self) -> Bool:
         """Returns whether this device supports completion flags.
 
         Returns:
-            False until the HAL supports completion flags.
+            True when the device's plugin exports both the completion-flag
+            and the flag-reset extensions.
         """
-        # TODO(DRIV-688): true once Mojo can allocate flags under the HAL.
+        # A context boxed under another target's type, such as a CPU context
+        # in the accelerator's `DeviceContext[]`, would read the wrong
+        # extension struct, so check the runtime API first.
+        if self.api() != Self._default_api():
+            return False
+        comptime Ext = type_of(self._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
+            ref ext = self._context[].extensions()
+            return Bool(ext.completion_flag()) and Bool(
+                ext.completion_flag_reset()
+            )
         return False
 
     @doc_hidden
@@ -4055,13 +4073,10 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             value: The 64-bit value to wait for. Keep values below 2^63.
 
         Raises:
-            If the underlying device does not support stream memory ops,
-            or if enqueueing the wait fails.
+            If the device has no completion flags, the flag belongs to
+            another backend, or enqueueing the wait fails.
         """
-        var device_addr = external_call[
-            "AsyncRT_CompletionFlag_devicePtr", UInt64
-        ](flag._handle)
-        self._stream[].wait_value64(device_addr, value)
+        flag._inner[].wait(self, value)
 
     @deprecated("Use `wait_for_flag` instead.")
     @doc_hidden
@@ -6260,35 +6275,106 @@ struct DevicePointer[
 # implemented here.
 
 
+struct _CompletionFlagBox(Movable):
+    """A plugin flag shared with the C++ ``M::Driver::CompletionFlag``."""
+
+    var ctx: DeviceContext[]
+    var flag: FlagHandle
+
+    @staticmethod
+    def _flags[E: SupportsCompletionFlagV1](ext: E) raises -> E.FlagGroup:
+        if case .Some(flags) = ext.completion_flag():
+            return flags
+        raise Error("completion flags are not supported on this device")
+
+    def __init__(out self, ctx: DeviceContext[]) raises:
+        # `reset` must not fail later inside a driver callback.
+        if not ctx.supports_flag_wait():
+            raise Error("completion flags are not supported on this device")
+        comptime Ext = type_of(ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = ctx._context[]
+            var flags = Self._flags(hal_ctx.extensions())
+            self.flag = flags.create(hal_ctx._raw[], hal_ctx._handle)
+            self.ctx = ctx
+            return
+        raise Error("completion flags are not supported on this device")
+
+    def __deinit__(deinit self):
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            try:
+                Self._flags(hal_ctx.extensions()).destroy(
+                    hal_ctx._raw[], hal_ctx._handle, self.flag
+                )
+            except e:
+                print("warning: failed to destroy completion flag:", e)
+
+    def signal(self, value: UInt64) raises:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            Self._flags(hal_ctx.extensions()).signal(
+                hal_ctx._raw[], self.flag, value
+            )
+            return
+        raise Error("completion flags are not supported on this device")
+
+    def load(self) raises -> UInt64:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            return Self._flags(hal_ctx.extensions()).load(
+                hal_ctx._raw[], self.flag
+            )
+        raise Error("completion flags are not supported on this device")
+
+    def reset(self) raises:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
+            ref hal_ctx = self.ctx._context[]
+            if case .Some(reset) = hal_ctx.extensions().completion_flag_reset():
+                reset.reset(hal_ctx._raw[], self.flag)
+                return
+        raise Error("completion flag reset is not supported on this device")
+
+    def wait[
+        target: CompilationTarget
+    ](self, stream: DeviceStreamBase[target], value: UInt64) raises:
+        # The stream's plugin would get a flag handle it didn't create.
+        if stream._ctx.api() != self.ctx.api():
+            raise Error(
+                "completion flag waits are not supported across backends"
+            )
+        stream._stream[].wait_flag(self.flag, value, FlagCondition.geq)
+
+
 struct CompletionFlag(ImplicitlyCopyable):
     """Host-visible completion flag.
 
-    Holds a reference to a C++ ``M::Driver::CompletionFlag``.
+    Shares the plugin flag that backs a C++ ``M::Driver::CompletionFlag``, so
+    a standalone Mojo program needs no C++ runtime to use one.
     """
 
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _handle: OpaquePointer[MutUntrackedOrigin]
+    var _inner: ArcPointer[_CompletionFlagBox]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, *, copy: Self):
-        """Copies a flag by incrementing its reference count.
+    def __init__(out self, *, var _inner: ArcPointer[_CompletionFlagBox]):
+        """Wraps a plugin flag.
 
         Args:
-            copy: The flag to copy.
+            _inner: The shared plugin flag.
         """
-        external_call["AsyncRT_CompletionFlag_retain", NoneType](copy._handle)
-        self._handle = copy._handle
-
-    def __deinit__(deinit self):
-        """Releases this flag's reference."""
-        external_call["AsyncRT_CompletionFlag_release", NoneType](self._handle)
+        self._inner = _inner^
 
     @inline(.always)
     def __init__(out self, *, unsafe_from_address: Int):
@@ -6298,53 +6384,72 @@ struct CompletionFlag(ImplicitlyCopyable):
         pointer from a payload buffer (mirroring how
         `runtime.launch_host_func` rebuilds its trampoline/user-data
         pointers). The caller asserts that ``unsafe_from_address``
-        points to a valid ``M::Driver::CompletionFlag`` and that the
-        underlying object outlives any in-flight use.
+        points to a valid ``M::Driver::CompletionFlag`` that outlives every
+        wait enqueued through this flag.
 
         Args:
             unsafe_from_address: Raw address of an
                 ``M::Driver::CompletionFlag`` (as packed into a graph
                 payload buffer by the producer side).
         """
-        self._handle = OpaquePointer[MutUntrackedOrigin](
-            unsafe_from_address=unsafe_from_address
-        )
-        external_call["AsyncRT_CompletionFlag_retain", NoneType](self._handle)
+        # The runtime library built this box, and a graph kernel reads its
+        # layout here, so both must come from the same source build.
+        self._inner = external_call[
+            "AsyncRT_CompletionFlag_mojoBox",
+            Pointer[ArcPointer[_CompletionFlagBox], MutUntrackedOrigin],
+        ](
+            OpaquePointer[MutUntrackedOrigin](
+                unsafe_from_address=unsafe_from_address
+            )
+        )[]
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    # The legacy signatures can't fail, so a plugin error aborts rather than
+    # leaving a wait that never passes.
+
     @inline(.always)
     def signal(self, value: UInt64):
         """Stores ``value`` in the flag with release ordering.
 
+        Don't signal a lower value than the last one without a reset in
+        between. Aborts if the plugin fails.
+
         Args:
             value: The value to store.
         """
-        external_call["AsyncRT_CompletionFlag_signal", NoneType](
-            self._handle, value
-        )
+        try:
+            self._inner[].signal(value)
+        except e:
+            abort(t"CompletionFlag.signal: {e}")
 
     @inline(.always)
     def load(self) -> UInt64:
         """Loads the flag's value with acquire ordering.
 
+        Aborts if the plugin fails.
+
         Returns:
             The value the flag holds.
         """
-        return external_call["AsyncRT_CompletionFlag_load", UInt64](
-            self._handle
-        )
+        try:
+            return self._inner[].load()
+        except e:
+            abort(t"CompletionFlag.load: {e}")
 
     @inline(.always)
     def reset(self):
-        """Stores 0 in the flag.
+        """Sets the flag back to 0.
 
-        Don't reset while a stream is still waiting on the flag, and don't
-        signal a lower value without a reset.
+        Don't reset while a wait on the flag is pending; doing so is undefined
+        behavior. Aborts if the plugin fails.
         """
-        external_call["AsyncRT_CompletionFlag_reset", NoneType](self._handle)
+        try:
+            self._inner[].reset()
+        except e:
+            abort(t"CompletionFlag.reset: {e}")
 
 
 struct DeviceContextArray[

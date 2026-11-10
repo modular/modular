@@ -1423,6 +1423,25 @@ TEST(DriverCApi, AcceleratorStreamWaitsForFlag) {
   EXPECT_EQ(M_DriverCompletionFlagDestroy(flag), M_DRIVER_OK);
 }
 
+TEST(DriverCApi, CompletionFlagSignalRejectsLowerValue) {
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK);
+  M_DriverCompletionFlag *flag = nullptr;
+  const M_DriverStatus created =
+      M_DriverCompletionFlagCreate(device.get(), &flag);
+  if (MODULAR_HAL_DEVICE_CONTEXT && created == M_DRIVER_NOT_SUPPORTED)
+    GTEST_SKIP() << "no HAL completion flags on this backend: " << lastError();
+  ASSERT_EQ(created, M_DRIVER_OK) << lastError();
+
+  ASSERT_EQ(M_DriverCompletionFlagSignal(flag, 5), M_DRIVER_OK);
+  EXPECT_EQ(M_DriverCompletionFlagSignal(flag, 5), M_DRIVER_OK);
+  EXPECT_EQ(M_DriverCompletionFlagSignal(flag, 4), M_DRIVER_INVALID_ARGUMENT);
+  EXPECT_EQ(M_DriverCompletionFlagSignal(flag, 6), M_DRIVER_OK) << lastError();
+  EXPECT_EQ(M_DriverCompletionFlagDestroy(flag), M_DRIVER_OK);
+}
+
 //===----------------------------------------------------------------------===//
 // Host memory registration
 //===----------------------------------------------------------------------===//

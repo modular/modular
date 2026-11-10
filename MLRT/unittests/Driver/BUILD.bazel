@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "mojo_test")
 
 # gazelle:default_visibility //visibility:private
 
@@ -1496,6 +1496,27 @@ modular_cc_test(
         ("MetalCompletionFlagTest", "//:apple_gpu", "//:asan"),
     ]
 ]
+
+# Meant for --config=hal-device-context; also passes under the legacy driver.
+mojo_test(
+    name = "test_completion_flag_graph_handle.mojo.test",
+    srcs = ["test_completion_flag_graph_handle.mojo"],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
 
 # The C API and virtual device parity tests under --config=hal-device-context,
 # which no CI lane runs on a GPU. Run with that config plus a remote GPU

@@ -691,21 +691,25 @@ M_DRIVER_API M_DriverStatus M_DriverEventElapsedTimeMs(
 
 /// A 64-bit value the host signals and a stream waits on. CUDA, HIP and Metal
 /// only; the CPU device fails with `M_DRIVER_RUNTIME_ERROR`. A HAL device
-/// context build supports CUDA and HIP only, and reports
+/// context build supports them on any non-CPU device whose plugin exports the
+/// completion-flag extension with reset (CUDA, HIP and Metal), and reports
 /// `M_DRIVER_NOT_SUPPORTED` for any other device.
 
 /// Allocates a flag on `device`, holding 0.
 M_DRIVER_API M_DriverStatus M_DriverCompletionFlagCreate(
     const M_DriverDevice *device, M_DriverCompletionFlag **out);
 
-/// Releases a flag handle. Keep it until every wait on it has completed: on
-/// CUDA and HIP, dropping a flag with a wait still pending deadlocks the
-/// waiting stream, because nothing can signal the flag any more.
+/// Releases a flag handle. Destroying a flag while a wait on it is pending is
+/// undefined behavior. On CUDA and HIP, destroy frees pinned memory, which
+/// synchronizes the device, so destroying any flag while a wait on any flag on
+/// that device is pending is undefined behavior. On Metal, a wait the flag did
+/// not satisfy before destroy blocks the stream forever.
 M_DRIVER_API M_DriverStatus
 M_DriverCompletionFlagDestroy(M_DriverCompletionFlag *flag);
 
 /// Stores `value` in the flag with release ordering. The value must not
-/// decrease: Metal ignores a lower value, and this interface has no reset.
+/// decrease, and this interface has no reset: a value lower than the flag's
+/// current one is `M_DRIVER_INVALID_ARGUMENT` and leaves the flag unchanged.
 ///
 /// Signal from a thread that does not first block on a stream waiting on the
 /// flag (see `M_DriverStreamWaitFlag`); otherwise the signal never comes.
@@ -717,12 +721,15 @@ M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag, uint64_t value);
 /// not block the host. A flag from another backend than `stream` is
 /// `M_DRIVER_INVALID_ARGUMENT`.
 ///
-/// While the wait is pending, the thread that signals the flag must not block
-/// on `stream` first, or neither side makes progress. That rules out
-/// `M_DriverStreamSynchronize`, a device-to-host copy into pageable memory, a
-/// large host-to-device copy from pageable memory, and destroying the flag.
-/// Stage copies through a pinned host buffer (`M_DriverBufferAllocate` with
-/// `pinned_host`), or signal from another thread.
+/// While the wait is pending, the thread that will signal the flag must not
+/// make a call that waits for the stream or the device, or neither side makes
+/// progress. That rules out `M_DriverStreamSynchronize`, a copy to or from
+/// pageable host memory (on CUDA and HIP a host-to-device copy below a small,
+/// vendor-dependent size may return), freeing any pinned host or device
+/// buffer, even an unrelated one, and destroying a flag. On Metal, memset and
+/// fill also wait. Stage copies through a pinned host buffer
+/// (`M_DriverBufferAllocate` with `pinned_host`), or signal from another
+/// thread.
 M_DRIVER_API M_DriverStatus
 M_DriverStreamWaitFlag(const M_DriverStream *stream,
                        const M_DriverCompletionFlag *flag, uint64_t value);

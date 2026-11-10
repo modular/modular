@@ -11,8 +11,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Covers the legacy driver. The HAL DeviceContext does not support these
-// cases yet.
+// Uses only the DeviceContext API, so the same cases run against the legacy
+// driver and under --config=hal-device-context.
 //
 //===----------------------------------------------------------------------===//
 
@@ -31,16 +31,22 @@
 
 namespace M::Driver {
 
+static bool hasFlags(const DeviceContext &ctx) {
+  return ctx.device().api() == Device::cudaAPI ||
+         ctx.device().api() == Device::hipAPI ||
+         ctx.device().api() == Device::metalAPI;
+}
+
+static void bumpAtomicCounter(void *userData) {
+  auto *counter = reinterpret_cast<std::atomic<int> *>(userData);
+  counter->fetch_add(1, std::memory_order_relaxed);
+}
+
 TEST(CompletionFlagTest, CompletionFlagAllocResetSignalLoad) {
-  // Round-trip the host-side API in isolation: allocation initializes
-  // to zero, signal() stores the value, reset() goes back to zero.
-  // No GPU stream involved -- this just exercises the device-mapped
-  // pinned buffer and the atomic accessors on M::Driver::CompletionFlag.
+  // No stream: a reset must read back 0 even where the plugin swaps the event.
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
-  if (ctx->device().api() == Device::cudaAPI ||
-      ctx->device().api() == Device::hipAPI ||
-      ctx->device().api() == Device::metalAPI) {
+  if (hasFlags(*ctx)) {
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
     EXPECT_EQ(flag->load(), 0u) << "fresh allocation should be zero";
@@ -65,9 +71,7 @@ TEST(CompletionFlagTest, EnqueueWaitOnHostValuePreSignaledReturnsImmediately) {
   // Covers the wait path end to end without depending on timing.
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
-  if (ctx->device().api() == Device::cudaAPI ||
-      ctx->device().api() == Device::hipAPI ||
-      ctx->device().api() == Device::metalAPI) {
+  if (hasFlags(*ctx)) {
     ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
@@ -81,9 +85,7 @@ TEST(CompletionFlagTest, EnqueueWaitOnHostValueGatesUntilHostSignals) {
   // Asserts ordering only; a timing assertion would flake.
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
-  if (ctx->device().api() == Device::cudaAPI ||
-      ctx->device().api() == Device::hipAPI ||
-      ctx->device().api() == Device::metalAPI) {
+  if (hasFlags(*ctx)) {
     ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
@@ -106,10 +108,74 @@ TEST(CompletionFlagTest, EnqueueWaitOnHostValueGatesUntilHostSignals) {
   }
 }
 
+TEST(CompletionFlagTest, CompletionFlagResetRegatesQueuedWait) {
+  // Pins current behavior of a UB pattern Mach depends on. `gate` holds the
+  // stream so the wait on `flag` is still pending when the reset lands.
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  if (ctx->device().api() != Device::cudaAPI &&
+      ctx->device().api() != Device::hipAPI)
+    GTEST_SKIP() << "on Metal the pending wait stays on the replaced event";
+
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(CompletionFlagRef, gate, ctx->allocateCompletionFlag());
+  ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
+
+  std::atomic<int> counter{0};
+  EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*gate, 1));
+  EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 9));
+  EXPECT_NO_ERR(stream->enqueueHostFunc(&bumpAtomicCounter, &counter));
+
+  flag->signal(9);
+  flag->reset();
+  gate->signal(1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(counter.load(std::memory_order_acquire), 0)
+      << "the reset did not re-gate the queued wait";
+
+  flag->signal(9);
+  EXPECT_NO_ERR(stream->synchronize());
+  EXPECT_EQ(counter.load(std::memory_order_acquire), 1);
+}
+
+TEST(CompletionFlagDeathTest, LowerSignalAbortsOnMetal) {
+  // The flag API has no error channel, so a rejected lower signal must abort
+  // rather than leave a waiter short of its target.
+  if (!MODULAR_HAL_DEVICE_CONTEXT)
+    GTEST_SKIP() << "the legacy Metal driver ignores a lower signal";
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  if (ctx->device().api() != Device::metalAPI)
+    GTEST_SKIP() << "only Metal rejects a lower signal";
+
+  ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
+  flag->signal(5);
+  EXPECT_DEATH(flag->signal(3), "CompletionFlag::signal");
+  EXPECT_EQ(flag->load(), 5u);
+}
+
+TEST(CompletionFlagTest, CompletionFlagResetKeepsHandle) {
+  // A graph payload holds the flag's address, so reset must not replace it,
+  // including on Metal, where it swaps the backing event.
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  if (!hasFlags(*ctx))
+    GTEST_SKIP() << "no completion flags on this device";
+
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
+  CompletionFlag *before = flag.getPointer();
+
+  flag->signal(3);
+  flag->reset();
+  EXPECT_EQ(flag.getPointer(), before);
+  EXPECT_EQ(flag->load(), 0u);
+
+  EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 2));
+  flag->signal(2);
+  EXPECT_NO_ERR(stream->synchronize());
+  EXPECT_EQ(flag->load(), 2u);
+}
+
 TEST(CompletionFlagTest, AllocateCompletionFlagUnsupportedOnCpu) {
-  // Sanity: the default `DeviceContext::allocateCompletionFlag` returns
-  // an error; only CUDA overrides it. Matches the
-  // EnqueueHostFuncUnsupportedOnCpu pattern above.
   ASSIGN_NO_ERR(DeviceContextRef, cpuCtx,
                 DeviceContext::create(Device::cpuAPI));
   ErrorOr<CompletionFlagRef> flagOr = cpuCtx->allocateCompletionFlag();
@@ -119,14 +185,11 @@ TEST(CompletionFlagTest, AllocateCompletionFlagUnsupportedOnCpu) {
 }
 
 TEST(CompletionFlagTest, EnqueueWaitOnHostValueUnsupportedOnCpu) {
-  // Allocate the flag against the CUDA context (the only backend that
-  // can produce one), then attempt the wait on the CPU stream. The
-  // stream itself must reject the call without dereferencing the flag.
+  // A CPU stream must reject a GPU flag rather than hand its handle to the
+  // wrong backend.
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
-  if (ctx->device().api() == Device::cudaAPI ||
-      ctx->device().api() == Device::hipAPI ||
-      ctx->device().api() == Device::metalAPI) {
+  if (hasFlags(*ctx)) {
     ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());
 
     ASSIGN_NO_ERR(DeviceContextRef, cpuCtx,
@@ -143,6 +206,8 @@ TEST(CompletionFlagTest, MetalHostCopyDoesNotBlockBehindFlagWait) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
   if (ctx->device().api() != Device::metalAPI)
     GTEST_SKIP() << "only Metal stages pageable host copies";
+  if (MODULAR_HAL_DEVICE_CONTEXT)
+    GTEST_SKIP() << "the HAL Metal pageable host copy waits behind the queue";
 
   ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
   ASSIGN_NO_ERR(CompletionFlagRef, flag, ctx->allocateCompletionFlag());

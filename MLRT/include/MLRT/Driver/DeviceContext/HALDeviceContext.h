@@ -396,8 +396,11 @@ private:
   ErrorOrSuccess err_;
 };
 
-/// A host-signalable, device-waitable 64-bit slot in device-mapped pinned
-/// host memory (allocated by `DeviceContext::allocateCompletionFlag`).
+/// A 64-bit flag the host signals and a device waits on, backed by the
+/// plugin's completion-flag extension.
+///
+/// `reset`, `signal` and `load` abort if the plugin fails: their legacy
+/// signatures have no error channel.
 class MODULAR_CXX_EXPORT CompletionFlag final
     : public ReferenceCounted<CompletionFlag> {
 public:
@@ -406,25 +409,23 @@ public:
   CompletionFlag(const CompletionFlag &) = delete;
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
-  // TODO(DRIV-688): make private once the extension backs the flag; the HAL
-  // Mojo wait reads it.
-  uint64_t devicePtr() const { return devicePtr_; }
-
+  /// Stores 0, keeping this object so a graph payload holding it stays valid.
+  ///
+  /// Don't reset while a wait on the flag is pending; doing so is undefined
+  /// behavior.
   void reset();
+  /// Don't signal a lower value than the last one without a reset in between.
   void signal(uint64_t value);
   uint64_t load() const;
 
 private:
   friend class DeviceContext;
   friend class DeviceStream;
-  CompletionFlag(MojoHALCompletionFlagBox *mojoFlag, void *hostPtr,
-                 uint64_t devicePtr)
-      : mojoFlag_(mojoFlag), hostPtr_(hostPtr), devicePtr_(devicePtr) {}
+  friend struct CompletionFlagMojoAccess;
+  explicit CompletionFlag(MojoHALCompletionFlagBox *mojoFlag)
+      : mojoFlag_(mojoFlag) {}
 
-  MojoHALCompletionFlagBox
-      *mojoFlag_; // Heap-boxed Mojo-side flag (owns the pinned slot).
-  void *hostPtr_;
-  uint64_t devicePtr_;
+  MojoHALCompletionFlagBox *mojoFlag_; // Owns the plugin flag.
 };
 
 /// An in-order command stream on one device.
@@ -446,6 +447,12 @@ public:
   ErrorOrSuccess enqueueWaitForEvent(DeviceEvent &event);
 
   /// Stalls the stream until the flag's slot is at least `value`.
+  ///
+  /// While the wait is pending, the thread that will signal the flag must not
+  /// make a call that waits for the stream or the device: `synchronize`, a
+  /// copy to or from pageable host memory (small host-to-device copies may
+  /// return on CUDA and HIP), freeing pinned or device memory, or destroying a
+  /// flag. On Metal, memset and fill also wait.
   ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
                                    uint64_t value) const;
 
@@ -673,9 +680,12 @@ public:
 
   // ===-- Completion flags ---------------------------------------------=== //
 
-  /// Allocates a zero-initialized 64-bit completion flag in device-mapped
-  /// pinned host memory.
+  /// Allocates a completion flag whose value is 0.
   ErrorOr<CompletionFlagRef> allocateCompletionFlag();
+
+  /// Returns whether this is a non-CPU device whose plugin exports the
+  /// completion-flag extension with reset.
+  bool supportsCompletionFlags() const;
 
   // ===-- Error helpers -------------------------------------------------=== //
 
