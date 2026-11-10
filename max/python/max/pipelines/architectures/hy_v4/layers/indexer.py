@@ -42,7 +42,7 @@ from max.tensor import Tensor
 from ..model_config import HYV4Config
 from . import mxfp8
 from .functional_kernels import (
-    mla_fp8_index_top_k,
+    mla_fp8_index_top_k_physical,
     rope_ragged,
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
@@ -84,9 +84,10 @@ class HYV4Indexer(Module[..., Tensor]):
     """The indexer of decoder layer ``layer_idx``.
 
     A ``full`` layer scores every cached key with ``relu(q . k)`` summed over
-    heads by ``weights_proj(x)`` and returns the ``index_topk`` best token
-    positions per query row (``-1`` past the end of a short row). Its keys go
-    to the FP8 indexer K cache at the slot the caller passes.
+    heads by ``weights_proj(x)`` and returns the MLA cache rows of the
+    ``index_topk`` best token positions per query row (``-1`` past the end of
+    a short row). Its keys go to the FP8 indexer K cache at the slot the
+    caller passes.
     A ``shared`` layer (``skip_topk``) declares no weights and returns the
     ``prev_topk_indices`` it is given.
 
@@ -131,9 +132,14 @@ class HYV4Indexer(Module[..., Tensor]):
         input_row_offsets: Tensor,
         k_cache: PagedCacheValues,
         cache_layer: Tensor,
+        mla_cache: PagedCacheValues,
         prev_topk_indices: Tensor | None = None,
     ) -> Tensor:
-        """Returns ``[tokens, index_topk]`` int32 token positions.
+        """Returns ``[tokens, index_topk]`` int32 physical MLA cache rows.
+
+        The rows are ``block_id * page_size + offset`` in ``mla_cache``, the
+        same at every layer, so a ``shared`` layer reuses them as they are and
+        the sparse MLA kernels read them without a remap.
 
         Args:
             x: ``[tokens, hidden_size]`` normalized hidden states.
@@ -144,6 +150,7 @@ class HYV4Indexer(Module[..., Tensor]):
             k_cache: The FP8 indexer K cache.
             cache_layer: ``[]`` uint32 on the host, the layer's slot in
                 ``k_cache``.
+            mla_cache: The MLA latent cache the returned rows index.
             prev_topk_indices: The previous ``full`` layer's result; read
                 only by a ``shared`` layer.
         """
@@ -191,11 +198,12 @@ class HYV4Indexer(Module[..., Tensor]):
             * q_scale
             * self.head_dim**-0.5
         )
-        return mla_fp8_index_top_k(
+        return mla_fp8_index_top_k_physical(
             q_fp8,
             weights,
             input_row_offsets,
             k_cache,
+            mla_cache,
             cache_layer,
             self.index_topk,
             self.head_dim,

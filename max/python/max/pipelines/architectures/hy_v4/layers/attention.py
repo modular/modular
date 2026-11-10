@@ -235,7 +235,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         prev_topk_indices: Tensor | None,
         buffer_length: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        """Returns the block output and the top-k positions it attended.
+        """Returns the block output and the top-k MLA cache rows it attended.
 
         Args:
             x: ``[tokens, hidden_size]`` normalized hidden states.
@@ -272,6 +272,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             input_row_offsets,
             indexer_kv_collection,
             indexer_layer,
+            kv_collection,
             prev_topk_indices,
         )
 
@@ -295,9 +296,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             scalar_args=kv_collection.attention_dispatch_metadata,
             num_partitions_scalar=kv_collection.mla_num_partitions,
             sparse_indices=topk,
-            # The indexer's top-k holds logical token positions, which the
-            # kernels look up in the page table, not physical cache rows.
-            physical_indices=False,
+            physical_indices=True,
             sparse_attn_sink=self.learnable_sink_param,
             sparse_indices_stride=self.index_topk,
         )

@@ -49,6 +49,9 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mha_decode_register_owners.mojo": ["//:nvidia_gpu"],
+    # The filtered top-k select runs on NVIDIA only; elsewhere its launcher
+    # keeps the shared select.
+    "test_topk_filtered.mojo": ["//:nvidia_gpu"],
     # The packed-indices kernel uses 32-lane warp masks (`match_any`).
     "test_moe_routing_packed.mojo": ["//:nvidia_gpu"],
     # PDL needs SM90+; below that the launches serialize and the test cannot fail.

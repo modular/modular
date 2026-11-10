@@ -119,6 +119,7 @@ from nn.attention.gpu.mla_index_fp8 import (
     mla_indexer_ragged_float8_paged_cp,
 )
 from nn.attention.gpu.cp_merge_topk import cp_merge_topk
+from nn.topk_filtered import FilteredTopk
 from nn.attention.compress_windows import compress_windows_ragged_paged
 from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.gpu.mla_common import SparseRowLayout
@@ -1356,6 +1357,162 @@ struct MLAIndexerRaggedFloat8PagedRemap:
             remap,
             ctx,
             _split_record_pointer(mixed_step_split.to_tile_tensor[.uint32]()),
+        )
+
+
+@extensibility.register(
+    "attention.mla.indexer.ragged.float8.paged.remap.filtered"
+)
+struct MLAIndexerRaggedFloat8PagedRemapFiltered:
+    """Registers the `attention.mla.indexer.ragged.float8.paged.remap.filtered` graph op.
+
+    `attention.mla.indexer.ragged.float8.paged.remap` with the filtered top-k
+    select (`nn.topk_filtered.FilteredTopk`): bounded rows that fill the GPU
+    keep only the columns at or above a sampled bound before the exact
+    select. Same operands, parameters and outputs. Hy4's indexer calls it at
+    every step; other score windows keep the shared select.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        num_heads: Int,
+        depth: Int,
+        k: Int,
+        quantization_granularity: Int,
+        mask_str: StaticString,
+        write_logical: Bool = False,
+    ](
+        output_indices: Some[Output & Tensor],
+        physical_indices: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        qs: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        k_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        k_cache_lengths: Some[Input & Tensor],
+        k_lookup_table: Some[Input & Tensor],
+        k_max_prompt_length: Some[Input & Tensor],
+        k_max_cache_length: Some[Input & Tensor],
+        k_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        k_scales_lookup_table: Some[Input & Tensor],
+        layer_idx: UInt32,
+        mla_kv_blocks: Some[MutableInput & Tensor],
+        mla_lookup_table: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        """Computes top-k key positions and their physical MLA cache rows.
+
+        Parameters:
+            num_heads: Number of query attention heads.
+            depth: Head dimension.
+            k: Number of top indices to return per token.
+            quantization_granularity: Quantization granularity for the K cache.
+            mask_str: Mask type - either MaskName.NULL or MaskName.CAUSAL.
+            write_logical: Whether to write `output_indices` (defaults to
+                `False`). With `False` only the physical rows are written, and
+                `output_indices` may have no rows.
+
+        Args:
+            output_indices: Logical top-k key positions `[total_seq_len, k]`,
+                `-1` past a token's candidates.
+            physical_indices: Physical MLA cache row of each `output_indices`
+                slot, `block_id * page_size + offset`, `-1` where the
+                position is `-1` or its page is unmapped.
+            q: Query tensor [total_seq_len, num_heads, depth] in FP8.
+            qs: Query scales [total_seq_len, num_heads] in float32.
+            input_row_offsets: Ragged row offsets [batch_size + 1] for queries.
+            k_blocks: Paged indexer K cache blocks in FP8.
+            page_stride: Page-to-page distance in elements; -1 when packed.
+            k_cache_lengths: Cache lengths [batch_size].
+            k_lookup_table: Indexer cache page lookup table.
+            k_max_prompt_length: Max prompt (query) length scalar tensor [1].
+            k_max_cache_length: Max cache length scalar tensor [1].
+            k_scales: K scale blocks matching k_blocks shape with scale values.
+            scales_page_stride: The same, for the scales leaf.
+            k_scales_lookup_table: Page lookup table for the scale blocks.
+            layer_idx: Layer index for retrieving the correct cache layer.
+            mla_kv_blocks: The MLA cache's blocks; their page count is the
+                invalid block id and their page size the remap's.
+            mla_lookup_table: The MLA cache's page lookup table
+                `[batch_size, pages_per_seq]`.
+            ctx: Device context for GPU execution.
+        """
+        comptime assert conforms_to(type_of(output_indices), TileTensorable)
+        comptime assert conforms_to(type_of(physical_indices), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(qs), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(k_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(k_cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(k_lookup_table), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(type_of(k_max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(type_of(mla_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(mla_lookup_table), TileTensorable)
+        comptime assert type_of(output_indices).rank == 2
+        comptime assert type_of(physical_indices).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(qs).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(k_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(k_cache_lengths).rank == 1
+        comptime assert type_of(k_lookup_table).rank == 2
+        comptime assert type_of(k_max_prompt_length).rank == 1
+        comptime assert type_of(k_max_cache_length).rank == 1
+        comptime assert type_of(k_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(k_scales_lookup_table).rank == 2
+        comptime assert type_of(mla_kv_blocks).rank == 6
+        comptime assert type_of(mla_lookup_table).rank == 2
+        comptime mla_page_size = type_of(mla_kv_blocks)._shape_types[
+            3
+        ].static_value
+        # The remap reads the index tables through their flat pointers; a
+        # non-pointer storage policy aborts here at run time.
+        var remap = PagedKVRemap[mla_page_size](
+            physical_indices.to_tile_tensor[.int32]().unsafe_ptr(),
+            mla_lookup_table.to_tile_tensor[.uint32]().unsafe_ptr(),
+            Int(mla_lookup_table.shape()[1].value()),
+            Int(mla_lookup_table.shape()[0].value()),
+            UInt32(Int(mla_kv_blocks.shape()[0].value())),
+        )
+        _mla_indexer_ragged_float8_paged_execute[
+            Topk=FilteredTopk,
+            num_heads=num_heads,
+            depth=depth,
+            k=k,
+            quantization_granularity=quantization_granularity,
+            mask_str=mask_str,
+            kpool=1,
+            write_logical=write_logical,
+        ](
+            output_indices.to_tile_tensor[.int32](),
+            q.to_tile_tensor[.float8_e4m3fn](),
+            qs.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            k_blocks.to_tile_tensor[.float8_e4m3fn](),
+            page_stride.to_tile_tensor[.int64](),
+            k_cache_lengths.to_tile_tensor[.uint32](),
+            k_lookup_table.to_tile_tensor[.uint32](),
+            k_max_prompt_length.to_tile_tensor[.uint32](),
+            k_max_cache_length.to_tile_tensor[.uint32](),
+            k_scales.to_tile_tensor[.float32](),
+            scales_page_stride.to_tile_tensor[.int64](),
+            k_scales_lookup_table.to_tile_tensor[.uint32](),
+            layer_idx,
+            remap,
+            ctx,
         )
 
 
