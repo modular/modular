@@ -29,7 +29,10 @@ from max.gpu.primitives import warp
 from max.gpu.memory import external_memory
 from std.collections import Span
 
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
+from layout import TensorLayout, TileTensor, coord_to_index_list
+
+from std.utils.coord import Coord
 
 from std.utils.numerics import min_or_neg_inf
 
@@ -62,36 +65,69 @@ struct TopK:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
-        //,  # Forces the previous two params to be inferred from the args
         K: Int,
     ](
-        out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
-        out_idxs: OutputTensor[dtype=.int32, rank=rank, ...],
-        in_vals: InputTensor[dtype=dtype, rank=rank, ...],
+        out_vals: Some[Output & Tensor],
+        out_idxs: Some[Output & Tensor],
+        in_vals: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime assert rank == 2, "rank must be 2"
+        comptime assert conforms_to(type_of(out_vals), TileTensorable)
+        comptime assert conforms_to(type_of(out_idxs), TileTensorable)
+        comptime assert conforms_to(type_of(in_vals), TileTensorable)
+        comptime dtype = type_of(in_vals).dtype
+        comptime assert type_of(out_vals).rank == 2, "rank must be 2"
+        comptime assert type_of(out_idxs).rank == 2, "rank must be 2"
+        comptime assert type_of(in_vals).rank == 2, "rank must be 2"
+
+        # `run` takes plain pointer-backed views, so rebuild each argument's
+        # view from its pointer and layout.
+        Self.run[K](
+            TileTensor(
+                ptr=out_vals.to_tile_tensor[dtype]().unsafe_ptr(),
+                layout=out_vals.layout(),
+            ),
+            TileTensor(
+                ptr=out_idxs.to_tile_tensor[.int32]().unsafe_ptr(),
+                layout=out_idxs.layout(),
+            ),
+            TileTensor(
+                ptr=in_vals.to_tile_tensor[dtype]().unsafe_ptr(),
+                layout=in_vals.layout(),
+            ),
+            ctx,
+        )
+
+    @staticmethod
+    def run[
+        dtype: DType,
+        vals_layout: TensorLayout,
+        idxs_layout: TensorLayout,
+        in_layout: TensorLayout,
+        //,
+        K: Int,
+    ](
+        out_vals: TileTensor[mut=True, dtype, vals_layout, _],
+        out_idxs: TileTensor[mut=True, .int32, idxs_layout, _],
+        in_vals: TileTensor[dtype, in_layout, _],
+        ctx: DeviceContext,
+    ) raises:
+        """Runs top-k on `TileTensor` views of rank-2 tensors."""
         comptime assert not (
             ctx.target.is_gpu() and K > WARP_SIZE
         ), "K can't be larger than warp size"
 
-        var shape = in_vals.shape()
+        var shape = coord_to_index_list(in_vals.layout.shape_coord())
         var batch_size = shape[0]
         var dev_ctx = ctx
 
-        var out_vals_tensor = out_vals.to_tile_tensor()
-        var out_idxs_tensor = out_idxs.to_tile_tensor()
-        var in_vals_tensor = in_vals.to_tile_tensor().as_imm()
+        comptime OutVals = type_of(out_vals)
+        comptime OutIdxs = type_of(out_idxs)
+        comptime InVals = type_of(in_vals)
 
         def top_k_gpu[
             K: Int,
-        ](
-            out_vals: type_of(out_vals_tensor),
-            out_idxs: type_of(out_idxs_tensor),
-            in_vals: type_of(in_vals_tensor),
-        ):
+        ](out_vals: OutVals, out_idxs: OutIdxs, in_vals: InVals,):
             comptime assert out_vals.flat_rank == 2
             comptime assert out_idxs.flat_rank == 2
             comptime assert in_vals.flat_rank == 2
@@ -154,9 +190,9 @@ struct TopK:
 
         comptime if ctx.target.is_gpu():
             dev_ctx.enqueue_function[top_k_gpu[K]](
-                out_vals_tensor,
-                out_idxs_tensor,
-                in_vals_tensor,
+                out_vals,
+                out_idxs,
+                in_vals,
                 grid_dim=batch_size,  # One block per batch
                 block_dim=WARP_SIZE,
                 shared_mem_bytes=WARP_SIZE * size_of[TopKElement[dtype]](),
@@ -171,10 +207,9 @@ struct TopK:
                     def val_greater_than(
                         lhs: Int32, rhs: Int32
                     ) {in_vals, row_idx} -> Bool:
-                        return (
-                            in_vals[row_idx, Int(lhs)]
-                            > in_vals[row_idx, Int(rhs)]
-                        )
+                        return in_vals.load[width=1](
+                            Coord(row_idx, Int(lhs))
+                        ) > in_vals.load[width=1](Coord(row_idx, Int(rhs)))
 
                     sort(
                         Span(
@@ -187,7 +222,12 @@ struct TopK:
                     )
 
                     for i in range(K):
-                        var sorted_idx = Int(out_idxs[row_idx, i])
-                        out_vals[row_idx, i] = in_vals[row_idx, sorted_idx]
+                        var sorted_idx = Int(
+                            out_idxs.load[width=1](Coord(row_idx, i))
+                        )
+                        out_vals.store[width=1](
+                            Coord(row_idx, i),
+                            in_vals.load[width=1](Coord(row_idx, sorted_idx)),
+                        )
 
             parallelize_over_rows(top_k_cpu, shape, axis=1, grain_size=1)

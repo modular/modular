@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import extensibility
-
 from std.math import abs, ceildiv, isfinite
 from std.math.uutils import udivmod
 from std.memory import bitcast
@@ -21,7 +19,6 @@ from std.sys.info import (
     simd_width_of,
 )
 
-from extensibility import register
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -53,29 +50,30 @@ from layout.tile_io import copy_dram_to_sram, copy_dram_to_sram_async
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
 
-from extensibility import InputTensor, OutputTensor
 
 from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
 
 
-@extensibility.register("tensor_core_mma")
 struct TensorCoreMMA[algorithm: StaticString]:
     """
-    The central custom operation that dispatches to multiple different
-    matrix multiplication implementations, depending on target hardware and
-    selected algorithm.
+    Dispatches to multiple different tensor core matrix multiplication
+    implementations, depending on target hardware and selected algorithm.
     """
 
     @staticmethod
-    def execute[
+    def run[
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        //,
         M: Int,
         N: Int,
         K: Int,
     ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        a: InputTensor[dtype=.float16, rank=2, ...],
-        b: InputTensor[dtype=.float16, rank=2, ...],
+        output: TileTensor[mut=True, .float32, c_layout, _],
+        a: TileTensor[.float16, a_layout, _],
+        b: TileTensor[.float16, b_layout, _],
         perform_validation: Bool,
         # the context is needed for some GPU calls
         ctx: DeviceContext,
@@ -83,8 +81,8 @@ struct TensorCoreMMA[algorithm: StaticString]:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
         comptime if ctx.target.is_gpu():
-            var a_tt = a.to_tile_tensor().as_unsafe_any_origin()
-            var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
+            var a_tt = a.as_unsafe_any_origin()
+            var b_tt = b.as_unsafe_any_origin()
 
             var gpu_ctx = ctx
             comptime warp_size = gpu_ctx.default_device_info.warp_size
@@ -112,7 +110,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 b_ptr_to_use = b_transposed_ptr.as_unsafe_any_origin()
             else:
-                b_ptr_to_use = b.unsafe_ptr()
+                b_ptr_to_use = b_tt.unsafe_ptr().unsafe_mut_cast[True]()
 
             # `mma_tile_buffers` consumes the (transposed) B matrix as a
             # `TileTensor` (static `row_major[N, K]` so the kernel's
@@ -122,7 +120,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 Span(unsafe_ptr=b_ptr_to_use, length=N * K), row_major[N, K]()
             ).as_unsafe_any_origin()
 
-            var out_tt = output.to_tile_tensor().as_unsafe_any_origin()
+            var out_tt = output.as_unsafe_any_origin()
             comptime if gpu_ctx.target.is_nvidia_gpu():
                 comptime assert out_tt.rank == out_tt.flat_rank == 2
                 var output_strides = out_tt.layout.stride_coord()
