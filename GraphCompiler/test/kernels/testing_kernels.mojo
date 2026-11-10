@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.builtin.device_passable import DevicePassable
-from std.builtin.rebind import downcast
 from std.collections import Array, Optional
 from std.collections.string import StaticString
 from std.math import ceildiv, iota
@@ -449,20 +448,23 @@ struct TraitNegateTileTensor:
 
 
 # UNIFIED-closure fused-load variant: the device kernel binds the PROJECTED load
-# proxy (`downcast[XHost.device_type, Loadable]`, access-enabled) and reads it
-# through a unified closure that captures that projected value. Same context gate
-# as store: the closure captures `device_type` (created after projection), so the
-# load body's `comptime assert _access_enabled` passes; a host-side load is a
-# compile error (see `trait_fused_load_host_negative`).
+# proxy (`XHost.device_type`, access-enabled), asserts that it is `Loadable`, and
+# reads it through a unified closure that captures that projected value. Same
+# context gate as store: the closure captures `device_type` (created after
+# projection), so the load body's `comptime assert _access_enabled` passes; a
+# host-side load is a compile error (see `trait_fused_load_host_negative`).
 def _gpu_fused_load_negate_unified_closure_kernel[
     XHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
     output: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    input: downcast[XHost.device_type, Loadable],
+    input: XHost.device_type,
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        XHost.device_type, Loadable
+    ), "the input's device value must be Loadable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -723,18 +725,21 @@ struct TraitInplaceIncrement:
 # `trait_negate` but with a fused input instead of a dense one.
 # Device entry for the fused-load negate path: one thread per element negates the
 # producer's fused load into the dense output. `input` is the device-projected
-# fused-load wrapper, bound by ONLY its `Loadable` capability via
-# `downcast[XHost.device_type, Loadable]` (the `XHost: DevicePassable` generic is
-# just the carrier that names the device type).
+# fused-load wrapper, typed as `XHost.device_type` (the `XHost: DevicePassable`
+# generic is just the carrier that names the device type). The body assert
+# requires ONLY its `Loadable` capability.
 def _gpu_fused_load_negate_kernel[
     XHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
     output: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    input: downcast[XHost.device_type, Loadable],
+    input: XHost.device_type,
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        XHost.device_type, Loadable
+    ), "the input's device value must be Loadable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1248,17 +1253,20 @@ struct TraitTensorTupleFusedStoreSplit:
 # Output-store (epilogue) fusion: computes `2 * x[i]` and hands it to the fused
 # store, which runs the consumer epilogue and writes. `x` is a plain dense input.
 # Device entry for the fused-store double path: one thread per element computes
-# `2 * x` and hands it to the device-projected fused-store wrapper, bound by ONLY
-# its `Storable` capability via `downcast[ZHost.device_type, Storable]`.
+# `2 * x` and hands it to the device-projected fused-store wrapper,
+# `ZHost.device_type`. The body assert requires ONLY its `Storable` capability.
 def _gpu_fused_store_double_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    output: downcast[ZHost.device_type, Storable],
+    output: ZHost.device_type,
     input: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, Storable
+    ), "the output's device value must be Storable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1304,24 +1312,29 @@ struct TraitFusedStoreDouble:
 
 def _gpu_fused_store_parameter_closure_kernel[
     dtype: DType,
-    ZDev: Storable,
+    ZHost: DevicePassable,
     LayoutType: TensorLayout,
     store_adapter: def[OutT: Storable, width: Int](
         OutT, Coord, SIMD[OutT.dtype, width]
     ) thin -> None,
 ](
-    output: ZDev,
+    output: ZHost.device_type,
     input: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, Storable
+    ), "the output's device value must be Storable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
         return
-    store_adapter[ZDev, 1](
+    store_adapter[ZHost.device_type, 1](
         output,
         Coord(i),
-        rebind[SIMD[ZDev.dtype, 1]](input.reshape(row_major(n))[i]),
+        rebind[SIMD[ZHost.device_type.dtype, 1]](
+            input.reshape(row_major(n))[i]
+        ),
     )
 
 
@@ -1339,7 +1352,7 @@ def _launch_fused_store_parameter_closure[
     ctx.enqueue_function[
         _gpu_fused_store_parameter_closure_kernel[
             dtype,
-            downcast[ZHost.device_type, Storable],
+            ZHost,
             LayoutType,
             store_adapter,
         ]
@@ -1389,23 +1402,26 @@ struct TraitFusedStoreParameterClosure:
 
 
 # Device entry for the UNIFIED-closure fused-store path. The device kernel binds
-# the PROJECTED store proxy by its `Storable` capability via
-# `downcast[ZHost.device_type, Storable]` -- the projected value has
-# `_access_enabled=True`. It then creates a unified closure that captures that
-# projected value and performs the store. This is the supported closure shape: the
-# closure is created AFTER projection, so it captures `device_type` and the store
-# body's `comptime assert _access_enabled` gate passes. A host-created closure
-# over the device-passable HOST proxy (or a direct host-side store) hits
+# the PROJECTED store proxy, `ZHost.device_type`, and asserts its `Storable`
+# capability -- the projected value has `_access_enabled=True`. It then creates
+# a unified closure that captures that projected value and performs the store.
+# This is the supported closure shape: the closure is created AFTER projection,
+# so it captures `device_type` and the store body's
+# `comptime assert _access_enabled` gate passes. A host-created closure over the
+# device-passable HOST proxy (or a direct host-side store) hits
 # `_access_enabled=False` and fails to compile -- see the negative test kernel.
 def _gpu_fused_store_unified_closure_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    output: downcast[ZHost.device_type, Storable],
+    output: ZHost.device_type,
     input: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, Storable
+    ), "the output's device value must be Storable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1488,17 +1504,20 @@ struct TraitFusedStoreHostNegative:
 # Device entry for the fused-transform path: one thread per element computes
 # `x[i] + 1`, applies the fused transform via `z.compute`, and stores through
 # the output-buffer projection `z.to_tile_tensor()`. `z` is the device-projected
-# transform wrapper, bound by ONLY `_LegacyComputable & TileTensorable` via
-# `downcast[ZHost.device_type, _LegacyComputable & TileTensorable]`.
+# transform wrapper, `ZHost.device_type`. The body assert requires ONLY
+# `_LegacyComputable & TileTensorable`.
 def _gpu_fused_transform_bias_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    z: downcast[ZHost.device_type, _LegacyComputable & TileTensorable],
+    z: ZHost.device_type,
     x: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, _LegacyComputable & TileTensorable
+    ), "the output's device value must be _LegacyComputable and TileTensorable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1520,10 +1539,13 @@ def _gpu_fused_transform_bias_store_form_kernel[
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    z: downcast[ZHost.device_type, Storable],
+    z: ZHost.device_type,
     x: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, Storable
+    ), "the output's device value must be Storable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
@@ -1593,21 +1615,25 @@ struct TraitFusedTransformBias:
 
 
 # UNIFIED-closure fused-transform variant: the device kernel binds the PROJECTED
-# transform proxy (`downcast[ZHost.device_type, _LegacyComputable & TileTensorable]`,
-# access-enabled) and applies the transform + final store through a unified
-# closure that captures that projected value. Same context gate as store/load: the
-# closure captures `device_type`, so the `compute`/`to_tile_tensor` bodies'
-# `comptime assert _access_enabled` passes; a host-side transform is a compile
-# error (see `trait_fused_transform_host_negative`).
+# transform proxy (`ZHost.device_type`, access-enabled), asserts that it is
+# `_LegacyComputable & TileTensorable`, and applies the transform + final store
+# through a unified closure that captures that projected value. Same context
+# gate as store/load: the closure captures `device_type`, so the
+# `compute`/`to_tile_tensor` bodies' `comptime assert _access_enabled` passes; a
+# host-side transform is a compile error (see
+# `trait_fused_transform_host_negative`).
 def _gpu_fused_transform_bias_unified_closure_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
 ](
-    z: downcast[ZHost.device_type, _LegacyComputable & TileTensorable],
+    z: ZHost.device_type,
     x: TileTensor[dtype, LayoutType, ImmutAnyOrigin],
     n_dev: Int32,
 ):
+    comptime assert conforms_to(
+        ZHost.device_type, _LegacyComputable & TileTensorable
+    ), "the output's device value must be _LegacyComputable and TileTensorable"
     var n = Int(n_dev)
     var i = Int(global_idx.x)
     if i >= n:
