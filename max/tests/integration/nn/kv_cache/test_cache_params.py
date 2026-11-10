@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import get_args
+from typing import ClassVar, get_args
 
 import numpy as np
 import pytest
@@ -749,3 +749,45 @@ def test_paged_row_ids_must_fit_the_kernels(
     else:
         with pytest.raises(ValueError, match="reduce the KV cache memory"):
             check()
+
+
+class _ScaleRowsCappedAtOne(MHAKVCacheParams):
+    nvfp4_max_scale_row_id: ClassVar[int | None] = 1
+
+
+class _ScaleRowsUnbounded(MHAKVCacheParams):
+    nvfp4_max_scale_row_id: ClassVar[int | None] = None
+
+
+@pytest.mark.parametrize(
+    ("params_cls", "fits"),
+    [(_ScaleRowsCappedAtOne, False), (_ScaleRowsUnbounded, True)],
+)
+def test_nvfp4_scale_row_check_follows_the_cache_class(
+    params_cls: type[MHAKVCacheParams], fits: bool
+) -> None:
+    """A cache whose kernels address scales with 64-bit offsets opts out."""
+    params = params_cls(
+        dtype=DType.uint8,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn, quantization_granularity=16
+        ),
+    )
+    assert params.is_nvfp4_kv_cache
+    # Two value pages, which the smaller scale pages also tile.
+    value_page_bytes = int(np.prod(params.shape_per_block))
+    slab = Buffer.from_numpy(np.zeros(2 * value_page_bytes, np.uint8))
+
+    def views() -> None:
+        params.slab_to_buffer_views([slab])
+
+    if fits:
+        views()
+    else:
+        with pytest.raises(ValueError, match="reduce the KV cache memory"):
+            views()

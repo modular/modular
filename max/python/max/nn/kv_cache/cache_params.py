@@ -1556,6 +1556,10 @@ class KVCacheParams(KVCacheParamInterface):
 
     leaf_kind: ClassVar[CacheLeafKind] = CacheLeafKind.ATTENTION
 
+    nvfp4_max_scale_row_id: ClassVar[int | None] = _MAX_UINT32_SCALE_ROW_ID
+    """The highest NVFP4 scale-pool row id this cache's kernels address, or
+    ``None`` when they address scales with 64-bit offsets."""
+
     num_layers: int
     """Number of layers in the model."""
 
@@ -2386,13 +2390,18 @@ class KVCacheParams(KVCacheParamInterface):
             if quantized and quant_config is not None
             else (None, None, None)
         )
-        if scales is not None and self.is_nvfp4_kv_cache:
+        max_scale_row_id = self.nvfp4_max_scale_row_id
+        if (
+            scales is not None
+            and self.is_nvfp4_kv_cache
+            and max_scale_row_id is not None
+        ):
             for pages in scales:
                 _check_paged_row_ids(
                     scales_id,
                     pages.shape[0],
                     math.prod(self.shape_per_scale_block[:-1]),
-                    _MAX_UINT32_SCALE_ROW_ID,
+                    max_scale_row_id,
                 )
         return KVCacheBuffer(
             leaf_id=values_id,
