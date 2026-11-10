@@ -35,7 +35,8 @@ SIMD-accumulator fold per row), whose fp32 summation order differs from the
 cast-then-GEMV chain; the fp64 oracle covers that by design. The
 `[128, 6144]` cells pin the older router shape's config and the
 `static_K == 7168` key's other side (N=896 with K=6144 must take the N=128
-sweep config, not the 896 table).
+sweep config, not the 896 table). The `[288, 4096]` bf16 cells cover
+GLM-5.3-Flash's gate, which also takes the N=128 sweep config.
 """
 
 from std.random import randn, random_float64, seed
@@ -64,6 +65,10 @@ comptime ROUTER_K = 6144
 comptime K3_ROUTER_N = 896
 comptime K3_ROUTER_K = 7168
 
+# GLM-5.3-Flash's bf16 router gate. It takes the N=128 sweep config.
+comptime FLASH_ROUTER_N = 288
+comptime FLASH_ROUTER_K = 4096
+
 # Pre-written into the output. Elements the kernel must not touch -- the
 # trailing guard, and every element when `m == 0` -- still hold it afterwards.
 comptime SENTINEL = Float32(-12345.0)
@@ -74,7 +79,7 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     """Runs the launcher at `[m, K] x [static_N, K]^T` and checks the output.
 
     The MiniMax-shape runner keeps the fp32 weight (its registry records
-    F32); the K3 bf16 cells go through `_run_k3_case_bf16` below.
+    F32); the bf16-weight cells (K3 and Flash) go through `_run_mixed_bf16_case` below.
 
     Parameters:
         static_N: Output width. Drives the launcher's `check_bounds_n` guard
@@ -173,21 +178,23 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
 
 def _run_k3_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     """Runs the fp32-weight launcher at `[m, K] x [static_N, K]^T` against an
-    fp64 oracle. See `_run_k3_case_bf16` for the bf16-weight twin."""
-    _run_k3_case_impl[static_N, K, DType.float32](ctx, m)
+    fp64 oracle. See `_run_mixed_bf16_case` for the bf16-weight twin."""
+    _run_mixed_case_impl[static_N, K, DType.float32](ctx, m)
 
 
-def _run_k3_case_bf16[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
+def _run_mixed_bf16_case[
+    static_N: Int, K: Int
+](ctx: DeviceContext, m: Int) raises:
     """Runs the bf16-weight launcher at `[m, K] x [static_N, K]^T` against an
     fp64 oracle.
 
     The weight is drawn fp32 then truncated to bf16 (the checkpoint's own
     storage), so the oracle sees exactly the values the kernel reads.
     """
-    _run_k3_case_impl[static_N, K, DType.bfloat16](ctx, m)
+    _run_mixed_case_impl[static_N, K, DType.bfloat16](ctx, m)
 
 
-def _run_k3_case_impl[
+def _run_mixed_case_impl[
     static_N: Int, K: Int, b_type: DType
 ](ctx: DeviceContext, m: Int) raises:
     """Runs the launcher at `[m, K] x [static_N, K]^T` against an fp64 oracle.
@@ -209,7 +216,7 @@ def _run_k3_case_impl[
         m: Runtime row count. `m == 0` exercises the empty-launch guard.
     """
     print(
-        t"== router_gate_mixed_gemv k3 m= {m} N= {static_N} K= {K}"
+        t"== router_gate_mixed_gemv m= {m} N= {static_N} K= {K}"
         t" b_type= {b_type}"
     )
 
@@ -580,7 +587,14 @@ def main() raises:
             65,
         )
         comptime for i in range(len(bf16_case_ms)):
-            _run_k3_case_bf16[K3_ROUTER_N, K3_ROUTER_K](ctx, bf16_case_ms[i])
+            _run_mixed_bf16_case[K3_ROUTER_N, K3_ROUTER_K](ctx, bf16_case_ms[i])
+        # GLM-5.3-Flash's bf16 gate, on both sides of the sweep config's
+        # tile_n edge (m=16 / m=17) and at the decode row counts.
+        comptime flash_case_ms = (1, 4, 12, 16, 17, 48, 64)
+        comptime for i in range(len(flash_case_ms)):
+            _run_mixed_bf16_case[FLASH_ROUTER_N, FLASH_ROUTER_K](
+                ctx, flash_case_ms[i]
+            )
         # The table keys on the static [N, K] pair: N=896 with K=6144 must
         # take the N=128 sweep config, not the 896 table.
         _run_case[896, ROUTER_K](ctx, 2)

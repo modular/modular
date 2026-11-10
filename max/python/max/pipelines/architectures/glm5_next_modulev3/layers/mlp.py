@@ -24,8 +24,11 @@ import functools
 from typing import ClassVar
 
 from max import functional as F
+from max.driver import accelerator_architecture_name, accelerator_count
 from max.dtype import DType
+from max.graph import StaticDim
 from max.nn import Module
+from max.nn._graph_ops import _router_gate_mixed_gemv
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.moe import MoEGate
 from max.nn.common_layers.quant_linear import QuantizedMLP
@@ -33,6 +36,7 @@ from max.nn.common_layers.quant_moe import ExpertParallelMoE, TensorParallelMoE
 from max.nn.kernels import moe_router_group_limited
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.tensor import Tensor
+from max.tensor.sharding import match_operand_placement
 
 from ..model_config import Glm5NextConfig
 
@@ -43,6 +47,38 @@ __all__ = [
     "Glm5NextTopKRouter",
     "build_mlp",
 ]
+
+# The logits take the activation's placement: the gate weight is replicated.
+_router_gate_mixed_gemv_op = F.functional(
+    _router_gate_mixed_gemv,
+    rule=match_operand_placement(_router_gate_mixed_gemv, "hidden_states"),
+)
+
+# A bf16-weight launch walks K in `8 * 128` granules with no tail guard
+# (max/kernels/src/linalg/gemv.mojo); Flash's K is 4096.
+_BF16_GEMV_K_TILE = 1024
+
+
+def _mixed_gemv_applies(hidden_states: Tensor, weight: Tensor) -> bool:
+    """Returns whether the mixed bf16 router GEMV can produce the logits.
+
+    The op is GPU-only and its AMD launch table is tuned on gfx950, so a
+    host-device graph, another accelerator, or a missing one keeps the
+    float32 matmul. The placement comes from ``hidden_states.mesh`` because
+    ``Tensor.device`` raises on the multi-device mesh a tensor-parallel
+    router input lives on.
+    """
+    if any(device.is_host for device in hidden_states.mesh.devices):
+        return False
+    if accelerator_count() == 0 or accelerator_architecture_name() != "gfx950":
+        return False
+    k_dim = weight.shape[1]
+    return (
+        hidden_states.dtype == DType.bfloat16
+        and weight.dtype == DType.bfloat16
+        and isinstance(k_dim, StaticDim)
+        and int(k_dim) % _BF16_GEMV_K_TILE == 0
+    )
 
 
 class Glm5NextTensorParallelMoE(TensorParallelMoE):
@@ -67,7 +103,12 @@ class Glm5NextTopKRouter(MoEGate):
     """Group-limited top-k router whose gate score and sigmoid run in float32.
 
     Uses sigmoid scoring with a group-limited top-k router and a learned
-    expert correction bias (``noaux_tc``).
+    expert correction bias (``noaux_tc``). On gfx950 the gate GEMV runs on the
+    checkpoint's bf16 operands in one launch (``moe.router.gate.mixed.gemv``)
+    instead of casting both to float32 first, which costs two cast launches
+    (the weight's every step, since the graph does not fold weight-only ops)
+    and a GEMV over a float32 copy of the weight. bf16 products are exact in
+    float32, so only the summation order differs from the float32 matmul.
     """
 
     def __init__(
@@ -147,9 +188,14 @@ class Glm5NextTopKRouter(MoEGate):
             their routing weights, each of shape
             ``(seq_len, num_experts_per_token)``.
         """
-        # The gate matmul itself runs in float32, not just the sigmoid.
-        weight = self.gate_score.weight.cast(DType.float32)
-        logits = hidden_states.cast(DType.float32) @ weight.T
+        if _mixed_gemv_applies(hidden_states, self.gate_score.weight):
+            logits = _router_gate_mixed_gemv_op(
+                hidden_states, self.gate_score.weight
+            )
+        else:
+            # The gate matmul itself runs in float32, not just the sigmoid.
+            weight = self.gate_score.weight.cast(DType.float32)
+            logits = hidden_states.cast(DType.float32) @ weight.T
         scores = F.sigmoid(logits)
         topk_idx, topk_weight = moe_router_group_limited(
             scores,

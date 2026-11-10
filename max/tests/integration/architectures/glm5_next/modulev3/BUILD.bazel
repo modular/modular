@@ -110,3 +110,28 @@ modular_py_test(
         requirement("torch"),
     ],
 )
+
+# Guards the shared code the Flash router dispatches on: the bf16-weight
+# binding of `_router_gate_mixed_gemv` in `max/nn/_graph_ops` and the
+# router's own fp32 path. Traces only; the GPU is
+# needed to build the bf16 gate weight.
+modular_py_test(
+    name = "test_moe_gate",
+    srcs = ["test_moe_gate.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+    ],
+)
