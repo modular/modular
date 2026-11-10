@@ -252,6 +252,11 @@ std::unique_ptr<mlir::Pass> createAutomaticInline(
     const AutomaticInlineOptions &options = {},
     std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
 
+/// Create a ForceAlwaysInline pass. `onAnnotated` is invoked for each function
+/// that carried non-automatic inline level.
+std::unique_ptr<mlir::Pass>
+createForceAlwaysInline(std::function<void(KGEN::FuncOp)> onAnnotated);
+
 //===----------------------------------------------------------------------===//
 // DecomposeFunctionArguments
 //===----------------------------------------------------------------------===//

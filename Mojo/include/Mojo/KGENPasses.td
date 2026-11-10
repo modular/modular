@@ -1189,6 +1189,19 @@ def LowerLoops: Pass<"lower-loops", "KGEN::FuncOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ForceAlwaysInline
+//===----------------------------------------------------------------------===//
+
+def ForceAlwaysInline : Pass<"force-always-inline", "KGEN::FuncOp"> {
+  let summary = "Mark every non-external function `always_inline`.";
+  let description = [{
+    Sets `InlineLevel::Always` on every `kgen.func` that has a body. External
+    functions are left alone, since they have nothing to inline. This pass does
+    not check for inline cycles; the inliner does that.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // AutomaticInliner
 //===----------------------------------------------------------------------===//
 
