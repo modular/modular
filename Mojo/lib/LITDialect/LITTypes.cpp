@@ -45,9 +45,9 @@ void LITDialect::registerTypes() {
       >();
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
-  dialect->registerMnemonicTypeWithoutParamPrinter<MetaType>();
-  dialect->registerMnemonicTypeWithoutParamPrinter<TraitType>();
-  dialect->registerMnemonicTypeWithoutParamPrinter<OriginType>();
+  dialect->registerMnemonicType<MetaType>();
+  dialect->registerMnemonicType<TraitType>();
+  dialect->registerMnemonicType<OriginType>();
   dialect->registerMnemonicType<OriginSetType>();
 
   // LIT compound expressions; see `registerNonTrivialParamAttrs`. The
@@ -757,6 +757,62 @@ void TraitType::print(AsmPrinter &p) const {
       p.printAttribute(constraints[i]);
     }
   }
+  p << '>';
+}
+
+void MetaType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  if (auto param = dyn_cast<ParamType>(getType())) {
+    // The `!kgen.param<...>` wrapper is part of the type here: this type's
+    // parser takes a full type, and the param-aware path omits that wrapper
+    // (`printParamType` prints the bare expression), so emit it by hand.
+    p << '!' << param.getDialect().getNamespace() << '.'
+      << ParamType::getMnemonic() << '<';
+    printer.printTypeParamValue(p, param.getParam());
+    p << '>';
+  } else if (auto *kgens =
+                 getType().getContext()->getLoadedDialect<KGENDialect>();
+             kgens && kgens->getTypeName(getType().getTypeID())) {
+    // An alias is already a complete `!name` reference, prefix included.
+    if (failed(p.printAlias(getType()))) {
+      p << '!' << getType().getDialect().getNamespace() << '.';
+      printer.printKGENType(p, getType());
+    }
+  } else {
+    p << getType();
+  }
+  p << '>';
+}
+
+void TraitType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  ArrayRef<TraitSymbolAttr> symbols = getSymbols();
+  ArrayRef<ConstraintAttr> constraints = getConstraints();
+
+  p << '<';
+  for (size_t i = 0; i < symbols.size(); ++i) {
+    if (i > 0)
+      p << ", ";
+    printer.printTraitSymbol(p, symbols[i]);
+    if (i < constraints.size() && !isTriviallyTrueConstraint(constraints[i])) {
+      p << " where ";
+      auto constraint = constraints[i];
+      // Print the mnemonic with its dialect prefix; the attribute's own printer
+      // would route the proposition through a fresh diagnostic printer.
+      p << '#' << constraint.getDialect().getNamespace() << '.'
+        << ConstraintAttr::getMnemonic() << '<';
+      printer.printParamValue(p, constraint.getProposition());
+      p << ", " << constraint.getLoc();
+      if (auto message = constraint.getMessage())
+        p << ", " << message;
+      p << '>';
+    }
+  }
+  p << '>';
+}
+
+void OriginType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  printer.printParamValue(p, getIsMutable());
   p << '>';
 }
 

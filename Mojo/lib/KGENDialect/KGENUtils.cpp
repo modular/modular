@@ -367,25 +367,28 @@ void KGENParamPrinter::printKGENType(AsmPrinter &p, Type type) {
   if (succeeded(p.printAlias(type)))
     return;
 
-  if (auto printable = dyn_cast<ParamPrintableTypeInterface>(type)) {
-    printable.printWith(p, *this);
-  } else if (auto signature = dyn_cast<FuncType>(type)) {
+  if (auto signature = dyn_cast<FuncType>(type)) {
     printFuncType(p, signature);
   } else if (auto generator = dyn_cast<GeneratorType>(type)) {
     printGenerator(p, generator);
+  } else if (auto literal = dyn_cast<FuncLiteralType>(type)) {
+    // Not registered as a pretty type: it prints with its dialect prefix, and
+    // both registration paths would drop it for the bare mnemonic.
+    p << "!kgen." << literal.getMnemonic();
+    printFuncLiteralBody(p, literal);
   } else {
     auto *dialect = type.getContext()->getLoadedDialect<KGENDialect>();
     assert(dialect && "cannot print KGEN type without KGEN dialect");
+    auto paramIt = dialect->paramTypePrintFns.find(type.getTypeID());
+    if (paramIt != dialect->paramTypePrintFns.end()) {
+      paramIt->second(p, type, *this);
+      return;
+    }
     auto it = dialect->typePrintFns.find(type.getTypeID());
     if (it == dialect->typePrintFns.end()) {
       p << type;
       return;
     }
-    // TODO(MOCO-5077): types that POP and LIT register cannot implement
-    // ParamPrintableTypeInterface without a dependency cycle, so their nested
-    // parameters still print through a fresh printer and lose dedup and memref
-    // hashing. Upgrade trigger: let a registered printer take the
-    // KGENParamPrinter.
     it->second(p, type);
   }
 }
@@ -2751,6 +2754,11 @@ void KGENParamPrinter::printParameterValues(AsmPrinter &p,
     printParamValue(p, value);
   });
   p << '>';
+}
+
+void KGENParamPrinter::printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait) {
+  p.printAttribute(trait.getSymbol());
+  printParameterValues(p, trait.getParamValues());
 }
 
 ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee) {

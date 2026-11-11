@@ -42,24 +42,31 @@ void registerKGENCommandLineOptions();
 
 template <typename TypeT>
 void KGENDialect::registerMnemonicType() {
-  static_assert(
-      std::is_same_v<typename TypeT::ImplType, mlir::TypeStorage> ||
-          requires(const TypeT type, AsmPrinter &p, KGENParamPrinter &printer) {
-            type.printWith(p, printer);
-          },
-      "a type with parameters must implement ParamPrintableTypeInterface, or "
-      "be registered with registerMnemonicTypeWithoutParamPrinter");
-  registerMnemonicTypeWithoutParamPrinter<TypeT>();
-}
+  // A type with no parameters has nothing to thread through, so it keeps the
+  // plain body printer.
+  constexpr bool hasParameters =
+      !std::is_same_v<typename TypeT::ImplType, mlir::TypeStorage>;
+  constexpr bool hasParamPrinter = requires(
+      const TypeT t, AsmPrinter &pp, KGENParamPrinter &kp) { t.print(pp, kp); };
 
-template <typename TypeT>
-void KGENDialect::registerMnemonicTypeWithoutParamPrinter() {
+  static_assert(!hasParameters || hasParamPrinter,
+                "a type with parameters must declare "
+                "print(AsmPrinter &, KGENParamPrinter &), so its nested "
+                "parameters keep the caller's dedup labels and memref hashing");
+
   registerPrettyType(
       TypeT::getMnemonic(), +[](AsmParser &p) { return TypeT::parse(p); },
       mlir::TypeID::get<TypeT>(),
       +[](AsmPrinter &p, Type type) {
         p << TypeT::getMnemonic();
         cast<TypeT>(type).print(p);
+      },
+      +[](AsmPrinter &p, Type type, KGENParamPrinter &printer) {
+        p << TypeT::getMnemonic();
+        if constexpr (hasParamPrinter)
+          cast<TypeT>(type).print(p, printer);
+        else
+          cast<TypeT>(type).print(p);
       });
 }
 } // namespace M::KGEN

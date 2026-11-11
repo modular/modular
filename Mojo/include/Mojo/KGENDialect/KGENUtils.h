@@ -110,6 +110,7 @@ public:
   void printColonTypeOrIndex(AsmPrinter &p, Type type);
   void printGenerator(AsmPrinter &p, GeneratorType generator);
   void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+  void printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait);
   void printBindParams(AsmPrinter &p, TypedAttr generator,
                        ArrayRef<TypedAttr> paramValues,
                        DenseBoolArrayAttr discharged = {});

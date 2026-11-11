@@ -67,6 +67,8 @@ def POP_ArrayType : POPType<"Array", "array", [
   let extraClassDeclaration = [{
     /// Try to narrow the size expression to an integer.
     std::optional<int64_t> getResolvedSize() const;
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -133,6 +135,8 @@ def POP_UnionType : POPType<"Union", "union", [
   ];
 
   let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+
     /// Returns whether this union type is resolved (element types are concrete).
     /// An unresolved union has a parameterized variadic that hasn't been
     /// specialized yet.

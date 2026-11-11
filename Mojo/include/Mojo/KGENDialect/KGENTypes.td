@@ -77,8 +77,7 @@ def KGEN_ParamType : KGENType<"Param", "param", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue",
-    [DeclareTypeInterfaceMethods<TraitSymbolInterface>,
-     DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
+    [DeclareTypeInterfaceMethods<TraitSymbolInterface>]> {
   let summary = "Type specified by a parameter expression (value domain)";
   let description = [{
     This is the value domain counterpart to KGEN ParamType. It allows
@@ -105,6 +104,8 @@ def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue",
     /// A specific builder used to build the type from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static TypeValueType getFromBytecode(TypedAttr typeValue);
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -536,8 +537,7 @@ def KGEN_FuncLiteralTypeGeneratorType : DialectType<KGENDialect,
 //===----------------------------------------------------------------------===//
 
 def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
-  DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-  DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
+  DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "The type of a KGEN literal function";
   let description = [{
     This type describes the type of a literal function in KGEN, in additional to
@@ -570,8 +570,7 @@ def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
 def PointerType : KGENType<"Pointer", "pointer", [
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized pointer type";
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
@@ -635,6 +634,8 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
     /// Returns the address space, or zero if unresolved.
     unsigned getAddrSpaceOrZero() const { return getAddrSpace().value_or(0); }
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -664,8 +665,7 @@ class PointerOf<Type type> : ConfinedType<PointerType,
 def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized variadic type";
   let description = [{
     The `!kgen.param_list` type represents a homogeneously typed list
@@ -695,6 +695,10 @@ def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
       return $_get(elementType.getContext(), elementType);
     }]>,
   ];
+
+  let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -773,8 +777,7 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<ContextuallyEvaluatedTypeInterface,
-                                ["evaluateWithContext"]>,
-    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
+                                ["evaluateWithContext"]>]> {
   let summary = "parameterized struct type";
   let description = [{
     This type represents a struct. A struct contains element types arranged in
@@ -984,6 +987,8 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     static StructType getChecked(function_ref<InFlightDiagnostic()> emitError,
                                  MLIRContext *context, ArrayRef<Type> types,
                                  bool isMemoryOnly = false);
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -991,8 +996,7 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 // StructInstanceType
 //===----------------------------------------------------------------------===//
 
-def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst",
-    [DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
+def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
   let summary = "concretized mojo struct type";
   let description = [{
     This type represents a concretized mojo source struct type. It is the result
@@ -1056,6 +1060,10 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst",
   ];
 
   let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1065,8 +1073,7 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst",
 def KGEN_VariantType : KGENType<"Variant", "variant", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<DataLayoutInterface>,
-    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>
+    DeclareTypeInterfaceMethods<DataLayoutInterface>
 ]> {
   let summary = "A parametric variant type.";
   let description = [{
@@ -1113,6 +1120,8 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
     llvm::iterator_range<llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator,
                                                Type (*)(TypedAttr)>>
     getTypes() const;
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -1188,8 +1197,7 @@ def KGEN_NeverType : KGENType<"Never", "never", [
 def KGEN_SIMDType : KGENType<"SIMD", "simd", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
@@ -1218,6 +1226,8 @@ def KGEN_SIMDType : KGENType<"SIMD", "simd", [
     bool isScalar() const { return getResolvedSize() == 1; }
     /// Returns the `!kgen.scalar<bool>` type (a SIMD of size 1 and bool dtype).
     static SIMDType getScalarBoolType(MLIRContext *ctx);
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 

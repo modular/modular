@@ -54,6 +54,9 @@ def KGENDialect : Dialect {
 
     using TypeParseFn = Type (*)(AsmParser &);
     using TypePrintFn = void (*)(AsmPrinter &, Type);
+    /// Prints a type whose parameters are parameter expressions.
+    using ParamTypePrintFn = void (*)(AsmPrinter &, Type,
+                                      M::KGEN::KGENParamPrinter &);
 
     /// Register a keyword parser. A keyword can only be registered once.
     /// Conflicts are up to dialect users to manage. The only restriction on
@@ -64,17 +67,16 @@ def KGENDialect : Dialect {
 
     /// Register a keyword parser and printer. The dialect will try to parse
     /// a pretty type indicated by a keyword when parsing a parameter type.
+    ///
+    /// `paramPrint` is the printer a `KGENParamPrinter` calls.
     void registerPrettyType(StringRef keyword, TypeParseFn parse, mlir::TypeID id,
-                            TypePrintFn print);
+                            TypePrintFn print,
+                            ParamTypePrintFn paramPrint = {});
 
-    /// Register a custom type parser using the type's mnemonic.
+    /// Register a custom type parser, printer, and parameter-aware printer
+    /// using the type's mnemonic.
     template <typename TypeT>
     void registerMnemonicType();
-
-    /// Like `registerMnemonicType`, for a type with parameters that does not
-    /// implement ParamPrintableTypeInterface.
-    template <typename TypeT>
-    void registerMnemonicTypeWithoutParamPrinter();
 
     /// Get the "name" of the type, if it has registered one.
     std::optional<StringRef> getTypeName(mlir::TypeID id);
@@ -102,6 +104,8 @@ def KGENDialect : Dialect {
     llvm::StringMap<TypeParseFn> typeParseFns;
     /// A map of pretty type printers.
     DenseMap<mlir::TypeID, TypePrintFn> typePrintFns;
+    /// Printers for types whose parameters need the active printer.
+    DenseMap<mlir::TypeID, ParamTypePrintFn> paramTypePrintFns;
     /// A map containing the "names" of types.
     DenseMap<mlir::TypeID, StringRef> typeNames;
     DenseSet<mlir::TypeID> nonTrivialParamAttrs;

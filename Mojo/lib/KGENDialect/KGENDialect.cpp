@@ -222,10 +222,13 @@ void KGENDialect::registerKeywordParser(StringRef keyword, TypeParseFn parse) {
 }
 
 void KGENDialect::registerPrettyType(StringRef keyword, TypeParseFn parse,
-                                     mlir::TypeID id, TypePrintFn print) {
+                                     mlir::TypeID id, TypePrintFn print,
+                                     ParamTypePrintFn paramPrint) {
   registerKeywordParser(keyword, parse);
   if (!typePrintFns.try_emplace(id, print).second)
     llvm::report_fatal_error("duplicate printer for: " + keyword);
+  if (paramPrint)
+    paramTypePrintFns.try_emplace(id, paramPrint);
   typeNames.try_emplace(id, keyword);
 }
 

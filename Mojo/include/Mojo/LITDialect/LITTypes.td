@@ -337,6 +337,8 @@ def LIT_TraitType: LITType<"Trait", "trait",
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+
     // Canonicalizing builder helper - declared here, implemented in LITTypes.cpp.
     // Performs canonicalization:
     // - False constraints (proposition = 0) remove the trait slot entirely
@@ -397,6 +399,8 @@ def LIT_MetaType : LITType<"Meta", "meta",
   ];
 
   let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+
     // Sugar support: non-parameterized types get aliases.
     mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
 
@@ -428,6 +432,8 @@ def LIT_OriginType : LITType<"Origin", "origin",
   ];
 
   let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+
     /// Return true if the mutable attribute is known to be the specific
     /// constant.  This returns false if parametric or if the other value.
     bool isMutableKnown(bool value);
