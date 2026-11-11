@@ -192,6 +192,28 @@ def test_functional_in_graph() -> None:
         graph.output(F.constant(1, dtype=DType.float32, device=DeviceRef.CPU()))
 
 
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DType.int32,
+        DType.int64,
+        DType.uint8,
+        DType.bool,
+        DType.float32,
+        DType.bfloat16,
+    ],
+)
+def test_zeros_and_ones_stage_for_dtype(dtype: DType) -> None:
+    # The fill value is written into a host buffer whose setter rejects a
+    # Python float for integer dtypes.
+    with Graph("zeros_and_ones") as graph:
+        zeros = F.zeros([2, 3], dtype=dtype, device=CPU())
+        ones = F.ones([2, 3], dtype=dtype, device=CPU())
+        assert zeros.dtype == dtype
+        assert ones.dtype == dtype
+        graph.output(zeros, ones, F.zeros_like(ones), F.ones_like(zeros))
+
+
 def test_tensor_default_dtype() -> None:
     t = Tensor(1, device=CPU())
     assert t.dtype == _default_dtype(CPU())

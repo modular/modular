@@ -152,7 +152,7 @@ def ones(
         A tensor of the requested shape, dtype, and placement with every
         element set to ``1``.
     """
-    return full(shape, 1.0, dtype=dtype, device=device)
+    return full(shape, 1, dtype=dtype, device=device)
 
 
 def zeros(
@@ -175,7 +175,7 @@ def zeros(
         A tensor of the requested shape, dtype, and placement with every
         element set to ``0``.
     """
-    return full(shape, 0.0, dtype=dtype, device=device)
+    return full(shape, 0, dtype=dtype, device=device)
 
 
 def full_like(like: Tensor, value: Number) -> Tensor:
@@ -218,7 +218,7 @@ def ones_like(like: Tensor) -> Tensor:
         A tensor matching the shape, dtype, and placement of ``like``,
         with every element set to ``1``.
     """
-    return full_like(like, 1.0)
+    return full_like(like, 1)
 
 
 def zeros_like(like: Tensor) -> Tensor:
@@ -231,7 +231,7 @@ def zeros_like(like: Tensor) -> Tensor:
         A tensor matching the shape, dtype, and placement of ``like``,
         with every element set to ``0``.
     """
-    return full_like(like, 0.0)
+    return full_like(like, 0)
 
 
 # Base-seed stride 100 = max devices per group; group = same Replicated axes.
