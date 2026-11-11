@@ -277,10 +277,6 @@ trait HalPluginHooks:
 
     comptime extensions: HALExtensions = DefaultHALExtensions
 
-    comptime FunctionWrapper: DeviceFunctionWrapper = _IdentityWrapper
-    """Selects the function `compile_function` compiles for a user kernel,
-    such as a generated entry point the plugin's runtime launches."""
-
     comptime Launcher: HalLauncher = DefaultHalLauncher
     """Launches `enqueue_function` calls the plugin takes over."""
 

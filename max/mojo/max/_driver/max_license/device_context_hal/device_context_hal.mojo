@@ -75,6 +75,7 @@ from ..hal import (
     Stream,
     get_device_spec,
 )
+from max._plugin import MaxPluginForTarget
 from ..hal._machine import DeviceRef, DeviceSpec
 from ..hal._plugin._impl import HalPluginForTarget
 from ..hal._plugin._trait import HalLaunchOptions
@@ -1182,7 +1183,9 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         _ptxas_info_verbose: Bool = False,
     ](
         self, *, func_attribute: OptionalReg[FuncAttribute] = None
-    ) raises -> HALDeviceFunction[func, Self._HALHooks.FunctionWrapper]:
+    ) raises -> HALDeviceFunction[
+        func, MaxPluginForTarget[Self.target].FunctionWrapper
+    ]:
         """Compiles the provided `capturing` function for execution on this
         device.
 
@@ -1213,9 +1216,9 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return HALDeviceFunction[func, Self._HALHooks.FunctionWrapper](
-            self, func_attribute=func_attribute
-        )
+        return HALDeviceFunction[
+            func, MaxPluginForTarget[Self.target].FunctionWrapper
+        ](self, func_attribute=func_attribute)
 
     @inline(.always)
     def enqueue_function[

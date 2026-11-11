@@ -38,6 +38,7 @@ from max.gpu.host import (
 
 # Hooks the legacy `DeviceContext` calls take its types. It still compiles when
 # `--config=hal-device-context` points `max.gpu.host` at the HAL one.
+from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
 from max.gpu.host._legacy.device_context import (
     LegacyDeviceContext as _LegacyDeviceContext,
     LegacyDeviceFunction,
@@ -111,6 +112,14 @@ trait MaxPluginHooks:
 
     comptime _handles_elementwise: Bool = False
     """Whether this plugin overrides MAX elementwise dispatch."""
+
+    comptime FunctionWrapper: DeviceFunctionWrapper = _IdentityWrapper
+    """Selects the function `compile_function` compiles for a user kernel,
+    such as a generated entry point the plugin's runtime launches.
+
+    Both backends read this one member: the legacy `DeviceContext` through its
+    own `FunctionWrapper`, and the HAL one through its plugin hooks.
+    """
 
     comptime warp_size: Int
     """The number of lanes in a warp on the target, which `WARP_SIZE` reads.

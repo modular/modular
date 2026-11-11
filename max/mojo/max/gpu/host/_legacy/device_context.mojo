@@ -4364,6 +4364,15 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
     comptime default_device_info = get_gpu_info[Self.target._arch()]()
     """`GPUInfo` object for the default accelerator."""
 
+    comptime FunctionWrapper: DeviceFunctionWrapper = MaxPluginForTarget[
+        Self.target
+    ].FunctionWrapper
+    """Selects the function `compile_function` compiles for a user kernel.
+
+    Read from `MaxPluginHooks`, which the HAL backend reads the same member
+    from, so both backends pick the same wrapper for a target.
+    """
+
     comptime ExecutionConfigType: ExecutionConfig = (
         ClusterAttributeLaunchConfig if _supports_cluster_launch[
             Self.target
