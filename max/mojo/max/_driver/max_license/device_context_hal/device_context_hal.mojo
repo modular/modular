@@ -201,6 +201,20 @@ def _check_dim_in_range[
         raise Error(location.prefix(msg))
 
 
+def _check_config_dims[
+    func_name_for_msg: StringLiteral,
+    ExecutionConfigType: ExecutionConfig,
+](execution_config: ExecutionConfigType, *, location: SourceLocation) raises:
+    """Checks a grid/block config's dims; any other config has none."""
+    comptime if conforms_to(ExecutionConfigType, GridBlockExecutionConfig):
+        _check_dim_in_range[func_name_for_msg, "grid_dim"](
+            execution_config.get_grid_dim(), location=location
+        )
+        _check_dim_in_range[func_name_for_msg, "block_dim"](
+            execution_config.get_block_dim(), location=location
+        )
+
+
 trait _HALFunctionEnqueuer:
     """HAL equivalent of DeviceContext's `_FunctionEnqueuer`.
 
@@ -563,14 +577,24 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         (
             ClusterAttributeLaunchConfig if Self._plugin_has_clusters else GridBlockAttributeLaunchConfig
         ) if Self._plugin_has_attributes else (
-            ClusterLaunchConfig if Self._plugin_has_clusters else GridBlockLaunchConfig
+            ClusterLaunchConfig if Self._plugin_has_clusters else (
+                Self._PluginExecutionConfigType if (
+                    Self._HALHooks.Launcher.launches_config
+                    and not conforms_to(
+                        Self._PluginExecutionConfigType,
+                        GridBlockExecutionConfig,
+                    )
+                ) else GridBlockLaunchConfig
+            )
         )
     )
     """The launch configuration type with every launch capability this
     device supports.
 
     On NVIDIA devices it carries launch attributes, and from sm_90 on also
-    thread block clusters, as on the legacy `DeviceContext`.
+    thread block clusters, as on the legacy `DeviceContext`. When the plugin's
+    own configuration isn't grid/block shaped and the plugin's launcher takes
+    it, it's that configuration.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -1195,7 +1219,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         func: def(*args: *declared_arg_types) thin -> None,
@@ -1269,12 +1293,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             var gpu_kernel = self.compile_function[func]()
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](execution_config.get_grid_dim(), location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](execution_config.get_block_dim(), location=call_location())
+                _check_config_dims["DeviceContext.enqueue_function"](
+                    execution_config, location=call_location()
+                )
             comptime for idx in range(HostArgs.length):
                 type_of(gpu_kernel)._check_trailing_host[
                     HostArgs[idx], actual_arg_types.length + idx
@@ -1290,7 +1311,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_function[
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         //,
     ](
         self,
@@ -1320,16 +1341,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], execution_config, func
             )
         else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+                _check_config_dims["DeviceContext.enqueue_function"](
+                    execution_config, location=call_location()
+                )
 
             var gpu_kernel = DeviceFunction[FuncType.__call__](self)
 
@@ -1342,7 +1357,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue_function[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         //,
         *Ts: DevicePassable,
     ](
@@ -1395,16 +1410,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 *args,
             )
         else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+                _check_config_dims["DeviceContext.enqueue_function"](
+                    execution_config, location=call_location()
+                )
             f._do_call_with_pack_checked(
                 self,
                 execution_config,
@@ -3262,7 +3271,7 @@ struct DeviceFunction[
 
     @inline(.always)
     def _do_call_closure_checked[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         ContextT: _HALFunctionEnqueuer,
     ](
@@ -3337,7 +3346,7 @@ struct DeviceFunction[
 
     @inline(.always)
     def _do_call_with_pack_checked[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         *Ts: DevicePassable,
@@ -3351,29 +3360,29 @@ struct DeviceFunction[
         var attributes: List[LaunchAttribute] = [],
         location: Optional[SourceLocation] = None,
     ) raises:
-        # Every grid/block launch, from a DeviceContext or a DeviceStream,
-        # ends up here, so this is the one place the plugin's launcher has to
-        # be honored.
+        # Every launch, from a DeviceContext or a DeviceStream, ends up here,
+        # so this is the one place the plugin's launcher has to be honored.
         comptime _HALHooks = HalPluginForTarget[
             CompilationTarget[_mlir_value=ContextT._target_value]()
         ]
         _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
-        comptime if _HALHooks.Launcher.overrides_grid_block:
+        comptime is_grid_block = conforms_to(
+            ExecutionConfigType, GridBlockExecutionConfig
+        )
+        comptime launcher_takes_config = (
+            not is_grid_block and _HALHooks.Launcher.launches_config
+        )
+        comptime launcher_takes_grid_block = (
+            is_grid_block and _HALHooks.Launcher.overrides_grid_block
+        )
+        comptime if launcher_takes_config or launcher_takes_grid_block:
             comptime if HostArgs.length != 0:
                 raise Error(
                     "the active HAL plugin's launcher doesn't take host-only"
                     " arguments"
                 )
-            # It only gets the grid and block, so refuse anything else rather
-            # than drop it.
-            var shared_mem_bytes = 0
-            comptime if conforms_to(
-                ExecutionConfigType,
-                NearComputeGeneralPurposeScratchpadExecutionConfig,
-            ):
-                shared_mem_bytes = (
-                    execution_config.get_near_compute_scratchpad_usage()
-                )
+            # It only gets its own config or the grid and block, so refuse
+            # anything else rather than drop it.
             var num_attributes = len(attributes)
             comptime if conforms_to(
                 ExecutionConfigType, LaunchAttributeHolderExecutionConfig
@@ -3389,22 +3398,77 @@ struct DeviceFunction[
                     or cluster_dim.y() != 1
                     or cluster_dim.z() != 1
                 )
-            if shared_mem_bytes != 0 or num_attributes != 0 or clustered:
+            if num_attributes != 0 or clustered:
                 raise Error(
-                    "the active HAL plugin's launcher doesn't take shared"
-                    " memory, cluster dims or launch attributes"
+                    "the active HAL plugin's launcher doesn't take cluster"
+                    " dims or launch attributes"
                 )
-            _HALHooks.Launcher.enqueue_grid_block[
-                get_device_spec[0](), Self.Wrapper, Self.declared_arg_types
-            ](
+
+        comptime if launcher_takes_config:
+            _HALHooks.Launcher.enqueue[Self.Wrapper, Self.declared_arg_types](
                 ctx._hal_stream()[],
                 self._inner[]._func_handle,
                 *args,
-                grid_dim=execution_config.get_grid_dim(),
-                block_dim=execution_config.get_block_dim(),
+                execution_config=execution_config,
             )
-            return
+        elif is_grid_block:
+            ref grid_block_config = rebind[
+                downcast[ExecutionConfigType, GridBlockExecutionConfig]
+            ](execution_config)
+            comptime if launcher_takes_grid_block:
+                # It only gets the grid and block, so refuse shared memory
+                # rather than drop it.
+                comptime if conforms_to(
+                    ExecutionConfigType,
+                    NearComputeGeneralPurposeScratchpadExecutionConfig,
+                ):
+                    if execution_config.get_near_compute_scratchpad_usage():
+                        raise Error(
+                            "the active HAL plugin's launcher doesn't take"
+                            " shared memory"
+                        )
+                _HALHooks.Launcher.enqueue_grid_block[
+                    get_device_spec[0](),
+                    Self.Wrapper,
+                    Self.declared_arg_types,
+                ](
+                    ctx._hal_stream()[],
+                    self._inner[]._func_handle,
+                    *args,
+                    grid_dim=grid_block_config.get_grid_dim(),
+                    block_dim=grid_block_config.get_block_dim(),
+                )
+            else:
+                self._do_call_grid_block_with_pack_checked(
+                    ctx,
+                    grid_block_config,
+                    *args,
+                    host_args=host_args,
+                    attributes=attributes^,
+                    location=location,
+                )
+        else:
+            comptime assert False, (
+                "the active HAL plugin's launcher doesn't take this execution"
+                " config"
+            )
 
+    @inline(.always)
+    def _do_call_grid_block_with_pack_checked[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+        //,
+        *Ts: DevicePassable,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        imm self,
+        ctx: ContextT,
+        execution_config: ExecutionConfigType,
+        *args: *Ts,
+        host_args: Tuple[*HostArgs],
+        var attributes: List[LaunchAttribute],
+        location: Optional[SourceLocation],
+    ) raises:
         comptime extra_host_count = HostArgs.length
 
         self._check_pdl_wait(Span(attributes))
@@ -4185,7 +4249,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         //,
         func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
@@ -4293,7 +4357,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue_function[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         //,
     ](
@@ -4322,16 +4386,10 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], execution_config, func
             )
         else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+                _check_config_dims["DeviceStream.enqueue_function"](
+                    execution_config, location=call_location()
+                )
             var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
             gpu_kernel._do_call_closure_checked(
                 self,
@@ -4409,7 +4467,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue_function[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         //,
         *Ts: DevicePassable,
     ](
@@ -4444,16 +4502,10 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 *args,
             )
         else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+                _check_config_dims["DeviceStream.enqueue_function"](
+                    execution_config, location=call_location()
+                )
 
             f._do_call_with_pack_checked(
                 self,
