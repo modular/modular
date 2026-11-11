@@ -1760,7 +1760,7 @@ def find_K_alignment_upto_16B(row_bytes_arg: Int) -> Int:
     var row_bytes = row_bytes_arg
     var alignment = 1
 
-    comptime for i in range(4):
+    for _ in range(4):
         # Check if current alignment divides evenly
         if row_bytes & 1 == 1:
             return alignment

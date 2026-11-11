@@ -297,7 +297,7 @@ def _has_native_f8_support() -> Bool:
 def _rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
     """Mask for `SIMD.rotate_left[shift]()`; any sign of `shift`."""
     var res = IndexList[size]()
-    comptime for i in range(size):
+    for i in range(size):
         res[i] = (i + shift + size) % size
     return res
 
@@ -310,7 +310,7 @@ def _shift_mask[size: Int, shift: Int]() -> IndexList[size]:
     out-of-range lanes index `other`, which callers pass as zero.
     """
     var res = IndexList[size]()
-    comptime for i in range(size):
+    for i in range(size):
         var src = i + shift
         if 0 <= src < size:
             res[i] = src
