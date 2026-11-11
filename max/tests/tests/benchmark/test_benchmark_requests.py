@@ -45,6 +45,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncInput,
     ProgressBarRequestDriver,
     RequestCounter,
+    RequestDriver,
     RequestFuncInput,
     RequestFuncOutput,
     SglangPixelGenerationRequestDriver,
@@ -1335,82 +1336,83 @@ class TestRequestDriverSelection:
             is OpenAICompletionsRequestDriver
         )
 
-    def test_get_request_driver_class_chat(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/chat/completions"
-            )
-            is OpenAIChatCompletionsRequestDriver
-        )
-
-    def test_get_request_driver_class_generate_stream(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v2/models/ensemble/generate_stream"
-            )
-            is TRTLLMRequestDriver
-        )
+    @pytest.mark.parametrize(
+        ("path", "task", "driver"),
+        [
+            # task=None exercises the default (text-generation) argument.
+            pytest.param(
+                "/v1/chat/completions",
+                None,
+                OpenAIChatCompletionsRequestDriver,
+                id="chat",
+            ),
+            pytest.param(
+                "/v2/models/ensemble/generate_stream",
+                None,
+                TRTLLMRequestDriver,
+                id="generate_stream",
+            ),
+            pytest.param(
+                "/v1/responses",
+                "text-to-image",
+                OpenResponsesRequestDriver,
+                id="pixel_gen_responses",
+            ),
+            pytest.param(
+                "/v1/images/generations",
+                "text-to-image",
+                SglangPixelGenerationRequestDriver,
+                id="pixel_gen_sglang",
+            ),
+            pytest.param(
+                "/v1/chat/completions",
+                "text-to-image",
+                VllmOmniPixelGenerationRequestDriver,
+                id="pixel_gen_vllm_omni",
+            ),
+            pytest.param(
+                "/v1/images/generations",
+                "image-to-image",
+                SglangPixelGenerationRequestDriver,
+                id="pixel_gen_image_to_image",
+            ),
+            pytest.param(
+                "/v1/videos/sync",
+                "text-to-video",
+                VllmOmniVideoRequestDriver,
+                id="pixel_gen_vllm_omni_video",
+            ),
+            pytest.param(
+                "/v1/videos",
+                "text-to-video",
+                SglangVideoRequestDriver,
+                id="pixel_gen_sglang_video",
+            ),
+            # Chat completions must stay on the chat driver, not the vLLM-Omni
+            # pixel driver, when the task is text generation.
+            pytest.param(
+                "/v1/chat/completions",
+                "text-generation",
+                OpenAIChatCompletionsRequestDriver,
+                id="text_gen_chat_not_pixel",
+            ),
+        ],
+    )
+    def test_get_request_driver_class(
+        self,
+        path: str,
+        task: BenchmarkTask | None,
+        driver: type[RequestDriver],
+    ) -> None:
+        url = f"http://localhost:8000{path}"
+        if task is None:
+            assert get_request_driver_class(url) is driver
+        else:
+            assert get_request_driver_class(url, task=task) is driver
 
     def test_get_request_driver_class_invalid_url(self) -> None:
         with pytest.raises(ValueError, match="Unsupported API URL"):
             get_request_driver_class("http://localhost:8000/unsupported")
-
-    # Pixel generation driver selection tests
-
-    def test_get_request_driver_class_pixel_gen_responses(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/responses",
-                task="text-to-image",
-            )
-            is OpenResponsesRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_sglang(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/images/generations",
-                task="text-to-image",
-            )
-            is SglangPixelGenerationRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_vllm_omni(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/chat/completions",
-                task="text-to-image",
-            )
-            is VllmOmniPixelGenerationRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_image_to_image(self) -> None:
-        """image-to-image task should also dispatch to pixel gen drivers."""
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/images/generations",
-                task="image-to-image",
-            )
-            is SglangPixelGenerationRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_vllm_omni_video(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/videos/sync",
-                task="text-to-video",
-            )
-            is VllmOmniVideoRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_sglang_video(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/videos",
-                task="text-to-video",
-            )
-            is SglangVideoRequestDriver
-        )
 
     def test_get_request_driver_class_pixel_gen_invalid_url(self) -> None:
         with pytest.raises(ValueError, match="pixel-generation"):
@@ -1430,17 +1432,6 @@ class TestRequestDriverSelection:
                 f"http://localhost:8000{path}",
                 task="text-generation",
             )
-
-    def test_get_request_driver_class_text_gen_chat_not_pixel(self) -> None:
-        """text-generation + /v1/chat/completions should return chat driver,
-        not VllmOmniPixelGenerationRequestDriver."""
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/chat/completions",
-                task="text-generation",
-            )
-            is OpenAIChatCompletionsRequestDriver
-        )
 
 
 class TestPixelGenerationPayloadBuilders:

@@ -115,35 +115,144 @@ class TestIterEvents:
     """Tests for iter_events: byte lines -> SSEEvent dispatches."""
 
     @pytest.mark.asyncio
-    async def test_basic_data_event(self) -> None:
-        events = [ev async for ev in iter_events(_chunks(b"data: hello\n\n"))]
-        assert events == [
-            SSEEvent(data="hello", event_type="message", last_event_id="")
-        ]
-
-    @pytest.mark.asyncio
-    async def test_multiline_data_joined_with_newlines(self) -> None:
-        # Spec §9.2.6: each data: line appends value + LF; trailing LF stripped.
-        events = [
-            ev
-            async for ev in iter_events(
-                _chunks(b"data: YHOO\ndata: +2\ndata: 10\n\n")
-            )
-        ]
-        assert events == [
-            SSEEvent(
-                data="YHOO\n+2\n10", event_type="message", last_event_id=""
-            )
-        ]
-
-    @pytest.mark.asyncio
-    async def test_event_type_field(self) -> None:
-        stream = b"event: add\ndata: 73857293\n\nevent: remove\ndata: 2153\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [
-            SSEEvent(data="73857293", event_type="add", last_event_id=""),
-            SSEEvent(data="2153", event_type="remove", last_event_id=""),
-        ]
+    @pytest.mark.parametrize(
+        ("chunks", "expected"),
+        [
+            pytest.param(
+                (b"data: hello\n\n",),
+                [
+                    SSEEvent(
+                        data="hello", event_type="message", last_event_id=""
+                    )
+                ],
+                id="basic_data_event",
+            ),
+            # Spec §9.2.6: each data: line appends value + LF; trailing LF
+            # stripped.
+            pytest.param(
+                (b"data: YHOO\ndata: +2\ndata: 10\n\n",),
+                [
+                    SSEEvent(
+                        data="YHOO\n+2\n10",
+                        event_type="message",
+                        last_event_id="",
+                    )
+                ],
+                id="multiline_data_joined_with_newlines",
+            ),
+            pytest.param(
+                (
+                    b"event: add\ndata: 73857293\n\nevent: remove\ndata: 2153\n\n",
+                ),
+                [
+                    SSEEvent(
+                        data="73857293", event_type="add", last_event_id=""
+                    ),
+                    SSEEvent(
+                        data="2153", event_type="remove", last_event_id=""
+                    ),
+                ],
+                id="event_type_field",
+            ),
+            pytest.param(
+                (
+                    b"event: add\ndata: 73857293\n\n"
+                    b"event: remove\ndata: 2153\n\n"
+                    b"event: add\ndata: 113411\n\n",
+                ),
+                [
+                    SSEEvent(data="73857293", event_type="add"),
+                    SSEEvent(data="2153", event_type="remove"),
+                    SSEEvent(data="113411", event_type="add"),
+                ],
+                id="multiple_event_types_in_stream",
+            ),
+            pytest.param(
+                (b": keep-alive\ndata: hello\n\n",),
+                [
+                    SSEEvent(
+                        data="hello", event_type="message", last_event_id=""
+                    )
+                ],
+                id="comment_lines_ignored",
+            ),
+            pytest.param(
+                (b": comment\n\n",),
+                [],
+                id="comment_only_block_does_not_dispatch",
+            ),
+            pytest.param(
+                (b"unknownfield: value\ndata: hello\n\n",),
+                [
+                    SSEEvent(
+                        data="hello", event_type="message", last_event_id=""
+                    )
+                ],
+                id="unknown_fields_ignored",
+            ),
+            pytest.param(
+                (b"\n",), [], id="blank_line_with_no_data_does_not_dispatch"
+            ),
+            # Spec: "data" alone (no colon) uses empty string as value, appends
+            # LF. The trailing LF is stripped on dispatch, leaving data="".
+            pytest.param(
+                (b"data\n\n",),
+                [SSEEvent(data="")],
+                id="bare_data_field_fires_empty_string_event",
+            ),
+            pytest.param(
+                (b"data:\n\n",),
+                [SSEEvent(data="")],
+                id="data_colon_no_value_fires_empty_string_event",
+            ),
+            # Spec example: two bare "data" fields → data buffer = "\n\n" →
+            # strip trailing LF → data = "\n" (a single newline character).
+            pytest.param(
+                (b"data\ndata\n\n",),
+                [SSEEvent(data="\n")],
+                id="two_bare_data_lines_yield_single_newline",
+            ),
+            # Spec: "data:test" and "data: test" are identical.
+            pytest.param(
+                (b"data:test\n\ndata: test\n\n",),
+                [SSEEvent(data="test"), SSEEvent(data="test")],
+                id="space_after_colon_stripped",
+            ),
+            # "data:  val" (two spaces) → value = " val" (one leading space
+            # remains).
+            pytest.param(
+                (b"data:  val\n\n",),
+                [SSEEvent(data=" val")],
+                id="only_first_space_after_colon_stripped",
+            ),
+            # Spec: pending data at end-of-stream (no trailing blank line) is
+            # discarded.
+            pytest.param(
+                (b"data: hello\n",), [], id="incomplete_event_at_eof_discarded"
+            ),
+            pytest.param(
+                (b"retry: 3000\ndata: hello\n\n",),
+                [SSEEvent(data="hello")],
+                id="retry_field_silently_consumed",
+            ),
+            pytest.param(
+                (b"data: hello\r\n\r\ndata: world\r\n\r\n",),
+                [SSEEvent(data="hello"), SSEEvent(data="world")],
+                id="crlf_delimited_stream",
+            ),
+            # SSE payload split arbitrarily across HTTP transport chunks.
+            pytest.param(
+                (b"data: hel", b"lo\n", b"\n", b"data: world\n\n"),
+                [SSEEvent(data="hello"), SSEEvent(data="world")],
+                id="chunked_delivery_assembles_correctly",
+            ),
+        ],
+    )
+    async def test_iter_events(
+        self, chunks: tuple[bytes, ...], expected: list[SSEEvent]
+    ) -> None:
+        events = [ev async for ev in iter_events(_chunks(*chunks))]
+        assert events == expected
 
     @pytest.mark.asyncio
     async def test_event_type_resets_to_message_after_dispatch(self) -> None:
@@ -181,89 +290,6 @@ class TestIterEvents:
         stream = b"id: bad\x00id\ndata: hello\n\n"
         events = [ev async for ev in iter_events(_chunks(stream))]
         assert events[0].last_event_id == ""
-
-    @pytest.mark.asyncio
-    async def test_comment_lines_ignored(self) -> None:
-        stream = b": keep-alive\ndata: hello\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [
-            SSEEvent(data="hello", event_type="message", last_event_id="")
-        ]
-
-    @pytest.mark.asyncio
-    async def test_comment_only_block_does_not_dispatch(self) -> None:
-        stream = b": comment\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == []
-
-    @pytest.mark.asyncio
-    async def test_unknown_fields_ignored(self) -> None:
-        stream = b"unknownfield: value\ndata: hello\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [
-            SSEEvent(data="hello", event_type="message", last_event_id="")
-        ]
-
-    @pytest.mark.asyncio
-    async def test_blank_line_with_no_data_does_not_dispatch(self) -> None:
-        stream = b"\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == []
-
-    @pytest.mark.asyncio
-    async def test_bare_data_field_fires_empty_string_event(self) -> None:
-        # Spec: "data" alone (no colon) uses empty string as value, appends LF.
-        # The trailing LF is stripped on dispatch, leaving data="".
-        stream = b"data\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [SSEEvent(data="")]
-
-    @pytest.mark.asyncio
-    async def test_data_colon_no_value_fires_empty_string_event(self) -> None:
-        stream = b"data:\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [SSEEvent(data="")]
-
-    @pytest.mark.asyncio
-    async def test_two_bare_data_lines_yield_single_newline(self) -> None:
-        # Spec example: two bare "data" fields → data buffer = "\n\n" → strip
-        # trailing LF → data = "\n" (a single newline character).
-        stream = b"data\ndata\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [SSEEvent(data="\n")]
-
-    @pytest.mark.asyncio
-    async def test_space_after_colon_stripped(self) -> None:
-        # Spec: "data:test" and "data: test" are identical.
-        stream = b"data:test\n\ndata: test\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [SSEEvent(data="test"), SSEEvent(data="test")]
-
-    @pytest.mark.asyncio
-    async def test_only_first_space_after_colon_stripped(self) -> None:
-        # "data:  val" (two spaces) → value = " val" (one leading space remains).
-        stream = b"data:  val\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [SSEEvent(data=" val")]
-
-    @pytest.mark.asyncio
-    async def test_incomplete_event_at_eof_discarded(self) -> None:
-        # Spec: pending data at end-of-stream (no trailing blank line) is discarded.
-        stream = b"data: hello\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == []
-
-    @pytest.mark.asyncio
-    async def test_retry_field_silently_consumed(self) -> None:
-        stream = b"retry: 3000\ndata: hello\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [SSEEvent(data="hello")]
-
-    @pytest.mark.asyncio
-    async def test_crlf_delimited_stream(self) -> None:
-        stream = b"data: hello\r\n\r\ndata: world\r\n\r\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [SSEEvent(data="hello"), SSEEvent(data="world")]
 
     @pytest.mark.asyncio
     async def test_spec_example_four_blocks(self) -> None:
@@ -312,29 +338,3 @@ class TestIterEvents:
         assert events[0].data == '{"choices": [{"text": "hello"}]}'
         assert events[1].data == '{"choices": [{"text": " world"}]}'
         assert events[2].data == "[DONE]"
-
-    @pytest.mark.asyncio
-    async def test_chunked_delivery_assembles_correctly(self) -> None:
-        # SSE payload split arbitrarily across HTTP transport chunks.
-        chunks = _chunks(
-            b"data: hel",
-            b"lo\n",
-            b"\n",
-            b"data: world\n\n",
-        )
-        events = [ev async for ev in iter_events(chunks)]
-        assert events == [SSEEvent(data="hello"), SSEEvent(data="world")]
-
-    @pytest.mark.asyncio
-    async def test_multiple_event_types_in_stream(self) -> None:
-        stream = (
-            b"event: add\ndata: 73857293\n\n"
-            b"event: remove\ndata: 2153\n\n"
-            b"event: add\ndata: 113411\n\n"
-        )
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events == [
-            SSEEvent(data="73857293", event_type="add"),
-            SSEEvent(data="2153", event_type="remove"),
-            SSEEvent(data="113411", event_type="add"),
-        ]

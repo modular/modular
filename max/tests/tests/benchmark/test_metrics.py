@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from functools import partial
 
 import numpy as np
 import pytest
@@ -197,22 +199,40 @@ def test_standard_percentile_metrics_str_representation() -> None:
     assert "metric" in result.lower()
 
 
-def test_standard_percentile_metrics_empty_data_assertion() -> None:
-    """Test that empty data raises assertion error."""
+@pytest.mark.parametrize(
+    "metrics_cls",
+    [StandardPercentileMetrics, ThroughputMetrics],
+    ids=["standard_percentile_metrics", "throughput_metrics"],
+)
+def test_empty_data_assertion(
+    metrics_cls: type[StandardPercentileMetrics | ThroughputMetrics],
+) -> None:
     with pytest.raises(AssertionError, match="data must not be empty"):
-        StandardPercentileMetrics([])
+        metrics_cls([])
 
 
-def test_standard_percentile_metrics_non_list_data_assertion() -> None:
-    """Test that non-list data raises assertion error."""
+@pytest.mark.parametrize(
+    "metrics_cls",
+    [StandardPercentileMetrics, ThroughputMetrics],
+    ids=["standard_percentile_metrics", "throughput_metrics"],
+)
+def test_non_list_data_assertion(
+    metrics_cls: type[StandardPercentileMetrics | ThroughputMetrics],
+) -> None:
     with pytest.raises(AssertionError, match="data must be a list"):
-        StandardPercentileMetrics((1.0, 2.0, 3.0))  # type: ignore
+        metrics_cls((1.0, 2.0, 3.0))  # type: ignore
 
 
-def test_standard_percentile_metrics_non_float_data_assertion() -> None:
-    """Test that non-float data raises assertion error."""
+@pytest.mark.parametrize(
+    "metrics_cls",
+    [StandardPercentileMetrics, ThroughputMetrics],
+    ids=["standard_percentile_metrics", "throughput_metrics"],
+)
+def test_non_float_data_assertion(
+    metrics_cls: type[StandardPercentileMetrics | ThroughputMetrics],
+) -> None:
     with pytest.raises(AssertionError, match="data must contain only floats"):
-        StandardPercentileMetrics([1, 2, 3])
+        metrics_cls([1, 2, 3])
 
 
 def test_standard_percentile_metrics_single_value() -> None:
@@ -286,24 +306,6 @@ def test_throughput_metrics_str_representation() -> None:
     """Test string representation uses 'throughput' prefix."""
     result = str(ThroughputMetrics([1.0, 2.0, 3.0]))
     assert "throughput" in result.lower()
-
-
-def test_throughput_metrics_empty_data_assertion() -> None:
-    """Test that empty data raises assertion error."""
-    with pytest.raises(AssertionError, match="data must not be empty"):
-        ThroughputMetrics([])
-
-
-def test_throughput_metrics_non_list_data_assertion() -> None:
-    """Test that non-list data raises assertion error."""
-    with pytest.raises(AssertionError, match="data must be a list"):
-        ThroughputMetrics((1.0, 2.0, 3.0))  # type: ignore
-
-
-def test_throughput_metrics_non_float_data_assertion() -> None:
-    """Test that non-float data raises assertion error."""
-    with pytest.raises(AssertionError, match="data must contain only floats"):
-        ThroughputMetrics([1, 2, 3])
 
 
 def test_throughput_metrics_single_value() -> None:
@@ -576,18 +578,65 @@ def test_healthy_metrics_pass_validation() -> None:
     assert errors == []
 
 
-def test_failures_detected() -> None:
-    """Any failed requests are flagged."""
-    ok, errors = _make_metrics(failures=3).validate_metrics()
+@pytest.mark.parametrize(
+    ("make", "flagged"),
+    [
+        pytest.param(
+            partial(_make_metrics, failures=3), "failures=3", id="failures"
+        ),
+        pytest.param(
+            partial(_make_metrics, completed=0),
+            "completed=0",
+            id="zero_completed",
+        ),
+        pytest.param(
+            partial(_make_metrics, total_output=0),
+            "total_output=0",
+            id="zero_output_tokens",
+        ),
+        pytest.param(
+            partial(_make_metrics, request_throughput=0.0),
+            "request_throughput",
+            id="zero_request_throughput",
+        ),
+        pytest.param(
+            partial(_make_metrics, request_throughput=float("nan")),
+            "request_throughput",
+            id="nan_request_throughput",
+        ),
+        pytest.param(
+            partial(_make_metrics, request_throughput=float("inf")),
+            "request_throughput",
+            id="inf_throughput",
+        ),
+        pytest.param(
+            partial(_make_metrics, request_throughput=-1.0),
+            "request_throughput",
+            id="negative_throughput",
+        ),
+        pytest.param(
+            partial(_make_metrics, output_throughput_values=[float("nan")]),
+            "output_throughput",
+            id="nan_output_throughput",
+        ),
+        pytest.param(
+            partial(_make_metrics, ttft_values=[float("nan")]),
+            "ttft_ms",
+            id="nan_ttft",
+        ),
+        pytest.param(
+            partial(_make_metrics, latency_values=[float("nan")]),
+            "latency_ms",
+            id="nan_latency",
+        ),
+    ],
+)
+def test_degenerate_field_detected(
+    make: Callable[[], BenchmarkResult], flagged: str
+) -> None:
+    ok, errors = make().validate_metrics()
     assert ok is False
-    assert any("failures=3" in e for e in errors)
-
-
-def test_zero_completed_detected() -> None:
-    """Zero completed requests are flagged."""
-    ok, errors = _make_metrics(completed=0).validate_metrics()
-    assert ok is False
-    assert any("completed=0" in e for e in errors)
+    assert any(flagged in e for e in errors)
 
 
 def test_all_excluded_by_skip_reports_insufficient_data() -> None:
@@ -622,20 +671,6 @@ def test_partial_exclusion_does_not_mask_other_errors() -> None:
     assert not any("Insufficient data" in e for e in errors)
 
 
-def test_zero_output_tokens_detected() -> None:
-    """Zero total output tokens are flagged."""
-    ok, errors = _make_metrics(total_output=0).validate_metrics()
-    assert ok is False
-    assert any("total_output=0" in e for e in errors)
-
-
-def test_zero_request_throughput_detected() -> None:
-    """Zero request throughput is flagged."""
-    ok, errors = _make_metrics(request_throughput=0.0).validate_metrics()
-    assert ok is False
-    assert any("request_throughput" in e for e in errors)
-
-
 def test_zero_cache_rate_passes() -> None:
     """A 0% per-turn cache hit rate is valid (cold cache, not a benchmark error)."""
     metrics = _make_metrics()
@@ -646,38 +681,6 @@ def test_zero_cache_rate_passes() -> None:
     ok, errors = metrics.validate_metrics()
     assert ok is True
     assert errors == []
-
-
-def test_nan_request_throughput_detected() -> None:
-    """NaN request throughput is flagged."""
-    ok, errors = _make_metrics(
-        request_throughput=float("nan")
-    ).validate_metrics()
-    assert ok is False
-    assert any("request_throughput" in e for e in errors)
-
-
-def test_nan_output_throughput_detected() -> None:
-    """NaN output throughput mean is flagged with field prefix."""
-    ok, errors = _make_metrics(
-        output_throughput_values=[float("nan")]
-    ).validate_metrics()
-    assert ok is False
-    assert any("output_throughput" in e for e in errors)
-
-
-def test_nan_ttft_detected() -> None:
-    """NaN TTFT mean is flagged with field prefix."""
-    ok, errors = _make_metrics(ttft_values=[float("nan")]).validate_metrics()
-    assert ok is False
-    assert any("ttft_ms" in e for e in errors)
-
-
-def test_nan_latency_detected() -> None:
-    """NaN latency mean is flagged with field prefix."""
-    ok, errors = _make_metrics(latency_values=[float("nan")]).validate_metrics()
-    assert ok is False
-    assert any("latency_ms" in e for e in errors)
 
 
 def test_all_degenerate_reports_all_errors() -> None:
@@ -700,22 +703,6 @@ def test_all_degenerate_reports_all_errors() -> None:
     assert any("output_throughput" in e for e in errors)
     assert any("ttft_ms" in e for e in errors)
     assert any("latency_ms" in e for e in errors)
-
-
-def test_inf_throughput_detected() -> None:
-    """Infinite throughput is flagged as invalid."""
-    ok, errors = _make_metrics(
-        request_throughput=float("inf")
-    ).validate_metrics()
-    assert ok is False
-    assert any("request_throughput" in e for e in errors)
-
-
-def test_negative_throughput_detected() -> None:
-    """Negative throughput is flagged as invalid."""
-    ok, errors = _make_metrics(request_throughput=-1.0).validate_metrics()
-    assert ok is False
-    assert any("request_throughput" in e for e in errors)
 
 
 def test_sub_metric_errors_prefixed() -> None:
