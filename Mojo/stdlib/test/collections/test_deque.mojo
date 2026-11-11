@@ -332,6 +332,18 @@ def test_impl_appendleft_with_maxlen() raises:
     _ = q^
 
 
+def test_extend_empty_list() raises:
+    var q: Deque[Int] = [1, 2, 3]
+    q.extend(List[Int]())
+    q.extendleft(List[Int]())
+    assert_equal(len(q), 3)
+    assert_equal(q[0], 1)
+    assert_equal(q[2], 3)
+
+    var empty = Deque[Int](elements=List[Int]())
+    assert_equal(len(empty), 0)
+
+
 def test_impl_extend() raises:
     var q = Deque[Int](maxlen=4)
     var lst: List = [0, 1, 2]
