@@ -129,6 +129,19 @@ from max.gpu.host._launch_args import (
 
 # Re-exports any `__extension`s an overlay's hook file declares.
 from ._device_context_hal_extras import *
+from max.gpu.host._driver_handles import (
+    _DeviceContextPtr,
+    _DeviceBufferPtr,
+    _DeviceFunctionPtr,
+    _DeviceStreamPtr,
+    _CString,
+)
+from max.gpu.host._vendor_handles import CUstream
+from max.gpu.host._driver_common import (
+    _DumpPath,
+    _check_dim_in_range,
+    StreamPriorityRange,
+)
 
 
 def _launch_attributes_ptr(
@@ -167,39 +180,6 @@ def _check_exec_config_launch_support[
         "HAL DeviceContext.enqueue_function does not support"
         " `constant_memory` mappings."
     )
-
-
-# Raises unless every component of `dim` is in `[1, Int32.MAX]`: drivers take
-# launch dims as 32-bit values, so a larger one would be truncated. Callers skip
-# it when the plugin's launcher takes over grid/block launches, since that
-# launcher reads the dims its own way (eg, 0 for every core).
-def _check_dim_in_range[
-    func_name_for_msg: StringLiteral, dim_name_for_msg: StringLiteral
-](dim: Dim, *, location: SourceLocation) raises:
-    if dim.x() <= 0 or dim.x() > Int(Int32.MAX):
-        comptime msg = String(
-            func_name_for_msg,
-            ": Dim value ",
-            dim_name_for_msg,
-            ".x must be in [1, Int32.MAX].",
-        )
-        raise Error(location.prefix(msg))
-    if dim.y() <= 0 or dim.y() > Int(Int32.MAX):
-        comptime msg = String(
-            func_name_for_msg,
-            ": Dim value ",
-            dim_name_for_msg,
-            ".y must be in [1, Int32.MAX].",
-        )
-        raise Error(location.prefix(msg))
-    if dim.z() <= 0 or dim.z() > Int(Int32.MAX):
-        comptime msg = String(
-            func_name_for_msg,
-            ": Dim value ",
-            dim_name_for_msg,
-            ".z must be in [1, Int32.MAX].",
-        )
-        raise Error(location.prefix(msg))
 
 
 def _check_config_dims[
@@ -424,36 +404,6 @@ def _init_peer_state() -> _PeerState:
 
 
 comptime _PEER_STATE = _Global["MODULAR_HAL_PEER_STATE", _init_peer_state]
-
-
-@fieldwise_init
-struct StreamPriorityRange(TrivialRegisterPassable, Writable):
-    """Represents the range of valid stream priorities for a GPU device.
-
-    Stream priorities control the scheduling of GPU operations, with higher
-    priority streams being executed preferentially over lower priority streams.
-    """
-
-    var least: Int
-    """The lowest (numerically smallest) priority value."""
-
-    var greatest: Int
-    """The highest (numerically largest) priority value."""
-
-    @inline(.always)
-    def write_to(self, mut writer: Some[Writer]):
-        """Writes the stream priority range to the given writer.
-
-        Args:
-            writer: The writer to output the stream priority range to.
-        """
-        writer.write(
-            "StreamPriorityRange(least=",
-            self.least,
-            ", greatest=",
-            self.greatest,
-            ")",
-        )
 
 
 comptime HALDeviceStream = HALDeviceStreamBase[]
@@ -5633,141 +5583,6 @@ struct _HostMappedBuffer[dtype: DType]:
         self._ctx.synchronize()
 
 
-# Create empty structs to ensure dtype checking when using the C++ handles.
-struct _DeviceContextCpp:
-    pass
-
-
-struct _DeviceBufferCpp:
-    pass
-
-
-struct _DeviceFunctionCpp:
-    pass
-
-
-struct _DeviceMulticastBufferCpp:
-    pass
-
-
-struct _DeviceStreamCpp:
-    pass
-
-
-struct _DeviceEventCpp:
-    pass
-
-
-struct _DeviceTimerCpp:
-    pass
-
-
-struct _CompletionFlagCpp:
-    pass
-
-
-struct _DeviceContextScopeCpp:
-    pass
-
-
-struct _DeviceGraphBuilderCpp:
-    pass
-
-
-struct _DeviceGraphCpp:
-    pass
-
-
-comptime _DeviceContextPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceContextCpp, origin]]
-
-comptime _DeviceBufferPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceBufferCpp, origin]]
-
-comptime _DeviceFunctionPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceFunctionCpp, origin]]
-
-comptime _DeviceMulticastBufferPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceMulticastBufferCpp, origin]]
-
-comptime _DeviceStreamPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceStreamCpp, origin]]
-
-comptime _DeviceEventPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceEventCpp, origin]]
-
-comptime _DeviceTimerPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceTimerCpp, origin]]
-
-comptime _CompletionFlagPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_CompletionFlagCpp, origin]]
-
-comptime _DeviceContextScopePtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceContextScopeCpp, origin]]
-
-comptime _DeviceGraphBuilderPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceGraphBuilderCpp, origin]]
-
-comptime _DeviceGraphPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceGraphCpp, origin]]
-
-comptime _CString[origin: ImmOrigin = ImmUntrackedOrigin] = Optional[
-    CStringSpan[origin]
-]
-
-comptime _DumpPath = Variant[Bool, Path, StaticString, def() thin -> Path]
-
-
-def _string_from_owned_charptr(c_str: _CString) -> String:
-    var result = String()
-    if case .Some(c_str) = c_str:
-        result = String(unsafe_from_utf8_ptr=c_str.ptr())
-    # void AsyncRT_DeviceContext_strfree(const char* ptr)
-    external_call["AsyncRT_DeviceContext_strfree", NoneType](c_str)
-    return result^
-
-
-@inline(.never)
-def _raise_checked_impl(
-    err_msg: _CString, msg: String, location: SourceLocation
-) raises:
-    var err = _string_from_owned_charptr(err_msg)
-    raise Error(location.prefix(err + ((" " + msg) if msg else "")))
-
-
 def _check_copy_src_size(
     dst: Buffer[get_device_spec[0]()], src: Buffer[get_device_spec[0]()]
 ) raises:
@@ -6740,14 +6555,3 @@ struct HALDeviceMulticastBuffer[dtype: DType]:
         self, ctx: HALDeviceContext
     ) raises -> HALDeviceBuffer[Self.dtype]:
         raise Error("Multicast not supported by the HAL DeviceContext")
-
-
-@inline(.always)
-def _checked(
-    err: _CString,
-    *,
-    msg: String = "",
-    location: Optional[SourceLocation] = None,
-) raises:
-    if err:
-        _raise_checked_impl(err, msg, location.or_else(call_location()))

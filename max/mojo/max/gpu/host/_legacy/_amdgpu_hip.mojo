@@ -17,32 +17,16 @@ from .device_context import (
     LegacyDeviceContext,
     LegacyDeviceFunction,
     LegacyDeviceStream,
-    _CString,
-    _checked,
 )
-
-
-struct _ihipDevice_t:
-    pass
-
-
-struct _ihipStream_t:
-    pass
-
-
-struct _ihipModule_t:
-    pass
-
-
-comptime hipDevice_t = Optional[
-    Pointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
-]
-comptime hipStream_t = Optional[
-    Pointer[_ihipStream_t, UntrackedOrigin[mut=True]]
-]
-comptime hipModule_t = Optional[
-    Pointer[_ihipModule_t, UntrackedOrigin[mut=True]]
-]
+from max.gpu.host._driver_handles import _CString
+from max.gpu.host._driver_common import _checked
+from max.gpu.host._driver_handles import _CString
+from max.gpu.host._vendor_handles import (
+    hipDevice_t,
+    hipStream_t,
+    hipModule_t,
+)
+from max.gpu.host._driver_common import _checked
 
 
 # Accessor function to get access to the underlying hipDevice_t from an abstract DeviceContext.

@@ -13,7 +13,9 @@
 
 from std.ffi import external_call
 
-from .device_context import LegacyDeviceContext, _CString, _checked
+from .device_context import LegacyDeviceContext
+from max.gpu.host._driver_handles import _CString
+from max.gpu.host._driver_common import _checked
 
 
 struct _MTLDevice:

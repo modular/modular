@@ -18,29 +18,12 @@ from .device_context_hal import (
     HALDeviceStreamBase,
 )
 from std.memory.pointer import unsafe_cast
-
-
-struct _ihipDevice_t:
-    pass
-
-
-struct _ihipStream_t:
-    pass
-
-
-struct _ihipModule_t:
-    pass
-
-
-comptime hipDevice_t = Optional[
-    Pointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
-]
-comptime hipStream_t = Optional[
-    Pointer[_ihipStream_t, UntrackedOrigin[mut=True]]
-]
-comptime hipModule_t = Optional[
-    Pointer[_ihipModule_t, UntrackedOrigin[mut=True]]
-]
+from max.gpu.host._vendor_handles import (
+    _ihipStream_t,
+    hipDevice_t,
+    hipStream_t,
+    hipModule_t,
+)
 
 
 @inline(.always)

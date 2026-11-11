@@ -32,13 +32,6 @@ from ._overlay import (
     DeviceStream,
     DeviceTypeEncoder,
     HostBuffer,
-    _CString,
-    _DeviceBufferCpp,
-    _DeviceContextPtr,
-    _DeviceFunctionPtr,
-    _DumpPath,
-    _check_dim_in_range,
-    _checked,
     DeviceGraph,
     DeviceGraphBuilder,
     DeviceGraphCache,
@@ -49,12 +42,25 @@ from ._overlay import (
     CUDA,
     CUDA_MODULE,
     CUDA_get_current_context,
+    HIP,
+    HIP_MODULE,
+)
+from max.gpu.host._driver_handles import (
+    _CString,
+    _DeviceBufferCpp,
+    _DeviceContextPtr,
+    _DeviceFunctionPtr,
+)
+from max.gpu.host._driver_common import (
+    _DumpPath,
+    _check_dim_in_range,
+    _checked,
+)
+from max.gpu.host._vendor_handles import (
     CUcontext,
     CUmodule,
     CUstream,
     _CUstream_st,
-    HIP,
-    HIP_MODULE,
     hipDevice_t,
     hipStream_t,
 )

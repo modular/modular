@@ -38,10 +38,14 @@ from ._legacy.device_context import (
     LegacyDevicePointer as DevicePointer,
     LegacyDeviceStream as DeviceStream,
     LegacyHostBuffer as HostBuffer,
+)
+from max.gpu.host._driver_handles import (
     _CString,
     _DeviceBufferCpp,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
+)
+from max.gpu.host._driver_common import (
     _DumpPath,
     _check_dim_in_range,
     _checked,
@@ -58,8 +62,15 @@ from ._legacy.device_graph import (
     LegacyStableAddr as StableAddr,
 )
 from ._legacy._nvidia_cuda import *
-from ._legacy._nvidia_cuda import _CUstream_st
-from ._legacy._amdgpu_hip import HIP, HIP_MODULE, hipDevice_t, hipStream_t
+from max.gpu.host._vendor_handles import _CUstream_st
+from ._legacy._amdgpu_hip import (
+    HIP,
+    HIP_MODULE,
+)
+from max.gpu.host._vendor_handles import (
+    hipDevice_t,
+    hipStream_t,
+)
 
 comptime HAL_DEVICE_CONTEXT = False
 """Whether `max.gpu.host` is the HAL `DeviceContext`."""

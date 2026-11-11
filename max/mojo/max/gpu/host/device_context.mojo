@@ -33,5 +33,5 @@ from ._overlay import (
     DevicePointer,
     DeviceStream,
     HostBuffer,
-    StreamPriorityRange,
 )
+from max.gpu.host._driver_common import StreamPriorityRange

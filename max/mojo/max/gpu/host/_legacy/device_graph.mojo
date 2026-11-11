@@ -44,38 +44,34 @@ from .device_context import (
     LegacyDeviceExternalFunction,
     LegacyDeviceFunction,
     LegacyHostBuffer,
+    _FunctionEnqueuer,
+)
+from max.gpu.host._driver_common import (
     _check_dim_in_range,
     _checked,
+    _DumpPath,
+)
+from max.gpu.host._driver_handles import (
     _CString,
     _DeviceBufferPtr,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
+)
+from max.gpu.host._driver_handles import (
+    _DeviceContextPtr,
+    _DeviceBufferPtr,
+    _DeviceFunctionPtr,
+    _DeviceGraphBuilderPtr,
+    _DeviceGraphPtr,
+    _CString,
+)
+from max.gpu.host._driver_common import (
     _DumpPath,
-    _FunctionEnqueuer,
+    _checked,
+    _check_dim_in_range,
 )
 
 comptime _logger = Logger()
-
-
-struct _DeviceGraphBuilderCpp:
-    pass
-
-
-struct _DeviceGraphCpp:
-    pass
-
-
-comptime _DeviceGraphBuilderPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceGraphBuilderCpp, origin]]
-
-comptime _DeviceGraphPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceGraphCpp, origin]]
 
 
 struct _DeviceGraphMemoryPoolCpp:

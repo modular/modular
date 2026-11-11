@@ -18,28 +18,12 @@ from .device_context_hal import (
     HALDeviceStreamBase,
 )
 from std.memory.pointer import unsafe_cast
-
-
-struct _CUctx_st:
-    pass
-
-
-struct _CUstream_st:
-    pass
-
-
-struct _CUmod_st:
-    pass
-
-
-struct _CUevent_st:
-    pass
-
-
-comptime CUcontext = Optional[Pointer[_CUctx_st, UntrackedOrigin[mut=True]]]
-comptime CUstream = Optional[Pointer[_CUstream_st, UntrackedOrigin[mut=True]]]
-comptime CUmodule = Optional[Pointer[_CUmod_st, UntrackedOrigin[mut=True]]]
-comptime CUevent = Optional[Pointer[_CUevent_st, UntrackedOrigin[mut=True]]]
+from max.gpu.host._vendor_handles import (
+    _CUstream_st,
+    CUcontext,
+    CUstream,
+    CUmodule,
+)
 
 
 @inline(.always)

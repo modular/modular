@@ -37,11 +37,15 @@ from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDevicePointer as DevicePointer,
     HALDeviceStream as DeviceStream,
     HALHostBuffer as HostBuffer,
+    _HALDeviceContextScope,
+)
+from max.gpu.host._driver_handles import (
     _CString,
     _DeviceBufferCpp,
     _DeviceContextPtr,
-    _HALDeviceContextScope,
     _DeviceFunctionPtr,
+)
+from max.gpu.host._driver_common import (
     _DumpPath,
     _check_dim_in_range,
     _checked,
@@ -57,12 +61,12 @@ from max._driver.max_license.device_context_hal.device_graph_hal import (
     HALStableAddr as StableAddr,
 )
 from max._driver.max_license.device_context_hal._nvidia_cuda_hal import *
-from max._driver.max_license.device_context_hal._nvidia_cuda_hal import (
-    _CUstream_st,
-)
+from max.gpu.host._vendor_handles import _CUstream_st
 from max._driver.max_license.device_context_hal._amdgpu_hip_hal import (
     HIP,
     HIP_MODULE,
+)
+from max.gpu.host._vendor_handles import (
     hipDevice_t,
     hipStream_t,
 )

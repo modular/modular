@@ -17,31 +17,16 @@ from .device_context import (
     LegacyDeviceContext,
     LegacyDeviceFunction,
     LegacyDeviceStream,
-    _CString,
-    _checked,
 )
-
-
-struct _CUctx_st:
-    pass
-
-
-struct _CUstream_st:
-    pass
-
-
-struct _CUmod_st:
-    pass
-
-
-struct _CUevent_st:
-    pass
-
-
-comptime CUcontext = Optional[Pointer[_CUctx_st, UntrackedOrigin[mut=True]]]
-comptime CUstream = Optional[Pointer[_CUstream_st, UntrackedOrigin[mut=True]]]
-comptime CUmodule = Optional[Pointer[_CUmod_st, UntrackedOrigin[mut=True]]]
-comptime CUevent = Optional[Pointer[_CUevent_st, UntrackedOrigin[mut=True]]]
+from max.gpu.host._driver_handles import _CString
+from max.gpu.host._driver_common import _checked
+from max.gpu.host._driver_handles import _CString
+from max.gpu.host._vendor_handles import (
+    CUcontext,
+    CUstream,
+    CUmodule,
+)
+from max.gpu.host._driver_common import _checked
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.

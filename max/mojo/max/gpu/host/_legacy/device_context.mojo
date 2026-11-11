@@ -112,43 +112,30 @@ from ..nvidia.launch_config import (
 )
 
 from ._device_context_extras import *
-
-
-# Create empty structs to ensure dtype checking when using the C++ handles.
-struct _DeviceContextCpp:
-    pass
-
-
-struct _DeviceBufferCpp:
-    pass
-
-
-struct _DeviceFunctionCpp:
-    pass
-
-
-struct _DeviceMulticastBufferCpp:
-    pass
-
-
-struct _DeviceStreamCpp:
-    pass
-
-
-struct _DeviceEventCpp:
-    pass
-
-
-struct _DeviceTimerCpp:
-    pass
-
-
-struct _CompletionFlagCpp:
-    pass
-
-
-struct _DeviceContextScopeCpp:
-    pass
+from max.gpu.host._driver_handles import (
+    _CompletionFlagCpp,
+    _DeviceContextPtr,
+    _DeviceBufferPtr,
+    _DeviceFunctionPtr,
+    _DeviceMulticastBufferPtr,
+    _DeviceStreamPtr,
+    _DeviceEventPtr,
+    _DeviceTimerPtr,
+    _CompletionFlagPtr,
+    _DeviceContextScopePtr,
+    _CString,
+)
+from max.gpu.host._vendor_handles import (
+    CUstream,
+    hipStream_t,
+)
+from max.gpu.host._driver_common import (
+    _string_from_owned_charptr,
+    _DumpPath,
+    _checked,
+    _check_dim_in_range,
+    StreamPriorityRange,
+)
 
 
 # The host task runs after `enqueue_cpu_*` returns, so it holds a pointer to the
@@ -163,87 +150,7 @@ __async def _run_cpu_range_function[
     func[](idx)
 
 
-comptime _DeviceContextPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceContextCpp, origin]]
-
-comptime _DeviceBufferPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceBufferCpp, origin]]
-
-comptime _DeviceFunctionPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceFunctionCpp, origin]]
-
-comptime _DeviceMulticastBufferPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceMulticastBufferCpp, origin]]
-
-comptime _DeviceStreamPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceStreamCpp, origin]]
-
-comptime _DeviceEventPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceEventCpp, origin]]
-
-comptime _DeviceTimerPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceTimerCpp, origin]]
-
-comptime _CompletionFlagPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_CompletionFlagCpp, origin]]
-
-comptime _DeviceContextScopePtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceContextScopeCpp, origin]]
-
-comptime _CString[origin: ImmOrigin = ImmUntrackedOrigin] = Optional[
-    CStringSpan[origin]
-]
-
-comptime _DumpPath = Variant[Bool, Path, StaticString, def() thin -> Path]
-
 # Define helper methods to call AsyncRT bindings.
-
-
-def _string_from_owned_charptr(c_str: _CString) -> String:
-    var result = String()
-    if case .Some(c_str) = c_str:
-        result = String(unsafe_from_utf8_ptr=c_str.ptr())
-    # void AsyncRT_DeviceContext_strfree(const char* ptr)
-    external_call["AsyncRT_DeviceContext_strfree", NoneType](c_str)
-    return result^
-
-
-@inline(.always)
-def _checked(
-    err: _CString,
-    *,
-    msg: String = "",
-    location: Optional[SourceLocation] = None,
-) raises:
-    if err:
-        _raise_checked_impl(err, msg, location.or_else(call_location()))
 
 
 @inline(.always)
@@ -293,45 +200,6 @@ def _raise_call_error(
     )
 
 
-@inline(.never)
-def _raise_checked_impl(
-    err_msg: _CString, msg: String, location: SourceLocation
-) raises:
-    var err = _string_from_owned_charptr(err_msg)
-    raise Error(location.prefix(err + ((" " + msg) if msg else "")))
-
-
-# Raises unless every component of `dim` is in `[1, Int32.MAX]`: drivers take
-# launch dims as 32-bit values, so a larger one would be truncated.
-def _check_dim_in_range[
-    func_name_for_msg: StringLiteral, dim_name_for_msg: StringLiteral
-](dim: Dim, *, location: SourceLocation) raises:
-    if dim.x() <= 0 or dim.x() > Int(Int32.MAX):
-        comptime msg = String(
-            func_name_for_msg,
-            ": Dim value ",
-            dim_name_for_msg,
-            ".x must be in [1, Int32.MAX].",
-        )
-        raise Error(location.prefix(msg))
-    if dim.y() <= 0 or dim.y() > Int(Int32.MAX):
-        comptime msg = String(
-            func_name_for_msg,
-            ": Dim value ",
-            dim_name_for_msg,
-            ".y must be in [1, Int32.MAX].",
-        )
-        raise Error(location.prefix(msg))
-    if dim.z() <= 0 or dim.z() > Int(Int32.MAX):
-        comptime msg = String(
-            func_name_for_msg,
-            ": Dim value ",
-            dim_name_for_msg,
-            ".z must be in [1, Int32.MAX].",
-        )
-        raise Error(location.prefix(msg))
-
-
 struct _DeviceTimer:
     var _handle: _DeviceTimerPtr[mut=True]
 
@@ -341,36 +209,6 @@ struct _DeviceTimer:
     def __deinit__(deinit self):
         # void AsyncRT_DeviceTimer_release(const DviceTimer *timer)
         external_call["AsyncRT_DeviceTimer_release", NoneType](self._handle)
-
-
-@fieldwise_init
-struct StreamPriorityRange(TrivialRegisterPassable, Writable):
-    """Represents the range of valid stream priorities for a GPU device.
-
-    Stream priorities control the scheduling of GPU operations, with higher
-    priority streams being executed preferentially over lower priority streams.
-    """
-
-    var least: Int
-    """The lowest (numerically smallest) priority value."""
-
-    var greatest: Int
-    """The highest (numerically largest) priority value."""
-
-    @inline(.always)
-    def write_to(self, mut writer: Some[Writer]):
-        """Writes the stream priority range to the given writer.
-
-        Args:
-            writer: The writer to output the stream priority range to.
-        """
-        writer.write(
-            "StreamPriorityRange(least=",
-            self.least,
-            ", greatest=",
-            self.greatest,
-            ")",
-        )
 
 
 struct LegacyHostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):

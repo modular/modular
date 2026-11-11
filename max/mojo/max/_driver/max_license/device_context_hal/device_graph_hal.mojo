@@ -21,27 +21,7 @@ constructed or used at runtime.
 """
 
 from .device_context_hal import HALDeviceBuffer, HALDeviceContext
-
-
-struct _DeviceGraphBuilderCpp:
-    pass
-
-
-struct _DeviceGraphCpp:
-    pass
-
-
-comptime _DeviceGraphBuilderPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceGraphBuilderCpp, origin]]
-
-comptime _DeviceGraphPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceGraphCpp, origin]]
+from max.gpu.host._driver_handles import _DeviceGraphPtr
 
 
 trait HALDeviceGraphInput:

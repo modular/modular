@@ -24,10 +24,12 @@ from ..info import _device_type_encoder_target
 
 from .device_context import (
     _checked_call,
-    _DeviceBufferCpp,
-    _DeviceFunctionPtr,
     _FunctionEnqueuer,
     LegacyDeviceContext,
+)
+from max.gpu.host._driver_handles import (
+    _DeviceBufferCpp,
+    _DeviceFunctionPtr,
 )
 
 from . import Dim, LaunchAttribute
