@@ -532,15 +532,6 @@ struct RawPluginBase[required: Bool = True](RawPluginComponent):
         ) thin abi("C") -> PluginResultCode,
         required=Self.required,
     ]
-    var queue_wait_value64: HALFunction[
-        "M_driver_queue_wait_value64",
-        def(
-            queue: QueueHandle,
-            device_address: UInt64,
-            value: UInt64,
-        ) thin abi("C") -> PluginResultCode,
-        required=Self.required,
-    ]
     var queue_property: HALFunction[
         "M_driver_queue_property",
         def[

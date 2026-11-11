@@ -699,21 +699,6 @@ struct RawDriver(Movable):
                 message=String(t"failed to fill memory: {err.message}"),
             )
 
-    def queue_wait_value64(
-        self, queue: QueueHandle, device_address: UInt64, value: UInt64
-    ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` is at
-        least `value` (cuStreamWaitValue64 with GEQ semantics)."""
-        var status = self._raw.base.queue_wait_value64.get()(
-            queue, device_address, value
-        )
-        if status != STATUS_SUCCESS:
-            var err = self.get_status_message(status)
-            raise HALError(
-                err.status,
-                message=String(t"failed to wait on value: {err.message}"),
-            )
-
     def queue_launch_host_func[
         origin: MutOrigin
     ](

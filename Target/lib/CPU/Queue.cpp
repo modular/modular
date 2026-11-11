@@ -372,12 +372,3 @@ M_driver_queue_launch_host_func([[maybe_unused]] M_driver_queue_t queue,
     return M_DRIVER_STATUS_BAD_QUEUE;
   return M_DRIVER_STATUS_UNIMPLEMENTED;
 }
-
-M_driver_status_t
-M_driver_queue_wait_value64([[maybe_unused]] M_driver_queue_t queue,
-                            [[maybe_unused]] uint64_t device_address,
-                            [[maybe_unused]] uint64_t value) {
-  if (queue == nullptr)
-    return M_DRIVER_STATUS_BAD_QUEUE;
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
-}

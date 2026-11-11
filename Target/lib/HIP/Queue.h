@@ -54,7 +54,6 @@ struct M_driver_queue {
                                   uint32_t num_events);
 
   M_driver_status_t launchHostFunc(void (*fn)(void *), void *user_data);
-  M_driver_status_t waitValue64(uint64_t device_address, uint64_t value);
 
   // The conditions hipStreamWaitValue64 supports natively.
   static constexpr uint32_t kFlagConditions =
