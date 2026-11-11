@@ -22,6 +22,7 @@
 #include "IREmitter.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/CallOperands.h"
@@ -764,8 +765,10 @@ static std::optional<size_t> lookupEnumCaseIndex(IREmitter &emitter,
   return std::nullopt;
 }
 
-/// Return the payload type for case `caseIndex` from `_enum_case_types`. This
-/// returns null if an error is emitted.
+/// Return the payload type of case `caseIndex` of `subjectType`, as
+/// `_enum_case_types` lists it. The payload type must be a `Tuple` (`Tuple[]`
+/// for a case without a payload). If it is not, or `_enum_case_types` lists no
+/// type for the case, an error is emitted and null is returned.
 static ASTType getEnumCasePayloadType(IREmitter &emitter, ASTType subjectType,
                                       size_t caseIndex, const ExprNode *expr) {
   SyntheticNode typeNode(expr->getLoc(), PValue(subjectType));
@@ -790,20 +793,28 @@ static ASTType getEnumCasePayloadType(IREmitter &emitter, ASTType subjectType,
         << expr->getRange();
     return {};
   }
-  return ASTType(payloadAttr);
+  ASTType payloadType(payloadAttr);
+  ASTType tupleType = emitter.shared.lookupBuiltinType(
+      "Tuple", emitter.getDeclScope(), expr->getLoc());
+  ArrayRef<TypedAttr> bindings = payloadType.getParamBindings();
+  if (tupleType &&
+      tupleType.getWithoutParameters(emitter.shared)
+          .isEqualCanon(payloadType.getWithoutParameters(emitter.shared)) &&
+      !bindings.empty() && isa<ParamListType>(bindings.front().getType()))
+    return payloadType;
+  auto names = getEnumCaseNames(emitter, subjectType, expr->getLoc());
+  auto name = names ? dyn_cast<StringAttr>((*names)[caseIndex]) : StringAttr();
+  emitter.emitError(expr->getLoc(), "payload type for case '")
+      << (name ? name.getValue() : StringRef()) << "' must be a 'Tuple', found "
+      << payloadType << expr->getRange();
+  return {};
 }
 
-/// True when the case payload is Mojo `NoneType` (no associated value).
-static bool isEnumCaseWithoutPayload(IREmitter &emitter, ASTType payloadType,
-                                     const ExprNode *expr) {
-  if (payloadType.isNoneType())
-    return true;
-  ASTType noneType = emitter.shared.lookupBuiltinType(
-      "NoneType", emitter.getDeclScope(), expr->getLoc());
-  if (!noneType)
-    return false;
-  return payloadType.getWithoutParameters(emitter.shared)
-      .isEqualCanon(noneType.getWithoutParameters(emitter.shared));
+/// Return the element types of `payloadType`, a `Tuple`, when they are known
+/// here, or null for the symbolic element types of a `Tuple[*Ts]`.
+static ParamListAttr getKnownEnumPayloadElementTypes(ASTType payloadType) {
+  return sugarDynCast<ParamListAttr>(
+      UpcastAttr::strip(payloadType.getParamBindings().front()));
 }
 
 /// Given a value of EnumLike type, extract the discriminant from it.
@@ -851,8 +862,9 @@ LogicalResult CallNode::buildEnumCheckList(
       getEnumCasePayloadType(emitter, subjectType, *caseIndex, this);
   if (!payloadType)
     return failure();
+  ParamListAttr elementTypes = getKnownEnumPayloadElementTypes(payloadType);
 
-  if (isEnumCaseWithoutPayload(emitter, payloadType, this)) {
+  if (elementTypes && elementTypes.getValues().empty()) {
     builder.emitError(getLoc(), "enum case '")
         << caseName << "' has no associated value" << getParenRange();
     return failure();
@@ -880,18 +892,36 @@ LogicalResult CallNode::buildEnumCheckList(
     }
   }
 
-  if (operands.size() != 1) {
-    builder.emitError(operands[1].getLoc(),
-                      "enum case patterns currently support at most one "
-                      "payload subpattern")
-        << operands[1].expr->getRange();
+  // TODO(rmorel): Support payload subpatterns on a `Tuple[*Ts]` payload, whose
+  // element count is known only when the code is instantiated.
+  if (!elementTypes) {
+    builder.emitError(operands[0].getLoc(),
+                      "cannot match the payload of case '")
+        << caseName << "': its element count is a compile-time parameter"
+        << operands[0].expr->getRange();
     return failure();
   }
 
+  // A case's subpatterns match the elements of its `Tuple` payload, as a
+  // constructor's arguments do.
+  ArrayRef<TypedAttr> elements = elementTypes.getValues();
+  if (operands.size() != elements.size()) {
+    builder.emitError(getLoc(), "expected ")
+        << elements.size() << " subpattern" << plural(elements.size())
+        << " for enum case '" << caseName << "', found " << operands.size()
+        << getParenRange();
+    return failure();
+  }
   out.push_back(builder.createEnumTag(path, this, *caseIndex));
   const PatternPath *payloadPath =
       builder.getEnumPayload(path, *caseIndex, payloadType);
-  return operands[0].expr->buildCheckList(builder, CValue(), payloadPath, out);
+  for (auto [index, operand] : llvm::enumerate(operands)) {
+    const PatternPath *eltPath =
+        builder.getTupleElement(payloadPath, index, ASTType(elements[index]));
+    if (failed(operand.expr->buildCheckList(builder, CValue(), eltPath, out)))
+      return failure();
+  }
+  return success();
 }
 
 LogicalResult AttributeRefNode::buildCheckList(
@@ -934,6 +964,32 @@ LogicalResult InferredAttributeRefNode::buildCheckList(
 // PatternCommandList emission
 //===----------------------------------------------------------------------===//
 
+/// Return element `index`, of type `elementType`, of `payload`, a `Tuple`
+/// payload in memory, projected as `Tuple.__getitem_param__` does.
+static CValue emitEnumPayloadElement(IREmitter &emitter, CValue payload,
+                                     size_t index, ASTType elementType,
+                                     const ExprNode *expr) {
+  SyntheticNode payloadNode(expr->getLoc(), payload);
+  AttributeRefNode storageRef(&payloadNode, expr->getLoc(), "_mlir_value");
+  CValue storage = emitter.emitExprCValue(&storageRef, EC_AttributeRefBase);
+  if (!storage)
+    return {};
+  Location loc = expr->getLocation(emitter);
+  Value storagePtr = RefToPointerOp::create(*emitter.builder, loc,
+                                            storage.getMValueReference());
+  Value eltPtr =
+      KGEN::StructGEPOp::create(*emitter.builder, loc, storagePtr, index);
+  auto eltRefType = cast<RefType>(payload.getMValueReference().getType())
+                        .getWithElement(elementType.mlirType);
+  Value eltRef =
+      RefFromKgenPtrOp::create(*emitter.builder, loc, eltRefType, eltPtr);
+  if (payload.getIfMLValue())
+    return MLValue(eltRef);
+  if (payload.getIfMBPValue())
+    return MBPValue(eltRef);
+  return MBValue(eltRef);
+}
+
 CValue PatternEmitState::getPathValue(IREmitter &emitter,
                                       const PatternPath *path,
                                       const ExprNode *expr, bool consume) {
@@ -958,6 +1014,18 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
   case PatternPath::Root:
     llvm_unreachable("handled above");
   case PatternPath::TupleElement: {
+    // No call for an element of an enum payload: in a consuming match, the
+    // lifetime checker takes a call on the payload as a use of the
+    // uninitialized owners that `getConsumedBindingValues` creates later at
+    // the elements' addresses.
+    // TODO(MOCO-5269): Call `Tuple.__getitem_param__` here once a consumed
+    // payload's bindings are projections of the subject, not owners of their
+    // own.
+    if (path->parent->kind == PatternPath::EnumPayload &&
+        (parent.getIfMLValue() || parent.getIfMBValue() ||
+         parent.getIfMBPValue()))
+      return pathValues[path] = emitEnumPayloadElement(
+                 emitter, parent, path->index, path->type, expr);
     // Emit `parent[idx]` as a subscript expression.
     CValue intIndex =
         emitter.emitInt(path->index, expr->getLoc(), EC_CallParamValue);
@@ -1217,6 +1285,9 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
       rootType.getParamBindings().size() == 2
           ? sugarDynCastIfPresent<ParamListAttr>(rootType.getParamBindings()[0])
           : ParamListAttr();
+  // The children's paths hang off `ownerParent`: the subject for a tuple, its
+  // payload for an enum.
+  const PatternPath *ownerParent = rootPath;
   SmallVector<CValue, 4> ownedChildren;
   if (tupleElements) {
     // Wildcards do not have binding paths, but they still need to be projected
@@ -1233,13 +1304,37 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
                                               ownedChildren)))
       return failure();
   } else {
-    auto payload = llvm::find_if(bindings, [](const PatternBoundName &binding) {
-      return binding.bindingKind == PatternDeclKind::kVar && binding.path &&
-             binding.path->kind == PatternPath::EnumPayload;
-    });
-    if (payload == bindings.end())
+    // An enum subject's `var` bindings take the elements of its payload, each
+    // its own owner.
+    auto element =
+        llvm::find_if(bindings, [&](const PatternBoundName &binding) {
+          const PatternPath *path = binding.path;
+          return binding.bindingKind == PatternDeclKind::kVar && path &&
+                 path->kind == PatternPath::TupleElement &&
+                 path->parent->kind == PatternPath::EnumPayload &&
+                 path->parent->parent == rootPath;
+        });
+    if (element == bindings.end())
       return success();
-    children.push_back(*payload->path);
+    ownerParent = element->path->parent;
+    ParamListAttr elementTypes =
+        getKnownEnumPayloadElementTypes(ownerParent->type);
+    assert(elementTypes &&
+           "a payload subpattern on a `Tuple[*Ts]` payload is rejected when "
+           "the pattern is built");
+    // TODO(MOCO-5256): Move the elements of a multi-element payload too, once
+    // the transfer no longer destroys them with the subject. Until then they
+    // are copied, as the elements of a tuple subpattern are.
+    if (elementTypes.getValues().size() > 1)
+      return success();
+    for (auto [index, type] : llvm::enumerate(elementTypes.getValues())) {
+      PatternPath child{};
+      child.kind = PatternPath::TupleElement;
+      child.parent = ownerParent;
+      child.type = ASTType(type);
+      child.index = index;
+      children.push_back(child);
+    }
   }
 
   auto rootRef = rootSubject.getMValueReference();
@@ -1268,7 +1363,7 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
         llvm::find_if(bindings, [&](const PatternBoundName &binding) {
           return binding.bindingKind == PatternDeclKind::kVar && binding.path &&
                  binding.path->kind == childPath.kind &&
-                 binding.path->parent == rootPath &&
+                 binding.path->parent == ownerParent &&
                  binding.path->index == childPath.index;
         });
     if (binding != bindings.end()) {

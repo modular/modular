@@ -24,9 +24,12 @@
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(move:$0$)"
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__deinit__($0$)"
 
-# Bool EnumLike (and transitive SIMD stringification) from the stubs.
+# Bool EnumLike (and transitive SIMD stringification, and the copy and move
+# constructors of its `Tuple[]` payload type) from the stubs.
 # CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__str__(::SIMD[$0, $1])"
 # CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "_unsafe_get_enum_payload{{.*}}(::Bool%)"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(copy:::Tuple[$0, $1])"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(move:::Tuple[$0, $1]$)"
 
 # CHECK-NOT: #debuginfo.subprogram
 

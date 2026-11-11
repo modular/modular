@@ -645,7 +645,7 @@ struct Bool(EnumLike, TrivialRegisterPassable):
         "False".value, "True".value
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
-        NoneType, NoneType
+        Tuple[], Tuple[]
     ].values
 
     @stable
@@ -1389,7 +1389,7 @@ struct AddressSpace(EnumLike, TrivialRegisterPassable):
     comptime _enum_case_types: _MLIR.KGENParamListType[
         AnyType
     ] = TypeList.splat[
-        ParameterList[Self._enum_case_names].length, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
     comptime _enum_is_exhaustive = False
 
@@ -1619,12 +1619,10 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
             pass
 
     def __init__(out self, *, copy: Self):
-        while True:
-            pass
+        self._mlir_value = copy._mlir_value
 
     def __init__(out self, *, deinit move: Self):
-        while True:
-            pass
+        self._mlir_value = move._mlir_value
 
     def __getitem_param__[i: Int](ref self) -> ref[self] Self.element_types[i]:
         while True:
@@ -1784,7 +1782,7 @@ struct Optional[T: Movable](
         "None".value, "Some".value
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
-        NoneType, Self.T
+        Tuple[], Tuple[Self.T]
     ].values
 
     def _get_enum_discriminant(self) -> Int:
@@ -1794,8 +1792,8 @@ struct Optional[T: Movable](
         id: Int
     ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
         comptime assert id != 0, "cannot get payload for None case"
-        comptime elt_type = TypeList[Self._enum_case_types]()[id]
-        return rebind[elt_type](self.value())
+        while True:
+            pass
 
 
 # ===-----------------------------------------------------------------------===#

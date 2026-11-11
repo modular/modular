@@ -62,7 +62,7 @@ def describe(token: Token) -> String:
             return String("word:", name)
         case .integer(value):
             return String("int:", value)
-        case .span((start, end)):
+        case .span(start, end):
             return String("span:", start, "..", end)
         case .tracked(t):
             return String("tracked:", t.id)
@@ -154,7 +154,7 @@ def test_ownership():
 # CHECK-LABEL: == writable
 def test_writable():
     print("== writable")
-    # CHECK-NEXT: Token.eof Token.integer(5) Token.span((1, 2))
+    # CHECK-NEXT: Token.eof Token.integer(5) Token.span(1, 2)
     print(String(Token.eof), String(Token.integer(5)), String(Token.span(1, 2)))
     # CHECK-NEXT: Token.identifier('x')
     print(repr(Token.identifier("x")))
@@ -225,7 +225,7 @@ __enum Shape(ImplicitlyCopyable, RegisterPassable):
                 return 0
             case .square(side):
                 return side * side
-            case .rect((width, height)):
+            case .rect(width, height):
                 return width * height
 
 
@@ -270,7 +270,7 @@ def describe(value: Bitwise) -> String:
             return "empty"
         case .one(t):
             return String("one:", t.id)
-        case .pair((t, n)):
+        case .pair(t, n):
             return String("pair:", t.id, ",", n)
 
 
@@ -298,7 +298,7 @@ def test_comptime_match():
     print("== comptime match")
     comptime shape: Shape = .rect(2, 5)
     comptime match shape:
-        case .rect((width, height)):
+        case .rect(width, height):
             # CHECK-NEXT: rect 2 5
             print("rect", width, height)
         case _:
@@ -418,6 +418,108 @@ def test_caseless_enum():
     _ = describe
 
 
+__enum Pair:
+    case ints(Int, Int)
+    case maybe(Optional[Int], Int)
+    case tracked(Tracked, Tracked)
+
+
+def classify(pair: Pair) -> String:
+    match pair:
+        case .ints(0, n) | .ints(n, 0):
+            return String("axis:", n)
+        case .ints(x, y) if x == y:
+            return String("diagonal:", x)
+        case .ints(x, _):
+            return String("ints:", x)
+        case .maybe(.Some(x), n):
+            return String("some:", x, ",", n)
+        case .maybe(_, n):
+            return String("none:", n)
+        case .tracked(a, b):
+            return String("tracked:", a.id, ",", b.id)
+
+
+# CHECK-LABEL: == element-wise
+def test_elementwise():
+    print("== element-wise")
+    # A case pattern takes one subpattern per payload element.
+    # CHECK-NEXT: axis:3 axis:4 diagonal:2 ints:5
+    print(
+        classify(Pair.ints(0, 3)),
+        classify(Pair.ints(4, 0)),
+        classify(Pair.ints(2, 2)),
+        classify(Pair.ints(5, 6)),
+    )
+    # CHECK-NEXT: some:7,8 none:9
+    print(classify(Pair.maybe(7, 8)), classify(Pair.maybe(None, 9)))
+    var pair = Pair.ints(1, 2)
+    match pair:
+        case .ints(ref a, ref b):
+            a = 10
+            b += 5
+        case _:
+            pass
+    if case .ints(a, b) = pair:
+        # CHECK-NEXT: if case 10 7
+        print("if case", a, b)
+    # Bindings without `var` borrow the elements.
+    # CHECK-NEXT: init 1
+    # CHECK-NEXT: init 2
+    # CHECK-NEXT: move 1
+    # CHECK-NEXT: move 2
+    # CHECK-NEXT: destroy 1
+    # CHECK-NEXT: destroy 2
+    # CHECK-NEXT: tracked:1,2
+    print(classify(Pair.tracked(Tracked(1), Tracked(2))))
+
+
+# CHECK-LABEL: == consuming payloads
+def test_consuming_payloads():
+    print("== consuming payloads")
+    # TODO(MOCO-5256): The lines below pin a known bug: a one-element payload is
+    # destroyed before the arm uses it, and again after. Once the transfer is
+    # fixed, it is destroyed once, after its use.
+    # CHECK-NEXT: init 7
+    # CHECK-NEXT: move 7
+    # CHECK-NEXT: destroy 7
+    # CHECK-NEXT: enum consumed 7
+    # CHECK-NEXT: destroy 7
+    match Token.tracked(Tracked(7)):
+        case .tracked(var payload):
+            print("enum consumed", payload.id)
+        case _:
+            pass
+    # CHECK-NEXT: init 8
+    # CHECK-NEXT: move 8
+    # CHECK-NEXT: destroy 8
+    # CHECK-NEXT: optional consumed 8
+    # CHECK-NEXT: destroy 8
+    match Optional[Tracked](Tracked(8)):
+        case .Some(var payload):
+            print("optional consumed", payload.id)
+        case .None:
+            pass
+    # TODO(MOCO-5256): Move the elements of a multi-element payload in place.
+    # Until then they are copied, and the subject is destroyed after the copies.
+    # CHECK-NEXT: init 9
+    # CHECK-NEXT: init 10
+    # CHECK-NEXT: move 9
+    # CHECK-NEXT: move 10
+    # CHECK-NEXT: copy 19
+    # CHECK-NEXT: copy 20
+    # CHECK-NEXT: destroy 9
+    # CHECK-NEXT: destroy 10
+    # CHECK-NEXT: pair consumed 19 20
+    # CHECK-NEXT: destroy 20
+    # CHECK-NEXT: destroy 19
+    match Pair.tracked(Tracked(9), Tracked(10)):
+        case .tracked(var a, var b):
+            print("pair consumed", a.id, b.id)
+        case _:
+            pass
+
+
 def main() raises:
     test_construction()
     test_contextual()
@@ -433,3 +535,5 @@ def main() raises:
     test_user_equality_and_hashing()
     test_open_enum()
     test_caseless_enum()
+    test_elementwise()
+    test_consuming_payloads()

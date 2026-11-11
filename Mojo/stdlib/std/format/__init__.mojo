@@ -75,6 +75,8 @@ print(repr(p)) # Point: x=1.5, y=2.7
 
 from std.builtin.constrained import _field_conforms_to_error
 from std.builtin.enum_like import EnumLike
+from std.builtin.rebind import downcast
+from std.builtin.tuple import __TupleLike
 from std.builtin.variadics import ParameterList, TypeList
 from std.collections import Span
 from std.reflection import reflect
@@ -201,8 +203,9 @@ trait Writable:
         The default implementation uses reflection to format all fields as
         `TypeName(field1=value1, field2=value2, ...)`, calling `write_to()`
         on each field. All fields must conform to `Writable`. `EnumLike` types
-        are instead formatted as `TypeName.case(payload)`, or `TypeName.case`
-        when the active case's payload is `NoneType`.
+        are instead formatted as `TypeName.case`, followed for a case with a
+        payload by the payload's elements in parentheses, as in
+        `Token.span(1, 2)`.
 
         Args:
             writer: The destination for formatted output.
@@ -239,8 +242,9 @@ trait Writable:
         The default implementation uses reflection to format all fields as
         `TypeName(field1=value1, field2=value2, ...)`, calling `write_repr_to()`
         on each field. All fields must conform to `Writable`. `EnumLike` types
-        are instead formatted as `TypeName.case(payload)`, or `TypeName.case`
-        when the active case's payload is `NoneType`.
+        are instead formatted as `TypeName.case`, followed for a case with a
+        payload by the payload's elements in parentheses, each written with
+        `write_repr_to()`.
 
         Args:
             writer: The destination for formatted output.
@@ -320,8 +324,8 @@ def _enum_reflection_write_to[
     //,
     f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W):
-    """Writes `TypeName.case(payload)`, or `TypeName.case` for `NoneType`
-    payloads."""
+    """Writes `TypeName.case`, followed by the payload's elements in
+    parentheses."""
     comptime names = ParameterList[T._enum_case_names]()
     comptime types = TypeList[Trait=AnyType, T._enum_case_types]()
     comptime type_name = _unqualified_type_name[T]()
@@ -333,14 +337,39 @@ def _enum_reflection_write_to[
         if discriminant == i:
             writer.write_string(StaticString(names[i]))
 
-            comptime PayloadType = types[i]
-            comptime if PayloadType != NoneType:
-                comptime assert conforms_to(PayloadType, Writable), (
-                    "the payload of every case must conform to `Writable` to"
-                    " use the default `Writable` implementation for an"
-                    " `EnumLike` type"
+            comptime if types[i] != Tuple[]:
+                comptime assert conforms_to(
+                    types[i], __TupleLike
+                ), "every case payload of an `EnumLike` type must be a `Tuple`"
+                _enum_write_payload_elements[f=f](
+                    this._unsafe_get_enum_payload[i](), writer
                 )
-                writer.write_string("(")
-                f(this._unsafe_get_enum_payload[i](), writer)
-                writer.write_string(")")
             return
+
+
+def _enum_write_payload_elements[
+    P: AnyType,
+    W: Writer,
+    //,
+    f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
+](ref payload: P, mut writer: W):
+    """Writes the payload's elements in parentheses."""
+    comptime assert conforms_to(
+        P, __TupleLike
+    ), "every case payload of an `EnumLike` type must be a `Tuple`"
+    comptime element_types = TypeList[
+        Trait=AnyType, downcast[P, __TupleLike].__element_types
+    ]()
+    comptime assert (
+        P == Tuple[*element_types]
+    ), "every case payload of an `EnumLike` type must be a `Tuple`"
+    writer.write_string("(")
+    comptime for j in range(element_types.length):
+        comptime assert conforms_to(element_types[j], Writable), (
+            "the payload of every case must conform to `Writable` to use the"
+            " default `Writable` implementation for an `EnumLike` type"
+        )
+        comptime if j > 0:
+            writer.write_string(", ")
+        f(payload[j], writer)
+    writer.write_string(")")

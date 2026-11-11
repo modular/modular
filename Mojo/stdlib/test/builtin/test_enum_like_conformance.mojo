@@ -107,7 +107,7 @@ struct _OpenTag(EnumLike, Equatable, Hashable, ImplicitlyCopyable):
 
     comptime _enum_is_exhaustive = False
     comptime _enum_case_names = ParameterList.of["A".value, "B".value].values
-    comptime _enum_case_types = TypeList.splat[2, NoneType].values
+    comptime _enum_case_types = TypeList.splat[2, Tuple[]].values
 
     def _get_enum_discriminant(self) -> Int:
         if self.value < 2:

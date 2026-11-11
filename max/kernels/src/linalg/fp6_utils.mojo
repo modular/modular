@@ -50,7 +50,7 @@ struct FP6Format(EnumLike, Equatable, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].length, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)

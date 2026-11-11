@@ -45,7 +45,6 @@ from std.hash import Hasher
 from std.memory import MaybeUninit, forget_deinit
 from std.reflection import call_location, reflect
 from std.sys import align_of, size_of
-from std.utils import StaticTuple
 from std.utils._nicheable import (
     UnsafeNicheable,
     UnsafeCustomNicheStorage,
@@ -179,7 +178,7 @@ struct Optional[T: AnyType](
     comptime device_type: AnyType = Optional[Self._DevicePayloadType]
     """The device-side type for this optional."""
 
-    comptime _type = Variant[_NoneType, Self.T]
+    comptime _type = Variant[_NoneType, Tuple[Self.T]]
     var _value: Self._type
 
     comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
@@ -220,7 +219,9 @@ struct Optional[T: AnyType](
         print(instance) # Output: 'Hello'
         ```
         """
-        self._value = Self._type(value^)
+        self._value = Self._type(unsafe_uninitialized=())
+        self._value._unsafe_set_active[Tuple[Self.T]]()
+        self._unsafe_element_ptr().unsafe_write(value^)
 
     def __init__[F: def() -> Self.T](out self, *, init_with: F):
         """Construct an `Optional` holding a value produced in place by `call`.
@@ -254,7 +255,9 @@ struct Optional[T: AnyType](
         print(opt.value().value)  # Output: 7
         ```
         """
-        self._value = Self._type(init_with=init_with)
+        self._value = Self._type(unsafe_uninitialized=())
+        self._value._unsafe_set_active[Tuple[Self.T]]()
+        self._unsafe_element_ptr().unsafe_write(init_with=init_with)
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
@@ -598,13 +601,16 @@ struct Optional[T: AnyType](
             target: The target pointer to store the device type.
         """
         comptime DevT = Self._DevicePayloadType
-        comptime DevStorage = Variant[_NoneType, DevT]
+        comptime DevStorage = Variant[_NoneType, Tuple[DevT]]
         ref dev = target.unsafe_bitcast[DevStorage]()[]
         if self:
             self._unsafe_unchecked_value()._to_device_type(
-                encoder, dev._unsafe_ptr[DevT]().unsafe_bitcast[NoneType]()
+                encoder,
+                Pointer(to=dev._unsafe_ptr[Tuple[DevT]]()[][0]).unsafe_bitcast[
+                    NoneType
+                ](),
             )
-            dev._unsafe_set_active[DevT]()
+            dev._unsafe_set_active[Tuple[DevT]]()
         else:
             dev._unsafe_set_active[_NoneType]()
 
@@ -664,9 +670,26 @@ struct Optional[T: AnyType](
     def _unsafe_unchecked_value(
         ref self,
     ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
-        return self._value._unsafe_ptr[
-            Self.T
-        ]()._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
+        return self._unsafe_element_ptr()._get_ref_with_unsafe_interior_origin[
+            "value", origin_of(self)
+        ]()
+
+    @inline(.always)
+    def _unsafe_element_ptr(
+        ref self,
+    ) -> Pointer[Self.T, origin_of(self._value)]:
+        """Returns a pointer to the element of the `Some` payload, without
+        checking that the `Optional` holds one."""
+        return Pointer(to=self._value._unsafe_ptr[Tuple[Self.T]]()[][0])
+
+    @inline(.always)
+    def _unsafe_take_element(
+        deinit self, out value: Self.T
+    ) where conforms_to(Self.T, Movable):
+        """Moves the element out of the `Some` payload, without checking that
+        the `Optional` holds one."""
+        value = self._unsafe_element_ptr().unsafe_take_pointee()
+        forget_deinit(self._value^)
 
     # ===-------------------------------------------------------------------===#
     # EnumLike
@@ -676,7 +699,7 @@ struct Optional[T: AnyType](
         "None".value, "Some".value
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
-        Trait=AnyType, NoneType, Self.T
+        Trait=AnyType, Tuple[], Tuple[Self.T]
     ].values
 
     @inline(.always)
@@ -698,7 +721,7 @@ struct Optional[T: AnyType](
         # once `EnumLike` payload accessors can vend interior origins.
         comptime assert id != 0, "cannot get payload for None case"
         return rebind[TypeList[Trait=AnyType, Self._enum_case_types]()[id]](
-            self._value._unsafe_ptr[Self.T]().unsafe_origin_cast[
+            self._value._unsafe_ptr[Tuple[Self.T]]().unsafe_origin_cast[
                 origin_of(self)
             ]()[]
         )
@@ -809,7 +832,9 @@ struct Optional[T: AnyType](
         ```
         """
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
-        return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
+        var value = self._unsafe_element_ptr().unsafe_take_pointee()
+        self._value._unsafe_set_active[_NoneType]()
+        return value^
 
     def deinit_with[F: def(var Self.T)](deinit self, deinit_func: F, /):
         """Destroy the value contained in this `Optional` in-place using a
@@ -845,14 +870,13 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            # SAFETY: We just checked that the `Optional` holds a `T`, so
-            # `Variant.deinit_with` won't abort.
-            self._value^.deinit_with[Self.T](deinit_func)
-        else:
-            # Retire the empty `Optional` by destroying its `_NoneType`
-            # payload through `Variant.deinit_with`. `_NoneType` is
-            # trivially destructible, so `_NoneType.__deinit__` is a no-op.
-            self._value^.deinit_with[_NoneType](_NoneType.__deinit__)
+            # SAFETY: We just checked that the `Optional` holds a `T`.
+            self._unsafe_element_ptr().unsafe_deinit_pointee_with(deinit_func)
+            self._value._unsafe_set_active[_NoneType]()
+        # Retire the empty `Optional` by destroying its `_NoneType` payload
+        # through `Variant.deinit_with`. `_NoneType` is trivially
+        # destructible, so `_NoneType.__deinit__` is a no-op.
+        self._value^.deinit_with[_NoneType](_NoneType.__deinit__)
 
     def deinit_assert_empty(deinit self):
         """Destroys an empty `Optional`, asserting that it holds no value.
@@ -900,7 +924,7 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return self._value^._unsafe_unchecked_unwrap[Self.T]()
+            return self^._unsafe_take_element()
         return default^
 
     @__allow_legacy_custom_self_type
@@ -996,7 +1020,7 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return {mapper(self._value^._unsafe_unchecked_unwrap[Self.T]())}
+            return {mapper(self^._unsafe_take_element())}
         else:
             # SAFETY:
             # We are `None` therefore we can safely forget self.
@@ -1055,7 +1079,7 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return mapper(self._value^._unsafe_unchecked_unwrap[Self.T]())
+            return mapper(self^._unsafe_take_element())
         else:
             # Destroy the empty `Optional` explicitly: an implicit drop here
             # would require `T: Deinitable`, ruling out linear `T`.
@@ -1127,7 +1151,7 @@ trait _OptionalRegStorageTraits(TrivialRegisterPassable):
 
     def _unsafe_payload_ptr[
         U: TrivialRegisterPassable
-    ](ref self) -> Pointer[U, origin_of(self)]:
+    ](ref self) -> Pointer[Tuple[U], origin_of(self)]:
         ...
 
     def __bool__(self) -> Bool:
@@ -1137,11 +1161,11 @@ trait _OptionalRegStorageTraits(TrivialRegisterPassable):
 struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
     TrivialRegisterPassable, _OptionalRegStorageTraits
 ):
-    # The alternatives are in the same order as `Variant[_NoneType, T]`, the
-    # storage of `Optional[T]`, so that `Optional[T]` can bitcast from
-    # `OptionalReg[T]`.
+    # The alternatives are in the same order as
+    # `Variant[_NoneType, Tuple[T]]`, the storage of `Optional[T]`, so that
+    # `Optional[T]` can bitcast from `OptionalReg[T]`.
     comptime _mlir_type = __mlir_type[
-        `!kgen.variant<`, _NoneType, `, `, Self.T, `>`
+        `!kgen.variant<`, _NoneType, `, `, Tuple[Self.T], `>`
     ]
     comptime _none_index = SIMDLength(0)._mlir_value
     comptime _some_index = SIMDLength(1)._mlir_value
@@ -1158,76 +1182,103 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
         comptime assert U == Self.T
         self._value = __mlir_op.`kgen.variant.create`[
             _type=Self._mlir_type, index=Self._some_index
-        ](rebind[Self.T](value))
+        ](Tuple[Self.T](rebind[Self.T](value)))
 
     @inline(.always)
     def value[U: TrivialRegisterPassable](self) -> U:
         comptime assert U == Self.T
-        var value = __mlir_op.`kgen.variant.get`[index=Self._some_index](
+        var payload = __mlir_op.`kgen.variant.get`[index=Self._some_index](
             self._value
         )
-        return rebind[U](value)
+        return rebind[U](payload[0])
 
     @inline(.always)
     def _unsafe_payload_ptr[
         U: TrivialRegisterPassable
-    ](ref self) -> Pointer[U, origin_of(self)]:
+    ](ref self) -> Pointer[Tuple[U], origin_of(self)]:
         comptime assert U == Self.T
-        return Pointer[Self.T, origin_of(self)](
-            _mlir_value=__mlir_op.`pop.variant.bitcast`[
-                _type=Pointer[Self.T, origin_of(self)]._mlir_type,
-                index=Self._some_index,
-            ](Pointer(to=self._value)._get_kgen_pointer())
-        ).unsafe_bitcast[U]()
+        return rebind[Pointer[Tuple[U], origin_of(self)]](
+            Pointer[Tuple[Self.T], origin_of(self)](
+                _mlir_value=__mlir_op.`pop.variant.bitcast`[
+                    _type=Pointer[Tuple[Self.T], origin_of(self)]._mlir_type,
+                    index=Self._some_index,
+                ](Pointer(to=self._value)._get_kgen_pointer())
+            )
+        )
 
     @inline(.always)
     def __bool__(self) -> Bool:
         return __mlir_op.`kgen.variant.is`[index=Self._some_index](self._value)
 
 
+comptime _CustomNicheStorageOf[
+    T: UnsafeCustomNicheStorage
+]: TrivialRegisterPassable = T.NicheStorage
+"""`T`'s custom niche storage, typed by the trait, so that it can be a branch
+of a conditional type."""
+
+
+struct _TupleBits[T: TrivialRegisterPassable](TrivialRegisterPassable):
+    """The bits of a `Tuple[T]`, for a `TrivialRegisterPassable` struct, which
+    cannot have a `Tuple` field."""
+
+    var _bits: Tuple[Self.T]._mlir_type
+
+
 struct _NicheableOptionalRegStorage[
     T: TrivialRegisterPassable & UnsafeNicheable
 ](TrivialRegisterPassable, _OptionalRegStorageTraits):
-    comptime StorageType: TrivialRegisterPassable = Self.T.NicheStorage if conforms_to(
-        Self.T, UnsafeCustomNicheStorage
-    ) else StaticTuple[
-        Self.T, 1
+    comptime StorageType: TrivialRegisterPassable = _CustomNicheStorageOf[
+        downcast[Tuple[Self.T], UnsafeCustomNicheStorage]
+    ] if conforms_to(Tuple[Self.T], UnsafeCustomNicheStorage) else _TupleBits[
+        Self.T
     ]
     var storage: Self.StorageType
+
+    # A `TrivialRegisterPassable` struct cannot have a `Tuple` field, so the
+    # payload is stored as `Tuple[T]`'s niche storage or bits, and reached
+    # through this cast.
+    @inline(.always)
+    def _payload(
+        ref self,
+    ) -> Pointer[MaybeUninit[Tuple[Self.T]], origin_of(self)]:
+        return (
+            Pointer(to=self.storage)
+            .unsafe_bitcast[MaybeUninit[Tuple[Self.T]]]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
 
     @inline(.always)
     def __init__(out self):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        var ptr = Pointer(to=self.storage).unsafe_bitcast[MaybeUninit[Self.T]]()
-        Self.T.write_niche[index=0](ptr)
+        Tuple[Self.T].write_niche[index=0](self._payload())
 
     @inline(.always)
     def __init__[U: TrivialRegisterPassable](out self, value: U):
         comptime assert U == Self.T
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        var ptr = Pointer(to=self.storage).unsafe_bitcast[Self.T]()
-        ptr.unsafe_write(rebind[Self.T](value))
+        self._payload()[].unsafe_write(Tuple[Self.T](rebind[Self.T](value)))
 
     @inline(.always)
     def value[U: TrivialRegisterPassable](self) -> U:
         comptime assert U == Self.T
-        return Pointer(to=self.storage).unsafe_bitcast[U]()[]
+        return rebind[U](self._payload()[].unsafe_ptr()[][0])
 
     @inline(.always)
     def _unsafe_payload_ptr[
         U: TrivialRegisterPassable
-    ](ref self) -> Pointer[U, origin_of(self)]:
+    ](ref self) -> Pointer[Tuple[U], origin_of(self)]:
         comptime assert U == Self.T
-        return (
-            Pointer(to=self.storage)
-            .unsafe_bitcast[U]()
-            .unsafe_origin_cast[origin_of(self)]()
+        return rebind[Pointer[Tuple[U], origin_of(self)]](
+            self._payload()[].unsafe_ptr()
         )
 
     @inline(.always)
     def __bool__(self) -> Bool:
-        var ptr = Pointer(to=self.storage).unsafe_bitcast[MaybeUninit[Self.T]]()
-        return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
+        return (
+            Tuple[Self.T].classify_niche(self._payload())
+            == NicheIndex.NotANiche
+        )
 
 
 comptime _OptionalRegStorageFor[
@@ -1427,7 +1478,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         "None".value, "Some".value
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
-        Trait=AnyType, NoneType, Self.T
+        Trait=AnyType, Tuple[], Tuple[Self.T]
     ].values
 
     @inline(.always)

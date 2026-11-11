@@ -104,13 +104,13 @@ struct GEMVAlgorithm(
     """
 
     comptime _enum_case_types = TypeList.of[
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
+        Tuple[],
+        Tuple[],
+        Tuple[],
+        Tuple[],
+        Tuple[],
+        Tuple[],
+        Tuple[],
     ].values
     comptime _enum_case_names = ParameterList.of[
         "GemvKernel".value,

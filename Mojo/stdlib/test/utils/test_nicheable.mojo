@@ -16,6 +16,7 @@ from std.sys import size_of
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from std.utils._nicheable import (
     NicheIndex,
+    UnsafeCustomNicheStorage,
     UnsafeNicheable,
     _NonNegativeScalarNiche,
 )
@@ -84,6 +85,52 @@ def test_niche_round_trip() raises:
         assert_true(
             L.classify_niche(Pointer(to=storage)) == NicheIndex.NotANiche
         )
+
+
+def test_tuple_niches() raises:
+    comptime L8 = Length[.int8]
+    comptime L16 = Length[.int16]
+
+    # A one-element tuple has its element's niches.
+    comptime One = Tuple[L16]
+    assert_equal(One.niche_count(), L16.niche_count())
+    var one = MaybeUninit[One]()
+    One.write_niche[2](Pointer(to=one))
+    assert_true(One.classify_niche(Pointer(to=one)) == NicheIndex(2))
+    one.write(One(L16(7)))
+    assert_true(One.classify_niche(Pointer(to=one)) == NicheIndex.NotANiche)
+
+    # A tuple has the niches of its element with the most niches, and leaves
+    # the other elements as they are.
+    comptime Most = Tuple[L8, L16]
+    assert_equal(Most.niche_count(), L16.niche_count())
+    var most = MaybeUninit[Most]()
+    most.write(Most(L8(3), L16(4)))
+    assert_true(Most.classify_niche(Pointer(to=most)) == NicheIndex.NotANiche)
+    Most.write_niche[5](Pointer(to=most))
+    assert_true(Most.classify_niche(Pointer(to=most)) == NicheIndex(5))
+    assert_equal(most.unsafe_ptr()[][0].value, 3)
+    assert_equal(most.unsafe_ptr()[][1].value, ~5)
+
+    # On a tie, the first element's niches.
+    comptime Tie = Tuple[L16, L16]
+    var tie = MaybeUninit[Tie]()
+    tie.write(Tie(L16(1), L16(2)))
+    Tie.write_niche[0](Pointer(to=tie))
+    assert_equal(tie.unsafe_ptr()[][0].value, ~0)
+    assert_equal(tie.unsafe_ptr()[][1].value, 2)
+
+    assert_false(conforms_to(Tuple[Int, Int], UnsafeNicheable))
+    assert_false(conforms_to(Tuple[], UnsafeNicheable))
+
+
+def test_tuple_custom_niche_storage() raises:
+    comptime P = Pointer[Int, ImmStaticOrigin]
+
+    # Only a one-element tuple has its element's layout.
+    assert_true(conforms_to(Tuple[P], UnsafeCustomNicheStorage))
+    assert_false(conforms_to(Tuple[P, P], UnsafeCustomNicheStorage))
+    assert_false(conforms_to(Tuple[Length[.int8]], UnsafeCustomNicheStorage))
 
 
 def main() raises:

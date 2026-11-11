@@ -27,11 +27,45 @@ from std.traits import (
     IsTriviallyMovable,
 )
 
+from std.builtin.rebind import downcast
+from std.builtin.variadics import TypeList, _MLIR
+from std.memory import MaybeUninit
+from std.utils._nicheable import (
+    NicheIndex,
+    NicheStorageTraits,
+    UnsafeCustomNicheStorage,
+    UnsafeNicheable,
+)
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
 # Tuple
 # ===-----------------------------------------------------------------------===#
+
+comptime _IsNicheable[T: AnyType]: Bool = conforms_to(T, UnsafeNicheable)
+"""True if `T` conforms to `UnsafeNicheable`."""
+
+
+trait __TupleLike:
+    """A fixed sequence of elements, each reached by a compile-time index."""
+
+    comptime __element_types: _MLIR.KGENParamListType[AnyType]
+    """The element types, in order."""
+
+    def __getitem_param__[
+        idx: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self.__element_types]()[
+        idx
+    ]:
+        """Returns a reference to an element.
+
+        Parameters:
+            idx: The element to return.
+
+        Returns:
+            A reference to the specified element.
+        """
+        ...
 
 
 @lldb_formatter_wrapping_type
@@ -49,7 +83,12 @@ struct Tuple[*Ts: AnyType](
     Movable where Ts.all_conforms_to[Movable](),
     RegisterPassable where Ts.all_conforms_to[RegisterPassable](),
     Sized,
+    UnsafeCustomNicheStorage where Ts.length == 1 and conforms_to(
+        Ts[0], UnsafeCustomNicheStorage
+    ),
+    UnsafeNicheable where Ts.any[_IsNicheable](),
     Writable where Ts.all_conforms_to[Writable](),
+    __TupleLike,
 ):
     """The type of a literal tuple expression.
 
@@ -62,6 +101,10 @@ struct Tuple[*Ts: AnyType](
     comptime __del__is_trivial = Self.Ts.all[IsTriviallyDeinitable]()
     comptime __copy_ctor_is_trivial = Self.Ts.all[IsTriviallyCopyable]()
     comptime __move_ctor_is_trivial = Self.Ts.all[IsTriviallyMovable]()
+
+    @doc_hidden
+    comptime __element_types = Self.Ts.values
+    """The element types, in order."""
 
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
@@ -225,6 +268,126 @@ struct Tuple[*Ts: AnyType](
                 # to uninitialized memory.
                 Pointer(to=self[i]).unsafe_write_move_from(Pointer(to=move[i]))
         # Note: The destructor on `move` is auto-disabled in a moveinit.
+
+    # ===-------------------------------------------------------------------===#
+    # UnsafeNicheable
+    # ===-------------------------------------------------------------------===#
+
+    @doc_hidden
+    comptime NicheStorage: NicheStorageTraits where (
+        Self.Ts.length == 1
+        and conforms_to(Self.Ts[0], UnsafeCustomNicheStorage)
+    ) = downcast[
+        Self.Ts[0], UnsafeCustomNicheStorage
+    ].NicheStorage
+    """The custom niche storage of the tuple's only element.
+
+    A one-element tuple has its element's size and alignment, so a
+    niche-optimized container can store it the way it stores the element.
+
+    Constraints:
+        The tuple has exactly one element, and that element conforms to
+        `UnsafeCustomNicheStorage`.
+    """
+
+    @staticmethod
+    def _niche_element() -> Int:
+        """Returns the index of the element whose niches the tuple uses: the
+        element with the most niches, the first one on a tie, or -1 when no
+        element is `UnsafeNicheable`."""
+        var best = -1
+        var best_count = -1
+        comptime for i in range(Self.__len__()):
+            comptime if conforms_to(Self.Ts[i], UnsafeNicheable):
+                var count = downcast[Self.Ts[i], UnsafeNicheable].niche_count()
+                if count > best_count:
+                    best = i
+                    best_count = count
+        return best
+
+    @staticmethod
+    @inline(.always)
+    def _element_memory[
+        mut: Bool, origin: Origin[mut=mut], //, idx: Int
+    ](memory: Pointer[MaybeUninit[Self], origin]) -> Pointer[
+        MaybeUninit[downcast[Self.Ts[idx], UnsafeNicheable]], origin
+    ]:
+        var storage_kgen_ptr = Pointer(
+            to=memory[].unsafe_ptr()[]._mlir_value
+        )._get_kgen_pointer()
+        var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
+            index=idx.__mlir_index__(),
+            _type=Pointer[Self.Ts[idx]]._mlir_type,
+        ](storage_kgen_ptr)
+        return Pointer[Self.Ts[idx], origin](
+            _mlir_value=elt_kgen_ptr
+        ).unsafe_bitcast[MaybeUninit[downcast[Self.Ts[idx], UnsafeNicheable]]]()
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def niche_count() -> Int where Self.Ts.any[_IsNicheable]():
+        """Returns the number of niches of the element with the most niches.
+
+        A tuple uses the niches of one element: the one with the most niches,
+        the first one on a tie. The other elements' bytes are left as they
+        are.
+
+        Returns:
+            The niche count of that element.
+
+        Constraints:
+            At least one element conforms to `UnsafeNicheable`.
+        """
+        comptime idx = Self._niche_element()
+        return downcast[Self.Ts[idx], UnsafeNicheable].niche_count()
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche[
+        index: Int
+    ](memory: MutPointer[MaybeUninit[Self], _]) where Self.Ts.any[
+        _IsNicheable
+    ]():
+        """Writes niche `index` of the element with the most niches.
+
+        Parameters:
+            index: The niche to write, in `[0, niche_count())`.
+
+        Args:
+            memory: Uninitialized storage for a tuple.
+
+        Constraints:
+            At least one element conforms to `UnsafeNicheable`.
+        """
+        comptime idx = Self._niche_element()
+        downcast[Self.Ts[idx], UnsafeNicheable].write_niche[index](
+            Self._element_memory[idx](memory)
+        )
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def classify_niche(
+        memory: ImmPointer[MaybeUninit[Self], _]
+    ) -> NicheIndex where Self.Ts.any[_IsNicheable]():
+        """Classifies the bytes of the element with the most niches.
+
+        Args:
+            memory: Storage holding a tuple or one of its niches.
+
+        Returns:
+            The niche the element holds, or `NicheIndex.NotANiche` when the
+            storage holds a tuple.
+
+        Constraints:
+            At least one element conforms to `UnsafeNicheable`.
+        """
+        comptime idx = Self._niche_element()
+        return downcast[Self.Ts[idx], UnsafeNicheable].classify_niche(
+            Self._element_memory[idx](memory)
+        )
 
     @always_inline("builtin")
     @staticmethod

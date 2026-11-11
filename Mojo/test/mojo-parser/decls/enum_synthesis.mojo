@@ -16,34 +16,32 @@
 # An `__enum` conforms to `__Enum`, which refines `EnumLike`, and
 # gets one hidden storage field, the `EnumLike` case lists, a `comptime` member
 # for each case without a payload and a static method for each case with one.
-# TODO(MOCO-5080): the `!NoneType` in the case lists below is the "no payload"
-# marker; it becomes `Tuple[]`.
 
 
 # CHECK-LABEL: lit.struct.decl @Token(!Enum_AnyType_Copyable_Deinitable_EnumLike_Movable)
 # CHECK: lit.alias.decl _enum_case_names: param_list<string> = <["eof", "ident", "span"]> {hasDocHiddenDecorator}
-# CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[!NoneType, !String, [[TUPLE:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[!Int, !Int\].*}>]]]> {hasDocHiddenDecorator}
-# CHECK: lit.struct.field __enum_storage {isDocHidden} : !lit.struct<#EnumStorage <:param_list<!AnyType> [!NoneType, !String, [[TUPLE]]]>>
+# CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[[[EMPTY:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[\],[^}]*}>]], [[ONE:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[!String\],[^}]*}>]], [[TUPLE:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[!Int, !Int\],[^}]*}>]]]> {hasDocHiddenDecorator}
+# CHECK: lit.struct.field __enum_storage {isDocHidden} : !lit.struct<#EnumStorage <:param_list<!AnyType> [[[EMPTY]], [[ONE]], [[TUPLE]]]>>
 
 # A case without a payload is a `comptime` member:
-# `Token.__enum_init[0, NoneType]()`, called with an empty pack.
-# CHECK: lit.alias.decl eof: !Token = <apply_result_slot({{.*}}@enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"<:param_list<!AnyType_Movable> [], :!Int {:scalar<index> 0}, :!AnyType !NoneType, {{.*}}@std::@builtin::@stubs::@VariadicPack::@"__init__({{.*}}
+# `Token.__enum_init[0]()`, called with an empty pack.
+# CHECK: lit.alias.decl eof: !Token = <apply_result_slot({{.*}}@enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"<:param_list<!AnyType_Movable> [], :!Int {:scalar<index> 0}, {{.*}}@std::@builtin::@stubs::@VariadicPack::@"__init__({{.*}}
 
 # A case with a payload is a static method taking it by `var`, positionally,
 # and passing it on in a pack.
 # CHECK: lit.fn @"ident(::String$)"{{.*}}(%payload: !lit.ref<!String, {{.*}}> owned_in_mem, |, ?, %__result__: !lit.ref<!Token, {{.*}}> byref_result) {{.*}} attributes {isStatic, sourceName = "ident"
 # CHECK-NEXT: lit.ref.pack.create(%payload) : !lit.ref.pack<:param_list<!AnyType_Movable> [!String], {{.*}}>
-# CHECK: lit.call tail @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!String], :!Int {:scalar<index> 1}, :!AnyType !String, {{.*}}>(%anonymous{{.*}}, %__result__)
+# CHECK: lit.call tail @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!String], :!Int {:scalar<index> 1}, {{.*}}>(%anonymous{{.*}}, %__result__)
 
 # Several payload types are passed on together; each is taken by `var`.
 # CHECK: lit.fn @"span(::SIMD[DType.int, 1]$,::SIMD[DType.int, 1]$)"{{.*}}(%payload0: !lit.ref<:meta<!Int> #alias_Int, mut *"payload0`"> owned_in_mem, %payload1: !lit.ref<:meta<!Int> #alias_Int, mut *"payload1`"> owned_in_mem, |, ?, %__result__: !lit.ref<!Token, {{.*}}> byref_result) {{.*}} attributes {isStatic, sourceName = "span"
 # CHECK: lit.ref.pack.create(%{{.*}}, %{{.*}}) : !lit.ref.pack<:param_list<!AnyType_Movable> [!Int, !Int], {{.*}}>
-# CHECK: lit.call tail @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!Int, !Int], :!Int {:scalar<index> 2}, :!AnyType @std::@builtin::@stubs::@Tuple<{{.*}}>(%anonymous{{.*}}, %__result__)
+# CHECK: lit.call tail @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!Int, !Int], :!Int {:scalar<index> 2}, {{.*}}>(%anonymous{{.*}}, %__result__)
 
 # The `__Enum` defaults, `__get_enum_storage`, `__enum_init` and the two
 # `EnumLike` methods, come in as always-inlined wrappers that call them.
-# CHECK: lit.fn @"__enum_init[{{.*}}__Enum"<{{.*}}, +, id: !Int, Case: !AnyType, Ts: {{.*}} pos_vararg, ?, {{.*}}>{{.*}}(%payload: !lit.ref<!lit.struct<#VariadicPack {{.*}}> owned_in_mem|pack_vararg, ?, %result: !lit.ref<!Token, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"__enum_init[{{.*}}", inheritedFrom = {{.*}}, isStatic, sourceName = "__enum_init"
-# CHECK-NEXT: lit.call @std::@builtin::@_enum::@__Enum::@"__enum_init[{{.*}}<:!Enum_AnyType_EnumLike !Token, :param_list<!AnyType_Movable> {{.*}}, :!Int id, :!AnyType Case, {{.*}}>(%payload, %result)
+# CHECK: lit.fn @"__enum_init[{{.*}}__Enum"<{{.*}}, +, id: !Int, Ts: {{.*}} pos_vararg, ?, {{.*}}>{{.*}}(%payload: !lit.ref<!lit.struct<#VariadicPack {{.*}}> owned_in_mem|pack_vararg, ?, %result: !lit.ref<!Token, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"__enum_init[{{.*}}", inheritedFrom = {{.*}}, isStatic, sourceName = "__enum_init"
+# CHECK-NEXT: lit.call @std::@builtin::@_enum::@__Enum::@"__enum_init[{{.*}}<:!Enum_AnyType_EnumLike !Token, :param_list<!AnyType_Movable> {{.*}}, :!Int id, {{.*}}>(%payload, %result)
 # CHECK: lit.fn @"__get_enum_storage[{{.*}}](enum_synthesis::Token%)__Enum"{{.*}}(%self: !lit.ref<!Token, {{.*}}> ref) refresult {{.*}} always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"__get_enum_storage[{{.*}}", inheritedFrom
 # CHECK-NEXT: lit.call @std::@builtin::@_enum::@__Enum::@"__get_enum_storage[{{.*}}<:!Enum_AnyType_EnumLike !Token, {{.*}}>(%self)
 # CHECK: lit.fn @"_get_enum_discriminant(enum_synthesis::Token)__Enum"{{.*}}(%self: !lit.ref<!Token, {{.*}}> imm_mem) -> !alias_Int1 always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"_get_enum_discriminant($0)", inheritedFrom = #kgen.trait_symbol<@std::@builtin::@_enum::@__Enum>
@@ -84,8 +82,8 @@ __enum Uninhabited:
 # A payload can be a parameter of the enum.
 # CHECK-LABEL: lit.struct.decl @Maybe<
 # CHECK-SAME: T: [[BOUND:!AnyType_Copyable_Deinitable_Movable]]>
-# CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[!NoneType, upcast(:[[BOUND]] T)]>
-# CHECK: lit.struct.field __enum_storage {isDocHidden} : !lit.struct<#EnumStorage <:param_list<!AnyType> [!NoneType, upcast(:[[BOUND]] T)]>>
+# CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[[[EMPTY]], [[JUST:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[upcast\(:.* T\)\],[^}]*}>]]]>
+# CHECK: lit.struct.field __enum_storage {isDocHidden} : !lit.struct<#EnumStorage <:param_list<!AnyType> [[[EMPTY]], [[JUST]]]>>
 # CHECK: lit.alias.decl nothing: !lit.struct<#Maybe <:[[BOUND]] T>> = <apply_result_slot(
 # CHECK: lit.fn @"just($0$)"{{.*}}(%payload: !lit.ref<:[[BOUND]] T, {{.*}}> owned_in_mem, |, ?, %__result__: !lit.ref<!lit.struct<#Maybe <:[[BOUND]] T>>, {{.*}}> byref_result)
 __enum Maybe[T: Copyable & Deinitable](Copyable):

@@ -4882,12 +4882,6 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
     payloadRequirements.push_back({traitName, std::move(assumptions)});
   }
 
-  // `NoneType` as a payload type marks a case without a payload.
-  ASTType noneType =
-      shared.lookupBuiltinType("NoneType", enumDecl, enumDecl.getLoc());
-  assert(!noneType.isTypeCheckErrorType() &&
-         "the builtin module resolved `__Enum`, so it has `NoneType`");
-
   SmallVector<Type> payloadTypes;
   for (ExprNode *typeExpr : payload) {
     IREmitter emitter(enumDecl, EC_Type);
@@ -4898,16 +4892,6 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
       shared.emitError(typeExpr->getLoc())
           << "enum case payloads do not support trait types; " << type
           << " is a trait, use a concrete type or compile-time generic";
-      return failure();
-    }
-    // TODO(MOCO-5080): `EnumLike` marks a case without a payload with
-    // `NoneType`, so a case cannot carry one; the marker goes away once every
-    // payload is a `Tuple`.
-    if (payload.size() == 1 && type.isEqualCanon(noneType)) {
-      shared.emitError(typeExpr->getLoc())
-          << "enum case payload must not be 'NoneType'; a case without a "
-             "payload is written 'case "
-          << caseName << "'" << typeExpr->getRange();
       return failure();
     }
     // The enum occurring as a payload implies an infinite type/layout.
