@@ -431,6 +431,9 @@ This version is still a work in progress.
 
 ## Fixed
 
+- On Apple GPUs, building a `SIMD` from device-buffer elements in a kernel, as
+  in `SIMD[DType.float32, 2](src[i], src[i])`, no longer reads zeros.
+
 - `SIMD.slice()` no longer passes `llvm.vector.extract` an offset that is not
   a multiple of the output width, which LLVM rejects. A wide slice at such an
   offset, like `slice[16, offset=8]()` on a 32-element vector, now takes the
