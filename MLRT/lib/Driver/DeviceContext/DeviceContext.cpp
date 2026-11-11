@@ -1540,6 +1540,27 @@ DeviceContext::getMemoryInfo() const {
   return getDeviceMemoryInfo();
 }
 
+DeviceContext::MemoryManagerStats DeviceContext::getMemoryManagerStats() const {
+  MemoryManagerStats out;
+  MemoryManager &cache = device().memoryManager();
+  if (!cache.isEnabled())
+    return out;
+  MemoryManager::AllocationStats s = cache.getAllocationStats();
+  out.liveBytes = s.liveBytes;
+  out.peakLiveBytes = s.peakLiveBytes;
+  out.maxRequestBytes = s.maxRequestBytes;
+  out.driverFallbacks = s.driverFallbacks;
+  out.driverFallbackBytes = s.driverFallbackBytes;
+  out.requestSizes = std::move(s.requestSizes);
+  return out;
+}
+
+void DeviceContext::resetMemoryManagerPeaks() const {
+  MemoryManager &cache = device().memoryManager();
+  if (cache.isEnabled())
+    cache.resetAllocationPeaks();
+}
+
 void DeviceContext::setPendingError(Error err) {
   {
     std::lock_guard<std::mutex> lock(pendingErrorMutex_);

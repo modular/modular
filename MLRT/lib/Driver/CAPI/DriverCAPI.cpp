@@ -31,6 +31,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -523,6 +524,81 @@ M_DriverStatus M_DriverDeviceAllocatorMemoryInfo(const M_DriverDevice *device,
                                         : M_DRIVER_MEMORY_UNKNOWN;
   }
   return succeed();
+}
+
+M_DriverStatus
+M_DriverDeviceAllocatorStats(const M_DriverDevice *device, uint64_t *out_live,
+                             uint64_t *out_peak, uint64_t *out_max_request,
+                             uint64_t *out_driver_fallbacks,
+                             uint64_t *out_driver_fallback_bytes) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  (void)out_live;
+  (void)out_peak;
+  (void)out_max_request;
+  (void)out_driver_fallbacks;
+  (void)out_driver_fallback_bytes;
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceAllocatorStats is not available in a HAL device "
+              "context build");
+#else
+  const DeviceContext::MemoryManagerStats stats =
+      contextOf(*device).getMemoryManagerStats();
+  if (out_live != nullptr)
+    *out_live = stats.liveBytes;
+  if (out_peak != nullptr)
+    *out_peak = stats.peakLiveBytes;
+  if (out_max_request != nullptr)
+    *out_max_request = stats.maxRequestBytes;
+  if (out_driver_fallbacks != nullptr)
+    *out_driver_fallbacks = stats.driverFallbacks;
+  if (out_driver_fallback_bytes != nullptr)
+    *out_driver_fallback_bytes = stats.driverFallbackBytes;
+  return succeed();
+#endif
+}
+
+M_DriverStatus M_DriverDeviceAllocatorRequestSizes(const M_DriverDevice *device,
+                                                   uint64_t *sizes,
+                                                   size_t capacity,
+                                                   size_t *out_count) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  (void)sizes;
+  (void)capacity;
+  (void)out_count;
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceAllocatorRequestSizes is not available in a HAL "
+              "device context build");
+#else
+  const DeviceContext::MemoryManagerStats stats =
+      contextOf(*device).getMemoryManagerStats();
+  if (sizes != nullptr) {
+    const size_t n = std::min(capacity, stats.requestSizes.size());
+    std::copy_n(stats.requestSizes.begin(), n, sizes);
+  }
+  if (out_count != nullptr)
+    *out_count = stats.requestSizes.size();
+  return succeed();
+#endif
+}
+
+M_DriverStatus M_DriverDeviceResetAllocatorPeaks(const M_DriverDevice *device) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceResetAllocatorPeaks is not available in a HAL "
+              "device context build");
+#else
+  contextOf(*device).resetMemoryManagerPeaks();
+  return succeed();
+#endif
 }
 
 M_DriverStatus M_DriverDeviceGetAttribute(const M_DriverDevice *device,

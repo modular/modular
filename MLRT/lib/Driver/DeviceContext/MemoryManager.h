@@ -246,6 +246,33 @@ public:
   class Chunk;
   class Desc;
 
+  // ---- Allocation statistics (mach and MAX Serve memory ledgers) ----
+  //
+  // Live bytes are the descriptors handed to callers and not yet freed, at
+  // their aligned size; a block a stream freed but still caches is not live.
+  // Peaks run from construction or the last resetAllocationPeaks(). Driver
+  // fallbacks are allocations the manager missed and the device driver served
+  // past the budget; their bytes only add up between resets, since the manager
+  // does not track their frees.
+  struct AllocationStats {
+    uint64_t liveBytes = 0;
+    uint64_t peakLiveBytes = 0;
+    uint64_t maxRequestBytes = 0;
+    uint64_t driverFallbacks = 0;
+    uint64_t driverFallbackBytes = 0;
+    // Distinct sizes of requests of at least kTrackedRequestMinBytes since the
+    // last reset, ascending, at most kMaxTrackedRequestSizes of the largest.
+    std::vector<uint64_t> requestSizes;
+  };
+  static constexpr size_t kTrackedRequestMinBytes = size_t(256) << 20;
+  static constexpr size_t kMaxTrackedRequestSizes = 64;
+  AllocationStats getAllocationStats() const;
+  // Restarts the peaks from the current live bytes and clears the request
+  // sizes, the largest request and the fallback counts.
+  void resetAllocationPeaks();
+  // Records a request the device driver served past the budget.
+  void noteDriverFallback(size_t bytes);
+
   class DescMap {
   public:
     DescMap(int mapSizeLog2);
@@ -681,6 +708,14 @@ private:
   static constexpr size_t kLargeAllocSizeFactor = 32;
 
   mutable std::mutex mu_;
+
+  // See AllocationStats. Guarded by `mu_`, except the fallback counters.
+  AllocationStats allocStats_;
+  std::atomic<uint64_t> driverFallbacks_ = {0};
+  std::atomic<uint64_t> driverFallbackBytes_ = {0};
+  // Called with `mu_` held as a descriptor enters or leaves `allocatedMap_`.
+  void noteAllocated(const Desc *desc);
+  void noteFreed(const Desc *desc);
   // List of all chunks allocated from the driver and their total size.
   size_t cacheSize_ = 0;
   std::unique_ptr<Chunk> chunks_ = nullptr;

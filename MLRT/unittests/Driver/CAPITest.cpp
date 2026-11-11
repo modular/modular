@@ -105,7 +105,7 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
   EXPECT_EQ(version >> 24, 1u);
-  EXPECT_EQ((version >> 16) & 0xffu, 4u);
+  EXPECT_EQ((version >> 16) & 0xffu, 5u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -2390,6 +2390,137 @@ TEST(DriverCApi, AcceleratorAllocatorMemoryInfoMatchesContext) {
   if (before != M_DRIVER_MEMORY_UNKNOWN && after != M_DRIVER_MEMORY_UNKNOWN)
     EXPECT_LE(after, before);
 }
+
+#if MODULAR_HAL_DEVICE_CONTEXT
+TEST(DriverCApi, AllocatorStatsAreNotSupportedInAHalBuild) {
+  DeviceHandle device;
+  ASSERT_TRUE(makeCpuDevice(device));
+  uint64_t live = 0;
+  size_t count = 0;
+  EXPECT_EQ(M_DriverDeviceAllocatorStats(device.get(), &live, nullptr, nullptr,
+                                         nullptr, nullptr),
+            M_DRIVER_NOT_SUPPORTED);
+  EXPECT_EQ(
+      M_DriverDeviceAllocatorRequestSizes(device.get(), nullptr, 0, &count),
+      M_DRIVER_NOT_SUPPORTED);
+  EXPECT_EQ(M_DriverDeviceResetAllocatorPeaks(device.get()),
+            M_DRIVER_NOT_SUPPORTED);
+}
+#else
+TEST(DriverCApi, CpuAllocatorStatsAreZero) {
+  DeviceHandle device;
+  ASSERT_TRUE(makeCpuDevice(device));
+  // Every figure is written, even where there is no memory manager.
+  uint64_t live = 1, peak = 1, maxRequest = 1, fallbacks = 1, fallbackBytes = 1;
+  ASSERT_EQ(M_DriverDeviceAllocatorStats(device.get(), &live, &peak,
+                                         &maxRequest, &fallbacks,
+                                         &fallbackBytes),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(live, 0u);
+  EXPECT_EQ(peak, 0u);
+  EXPECT_EQ(maxRequest, 0u);
+  EXPECT_EQ(fallbacks, 0u);
+  EXPECT_EQ(fallbackBytes, 0u);
+  size_t count = 1;
+  ASSERT_EQ(
+      M_DriverDeviceAllocatorRequestSizes(device.get(), nullptr, 0, &count),
+      M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(count, 0u);
+  EXPECT_EQ(M_DriverDeviceResetAllocatorPeaks(device.get()), M_DRIVER_OK)
+      << lastError();
+  // Every out-pointer may be null.
+  EXPECT_EQ(M_DriverDeviceAllocatorStats(device.get(), nullptr, nullptr,
+                                         nullptr, nullptr, nullptr),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(M_DriverDeviceAllocatorStats(nullptr, nullptr, nullptr, nullptr,
+                                         nullptr, nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+  EXPECT_EQ(M_DriverDeviceAllocatorRequestSizes(nullptr, nullptr, 0, nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+  EXPECT_EQ(M_DriverDeviceResetAllocatorPeaks(nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+}
+
+TEST(DriverCApi, AcceleratorAllocatorStatsTrackAnAllocation) {
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK)
+      << lastError();
+  ErrorOr<DeviceContextRef> context =
+      DeviceContext::getOrCreate(M::Driver::Device::gpuAPI, 0);
+  ASSERT_FALSE(context.isError()) << context.getError();
+
+  // The same numbers as the context's own statistics.
+  ASSERT_EQ(M_DriverDeviceResetAllocatorPeaks(device.get()), M_DRIVER_OK)
+      << lastError();
+  // Small enough for any CI pool; some cap the memory manager near 200 MiB.
+  constexpr uint64_t kBytes = 16ull << 20;
+  uint64_t liveBefore = 0;
+  ASSERT_EQ(M_DriverDeviceAllocatorStats(device.get(), &liveBefore, nullptr,
+                                         nullptr, nullptr, nullptr),
+            M_DRIVER_OK)
+      << lastError();
+  uint64_t live = 0, peak = 0, maxRequest = 0;
+  {
+    BufferHandle held;
+    ASSERT_EQ(M_DriverBufferAllocate(device.get(), kBytes,
+                                     /*pinned_host=*/false, held.receive()),
+              M_DRIVER_OK)
+        << lastError();
+    ASSERT_EQ(M_DriverDeviceAllocatorStats(device.get(), &live, &peak,
+                                           &maxRequest, nullptr, nullptr),
+              M_DRIVER_OK)
+        << lastError();
+    // A disabled memory manager reports zeros even with a buffer held.
+    if (live == 0)
+      GTEST_SKIP() << "the memory manager is disabled";
+    EXPECT_GE(live, liveBefore + kBytes);
+    EXPECT_GE(peak, live);
+    EXPECT_GE(maxRequest, kBytes);
+    const DeviceContext::MemoryManagerStats stats =
+        (*context)->getMemoryManagerStats();
+    EXPECT_EQ(live, stats.liveBytes);
+    EXPECT_EQ(peak, stats.peakLiveBytes);
+
+    // The request sizes match the context's own list.
+    size_t count = 0;
+    ASSERT_EQ(
+        M_DriverDeviceAllocatorRequestSizes(device.get(), nullptr, 0, &count),
+        M_DRIVER_OK)
+        << lastError();
+    ASSERT_EQ(count, stats.requestSizes.size());
+    std::vector<uint64_t> sizes(count);
+    size_t written = 0;
+    ASSERT_EQ(M_DriverDeviceAllocatorRequestSizes(device.get(), sizes.data(),
+                                                  sizes.size(), &written),
+              M_DRIVER_OK)
+        << lastError();
+    EXPECT_EQ(written, count);
+    EXPECT_EQ(sizes, stats.requestSizes);
+  }
+
+  // A free keeps the peak; a reset restarts it from the live bytes.
+  uint64_t peakAfterFree = 0;
+  ASSERT_EQ(M_DriverDeviceAllocatorStats(device.get(), nullptr, &peakAfterFree,
+                                         nullptr, nullptr, nullptr),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_GE(peakAfterFree, peak);
+  ASSERT_EQ(M_DriverDeviceResetAllocatorPeaks(device.get()), M_DRIVER_OK)
+      << lastError();
+  uint64_t liveAfter = 0, peakAfter = 0, maxAfter = 1;
+  ASSERT_EQ(M_DriverDeviceAllocatorStats(device.get(), &liveAfter, &peakAfter,
+                                         &maxAfter, nullptr, nullptr),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(peakAfter, liveAfter);
+  EXPECT_EQ(maxAfter, 0u);
+}
+#endif // MODULAR_HAL_DEVICE_CONTEXT
 
 //===----------------------------------------------------------------------===//
 // Host functions

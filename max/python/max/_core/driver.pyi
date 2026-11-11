@@ -166,6 +166,23 @@ class Device:
         """
 
     @property
+    def memory_manager_stats(self) -> Mapping[str, Any]:
+        """
+        MLRT memory-manager allocation statistics for the device.
+
+        Keys: ``live_bytes``, ``peak_live_bytes``, ``max_request_bytes``,
+        ``driver_fallbacks``, ``driver_fallback_bytes`` and
+        ``request_sizes`` (distinct request sizes
+        of at least 256 MiB since the last reset). Every count is zero when
+        the memory manager is disabled.
+        """
+
+    def reset_memory_manager_peaks(self) -> None:
+        """
+        Restarts the memory manager's peak statistics from its live bytes, and clears the largest request, the recorded request sizes and the driver fallback counts.
+        """
+
+    @property
     def max_single_alloc_size(self) -> int:
         """Largest single contiguous allocation, in bytes."""
 

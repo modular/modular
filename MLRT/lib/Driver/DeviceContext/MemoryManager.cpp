@@ -269,6 +269,61 @@ MemoryManager::Chunk::Chunk(MemoryManager &cache, void *base, size_t size)
   cache_.freeList_->addToFreeList(descs_);
 }
 
+void MemoryManager::noteAllocated(const Desc *desc) {
+  AllocationStats &s = allocStats_;
+  const uint64_t size = desc->size_;
+  s.liveBytes += size;
+  s.peakLiveBytes = std::max(s.peakLiveBytes, s.liveBytes);
+  s.maxRequestBytes = std::max(s.maxRequestBytes, size);
+  if (size < kTrackedRequestMinBytes)
+    return;
+  auto it =
+      std::lower_bound(s.requestSizes.begin(), s.requestSizes.end(), size);
+  if (it != s.requestSizes.end() && *it == size)
+    return;
+  s.requestSizes.insert(it, size);
+  // Keep the largest: those are the pools a sizing decision is about.
+  if (s.requestSizes.size() > kMaxTrackedRequestSizes)
+    s.requestSizes.erase(s.requestSizes.begin());
+}
+
+void MemoryManager::noteFreed(const Desc *desc) {
+  AllocationStats &s = allocStats_;
+  // Every desc in allocatedMap_ went through noteAllocated, so this holds; a
+  // new allocation path that skips it would under-report the live bytes.
+  assert(s.liveBytes >= desc->size_ && "freed a desc noteAllocated never saw");
+  s.liveBytes -= desc->size_;
+}
+
+void MemoryManager::noteDriverFallback(size_t bytes) {
+  driverFallbacks_.fetch_add(1, std::memory_order_relaxed);
+  driverFallbackBytes_.fetch_add(bytes, std::memory_order_relaxed);
+}
+
+MemoryManager::AllocationStats MemoryManager::getAllocationStats() const {
+  AllocationStats out;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    out = allocStats_;
+  }
+  out.driverFallbacks = driverFallbacks_.load(std::memory_order_relaxed);
+  out.driverFallbackBytes =
+      driverFallbackBytes_.load(std::memory_order_relaxed);
+  return out;
+}
+
+void MemoryManager::resetAllocationPeaks() {
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    AllocationStats &s = allocStats_;
+    s.peakLiveBytes = s.liveBytes;
+    s.maxRequestBytes = 0;
+    s.requestSizes.clear();
+  }
+  driverFallbacks_.store(0, std::memory_order_relaxed);
+  driverFallbackBytes_.store(0, std::memory_order_relaxed);
+}
+
 MemoryManager::Desc *MemoryManager::Chunk::splitFreeDesc(Desc *freeDesc,
                                                          size_t size) {
   // Split the descriptor. Keep the current freeDesc in the free list.
@@ -2336,6 +2391,7 @@ MemoryManager::remapOwnFreeBlocks(MemoryManagerFreeList *fl, size_t size) {
   retiringCount_.store(retiring_.size(), std::memory_order_relaxed);
 
   allocatedMap_.add(desc);
+  noteAllocated(desc);
   desc->allocatedBy_ = fl;
   const size_t reusedBytes = handles.size() * ps;
   streamRemaps_.fetch_add(1, std::memory_order_relaxed);
@@ -3145,6 +3201,8 @@ ErrorOr<void *> MemoryManagerFreeList::allocate(size_t size,
   LOG_MSG("allocate_buffer(" + TWINE_PTR(ptr) + " ; " + TWINE(size) + ")", 0,
           0);
   assert(ptr != nullptr);
+  if (memoryManager_.isEnabled())
+    memoryManager_.noteDriverFallback(wrappedSize);
   if (redzoneEnable_ || poisonEnable_) {
     // body starts immediately after the underflow redzone (if redzones are on)
     return finalizeDebugAlloc(ptr, size);
@@ -3294,6 +3352,7 @@ MemoryManagerFreeList::allocateDescAligned(size_t size, size_t startAlign) {
       }
 
       memoryManager_.allocatedMap_.add(desc);
+      memoryManager_.noteAllocated(desc);
       desc->allocatedBy_ = this;
 
       LOG_MSG("allocate from free buffer at id: " + TWINE(freeListIdToUse) +
@@ -3493,6 +3552,7 @@ ErrorOrSuccess MemoryManagerFreeList::free(void *ptr) {
 
       desc = memoryManager_.allocatedMap_.remove(unwrappedPtr);
       if (desc != nullptr) {
+        memoryManager_.noteFreed(desc);
         owner = desc->allocatedBy_;
         assert(owner && "desc freed without a valid allocatedBy_ - was it ever "
                         "allocated via allocateDesc?");

@@ -88,7 +88,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 4
+#define M_DRIVER_CAPI_VERSION_MINOR 5
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -369,6 +369,48 @@ M_DRIVER_API M_DriverStatus M_DriverDeviceMemoryInfo(
 M_DRIVER_API M_DriverStatus M_DriverDeviceAllocatorMemoryInfo(
     const M_DriverDevice *device, uint64_t *out_budget,
     uint64_t *out_allocatable);
+
+/// Writes the allocation statistics of the device's memory manager: the bytes
+/// it has handed out and not yet had back (`*out_live`), the most of those at
+/// once (`*out_peak`), the largest single request (`*out_max_request`), and the
+/// requests it could not serve and passed to the driver, past its budget
+/// (`*out_driver_fallbacks`, totalling `*out_driver_fallback_bytes`). Any
+/// out-pointer may be null.
+///
+/// A caller that sizes its own pools from what its work really allocates resets
+/// the peaks with `M_DriverDeviceResetAllocatorPeaks`, runs the work, and reads
+/// `*out_peak`. Live bytes count allocations at their aligned size; a block the
+/// manager caches after a free is not live. The peak, the largest request and
+/// the fallbacks run from the first allocation or the last reset, and the
+/// fallback bytes only add up in between, since the manager never sees those
+/// frees. A
+/// device without a memory manager (the CPU device, Metal, or a manager that is
+/// disabled) reports zeros.
+///
+/// Returns `M_DRIVER_NOT_SUPPORTED` in a HAL device context build, which has no
+/// memory manager statistics; so do the two calls below.
+///
+/// Mirrors `max._core.driver.Device.memory_manager_stats`.
+M_DRIVER_API M_DriverStatus M_DriverDeviceAllocatorStats(
+    const M_DriverDevice *device, uint64_t *out_live, uint64_t *out_peak,
+    uint64_t *out_max_request, uint64_t *out_driver_fallbacks,
+    uint64_t *out_driver_fallback_bytes);
+
+/// Copies the distinct sizes of the memory manager's requests of at least
+/// 256 MiB since the last `M_DriverDeviceResetAllocatorPeaks`, ascending, into
+/// `sizes`, and writes how many there are to `*out_count`. At most the 64
+/// largest are kept. Copies the first `capacity` of them; call with a null
+/// `sizes` to size the buffer. `out_count` may be null. A device without a
+/// memory manager reports none.
+M_DRIVER_API M_DriverStatus M_DriverDeviceAllocatorRequestSizes(
+    const M_DriverDevice *device, uint64_t *sizes, size_t capacity,
+    size_t *out_count);
+
+/// Restarts the memory manager's peak from its live bytes, and clears the
+/// largest request, the request sizes and the fallback counts. Does nothing on
+/// a device without a memory manager.
+M_DRIVER_API M_DriverStatus
+M_DriverDeviceResetAllocatorPeaks(const M_DriverDevice *device);
 
 /// A device property `M_DriverDeviceGetAttribute` reports. A consumer built
 /// against a newer header may pass a value this library does not know, which

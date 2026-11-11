@@ -36,6 +36,7 @@
 #include <memory>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 using namespace M;
 using namespace Driver;
@@ -152,6 +153,45 @@ std::string Python::Device::getStats() const {
 
   os.flush();
   return s;
+}
+
+std::string Python::Device::getMemoryManagerStats() const {
+  nb::gil_scoped_release release;
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL DeviceContext has no MLRT memory manager: report all zeros, which
+  // callers read as "not measurable".
+  struct {
+    uint64_t liveBytes = 0, peakLiveBytes = 0, maxRequestBytes = 0;
+    uint64_t driverFallbacks = 0, driverFallbackBytes = 0;
+    std::vector<uint64_t> requestSizes;
+  } stats;
+#else
+  M::Driver::DeviceContext::MemoryManagerStats stats =
+      ctx->getMemoryManagerStats();
+#endif
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  llvm::json::OStream j(os);
+  j.object([&] {
+    j.attribute("live_bytes", stats.liveBytes);
+    j.attribute("peak_live_bytes", stats.peakLiveBytes);
+    j.attribute("max_request_bytes", stats.maxRequestBytes);
+    j.attribute("driver_fallbacks", stats.driverFallbacks);
+    j.attribute("driver_fallback_bytes", stats.driverFallbackBytes);
+    j.attributeArray("request_sizes", [&] {
+      for (uint64_t size : stats.requestSizes)
+        j.value(size);
+    });
+  });
+  os.flush();
+  return s;
+}
+
+void Python::Device::resetMemoryManagerPeaks() const {
+#if !MODULAR_HAL_DEVICE_CONTEXT
+  nb::gil_scoped_release release;
+  ctx->resetMemoryManagerPeaks();
+#endif
 }
 
 size_t Python::Device::getMaxSingleAllocSize() const {

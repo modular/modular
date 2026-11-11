@@ -393,11 +393,13 @@ TEST_F(MemoryManagerVMMTest, LargerRequestRemapsTheStreamsOwnFreePages) {
                                 /*disableFlush=*/false, /*label=*/"remap");
     ASSIGN_NO_ERR(void *, small, child.allocate(kSmall, mode));
     EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kSmall);
+    EXPECT_EQ(cache->getAllocationStats().liveBytes, kSmall);
 
     // Shut the gate, then free: the free's event is ordered behind the gate,
     // so A stays on this stream's free list and never reaches the root.
     EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*gate, 1));
     EXPECT_NO_ERR(child.free(small));
+    EXPECT_EQ(cache->getAllocationStats().liveBytes, 0u);
 
     // Only 2 pages are left to create, so B needs A's 2 pages. It must come
     // back with the gate still shut.
@@ -408,6 +410,8 @@ TEST_F(MemoryManagerVMMTest, LargerRequestRemapsTheStreamsOwnFreePages) {
     // A's pages were reused: B added exactly B - A of new physical.
     EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kLarge);
     EXPECT_EQ(cache->retiringRangesForTesting(), 1u);
+    // The remap counts B as live like any other allocation.
+    EXPECT_EQ(cache->getAllocationStats().liveBytes, kLarge);
 
     // The old range waits for the stream, which is still behind the gate.
     EXPECT_NO_ERR(cache->drainCompletedFrees());
@@ -423,6 +427,9 @@ TEST_F(MemoryManagerVMMTest, LargerRequestRemapsTheStreamsOwnFreePages) {
     EXPECT_NO_ERR(writeAndVerify(*ctx, large, kLarge, kPage));
 
     EXPECT_NO_ERR(child.free(large));
+    const MemoryManager::AllocationStats stats = cache->getAllocationStats();
+    EXPECT_EQ(stats.liveBytes, 0u);
+    EXPECT_EQ(stats.peakLiveBytes, kLarge);
     EXPECT_NO_ERR(ctx->synchronize());
   }
   cache->clear();
@@ -447,6 +454,44 @@ TEST_F(MemoryManagerVMMTest, RequestThatFitsTheStreamsFreeBlockDoesNotRemap) {
       EXPECT_NO_ERR(child.free(smaller));
     }
     EXPECT_EQ(cache->streamRemaps(), 0u);
+    EXPECT_NO_ERR(ctx->synchronize());
+  }
+  cache->clear();
+}
+
+// The allocation statistics a sizing decision reads (the memory ledgers):
+// live and peak bytes, the largest request and the distinct large request
+// sizes, all restartable.
+TEST_F(MemoryManagerVMMTest, AllocationStatsTrackPeaksAndLargeRequests) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const size_t kPage = 256 * kMiB;
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  {
+    MemoryManagerFreeList child(ctx.getPointer(), *cache, cache->freeList(),
+                                /*disableFlush=*/false, /*label=*/"stats");
+    ASSIGN_NO_ERR(void *, small, child.allocate(kPage, mode));
+    ASSIGN_NO_ERR(void *, large, child.allocate(kGiB + kPage, mode));
+    MemoryManager::AllocationStats s = cache->getAllocationStats();
+    EXPECT_EQ(s.liveBytes, kGiB + 2 * kPage);
+    EXPECT_EQ(s.peakLiveBytes, kGiB + 2 * kPage);
+    EXPECT_EQ(s.maxRequestBytes, kGiB + kPage);
+    EXPECT_EQ(s.requestSizes, (std::vector<uint64_t>{kPage, kGiB + kPage}));
+
+    EXPECT_NO_ERR(child.free(large));
+    s = cache->getAllocationStats();
+    EXPECT_EQ(s.liveBytes, kPage);
+    EXPECT_EQ(s.peakLiveBytes, kGiB + 2 * kPage) << "a free keeps the peak";
+
+    cache->resetAllocationPeaks();
+    s = cache->getAllocationStats();
+    EXPECT_EQ(s.peakLiveBytes, kPage);
+    EXPECT_EQ(s.maxRequestBytes, 0u);
+    EXPECT_TRUE(s.requestSizes.empty());
+
+    EXPECT_NO_ERR(child.free(small));
     EXPECT_NO_ERR(ctx->synchronize());
   }
   cache->clear();

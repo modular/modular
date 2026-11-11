@@ -217,6 +217,27 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
         Returns:
             A dictionary containing device utilization statistics.
       )nbdoc")
+      .def_prop_ro(
+          "memory_manager_stats",
+          [](Python::Device &self) {
+            auto json = nb::module_::import_("json");
+            return nb::borrow<nb::typed<nb::mapping, nb::str, nb::any>>(
+                json.attr("loads")(self.getMemoryManagerStats()));
+          },
+          R"nbdoc(
+        MLRT memory-manager allocation statistics for the device.
+
+        Keys: ``live_bytes``, ``peak_live_bytes``, ``max_request_bytes``,
+        ``driver_fallbacks``, ``driver_fallback_bytes`` and
+        ``request_sizes`` (distinct request sizes
+        of at least 256 MiB since the last reset). Every count is zero when
+        the memory manager is disabled.
+      )nbdoc")
+      .def("reset_memory_manager_peaks",
+           &Python::Device::resetMemoryManagerPeaks,
+           "Restarts the memory manager's peak statistics from its live "
+           "bytes, and clears the largest request, the recorded request "
+           "sizes and the driver fallback counts.")
       .def_prop_ro("max_single_alloc_size",
                    &Python::Device::getMaxSingleAllocSize,
                    "Largest single contiguous allocation, in bytes.")

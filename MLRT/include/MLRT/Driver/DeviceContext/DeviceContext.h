@@ -1248,6 +1248,26 @@ public:
 
   ErrorOr<Device::MemInfo> getMemoryInfo() const;
 
+  // Allocation statistics of this device's memory manager, for an embedder
+  // that sizes its own pools from what its forwards really allocate (mach's
+  // memory ledger, MAX Serve's memory_ledger.py). See
+  // MemoryManager::AllocationStats for the definitions. All zero when the
+  // memory manager is disabled.
+  struct MemoryManagerStats {
+    uint64_t liveBytes = 0;
+    uint64_t peakLiveBytes = 0;
+    uint64_t maxRequestBytes = 0;
+    uint64_t driverFallbacks = 0;
+    uint64_t driverFallbackBytes = 0;
+    // Distinct request sizes of at least 256 MiB since the last reset,
+    // ascending.
+    std::vector<uint64_t> requestSizes;
+  };
+  MemoryManagerStats getMemoryManagerStats() const;
+  // Restarts the peaks from the live bytes and clears the largest request,
+  // the request sizes and the fallback counts.
+  void resetMemoryManagerPeaks() const;
+
   // Context-level attribute query. Subclasses override to provide
   // context-specific values (e.g. CpuDeviceContext returns the cpuDevice's
   // parallelism level). Default returns an error for unknown attributes.
