@@ -313,6 +313,23 @@ def amd_kda_chunk_eligible(
     )
 
 
+def kda_chunk_bf16_launch() -> tuple[DType, bool]:
+    """Returns how :func:`kda_chunk` takes bf16 q/k/v on this accelerator.
+
+    On gfx950 the output is bf16 and there is no compute-bound variant. On
+    NVIDIA a float32 output with ``use_computebound`` selects the fused
+    tensor-core kernel; float32 q/k/v would fall back to the L1/L2/L3
+    pipeline, whose scan runs one CTA per (sequence, head) and is ~8x slower
+    at 8K tokens.
+
+    Returns:
+        ``(output_dtype, use_computebound)`` to pass :func:`kda_chunk`.
+    """
+    if accelerator_api() == "hip":
+        return DType.bfloat16, False
+    return DType.float32, True
+
+
 def kda_chunk_predicate(
     total_tokens: TensorValue,
     batch_size: TensorValue,
