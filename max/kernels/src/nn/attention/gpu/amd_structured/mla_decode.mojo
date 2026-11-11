@@ -327,11 +327,8 @@ __extension Attention:
                     return
 
             k_buffer.load_from_shared(0)
-            # Register-side zero pad for the partial K-tile's OOB tail.  No-op
-            # when depth % BK == 0.  Mirrors `QRegisterBuffer.__init__`'s
-            # partial-tile zero on the Q side; both zero the upper half of each
-            # lane's partial-tile fragment (the pad K-positions in MFMA-K),
-            # preserving the lower half which holds valid K-rope / Q-rope data.
+            # Set the pad columns of the partial K-tile to zero. When
+            # depth % BK == 0, there is no pad.
             k_buffer.zero_partial_tile_pad()
             mma_qk()
 

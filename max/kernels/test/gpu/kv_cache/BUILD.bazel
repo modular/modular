@@ -293,12 +293,13 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
 #
 # head_size:
 #   64, 128: all GPUs (subject to page_size).
-#   80:      MI355 only.
+#   72, 80:  MI355 only.
 #   256:     depth512 kernel, H100 and B200 only.
 #   512:     depth512 kernel, B200 only.
 _PAGED_FA_GPU_MEMORY = {
     ("16", "256"): "6",
     ("16", "512"): "6",
+    ("256", "72"): "2",
     ("256", "80"): "2",
     ("64", "256"): "6",
     ("64", "512"): "6",
@@ -307,6 +308,11 @@ _PAGED_FA_GPU_MEMORY = {
 _PAGED_FA_CONFIGS = [
     # (page_size, head_size, extra_constraints)
     ("256", "64", _APPLE_GPU_INCOMPATIBLE),
+    (
+        "256",
+        "72",
+        ["//:mi355_gpu"],
+    ),
     (
         "256",
         "80",

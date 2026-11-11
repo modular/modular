@@ -778,61 +778,65 @@ struct KVBuffer[
 
     @inline(.always)
     def zero_partial_tile_pad(self):
-        """Register-side zero for the OOB tail of the partial K-tile.
+        """Sets the pad columns of the partial K-tile to zero.
 
-        When `depth % BK != 0`, the last K-tile (i = depth // BK) spans
-        `BK` K-positions but only `valid_cols = depth - i*BK` are valid;
-        the trailing `BK - valid_cols` are pad and must read as zero.
+        When `depth % BK != 0`, the last K-tile (`i = depth // BK`) has `BK`
+        K-positions, but only `valid_cols = depth - i*BK` are valid. The
+        other `BK - valid_cols` positions are pad. The load fills them with
+        data from other rows, and the QK MMA must read zero there.
 
-        Per-lane K-fragment layout: the `input_frag_size` elements per
-        lane interleave across MFMA-K such that the LOWER
-        `valid_per_lane = input_frag_size * valid_cols / BK` elements
-        correspond to the valid K-range and the UPPER
-        `input_frag_size - valid_per_lane` elements correspond to the
-        pad. Zero the upper portion per lane.
+        The pad layout depends on the fragment shape:
 
-        The reference pre-zeros half of the partial-tile K-fragment dwords
-        once and reuses; we re-zero each K LDS load because the LDS loader
-        fills the whole reg tile.
+        - Single-pack fragment (BF16): lane l holds the contiguous K-run
+          `[k_mma*MMA_K + (l // MMA_N) * input_frag_size, +input_frag_size)`.
+          The pad is whole fragments. Each lane sets to zero the fragments
+          that start at or after `valid_cols`.
+        - Two-pack fragment (`input_frag_size` is not one load width, as
+          in the FP8 `lo.join(hi)`): the fragment splits by element. Each
+          lane sets its upper
+          `input_frag_size - input_frag_size * valid_cols / BK` elements to
+          zero.
 
-        A no-op when `depth % BK == 0`.
-
-        NOTE: keep in sync with `QRegisterBuffer.__init__`'s partial-tile
-        zero in `buffers.mojo`. Both sites share the upper-half-is-pad
-        assumption (asserted below); a future config that violates it
-        (`valid_cols > BK/2`) needs a different zero pattern in both.
+        Each K load from LDS writes the full register tile. Call this
+        function after each load.
         """
         comptime if Self.depth % Self.BK != 0:
             comptime partial_bk_tile = Self.depth // Self.BK
             comptime valid_cols_in_partial = (
                 Self.depth - partial_bk_tile * Self.BK
             )
-            # Upper-half-is-pad invariant: today (depth=576, BK=128)
-            # `valid_cols` is exactly BK/2, so the lo half of each
-            # lane's per-tile fragment covers the valid K-range and the
-            # hi half is pad. A future config with `valid_cols > BK/2`
-            # would split the valid range across both halves and need a
-            # different zero pattern.
-            comptime assert valid_cols_in_partial <= Self.BK // 2, (
-                "zero_partial_tile_pad assumes valid cols fit in the"
-                " lower-K half of the per-lane fragment"
-            )
-            comptime valid_per_lane = (
-                Self.input_frag_size * valid_cols_in_partial // Self.BK
-            )
-            comptime zero_per_lane = Self.input_frag_size - valid_per_lane
-            comptime assert (
-                zero_per_lane > 0
-            ), "zero_partial_tile_pad: zero_per_lane must be positive"
-            comptime for k_mma in range(Self.num_k_mmas2):
-                # Zero cols [valid_per_lane .. input_frag_size) of each
-                # lane's partial-bk-tile fragment — the K-pad portion
-                # produced by `load_b`'s `lo.join(hi)` upper half.
-                _ = (
-                    self.mma_subtile[k_mma, partial_bk_tile]()
-                    .tile[Self._rows_per_k_mma, zero_per_lane](0, 1)
-                    .fill(0)
+            comptime if (
+                Self.input_frag_size != simd_width_of[Self.kv_t.dtype]()
+            ):
+                # The valid columns must fit in the lower half of each
+                # lane's fragment. Then the upper half holds only pad.
+                comptime assert valid_cols_in_partial <= Self.BK // 2, (
+                    "zero_partial_tile_pad assumes valid cols fit in the"
+                    " lower-K half of the per-lane fragment"
                 )
+                comptime valid_per_lane = (
+                    Self.input_frag_size * valid_cols_in_partial // Self.BK
+                )
+                comptime zero_per_lane = (Self.input_frag_size - valid_per_lane)
+                comptime assert (
+                    zero_per_lane > 0
+                ), "zero_partial_tile_pad: zero_per_lane must be positive"
+                comptime for k_mma in range(Self.num_k_mmas2):
+                    # Set elements [valid_per_lane, input_frag_size) of
+                    # each lane's fragment to zero.
+                    _ = (
+                        self.mma_subtile[k_mma, partial_bk_tile]()
+                        .tile[Self._rows_per_k_mma, zero_per_lane](0, 1)
+                        .fill(0)
+                    )
+            else:
+                comptime assert (
+                    valid_cols_in_partial % Self.input_frag_size == 0
+                ), "K partial-tile tail must cover whole lane fragments"
+                var lane_k = lane_id() // Self.MMA_N * Self.input_frag_size
+                comptime for k_mma in range(Self.num_k_mmas2):
+                    if k_mma * Self.MMA_K + lane_k >= valid_cols_in_partial:
+                        _ = self.mma_subtile[k_mma, partial_bk_tile]().fill(0)
 
     @inline(.always)
     def load_from_shared(self, buffer: Int):

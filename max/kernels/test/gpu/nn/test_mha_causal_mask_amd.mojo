@@ -299,6 +299,10 @@ def test_helper[depth: Int](ctx: DeviceContext[]) raises:
     test[dtype, depth=depth, num_heads=3, group=3](102, 102, ctx)
     test[dtype, depth=depth, num_heads=1](14, 14, ctx)
     test[dtype, depth=depth, num_heads=1](528, 528, ctx)
+    # Token gen at depth 72 takes the naive kernel, which is also the
+    # reference, so its decode cases test nothing.
+    comptime if depth == 72:
+        return
     # Token gen
     test[dtype, depth=depth, num_heads=32](1, 512, ctx, is_benchmark())
     test[dtype, depth=depth, num_heads=11](1, 256, ctx)
@@ -560,5 +564,5 @@ def main() raises:
             comptime for depth in [128, 256]:
                 test_helper[depth](ctx)
         else:
-            comptime for depth in [64, 80, 128, 256]:
+            comptime for depth in [64, 72, 80, 128, 256]:
                 test_helper[depth](ctx)

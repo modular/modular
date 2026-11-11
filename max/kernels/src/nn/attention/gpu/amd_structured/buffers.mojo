@@ -222,28 +222,40 @@ struct QRegisterBuffer[
                 dst,
                 src.vectorize[1, load_width](),
             )
-        # RegTileLoader stores each lane's lower and upper BK halves
-        # contiguously. Zero only the trailing per-lane elements; zeroing whole
-        # lanes would also erase valid lower-half data. Keep this in sync with
-        # KVBuffer.zero_partial_tile_pad.
-        comptime if (Self.zero_partial_tile_pad and Self.depth % Self.BK != 0):
+        # The load clamps out-of-bounds reads, so the pad columns of the
+        # partial strip contain data from other rows. Set them to zero.
+        comptime if Self.zero_partial_tile_pad and Self.depth % Self.BK != 0:
             comptime partial_tile_idx = Self.depth // Self.BK
             comptime valid_cols = Self.depth - partial_tile_idx * Self.BK
-            comptime assert valid_cols <= Self.BK // 2, (
-                "Q partial-tile zero assumes valid cols fit in the"
-                " lower-K half of the per-lane fragment"
-            )
-            comptime valid_per_lane = (
-                Self.input_frag_size * valid_cols // Self.BK
-            )
-            comptime zero_per_lane = Self.input_frag_size - valid_per_lane
-            _ = (
-                self.reg_tile.tile[Self._rows_per_tile, Self.input_frag_size](
-                    partial_tile_idx, 0
+            comptime if Self.input_frag_size != load_width:
+                # Each lane holds a two-pack fragment (lo.join(hi)). The
+                # pad columns are the upper elements of each fragment.
+                comptime assert valid_cols <= Self.BK // 2, (
+                    "Q partial-tile zero assumes valid cols fit in the"
+                    " lower-K half of the per-lane fragment"
                 )
-                .tile[Self._rows_per_tile, zero_per_lane](0, 1)
-                .fill(0)
-            )
+                comptime valid_per_lane = (
+                    Self.input_frag_size * valid_cols // Self.BK
+                )
+                comptime zero_per_lane = Self.input_frag_size - valid_per_lane
+                _ = (
+                    self.reg_tile.tile[
+                        Self._rows_per_tile, Self.input_frag_size
+                    ](partial_tile_idx, 0)
+                    .tile[Self._rows_per_tile, zero_per_lane](0, 1)
+                    .fill(0)
+                )
+            else:
+                # Lane l holds one contiguous K-run for each MMA:
+                # [k*MMA_K + (l // MMA_M) * frag, +frag). Thus the pad
+                # columns are whole fragments.
+                comptime assert (
+                    valid_cols % Self.input_frag_size == 0
+                ), "Q partial-tile tail must cover whole lane fragments"
+                var lane_k = lane_id() // Self.MMA_M * Self.input_frag_size
+                comptime for k in range(Self.num_k_tiles):
+                    if k * Self.MMA_K + lane_k >= valid_cols:
+                        _ = self.mma_tile[partial_tile_idx, k]().fill(0)
 
     @inline(.always)
     def mma_tile[
