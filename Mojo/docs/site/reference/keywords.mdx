@@ -205,20 +205,21 @@ They control ownership and mutability:
 
 {/* markdownlint-disable MD013 */}
 
-| Convention | Role                 | Meaning                                                     |
-|------------|----------------------|-------------------------------------------------------------|
-| (`imm`)    | Argument             | Immutable reference to an existing value (default behavior) |
-| `mut`      | Argument             | Mutable reference to an existing value                      |
-| `out`      | Argument             | Returns a value without a return arrow                      |
-| `deinit`   | Argument             | Destructive transfer; end of a value's lifecycle            |
-| `var`      | Argument or variable | Independent mutable owned copy of the value                 |
-| `ref`      | Argument or variable | Reference that doesn't own the value                        |
+| Convention | Role                 | Meaning                                               |
+|------------|----------------------|-------------------------------------------------------|
+| (`imm`)    | Argument             | Non-owning immutable reference (default behavior)     |
+| `mut`      | Argument             | Non-owning mutable reference                          |
+| `out`      | Argument             | Returns a value without a return arrow                |
+| `deinit`   | Argument             | Destructive transfer; end of a value's lifecycle      |
+| `var`      | Argument or variable | Independent mutable owned copy of the value           |
+| `ref`      | Argument or variable | Non-owning reference that can be mutable or immutable |
 
 {/* markdownlint-enable MD013 */}
 
-`var` and `ref` also appear in **variable declarations**, where `var`
-creates a scoped mutable variable and `ref` creates a scoped reference
-binding:
+`var` and `ref` also appear in **variable declarations**. A `var` declaration
+creates a scoped mutable variable. A `ref` declaration creates a non-owning
+alias to existing storage; its origin and mutability are inferred from the
+initializer:
 
 ```mojo
 struct CountingTool:
@@ -235,6 +236,12 @@ def main():
     var data: List[Int] = [1, 2, 3]
     ref view = data        # ref binds a reference, no copying
 ```
+
+As an argument convention, `ref` similarly binds a non-owning reference to the
+caller's value. The function can only read through the argument. A plain `ref`
+argument infers its origin, including the origin's mutability, from the value
+passed in. The `ref[origin]` form explicitly names or constrains the origin so a
+function can relate the argument to another argument or return value.
 
 A `self` argument without a convention is an immutable reference. Modifying
 it requires `mut`:

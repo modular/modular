@@ -465,12 +465,19 @@ def main():
 Instance methods take `self` as the first argument. The convention on
 `self` determines access:
 
-- Bare `self`: immutable reference.
+- Bare `self`: immutable, non-owning reference. Equivalent to `imm self`.
 - `mut self`: allows modification.
 - `out`, `deinit`: used by lifecycle methods.
 - `out`: also used to specify a named result slot.
-- `ref`: used to declare an argument with parametric mutability, and which
-  must be passed in memory regardless of its type.
+- `ref`: non-owning reference with parametric mutability. Its origin and
+  mutability are inferred from the instance unless an explicit `ref[...]`
+  origin clause is present. A `ref` argument is passed in memory regardless
+  of its type.
+
+As with a local `ref` declaration, `ref self` aliases existing storage instead
+of copying the value. The difference is where the binding appears: `ref self`
+declares a method argument, while `ref value = expression` declares a local
+reference.
 
 A method without `self` is an error unless it's marked `@staticmethod`:
 
