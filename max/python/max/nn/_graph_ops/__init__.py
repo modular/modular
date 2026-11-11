@@ -17729,6 +17729,206 @@ def mhc_pre(
     )
 
 
+# NOTE: keep these in sync with the comptime asserts of `ihc_mix_gemv` and
+# `ihc_collapse_rms_norm` in max/kernels/src/nn/ihc.mojo: a shape admitted here
+# but not there fails at graph compile.
+_IHC_WARP_COLS = 128
+_IHC_MAX_WARPS = 8
+_IHC_MAX_MIX = 8
+
+
+def _ihc_splits(k: int) -> int | None:
+    """Returns the projection's column splits, or None for a ragged ``k``."""
+    cols = min(_IHC_MAX_WARPS, k // _IHC_WARP_COLS) * _IHC_WARP_COLS
+    if cols == 0 or k % cols:
+        return None
+    return k // cols
+
+
+def _ihc_supports_shape(hc_mult: int, hidden_size: int, num_mix: int) -> bool:
+    # The collapse holds the `pre` gates in a SIMD vector of `hc_mult` lanes.
+    return (
+        hc_mult & (hc_mult - 1) == 0
+        and num_mix in (hc_mult, 2 * hc_mult)
+        and num_mix % 2 == 0
+        and num_mix <= _IHC_MAX_MIX
+        and hidden_size % 8 == 0
+        and _ihc_splits(hc_mult * hidden_size) is not None
+    )
+
+
+def ihc_pre_supports(
+    hc_mult: int,
+    hidden_size: int,
+    num_mix: int,
+    dtype: DType,
+    device: Device | DeviceRef,
+) -> bool:
+    """Returns whether :func:`ihc_pre` runs on this device and shape.
+
+    The projection runs on NVIDIA bfloat16 MMA with 32-lane warps, so the op
+    runs on CUDA devices only, on bfloat16 streams.
+
+    Args:
+        hc_mult: The number of residual streams.
+        hidden_size: The width of one stream.
+        num_mix: The number of gate rows, ``hc_mult`` or ``2 * hc_mult``.
+        dtype: The streams' dtype.
+        device: The device the op would run on.
+
+    Returns:
+        True if :func:`ihc_pre` accepts the shape on ``device``.
+    """
+    if dtype != DType.bfloat16 or not _ihc_supports_shape(
+        hc_mult, hidden_size, num_mix
+    ):
+        return False
+    if isinstance(device, DeviceRef):
+        # A graph can be built on a host without the GPU it targets.
+        if not device.is_gpu() or device.id >= accelerator_count():
+            return False
+        device = device.to_device()
+    return device.api == "cuda"
+
+
+def ihc_pre(
+    streams: TensorValue,
+    fn: TensorValue,
+    base: TensorValue,
+    scale: TensorValue,
+    gamma: TensorValue,
+    *,
+    hc_magnitude: float,
+    hc_eps: float,
+    rms_eps: float,
+    norm_eps: float,
+) -> tuple[TensorValue, TensorValue]:
+    r"""Runs an iHC pre site in one call: gates, collapse and RMSNorm.
+
+    An identity hyper-connection (iHC) site is an mHC site without the
+    ``comb`` mixer. Per token, with
+    ``x`` the streams flattened to ``hc_mult * hidden_size`` values, it
+    computes ``mix = (x @ fn.T) * rsqrt(mean(x * x) + rms_eps)``, ``pre =
+    sigmoid(mix[:hc_mult] * scale[0] + base[:hc_mult]) + hc_eps`` and, when
+    ``fn`` has ``2 * hc_mult`` rows, ``post = hc_magnitude *
+    sigmoid(mix[hc_mult:] * scale[1] + base[hc_mult:]) + hc_eps``. Then it
+    computes ``collapsed = sum_j pre[j] * streams[j]`` rounded to bfloat16,
+    and RMS-normalizes it with ``gamma`` as an RMSNorm would.
+
+    Two kernels each read the streams once in bfloat16. The projection runs
+    on tensor cores with float32 accumulation, with ``fn`` split into two
+    bfloat16 terms. Check :func:`ihc_pre_supports` first: the op runs on
+    CUDA devices only.
+
+    Args:
+        streams: The residual streams, bfloat16. Shape: ``[total_seq_len,
+            hc_mult, hidden_size]``.
+        fn: The stream projection, float32. Shape: ``[num_mix, hc_mult *
+            hidden_size]``, ``num_mix`` is ``hc_mult`` or ``2 * hc_mult``.
+        base: Per-gate bias, float32. Shape: ``[num_mix]``.
+        scale: Per-band scale, float32. Shape: ``[num_mix // hc_mult]``.
+        gamma: The RMSNorm weight, bfloat16. Shape: ``[hidden_size]``.
+        hc_magnitude: The upper bound of ``post``.
+        hc_eps: Added to every gate.
+        rms_eps: Epsilon of the unweighted RMS scale on the projection.
+        norm_eps: Epsilon of the RMSNorm.
+
+    Returns:
+        A tuple of two tensors:
+
+        - ``normed``: the normalized collapse, bfloat16. Shape:
+          ``[total_seq_len, hidden_size]``.
+        - ``gates``: ``pre``, then ``post`` if ``fn`` has ``2 * hc_mult``
+          rows, float32. Shape: ``[total_seq_len, num_mix]``.
+
+    Raises:
+        ValueError: If a dtype, rank, shape or device does not match, or
+            ``hc_mult`` or ``hidden_size`` is not static or outside what the
+            kernels support.
+    """
+    _check_rank(3, streams=streams)
+    _check_rank(2, fn=fn)
+    _check_rank(1, base=base, scale=scale, gamma=gamma)
+    _check_dtype(DType.bfloat16, streams=streams, gamma=gamma)
+    _check_dtype(DType.float32, fn=fn, base=base, scale=scale)
+    _check_same_device(
+        streams=streams, fn=fn, base=base, scale=scale, gamma=gamma
+    )
+    if not streams.device.is_gpu():
+        raise ValueError(f"ihc_pre runs on GPU only, got {streams.device}")
+
+    rows, hc_dim, hidden_dim = streams.shape
+    if not isinstance(hc_dim, StaticDim) or not isinstance(
+        hidden_dim, StaticDim
+    ):
+        raise ValueError(
+            "expected static hc_mult and hidden_size in streams, got"
+            f" {streams.shape}"
+        )
+    hc_mult, hidden_size = int(hc_dim), int(hidden_dim)
+    num_mix = int(fn.shape[0])
+    k = hc_mult * hidden_size
+    if not _ihc_supports_shape(hc_mult, hidden_size, num_mix):
+        raise ValueError(
+            f"expected a power-of-two hc_mult, {hc_mult} or {2 * hc_mult}"
+            f" gate rows (even, at most"
+            f" {_IHC_MAX_MIX}) and hidden_size a multiple of 8 whose"
+            f" {k} flattened columns split into {_IHC_WARP_COLS}-column"
+            f" warps, got fn {fn.shape} for streams {streams.shape}"
+        )
+    if (
+        fn.shape[1] != k
+        or base.shape[0] != num_mix
+        or scale.shape[0] != num_mix // hc_mult
+        or gamma.shape[0] != hidden_size
+    ):
+        raise ValueError(
+            f"expected fn [{num_mix}, {k}], base [{num_mix}], scale"
+            f" [{num_mix // hc_mult}] and gamma [{hidden_size}] for streams"
+            f" {streams.shape}, got {fn.shape}, {base.shape}, {scale.shape}"
+            f" and {gamma.shape}"
+        )
+
+    splits = _ihc_splits(k)
+    assert splits is not None
+    device = streams.device
+    partials = ops.custom(
+        "hyper_connection.ihc.mix_gemv",
+        device=device,
+        values=[ops.reshape(streams, [rows, k]), fn],
+        out_types=[
+            TensorType(DType.float32, [splits, rows, num_mix + 1], device)
+        ],
+        parameters={"k": k, "num_mix": num_mix},
+    )[0].tensor
+    normed, gates = ops.custom(
+        "hyper_connection.ihc.collapse_rms_norm",
+        device=device,
+        values=[
+            streams,
+            partials,
+            base,
+            scale,
+            gamma,
+            *(
+                ops.constant(v, DType.float32, device=DeviceRef.CPU())
+                for v in (hc_magnitude, hc_eps, rms_eps, norm_eps)
+            ),
+        ],
+        out_types=[
+            TensorType(streams.dtype, [rows, hidden_size], device),
+            TensorType(DType.float32, [rows, num_mix], device),
+        ],
+        parameters={
+            "hc_mult": hc_mult,
+            "num_mix": num_mix,
+            "num_splits": splits,
+            "hidden": hidden_size,
+        },
+    )
+    return normed.tensor, gates.tensor
+
+
 def _mhc_post_block_width(dtype: DType) -> int:
     # The narrowest block, 128 threads, covers 128 16-byte vectors of the
     # hidden axis; the kernel takes 256 where those divide it.

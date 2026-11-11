@@ -81,6 +81,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
 )
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
+from nn.ihc import ihc_collapse_rms_norm, ihc_mix_gemv
 from nn.mhc import (
     hyper_connection_gates,
     mhc_post,
@@ -2803,6 +2804,98 @@ struct Struct_hyper_connection_gates:
             pre_post_comb_b.to_tile_tensor[.float32, mut=False](),
             pre_post_comb_scale.to_tile_tensor[.float32, mut=False](),
             hc_eps,
+            context,
+        )
+
+
+@extensibility.register("hyper_connection.ihc.mix_gemv")
+struct Struct_ihc_mix_gemv:
+    """Registers the `hyper_connection.ihc.mix_gemv` graph op with the graph
+    compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        k: Int,
+        num_mix: Int,
+    ](
+        partials: Some[Output & Tensor],
+        streams: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(partials), TileTensorable)
+        comptime assert conforms_to(type_of(streams), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert type_of(partials).rank == 3
+        comptime assert type_of(streams).rank == 2
+        comptime assert type_of(weight).rank == 2
+        ihc_mix_gemv[k=k, num_mix=num_mix](
+            partials.to_tile_tensor[.float32](),
+            streams.to_tile_tensor[.bfloat16, mut=False](),
+            weight.to_tile_tensor[.float32, mut=False](),
+            context,
+        )
+
+
+@extensibility.register("hyper_connection.ihc.collapse_rms_norm")
+struct Struct_ihc_collapse_rms_norm:
+    """Registers the `hyper_connection.ihc.collapse_rms_norm` graph op with the graph
+    compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hc_mult: Int,
+        num_mix: Int,
+        num_splits: Int,
+        hidden: Int,
+    ](
+        output: Some[Output & Tensor],
+        gates: Some[Output & Tensor],
+        streams: Some[Input & Tensor],
+        partials: Some[Input & Tensor],
+        base: Some[Input & Tensor],
+        scale: Some[Input & Tensor],
+        gamma: Some[Input & Tensor],
+        hc_magnitude: Float32,
+        hc_eps: Float32,
+        streams_eps: Float32,
+        norm_eps: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(gates), TileTensorable)
+        comptime assert conforms_to(type_of(streams), TileTensorable)
+        comptime assert conforms_to(type_of(partials), TileTensorable)
+        comptime assert conforms_to(type_of(base), TileTensorable)
+        comptime assert conforms_to(type_of(scale), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(gates).rank == 2
+        comptime assert type_of(streams).rank == 3
+        comptime assert type_of(partials).rank == 3
+        comptime assert type_of(base).rank == 1
+        comptime assert type_of(scale).rank == 1
+        comptime assert type_of(gamma).rank == 1
+        ihc_collapse_rms_norm[
+            hc_mult=hc_mult,
+            num_mix=num_mix,
+            num_splits=num_splits,
+            hidden=hidden,
+        ](
+            output.to_tile_tensor[dtype](),
+            gates.to_tile_tensor[.float32](),
+            streams.to_tile_tensor[dtype, mut=False](),
+            partials.to_tile_tensor[.float32, mut=False](),
+            base.to_tile_tensor[.float32, mut=False](),
+            scale.to_tile_tensor[.float32, mut=False](),
+            gamma.to_tile_tensor[dtype, mut=False](),
+            hc_magnitude,
+            hc_eps,
+            streams_eps,
+            norm_eps,
             context,
         )
 
