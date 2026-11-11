@@ -2520,3 +2520,41 @@ kgen.func @same_width_sign_differs_does_not_fold(%v0 : !kgen.scalar<ui32>) -> !k
 }
 
 }
+
+// A store of a zero-sized aggregate writes no bytes, so the canonicalizer
+// drops it.
+// CHECK-LABEL: @store_zero_sized_struct
+// CHECK-NOT: pop.store
+kgen.func @store_zero_sized_struct() {
+  %slot = pop.stack_allocation 1 x !kgen.struct<()>
+  %empty = kgen.struct.create() : !kgen.struct<()>
+  pop.store %empty, %slot : !kgen.pointer<!kgen.struct<()>>
+  hlcf.return
+}
+
+// -----
+
+// The aggregate is recognized through nesting, so a store of one still goes.
+// CHECK-LABEL: @store_nested_zero_sized_struct
+// CHECK-NOT: pop.store
+kgen.func @store_nested_zero_sized_struct() {
+  %slot = pop.stack_allocation 1 x !kgen.struct<(struct<()>)>
+  %inner = kgen.struct.create() : !kgen.struct<()>
+  %outer = kgen.struct.create(%inner) : !kgen.struct<(struct<()>)>
+  pop.store %outer, %slot : !kgen.pointer<!kgen.struct<(struct<()>)>>
+  hlcf.return
+}
+
+// -----
+
+// An array is zero-sized when it has no elements, or when its element type is.
+// CHECK-LABEL: @store_zero_sized_arrays
+// CHECK-NOT: pop.store
+kgen.func @store_zero_sized_arrays(%empty: !pop.array<0, index>,
+                                   %ofEmpty: !pop.array<2, struct<()>>) {
+  %noElements = pop.stack_allocation 1 x !pop.array<0, index>
+  %emptyElements = pop.stack_allocation 1 x !pop.array<2, struct<()>>
+  pop.store %empty, %noElements : !kgen.pointer<array<0, index>>
+  pop.store %ofEmpty, %emptyElements : !kgen.pointer<array<2, struct<()>>>
+  hlcf.return
+}

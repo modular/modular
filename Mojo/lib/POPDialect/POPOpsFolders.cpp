@@ -1481,10 +1481,34 @@ SIMDSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
 // StoreOp
 //===----------------------------------------------------------------------===//
 
+/// True if `type` is recursively empty (zero-sized): an empty struct, a struct
+/// of recursively-empty fields, or an array thereof. False if unresolved.
+static bool isRecursivelyEmptyAggregate(Type type) {
+  if (auto structTy = dyn_cast<StructType>(type)) {
+    auto elementTypes = structTy.getElementTypes();
+    if (!elementTypes)
+      return false;
+    return llvm::all_of(*elementTypes, isRecursivelyEmptyAggregate);
+  }
+  if (auto arrayTy = dyn_cast<POP::ArrayType>(type)) {
+    std::optional<int64_t> size = arrayTy.getResolvedSize();
+    if (!size)
+      return false;
+    return *size == 0 || isRecursivelyEmptyAggregate(arrayTy.getElementType());
+  }
+  return false;
+}
+
 LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
   if (op.isAtomicOrMightBeVolatile()) {
     // Don't canonicalize atomic or volatile stores.
     return failure();
+  }
+
+  // A zero-sized store writes no bytes.
+  if (isRecursivelyEmptyAggregate(op.getArg().getType())) {
+    b.eraseOp(op);
+    return success();
   }
 
   // Storing an unknown to a pointer is a nop as it is legal to assume the
