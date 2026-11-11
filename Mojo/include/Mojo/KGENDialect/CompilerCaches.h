@@ -79,6 +79,17 @@ private:
   std::array<Shard, numShards> shards;
 };
 
+/// What `ParameterEvaluator` can do to an attribute or type.
+struct EvaluatorValueFacts {
+  /// The greatest depth of a free index reference, if the value has one.
+  std::optional<int32_t> freeIndexDepth;
+  /// True if a binding or a fold can change the value at any depth.
+  bool isRewritable = false;
+  /// True if the value holds an expression that the evaluation context folds.
+  /// Such an expression can fold further once more declarations resolve.
+  bool hasContextualExpr = false;
+};
+
 /// Caches for pure helpers of the parameter machinery. Every parser state on an
 /// `MLIRContext` shares one instance, owned through the `shared_ptr` that
 /// `getOrCreate` returns; it lives until the last owner releases it. Helpers
@@ -122,6 +133,9 @@ public:
   ShardedCache<std::tuple<const void *, int64_t, unsigned>> depthAdjust;
   /// `KGEN::isParameterizedType` results, keyed by the type's opaque pointer.
   ShardedCache<const void *, bool> parameterized;
+  /// Facts that `ParameterEvaluator` uses to skip values it cannot change,
+  /// keyed by the value's opaque pointer.
+  ShardedCache<const void *, EvaluatorValueFacts> evaluatorFacts;
 
 private:
   CompilerCaches() = default;
