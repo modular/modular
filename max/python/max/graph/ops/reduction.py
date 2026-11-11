@@ -20,6 +20,7 @@ from max._core import Operation
 from max._core.dialects import builtin, kgen, mo, rmo
 from max.dtype import DType
 
+from .. import dtype_promotion
 from ..dim import Dim, StaticDim
 from ..graph import Graph
 from ..shape import Shape
@@ -27,6 +28,7 @@ from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
 from .cast import cast
 from .constant import constant
+from .elementwise import _accum_type, exp, log
 from .elementwise import max as elementwise_max
 from .reshape import reshape
 from .shape_to_tensor import shape_to_tensor
@@ -433,3 +435,48 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
     return _reduce(mo.ReduceArgMaxOp, x, axis, out_dtype=DType.int64)
+
+
+def logsoftmax(value: TensorValueLike, axis: int = -1) -> TensorValue:
+    """Computes the log-softmax of a tensor along an axis.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("logsoftmax_example") as graph:
+            x = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+            graph.output(ops.logsoftmax(x))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(
+            result.to_numpy(), [-2.407, -1.407, -0.407], atol=1e-3
+        )
+
+    Args:
+        value: The input to the log-softmax computation. Must have a
+            floating-point dtype.
+        axis: The axis along which to compute the log-softmax. Defaults to the
+            final axis (``-1``).
+
+    Returns:
+        A ``TensorValue`` of the same shape and dtype as ``value``
+        representing the log-softmax of ``value`` computed along ``axis``.
+
+    Raises:
+        Error: If the input is not a tensor or has a non-floating-point dtype.
+    """
+    value = dtype_promotion._restrict_to_strong_dtypes(value)
+    # In the accumulation dtype: x - max - log(sum(exp(x - max))).
+    x = cast(value, _accum_type(value))
+    shifted = x - max(x, axis=axis)
+    return cast(shifted - log(sum(exp(shifted), axis=axis)), value.dtype)

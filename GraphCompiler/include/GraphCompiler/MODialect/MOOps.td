@@ -2026,41 +2026,6 @@ def MO_TanhOp : MO_ElementWiseUnaryFloatMonoTypeOp<"tanh", [MO_ExpensiveElementw
 }
 
 //===----------------------------------------------------------------------===//
-// Softmax-like ops
-//===----------------------------------------------------------------------===//
-
-class MO_SoftmaxLikeOp<string name, list<Trait> traits = []> :
-  MO_TensorOp<name, traits # [
-    AllDTypesMatch<["input", "result"]>,
-    AllShapeAttrsMatch<["input", "result"]>,
-    MO_ParamDeclaration,
-    MO_SingleDevice,
-    Pure,
-  ]> {
-  let arguments = (ins MO_Tensor:$input, IndexAttr:$axis);
-  let results = (outs MO_Tensor:$result);
-  let assemblyFormat = [{
-    `(` $input `)` `[` `axis` `=` $axis `]` attr-dict `:`
-    functional-type($input, results)
-  }];
-}
-
-def MO_LogSoftmaxOp : MO_SoftmaxLikeOp<"reduce.logsoftmax"> {
-  let summary = "Logarithmic softmax operation";
-  let description = [{
-    Returns `log(softmax(x, axis))`.
-
-    Example:
-
-    ```mlir
-      %arg: !mo.tensor<[2, 3], f32>
-      %axis: !mo.tensor<[], si64>
-      %res = mo.logsoftmax(%arg, %axis) : !mo.tensor<[2, 3], f32>
-    ```
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // Reduction ops
 //===----------------------------------------------------------------------===//
 

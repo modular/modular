@@ -87,10 +87,9 @@ _BOTH_DEVICES = ("cpu", "gpu")
 # Inner-axis matrix: precision-sensitive ops in both dtypes; exact
 # selection/compare ops (max/min_and_max/arg) in bfloat16 only.
 #
-# reduce_min/logsoftmax/argmin are deliberately absent: each is redundant with
-# a sibling already in this matrix (reduce_max, softmax, argmax respectively)
-# -- same monoid/combine mechanics, differing only in comparison direction or
-# the elementwise map after the shared OnlineLogSumExp reduce. reduce_mean
+# reduce_min/argmin are deliberately absent: each is redundant with a sibling
+# already in this matrix (reduce_max, argmax respectively) -- same
+# monoid/combine mechanics, differing only in comparison direction. reduce_mean
 # stays: it is a sum with a division by the symbolic axis length fused in. A bug in the
 # shared scaffolder path shows up in the sibling that's still tested; the two
 # confirmed bugs that genuinely needed both directions tested (the bool
@@ -102,6 +101,7 @@ _INNER_BOTH = [
     "reduce_mean",
     "reduce_product",
     "softmax",
+    "logsoftmax",
     "layer_norm",
     "rms_norm",
     "row_mean_of_squares",
@@ -319,13 +319,14 @@ class SoftmaxSpec:
         )
 
 
-# softmax compiles to a generated rowwise kernel with two folds. Rank 2 runs in
-# both precisions; ranks 1 and 5 check the row indexing. On a GPU, a static row
-# width keeps the row in registers when the SIMD width divides it (4096) and
-# streams it otherwise (557).
+# softmax and logsoftmax compile to a generated rowwise kernel with two folds.
+# Rank 2 runs in both precisions; ranks 1 and 5 check the row indexing. On a
+# GPU, a static row width keeps the row in registers when the SIMD width
+# divides it (4096) and streams it otherwise (557).
 SOFTMAX_SPECS = (
     [
-        SoftmaxSpec("softmax", dtype, 2, device)
+        SoftmaxSpec(op, dtype, 2, device)
+        for op in ("softmax", "logsoftmax")
         for device in _BOTH_DEVICES
         for dtype in (DType.float32, DType.bfloat16)
     ]

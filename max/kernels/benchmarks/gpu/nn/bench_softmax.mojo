@@ -20,9 +20,7 @@ from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.softmax import softmax_inline
-from builtin_kernels.rowwise_softmax import softmax
 
-from std.utils.coord import ComptimeInt
 from std.utils.index import IndexList
 
 
@@ -71,37 +69,6 @@ def bench_softmax_gpu[
     b.bench_function(
         bench_fn,
         BenchId("softmax", input_id=String(fn_name, "/", dtype, "/", shape)),
-    )
-
-    # The `algorithm.rowwise` overload — what `mo.composite.reduce.softmax`
-    # launches.
-    # Benched in the same process so both arms see identical clocks.
-    @inline(.always)
-    def kernel_launch_rowwise(ctx: DeviceContext[]) raises {mut out_buf, imm}:
-        @inline(.always)
-        def rowwise_input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-            return data_buf.load[width=width](coords)
-
-        softmax[dtype, rank, reduce_dim=rank - 1](
-            rowwise_input_fn,
-            Coord(shape),
-            ComptimeInt[cols](),
-            out_buf,
-            rank - 1,
-            context=ctx,
-        )
-
-    @inline(.always)
-    def bench_fn_rowwise(mut b: Bencher) raises {imm}:
-        bencher_iter_custom(b, kernel_launch_rowwise, ctx)
-
-    b.bench_function(
-        bench_fn_rowwise,
-        BenchId(
-            "softmax", input_id=String("softmax_rowwise/", dtype, "/", shape)
-        ),
     )
 
     ctx.synchronize()

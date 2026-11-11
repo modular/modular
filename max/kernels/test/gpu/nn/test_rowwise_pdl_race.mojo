@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""PDL race test for the row-wise kernels behind layer norm, softmax and the
-reduce-shaped argmax.
+"""PDL race test for the row-wise kernels behind layer norm, a softmax-shaped
+body (`_rowwise_softmax`) and the reduce-shaped argmax.
 
 A real PDL chain with no host sync between the launches:
 
@@ -58,7 +58,7 @@ from std.time import global_perf_counter_ns
 
 from builtin_kernels.rowwise_normalization import layer_norm
 from builtin_kernels.rowwise_reductions import reduce_argmax
-from builtin_kernels.rowwise_softmax import softmax
+from _rowwise_softmax import softmax
 from layout import Coord, TileTensor, row_major
 from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceContext, HostBuffer
@@ -158,8 +158,45 @@ struct Kind:
     comptime SOFTMAX = 2
 
 
-def run_case[
+def _run_body[
     kind: Int,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, alignment: Int
+        ](Coord, SIMD[dtype, width]) -> None
+    ),
+](
+    ctx: DeviceContext,
+    input_fn: InputFn,
+    output_fn: OutputFn,
+    rows: Int,
+    cols: Int,
+    gamma: TileTensor[mut=False, dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
+) raises:
+    var shape = Coord(Index(rows, cols))
+    comptime if kind == Kind.LAYER:
+        layer_norm[dtype, 2](
+            input_fn,
+            output_fn,
+            shape,
+            Int(cols),
+            gamma,
+            beta,
+            EPS.cast[dtype](),
+            ctx,
+        )
+    else:
+        softmax[dtype](input_fn, output_fn, shape, Int(cols), ctx)
+
+
+def run_case[
+    kind: Int
 ](
     ctx: DeviceContext,
     label: String,
@@ -229,19 +266,7 @@ def run_case[
             attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_END),
         )
 
-        comptime if kind == Kind.LAYER:
-            layer_norm[dtype, 2](
-                input_fn,
-                output_fn,
-                Coord(shape),
-                Int(cols),
-                gamma,
-                beta,
-                EPS.cast[dtype](),
-                ctx,
-            )
-        else:
-            softmax[dtype, 2](input_fn, Coord(shape), cols, out_t, 1, ctx)
+        _run_body[kind](ctx, input_fn, output_fn, rows, cols, gamma, beta)
 
         ctx.enqueue_function[consumer[dtype]](
             out_d,
@@ -482,7 +507,7 @@ def _report_release(
 
 
 def run_release_case[
-    kind: Int,
+    kind: Int
 ](
     ctx: DeviceContext,
     label: String,
@@ -539,19 +564,7 @@ def run_release_case[
 
     ctx.enqueue_memset[DType.int32](flags_d, 0)
     ctx.synchronize()
-    comptime if kind == Kind.LAYER:
-        layer_norm[dtype, 2](
-            input_fn,
-            output_fn,
-            Coord(shape),
-            Int(cols),
-            gamma,
-            beta,
-            EPS.cast[dtype](),
-            ctx,
-        )
-    else:
-        softmax[dtype, 2](input_fn, Coord(shape), cols, out_t, 1, ctx)
+    _run_body[kind](ctx, input_fn, output_fn, rows, cols, gamma, beta)
     ctx.enqueue_function[release_probe](
         flags,
         grid_dim=1,

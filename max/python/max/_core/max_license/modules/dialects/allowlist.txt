@@ -193,7 +193,6 @@ MO_LayerNormOp                                       # ReduceLayerNormOp
 MO_LayoutAttr                                        # LayoutAttr
 MO_Log1pOp                                           # Log1pOp
 MO_LogOp                                             # LogOp
-MO_LogSoftmaxOp                                      # ReduceLogsoftmaxOp
 MO_MatmulOp                                          # MatmulOp
 MO_MaxOp                                             # MaxOp
 MO_MaxPoolCeilOp                                     # MaxPoolCeilModeTrueOp

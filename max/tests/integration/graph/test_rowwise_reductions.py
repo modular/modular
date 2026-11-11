@@ -23,7 +23,7 @@ across a few small column counts (even + odd), on the inner axis and -- for the
 pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
 float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
 group (see :data:`WIDE_CPU_SPECS`) for what only the widest element can reach.
-``rms_norm`` and ``softmax`` also run on edge-case shapes
+``rms_norm``, ``softmax`` and ``logsoftmax`` also run on edge-case shapes
 (:data:`RMS_NORM_SPECS`, :data:`SOFTMAX_SPECS`): no rows, odd, many and long
 rows (the GPU split-K and CPU split-axis tiers), and ranks 1 and 5; for
 ``rms_norm``, static row widths and both ``multiply_before_cast`` orders with a

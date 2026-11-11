@@ -117,7 +117,7 @@ from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
 from .reduce_scatter_rms_norm import reduce_scatter_rms_norm
-from .reduction import argmax, argmin, mean, prod, sum
+from .reduction import argmax, argmin, logsoftmax, mean, prod, sum
 from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave
