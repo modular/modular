@@ -39,6 +39,7 @@ from .kimi_delta import (
     kda_ring_record_elements,
     kda_state_fold,
     kda_verify_ring,
+    kda_verify_ring_conv,
 )
 from .mamba2_replay_fold import mamba2_replay_fold
 from .mamba2_ssd_scan import (
@@ -71,6 +72,7 @@ __all__ = [
     "kda_ring_record_elements",
     "kda_state_fold",
     "kda_verify_ring",
+    "kda_verify_ring_conv",
     "mamba2_replay_fold",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows",
