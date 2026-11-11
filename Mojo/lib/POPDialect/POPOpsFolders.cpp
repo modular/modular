@@ -25,6 +25,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/Support/MathExtras.h"
 #include <mlir/IR/Diagnostics.h>
 #include <unistd.h>
 
@@ -468,11 +469,10 @@ OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
 
   auto findOffsetValueAt = [&](GlobalConstantOp cst,
                                Value offset) -> OpFoldResult {
-    APInt idx;
-    if (!mlir::matchPattern(offset, mlir::m_ConstantInt(&idx)) ||
-        idx.isNegative())
+    std::optional<int64_t> idx = matchConstantIndex(offset);
+    if (!idx || *idx < 0)
       return {};
-    return findValueAt(cst, idx.getLimitedValue());
+    return findValueAt(cst, *idx);
   };
 
   // `load(gep(global_constant()))` is a load of a specific element, if the gep
@@ -1579,7 +1579,7 @@ ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "operation requires a target model");
 
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
-  auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  std::optional<int64_t> offset = getConstantIndex(operands[1]);
   if (!ptr || !offset)
     return ErrorTree(getLoc(), "non-constant inputs");
   // Stride by the alloc size, matching parametric_interpret and the LLVM GEP
@@ -1588,8 +1588,8 @@ ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
       state.getTarget(), cast<PointerType>(ptr.getType()).getElementType());
   if (!elSize)
     return ErrorTree(getLoc(), "could not query pointer element size");
-  return state.mapResults(PointerAttr::get(
-      ptr.getAddr() + *elSize * offset.getInt(), ptr.getType()));
+  return state.mapResults(
+      PointerAttr::get(ptr.getAddr() + *elSize * *offset, ptr.getType()));
 }
 
 ErrorTreeOrSuccess
@@ -1599,7 +1599,7 @@ OffsetOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "operation requires a target model");
 
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
-  auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  std::optional<int64_t> offset = getConstantIndex(operands[1]);
   if (!ptr || !offset)
     return ErrorTree(getLoc(), "non-constant inputs");
   auto ptrType = state.getReboundType(ptr.getType());
@@ -1610,15 +1610,11 @@ OffsetOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (!elSize)
     return ErrorTree(getLoc(), "could not query pointer element size");
   return state.mapResults(
-      PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(), ptrType));
+      PointerAttr::get(ptr.getAddr() + *elSize * *offset, ptrType));
 }
 
 OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
-  auto offset = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
-  if (!offset)
-    return {};
-
-  if (offset.getInt() != 0)
+  if (getConstantIndex(adaptor.getIndex()) != 0)
     return {};
 
   return getPtr();
@@ -1632,34 +1628,35 @@ LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
     if (!mlir::matchPattern(gep.getIndex(), mlir::m_Zero()))
       return b.notifyMatchFailure(op, "not a constant offset");
 
-    b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), gep.getArray(),
-                                     op.getIndex());
+    Value index = CastToBuiltinOp::create(b, op.getLoc(), b.getIndexType(),
+                                          op.getIndex());
+    b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), gep.getArray(), index);
     return success();
   }
 
   // Canonicalize `%ptr[%c0][%c1] -> %ptr[%c0 + %c1]`, where the indices are
   // constants.
-  APInt c1;
-  if (!mlir::matchPattern(op.getIndex(), mlir::m_ConstantInt(&c1)))
+  std::optional<int64_t> c1 = matchConstantIndex(op.getIndex());
+  if (!c1)
     return b.notifyMatchFailure(op, "not a constant offset");
   auto parent = op.getPtr().getDefiningOp<OffsetOp>();
   if (!parent)
     return b.notifyMatchFailure(op, "parent is not an offset");
-  APInt c0;
-  if (!mlir::matchPattern(parent.getIndex(), mlir::m_ConstantInt(&c0)))
+  std::optional<int64_t> c0 = matchConstantIndex(parent.getIndex());
+  if (!c0)
     return b.notifyMatchFailure(op, "parent is not a constant offset");
 
   // However unlikely, don't canonicalize if the arithmetic overflows. Note that
   // it is always valid to fold addition of index values, regardless of width.
-  bool ov = false;
-  APInt newOffset = c0.sadd_ov(c1, ov);
-  if (ov)
+  int64_t newOffset;
+  if (llvm::AddOverflow(*c0, *c1, newOffset))
     return b.notifyMatchFailure(op, "offset addition overflows");
 
+  auto indexTy = SIMDType::getScalarIndexType(b.getContext());
   b.replaceOpWithNewOp<OffsetOp>(
       op, parent.getPtr(),
       ParamConstantOp::create(b, op.getLoc(),
-                              b.getIndexAttr(newOffset.getSExtValue())));
+                              SIMDAttr::get(uint64_t(newOffset), indexTy)));
   return success();
 }
 

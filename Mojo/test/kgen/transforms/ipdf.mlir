@@ -65,7 +65,8 @@ kgen.func @aliasing_none(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index
                          %arg2: !kgen.pointer<struct<(index)>>, %arg3: !kgen.pointer<array<2, index>>) {
   %idx1 = index.constant 1
   %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<index> to !kgen.pointer<none>
-  %1 = pop.offset %arg1[%idx1] : !kgen.pointer<index>
+  %offidx1 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %1 = pop.offset %arg1[%offidx1] : !kgen.pointer<index>
   %2 = kgen.struct.gep %arg2[0] : <struct<(index)>>
   %3 = pop.array.gep %arg3[%idx1] : <array<2, index>>
   hlcf.return
@@ -77,7 +78,8 @@ kgen.func @aliasing_effect(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<ind
                            %arg2: !kgen.pointer<struct<(index)>>, %arg3: !kgen.pointer<array<2, index>>) {
   %idx1 = index.constant 1
   %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<index> to !kgen.pointer<i64>
-  %1 = pop.offset %arg1[%idx1] : !kgen.pointer<index>
+  %offidx2 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %1 = pop.offset %arg1[%offidx2] : !kgen.pointer<index>
   %2 = kgen.struct.gep %arg2[0] : <struct<(index)>>
   %3 = pop.array.gep %arg3[%idx1] : <array<2, index>>
 
@@ -171,7 +173,8 @@ kgen.func @alias_unknown_struct_gep(%arg0: !kgen.pointer<index>) {
 kgen.func @alias_unknown_offset(%arg0: !kgen.pointer<index>) {
   %0 = "unknown.ptr"() : () -> !kgen.pointer<index>
   %idx1 = index.constant 1
-  %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
+  %offidx3 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %1 = pop.offset %0[%offidx3] : !kgen.pointer<index>
   pop.store %idx1, %1 : !kgen.pointer<index>
   hlcf.return
 }

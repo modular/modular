@@ -228,7 +228,8 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
   // CHECK-NEXT:   [[V4:%.*]] = pop.cast [[V3]] : !kgen.scalar<f32> to !kgen.scalar<index>
   // CHECK-NEXT:   [[V5:%.*]] = pop.cast_to_builtin [[V4]] : !kgen.scalar<index> to index
   // CHECK-NEXT:   [[V6:%.*]] = index.add %arg2, [[V5]]
-  // CHECK-NEXT:   [[V7:%.*]] = pop.offset %arg3[%idx1] : !kgen.pointer<scalar<f32>>
+  // CHECK-NEXT:   [[C1:%.*]] = kgen.param.constant: scalar<index> = <1>
+  // CHECK-NEXT:   [[V7:%.*]] = pop.offset %arg3[[[C1]]] : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V2]] : index)] [retvals ([[V6]] : index)] [iterargs ([[V7]] : !kgen.pointer<scalar<f32>>)]
   // CHECK-NEXT: } <unrollLevel = full>
 
@@ -245,7 +246,8 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
     %5 = pop.cast %4 : !kgen.scalar<f32> to !kgen.scalar<index>
     %6 = pop.cast_to_builtin %5 : !kgen.scalar<index> to index
     %7 = index.add %arg2, %6
-    %8 = pop.offset %arg1[%idx1] : !kgen.pointer<scalar<f32>>
+    %offidx1 = kgen.param.constant: scalar<index> = <1>
+    %8 = pop.offset %arg1[%offidx1] : !kgen.pointer<scalar<f32>>
     hlcf.continue %3, %8, %7 : index, !kgen.pointer<scalar<f32>>, index
   } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return %1 : index

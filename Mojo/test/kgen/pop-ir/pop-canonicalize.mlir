@@ -1791,7 +1791,7 @@ kgen.func @dtype_from_ui8() -> !kgen.dtype {
 // CHECK: ([[ARG0:%.*]]:
 kgen.func @fold_offset(%arg0: !kgen.pointer<index>) -> (!kgen.pointer<index>) {
   // CHECK-NEXT: hlcf.return [[ARG0]]
-  %0 = kgen.param.constant = <0>
+  %0 = kgen.param.constant: scalar<index> = <0>
   %1 = pop.offset %arg0[%0] : !kgen.pointer<index>
   hlcf.return %1 : !kgen.pointer<index>
 }
@@ -1829,12 +1829,13 @@ kgen.func @string_ops() -> index {
 
 // CHECK-LABEL: @offset_of_offset
 kgen.func @offset_of_offset(%arg0: !kgen.pointer<index>) -> !kgen.pointer<index> {
-  %idx3 = index.constant 3
+  %idx3 = kgen.param.constant: scalar<index> = <3>
   %0 = pop.offset %arg0[%idx3] : !kgen.pointer<index>
-  %idx200 = index.constant 200
-  // CHECK: %0 = pop.offset %arg0[%index203]
+  %idx200 = kgen.param.constant: scalar<index> = <200>
+  // CHECK: [[C203:%.*]] = kgen.param.constant: scalar<index> = <203>
+  // CHECK: [[OFF:%.*]] = pop.offset %arg0[[[C203]]]
   %1 = pop.offset %0[%idx200] : !kgen.pointer<index>
-  // CHECK: return %0
+  // CHECK: return [[OFF]]
   hlcf.return %1 : !kgen.pointer<index>
 }
 
@@ -1849,7 +1850,8 @@ kgen.func @array_gep_offset(%arg1: !pop.array<4, index>, %arg2: index) -> index 
   // Fold gep+offset into just gep.
   // CHECK: %1 = pop.array.gep %0[%arg1]
   // CHECK: %2 = pop.load %1
-  %offset = pop.offset %gep[%arg2] : !kgen.pointer<index>
+  %offidx4 = pop.cast_from_builtin %arg2 : index to !kgen.scalar<index>
+  %offset = pop.offset %gep[%offidx4] : !kgen.pointer<index>
   %load = pop.load %offset : !kgen.pointer<index>
   hlcf.return %load : index
 }

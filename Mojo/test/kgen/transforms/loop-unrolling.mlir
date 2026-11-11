@@ -150,7 +150,7 @@ kgen.func @loop_carried_dependency() {
 
 // CHECK-LABEL: @loop_has_side_effect
 kgen.func @loop_has_side_effect(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)>) -> index {
-  // CHECK: [[IDX:%.*]] = index.constant 1
+  // CHECK: [[IDX:%.*]] = kgen.param.constant: scalar<index> = <1>
   // CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<scalar<f32>>, index, dtype)>
   // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align<1> : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !kgen.scalar<f32> to !kgen.scalar<index>
@@ -172,7 +172,8 @@ kgen.func @loop_has_side_effect(%arg0: !kgen.struct<(pointer<scalar<f32>>, index
     %5 = pop.cast %4 : !kgen.scalar<f32> to !kgen.scalar<index>
     %6 = pop.cast_to_builtin %5 : !kgen.scalar<index> to index
     %7 = index.add %arg1, %6
-    %8 = pop.offset %arg2[%idx1] : !kgen.pointer<scalar<f32>>
+    %offidx1 = kgen.param.constant: scalar<index> = <1>
+    %8 = pop.offset %arg2[%offidx1] : !kgen.pointer<scalar<f32>>
     hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !kgen.pointer<scalar<f32>>)]
   } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return %1 : index
@@ -195,7 +196,8 @@ kgen.func @single_iteration_no_decorator(%arg0: !kgen.struct<(pointer<scalar<f32
     %5 = pop.cast %4 : !kgen.scalar<f32> to !kgen.scalar<index>
     %6 = pop.cast_to_builtin %5 : !kgen.scalar<index> to index
     %7 = index.add %arg1, %6
-    %8 = pop.offset %arg2[%idx1] : !kgen.pointer<scalar<f32>>
+    %offidx2 = kgen.param.constant: scalar<index> = <1>
+    %8 = pop.offset %arg2[%offidx2] : !kgen.pointer<scalar<f32>>
     hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !kgen.pointer<scalar<f32>>)]
 
   }

@@ -12,14 +12,14 @@ kgen.func @bitcast() -> !kgen.scalar<si64> {
 // CHECK-NEXT: hlcf.return %[[OUT]]
 
 kgen.func @bitcast_with_offset() -> !kgen.scalar<si64> {
-  %one = kgen.param.constant = <1>
-  %two = kgen.param.constant = <2>
 
   %0 = pop.global_constant: array<3, scalar<si64>> = <[2, 3, 4]>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<array<3, scalar<si64>>> to !kgen.pointer<scalar<si64>>
 
-  %2 = pop.offset %1[%one] : !kgen.pointer<scalar<si64>>
-  %3 = pop.offset %1[%two] : !kgen.pointer<scalar<si64>>
+  %offidx1 = kgen.param.constant: scalar<index> = <1>
+  %2 = pop.offset %1[%offidx1] : !kgen.pointer<scalar<si64>>
+  %offidx2 = kgen.param.constant: scalar<index> = <2>
+  %3 = pop.offset %1[%offidx2] : !kgen.pointer<scalar<si64>>
 
   %load1 = pop.load %2 : !kgen.pointer<scalar<si64>>
   %load2 = pop.load %3 : !kgen.pointer<scalar<si64>>
@@ -33,12 +33,12 @@ kgen.func @bitcast_with_offset() -> !kgen.scalar<si64> {
 // CHECK-NEXT: hlcf.return %[[OUT]]
 
 kgen.func @bitcast_muli_use_offset() -> (!kgen.scalar<si64>, !kgen.pointer<scalar<si64>>) {
-  %one = kgen.param.constant = <1>
-  %two = kgen.param.constant = <2>
   %0 = pop.global_constant: array<3, scalar<si64>> = <[2, 3, 4]>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<array<3, scalar<si64>>> to !kgen.pointer<scalar<si64>>
-  %2 = pop.offset %1[%one] : !kgen.pointer<scalar<si64>>
-  %3 = pop.offset %1[%two] : !kgen.pointer<scalar<si64>>
+  %offidx3 = kgen.param.constant: scalar<index> = <1>
+  %2 = pop.offset %1[%offidx3] : !kgen.pointer<scalar<si64>>
+  %offidx4 = kgen.param.constant: scalar<index> = <2>
+  %3 = pop.offset %1[%offidx4] : !kgen.pointer<scalar<si64>>
   %load = pop.load %3 : !kgen.pointer<scalar<si64>>
   hlcf.return %load, %2 : !kgen.scalar<si64>, !kgen.pointer<scalar<si64>>
 }
@@ -80,10 +80,10 @@ kgen.func @array_neg_index() -> !kgen.scalar<si64> {
 // CHECK: pop.global_constant
 
 kgen.func @bitcast_neg_index() -> !kgen.scalar<si64> {
-  %ntwo = kgen.param.constant = <-2>
   %0 = pop.global_constant: array<3, scalar<si64>> = <[2, 3, 4]>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<array<3, scalar<si64>>> to !kgen.pointer<scalar<si64>>
-  %2 = pop.offset %1[%ntwo] : !kgen.pointer<scalar<si64>>
+  %offidx5 = kgen.param.constant: scalar<index> = <-2>
+  %2 = pop.offset %1[%offidx5] : !kgen.pointer<scalar<si64>>
   %load = pop.load %2 : !kgen.pointer<scalar<si64>>
   hlcf.return %load : !kgen.scalar<si64>
 }

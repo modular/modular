@@ -622,7 +622,7 @@ kgen.generator @pop_load_alignment_generator<alignment>(%ptr: !kgen.pointer<scal
 }
 
 // CHECK-LABEL: @pop_offset
-kgen.generator @pop_offset<type: dtype>(%p: !kgen.pointer<scalar<f32>>, %idx: index) {
+kgen.generator @pop_offset<type: dtype>(%p: !kgen.pointer<scalar<f32>>, %idx: !kgen.scalar<index>) {
   // pop.offset %{{.*}}[{{.*}}] : !kgen.pointer<scalar<f32>>
   %0 = pop.offset %p[%idx] : !kgen.pointer<scalar<f32>>
   hlcf.return
@@ -660,7 +660,7 @@ kgen.generator @pop_generic_load_store<ty: type, dt: dtype, size>(
 kgen.generator @pop_generic_offset<ty: type>(
     %p0: !kgen.pointer<ty>,
     %p1: !kgen.pointer<simd<4, f32>>,
-    %i: index) {
+    %i: !kgen.scalar<index>) {
   // CHECK: pop.offset %{{.*}} : !kgen.pointer<ty>
   %0 = pop.offset %p0[%i] : !kgen.pointer<ty>
   // CHECK: pop.offset %{{.*}} : !kgen.pointer<simd<4, f32>>

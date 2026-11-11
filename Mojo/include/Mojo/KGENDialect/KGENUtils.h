@@ -737,6 +737,22 @@ inline bool isAllIntLikeOne(SIMDAttr simdAttr) {
                       [](const DTypeValue &v) { return v.getData().isOne(); });
 }
 
+/// The value of a constant index: a builtin `index` or a `!kgen.scalar<index>`.
+inline std::optional<int64_t> getConstantIndex(mlir::Attribute attr) {
+  if (auto integer = dyn_cast_if_present<mlir::IntegerAttr>(attr))
+    return integer.getInt();
+  auto simd = dyn_cast_if_present<SIMDAttr>(attr);
+  if (!simd || simd.getValues().size() != 1)
+    return std::nullopt;
+  std::optional<KGENDType> dtype = simd.getType().getResolvedDType();
+  if (!dtype || !dtype->isIndex())
+    return std::nullopt;
+  return simd.getValues().front().getIndexVal();
+}
+
+/// The constant value of an index-typed SSA value, if it is a constant.
+std::optional<int64_t> matchConstantIndex(mlir::Value value);
+
 //===----------------------------------------------------------------------===//
 // Constraint Utilities
 //===----------------------------------------------------------------------===//

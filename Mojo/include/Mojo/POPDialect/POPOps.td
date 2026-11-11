@@ -1193,7 +1193,7 @@ def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr, Index:$index);
+  let arguments = (ins PointerType:$ptr, IndexScalar:$index);
   let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))

@@ -350,7 +350,7 @@ kgen.func @store_with_atomic(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scalar<s
 }
 
 // CHECK-LABEL: @offset
-kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: index) -> !kgen.pointer<scalar<f32>> {
+kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: !kgen.scalar<index>) -> !kgen.pointer<scalar<f32>> {
   // CHECK: llvm.getelementptr inbounds %{{.*}}[{{.*}}]
   %0 = pop.offset %p[%i] : !kgen.pointer<scalar<f32>>
   hlcf.return %0 : !kgen.pointer<scalar<f32>>

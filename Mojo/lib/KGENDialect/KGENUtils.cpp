@@ -34,6 +34,7 @@
 #include "Support/ML/DType.h"
 #include "Support/Preprocessor.h"
 #include "Support/STLExtras.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringExtras.h"
@@ -3160,6 +3161,13 @@ static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
   for (const DTypeValue &value : simd.getValues())
     values.push_back(fn(value));
   return AttrT::get(type, values);
+}
+
+std::optional<int64_t> KGEN::matchConstantIndex(Value value) {
+  Attribute attr;
+  if (!matchPattern(value, m_Constant(&attr)))
+    return std::nullopt;
+  return getConstantIndex(attr);
 }
 
 OpFoldResult KGEN::foldCastToBuiltin(TypedAttr input, Type resultType) {

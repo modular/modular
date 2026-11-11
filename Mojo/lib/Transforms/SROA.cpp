@@ -15,6 +15,7 @@
 
 #include "Mojo/HLCFDialect/Analysis/CFG.h"
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/POPDialect/POPTypes.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -624,14 +625,12 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
 
       // We only support offsets with constant terms.
       if (auto offset = dyn_cast<POP::OffsetOp>(user)) {
-        APInt index;
-        if (!matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index)) ||
-            index.isNegative())
+        std::optional<int64_t> index = matchConstantIndex(offset.getIndex());
+        if (!index || *index < 0)
           return false;
 
         // Oddly this comes up. Guard against out of range accesses.
-        if (static_cast<int64_t>(index.getLimitedValue()) >=
-            cast<IntegerAttr>(alloc.getCount()).getInt())
+        if (*index >= cast<IntegerAttr>(alloc.getCount()).getInt())
           return false;
 
         // Offsets are aliases to the original stack allocation, not element
@@ -683,9 +682,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
     if (auto bitcast = dyn_cast<PointerBitcastOp>(user)) {
       rewriteRoundTrip(bitcast.getResult(), newAllocas[0], toDelete);
     } else if (auto offset = dyn_cast<OffsetOp>(user)) {
-      APInt index;
-      matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index));
-      offset.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
+      std::optional<int64_t> index = matchConstantIndex(offset.getIndex());
+      offset.replaceAllUsesWith(newAllocas[*index]);
     } else if (auto gep = dyn_cast<ArrayGEPOp>(user)) {
       // An array GEP is implicitly on the first element so swap it for a GEP on
       // that allocation. We don't need to check the index because if it is

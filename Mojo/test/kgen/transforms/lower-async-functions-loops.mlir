@@ -748,13 +748,13 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   }
   kgen.func @offset(%arg0: i1 imm, %arg1: !kgen.pointer<none> byref_result) async no_inline {
     // CHECK-LABEL: kgen.func @offset_resume
-    // CHECK:      [[V1:%.*]] = index.constant 1
+    // CHECK:      [[V1:%.*]] = kgen.param.constant: scalar<index> = <1>
     // CHECK-NEXT: [[V3:%.*]] = kgen.struct.gep %arg0[[[#FRAME8:]]]
     // CHECK-NEXT: [[V4:%.*]] = pop.pointer.bitcast [[V3]]
     // CHECK-NEXT: [[V5:%.*]] = pop.offset [[V4]][[[V1]]] : !kgen.pointer<index>
     %0 = pop.stack_allocation 2 x index marked
     pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<index>
-    %idx1 = index.constant 1
+    %idx1 = kgen.param.constant: scalar<index> = <1>
     %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
     hlcf.loop {
       %arg0_sb = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
@@ -766,7 +766,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       co.suspend (%hdl) {
         co.suspend.end
       }
-      // CHECK:      [[V6:%.*]] = index.constant 1
+      // CHECK:      [[V6:%.*]] = kgen.param.constant: scalar<index> = <1>
       // CHECK-NEXT: [[V7:%.*]] = kgen.struct.gep %arg0[[[#FRAME8]]]
       // CHECK-NEXT: [[V8:%.*]] = pop.pointer.bitcast [[V7]]
       // CHECK-NEXT: [[V9:%.*]] = pop.offset [[V8]][[[V6]]] : !kgen.pointer<index>
@@ -776,7 +776,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       %3 = kgen.call @doSomething(%4) : (index) -> index
       hlcf.continue
     }
-    // CHECK:      [[V12:%.*]] = index.constant 1
+    // CHECK:      [[V12:%.*]] = kgen.param.constant: scalar<index> = <1>
     // CHECK-NEXT: [[V13:%.*]] = kgen.struct.gep %arg0[[[#FRAME8]]]
     // CHECK-NEXT: [[V14:%.*]] = pop.pointer.bitcast [[V13]]
     // CHECK-NEXT: [[V15:%.*]] = pop.offset [[V14]][[[V12]]] : !kgen.pointer<index>

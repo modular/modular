@@ -1226,6 +1226,8 @@ def KGEN_SIMDType : KGENType<"SIMD", "simd", [
     bool isScalar() const { return getResolvedSize() == 1; }
     /// Returns the `!kgen.scalar<bool>` type (a SIMD of size 1 and bool dtype).
     static SIMDType getScalarBoolType(MLIRContext *ctx);
+    /// Returns the `!kgen.scalar<index>` type.
+    static SIMDType getScalarIndexType(MLIRContext *ctx);
 
     void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];

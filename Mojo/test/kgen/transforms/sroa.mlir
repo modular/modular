@@ -130,9 +130,9 @@ kgen.func @struct_of_structs(%arg1: !kgen.struct<(struct<(scalar<index>)>, struc
 // CHECK: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
 // MEM2REG: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
 kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !kgen.pointer<index>) {
-  %0 = kgen.param.constant = <0>
-  %1 = kgen.param.constant = <1>
-  %2 = kgen.param.constant = <2>
+  %0 = kgen.param.constant: scalar<index> = <0>
+  %1 = kgen.param.constant: scalar<index> = <1>
+  %2 = kgen.param.constant: scalar<index> = <2>
 
   %alloc = pop.stack_allocation 3 x index
 
@@ -144,9 +144,9 @@ kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !kgen.
   // CHECK-NEXT: pop.store %[[ARG2]], %[[MEM3]] : !kgen.pointer<index>
 
   // Mem2Reg should eliminate everything
-  // MEM2REG-NEXT: kgen.param.constant = <0>
-  // MEM2REG-NEXT: kgen.param.constant = <1>
-  // MEM2REG-NEXT: kgen.param.constant = <2>
+  // MEM2REG-NEXT: kgen.param.constant: scalar<index> = <0>
+  // MEM2REG-NEXT: kgen.param.constant: scalar<index> = <1>
+  // MEM2REG-NEXT: kgen.param.constant: scalar<index> = <2>
   // MEM2REG-NEXT: pop.store %[[ARG2]], %[[OUT_PTR]] : !kgen.pointer<index>
   // MEM2REG-NEXT: hlcf.return
 
@@ -169,7 +169,7 @@ kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !kgen.
 // CHECK-LABEL: @bigger_stack
 // CHECK: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
 kgen.func @bigger_stack(%val1: index, %output : !kgen.pointer<index>) {
-  %0 = kgen.param.constant = <0>
+  %0 = kgen.param.constant: scalar<index> = <0>
 
   // Larger stacks should not be touched.
   // CHECK: pop.stack_allocation 512 x index
@@ -215,6 +215,7 @@ kgen.func @n_stack_store(%val1: index, %output : !kgen.pointer<index>) {
 kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !kgen.pointer<index>) {
   %0 = kgen.param.constant = <0>
   %1 = kgen.param.constant = <1>
+  %offidx1 = kgen.param.constant: scalar<index> = <1>
 
   // CHECK: pop.stack_allocation 1 x index
   // CHECK-NEXT: pop.stack_allocation 1 x index
@@ -234,7 +235,7 @@ kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !kgen.pointer<in
 
   %alloc = pop.stack_allocation 5 x !pop.array<3, index>
   pop.store %val, %alloc : !kgen.pointer<array<3, index>>
-  %offset = pop.offset %alloc[%1] : !kgen.pointer<array<3, index>>
+  %offset = pop.offset %alloc[%offidx1] : !kgen.pointer<array<3, index>>
   pop.store %val, %offset : !kgen.pointer<array<3, index>>
 
   %gep1 = pop.array.gep %alloc[%0] : <array<3, index>>
@@ -254,7 +255,7 @@ kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !kgen.pointer<in
 // CHECK: (%[[ARG0:.*]]: !kgen.struct<(index, index)>, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
 // MEM2REG: (%[[ARG0:.*]]: !kgen.struct<(index, index)>, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
 kgen.func @n_stack_structs(%val: !kgen.struct<(index, index)>, %output : !kgen.pointer<index>) {
-  %1 = kgen.param.constant = <1>
+  %1 = kgen.param.constant: scalar<index> = <1>
 
   %alloc = pop.stack_allocation 5 x !kgen.struct<(index, index)>
   pop.store %val, %alloc : !kgen.pointer<struct<(index, index)>>
@@ -316,10 +317,10 @@ kgen.func @negArrayGep() {
 
 // CHECK-LABEL: kgen.func @negOffsetGep
 kgen.func @negOffsetGep() {
-  // CHECK: kgen.param.constant = <-1>
+  // CHECK: kgen.param.constant: scalar<index> = <-1>
   // CHECK-NEXT: pop.stack_allocation 2 x index
   // CHECK-NEXT: pop.offset
-  %0 = kgen.param.constant = <-1>
+  %0 = kgen.param.constant: scalar<index> = <-1>
   %alloc = pop.stack_allocation 2 x index
   %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
   hlcf.return
@@ -338,10 +339,10 @@ kgen.func @oobArrayGep() {
 
 // CHECK-LABEL: kgen.func @oobOffsetGep
 kgen.func @oobOffsetGep() {
-  // CHECK: kgen.param.constant = <2>
+  // CHECK: kgen.param.constant: scalar<index> = <2>
   // CHECK-NEXT: pop.stack_allocation 2 x index
   // CHECK-NEXT: pop.offset
-  %0 = kgen.param.constant = <2>
+  %0 = kgen.param.constant: scalar<index> = <2>
   %alloc = pop.stack_allocation 2 x index
   %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
   hlcf.return
@@ -390,7 +391,7 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
 // CHECK-LABEL: @offset_of_offset
 kgen.func @offset_of_offset() -> !kgen.pointer<index> {
   %0 = pop.stack_allocation 2 x index
-  %idx1 = index.constant 1
+  %idx1 = kgen.param.constant: scalar<index> = <1>
   %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
   hlcf.return %1 : !kgen.pointer<index>
 }
@@ -478,7 +479,7 @@ kgen.generator @unresolved_index_struct_gep<I: index>(%arg0: !kgen.struct<(index
 
 
 // CHECK-LABEL: @array_offset
-kgen.func @array_offset(%arg1: !pop.array<4, index>, %arg2: index) -> index {
+kgen.func @array_offset(%arg1: !pop.array<4, index>, %arg2: !kgen.scalar<index>) -> index {
   %0 = kgen.param.constant = <0>
   %array = pop.stack_allocation 1 x array<4, index>
   // Offset from an element should not be touched.

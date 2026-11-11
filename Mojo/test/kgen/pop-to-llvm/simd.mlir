@@ -425,7 +425,7 @@ kgen.func @simd_shuffle_1xf32(%a: !kgen.scalar<f32>, %b: !kgen.scalar<f32>) -> (
 }
 
 // CHECK-LABEL: @simd_load_store
-kgen.func @simd_load_store(%i: index, %p0: !kgen.pointer<simd<4, f32>>) {
+kgen.func @simd_load_store(%i: !kgen.scalar<index>, %p0: !kgen.pointer<simd<4, f32>>) {
   // CHECK: llvm.getelementptr inbounds %{{.*}} : (!llvm.ptr, {{.*}}) -> !llvm.ptr
   %0 = pop.offset %p0[%i] : !kgen.pointer<simd<4, f32>>
   // CHECK: llvm.load

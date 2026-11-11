@@ -1217,7 +1217,7 @@ struct Pointer[
         """
         return {
             _mlir_value = __mlir_op.`pop.offset`(
-                self._mlir_value, index(offset).__mlir_index__()
+                self._mlir_value, index(offset)._mlir_value
             )
         }
 
