@@ -19,6 +19,7 @@ import json
 import logging
 import math
 import statistics
+from collections.abc import Sequence
 from unittest.mock import MagicMock
 
 import pytest
@@ -90,6 +91,38 @@ def _make_mock_tokenizer(token_counts: dict[str, int]) -> MagicMock:
     return tokenizer
 
 
+def _calculate(
+    outputs: Sequence[RequestFuncOutput],
+    *,
+    dur_s: float,
+    tokenizer: MagicMock,
+    skip_first_n_requests: int = 0,
+    skip_last_n_requests: int = 0,
+    reject_outliers: bool = False,
+    record_request_text: bool = False,
+    goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
+) -> BenchmarkResult:
+    """Runs `calculate_metrics` with no GPU stats and no concurrency limit."""
+    return calculate_metrics(
+        outputs=outputs,
+        dur_s=dur_s,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=skip_first_n_requests,
+        skip_last_n_requests=skip_last_n_requests,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        kv_block_size=128,
+        reject_outliers=reject_outliers,
+        record_request_text=record_request_text,
+        goodput_targets=goodput_targets,
+        num_gpus=num_gpus,
+    )
+
+
 def test_per_chunk_tpot_collected_from_outputs() -> None:
     """Per-chunk TPOT values are collected into step_tpot_ms."""
     output = RequestFuncOutput(
@@ -104,18 +137,10 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello world": 5})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -158,18 +183,10 @@ def test_tpot_both_definitions() -> None:
     # Mock tokenizer: output1 -> 10 tokens, output2 -> 4 tokens
     tokenizer = _make_mock_tokenizer({"ten tokens out": 10, "four tok": 4})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output1, output2],
         dur_s=2.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -205,18 +222,10 @@ def test_output_len_prefers_server_completion_tokens() -> None:
     )
     tokenizer = _make_mock_tokenizer({"four tok": 4})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -249,18 +258,10 @@ def test_tpot_zero_decode_tokens() -> None:
     # 1 output token, 1 completed -> decode_tokens = 0
     tokenizer = _make_mock_tokenizer({"a": 1})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -277,18 +278,10 @@ def test_empty_outputs_no_crash() -> None:
     """Empty outputs list doesn't crash."""
     tokenizer = _make_mock_tokenizer({})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -327,18 +320,10 @@ def test_itl_metrics_unchanged() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello world": 5})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -369,18 +354,10 @@ def test_failed_requests_excluded() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello": 3, "": 0})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[success_output, failed_output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -430,32 +407,17 @@ def test_skip_last_n_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 3, "second": 3, "third": 3})
 
-    metrics_all = calculate_metrics(
+    metrics_all = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
-    metrics_skip_last = calculate_metrics(
+    metrics_skip_last = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics_all.text_data is not None
@@ -507,18 +469,12 @@ def test_skip_first_and_last_n_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 2, "middle": 2, "last": 2})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -568,18 +524,12 @@ def test_skip_last_with_cancelled_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 2, "second": 2, "third": 2})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -612,18 +562,12 @@ def test_skip_all_requests_warns() -> None:
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        calculate_metrics(
+        _calculate(
             outputs=outputs,
             dur_s=1.0,
             tokenizer=tokenizer,
-            gpu_metrics=None,
-            cpu_metrics=_EMPTY_CPU_METRICS,
             skip_first_n_requests=1,
             skip_last_n_requests=1,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
-            kv_block_size=128,
         )
         assert len(w) == 1
         assert "excluded" in str(w[0].message).lower()
@@ -690,18 +634,10 @@ def test_request_submit_time_set_on_output() -> None:
     assert output.request_submit_time == 100.5
 
     tokenizer = _make_mock_tokenizer({"hello": 2})
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
     assert metrics.text_data is not None
     # Metrics are computed normally regardless of submit time
@@ -760,18 +696,12 @@ def test_measured_duration_uses_measured_window() -> None:
     # measured window should be.
     full_run_duration = 60.0
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=full_run_duration,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=10,
         skip_last_n_requests=10,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -810,18 +740,10 @@ def test_measured_duration_falls_back_when_no_timestamps() -> None:
     )
     # No request_submit_time -> fallback to dur_s.
     tokenizer = _make_mock_tokenizer({"hello": 2})
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
     assert metrics.text_data is not None
     assert math.isclose(metrics.text_data.duration, 3.0, rel_tol=1e-9)
@@ -866,18 +788,12 @@ def test_skipped_tokens_excluded_from_totals() -> None:
     ]
     tokenizer = _make_mock_tokenizer({"warm": 999, "mid": 3, "tail": 999})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=20.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1000,18 +916,12 @@ def test_skip_uses_submit_time_for_head_complete_time_for_tail() -> None:
         {"s0t0": 2, "s0t1": 2, "s1t0": 2, "s1t1": 2, "s2t0": 2, "s2t1": 2}
     )
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=10.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1072,18 +982,12 @@ def test_skip_distinguishes_dispatch_order_from_timing() -> None:
         {"block_late_complete": 2, "block_early_submit": 2, "middle": 2}
     )
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=15.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1142,18 +1046,12 @@ def test_skip_first_overlaps_with_skip_last_drops_both() -> None:
 
     tokenizer = _make_mock_tokenizer({"slow_warmup": 2, "a": 2, "b": 2})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=21.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1854,18 +1752,10 @@ class TestPerTurnCacheRetention:
             generated_text="x",
             itl=[0.1],
         )
-        metrics = calculate_metrics(
+        metrics = _calculate(
             outputs=[output],
             dur_s=1.0,
             tokenizer=_make_mock_tokenizer({"x": 3}),
-            gpu_metrics=None,
-            cpu_metrics=_EMPTY_CPU_METRICS,
-            skip_first_n_requests=0,
-            skip_last_n_requests=0,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
-            kv_block_size=128,
         )
         assert metrics.text_data is not None
         assert metrics.text_data.per_turn_cache_retention is None
@@ -1911,18 +1801,11 @@ class TestRequestRecords:
         self, *, record_request_text: bool = False, skip_first: int = 0
     ) -> BenchmarkResult:
         tokenizer = _make_mock_tokenizer({"alpha": 5, "gamma": 5, "": 0})
-        return calculate_metrics(
+        return _calculate(
             outputs=self._outputs(),
             dur_s=3.0,
             tokenizer=tokenizer,
-            gpu_metrics=None,
-            cpu_metrics=_EMPTY_CPU_METRICS,
             skip_first_n_requests=skip_first,
-            skip_last_n_requests=0,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
-            kv_block_size=128,
             record_request_text=record_request_text,
         )
 
@@ -2078,18 +1961,12 @@ def _calculate_for(
     skip_last: int = 0,
 ) -> object:
     tokenizer = _make_mock_tokenizer({"five tokens here now": 5})
-    return calculate_metrics(
+    return _calculate(
         outputs=outputs,
         dur_s=2.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=skip_first,
         skip_last_n_requests=skip_last,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
 
@@ -2188,18 +2065,10 @@ def test_tpot_split_is_gated_on_its_own_population() -> None:
         long.request_submit_time = float(2 * i + 1)
         outputs.append(long)
 
-    text = calculate_metrics(
+    text = _calculate(
         outputs=outputs,
         dur_s=2.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     ).text_data
     assert text is not None
     # Both sides produced a first token, so the TTFT split stands.
@@ -2541,18 +2410,11 @@ _GOODPUT_TOKENIZER_COUNTS = {
 def _goodput_metrics(
     targets: GoodputTargets | None,
 ) -> BenchmarkResult:
-    return calculate_metrics(
+    return _calculate(
         outputs=_goodput_outputs(),
         dur_s=10.0,
         tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
         goodput_targets=targets,
     )
 
@@ -2615,18 +2477,10 @@ def test_goodput_unreported_ttft_misses_a_ttft_target() -> None:
     ]
 
     def attainment(targets: GoodputTargets) -> float | None:
-        text = calculate_metrics(
+        text = _calculate(
             outputs=outputs,
             dur_s=1.0,
             tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
-            gpu_metrics=None,
-            cpu_metrics=_EMPTY_CPU_METRICS,
-            skip_first_n_requests=0,
-            skip_last_n_requests=0,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
-            kv_block_size=128,
             goodput_targets=targets,
         ).text_data
         assert text is not None
@@ -2724,18 +2578,10 @@ def _calculate_interactivity(
     dur_s: float = 2.0,
     reject_outliers: bool = False,
 ) -> BenchmarkResult:
-    return calculate_metrics(
+    return _calculate(
         outputs=outputs,
         dur_s=dur_s,
         tokenizer=_make_mock_tokenizer(_INTERACTIVITY_TOKENIZER_COUNTS),
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
         num_gpus=num_gpus,
         reject_outliers=reject_outliers,
     )
@@ -2992,18 +2838,12 @@ def test_per_gpu_throughput_spans_all_successful_requests_despite_trims() -> (
         "twenty tokens out": 20,
         "thirty tokens out": 30,
     }
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=_make_mock_tokenizer(tokenizer_counts),
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
         num_gpus=1,
     )
     text = metrics.text_data
@@ -3048,18 +2888,10 @@ def test_per_gpu_input_counts_each_request_on_its_own_token_source() -> None:
         request_submit_time=0.0,
         server_token_stats=ServerTokenStats(completion_tokens=4),
     )
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[with_usage, without_usage],
         dur_s=1.0,
         tokenizer=_make_mock_tokenizer({"four tok": 4}),
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
         num_gpus=1,
     )
     text = metrics.text_data
@@ -3105,18 +2937,10 @@ def test_interactivity_none_for_single_token_outputs() -> None:
         ),
     ]
     tokenizer = _make_mock_tokenizer({"one": 1})
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
         num_gpus=1,
     )
     text = metrics.text_data
