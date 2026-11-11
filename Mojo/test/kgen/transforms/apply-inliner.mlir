@@ -252,9 +252,11 @@ kgen.generator @leaf() -> index {
   hlcf.return %0 : index
 }
 
-// CHECK-LABEL: kgen.generator @outer() -> index attributes {inlinedForm = 7 : index}
+// CHECK-LABEL: kgen.generator @outer() -> index {
 kgen.generator @outer() -> index {
   // CHECK-NEXT: kgen.param.constant = <7>
+  // CHECK-NEXT: hlcf.return
+  // CHECK-NEXT: } <inlinedForm = 7 : index>
   %0 = kgen.param.constant: index = <apply(:() -> index @leaf)>
   hlcf.return %0 : index
 }

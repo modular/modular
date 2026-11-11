@@ -11,10 +11,10 @@
 // the new argument directly.
 // CHECK-LABEL: kgen.func @read_single
 // CHECK-SAME:    (%[[A:[^:]+]]: !kgen.pointer<struct<(memref<128xf32>)>>)
-// CHECK-SAME:    kgen.decomposed_arg_map = [array<i32: 0, 1, 1>]
 // CHECK:         %[[LOADED:.+]] = pop.load %[[A]]
 // CHECK:         %[[FIELD:.+]] = kgen.struct.extract %[[LOADED]][0]
 // CHECK:         "use"(%[[FIELD]])
+// CHECK:         } {{.*}}kgen.decomposed_arg_map = [array<i32: 0, 1, 1>]
 kgen.func @read_single(%arg0: !kgen.struct<(pointer<struct<(memref<128xf32>)>>)>) {
   %0 = kgen.struct.extract %arg0[0] : <(pointer<struct<(memref<128xf32>)>>)>
   %1 = pop.load %0 : !kgen.pointer<struct<(memref<128xf32>)>>
@@ -28,8 +28,8 @@ kgen.func @read_single(%arg0: !kgen.struct<(pointer<struct<(memref<128xf32>)>>)>
 // Struct-by-value with two fields flattens to two leaf args.
 // CHECK-LABEL: kgen.func @two_fields
 // CHECK-SAME:    (%[[A:[^:]+]]: memref<128xf32>, %[[B:[^:]+]]: i32)
-// CHECK-SAME:    kgen.decomposed_arg_map = [array<i32: 0, 2, 1>]
 // CHECK:         "use"(%[[A]], %[[B]])
+// CHECK:         } {{.*}}kgen.decomposed_arg_map = [array<i32: 0, 2, 1>]
 kgen.func @two_fields(%arg0: !kgen.struct<(memref<128xf32>, i32)>) {
   %0 = kgen.struct.extract %arg0[0] : <(memref<128xf32>, i32)>
   %1 = kgen.struct.extract %arg0[1] : <(memref<128xf32>, i32)>
@@ -125,14 +125,12 @@ kgen.func @conventions(%arg0: !kgen.struct<(memref<128xf32>, i32)> owned, %arg1:
 // `fnArgAttrs` is re-indexed too: the pass-through argument's entry follows
 // it, and the default policy gives leaves empty entries.
 // CHECK-LABEL: kgen.func @arg_attrs
-// CHECK-SAME:    fnArgAttrs = [{}, {}, {test.marker}]
-kgen.func @arg_attrs(%arg0: !kgen.struct<(memref<128xf32>, i32)>, %arg1: index) attributes {
-  fnArgAttrs = [{}, {test.marker}]
-} {
+// CHECK:         } {{.*}}fnArgAttrs = [{}, {}, {test.marker}]
+kgen.func @arg_attrs(%arg0: !kgen.struct<(memref<128xf32>, i32)>, %arg1: index) {
   %0 = kgen.struct.extract %arg0[0] : <(memref<128xf32>, i32)>
   "use"(%0, %arg1) : (memref<128xf32>, index) -> ()
   hlcf.return
-}
+} <fnArgAttrs = [{}, {test.marker}]>
 
 // -----
 

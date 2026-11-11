@@ -739,7 +739,7 @@ kgen.func @if_cond_same(%arg0: !kgen.scalar<bool>) -> !kgen.scalar<bool> {
 // CHECK-NEXT:      hlcf.yield %[[REC]] : !kgen.scalar<bool>
 // CHECK-NEXT:    }
 // CHECK-NEXT:    hlcf.return %[[R]]
-kgen.generator export @tail_call_error_fn(%cond: !kgen.scalar<bool>, %arg0: index, %arg1: index, %arg2: !kgen.pointer<struct<() memoryOnly>> byref_error, %arg3: !kgen.pointer<index> byref_result) throws -> !kgen.scalar<bool> attributes {sourceName = "factorial"} {
+kgen.generator export @tail_call_error_fn(%cond: !kgen.scalar<bool>, %arg0: index, %arg1: index, %arg2: !kgen.pointer<struct<() memoryOnly>> byref_error, %arg3: !kgen.pointer<index> byref_result) throws -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: scalar<bool> = <true>
   %1 = kgen.param.constant: scalar<bool> = <false>
   %4 = hlcf.if %cond -> !kgen.scalar<bool> {
@@ -756,7 +756,7 @@ kgen.generator export @tail_call_error_fn(%cond: !kgen.scalar<bool>, %arg0: inde
     hlcf.yield %1 : !kgen.scalar<bool>
   }
   hlcf.return %4 : !kgen.scalar<bool>
-}
+} <sourceName = "factorial">
 
 
 // CHECK-LABEL: kgen.func @preserve_elif_side_effects(

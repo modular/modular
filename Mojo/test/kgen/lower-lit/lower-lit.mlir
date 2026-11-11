@@ -424,8 +424,8 @@ lit.file_module @module {
 }
 
 // CHECK: kgen.generator @metadata
+// CHECK: } <fnAttrs = ["llvm.someattr",  3 : index]
 // CHECK-SAME{LITERAL}: fnArgAttrs = [[], ["llvm.someattr", 2 : index]]
-// CHECK-SAME: fnAttrs = ["llvm.someattr",  3 : index]
 lit.fn @metadata(%a: i32, %b: i32) attributes {
   fnArgAttrs = [[], ["llvm.someattr", 2 : index]],
   fnAttrs = ["llvm.someattr", 3 : index]
@@ -438,7 +438,8 @@ lit.fn @metadata(%a: i32, %b: i32) attributes {
 // COM: Ensure the linkage name is passed through on an exported function.
 
 // CHECK: kgen.generator export @"main::main::main"
-// CHECK-SAME: linkageName = #kgen.linkage_name<"main" : !kgen.string, false>
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: } <linkageName = <"main" : !kgen.string, false>
 lit.package @main {
   lit.file_module @main {
     lit.fn export @main() attributes {linkageName = #kgen.linkage_name<"main" : !kgen.string, false>} {
@@ -453,7 +454,8 @@ lit.package @main {
 // COM: renaming the symbol.
 
 // CHECK: kgen.generator export @"pkg::mod::my_fn"
-// CHECK-SAME: linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: } <linkageName = <"my_export" : !kgen.string, false>
 lit.package @pkg {
   lit.file_module @mod {
     lit.fn export @my_fn() attributes {linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>} {
@@ -467,7 +469,8 @@ lit.package @pkg {
 // COM: Ensure that linkageName on a non-export function passes through.
 
 // CHECK: kgen.generator @"pkg3::mod3::orig_name"
-// CHECK-SAME: linkageName = #kgen.linkage_name<"my_link_name" : !kgen.string, false>
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: } <linkageName = <"my_link_name" : !kgen.string, false>
 lit.package @pkg3 {
   lit.file_module @mod3 {
     lit.fn @orig_name() attributes {linkageName = #kgen.linkage_name<"my_link_name" : !kgen.string, false>} {
@@ -505,9 +508,9 @@ lit.fn @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !kge
 
 // CHECK-LABEL: kgen.generator @callThing
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result)
-// CHECK-SAME: sourceName = "callThing"
 lit.fn @callThing[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
   // CHECK-NEXT: kgen.call @getThing(%arg0)
+  // CHECK: } <sourceName = "callThing"
   %0 = lit.call @getThing[mut lt](%__result__) : !lit.generator<[1]("res": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
   hlcf.return %none : !kgen.none

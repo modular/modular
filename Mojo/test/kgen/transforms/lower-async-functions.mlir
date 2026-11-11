@@ -43,7 +43,7 @@ kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg3: index) {
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @unused_args_resume
-// CHECK-SAME: coroutineType = !kgen.struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, index)>
+// CHECK: } <{{.*}}coroutineType = !kgen.struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, index)>
 kgen.func @unused_args(%arg0: index, %arg1: index) async -> index {
   co.suspend (%hdl) {
     co.suspend.end

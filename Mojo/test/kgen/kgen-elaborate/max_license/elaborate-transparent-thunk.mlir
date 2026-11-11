@@ -14,13 +14,11 @@
 // The user's parametric kernel impl. `n` parameterises its emitted
 // `nvvm.maxntid`, so a successful redirect carries `n=128` through to the
 // emitted PTX function name and its attribute.
-kgen.generator @user_kernel_impl<n: i32>() attributes {
-  fnAttrs = [
-    "nvvm.maxntid", #pop.array<n, 1, 1> : !pop.array<3, i32>
-  ]
-} {
+kgen.generator @user_kernel_impl<n: i32>() {
   hlcf.return
-}
+} <fnAttrs = [
+    "nvvm.maxntid", #pop.array<n, 1, 1> : !pop.array<3, i32>
+  ]>
 
 // A parametric "closure wrapper" struct that conforms to `Callable`. Its
 // witness for `__call__` is the user kernel instantiated with the wrapper's
@@ -37,15 +35,13 @@ kgen.struct.generator @ClosureWrapper<n: i32> =
 // The transparent thunk. Parameterised over `W: type` (the callable type),
 // it carries a `kgen.transparent_thunk_callee_expr` whose get_witness
 // expression needs `W` substituted before it can resolve.
-kgen.generator @callable_thunk<W: type>() attributes {
-  "kgen.transparent_thunk_callee_expr" =
-    #kgen.get_witness<W, @Callable, "__call__"> : !kgen.generator<() -> ()>
-} {
+kgen.generator @callable_thunk<W: type>() {
   kgen.param.declare callee: () -> () =
       <#kgen.get_witness<W, @Callable, "__call__">>
   kgen.call_param[() -> () : callee]()
   hlcf.return
-}
+} attributes {"kgen.transparent_thunk_callee_expr" =
+    #kgen.get_witness<W, @Callable, "__call__"> : !kgen.generator<() -> ()>}
 
 #wrapper128 = #kgen.type<
     typevalue<:!kgen.type #kgen.genref<@ClosureWrapper<:i32 128>>>,

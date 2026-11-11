@@ -9,7 +9,7 @@
 
 // A non-parametric generator snapshots just the function type.
 // CHECK-LABEL: kgen.generator @trivial_generator
-// CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(si32) -> si32> : !kgen.type
+// CHECK: } <{{.*}}sourceFuncTypeGenerator = #kgen.type<(si32) -> si32> : !kgen.type
 lit.fn @trivial_generator(%arg0: si32) -> si32 {
   hlcf.return %arg0 : si32
 }
@@ -20,7 +20,7 @@ lit.fn @trivial_generator(%arg0: si32) -> si32 {
 // whose `ParamIndexRefAttr`s (e.g. `*(0,0)`) are bound by the generator's own
 // scope.
 // CHECK-LABEL: kgen.generator @param_gen
-// CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<<index>(!kgen.simd<*(0,0), f32>) -> !kgen.simd<*(0,0), f32>> : !kgen.type
+// CHECK: } <{{.*}}sourceFuncTypeGenerator = #kgen.type<<index>(!kgen.simd<*(0,0), f32>) -> !kgen.simd<*(0,0), f32>> : !kgen.type
 lit.fn @param_gen<w: index>(%arg0: !kgen.simd<w, f32>) -> !kgen.simd<w, f32> {
   hlcf.return %arg0 : !kgen.simd<w, f32>
 }
@@ -30,7 +30,7 @@ lit.fn @param_gen<w: index>(%arg0: !kgen.simd<w, f32>) -> !kgen.simd<w, f32> {
 // Lit-level types inside the snapshot are lowered by `LowerLIT` too: the
 // `!lit.ref` argument becomes a `!kgen.pointer` inside the snapshot's body type.
 // CHECK-LABEL: kgen.generator @ref_arg
-// CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(!kgen.pointer<index>) -> ()> : !kgen.type
+// CHECK: } <{{.*}}sourceFuncTypeGenerator = #kgen.type<(!kgen.pointer<index>) -> ()> : !kgen.type
 lit.fn @ref_arg(%arg0: !lit.ref<index, mut #lit.any.origin>) {
   hlcf.return
 }
@@ -46,7 +46,7 @@ lit.struct.decl @Int register_passable {
 }
 
 // CHECK-LABEL: kgen.generator @takes_int
-// CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(!kgen.typevalue<#kgen.genref<@Int>>) -> (), (index) -> ()> : !kgen.type
+// CHECK: } <{{.*}}sourceFuncTypeGenerator = #kgen.type<(!kgen.typevalue<#kgen.genref<@Int>>) -> (), (index) -> ()> : !kgen.type
 lit.fn @takes_int(%arg0: !lit.struct<@Int>) {
   hlcf.return
 }

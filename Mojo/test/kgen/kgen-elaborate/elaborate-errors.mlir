@@ -241,11 +241,11 @@ kgen.generator export @gen_structs() {
 
 // expected-note @below {{function instantiation failed}}
 // expected-note @below {{cannot concretize name in 'llvm_metadata'}}
-kgen.generator export @metadata<x>() attributes {fnAttrs = [
-  #pop.array<x> : !pop.array<1, index>,  #pop.array<x> : !pop.array<1, index>
-]}{
+kgen.generator export @metadata<x>(){
   hlcf.return
-}
+} <fnAttrs = [
+  #pop.array<x> : !pop.array<1, index>,  #pop.array<x> : !pop.array<1, index>
+]>
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @metadata_caller() {
@@ -445,14 +445,14 @@ kgen.generator @count_to_zero_has_next(%arg0: index) -> !kgen.scalar<bool> {
 // Two generators with the same linkage name should report a clash error.
 
 // expected-remark @below {{existing function here}}
-kgen.generator @"clash::a"() attributes {linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>} {
+kgen.generator @"clash::a"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>>
 
 // expected-error @below {{duplicate functions named "foo"}}
-kgen.generator @"clash::b"() attributes {linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>} {
+kgen.generator @"clash::b"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>>
 
 // -----
 

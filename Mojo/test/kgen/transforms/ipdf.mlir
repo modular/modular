@@ -1,39 +1,39 @@
 // RUN: kgen-opt %s -ipdf -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.func @no_arguments
-// CHECK-SAME: ipdf = []
+// CHECK: } attributes {ipdf = []
 kgen.func @no_arguments() {
   hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @one_argument
-// CHECK-SAME: ipdf = [""]
+// CHECK: } attributes {ipdf = [""]
 kgen.func @one_argument(%arg0: index) {
   hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @unused_pointer_argument
-// CHECK-SAME: ipdf = ["none"]
+// CHECK: } attributes {ipdf = ["none"]
 kgen.func @unused_pointer_argument(%arg0: !kgen.pointer<index>) {
   hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @read_pointer_argument
-// CHECK-SAME: ipdf = ["read"]
+// CHECK: } attributes {ipdf = ["read"]
 kgen.func @read_pointer_argument(%arg0: !kgen.pointer<index>) {
   %0 = pop.load %arg0 : !kgen.pointer<index>
   hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @write_pointer_argument
-// CHECK-SAME: ipdf = ["", "write"]
+// CHECK: } attributes {ipdf = ["", "write"]
 kgen.func @write_pointer_argument(%arg0: index, %arg1: !kgen.pointer<index>) {
   pop.store %arg0, %arg1 : !kgen.pointer<index>
   hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @readwrite_pointer_argument
-// CHECK-SAME: ipdf = ["", "read,write"]
+// CHECK: } attributes {ipdf = ["", "read,write"]
 kgen.func @readwrite_pointer_argument(%arg0: index, %arg1: !kgen.pointer<index>) {
   %0 = pop.load %arg1 : !kgen.pointer<index>
   pop.store %0, %arg1 : !kgen.pointer<index>
@@ -41,7 +41,7 @@ kgen.func @readwrite_pointer_argument(%arg0: index, %arg1: !kgen.pointer<index>)
 }
 
 // CHECK-LABEL: kgen.func @roundtrip_stack_alloc
-// CHECK-SAME: ipdf = ["none"]
+// CHECK: } attributes {ipdf = ["none"]
 kgen.func @roundtrip_stack_alloc(%arg0: !kgen.pointer<index>) {
   %0 = pop.stack_allocation 1 x pointer<index>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
@@ -50,7 +50,7 @@ kgen.func @roundtrip_stack_alloc(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @roundtrip_stack_alloc_load
-// CHECK-SAME: ipdf = ["read"]
+// CHECK: } attributes {ipdf = ["read"]
 kgen.func @roundtrip_stack_alloc_load(%arg0: !kgen.pointer<index>) {
   %0 = pop.stack_allocation 1 x pointer<index>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
@@ -60,7 +60,7 @@ kgen.func @roundtrip_stack_alloc_load(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @aliasing_none
-// CHECK-SAME: ipdf = ["none", "none", "none", "none"]
+// CHECK: } attributes {ipdf = ["none", "none", "none", "none"]
 kgen.func @aliasing_none(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>,
                          %arg2: !kgen.pointer<struct<(index)>>, %arg3: !kgen.pointer<array<2, index>>) {
   %idx1 = index.constant 1
@@ -72,7 +72,7 @@ kgen.func @aliasing_none(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index
 }
 
 // CHECK-LABEL: kgen.func @aliasing_effect
-// CHECK-SAME: ipdf = ["read", "write", "read", "write"]
+// CHECK: } attributes {ipdf = ["read", "write", "read", "write"]
 kgen.func @aliasing_effect(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>,
                            %arg2: !kgen.pointer<struct<(index)>>, %arg3: !kgen.pointer<array<2, index>>) {
   %idx1 = index.constant 1
@@ -89,7 +89,7 @@ kgen.func @aliasing_effect(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<ind
 }
 
 // CHECK-LABEL: kgen.func @multiple_store_load
-// CHECK-SAME: ipdf = ["read,write", "write"]
+// CHECK: } attributes {ipdf = ["read,write", "write"]
 kgen.func @multiple_store_load(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>) {
   %0 = pop.stack_allocation 1 x pointer<index>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
@@ -109,7 +109,7 @@ kgen.func @multiple_store_load(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer
 }
 
 // CHECK-LABEL: kgen.func @roundtrip_arg
-// CHECK-SAME: ipdf = ["read,write", "read,cap"]
+// CHECK: } attributes {ipdf = ["read,write", "read,cap"]
 kgen.func @roundtrip_arg(%arg0: !kgen.pointer<pointer<index>>, %arg1: !kgen.pointer<index>) {
   pop.store %arg1, %arg0 : !kgen.pointer<pointer<index>>
   %0 = pop.load %arg0 : !kgen.pointer<pointer<index>>
@@ -118,7 +118,7 @@ kgen.func @roundtrip_arg(%arg0: !kgen.pointer<pointer<index>>, %arg1: !kgen.poin
 }
 
 // CHECK-LABEL: kgen.func @store_bitcast_drop
-// CHECK-SAME: ipdf = ["cap"]
+// CHECK: } attributes {ipdf = ["cap"]
 kgen.func @store_bitcast_drop(%arg0: !kgen.pointer<index>) {
   %0 = pop.stack_allocation 1 x pointer<index>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
@@ -131,7 +131,7 @@ kgen.func @store_bitcast_drop(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @store_bitcast_lost
-// CHECK-SAME: ipdf = ["read,cap"]
+// CHECK: } attributes {ipdf = ["read,cap"]
 kgen.func @store_bitcast_lost(%arg0: !kgen.pointer<index>) {
   %0 = pop.stack_allocation 1 x pointer<index>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
@@ -148,7 +148,7 @@ kgen.func @store_bitcast_lost(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @alias_unknown_array_gep
-// CHECK-SAME: ipdf = ["write"]
+// CHECK: } attributes {ipdf = ["write"]
 kgen.func @alias_unknown_array_gep(%arg0: !kgen.pointer<index>) {
   %0 = "unknown.ptr"() : () -> !kgen.pointer<array<2, index>>
   %idx1 = index.constant 1
@@ -158,7 +158,7 @@ kgen.func @alias_unknown_array_gep(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @alias_unknown_struct_gep
-// CHECK-SAME: ipdf = ["read"]
+// CHECK: } attributes {ipdf = ["read"]
 kgen.func @alias_unknown_struct_gep(%arg0: !kgen.pointer<index>) {
   %0 = "unknown.ptr"() : () -> !kgen.pointer<struct<(index)>>
   %1 = kgen.struct.gep %0[0] : <struct<(index)>>
@@ -167,7 +167,7 @@ kgen.func @alias_unknown_struct_gep(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @alias_unknown_offset
-// CHECK-SAME: ipdf = ["write"]
+// CHECK: } attributes {ipdf = ["write"]
 kgen.func @alias_unknown_offset(%arg0: !kgen.pointer<index>) {
   %0 = "unknown.ptr"() : () -> !kgen.pointer<index>
   %idx1 = index.constant 1
@@ -177,7 +177,7 @@ kgen.func @alias_unknown_offset(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @alias_unknown_bitcast
-// CHECK-SAME: ipdf = ["read"]
+// CHECK: } attributes {ipdf = ["read"]
 kgen.func @alias_unknown_bitcast(%arg0: !kgen.pointer<index>) {
   %0 = "unknown.ptr"() : () -> !kgen.pointer<index>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<index> to !kgen.pointer<i8>
@@ -186,7 +186,7 @@ kgen.func @alias_unknown_bitcast(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @unknown_op_known_ptr
-// CHECK-SAME: ipdf = ["read,write,cap", "none"]
+// CHECK: } attributes {ipdf = ["read,write,cap", "none"]
 kgen.func @unknown_op_known_ptr(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>) {
   "unknown.op"(%arg0) : (!kgen.pointer<index>) -> ()
   hlcf.return

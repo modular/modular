@@ -3,9 +3,9 @@
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" \
 // RUN:   -allow-unregistered-dialect | FileCheck %s
 
-kgen.generator @some_generator() attributes {sourceName = "foo"} {
+kgen.generator @some_generator() {
   hlcf.return
-}
+} <sourceName = "foo">
 
 // CHECK-LABEL: kgen.func export @get_source_name
 kgen.generator export @get_source_name() {
@@ -20,9 +20,9 @@ kgen.generator export @get_source_name() {
 // function, whose name mangles the quotes in the generator's name. The source
 // name must still be found through it.
 
-kgen.generator @"load(\22\22)"(%arg0: !kgen.scalar<index>) -> !kgen.scalar<index> attributes {sourceName = "load"} {
+kgen.generator @"load(\22\22)"(%arg0: !kgen.scalar<index>) -> !kgen.scalar<index> {
   hlcf.return %arg0 : !kgen.scalar<index>
-}
+} <sourceName = "load">
 
 kgen.generator @identity(%arg0: !kgen.generator<(!kgen.scalar<index>) -> !kgen.scalar<index>>) -> !kgen.generator<(!kgen.scalar<index>) -> !kgen.scalar<index>> {
   hlcf.return %arg0 : !kgen.generator<(!kgen.scalar<index>) -> !kgen.scalar<index>>

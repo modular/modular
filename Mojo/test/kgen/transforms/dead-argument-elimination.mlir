@@ -120,9 +120,9 @@ kgen.func @test_correctly_handle_pure_ops(%arg0: index, %arg1: !kgen.scalar<inde
 
 // COM: An argument passed to an external callee stays live: the callee has no
 // COM: call graph edge, so its argument liveness is unknowable.
-kgen.func @external_callee(%arg0: index) -> index attributes {external} {
+kgen.func @external_callee(%arg0: index) -> index {
   hlcf.unreachable
-}
+} <external>
 
 // CHECK-LABEL: kgen.func @calls_external(%arg0: index) -> index {
 kgen.func @calls_external(%dead_arg: index, %live_arg: index) -> index {
@@ -137,18 +137,16 @@ kgen.func @calls_external(%dead_arg: index, %live_arg: index) -> index {
 // COM: dead arguments bracket the live ones, so the survivors are entries 1
 // COM: and 3 and any off-by-one picks up a `{}`.
 // CHECK-LABEL: kgen.func @arg_metadata_follows_live_args(%arg0: index, %arg1: index) -> index
-// CHECK-SAME: fnArgAttrs = [{llvm.noalias}, {nvvm.grid_constant}]
+// CHECK:         } {{.*}}fnArgAttrs = [{llvm.noalias}, {nvvm.grid_constant}]
 kgen.func @arg_metadata_follows_live_args(
   %dead_first: !kgen.scalar<f32>,
   %live_first: index,
   %dead_last: !kgen.scalar<f32>,
   %live_last: index
-) -> index attributes {
-  fnArgAttrs = [{}, {llvm.noalias = unit}, {}, {nvvm.grid_constant = unit}]
-} {
+) -> index {
   %0 = index.add %live_first, %live_last
   hlcf.return %0: index
-}
+} <fnArgAttrs = [{}, {llvm.noalias = unit}, {}, {nvvm.grid_constant = unit}]>
 
 // CHECK-LABEL: kgen.func export @calls_arg_metadata_follows_live_args
 kgen.func export @calls_arg_metadata_follows_live_args(%arg: index) -> index {

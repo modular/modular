@@ -19,7 +19,9 @@ kgen.func @no_inline_fn() no_inline {
 
 // An external function has no body to inline, so the pass leaves its inline
 // level alone.
-// CHECK: kgen.func @external_fn() no_inline attributes {external}
-kgen.func @external_fn() no_inline attributes {external} {
+// CHECK: kgen.func @external_fn() no_inline {
+// CHECK-NEXT: hlcf.unreachable
+// CHECK-NEXT: } <external>
+kgen.func @external_fn() no_inline {
   hlcf.unreachable
-}
+} <external>
