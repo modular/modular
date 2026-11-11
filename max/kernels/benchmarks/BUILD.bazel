@@ -86,6 +86,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     # MXFP4 packing uses the SM100 conversion instructions.
+    "gpu/nn/bench_acceptance_residual.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # The subtract and from_probs sampling modes are not supported on Metal
     "gpu/nn/bench_indexer_k_store.mojo": ["//:b200_gpu"],
     "gpu/nn/bench_fused_dual_qk_rms_norm_rope_nvfp4.mojo": ["//:b200_gpu"],  # NVFP4 packing uses the SM100 conversion instructions
     "algorithm/parallelize_overhead.mojo": select({

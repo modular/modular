@@ -3456,6 +3456,70 @@ struct Struct_gumbel_argmax_from_probs:
         )
 
 
+@extensibility.register("sampler.gumbel_argmax_from_residual")
+struct Struct_gumbel_argmax_from_residual:
+    """Registers the `sampler.gumbel_argmax_from_residual` graph op.
+
+    Draws one token per row proportionally to `max(p - q, 0)`, the rejection
+    sampler's residual, by Gumbel-max over its `ln`. Both the subtract and the
+    clamp happen in registers inside the sampling pass, so the residual is
+    never written to or read from HBM: the alternative materializes the
+    proposal mass and the residual, two `[rows, vocab]` round-trips.
+
+    `fallback` carries one drafted token id per row; a non-negative entry
+    marks a row with no proposal distribution, and that row subtracts a
+    one-hot at the token instead of `q`. The value is bit-identical to
+    subtracting a materialized one-hot row, and it is what the caller
+    already has on hand, so passing the flag costs nothing.
+
+    Arity is fixed, so this is a separate registration rather than a mode on
+    `sampler.gumbel_argmax_from_probs`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        _trace_name: StaticString,
+    ](
+        out_tokens: Some[Output & Tensor],
+        seed: Some[Input & Tensor],
+        probs: Some[Input & Tensor],
+        sub: Some[Input & Tensor],
+        fallback: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert conforms_to(type_of(probs), TileTensorable)
+        comptime assert conforms_to(type_of(sub), TileTensorable)
+        comptime assert conforms_to(type_of(fallback), TileTensorable)
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(seed).rank == 1
+        comptime assert type_of(probs).rank == 2
+        comptime assert type_of(sub).rank == 2
+        comptime assert type_of(fallback).rank == 1
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "sampler.gumbel_argmax_from_residual is GPU-only"
+        var sub_tt = sub.to_tile_tensor[.float32]()
+        var fallback_tt = fallback.to_tile_tensor[.int64]()
+        gumbel_sampling_fused_gpu[
+            from_probs=False,
+            subtract=True,
+            SubLayoutType=sub_tt.LayoutType,
+            SubEngine=sub_tt.Engine,
+            FallbackLayoutType=fallback_tt.LayoutType,
+            FallbackEngine=fallback_tt.Engine,
+        ](
+            ctx,
+            probs.to_tile_tensor[.float32](),
+            out_tokens.to_tile_tensor[.int64](),
+            seed=seed.to_tile_tensor[.uint64]().as_unsafe_any_origin().as_imm(),
+            sub=sub_tt.as_unsafe_any_origin().as_imm(),
+            fallback=fallback_tt.as_unsafe_any_origin().as_imm(),
+        )
+
+
 @extensibility.register("sampler.argmax_with_bias")
 struct Struct_argmax_with_bias:
     """Registers the `sampler.argmax_with_bias` graph op.

@@ -15853,6 +15853,72 @@ def gumbel_argmax_from_probs(
     )[0].tensor
 
 
+def gumbel_argmax_from_residual(
+    probs: TensorValue,
+    proposal: TensorValue,
+    *,
+    fallback: TensorValue,
+    seed: TensorValue,
+) -> TensorValue:
+    """Draws one token per row, proportionally to ``max(probs - proposal, 0)``.
+
+    Gumbel-max over ``ln(max(p - q, 0))``: a token with no residual mass can
+    never win while the row has any, and row normalization does not matter.
+    The subtract and the clamp happen inside the sampling pass, so neither the
+    selected proposal mass nor the residual is written to or read from HBM. A
+    graph of ``ops.relu(p - q)`` feeding :func:`gumbel_argmax_from_probs` is
+    the same draw for two extra ``[rows, vocab_size]`` round-trips plus the
+    ops that select the one-hot rows below.
+
+    The noise is generated inside the kernel from the per-row ``seed``, with
+    the same per-element sequence :func:`gumbel_argmax_from_probs` uses, so a
+    row draws identically whichever of the two it goes through.
+
+    ``fallback`` carries one drafted token id per row: a non-negative entry
+    makes that row subtract a one-hot at the token instead of ``proposal``,
+    which is exactly the token a rejection step wants removed from a row with
+    no proposal distribution. ``-1`` subtracts ``proposal``. GPU-only, and not
+    supported on Apple GPUs, where the kernel's block reduction cannot cover a
+    full-sized block.
+
+    Args:
+        probs: Target probabilities ``[rows, vocab_size]``, float32.
+        proposal: Proposal probabilities ``[rows, vocab_size]``, float32 and
+            contiguous.
+        fallback: Per-row drafted token ids ``[rows]``, int64; ``-1`` for a row
+            that should subtract ``proposal``.
+        seed: Per-row RNG seed ``[rows]``, uint64.
+
+    Returns:
+        The drawn token id per row, ``int64 [rows]``.
+
+    Raises:
+        ValueError: If the shapes or dtypes do not match the contract.
+    """
+    rows = probs.shape[0]
+    if proposal.rank != 2:
+        raise ValueError(
+            f"gumbel_argmax_from_residual requires rank-2 proposal, got"
+            f" {proposal.rank}"
+        )
+    if fallback.rank != 1:
+        raise ValueError(
+            f"gumbel_argmax_from_residual requires a rank-1 fallback, got"
+            f" {fallback.rank}"
+        )
+    if probs.device == DeviceRef.CPU():
+        raise ValueError("gumbel_argmax_from_residual is GPU-only")
+
+    return ops.custom(
+        "sampler.gumbel_argmax_from_residual",
+        device=probs.device,
+        values=[seed, probs, proposal, fallback],
+        out_types=[
+            TensorType(dtype=DType.int64, shape=[rows], device=probs.device)
+        ],
+    )[0].tensor
+
+
 def argmax_with_bias(
     logits: TensorValue, bias: TensorValue, *, position: int
 ) -> TensorValue:
