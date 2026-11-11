@@ -26,13 +26,22 @@ plain forward over the accepted tokens alone. All three must match exactly.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import NamedTuple
 
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Dim,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn._graph_ops import mla_kpool_seed_tail
 from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_fwd,
@@ -41,10 +50,12 @@ from max.nn._graph_ops.state_space import (
     verify_width_operand,
 )
 from max.nn._graph_ops.state_space.kimi_delta import kda_verify_ring
-from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
+from max.pipelines.architectures.glm5_next.layers.indexer_inputs import (
     KpoolTailReplayInputs,
 )
-from max.pipelines.architectures.glm5_next.layers.kda import KdaReplayInputs
+from max.pipelines.architectures.glm5_next.layers.kda_replay import (
+    KdaReplayInputs,
+)
 from max.pipelines.architectures.glm5_next.spec_state import (
     deferred_seed_offsets,
     fold_kda_state_pools,
@@ -60,6 +71,8 @@ from max.pipelines.speculative.gated_delta_rollback import (
     accepted_row_plan,
     replay_conv_pools,
 )
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
 
 RING_LEN = 4
 NUM_DRAFTS = RING_LEN - 1
@@ -78,6 +91,13 @@ MAX_BATCH = 3
 POOL_ROWS = MAX_BATCH * NUM_LAYERS + 5
 
 POISON = np.float32(-7.75e18)
+
+
+class _ConvCapture(NamedTuple):
+    """A verify's conv capture as the shared per-layer conv replay reads it."""
+
+    qkv_window: TensorValue
+    conv_weight: TensorValue
 
 
 def _ring_row_shape() -> tuple[int, ...]:
@@ -226,7 +246,10 @@ def _compile_kda(
         BufferType(DType.float32, conv_shape, device=gpu),
         BufferType(DType.float32, conv_shape, device=gpu),
     ]
-    with Graph("kda_ring_rollback", input_types=types) as graph:
+    with (
+        Graph("kda_ring_rollback", input_types=types) as graph,
+        ensure_context(),
+    ):
         (
             q_v,
             k_v,
@@ -254,16 +277,6 @@ def _compile_kda(
         ) = (value.buffer for value in graph.inputs[16:])
         verify_width = verify_width_operand(num_drafts)
         cu_seqlens = offsets_v.cast(DType.int32)
-        captures = [
-            KdaReplayInputs(
-                qkv=window_v,
-                conv_weight=conv_weight_v,
-                raw_gate=gate_v,
-                beta_logits=beta_v,
-                qkv_window=window_v,
-            )
-            for _ in range(NUM_LAYERS)
-        ]
         readouts = []
         for layer in range(NUM_LAYERS):
             readout = kda_verify_ring(
@@ -285,18 +298,27 @@ def _compile_kda(
             readouts.append(readout)
         if rollback:
             num_drafts_v = ops.constant(num_drafts, DType.int64, device=gpu)
+            window_t = Tensor.from_graph_value(window_v)
+            capture = KdaReplayInputs(
+                qkv=window_t,
+                conv_weight=Tensor.from_graph_value(conv_weight_v),
+                raw_gate=Tensor.from_graph_value(gate_v),
+                beta_logits=Tensor.from_graph_value(beta_v),
+                qkv_window=window_t,
+            )
             fold_kda_state_pools(
-                [live],
-                [state_rows_v],
-                [ring],
-                [ring_rows_v],
-                [conv],
-                [conv_rows_v],
-                [captures],
-                accepted_lengths(offsets_v, accepted_v, num_drafts_v),
-                [offsets_v],
-                [],
-                verify_width,
+                Tensor.from_graph_value(live),
+                Tensor.from_graph_value(state_rows_v),
+                Tensor.from_graph_value(ring),
+                Tensor.from_graph_value(ring_rows_v),
+                Tensor.from_graph_value(conv),
+                Tensor.from_graph_value(conv_rows_v),
+                [[capture] * NUM_LAYERS],
+                Tensor.from_graph_value(
+                    accepted_lengths(offsets_v, accepted_v, num_drafts_v)
+                ),
+                Tensor.from_graph_value(offsets_v),
+                Tensor.from_graph_value(verify_width),
             )
             # The reference arm's conv replay: the per-layer launches, over
             # the same accepted plan.
@@ -308,7 +330,7 @@ def _compile_kda(
                 gpu,
             )
             replay_conv_pools(
-                [captures],
+                [[_ConvCapture(window_v, conv_weight_v)] * NUM_LAYERS],
                 [conv_reference],
                 [conv_rows_v],
                 row_indices,
@@ -373,25 +395,13 @@ def _compile_kda(
     return execute
 
 
-@pytest.mark.parametrize("accepted", [[0], [1], [NUM_DRAFTS]])
-def test_the_fold_lands_the_kda_state_and_conv_on_the_accepted_prefix(
-    accepted: list[int],
-) -> None:
-    pools = _compile_kda([RING_LEN], accepted)()
-    np.testing.assert_array_equal(pools["live"], pools["reference"])
-    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
-
-
-def test_each_request_folds_its_own_kda_length() -> None:
-    pools = _compile_kda([RING_LEN] * 3, [NUM_DRAFTS, 1, 0])()
-    np.testing.assert_array_equal(pools["live"], pools["reference"])
-    np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
-
-
-def test_a_request_longer_than_the_ring_still_places_its_conv_window() -> None:
-    """The fold skips the long row's state, which the verify committed, but
-    still places its conv window."""
-    pools = _compile_kda([RING_LEN, RING_LEN + 2], [1, NUM_DRAFTS])()
+def test_the_fold_lands_the_kda_state_and_conv_on_the_accepted_prefix() -> None:
+    """Checks one batch of nothing, one, and every draft accepted, plus a
+    request longer than the ring: the fold skips its state, which the verify
+    committed, but still places its conv window."""
+    pools = _compile_kda(
+        [RING_LEN] * 3 + [RING_LEN + 2], [0, 1, NUM_DRAFTS, NUM_DRAFTS]
+    )()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
     np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
 
@@ -402,10 +412,10 @@ def test_the_kda_verify_leaves_the_live_pool_alone() -> None:
     np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
 
 
-@pytest.mark.parametrize("seq_lengths", [[1], [5], [1, 9]])
-def test_a_committed_kda_window_lands_on_the_forward(
-    seq_lengths: list[int],
-) -> None:
+def test_a_committed_kda_window_lands_on_the_forward() -> None:
+    """Covers a row past the ring at the head of the batch, a one-token row,
+    and a decode row riding a prompt."""
+    seq_lengths = [5, 1, 9]
     pools = _compile_kda(seq_lengths, [0] * len(seq_lengths), num_drafts=0)()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
     np.testing.assert_array_equal(pools["conv"], pools["conv_reference"])
@@ -418,9 +428,16 @@ def test_a_committed_kda_window_lands_on_the_forward(
 
 
 def _compile_conv(
-    seq_lengths: list[int], accepted: list[int], *, num_drafts: int
+    seq_lengths: list[int],
+    accepted: list[int],
+    *,
+    num_drafts: int,
 ) -> Callable[[], dict[str, np.ndarray]]:
-    """Compiles the conv verify, the conv replay, and the reference conv."""
+    """Compiles the conv verify, the conv replay, and the reference conv.
+
+    The run also returns the last layer's verify copy as ``output_0`` and the
+    conv input as ``qkv``.
+    """
     batch = len(seq_lengths)
     rng = np.random.default_rng(3)
     total = sum(seq_lengths)
@@ -456,7 +473,7 @@ def _compile_conv(
         ) = (value.tensor for value in graph.inputs[:7])
         live, reference = (value.buffer for value in graph.inputs[7:])
         verify_width = verify_width_operand(num_drafts)
-        captures: list[KdaReplayInputs] = []
+        captures: list[_ConvCapture] = []
         for layer in range(NUM_LAYERS):
             _, qkv_window = gated_delta_conv1d_verify_fwd(
                 qkv_v,
@@ -467,15 +484,7 @@ def _compile_conv(
                 verify_width,
                 rollback=False,
             )
-            captures.append(
-                KdaReplayInputs(
-                    qkv=qkv_v,
-                    conv_weight=weight_v,
-                    raw_gate=qkv_v,
-                    beta_logits=qkv_v,
-                    qkv_window=qkv_window,
-                )
-            )
+            captures.append(_ConvCapture(qkv_window, weight_v))
         row_indices, replay_offsets = accepted_row_plan(
             offsets_v,
             accepted_v,
@@ -500,7 +509,7 @@ def _compile_conv(
                 rows_v[layer],
                 ref_offsets_v,
             )
-        graph.output()
+        graph.output(qkv_window)
 
     inputs: list[np.ndarray] = [
         qkv,
@@ -511,27 +520,89 @@ def _compile_conv(
         ref_rows,
         ref_offsets,
     ]
-    return lambda: _run(graph, inputs, {"live": init, "reference": init})
+    return lambda: {
+        **_run(graph, inputs, {"live": init, "reference": init}),
+        "qkv": qkv,
+    }
 
 
-@pytest.mark.parametrize("accepted", [[0], [2], [NUM_DRAFTS]])
-def test_the_conv_replay_lands_on_the_accepted_prefix(
-    accepted: list[int],
-) -> None:
-    pools = _compile_conv([RING_LEN], accepted, num_drafts=NUM_DRAFTS)()
-    np.testing.assert_array_equal(pools["live"], pools["reference"])
-
-
-def test_each_request_replays_its_own_conv_length() -> None:
-    pools = _compile_conv(
-        [RING_LEN] * 3, [NUM_DRAFTS, 1, 0], num_drafts=NUM_DRAFTS
+def test_the_conv_replay_lands_on_the_accepted_prefix() -> None:
+    """Checks one batch of every draft, two drafts, and nothing accepted. With
+    every row as long as the window, the copy slots also tile the input row
+    for row."""
+    run = _compile_conv(
+        [RING_LEN] * 3, [NUM_DRAFTS, 2, 0], num_drafts=NUM_DRAFTS
     )()
-    np.testing.assert_array_equal(pools["live"], pools["reference"])
+    np.testing.assert_array_equal(run["output_0"], run["qkv"])
+    np.testing.assert_array_equal(run["live"], run["reference"])
 
 
 def test_a_committed_conv_window_lands_on_the_forward() -> None:
     pools = _compile_conv([5, 2], [0, 0], num_drafts=0)()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
+
+
+def test_a_decode_window_shorter_than_the_ring_replays_from_its_slots() -> None:
+    num_drafts = RING_LEN - 2
+    window = num_drafts + 1
+    run = _compile_conv(
+        [window] * 3, [num_drafts, 1, 0], num_drafts=num_drafts
+    )()
+    slots = run["output_0"].reshape(3, window, CONV_DIM)
+    np.testing.assert_array_equal(slots.reshape(-1, CONV_DIM), run["qkv"])
+    np.testing.assert_array_equal(run["live"], run["reference"])
+
+
+def test_a_copy_slot_shorter_than_a_window_is_refused() -> None:
+    """Checks the conv op refuses a copy slot below the verify window."""
+    batch = 1
+    gpu = DeviceRef.GPU()
+    types: list[TensorType | BufferType] = [
+        TensorType(DType.float32, [RING_LEN, CONV_DIM], device=gpu),
+        TensorType(DType.float32, [CONV_DIM, CONV_KERNEL], device=gpu),
+        TensorType(DType.uint32, [batch], device=gpu),
+        TensorType(DType.uint32, [batch + 1], device=gpu),
+        BufferType(
+            DType.float32, [POOL_ROWS, CONV_DIM, CONV_KERNEL - 1], device=gpu
+        ),
+    ]
+    with Graph("conv_short_slot", input_types=types) as graph:
+        qkv, weight, rows, offsets = (v.tensor for v in graph.inputs[:4])
+        pool = graph.inputs[4].buffer
+        # The op reads the window from its result type, so a short one
+        # reaches the refusal the wrapper's own K + 1 sizing never can.
+        conv_out, _ = ops.inplace_custom(
+            "gated_delta_conv1d_verify_fwd",
+            gpu,
+            [
+                qkv,
+                weight,
+                pool,
+                rows,
+                offsets,
+                verify_width_operand(NUM_DRAFTS),
+            ],
+            [
+                TensorType(DType.float32, [RING_LEN, CONV_DIM], device=gpu),
+                TensorType(
+                    DType.float32, [batch * NUM_DRAFTS, CONV_DIM], device=gpu
+                ),
+            ],
+            parameters={"rollback": False},
+        )
+        graph.output(conv_out)
+    rng = np.random.default_rng(9)
+    inputs = [
+        rng.standard_normal((RING_LEN, CONV_DIM)).astype(np.float32),
+        rng.standard_normal((CONV_DIM, CONV_KERNEL)).astype(np.float32),
+        np.zeros(batch, dtype=np.uint32),
+        np.array([0, RING_LEN], dtype=np.uint32),
+    ]
+    pool_init = rng.standard_normal(
+        (POOL_ROWS, CONV_DIM, CONV_KERNEL - 1)
+    ).astype(np.float32)
+    with pytest.raises(Exception, match="needs slots of at least"):
+        _run(graph, inputs, {"live": pool_init})
 
 
 # ===--------------------------------------------------------------------=== #
@@ -578,7 +649,10 @@ def _compile_tail(
         BufferType(DType.bfloat16, tail_shape, device=gpu),
         BufferType(DType.bfloat16, tail_shape, device=gpu),
     ]
-    with Graph("tail_ring_rollback", input_types=types) as graph:
+    with (
+        Graph("tail_ring_rollback", input_types=types) as graph,
+        ensure_context(),
+    ):
         (
             key_v,
             gate_v,
@@ -591,10 +665,14 @@ def _compile_tail(
         ) = (value.tensor for value in graph.inputs[:8])
         live, reference = (value.buffer for value in graph.inputs[8:])
 
-        (seed_offsets,) = (
-            deferred_seed_offsets(Dim(num_drafts), [offsets_v])
+        seed_offsets = (
+            TensorValue(
+                deferred_seed_offsets(
+                    Dim(num_drafts), Tensor.from_graph_value(offsets_v)
+                )
+            )
             if defer
-            else [offsets_v]
+            else offsets_v
         )
         mla_kpool_seed_tail(
             live, key_v, gate_v, seed_offsets, cache_lengths_v, slots_v, KPOOL
@@ -607,19 +685,19 @@ def _compile_tail(
             [
                 [
                     KpoolTailReplayInputs(
-                        k=key_v,
-                        gate=gate_v,
-                        tail=live,
-                        slot_idx=slots_v,
-                        cache_lengths=cache_lengths_v,
+                        k=Tensor.from_graph_value(key_v),
+                        gate=Tensor.from_graph_value(gate_v),
+                        tail=Tensor.from_graph_value(live),
+                        slot_idx=Tensor.from_graph_value(slots_v),
+                        cache_lengths=Tensor.from_graph_value(cache_lengths_v),
                         kpool=KPOOL,
                     )
                 ]
             ],
-            row_indices,
-            replay_offsets,
-            num_drafts_v,
-            [],
+            Tensor.from_graph_value(row_indices),
+            Tensor.from_graph_value(replay_offsets),
+            Tensor.from_graph_value(num_drafts_v),
+            Tensor.from_graph_value(row_indices).mesh,
         )
         mla_kpool_seed_tail(
             reference,
@@ -645,27 +723,16 @@ def _compile_tail(
     return lambda: _run(graph, inputs, {"live": init, "reference": init})
 
 
-@pytest.mark.parametrize(
-    ("cache_length", "accepted"),
-    [
-        # Pending member at 8; the window 9..12 seeds 12 into its slot.
-        (9, 0),
-        (9, 2),
-        (9, 3),
-        # The window starts on a pool boundary.
-        (8, 1),
-        (10, 3),
-    ],
-)
-def test_the_tail_ring_lands_on_the_accepted_prefix(
-    cache_length: int, accepted: int
-) -> None:
-    rings = _compile_tail([cache_length], [accepted], num_drafts=NUM_DRAFTS)()
+def test_the_tail_ring_lands_on_the_accepted_prefix() -> None:
+    """Checks each request seeds its own tail. The pending member is at 8; the
+    window 9..12 seeds 12 into its slot."""
+    rings = _compile_tail([9, 9, 9], [0, 2, 3], num_drafts=NUM_DRAFTS)()
     np.testing.assert_array_equal(rings["live"], rings["reference"])
 
 
-def test_each_request_seeds_its_own_tail() -> None:
-    rings = _compile_tail([9, 10, 8], [0, 3, 1], num_drafts=NUM_DRAFTS)()
+def test_a_tail_window_at_a_pool_boundary_lands_on_the_prefix() -> None:
+    """Covers a window that starts on a pool boundary and one past it."""
+    rings = _compile_tail([8, 10], [1, 3], num_drafts=NUM_DRAFTS)()
     np.testing.assert_array_equal(rings["live"], rings["reference"])
 
 

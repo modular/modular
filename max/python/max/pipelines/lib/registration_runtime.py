@@ -46,6 +46,7 @@ from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
 from .interfaces.pipeline_model import ModelLoadContext
+from .weight_transform import WeightEntry
 
 __all__ = [
     "BatchContextLengths",
@@ -196,6 +197,19 @@ class DeploymentConfig:
         parameter dtype conversion. The default preserves every weight.
         """
         return dict(state_dict)
+
+    @classmethod
+    def weight_entries(cls) -> Mapping[str, Sequence[WeightEntry]]:
+        """Returns the entries that name each role's checkpoint weights.
+
+        A config that names the weights itself, by keeping the checkpoint's
+        keys or overriding :meth:`prepare_weights`, declares here the names
+        its roles' weights end up with, so an exported artifact names them
+        as serving does. Keyed by
+        :class:`~max.pipelines.lib.graph_specs.GraphRole`; the default names
+        none.
+        """
+        return {}
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
         """Returns the config completed with ``runtime``.

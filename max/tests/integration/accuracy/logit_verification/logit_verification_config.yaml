@@ -901,6 +901,25 @@ logit_verification_pipelines:
     encoding: float4_e2m1fnx2
     tags: [nvidia-only, no-h100, manual]
 
+  # Beam needs ep_size == device count, so it runs only on 4 GPUs, and no
+  # B200 row has 4. `manual` keeps it out of full runs. A deploy gate names
+  # the entry, which drops `manual`, so `no-b200-multi` keeps it off the
+  # 2xB200 row.
+  # Goldens generated using vLLM 0.33.0.
+  # https://github.com/modularml/modular/actions/runs/42683146050
+  reflection/Beam-1.0-501B-A23B-NVFP4:
+    pre_submit_agents: []
+    pipeline: "reflection/Beam-1.0-501B-A23B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only, nvidia-multi, no-h100, no-b200-multi, manual]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/reflection_Beam-1.0-501B-A23B-NVFP4_golden/1/b551b852a327f87c274b8624eb6e316b3ba26260b639569d028279fed7547803/reflection_Beam-1.0-501B-A23B-NVFP4_golden.tar.gz"
+      json_file: "vllm_reflection_Beam-1.0-501B-A23B-NVFP4_float4_e2m1fnx2_golden.json"
+    cos_dist_threshold: 2.8e-04
+    kl_div_threshold: 5.0e-02
+    timeout: 3600
+
   # MiniMax-M3 (dense-only layers) on a trimmed checkpoint, compared
   # against goldens pregenerated from the mm-sglang MiniMax-M3 fork.
   minimax/minimax3-dense-only:

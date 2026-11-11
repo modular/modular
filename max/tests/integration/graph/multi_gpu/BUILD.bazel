@@ -39,6 +39,7 @@ modular_py_test(
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
         "//max/python/max/support",
+        "//max/tests/integration/test_common:graph_utils",
         requirement("ml-dtypes"),
         requirement("numpy"),
         requirement("torch"),

@@ -594,6 +594,7 @@ def scan_launch[
     ]
     ctx.enqueue_function[kernel](
         Int32(ngroups),
+        Int32(0),
         a_t,
         d_t,
         dtb_t,

@@ -92,6 +92,11 @@ public:
 
   static const VirtualDevice &cast(const Device &device);
 
+protected:
+  // Refused by name rather than by the base class's generic message; see
+  // `VirtualDeviceStream`.
+  ErrorOrSuccess enablePeerAccessImpl(const Device &peer) override;
+
 private:
   // Compilation device used for code generation (e.g., PTX→CUBIN)
   std::unique_ptr<CompilationDevice> compilationDevice_;

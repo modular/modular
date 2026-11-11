@@ -40,7 +40,7 @@ gemma4_modulev3_arch = SupportedArchitecture(
         "nvidia/Gemma-4-26B-A4B-NVFP4",
     ],
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16", "float4_e2m1fnx2"},
+    supported_encodings={"bfloat16", "float16", "float4_e2m1fnx2"},
     modules={GraphRole.DECODER: Gemma4Decoder, GraphRole.VISION: Gemma4Vision},
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=Gemma4Tokenizer,

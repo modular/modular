@@ -50,7 +50,6 @@ def generate_max_outputs(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     input_tensor = input_tensor.squeeze()  # remove batch dimension
     is_gpu = isinstance(device, Accelerator)
-    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
     state_dict = {"gate_score.weight": dummy_moe_weight.cpu()}
     model = DeepSeekV2MoEGate(
@@ -82,6 +81,7 @@ def generate_max_outputs(
     )
 
     compiled = session.load(graph, weights_registry=model.state_dict())
+    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
     max_output = compiled.execute(input_tensor)
     max_topk_idxs = from_dlpack(max_output[0]).to(torch.bfloat16)
     max_topk_weights = from_dlpack(max_output[1]).to(torch.bfloat16)
@@ -102,11 +102,11 @@ def test_moe_gate_topk_methods(
         config.topk_group = 3
         config.routed_scaling_factor = 5.0
 
-    torch_topk_idxs, torch_topk_weights = generate_torch_outputs(
-        config, input_tensor, dummy_moe_weight, device="cuda"
-    )
     max_topk_idxs, max_topk_weights = generate_max_outputs(
         config, input_tensor, dummy_moe_weight, device=Accelerator()
+    )
+    torch_topk_idxs, torch_topk_weights = generate_torch_outputs(
+        config, input_tensor, dummy_moe_weight, device="cuda"
     )
 
     # Top_k does not return values in sorted order, so we sort outputs here to compare.

@@ -175,7 +175,6 @@ modular_py_test(
     name = "test_logprobs",
     srcs = ["test_logprobs.py"],
     deps = [
-        "//max/python/max/pipelines/architectures/diffusion_gemma",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/lib",
     ],

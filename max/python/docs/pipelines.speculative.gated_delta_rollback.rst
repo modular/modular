@@ -31,6 +31,8 @@ Window planning
 
    accepted_lengths
    accepted_row_plan
+   ring_accepted_lengths
+   window_row_plan
 
 Pool updates
 ------------

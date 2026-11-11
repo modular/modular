@@ -3974,6 +3974,15 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
+/// Narrows a data layout query's type operand to a type constant, or returns
+/// null. Extensions, casts and rebinds only change a type value's trait view,
+/// so its layout is the wrapped type's; without stripping them a closure
+/// whose type is extended never folds.
+static TypeParamAttr getLayoutTypeConstant(TypedAttr type) {
+  return sugarDynCast<TypeParamAttr>(
+      stripIdentityWrappers(SugarAttr::strip(type)));
+}
+
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
@@ -3982,7 +3991,7 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!resultType)
     resultType = b.getIndexType();
 
-  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
@@ -4004,7 +4013,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!resultType)
     resultType = b.getIndexType();
 
-  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};

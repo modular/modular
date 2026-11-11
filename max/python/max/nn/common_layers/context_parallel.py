@@ -24,13 +24,21 @@ own heads (:func:`combine_partial_attention`), and, for an indexer that picks
 the keys to attend, the exchange of its local top-k scores
 (:func:`gather_topk_scores`).
 
-DCP spans the attention tensor-parallel axis of the mesh (``dcp == tp``):
-the whole of a one-axis mesh, or the ``tp`` axis of a ``(dp, tp)`` mesh of
-data-parallel replicas, where every collective runs within a replica. The
-``tp`` axis must be innermost, so a DCP group is a run of consecutive
-devices and each collective is one launch over every replica. A smaller
-DCP group inside TP needs a ``(tp / dcp, dcp)`` mesh; see
-``mach/docs/internal/context-parallel-plan-2026-11-02.md``.
+A DCP group is ``dcp`` consecutive ranks of the attention tensor-parallel
+axis of the mesh: ``tp`` of a one-axis mesh or of a ``(dp, tp)`` mesh of
+data-parallel replicas, which must be innermost. ``dcp`` may be any divisor
+of ``tp``. With ``dcp < tp`` the ``tp / dcp`` groups each hold a full copy
+of the cache between their ranks, and each attends its own run of
+``H * dcp / tp`` heads, so the group's merge leaves every rank exactly its
+``H / tp`` tensor-parallel heads.
+
+The model keeps its mesh. What only a group sees runs on the mesh's DCP
+view (:func:`dcp_view`), the same devices with ``tp`` split into
+``(tp / dcp, dcp)``: the collectives over one group, which run along its
+``dcp`` axis, and the weights a group shares, which shard along its ``tp``
+axis. :func:`to_dcp_mesh` moves a tensor between the two meshes without
+moving data. A placement only the view can state, such as a tensor sharded
+across groups and replicated within one, is ``Unknown`` on the model mesh.
 """
 
 from __future__ import annotations
@@ -40,7 +48,7 @@ import math
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.nn.common_layers.mesh_axis import TP, dcp_axis
+from max.nn.common_layers.mesh_axis import DCP, TP, dcp_axis
 from max.nn.kernels import cp_merge_topk
 from max.tensor import Tensor
 from max.tensor.sharding import (
@@ -58,24 +66,150 @@ _LN2 = math.log(2.0)
 # instead of NaN (``-inf - -inf``).
 _LSE_FLOOR = -1e30
 
+__all__ = [
+    "check_dcp_mesh",
+    "combine_partial_attention",
+    "dcp_group_heads",
+    "dcp_rank_tensor",
+    "dcp_ranks",
+    "dcp_view",
+    "gather_columns",
+    "gather_topk_scores",
+    "merge_topk",
+    "split_selection",
+    "to_dcp_mesh",
+]
+
 
 def check_dcp_mesh(mesh: DeviceMesh, dcp: int) -> None:
-    """Raises unless ``dcp`` spans the mesh's innermost attention TP axis.
+    """Raises unless DCP groups of ``dcp`` ranks tile the attention TP axis.
+
+    The axis is the innermost ``tp`` axis, the whole of a one-axis mesh, or
+    the ``dcp`` axis of a DCP view (:func:`dcp_view`).
 
     Raises:
-        NotImplementedError: If ``dcp`` is not the size of the ``tp`` axis
-            (the whole of a one-axis mesh), or another axis of more than one
-            device is inside it.
+        NotImplementedError: If ``dcp`` does not divide the size of the
+            ``tp`` axis (or is not the size of a view's ``dcp`` axis), or
+            another axis of more than one device is inside it.
     """
     axis = dcp_axis(mesh)
+    size = mesh.mesh_shape[axis]
     inner = mesh.mesh_shape[axis + 1 :]
-    if dcp != mesh.mesh_shape[axis] or any(size > 1 for size in inner):
+    fits = size == dcp if DCP in mesh.axis_names else size % dcp == 0
+    if dcp < 1 or not fits or any(n > 1 for n in inner):
         raise NotImplementedError(
-            f"decode context parallelism over {dcp} devices needs it to span "
-            f"the innermost {TP!r} axis of the mesh, got {mesh}; a group "
-            "smaller than tp needs a (tp / dcp, dcp) mesh, which is not "
-            "supported yet."
+            f"decode context parallelism over {dcp} devices needs groups of "
+            f"{dcp} consecutive ranks of the innermost {TP!r} axis of the "
+            f"mesh, so dcp must divide its size; got {mesh}."
         )
+
+
+def dcp_view(mesh: DeviceMesh, dcp: int) -> DeviceMesh:
+    """Returns ``mesh`` with its attention TP axis split into DCP groups.
+
+    The view holds the same devices in the same order, with the ``tp`` axis
+    (:func:`~max.nn.common_layers.mesh_axis.dcp_axis`) split into a ``tp``
+    axis of ``tp / dcp`` groups and an innermost ``dcp`` axis of each
+    group's ranks: ``(dp, tp)`` becomes ``(dp, tp / dcp, dcp)``. A
+    collective along ``dcp`` runs within each group, and a weight sharded
+    along the view's ``tp`` axis and replicated along ``dcp`` gives each
+    group its own heads. With ``dcp == tp`` the view's ``tp`` axis has one
+    group. A view is its own view.
+
+    Raises:
+        NotImplementedError: If ``dcp`` does not tile the mesh's attention
+            TP axis (see :func:`check_dcp_mesh`).
+    """
+    check_dcp_mesh(mesh, dcp)
+    if DCP in mesh.axis_names:
+        return mesh
+    axis = dcp_axis(mesh)
+    groups = mesh.mesh_shape[axis] // dcp
+    return DeviceMesh(
+        mesh.devices,
+        mesh.mesh_shape[:axis] + (groups, dcp) + mesh.mesh_shape[axis + 1 :],
+        mesh.axis_names[:axis] + (TP, DCP) + mesh.axis_names[axis + 1 :],
+    )
+
+
+def _view_placements(
+    placements: tuple[Placement, ...], axis: int
+) -> tuple[Placement, ...]:
+    """Returns a model-mesh mapping's placements on its DCP view.
+
+    The TP axis at ``axis`` becomes the view's ``(tp, dcp)`` pair. Its
+    placement holds on both, since the pair spans the same devices in the
+    same row-major order: a tensor axis sharded over ``tp`` is sharded over
+    both, the groups' pieces first.
+    """
+    p = placements[axis]
+    return placements[:axis] + (p, p) + placements[axis + 1 :]
+
+
+def _model_placements(
+    placements: tuple[Placement, ...], axis: int, sizes: tuple[int, int]
+) -> tuple[Placement, ...]:
+    """Returns a view mapping's placements on the mesh it views.
+
+    ``axis`` is the view's ``tp`` axis and ``sizes`` the sizes of its
+    ``(tp, dcp)`` pair. The pair folds into one placement when both say the
+    same, or when one of them spans a single device. Anything else, such as
+    sharded across groups and replicated within one, has no placement on
+    the model mesh and becomes ``Unknown``.
+    """
+    outer, inner = placements[axis], placements[axis + 1]
+    if sizes[0] == 1:
+        p = inner
+    elif sizes[1] == 1 or outer == inner:
+        p = outer
+    else:
+        p = Unknown()
+    return placements[:axis] + (p,) + placements[axis + 2 :]
+
+
+def to_dcp_mesh(t: Tensor, mesh: DeviceMesh) -> Tensor:
+    """Moves ``t`` between a mesh and its DCP view, moving no data.
+
+    One of ``t.mesh`` and ``mesh`` must be the other's :func:`dcp_view`.
+    Each device keeps its shard, and the placements carry over (see
+    :func:`_view_placements` and :func:`_model_placements`). A tensor on
+    ``mesh`` already, or on one device, is returned as it is.
+
+    Raises:
+        ValueError: If neither mesh is the other's DCP view.
+    """
+    source = t.mesh
+    if not t.is_distributed or source == mesh:
+        return t
+    if source.devices != mesh.devices:
+        raise ValueError(f"{mesh} is not a DCP view of {source}, or back")
+    if DCP in mesh.axis_names and DCP not in source.axis_names:
+        axis = dcp_axis(source)
+        placements = _view_placements(t.placements, axis)
+    elif DCP in source.axis_names and DCP not in mesh.axis_names:
+        axis = source.axis_names.index(TP)
+        sizes = (source.mesh_shape[axis], source.mesh_shape[axis + 1])
+        placements = _model_placements(t.placements, axis, sizes)
+    else:
+        raise ValueError(f"{mesh} is not a DCP view of {source}, or back")
+    return F.call_on_mesh(
+        lambda shard: shard,
+        source,
+        out_specs=DeviceMapping(mesh, placements),
+    )(t)
+
+
+def dcp_group_heads(mesh: DeviceMesh, n_heads: int, dcp: int) -> int:
+    """Returns the query heads each DCP group of ``mesh`` attends.
+
+    A group attends its ranks' tensor-parallel heads: ``n_heads * dcp /
+    tp``, all of them when ``dcp == tp``.
+    """
+    check_dcp_mesh(mesh, dcp)
+    tp = mesh.axis_size(dcp_axis(mesh))
+    if DCP in mesh.axis_names:
+        tp *= mesh.axis_size(TP)
+    return n_heads * dcp // tp
 
 
 def dcp_ranks(mesh: DeviceMesh, dcp: int) -> PerShard[int]:
@@ -169,27 +303,33 @@ def split_selection(selection: Tensor, width: int) -> tuple[Tensor, Tensor]:
 def combine_partial_attention(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
     """Merges each rank's partial attention and returns its own heads.
 
-    Every rank attended all ``H`` heads of its group over its own keys,
+    Every rank attended all ``H`` heads of its DCP group over its own keys,
     producing ``out`` (``[T, H, D]``) and the per-head base-2 LSE ``lse``
     (``[T, H]``, float32). The merged output of head ``h`` is
     ``sum_r w_r * out_r`` with ``w_r = 2^(lse_r - log2(sum_s 2^lse_s))``,
     exactly attention over the union of the ranks' keys. Each rank sends
-    every other rank its partials for that rank's heads in one all-to-all
-    and merges what it receives (:func:`_combine_a2a`).
+    every other rank of its group its partials for that rank's heads in one
+    all-to-all and merges what it receives (:func:`_combine_a2a`).
 
     Args:
-        out: Each rank's partial attention output, ``[T, H, D]``.
+        out: Each rank's partial attention output, ``[T, H, D]``, over its
+            group's ``H`` heads: all of them when ``dcp`` is the size of
+            the ``tp`` axis, else the group's run of them
+            (:func:`dcp_group_heads`).
         lse: Each rank's base-2 log-sum-exp per token and head, ``[T, H]``.
-        dcp: The DCP group size, the size of the mesh's ``tp`` axis.
+        dcp: The DCP group size, a divisor of the ``tp`` axis's size.
 
     Returns:
-        The merged ``[T, H, D]`` output, sharded over its head axis along
-        the DCP axis, each rank holding its ``H / dcp`` heads, ready for a
+        The merged output on ``out``'s mesh, sharded over its head axis
+        along the ``tp`` axis: each rank holds its ``H / dcp`` heads of its
+        group's, which are its tensor-parallel heads, ready for a
         head-sharded output projection. Other mesh axes keep ``out``'s
         placements: each data-parallel replica merges only its own ranks.
     """
-    check_dcp_mesh(out.mesh, dcp)
-    return _combine_a2a(out, lse, dcp)
+    mesh = out.mesh
+    view = dcp_view(mesh, dcp)
+    merged = _combine_a2a(to_dcp_mesh(out, view), to_dcp_mesh(lse, view), dcp)
+    return to_dcp_mesh(merged, mesh)
 
 
 def _lse_lanes(lse: Tensor, dtype: DType) -> list[Tensor]:
@@ -275,12 +415,13 @@ def _merge_received(received: Tensor, partial: Tensor, dcp: int) -> Tensor:
 def _combine_a2a(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
     """Merges by one packed all-to-all, as vLLM's and SGLang's a2a do.
 
-    Each rank packs its partial outputs and LSEs per destination rank
-    (:func:`_pack_partials`); the all-to-all splits that axis, so rank
-    ``j`` receives every rank's partials for heads
-    ``[j * H / dcp, (j + 1) * H / dcp)``, and merges them locally
-    (:func:`_merge_received`). One collective per layer, where an LSE
-    all-gather plus an output reduce-scatter would take two.
+    ``out`` and ``lse`` are on a DCP view (:func:`dcp_view`). Each rank
+    packs its partial outputs and LSEs per destination rank
+    (:func:`_pack_partials`); the all-to-all along the ``dcp`` axis splits
+    that axis, so rank ``j`` of a group receives every rank's partials for
+    the group's heads ``[j * H / dcp, (j + 1) * H / dcp)``, and merges them
+    locally (:func:`_merge_received`). One collective per layer, where an
+    LSE all-gather plus an output reduce-scatter would take two.
     """
     mesh = out.mesh
     axis = dcp_axis(mesh)
@@ -295,10 +436,21 @@ def _combine_a2a(out: Tensor, lse: Tensor, dcp: int) -> Tensor:
     # claims nothing either: each rank holds every rank's partials for its
     # heads, not a slice of one tensor.
     received = F.all_to_all(packed, split_axis=1, concat_axis=1, mesh_axis=axis)
+    # Group ``g`` attended heads ``[g * H, (g + 1) * H)`` of the layer's, so
+    # each rank's merged heads are its slice along the whole TP axis: the
+    # view's ``tp`` axis, then ``dcp``.
+    groups = mesh.axis_names.index(TP)
+    merged = DeviceMapping(
+        mesh,
+        tuple(
+            Sharded(1) if i in (groups, axis) else p
+            for i, p in enumerate(out.placements)
+        ),
+    )
     return F.call_on_mesh(
         lambda received, partial: _merge_received(received, partial, dcp),
         mesh,
-        out_specs=_on_dcp_axis(out, Sharded(1)),
+        out_specs=merged,
     )(received, out)
 
 
@@ -316,16 +468,23 @@ def gather_topk_scores(scores: Tensor, dcp: int) -> Tensor:
 def gather_columns(x: Tensor, dcp: int) -> Tensor:
     """All-gathers each rank's ``[T, c]`` columns into ``[T, dcp * c]``.
 
-    Rank ``r``'s columns land at ``[r * c, (r + 1) * c)``, so a tensor whose
-    columns are a rank's run of heads gathers into all of them in order. On
-    a ``(dp, tp)`` mesh each replica gathers only its own ranks' columns.
+    Rank ``r`` of a DCP group gets its columns at ``[r * c, (r + 1) * c)``,
+    so a tensor whose columns are a rank's run of heads gathers into all of
+    its group's heads in order. Each group gathers only its own ranks'
+    columns, and on a ``(dp, tp)`` mesh only within its replica. The result
+    is on ``x``'s mesh, ``Replicated`` along ``tp`` when one group spans
+    it, else ``Unknown`` there: the groups gathered different columns.
     """
     mesh = x.mesh
-    check_dcp_mesh(mesh, dcp)
-    axis = dcp_axis(mesh)
+    view = dcp_view(mesh, dcp)
+    x = to_dcp_mesh(x, view)
+    axis = dcp_axis(view)
     per_rank = _on_dcp_axis(x, Sharded(1), Unknown())
     gathered = F.allgather(
         x.rebind_mapping(per_rank), tensor_axis=1, mesh_axis=axis
     )
     # Back to the input's placements on the other axes.
-    return gathered.rebind_mapping(_on_dcp_axis(x, gathered.placements[axis]))
+    gathered = gathered.rebind_mapping(
+        _on_dcp_axis(x, gathered.placements[axis])
+    )
+    return to_dcp_mesh(gathered, mesh)

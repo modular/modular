@@ -56,6 +56,8 @@ from layout.coord import (
 from layout.tile_io import TileCopier
 from layout.layout import Layout, TensorLayout, _RowMajor
 
+from .tensor_arg_traits import Output, Storable, Tensor, TileTensorable
+
 
 # ===----------------------------------------------------------------------=== #
 # IO direction tag + IOSpec marker
@@ -2812,6 +2814,73 @@ def foreach[
         simd_width=simd_width,
         _trace_description=_trace_name,
     ](wrapper, tensor.shape_coord(), ctx)
+
+
+def foreach[
+    Z: Output & Tensor,
+    ctx_target: CompilationTarget,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[Z.dtype, width]),
+    //,
+    *,
+    simd_width: Int = get_kernel_simd_width[Z.dtype, ctx_target](),
+    _trace_name: StaticString = "mogg.for_each",
+](var func: FuncType, z: Z, ctx: DeviceContext[ctx_target]) raises:
+    """Apply a `RegisterPassable` body to each element of a tensor-trait output.
+
+    Tensor-trait twin of the `ManagedTensorSlice` overload above. A dense
+    output stores through its `TileTensor` projection. A fused output stores
+    through `Storable.store`, which runs the fused consumer epilogue.
+
+    Constraints:
+        `Z` conforms to `TileTensorable`, or to `Storable` and
+        `TrivialRegisterPassable`. A fused output runs only on the CPU, because
+        its host proxy cannot store on a device.
+
+    Parameters:
+        Z: The type of the output tensor argument.
+        ctx_target: The compilation target of `ctx` (inferred).
+        FuncType: The type of the per-element body closure.
+        simd_width: The SIMD width for the target (usually leave this as its default value).
+        _trace_name: Name of the executed operation displayed in the trace_description.
+
+    Args:
+        func: The function to apply to each element of the output.
+        z: The output tensor argument which receives the return values from `func`.
+        ctx: The call context (forward this from the custom operation).
+    """
+    comptime if conforms_to(Z, TileTensorable):
+        var zt = z.to_tile_tensor()
+
+        def wrapper[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var func^, var zt}:
+            zt.store[
+                width=width,
+                alignment=min(Z.alignment, alignment * align_of[Z.dtype]()),
+            ](idx, rebind[SIMD[zt.dtype, width]](func[width](idx)))
+
+        elementwise[simd_width=simd_width, _trace_description=_trace_name](
+            wrapper, z.shape(), ctx
+        )
+    else:
+        comptime assert ctx_target.is_cpu(), (
+            "foreach: a fused output that is not TileTensorable runs only on"
+            " the CPU"
+        )
+        comptime assert conforms_to(Z, Storable & TrivialRegisterPassable)
+
+        def fused_wrapper[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var func^, var z}:
+            z.store[width=width, element_alignment=alignment](
+                idx, func[width](idx)
+            )
+
+        elementwise[simd_width=simd_width, _trace_description=_trace_name](
+            fused_wrapper, z.shape(), ctx
+        )
 
 
 def _shape_types_compatible[

@@ -32,6 +32,10 @@ A step either verifies drafts or it does not, and the two commit differently:
   and advances the live rows itself. Replay changes nothing: every request's
   accepted range is empty.
 
+A row longer than ``K + 1`` tokens is a prefill row: the verify commits its
+conv and SSM state at its last real token whatever ``update_state`` says, and
+the replay folds nothing for it.
+
 Both ops are in every graph. Each takes its extent from ``K``, and the one that
 does not apply has no rows.
 """
@@ -84,6 +88,8 @@ def replay_state_pools(
     conv_rows: TensorValue,
     ssm_rows: TensorValue,
     replay_bounds: TensorValue,
+    merged_offsets: TensorValue,
+    verify_width: TensorValue,
 ) -> None:
     """Commits the accepted prefix of one device's captured Mamba layers.
 
@@ -100,6 +106,10 @@ def replay_state_pools(
         ssm_rows: Live ``[num_layers, batch_size]`` SSM row ids.
         replay_bounds: The ``(start, end)`` captured rows each request
             replays, from :func:`replay_plan`.
+        merged_offsets: This device's ``[batch_size + 1]`` merged row
+            offsets.
+        verify_width: The ``[K]`` operand from
+            :func:`~max.nn._graph_ops.state_space.verify_width_operand`.
     """
     mamba2_replay_fold(
         conv_pool=live_conv_pool,
@@ -107,6 +117,8 @@ def replay_state_pools(
         conv_rows=conv_rows,
         ssm_rows=ssm_rows,
         replay_bounds=replay_bounds,
+        merged_offsets=merged_offsets,
+        verify_width=verify_width,
         projected=[capture.projected for capture in captures],
         convolved=[capture.convolved for capture in captures],
         A=[capture.A for capture in captures],

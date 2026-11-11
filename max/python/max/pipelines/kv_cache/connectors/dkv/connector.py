@@ -2083,6 +2083,10 @@ class DKVConnector(KVConnector):
         """
         return None if self._sliding_leaf_ids else hint
 
+    def routes_hint(self, hint: bytes) -> bool:
+        """Returns whether ``hint`` reaches the wire, per :meth:`_usable_hint`."""
+        return self._usable_hint(hint) is not None
+
     @staticmethod
     def _leased_end(
         depths: Mapping[int, int],

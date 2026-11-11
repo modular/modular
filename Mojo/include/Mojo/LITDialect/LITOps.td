@@ -1133,7 +1133,8 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
                    "StringRef":$originName,
-                   "VarDeclKind":$kind)>
+                   "VarDeclKind":$kind,
+                   CArg<"TypedAttr", "{}">:$addressSpace)>
   ];
   let extraClassDeclaration = [{
     bool isSynthetic();
@@ -2153,6 +2154,47 @@ def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
   let assemblyFormat = [{
     $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// RefPackConcatOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefPackConcatOp : LITOp<"ref.pack.concat", [Pure]> {
+  let summary = "concatenate reference packs";
+  let description = [{
+    The `lit.ref.pack.concat` operation makes one reference pack from the
+    elements of its operands, in sequence. The operation must have one or more
+    operands.
+
+    All operands have the same element type, address space and origin as the
+    result.
+
+    The variadic element list of the result is the `#kgen.param_list.concat` of
+    the lists of the operands. An element list can be parametric. With one
+    operand, the result can also have the list of the operand, because a
+    `#kgen.param_list.concat` of one parametric list does not fold.
+
+    Example:
+
+    ```mlir
+    %0 = lit.ref.pack.concat(%a, %b)
+      : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+        !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+     -> !lit.ref.pack<:param_list<!kgen.type>
+          #kgen.param_list.concat<#kgen.param_list<[index], Ts>
+            : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+    ```
+  }];
+
+  let arguments = (ins Variadic<LIT_RefPackType>:$packs);
+  let results = (outs LIT_RefPackType:$result);
+  let assemblyFormat = [{
+    `(` $packs `)` attr-dict `:` type($packs) `->` type($result)
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

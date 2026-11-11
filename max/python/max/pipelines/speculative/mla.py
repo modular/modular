@@ -242,7 +242,7 @@ def _step0_kv(kv: PagedCacheValues) -> PagedCacheValues:
     assert decode_md is not None
     step0_max_prompt = kv.max_prompt_length.cast(DType.int64).reshape([1]) + 1
     step0_md = ops.concat(
-        [decode_md[0:1], step0_max_prompt, decode_md[2:4]],
+        [decode_md[0:1], step0_max_prompt, decode_md[2:]],
         axis=0,
     )
     return replace(kv, attention_dispatch_metadata=step0_md)

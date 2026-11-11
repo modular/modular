@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.driver import CPU, Accelerator
+from max.driver import CPU, Accelerator, ArchitectureVersion
 from max.support.host_memory import available_host_memory
 
 GIB = 1024**3
@@ -93,3 +93,20 @@ def test_cpu_architecture_name() -> None:
         Exception, match="failed to get device architecture name"
     ):
         _ = cpu.architecture_name
+
+
+def test_cpu_architecture_version() -> None:
+    cpu = CPU()
+    with pytest.raises(ValueError, match="the CPU device has no architecture"):
+        _ = cpu.architecture_version
+
+
+def test_architecture_version_equality() -> None:
+    gfx90a = ArchitectureVersion(9, 0, 10)
+    assert (gfx90a.major, gfx90a.minor, gfx90a.stepping) == (9, 0, 10)
+    assert gfx90a == ArchitectureVersion(9, 0, 10)
+    assert gfx90a != ArchitectureVersion(9, 0)
+    assert len({gfx90a, ArchitectureVersion(9, 0, 10)}) == 1
+    assert repr(gfx90a) == "ArchitectureVersion(major=9, minor=0, stepping=10)"
+    # Not a tuple, so it does not compare equal to one.
+    assert gfx90a != (9, 0, 10)

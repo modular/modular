@@ -53,6 +53,8 @@ LIBMAX_EXPORTS = [
     "_ZNK1M6Engine*",
     "_ZN1M15ExecutableModel*",
     "_ZNK1M15ExecutableModel*",
+    # `ModelMetadata.kernel_summaries` reads it off a compiled artifact.
+    "_ZNK1M5Model18getKernelSummaries*",
     "_ZN1M13GraphCompiler*",
     "_ZNK1M13GraphCompiler*",
     "_ZN1M10MOFContext*",

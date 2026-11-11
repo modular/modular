@@ -153,6 +153,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:muse_spark"],
         description="Muse Spark model-specific tests",
     ),
+    "beam": ModelProfile(
+        name="beam",
+        default_port=8900,
+        tags=["model:beam"],
+        description="Beam 1.0 on Mach",
+    ),
     "nemotron": ModelProfile(
         name="nemotron",
         default_port=8700,

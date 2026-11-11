@@ -2351,14 +2351,19 @@ struct String(
             dst[unsafe_offset=i] = src[unsafe_offset=i]
         self = new_string^
 
-    # This is the out-of-line implementation of reserve called when we need
-    # to grow the capacity of the string. Make sure our capacity at least
-    # doubles to avoid O(n^2) behavior, and make use of extra space if it exists.
+    # Moves the bytes into a new buffer that only this string owns. Growth at
+    # least doubles the capacity to avoid O(n^2) appends. A call that only
+    # un-shares the buffer keeps the capacity: doubling there would double it
+    # again on every copy-then-append.
     def _realloc_mutable(mut self, capacity: Int):
         # Get these fields before we change _capacity_or_data
         var byte_len = self.byte_length()
         var old_ptr = self.unsafe_ptr()
-        var new_capacity = (max(capacity, self.capacity_bytes() * 2) + 7) >> 3
+        var old_capacity = self.capacity_bytes()
+        var target = old_capacity
+        if capacity > old_capacity:
+            target = max(capacity, old_capacity * 2)
+        var new_capacity = (target + 7) >> 3
         var new_ptr = self._alloc(new_capacity << 3)
         unsafe_memcpy(dest=new_ptr, src=old_ptr, count=byte_len)
         # If mutable buffer drop the ref count

@@ -437,6 +437,8 @@ def init_vector_gpu[
                 UInt64(tid + 2 * stride).cast[dtype](),
                 UInt64(tid + 3 * stride).cast[dtype](),
             )
+        case _:
+            pass
     apply(values)
 
 

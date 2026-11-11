@@ -670,8 +670,9 @@ ASTDecl::getDeclFullSignature(ASTType contextualType) const {
     genDefaults.push_back(pog.getDefaultValue());
   }
 
-  return FnTypeGeneratorType::prependParams(fnSig, genDecls, genPogNames,
-                                            genDefaults);
+  return FnTypeGeneratorType::prependParams(
+      fnSig, genDecls, genPogNames, genDefaults,
+      genAttr.getMetadata().getBodyConstraints());
 }
 
 bool ASTDecl::isStaticMethodDecl() const {

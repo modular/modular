@@ -26,7 +26,7 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module, ModuleList, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
@@ -231,7 +231,7 @@ class Lfm3Base(Module[..., ModuleV3Outputs]):
         Returns the attention caches and the conv state pool and rows.
         """
         kv_tree = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in kv_inputs)
+            iter(kv_input_values(kv_inputs))
         )
         kv = {
             key: PagedCacheValues.from_upstream(

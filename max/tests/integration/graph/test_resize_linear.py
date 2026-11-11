@@ -23,7 +23,7 @@ import torch
 from max._core.dialects import builtin, kgen, mo
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.ops import CoordinateTransformMode
 from numpy.typing import NDArray
@@ -106,6 +106,36 @@ def _reference(
     return out.astype(np.float32)
 
 
+def _load(
+    session: InferenceSession,
+    input_type: TensorType,
+    out_shape: Sequence[int | str],
+    coord_mode: CoordinateTransformMode = CoordinateTransformMode.HALF_PIXEL,
+    antialias: bool = False,
+) -> Model:
+    """Compiles resize_linear on one graph."""
+    with Graph("test_resize_linear", input_types=[input_type]) as graph:
+        graph.output(
+            ops.resize_linear(
+                graph.inputs[0].tensor,
+                out_shape,
+                coordinate_transform_mode=coord_mode,
+                antialias=antialias,
+            )
+        )
+    return session.load(graph)
+
+
+def _fetch(model: Model, data: NDArray[np.float32]) -> NDArray[np.float32]:
+    """Executes a compiled resize_linear and returns the host result."""
+    result = model.execute(Buffer.from_numpy(data).to(model.input_devices[0]))[
+        0
+    ]
+    assert isinstance(result, Buffer)
+    assert result.device == model.input_devices[0]
+    return result.to_numpy()
+
+
 def _execute(
     session: InferenceSession,
     device: DeviceRef,
@@ -116,22 +146,8 @@ def _execute(
     antialias: bool = False,
 ) -> NDArray[np.float32]:
     """Executes resize_linear on one graph and returns the host result."""
-    with Graph("test_resize_linear", input_types=[input_type]) as graph:
-        graph.output(
-            ops.resize_linear(
-                graph.inputs[0].tensor,
-                out_shape,
-                coordinate_transform_mode=coord_mode,
-                antialias=antialias,
-            )
-        )
-    model = session.load(graph)
-    result = model.execute(Buffer.from_numpy(data).to(model.input_devices[0]))[
-        0
-    ]
-    assert isinstance(result, Buffer)
-    assert result.device == model.input_devices[0]
-    return result.to_numpy()
+    model = _load(session, input_type, out_shape, coord_mode, antialias)
+    return _fetch(model, data)
 
 
 def _run(
@@ -158,8 +174,18 @@ def test_resize_linear_gpu_matches_cpu(
     rng = np.random.default_rng(0)
     data = rng.standard_normal(INPUT_SHAPE).astype(np.float32)
 
-    cpu = _run(session, DeviceRef.CPU(), data, coord_mode, antialias)
-    gpu = _run(session, DeviceRef.GPU(), data, coord_mode, antialias)
+    cpu_model, gpu_model = [
+        _load(
+            session,
+            TensorType(DType.float32, INPUT_SHAPE, device=device),
+            OUTPUT_SHAPE,
+            coord_mode,
+            antialias,
+        )
+        for device in (DeviceRef.CPU(), DeviceRef.GPU())
+    ]
+    cpu = _fetch(cpu_model, data)
+    gpu = _fetch(gpu_model, data)
 
     assert gpu.shape == tuple(OUTPUT_SHAPE)
     np.testing.assert_allclose(gpu, cpu, rtol=1e-5, atol=1e-5)

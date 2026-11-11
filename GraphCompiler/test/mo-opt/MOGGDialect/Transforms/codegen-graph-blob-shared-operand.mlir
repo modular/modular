@@ -10,8 +10,8 @@
 // verification is disabled.
 
 // The three calls of a `mogg.graph_blob` read the same `%a1`. It crosses the
-// launch once, as one kernel argument that each call rebuilds, and the blob
-// folds the three configurations with two `merge`s.
+// launch once, as one kernel argument that each call rebuilds, and each call's
+// own configuration gives its `active_threads`.
 
 // CHECK: def {{__[A-Za-z0-9_]+}}({{.*}}, [[CTX:[A-Za-z0-9_]+]]: {{.*}}DeviceContext) raises:
 // CHECK:   var [[CONFIG0:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration([[OUT0:[A-Za-z0-9_]+]], [[IN:[A-Za-z0-9_]+]])
@@ -22,13 +22,12 @@
 // CHECK:   var [[CONFIG2:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration([[OUT2:[A-Za-z0-9_]+]], [[IN]])
 // CHECK:   comptime [[OUT2_T:[A-Za-z0-9_]+]] = type_of([[OUT2]])
 // CHECK:   comptime [[CONFIG_T:[A-Za-z0-9_]+]] = type_of([[CONFIG0]])
-// CHECK:   var [[MERGED1:[A-Za-z0-9_]+]] = [[CONFIG0]].merge([[CONFIG1]])
-// CHECK:   var [[MERGED2:[A-Za-z0-9_]+]] = [[MERGED1]].merge([[CONFIG2]])
-// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].DeviceType, [[A1:[A-Za-z0-9_]+]]: [[IN_T]].DeviceType, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].DeviceType, [[A3:[A-Za-z0-9_]+]]: [[OUT2_T]].DeviceType, {{[A-Za-z0-9_]+}}: [[CONFIG_T]].ActiveThreads, {{[A-Za-z0-9_]+}}: [[CONFIG_T]].ActiveThreads, {{[A-Za-z0-9_]+}}: [[CONFIG_T]].ActiveThreads):
+// CHECK:   var [[LAUNCH:[A-Za-z0-9_]+]] = [[CONFIG_T]].all_cores()
+// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].device_type, [[A1:[A-Za-z0-9_]+]]: [[IN_T]].device_type, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].device_type, [[A3:[A-Za-z0-9_]+]]: [[OUT2_T]].device_type, {{[A-Za-z0-9_]+}}: Int32, {{[A-Za-z0-9_]+}}: Int32, {{[A-Za-z0-9_]+}}: Int32):
 // CHECK:     {{.*}}.MapLowerDeclarative.execute_device([[OUT0_T]]([[A0]]), [[IN_T]]([[A1]]))
 // CHECK:     {{.*}}.MapLowerDeclarative.execute_device([[OUT1_T]]([[A2]]), [[IN_T]]([[A1]]))
 // CHECK:     {{.*}}.MapLowerDeclarative.execute_device([[OUT2_T]]([[A3]]), [[IN_T]]([[A1]]))
-// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[MERGED2]], [[OUT0]], [[IN]], [[OUT1]], [[OUT2]], [[CONFIG0]].active_threads(), [[CONFIG1]].active_threads(), [[CONFIG2]].active_threads())
+// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[LAUNCH]], [[OUT0]], [[IN]], [[OUT1]], [[OUT2]], _graph_blob.active_threads([[CONFIG0]].get_grid_dim(), [[CONFIG0]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim()), _graph_blob.active_threads([[CONFIG1]].get_grid_dim(), [[CONFIG1]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim()), _graph_blob.active_threads([[CONFIG2]].get_grid_dim(), [[CONFIG2]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim()))
 
 mo.graph @blob(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %0:3 = mogg.routine (%arg0 : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)

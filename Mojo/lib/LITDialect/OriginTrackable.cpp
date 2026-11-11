@@ -400,9 +400,22 @@ void OperationEffects::analyzeCallOp(Operation &op) {
       // Find all the references getting passed into the list/pack so we can
       // process them individually.
       TypedAttr extraOrigin;
-      for (auto elt :
-           OriginTrackable::decodeIndividualVariadicArguments(arg, extraOrigin))
-        addArgument(elt, argConvention);
+      for (auto elt : OriginTrackable::decodeIndividualVariadicArguments(
+               arg, extraOrigin)) {
+        if (!isa<RefPackType>(getCanonicalType(elt.getType()))) {
+          addArgument(elt, argConvention);
+          continue;
+        }
+        // An unpacked pack is a register value. Its accesses are the origins
+        // in its type. The element convention of the callee decides if they
+        // are mutated. A `mut` pack of the caller can go into a `read` pack.
+        operands.push_back({elt, OperandEffect::regUse});
+        for (TypedAttr origin : originFinder.findOriginsIn({elt.getType()})) {
+          if (originsAccessesAreReadOnly || argConvention != ArgConvention::Mut)
+            origin = OriginMutCastAttr::get(origin, false);
+          origins.push_back({origin, elt});
+        }
+      }
 
       // This hack makes sure we extend the lifetime of the VarDecl containing
       // the variadic list. VariadicList itself should capture the origin.
@@ -653,19 +666,21 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 // Helpers
 //===----------------------------------------------------------------------===//
 
-/// Find the single !lit.ref.store that stores to the specified var decl.
+/// Return the value that the single !lit.ref.store writes to the var decl.
+/// Return null if the var decl does not have exactly one store. A temporary
+/// variable that the parser makes has one store. A user variable can have
+/// more stores, or it can get its value through an `out` argument.
 static Value findSingleStoreToVarDecl(VarDeclOp varDecl) {
   Value foundValue;
   for (Operation *user : varDecl.getResult().getUsers()) {
     if (auto refStore = ::dyn_cast<RefStoreOp>(user)) {
       if (refStore.getDest() == varDecl.getResult()) {
-        assert(!foundValue && "expected to find a single store to a var decl");
+        if (foundValue)
+          return {};
         foundValue = refStore.getValue();
       }
     }
   }
-
-  assert(foundValue && "expected to find a single store to a var decl");
   return foundValue;
 }
 
@@ -709,6 +724,8 @@ static Value findArgPassedToVariadicConstructor(Value val) {
     return {};
 
   auto storedValue = findSingleStoreToVarDecl(varDecl);
+  if (!storedValue)
+    return {};
 
   // Look through VariadicList/VariadicPack::__init__ so we can check the
   // individual arguments for exclusivity. Without this, `mutate_pack(x, x)`
@@ -767,14 +784,34 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
     return result;
   }
 
+  if (auto concat =
+          ctorArg ? ctorArg.getDefiningOp<RefPackConcatOp>() : nullptr) {
+    // A call such as `f(a, *p, b)`. Each plain operand (`a`, `b`) is one
+    // entry. An unpacked pack (`*p`) has no separate element values here, so
+    // the `!lit.ref.pack` value is one entry. The checker treats it as an
+    // access to the origin of `p`. The access is mutable if the callee takes a
+    // `mut` pack. Thus, `f(*p, *p)` and `f(p[0], *p)` into a `mut` pack are
+    // aliasing errors.
+    for (Value segment : concat.getPacks()) {
+      if (auto run = segment.getDefiningOp<RefPackCreateOp>()) {
+        for (auto elt : run.getOperands())
+          result.push_back(RefImmutOp::stripRebinds(elt));
+      } else {
+        result.push_back(RefImmutOp::stripRebinds(segment));
+      }
+    }
+    return result;
+  }
+
   Value listStorage = ctorArg;
   if (auto refLoad = ctorArg ? ctorArg.getDefiningOp<RefLoadOp>() : nullptr)
     listStorage = RefImmutOp::stripRebinds(refLoad.getOperand());
 
   if (auto varDecl =
           listStorage ? listStorage.getDefiningOp<VarDeclOp>() : nullptr) {
-    if (auto arrayCreate = findSingleStoreToVarDecl(varDecl)
-                               .getDefiningOp<POP::ArrayCreateOp>()) {
+    Value stored = findSingleStoreToVarDecl(varDecl);
+    if (auto arrayCreate =
+            stored ? stored.getDefiningOp<POP::ArrayCreateOp>() : nullptr) {
       // Locally constructed VariadicList. The parser emits:
       //   %__passed_varargs__ = lit.var.decl: !lit.ref<array<4, eltref>>
       //   %arr = pop.array.create [%1, %2, %3]

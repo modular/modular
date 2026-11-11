@@ -66,6 +66,7 @@ from state_space.mamba2_ssd_scan import (
     _use_initial_state,
     _write_final_state,
 )
+from state_space.row_rule import commit_len, is_prefill_row
 
 comptime CHUNK = 256
 """Tokens per chunk."""
@@ -164,9 +165,11 @@ def ssd_chunk_map[
     SEngine: TensorEngine,
     QLT: TensorLayout,
     QEngine: TensorEngine,
+    ROW_RULE: Bool = False,
 ](
     slots_i: Int32,
     batch_i: Int32,
+    num_draft_tokens: Int32,
     info: TileTensor[.int32, SLT, MutUntrackedOrigin, Engine=SEngine],
     query_start_loc: TileTensor[
         .int32, QLT, ImmUntrackedOrigin, Engine=QEngine
@@ -176,27 +179,34 @@ def ssd_chunk_map[
 
     `info` holds, in order: `slots` chunk start tokens, `slots` chunk
     lengths (0 for an unused slot), `slots` owning sequences, then `batch`
-    first-chunk slots and `batch` chunk counts.
+    first-chunk slots and `batch` chunk counts. Under `ROW_RULE` a
+    prefill row maps only its real tokens and a short row gets no chunk:
+    a serial launch beside this one scans it.
     """
     var slots = Int(slots_i)
     var batch = Int(batch_i)
     if thread_idx.x != 0:
         return
+    var k = Int(num_draft_tokens)
     var next = 0
     for b in range(batch):
         var s = Int(query_start_loc[b])
         var e = Int(query_start_loc[b + 1])
-        var n = ceildiv(max(e - s, 0), CHUNK)
+        var row_len = e - s
+        var real = (
+            commit_len(row_len, k) if is_prefill_row(row_len, k) else 0
+        ) if ROW_RULE else row_len
+        var n = ceildiv(max(real, 0), CHUNK)
         info.store((3 * slots + b,), Int32(next))
         info.store((3 * slots + batch + b,), Int32(n))
         for c in range(n):
             var start = s + c * CHUNK
             info.store((next,), Int32(start))
-            info.store((slots + next,), Int32(min(CHUNK, e - start)))
+            info.store((slots + next,), Int32(min(CHUNK, s + real - start)))
             info.store((2 * slots + next,), Int32(b))
             next += 1
-    for k in range(next, slots):
-        info.store((slots + k,), Int32(0))
+    for slot in range(next, slots):
+        info.store((slots + slot,), Int32(0))
 
 
 def ssd_chunk_cumsum[
@@ -423,6 +433,7 @@ def ssd_state_passing[
     DSTATE: Int,
     VPT: Int = 1,
     entry_bf16: Bool = False,
+    ROW_RULE: Bool = False,
 ](
     slots_i: Int32,
     batch_i: Int32,
@@ -528,7 +539,10 @@ def ssd_state_passing[
                                 states.store[alignment=16]((off + e,), state[v])
                             state[v] = fma(state[v], d, s_c[u * VPT + v])
         barrier()
-    if _write_final_state(update_state, b):
+    # Under ROW_RULE only a prefill row has chunks, and its last chunk
+    # ends at the commit point, so the state lands there whatever the flag.
+    var write_state = _write_final_state(update_state, b) or ROW_RULE
+    if write_state:
         comptime for v in range(VPT):
             var e = e0 + v * VS
             if e < pn:
@@ -1018,6 +1032,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
     DSTATE: Int,
     dt_softplus: Bool,
     grouped_cb_mode: Int = GROUPED_CB_AUTO,
+    ROW_RULE: Bool = False,
 ](
     ctx: DeviceContext,
     total_len: Int,
@@ -1041,6 +1056,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
     b_addr: Int = 0,
     c_addr: Int = 0,
     bc_ld: Int = 0,
+    num_draft_tokens: Int = 0,
 ) raises:
     """Runs the chunked SSD scan over a varlen batch.
 
@@ -1062,6 +1078,9 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         grouped_cb_mode: `GROUPED_CB_OFF`, `GROUPED_CB_ON`, or
             `GROUPED_CB_AUTO`. AUTO selects only the validated B200 bf16
             kernel, fp32 state, dimension-128 amortization regime.
+        ROW_RULE: Whether a prefill row (longer than one real token plus
+            its drafts) maps only its real tokens and commits its state
+            after them, whatever its `update_state` flag.
 
     Args:
         ctx: Device context.
@@ -1075,7 +1094,9 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         ssm_pool: State pool, read and written in place.
         query_start_loc: Cumulative sequence offsets of shape `(batch + 1,)`.
         has_initial_state: Per-sequence flag, or empty.
-        update_state: Per-sequence write-back flag, or empty.
+        update_state: Per-sequence write-back flag, or empty. Under
+            `ROW_RULE` a prefill row writes its state at its last real
+            token whatever this flag.
         x_fn: Reads `x`.
         dt_fn: Reads `dt`.
         b_fn: Reads `B`.
@@ -1093,6 +1114,8 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         b_addr: B's first element, or 0.
         c_addr: C's first element, or 0.
         bc_ld: Row stride of B and C in elements.
+        num_draft_tokens: Draft tokens per row; a row longer than this
+            plus one is a prefill row under `ROW_RULE`.
     """
     comptime assert DSTATE % 64 == 0, "the chunked scan needs DSTATE % 64 == 0"
     comptime assert grouped_cb_mode in (
@@ -1189,10 +1212,12 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         info.Engine,
         query_start_loc.LayoutType,
         query_start_loc.Engine,
+        ROW_RULE=ROW_RULE,
     ]
     ctx.enqueue_function[map_kernel](
         Int32(slots),
         Int32(batch),
+        Int32(num_draft_tokens),
         info,
         query_start_loc,
         grid_dim=(1, 1, 1),
@@ -1237,6 +1262,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
             DSTATE,
             VPT,
             entry_bf16,
+            ROW_RULE=ROW_RULE,
         ]
         ctx.enqueue_function[pass_kernel](
             Int32(slots),

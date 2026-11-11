@@ -22,7 +22,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
-from max.nn.kv_cache.input_types import MIXED_STEP_SPLIT_SIZE
+from max.nn.kv_cache.input_types import (
+    MIXED_STEP_SPLIT_SIZE,
+    _mixed_step_decode_view,
+)
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.paged_kv_cache._mixed_step_split import (
     MIXED_STEP_SPLIT_SWITCH,
@@ -36,6 +39,30 @@ from test_common.context_utils import create_text_context
 
 K = 3
 WIDTH = mixed_step_decode_width(K)
+
+
+def test_decode_view_of_a_head_decode_record() -> None:
+    """The head view is the decode view when its max query fits the cap."""
+    record = np.array([2, 8, 4, 200, 604, 1_700, 1_700], dtype=np.uint32)
+    assert _mixed_step_decode_view(record, batch_size=3) == (2, 4, 200)
+
+
+def test_decode_view_of_a_tail_decode_record() -> None:
+    """The tail view is the decode view when the head view is prefill."""
+    record = np.array([1, 608, 604, 1_700, 4, 200, 200], dtype=np.uint32)
+    assert _mixed_step_decode_view(record, batch_size=3) == (2, 4, 200)
+
+
+def test_decode_view_of_a_zeros_record_is_none() -> None:
+    """A zeros record does not split, so there is no decode view."""
+    record = np.zeros(MIXED_STEP_SPLIT_SIZE, dtype=np.uint32)
+    assert _mixed_step_decode_view(record, batch_size=3) is None
+
+
+def test_decode_view_of_a_record_reaching_the_batch_is_none() -> None:
+    """A head row count at or past the batch size has no decode view."""
+    record = np.array([3, 8, 4, 200, 604, 1_700, 1_700], dtype=np.uint32)
+    assert _mixed_step_decode_view(record, batch_size=3) is None
 
 
 def _record(widths: list[int], valid: list[int]) -> list[int]:

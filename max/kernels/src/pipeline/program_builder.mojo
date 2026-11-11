@@ -109,6 +109,8 @@ def _construct_mma_blocks(
                     pre_ops.append(op)
                 case .GLOBAL_LOAD:
                     global_loads.append(op)
+                case _:
+                    pass
             op_idx += 1
 
         var partition_idx, pos_in_partition = divmod(block_idx, bph)
@@ -1394,6 +1396,8 @@ def mma_block_interleave[
             case .COMPUTE:
                 mmas[n_m] = op
                 n_m += 1
+            case _:
+                pass
 
     # Track which M-tile rows and N-tile cols have been seen.
     var seen_m = Array[Int, N](fill=0)
@@ -1500,6 +1504,8 @@ def mma_block_interleave_list(
                 frag_b.append(op)
             case .COMPUTE:
                 mmas.append(op)
+            case _:
+                pass
 
     # Track which M-tile rows and N-tile cols have been seen.
     var seen_m = List[Bool]()

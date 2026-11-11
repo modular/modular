@@ -1,3 +1,16 @@
+diff --git a/llvm/include/llvm/ADT/APFloat.h b/llvm/include/llvm/ADT/APFloat.h
+index 6655720..7d6e27c 100644
+--- a/llvm/include/llvm/ADT/APFloat.h
++++ b/llvm/include/llvm/ADT/APFloat.h
+@@ -1641,7 +1641,7 @@ public:
+   LLVM_ABI void print(raw_ostream &) const;
+ 
+ #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+-  LLVM_DUMP_METHOD void dump() const;
++  LLVM_ABI LLVM_DUMP_METHOD void dump() const;
+ #endif
+ 
+   /// If this value is normal and has an exact, normal, multiplicative inverse,
 diff --git a/llvm/include/llvm/ADT/SmallVector.h b/llvm/include/llvm/ADT/SmallVector.h
 index 9fb90e0b1ed4..d411f3ef59cb 100644
 --- a/llvm/include/llvm/ADT/SmallVector.h
@@ -40,6 +53,19 @@ index f2ce8158675a..6496f7ed6f62 100644
  
  extern template class LLVM_TEMPLATE_ABI OuterAnalysisManagerProxy<
      ModuleAnalysisManager, LazyCallGraph::SCC, LazyCallGraph &>;
+diff --git a/llvm/include/llvm/Support/RandomNumberGenerator.h b/llvm/include/llvm/Support/RandomNumberGenerator.h
+index e1a11e2..f3e0cab 100644
+--- a/llvm/include/llvm/Support/RandomNumberGenerator.h
++++ b/llvm/include/llvm/Support/RandomNumberGenerator.h
+@@ -51,7 +51,7 @@ private:
+   ///
+   /// This constructor should not be used directly. Instead use
+   /// Module::createRNG to create a new RNG salted with the Module ID.
+-  RandomNumberGenerator(StringRef Salt);
++  LLVM_ABI RandomNumberGenerator(StringRef Salt);
+ 
+   generator_type Generator;
+ 
 diff --git a/llvm/lib/Analysis/CGSCCPassManager.cpp b/llvm/lib/Analysis/CGSCCPassManager.cpp
 index fa2c5abc0718..49500f888aa8 100644
 --- a/llvm/lib/Analysis/CGSCCPassManager.cpp
@@ -251,7 +277,7 @@ index 10d58c41c926..c726666c4861 100644
  # including optional ones selected in BUILD.bazel. These are kept separate so
  # that reordering DEFAULT_PLUGINS cannot move them earlier.
 diff --git a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
-index 709ad691ad51..08f52a12a880 100644
+index 20ec8dc..289592f 100644
 --- a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
 +++ b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
 @@ -8,12 +8,14 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
@@ -299,7 +325,7 @@ index 709ad691ad51..08f52a12a880 100644
      deps = [
          ":Support",
          ":llvm_driver_tools_def_lib",
-@@ -4621,6 +4639,142 @@ cc_library(
+@@ -4621,6 +4639,139 @@ cc_library(
      ],
  )
  
@@ -310,6 +336,11 @@ index 709ad691ad51..08f52a12a880 100644
 +# transitively.
 +cc_shared_library(
 +    name = "LLVM",
++    # Modular-specific and temporary: Support, TargetParser and their
++    # dependencies live in a separate shared library that the runtime
++    # libraries also link against, so a process loading both has one copy of
++    # LLVM's global state.
++    dynamic_deps = ["@@//bazel/internal:LLVMSupport"],
 +    exports_filter = [
 +        "//llvm:__subpackages__",
 +        "//third-party:__subpackages__",
@@ -340,7 +371,6 @@ index 709ad691ad51..08f52a12a880 100644
 +        ":Analysis",
 +        ":AsmParser",
 +        ":BinaryFormat",
-+        ":BinaryFormatELF",
 +        ":BitReader",
 +        ":BitWriter",
 +        ":BitstreamReader",
@@ -366,7 +396,6 @@ index 709ad691ad51..08f52a12a880 100644
 +        ":DebugInfoMSF",
 +        ":DebugInfoPDB",
 +        ":Debuginfod",
-+        ":Demangle",
 +        ":DlltoolDriver",
 +        ":ExecutionEngine",
 +        ":FileCheckLib",
@@ -412,10 +441,8 @@ index 709ad691ad51..08f52a12a880 100644
 +        ":Remarks",
 +        ":SandboxIR",
 +        ":Scalar",
-+        ":Support",
 +        ":Symbolize",
 +        ":Target",
-+        ":TargetParser",
 +        ":Telemetry",
 +        ":TextAPI",
 +        ":TextAPIBinaryReader",
@@ -425,10 +452,6 @@ index 709ad691ad51..08f52a12a880 100644
 +        ":WindowsManifest",
 +        ":XRay",
 +        ":remark_linker",
-+        # Tools such as lld call zlib and zstd directly, including functions
-+        # LLVM itself never uses, so link the whole libraries.
-+        "//third-party:zlib",
-+        "//third-party:zstd",
 +    ] + [
 +        ":" + target["name"] + suffix
 +        for target in llvm_target_lib_list
@@ -442,7 +465,7 @@ index 709ad691ad51..08f52a12a880 100644
  cc_library(
      name = "pass_registry_def",
      copts = llvm_copts,
-@@ -5443,6 +5597,7 @@ cc_binary(
+@@ -5443,6 +5594,7 @@ cc_binary(
      name = "llc",
      srcs = ["tools/llc/llc.cpp"],
      copts = llvm_copts,
@@ -450,7 +473,7 @@ index 709ad691ad51..08f52a12a880 100644
      stamp = 0,
      deps = [
          ":Support",
-@@ -5566,6 +5721,7 @@ cc_binary(
+@@ -5566,6 +5718,7 @@ cc_binary(
          "tools/llvm-as/*.cpp",
      ]),
      copts = llvm_copts,
@@ -458,7 +481,7 @@ index 709ad691ad51..08f52a12a880 100644
      stamp = 0,
      deps = [
          ":Analysis",
-@@ -5820,6 +5976,9 @@ cc_library(
+@@ -5820,6 +5973,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-debuginfod-find",
@@ -468,7 +491,7 @@ index 709ad691ad51..08f52a12a880 100644
      stamp = 0,
      deps = [":llvm-debuginfod-find-lib"],
  )
-@@ -5830,6 +5989,7 @@ cc_binary(
+@@ -5830,6 +5986,7 @@ cc_binary(
          "tools/llvm-dis/*.cpp",
      ]),
      copts = llvm_copts,
@@ -476,7 +499,7 @@ index 709ad691ad51..08f52a12a880 100644
      stamp = 0,
      deps = [
          ":Analysis",
-@@ -6546,6 +6706,9 @@ cc_library(
+@@ -6546,6 +6703,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-objdump",
@@ -486,7 +509,7 @@ index 709ad691ad51..08f52a12a880 100644
      stamp = 0,
      deps = [":llvm-objdump-lib"],
  )
-@@ -6959,6 +7122,9 @@ cc_library(
+@@ -6959,6 +7119,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-symbolizer",
@@ -496,7 +519,7 @@ index 709ad691ad51..08f52a12a880 100644
      stamp = 0,
      deps = [":llvm-symbolizer-lib"],
  )
-@@ -7039,6 +7205,7 @@ cc_library(
+@@ -7039,6 +7202,7 @@ cc_library(
  
  cc_binary(
      name = "opt",

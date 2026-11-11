@@ -18,11 +18,10 @@ from __future__ import annotations
 import functools
 
 from max import functional as F
-from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mlp import MLP
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
@@ -266,7 +265,7 @@ class Gemma3(Module[[DecoderInputs], DecoderOutputs]):
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Unflattens the hybrid KV leaves, then runs the text model."""
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         kv_cache_local, kv_cache_global = (
             self.kv_params.unflatten_basic_kv_tree(kv_inputs)
         )

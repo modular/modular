@@ -28,6 +28,7 @@ from max.nn import (
     RMSNorm,
     as_subgraph,
 )
+from max.nn.common_layers.kv_cache import kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.rotary_embedding import (
@@ -529,7 +530,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
             data_parallel_splits = kv_inputs[0]
             host_row_offsets = kv_inputs[1]
             kv_inputs = kv_inputs[2:]
-        kv_iter = iter(x._graph_value for x in kv_inputs)
+        kv_iter = iter(kv_input_values(kv_inputs))
         # One entry per device, in declaration order: sliding, then full.
         sliding_kv, full_kv = self.kv_params.unflatten_basic_kv_tree(kv_iter)
         # Whatever the KV tree left in the tail is the EP communication

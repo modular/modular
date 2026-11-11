@@ -70,6 +70,29 @@ _DisconnectPhase = Literal["before_response", "during_response"]
 _StructuredOutputKind = Literal["json_object", "json_schema"]
 # The ``reason`` label on ``max.cache.connector_lookup_admission_stops``.
 LookupAdmissionStop = Literal["budget", "max_pending", "held"]
+# The ``reason`` and ``answer`` labels on ``max.cache.connector_lookup_drops``.
+# They mirror ``ConnectorLookupDrop`` and ``ConnectorLookupAnswer`` in
+# ``max.nn.kv_cache.metrics``, which telemetry does not import, and mypy flags
+# a drift where the scheduler passes one into the other.
+LookupDropReason = Literal[
+    "poll_failed",
+    "timeout",
+    "release",
+    "hand_back",
+    "stale_reask",
+    "sync_alloc",
+    "shrink_reask",
+    "shrink_cap",
+    "shrink_at_load",
+    "covered",
+    "skip",
+    "nothing_to_load",
+    "no_room",
+    "load_refused",
+    "load_failed",
+    "exception",
+]
+LookupDropAnswer = Literal["offered", "empty", "unseen"]
 
 # Exclusive upper bounds, in tokens, of the ``prompt_length`` label on
 # ``max.time_to_first_token_by_prompt_length``. Coarse on purpose: the
@@ -120,6 +143,12 @@ def _create_counter(name: str, description: str) -> SupportedInstruments:
     """
     counter = _meter.create_counter(name, description=description)
     return cast(SupportedInstruments, counter)
+
+
+def _create_histogram(name: str, description: str) -> SupportedInstruments:
+    """Creates a histogram, typed the way :func:`_create_counter` types one."""
+    histogram = _meter.create_histogram(name, description=description)
+    return cast(SupportedInstruments, histogram)
 
 
 # Sorry for the type ignores, OTEL goes out of its way to obscure its types.
@@ -440,6 +469,33 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "max.cache.connector_lookup_admission_stops": _create_counter(
         "max.cache.connector_lookup_admission_stops",
         description="Prompt admission passes that stopped on a deferred connector lookup, counted per data-parallel replica, split by `reason`: `budget` when the pass had spent its share of lookup tokens, `max_pending` when the replica already had its bound of unanswered lookups out, and `held` when the next prompt arrived behind one still out on its lookup. The prompt waits at the head of its queue for a later pass.",
+    ),
+    # The connector lookup answers the Jenga block manager drops. Each counts
+    # one request-level lookup once, however many leaf clients answered it.
+    # ``max.nn.kv_cache.metrics.ConnectorLookupDrop`` defines each reason.
+    "max.cache.connector_lookup_drops": _create_counter(
+        "max.cache.connector_lookup_drops",
+        description="Connector lookup answers the KV cache dropped unloaded, once per lookup (a request asking again counts each), never per KV cache leaf, by `reason`, `hinted` (routed by a cache hint) and `answer`: `offered` (a block or more), `empty` (none, which includes store reads that failed or were shed) or `unseen` (dropped before an answer was seen). `shrink_cap` counts requests out of re-asks.",
+    ),
+    "max.cache.connector_lookup_dropped_blocks": _create_counter(
+        "max.cache.connector_lookup_dropped_blocks",
+        description="Prompt blocks (not per KV cache leaf) the drops in `max_cache_connector_lookup_drops_total` cost, by `reason` and `hinted`. At the load (`no_room`, `load_refused`, `load_failed`) the run past the device hit then, and `covered` costs none. Otherwise the run the answer offered, which `shrink_reask`, `shrink_at_load`, `hand_back` and `stale_reask` may get back by asking again.",
+    ),
+    "max.cache.connector_lookup_shrink_cap_blocks": _create_counter(
+        "max.cache.connector_lookup_shrink_cap_blocks",
+        description="An estimate of the prompt blocks requests computed because their device hit shrank under a lookup after their last re-ask (`reason=shrink_cap`): the blocks the device hit lost since the ask plus the run the dropped answer offered past them. Counted only for a connector whose lookup is deferred, since one that answers in place asks about the gap at once.",
+    ),
+    "max.cache.connector_lookup_shrink_depth": _create_histogram(
+        "max.cache.connector_lookup_shrink_depth",
+        description="Prompt blocks the device hit lost between starting a connector lookup and checking its answer, recorded once for each answer dropped because of it, the drops `max_cache_connector_lookup_drops_total` counts under reasons `shrink_reask`, `shrink_cap` and `shrink_at_load`.",
+    ),
+    "max.cache.connector_lookup_reasks_per_request": _create_histogram(
+        "max.cache.connector_lookup_reasks_per_request",
+        description="Times one request's connector lookup was asked again because its device hit shrank, recorded when the KV cache releases the request and only for a request that re-asked at least once. A request released and claimed again, as on preemption, records once per claim. The top value is the cap, past which a shrink is computed.",
+    ),
+    "max.cache.connector_lookup_hand_backs_per_request": _create_histogram(
+        "max.cache.connector_lookup_hand_backs_per_request",
+        description="Connector lookup answers one request handed back for age and asked again, recorded when the KV cache releases the request and only for a request that handed back at least one. A request released and claimed again, as on preemption, records once per claim. The top value is the cap, past which an answer is loaded however old.",
     ),
     "max.cache.hits": _meter.create_counter(
         "max.cache.hits",
@@ -1923,6 +1979,80 @@ class _AsyncMetrics:
                 "max.cache.connector_lookup_admission_stops",
                 1,
                 {**self.extra_attributes, "reason": reason},
+            ),
+        )
+
+    def cache_connector_lookup_drops(
+        self,
+        count: int,
+        *,
+        reason: LookupDropReason,
+        answer: LookupDropAnswer,
+        hinted: bool,
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_lookup_drops",
+                count,
+                {
+                    **self.extra_attributes,
+                    "reason": reason,
+                    "answer": answer,
+                    "hinted": "true" if hinted else "false",
+                },
+            ),
+        )
+
+    def cache_connector_lookup_dropped_blocks(
+        self, blocks: int, *, reason: LookupDropReason, hinted: bool
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_lookup_dropped_blocks",
+                blocks,
+                {
+                    **self.extra_attributes,
+                    "reason": reason,
+                    "hinted": "true" if hinted else "false",
+                },
+            ),
+        )
+
+    def cache_connector_lookup_shrink_cap_blocks(self, blocks: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_lookup_shrink_cap_blocks",
+                blocks,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_lookup_shrink_depth(self, blocks: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_lookup_shrink_depth",
+                blocks,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_lookup_reasks_per_request(self, reasks: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_lookup_reasks_per_request",
+                reasks,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_lookup_hand_backs_per_request(
+        self, hand_backs: int
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_lookup_hand_backs_per_request",
+                hand_backs,
+                self.extra_attributes,
             ),
         )
 

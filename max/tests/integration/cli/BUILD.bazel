@@ -257,8 +257,8 @@ modular_py_test(
 _QUANT_ERROR_CASES = [
     ("gemma3_1b", "b200", "nvfp4,mxfp8", "//:b200_gpu", "10"),
     ("gemma3_1b", "amd", "mxfp4", "//:mi355_gpu", "10"),
-    ("olmo3_7b", "b200", "nvfp4,mxfp8", "//:b200_gpu", "60"),
-    ("olmo3_7b", "amd", "mxfp4", "//:mi355_gpu", "60"),
+    ("olmo2_1b", "b200", "nvfp4,mxfp8", "//:b200_gpu", "10"),
+    ("olmo2_1b", "amd", "mxfp4", "//:mi355_gpu", "10"),
 ]
 
 [

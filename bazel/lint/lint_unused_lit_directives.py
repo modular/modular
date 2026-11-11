@@ -56,7 +56,9 @@ def _bazelw() -> Path:
 
 def _label_to_path(label: str) -> Path:
     assert label.startswith("//")
-    return Path(label[2:].replace(":", "/"))
+    # A root-package label is "//:path/file", so the colon must not become a
+    # leading slash.
+    return Path(label[2:].replace(":", "/").lstrip("/"))
 
 
 def _get_files(bazel: Path, query: str) -> set[Path]:

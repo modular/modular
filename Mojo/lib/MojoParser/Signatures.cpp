@@ -70,6 +70,37 @@ TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
   return LIT::StructExtractAttr::get(value, fieldDecl->getOp());
 }
 
+TypedAttr ASTType::extractAddressSpace(TypedAttr value, SMLoc loc,
+                                       SharedState &shared) {
+  if (value.getType().isIndex())
+    return value;
+
+  // `AddressSpace` holds the index two fields deep.
+  auto extractInt = extractStructField(value, "_value", loc, shared);
+  if (!extractInt)
+    return {};
+  auto extractIndex =
+      extractStructField(extractInt, "_mlir_value", loc, shared);
+  if (!extractIndex || !extractIndex.getType().isIndex())
+    return {};
+  return extractIndex;
+}
+
+TypedAttr ASTType::getAddressSpaceForDisplay(TypedAttr addrSpace) {
+  // FIXME: when StructExtractAttr::get folds the extracts on the constant, it
+  // keeps the sugar by applying the same extracts to that sugared form, which
+  // drops the member name and would print as simply 'AddressSpace'. Fall back
+  // to the canonical index instead.
+  addrSpace = getCanonicalAttr(addrSpace);
+  auto index = dyn_cast<LIT::StructExtractAttr>(addrSpace);
+  if (!index || index.getField() != "_mlir_value")
+    return addrSpace;
+  auto value = dyn_cast<LIT::StructExtractAttr>(index.getStructValue());
+  if (!value || value.getField() != "_value")
+    return addrSpace;
+  return value.getStructValue();
+}
+
 /// Given an expression that can be used in `origin_of` or a ref expression,
 /// analyze it to determine which origin it represents.  If it doesn't work,
 /// emit an error and return null.
@@ -108,27 +139,6 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 
   IREmitter emitter(paramList.declScope, EC_Origin);
 
-  // Check to see if this is a value address space specifier.  If so, return
-  // true, otherwise return false.
-  auto digOutAddressSpace = [&](TypedAttr value, SMLoc loc) -> TypedAttr {
-    // If the value has index type, then it is good to go.
-    if (value.getType().isIndex())
-      return value;
-
-    // Check to see if this is the well-known AddressSpace struct.  If so,
-    // dig out the index from within it.
-    auto extractInt = ASTType::extractStructField(value, "_value", loc, shared);
-    if (!extractInt)
-      return {};
-    auto extractIndex =
-        ASTType::extractStructField(extractInt, "_mlir_value", loc, shared);
-    if (!extractIndex)
-      return {};
-    if (extractIndex.getType().isIndex())
-      return extractIndex;
-    return {};
-  };
-
   // If the origin expression is syntactically a multi-element tuple, then
   // take it apart.
   ArrayRef<const ExprNode *> originExprElts;
@@ -158,7 +168,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
         [&](CValue result, IREmitter &emitter, Block &exprBlock) {
           // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
-            if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
+            if (auto as = ASTType::extractAddressSpace(pv.get(), expr->getLoc(),
+                                                       shared)) {
               if (addrSpace) {
                 emitter.emitError(expr->getLoc())
                     << "address space must be specified once; remove duplicate "
@@ -2331,12 +2342,10 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
     // We build StringDict[ValType].
     ASTType dictType = shared.getStandardCollectionType(arg.loc, "StringDict");
 
-    auto dictDecl = cast<LIT::StructType>(dictType.mlirType);
-    // We know these are all UnboundAttrs created by
-    // StructDeclOp::legacyBindReference. The correct way is to have
-    // legacyBindReference return a GeneratorType.
-    ArrayRef<TypedAttr> inputUnboundParams = dictDecl.getParamValues();
-    if (inputUnboundParams.size() != 1) {
+    auto dictGen = StructTypeGenerator::dynCast(dictType);
+    ArrayRef<Type> dictParamTypes =
+        dictGen ? dictGen.getInputParamTypes() : ArrayRef<Type>();
+    if (dictParamTypes.size() != 1) {
       shared.emitError(arg.loc)
           << "internal compiler error: StringDict type has unexpected "
              "parameter signature; please file a bug";
@@ -2348,7 +2357,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
     if (arg.isErroneous)
       return;
 
-    auto collectionElement = cast<TraitType>(inputUnboundParams[0].getType());
+    auto collectionElement = cast<TraitType>(dictParamTypes[0]);
     SyntheticNode typeExpr(arg.loc);
     auto typeExprToUse = arg.typeExpr ? arg.typeExpr : &typeExpr;
     auto binding = typeEmitter.emitPValue({fullType, typeExprToUse}, EC_Type,
@@ -2357,7 +2366,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
       arg.isErroneous = true;
       return;
     }
-    fullType = cast<LIT::StructType>(dictType).bindAll(binding.get());
+    fullType = dictGen.bindAll({binding.get()}, &shared.getEvaluationContext());
 
     // StringDict is memory only and since only the callee can access it,
     // we pass it as owned.

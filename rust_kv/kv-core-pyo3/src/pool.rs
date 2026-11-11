@@ -144,6 +144,7 @@ struct PyJengaBlockPool {
     cache_index: HashMap<String, usize>,
     ratios: Vec<usize>,
     num_huge_blocks: usize,
+    num_allocatable_huge_blocks: usize,
     prefix_caches: Py<PyDict>,
     null_little_blocks: Py<PyDict>,
 }
@@ -189,10 +190,12 @@ fn geometry_error(err: &JengaError) -> PyErr {
 #[pymethods]
 impl PyJengaBlockPool {
     #[new]
+    #[pyo3(signature = (num_huge_blocks, cache_ratios, *, min_huge_bid = 0))]
     fn new(
         py: Python<'_>,
         num_huge_blocks: usize,
         cache_ratios: &Bound<'_, PyAny>,
+        min_huge_bid: usize,
     ) -> PyResult<Self> {
         let ratios: Vec<(String, i64)> = cache_ratios
             .call_method0("items")?
@@ -215,9 +218,11 @@ impl PyJengaBlockPool {
             PoolOptions {
                 null_block: true,
                 skip_prefix_cache: false,
+                min_huge_bid,
             },
         )
         .map_err(|err| geometry_error(&err))?;
+        let num_allocatable_huge_blocks = pool.allocatable_huge_bids().len();
         let handles = pool
             .little_blocks
             .iter()
@@ -255,6 +260,7 @@ impl PyJengaBlockPool {
             shared,
             ratios: ratio_values,
             num_huge_blocks,
+            num_allocatable_huge_blocks,
             prefix_caches: prefix_caches.unbind(),
             null_little_blocks: null_little_blocks.unbind(),
         })
@@ -267,7 +273,7 @@ impl PyJengaBlockPool {
 
     #[getter]
     fn num_allocatable_huge_blocks(&self) -> usize {
-        self.num_huge_blocks - 1
+        self.num_allocatable_huge_blocks
     }
 
     #[getter]

@@ -28,7 +28,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, DimLike, TensorValue
 from max.nn import Module, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
@@ -180,7 +180,7 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
             raise NotImplementedError(
                 "Beam scores variable logits only in a speculative verify."
             )
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         comm_buffers = (
             self.ep_batch_manager.comm_buffers(
                 [x._graph_value for x in tree.leaves(inputs.ep)]

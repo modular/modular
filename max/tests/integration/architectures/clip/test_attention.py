@@ -51,7 +51,7 @@ def generate_torch_outputs(
 
     # Run forward pass
     output, _ = layer(
-        hidden_states=input_tensor,
+        hidden_states=input_tensor.to("cuda"),
         output_attentions=False,
     )
 
@@ -75,10 +75,11 @@ def generate_max_outputs(
         dtype=DType.bfloat16,
     )
 
+    # The layer compiles with the host weights below, so its own parameters
+    # stay unrealized and the compile needs no device.
     with F.lazy():
         # Create MAX CLIPAttention layer
         attention = MaxCLIPAttention(max_config)
-        attention.load_state_dict(attention_weights)
         attention.to(device_ref)
 
     # Define input types for the graph
@@ -108,13 +109,13 @@ def test_clip_attention(
 ) -> None:
     """Test that MAX CLIPAttention matches PyTorch CLIPAttention output."""
 
-    torch_output = generate_torch_outputs(
+    max_output = generate_max_outputs(
         clip_config,
         input_tensor,
         attention_weights,
     )
 
-    max_output = generate_max_outputs(
+    torch_output = generate_torch_outputs(
         clip_config,
         input_tensor,
         attention_weights,

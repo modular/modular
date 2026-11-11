@@ -49,6 +49,11 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mha_decode_register_owners.mojo": ["//:nvidia_gpu"],
+    # The filtered top-k select runs on NVIDIA only; elsewhere its launcher
+    # keeps the shared select.
+    "test_topk_filtered.mojo": ["//:nvidia_gpu"],
+    # m16n8k16 bfloat16 MMA fragments on 32-lane warps.
+    "test_ihc.mojo": ["//:nvidia_gpu"],
     # The packed-indices kernel uses 32-lane warp masks (`match_any`).
     "test_moe_routing_packed.mojo": ["//:nvidia_gpu"],
     # PDL needs SM90+; below that the launches serialize and the test cannot fail.
@@ -384,6 +389,13 @@ _EXTRA_CONSTRAINTS = {
     }),
     # k-pooled scorer over GLM-5.3-Flash's per-token pooled cache layout.
     "test_mla_index_kpool_cache_layout.mojo": select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The fused k-pool append quantizes to FP8 and stores through the paged
+    # cache; built for the SM100 and MI355 FP8 formats only.
+    "test_mla_index_kpool_append.mojo": select({
         "//:b200_gpu": [],
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],

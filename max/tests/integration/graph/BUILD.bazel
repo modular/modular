@@ -30,6 +30,7 @@ _CPU_ONLY_TESTS = [
     "test_rowwise_fusion.py",
     "test_shard_and_stack.py",
     "test_symbolic_dimension_validation.py",
+    "test_view_fusion.py",
 ]
 
 # Tests with their own targets due to special configurations
@@ -344,6 +345,7 @@ modular_py_test(
         "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -411,7 +413,7 @@ modular_py_test(
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
-        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_next",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -532,6 +534,26 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+# Kept out of `cpu_tests` so it does not inherit "external-exclusive". Not
+# sharded: the file compiles all its graphs in one `load_all`, which each
+# shard would repeat.
+modular_py_test(
+    name = "test_view_fusion",
+    srcs = [
+        "conftest.py",
+        "test_view_fusion.py",
+    ],
+    deps = [
+        ":fusion_utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 
@@ -952,6 +974,7 @@ modular_py_test(
     # generic Mojo via `foreach_fusion_tile` with no NVIDIA-specific branch).
     # Widen this once the path is validated on other targets.
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",

@@ -31,6 +31,7 @@ from typing_extensions import Self, TypeVar
 
 __all__ = [
     "BatchContext",
+    "BlockDiffusionGraphInputs",
     "ConvStates",
     "DecoderGraphInputs",
     "DecoderOutputs",
@@ -194,7 +195,7 @@ class VisionHostMax(GraphGroup[str, _VisionInput]):
     kind = "vision_host_max"
 
 
-class VisionEmbeddings(GraphGroup[str, tuple[TensorValue, ...]]):
+class VisionEmbeddings(GraphGroup[str, tuple[_TensorT, ...]]):
     """A vision encoder's ``image_embeddings``, one per device.
 
     They feed the decoder's :class:`VisionMerge` group.
@@ -204,8 +205,8 @@ class VisionEmbeddings(GraphGroup[str, tuple[TensorValue, ...]]):
 
 
 def vision_outputs(
-    image_embeddings: Sequence[TensorValue],
-) -> OrderedDict[str, VisionEmbeddings]:
+    image_embeddings: Sequence[_TensorT],
+) -> OrderedDict[str, VisionEmbeddings[_TensorT]]:
     """Returns a vision encoder graph's named outputs.
 
     The kinded group sits under a plain root, as a decoder's do, since a
@@ -341,6 +342,17 @@ class SpecDecodeOutputs(GraphGroup[str, _TensorT | tuple[_TensorT, ...]]):
     """
 
     kind = "spec_decode_outputs"
+
+
+class BlockDiffusionGraphInputs(GraphGroup[str, Any]):
+    """A block-diffusion denoiser graph's named inputs, keyed by its fields.
+
+    The keys are the
+    :class:`~max.pipelines.lib.role_contracts.BlockDiffusionInputs` fields,
+    in their order, so a serving engine finds each input by name.
+    """
+
+    kind = "block_diffusion_inputs"
 
 
 class DecoderGraphInputs(GraphGroup[str, Any]):

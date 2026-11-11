@@ -27,6 +27,7 @@ from std.memory import alloc, bitcast
 from std.memory.alloc import unsafe_alloc
 from std.random import rand
 from nn.activations import silu
+from state_space.row_rule import commit_len, is_prefill_row
 from state_space.varlen_causal_conv1d import (
     _apply_silu,
     causal_conv1d_varlen_fwd_cpu,
@@ -1019,6 +1020,315 @@ def test_nvidia_f32_silu_bit_exact() raises:
         got_h.unsafe_free()
         ref_h.unsafe_free()
     vals_h.unsafe_free()
+
+
+def run_varlen_causal_conv1d_fwd_gpu_row_rule[
+    dtype: DType, kWidth: Int
+](
+    dim: Int,
+    seq_lengths: IndexList,
+    num_draft_tokens: Int,
+    ctx: DeviceContext,
+    nonzero_initial_state: Bool,
+    update_state: Bool = False,
+) raises:
+    """The row rule against main's kernel.
+
+    Main's kernel on the real tokens only (`len - K`, `update_state` true)
+    names the state a prefill row must commit; main's kernel on the full
+    row names every token's output. Rows of `len <= K + 1` keep main's
+    behavior: their slot follows the `update_state` flag.
+    """
+    comptime width = kWidth
+    comptime state_len = width - 1
+    var batch = len(seq_lengths)
+    var total_seqlen = 0
+    for i in range(batch):
+        total_seqlen += seq_lengths[i]
+
+    var x_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var x_h = TileTensor(x_heap, row_major(dim, total_seqlen))
+    var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
+    var weight_h = TileTensor(weight_heap, row_major(dim, width))
+    var bias_heap = List(length=dim, fill=Scalar[dtype](0))
+    var bias_h = TileTensor(bias_heap, row_major(dim))
+    rand[dtype](x_h._storage, dim * total_seqlen)
+    rand[dtype](weight_h._storage, dim * width)
+    rand[dtype](bias_h._storage, dim)
+
+    var query_start_loc_heap = List(length=batch + 1, fill=Int32(0))
+    var query_start_loc_h = TileTensor(
+        query_start_loc_heap, row_major(batch + 1)
+    )
+    var cumsum = 0
+    query_start_loc_h[0] = Int32(0)
+    for i in range(batch):
+        cumsum += seq_lengths[i]
+        query_start_loc_h[i + 1] = Int32(cumsum)
+
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
+    var cache_indices_h = TileTensor(cache_indices_heap, row_major(batch))
+    for i in range(batch):
+        cache_indices_h[i] = UInt32(i)
+
+    var has_initial_state_heap = List(
+        length=batch, fill=Scalar[.bool](nonzero_initial_state)
+    )
+    var has_initial_state_h = TileTensor(
+        has_initial_state_heap, row_major(batch)
+    )
+
+    var update_state_heap = List(length=batch, fill=Scalar[.bool](update_state))
+    var update_state_h = TileTensor(update_state_heap, row_major(batch))
+
+    var conv_states_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_states_h = TileTensor(
+        conv_states_heap, row_major(batch, dim, state_len)
+    )
+    if nonzero_initial_state:
+        rand[dtype](conv_states_h._storage, batch * dim * state_len)
+    var conv_states_seed_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    for i in range(batch * dim * state_len):
+        conv_states_seed_heap[i] = conv_states_h._storage[i]
+
+    var x_device = ctx.enqueue_create_buffer[dtype](dim * total_seqlen)
+    ctx.enqueue_copy(x_device, x_h._storage)
+    var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
+    ctx.enqueue_copy(weight_device, weight_h._storage)
+    var bias_device = ctx.enqueue_create_buffer[dtype](dim)
+    ctx.enqueue_copy(bias_device, bias_h._storage)
+    var query_start_loc_device = ctx.enqueue_create_buffer[.int32](batch + 1)
+    ctx.enqueue_copy(query_start_loc_device, query_start_loc_h._storage)
+    var cache_indices_device = ctx.enqueue_create_buffer[.uint32](batch)
+    ctx.enqueue_copy(cache_indices_device, cache_indices_h._storage)
+    var has_initial_state_device = ctx.enqueue_create_buffer[.bool](batch)
+    ctx.enqueue_copy(has_initial_state_device, has_initial_state_h._storage)
+    var update_state_device = ctx.enqueue_create_buffer[.bool](batch)
+    ctx.enqueue_copy(update_state_device, update_state_h._storage)
+    var conv_states_device = ctx.enqueue_create_buffer[dtype](
+        batch * dim * state_len
+    )
+    ctx.enqueue_copy(conv_states_device, conv_states_h._storage)
+    var output_device = ctx.enqueue_create_buffer[dtype](dim * total_seqlen)
+
+    var x_device_tt = TileTensor(x_device, row_major(dim, total_seqlen))
+    var weight_device_tt = TileTensor(weight_device, row_major(dim, width))
+    var bias_device_tt = TileTensor(bias_device, row_major(dim))
+    var query_start_loc_device_tt = TileTensor(
+        query_start_loc_device, row_major(batch + 1)
+    )
+    var cache_indices_device_tt = TileTensor(
+        cache_indices_device, row_major(batch)
+    )
+    var has_initial_state_device_tt = TileTensor(
+        has_initial_state_device, row_major(batch)
+    )
+    var update_state_device_tt = TileTensor(
+        update_state_device, row_major(batch)
+    )
+    var conv_states_device_tt = TileTensor(
+        conv_states_device, row_major(batch, dim, state_len)
+    )
+    var output_device_tt = TileTensor(
+        output_device, row_major(dim, total_seqlen)
+    )
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](i: Int, j: Int) {var x_device_tt} -> SIMD[dtype, width]:
+        return x_device_tt.load[width=width]((i, j))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices_device_tt} -> SIMD[.uint32, width]:
+        return cache_indices_device_tt.load[width=width]((b,))
+
+    var x_addr = Int(x_device_tt.unsafe_ptr())
+    var x_row_stride = Int(x_device_tt.dynamic_stride(0))
+    causal_conv1d_varlen_fwd_gpu[kWidth, False, False, False, True](
+        weight_device_tt,
+        bias_device_tt,
+        query_start_loc_device_tt,
+        has_initial_state_device_tt,
+        update_state_device_tt,
+        conv_states_device_tt,
+        output_device_tt,
+        x_addr,
+        x_row_stride,
+        x_fn,
+        slot_fn,
+        ctx,
+        num_draft_tokens=num_draft_tokens,
+    )
+
+    var output_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var output_h = TileTensor(output_heap, row_major(dim, total_seqlen))
+    var conv_states_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * state_len
+    )
+    ctx.enqueue_copy(output_h._storage, output_device)
+    with ctx.push_context():
+        ctx.enqueue_copy(conv_states_gpu_heap, conv_states_device)
+    ctx.synchronize()
+
+    # Main's kernel on the full row names every token's output.
+    var output_main_heap = List(
+        length=dim * total_seqlen, fill=Scalar[dtype](0)
+    )
+    var output_main_h = TileTensor(
+        output_main_heap, row_major(dim, total_seqlen)
+    )
+    var conv_states_main_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_states_main_h = TileTensor(
+        conv_states_main_heap, row_major(batch, dim, state_len)
+    )
+    for i in range(batch * dim * state_len):
+        conv_states_main_h._storage[i] = conv_states_seed_heap[i]
+    _conv_cpu[False,](
+        x_h,
+        weight_h,
+        bias_h,
+        query_start_loc_h,
+        cache_indices_h,
+        has_initial_state_h,
+        # Empty: every sequence writes its new window.
+        TileTensor(update_state_heap, row_major(0)),
+        conv_states_main_h,
+        output_main_h,
+    )
+    for i in range(dim * total_seqlen):
+        assert_almost_equal(
+            output_h._storage[i], output_main_h._storage[i], rtol=0.01
+        )
+
+    var real_lengths = List[Int](fill=0, length=batch)
+    for i in range(batch):
+        real_lengths[i] = commit_len(seq_lengths[i], num_draft_tokens)
+    var real_total = 0
+    for i in range(batch):
+        real_total += real_lengths[i]
+    var x_real_heap = List(length=dim * real_total, fill=Scalar[dtype](0))
+    var x_real_h = TileTensor(x_real_heap, row_major(dim, real_total))
+    var real_start = 0
+    for i in range(batch):
+        for l in range(real_lengths[i]):
+            for d in range(dim):
+                x_real_h[d, real_start + l] = x_h[
+                    d, Int(query_start_loc_h[i]) + l
+                ]
+        real_start += real_lengths[i]
+    var real_start_loc_heap = List(length=batch + 1, fill=Int32(0))
+    var real_start_loc_h = TileTensor(real_start_loc_heap, row_major(batch + 1))
+    var real_cumsum = 0
+    real_start_loc_h[0] = Int32(0)
+    for i in range(batch):
+        real_cumsum += real_lengths[i]
+        real_start_loc_h[i + 1] = Int32(real_cumsum)
+    var conv_states_ref_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_states_ref_h = TileTensor(
+        conv_states_ref_heap, row_major(batch, dim, state_len)
+    )
+    for i in range(batch * dim * state_len):
+        conv_states_ref_h._storage[i] = conv_states_seed_heap[i]
+    var output_ref_heap = List(length=dim * real_total, fill=Scalar[dtype](0))
+    var output_ref_h = TileTensor(output_ref_heap, row_major(dim, real_total))
+    _conv_cpu[False,](
+        x_real_h,
+        weight_h,
+        bias_h,
+        real_start_loc_h,
+        cache_indices_h,
+        has_initial_state_h,
+        # Empty: every sequence writes its new window.
+        TileTensor(update_state_heap, row_major(0)),
+        conv_states_ref_h,
+        output_ref_h,
+    )
+
+    for b in range(batch):
+        var seqlen = seq_lengths[b]
+        var is_prefill = is_prefill_row(seqlen, num_draft_tokens)
+        for d in range(dim):
+            for s in range(state_len):
+                var expected: Scalar[dtype]
+                if is_prefill:
+                    expected = conv_states_ref_h[b, d, s]
+                elif update_state:
+                    # A row of `len <= K + 1` writes at its row end, as on
+                    # main.
+                    expected = conv_states_main_h[b, d, s]
+                else:
+                    # A clear flag leaves the slot seeded.
+                    expected = conv_states_seed_heap[
+                        (b * dim + d) * state_len + s
+                    ]
+                assert_equal(
+                    conv_states_gpu_heap[(b * dim + d) * state_len + s],
+                    expected,
+                )
+
+    _ = x_heap^
+    _ = weight_heap^
+    _ = bias_heap^
+    _ = query_start_loc_heap^
+    _ = cache_indices_heap^
+    _ = has_initial_state_heap^
+    _ = update_state_heap^
+    _ = conv_states_heap^
+    _ = output_heap^
+    _ = output_main_heap^
+    _ = conv_states_main_heap^
+    _ = x_real_heap^
+    _ = real_start_loc_heap^
+    _ = conv_states_ref_heap^
+    _ = output_ref_heap^
+
+
+def test_varlen_causal_conv1d_fwd_gpu_row_rule() raises:
+    """A prefill row commits its state window at its last real token.
+
+    `update_state` false: prefill rows still write, decode rows keep their
+    seed. One batch runs the flag true: a decode row then writes at its
+    row end, as on main. The `Index(9, 0, 0, 0, 0, 0, 0, 0, 0)` batch
+    sums to 9 with batch 9, so it takes the `SEQ_PER_ROW` launch
+    (`total_seqlen <= batch` at varlen_causal_conv1d.mojo:1024) and its
+    prefill row takes its taps from `x` before the tile's window. The
+    130-token rows cross the 64-token tile: `commit_end` 64 reloads from
+    tile 0's window and `commit_end` 70 reloads from `x` past tile 0.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_varlen_causal_conv1d_fwd_gpu_row_rule[.float32, 4](
+        4, Index(10, 9, 8), 7, ctx, nonzero_initial_state=True
+    )
+    run_varlen_causal_conv1d_fwd_gpu_row_rule[.float32, 4](
+        4, Index(9, 8), 7, ctx, nonzero_initial_state=False
+    )
+    run_varlen_causal_conv1d_fwd_gpu_row_rule[.float32, 4](
+        4,
+        Index(9, 0, 0, 0, 0, 0, 0, 0, 0),
+        7,
+        ctx,
+        nonzero_initial_state=True,
+    )
+    run_varlen_causal_conv1d_fwd_gpu_row_rule[.float32, 4](
+        4, Index(130, 8), 66, ctx, nonzero_initial_state=True
+    )
+    run_varlen_causal_conv1d_fwd_gpu_row_rule[.float32, 4](
+        4, Index(130, 8), 60, ctx, nonzero_initial_state=True
+    )
+    run_varlen_causal_conv1d_fwd_gpu_row_rule[.float32, 4](
+        4, Index(8, 9), 7, ctx, nonzero_initial_state=True, update_state=True
+    )
 
 
 def main() raises:

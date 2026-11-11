@@ -20,7 +20,7 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.idefics3.vision_model.connector import (
     Idefics3Connector as MAXIdefics3Connector,
@@ -80,7 +80,6 @@ def create_connector_weights(
     text_hidden_size: int,
     scale_factor: int,
     dtype: torch.dtype = torch.bfloat16,
-    device: str = "cuda",
 ) -> dict[str, torch.Tensor]:
     """Create shared connector weights for both PyTorch and MAX models."""
     torch.manual_seed(42)
@@ -93,7 +92,7 @@ def create_connector_weights(
 
     # Modality projection weights (no bias)
     weights["modality_projection.proj.weight"] = std * torch.randn(
-        text_hidden_size, input_size, dtype=dtype, device=device
+        text_hidden_size, input_size, dtype=dtype
     )
 
     return weights
@@ -122,20 +121,19 @@ def generate_pytorch_outputs(
     # Load weights
     torch_connector.modality_projection.proj.weight.data = connector_weights[
         "modality_projection.proj.weight"
-    ]
+    ].cuda()
 
     return torch_connector(input_tensor)
 
 
-def generate_max_outputs(
+def load_max_connector(
     config: Idefics3Config,
     connector_weights: dict[str, torch.Tensor],
-    input_tensor: torch.Tensor,
+    input_shape: tuple[int, ...],
     dtype: DType = DType.bfloat16,
-) -> torch.Tensor:
-    """Generate outputs using MAX Idefics3Connector."""
-    cuda = Accelerator()
-    session = InferenceSession(devices=[cuda])
+) -> Model:
+    """Compiles the MAX Idefics3Connector."""
+    session = InferenceSession(devices=[Accelerator()])
 
     # Create a config object that matches what Idefics3SimpleMLP expects
     # The MLP constructor expects: config.hidden_size, config.scale_factor, and config.text_config_hidden_size
@@ -164,7 +162,7 @@ def generate_max_outputs(
     connector.load_state_dict(state_dict)
 
     # Get input dimensions
-    input_dims = list(input_tensor.shape)
+    input_dims: list[int | Dim] = list(input_shape)
     input_dims[0] = Dim("batch")
 
     def build_connector_model() -> Graph:
@@ -184,12 +182,13 @@ def generate_max_outputs(
         return graph
 
     graph = build_connector_model()
-    model = session.load(graph, weights_registry=connector.state_dict())
+    return session.load(graph, weights_registry=connector.state_dict())
 
-    x_tensor = Buffer.from_dlpack(input_tensor).to(cuda)
-    max_output = model.execute(x_tensor)[0]
 
-    return max_output
+def generate_max_outputs(model: Model, input_tensor: torch.Tensor) -> Buffer:
+    """Generate outputs using MAX Idefics3Connector."""
+    x_tensor = Buffer.from_dlpack(input_tensor).to(model.input_devices[0])
+    return model.execute(x_tensor)[0]
 
 
 @pytest.mark.parametrize(
@@ -234,7 +233,12 @@ def test_idefics3_connector(
         text_hidden_size=text_hidden_size,
         scale_factor=scale_factor,
         dtype=torch_dtype,
-        device="cuda",
+    )
+    model = load_max_connector(
+        config=config,
+        connector_weights=connector_weights,
+        input_shape=(batch_size, seq_len, vision_hidden_size),
+        dtype=dtype,
     )
 
     # Create input tensor (batch_size, seq_len, vision_hidden_size)
@@ -255,12 +259,7 @@ def test_idefics3_connector(
         torch_dtype=torch_dtype,
     )
 
-    max_output = generate_max_outputs(
-        config=config,
-        connector_weights=connector_weights,
-        input_tensor=input_tensor,
-        dtype=dtype,
-    )
+    max_output = generate_max_outputs(model, input_tensor)
 
     # Compare outputs
     max_output_torch = from_dlpack(max_output)

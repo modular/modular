@@ -80,9 +80,11 @@ struct Batch(Movable):
         seed(5)
         # Rows 1, 6 and 7 decode one token; 1 and 6 end a page. Row 5 crosses
         # global position 1024, a logical-page boundary for every group size
-        # here, and row 3 crosses 256 and 384.
-        self.prompt_lens = [17, 1, 31, 130, 3, 40, 1, 1]
-        self.cache_lens = [0, 127, 13, 250, 6, 1000, 1023, 2047]
+        # here, and row 3 crosses 256 and 384. Row 8 is a context of one, row
+        # 9 crosses the first 128-token page (context 129), and row 10 wraps
+        # past a full 8-rank lap of 128-token pages (context 2051).
+        self.prompt_lens = [17, 1, 31, 130, 3, 40, 1, 1, 1, 2, 4]
+        self.cache_lens = [0, 127, 13, 250, 6, 1000, 1023, 2047, 0, 127, 2047]
         var max_context = 0
         self.num_blocks = 4
         for i in range(len(self.prompt_lens)):

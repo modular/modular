@@ -352,7 +352,7 @@ def test_grouped_tensormap_update[
         row_major[128 * num_blocks]()
     )
 
-    comptime for blk in range(num_blocks):
+    for blk in range(num_blocks):
         for j in range(128):
             tensormaps_host_a[blk * 128 + j] = template_tma_a.descriptor.data[j]
             tensormaps_host_b[blk * 128 + j] = template_tma_b.descriptor.data[j]

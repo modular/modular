@@ -150,7 +150,13 @@ def build_paged_cache(
             mla_num_partitions=(
                 Tensor(
                     storage=Buffer.from_numpy(
-                        np.array([attn_key.num_partitions], np.int64)
+                        np.array(
+                            [
+                                attn_key.num_partitions,
+                                attn_key.decode_num_partitions,
+                            ],
+                            np.int64,
+                        )
                     )
                 )
                 if isinstance(attn_key, MLAAttnKey)

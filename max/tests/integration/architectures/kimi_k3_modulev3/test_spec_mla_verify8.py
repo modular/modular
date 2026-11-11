@@ -73,6 +73,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
 from max.pipelines.architectures.kimi_k3_modulev3.spec_mla import (
     kimi_k3_mla_buffer_size,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
+)
 from max.support.math import ceildiv
 from max.tensor import Tensor, default_device
 from max.tensor.realization_context import ensure_context
@@ -235,7 +238,10 @@ class _LatentPool:
                 ),
                 mla_num_partitions=Tensor(
                     storage=Buffer.from_numpy(
-                        np.array([key.num_partitions], np.int64)
+                        np.array(
+                            [key.num_partitions, key.decode_num_partitions],
+                            np.int64,
+                        )
                     )
                 ),
                 # Every paged leaf declares the record; zeros mean no split.
@@ -284,6 +290,7 @@ def _make_layer(
     heads: int,
     kv_params: MLAKVCacheParams,
     weights: dict[str, np.ndarray],
+    tp_size: int = 1,
 ) -> KimiK3MLAAttention:
     """Builds a random-weight MLA layer with production head geometry."""
     layer = KimiK3MLAAttention(
@@ -296,12 +303,22 @@ def _make_layer(
         kv_lora_rank=_KV_LORA_RANK,
         kv_params=kv_params,
         layer_idx=0,
+        tp_size=tp_size,
     )
-    for name, arr in weights.items():
+    layer.qkv_a_g_proj.weight = Tensor(
+        fuse_qkv_a_g_for_tp(
+            weights["q_a_proj"],
+            weights["kv_a_proj_with_mqa"],
+            weights["g_proj"],
+            tp_size,
+        ),
+        dtype=DType.float32,
+    ).cast(layer.qkv_a_g_proj.weight.dtype)
+    for name in ("q_b_proj", "kv_b_proj", "o_proj"):
         weight = getattr(layer, name).weight
-        getattr(layer, name).weight = Tensor(arr, dtype=DType.float32).cast(
-            weight.dtype
-        )
+        getattr(layer, name).weight = Tensor(
+            weights[name], dtype=DType.float32
+        ).cast(weight.dtype)
     layer.q_a_layernorm.weight = Tensor(
         np.ones(_Q_LORA_RANK, np.float32), dtype=DType.float32
     ).cast(layer.q_a_layernorm.weight.dtype)
@@ -575,7 +592,7 @@ def _build_tp2(
     weights: dict[str, np.ndarray],
 ) -> tuple[KimiK3MLAAttention, MLAKVCacheParams]:
     params = _kv_params(heads, devices)
-    layer = _make_layer(heads, params, weights)
+    layer = _make_layer(heads, params, weights, tp_size=len(devices))
     return tensor_parallel_mla_attention(layer, mesh), params
 
 

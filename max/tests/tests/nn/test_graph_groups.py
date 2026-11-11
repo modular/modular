@@ -24,6 +24,7 @@ from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
 from max.nn.legacy import graph_groups
 from max.nn.legacy.graph_groups import (
     BatchContext,
+    BlockDiffusionGraphInputs,
     ConvStates,
     DecoderGraphInputs,
     DecoderOutputs,
@@ -77,6 +78,7 @@ def _examples() -> list[GraphGroup[Any, Any]]:
         SparseIndices(rows=(b,)),
         DecoderOutputs(logits=logits, hidden_states=HiddenStates(all=(a,))),
         DecoderGraphInputs(tokens=t, vision=VisionMerge(image_embeddings=t)),
+        BlockDiffusionGraphInputs(tokens=t, sc_logits=t),
         VisionRows(pixel_values=(t,), grid_thw=t),
         VisionSegments(cu_seqlens=(t,)),
         VisionRowIndex(pool_gather_index=(t,)),

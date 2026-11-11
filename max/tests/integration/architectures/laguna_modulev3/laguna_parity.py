@@ -362,22 +362,20 @@ def _v3_logits(model: Any) -> torch.Tensor:
 def assert_logits_match(case_name: str) -> None:
     """Asserts both architectures produce the same logits for one case."""
     case = CASES[case_name]
-    expected = _graph_logits(
-        _build(
-            graph_model.LagunaModel,
-            graph_adapters.convert_safetensor_state_dict,
-            case,
-        )
-    )
     v3_model = laguna_modulev3_arch.pipeline_model
     assert isinstance(v3_model, type)
-    actual = _v3_logits(
-        _build(
-            v3_model,
-            v3_adapters.convert_safetensor_state_dict,
-            case,
-        )
+    graph_built = _build(
+        graph_model.LagunaModel,
+        graph_adapters.convert_safetensor_state_dict,
+        case,
     )
+    v3_built = _build(
+        v3_model,
+        v3_adapters.convert_safetensor_state_dict,
+        case,
+    )
+    expected = _graph_logits(graph_built)
+    actual = _v3_logits(v3_built)
 
     assert actual.shape == expected.shape == (len(PROMPT_LENS), VOCAB_SIZE)
     assert torch.isfinite(actual).all()

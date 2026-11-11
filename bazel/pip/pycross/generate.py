@@ -43,6 +43,9 @@ _DEFAULT_PYTHON_VERSION_ONLY = _TORCH_PACKAGES | {
     "flashinfer-python",
     "nvidia-cutlass-dsl",
     "sglang",
+    # Pinned in nvidia-sglang to stay off vllm's version, which makes it a
+    # direct dependency that the reachability walk would otherwise share.
+    "tokenspeed-triton",
     "vllm",
 }
 
@@ -80,12 +83,14 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "cuda-python",  # vllm/sglang use CUDA 13; the default groups use CUDA 12
         "cuda-toolkit",  # Differs between vllm's and sglang's torch versions
         "fastapi",  # vllm 0.24.0 caps fastapi below what other groups resolve to
+        "filelock",  # vllm 0.33.0 needs >=3.20.3; the other groups stay on 3.16.1
         "flash-attn-4",  # sglang 0.5.12.post1 needs 4.0.0b9; the benchmarks use 4.0.0b31
         "flashinfer-cubin",  # sglang pins 0.6.11.post1; MAX uses 0.6.8.post1
         "flashinfer-python",  # MAX, vllm and sglang each pin a different version
         "idna",  # Follows mcp's split
         "llguidance",  # Not used by MAX directly; vllm pulls 1.7.5, sglang pins 0.7.30
         "mcp",  # vllm 0.30.0 needs mcp 2.x; MAX and sglang use 1.30.0
+        "multidict",  # vllm 0.33.0 needs >=6.9.1; the other groups stay on 6.7.1
         "nvidia-cudnn-frontend",  # flashinfer 0.7 needs >=1.29 (bench, vllm); MAX and sglang use 1.26.0
         "nvidia-cublas",  # Differs between vllm's and sglang's torch versions
         "nvidia-cudnn-cu13",  # Differs between vllm's and sglang's torch versions
@@ -99,13 +104,17 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "nvidia-nvjitlink",  # Differs between vllm's and sglang's torch versions
         "openai",  # vllm 0.30.0 needs >=2.25; sglang pins 2.6.1; MAX uses 2.11.0
         "outlines-core",  # Conflicts between vllm and sglang
+        "requests",  # vllm 0.33.0 needs >=2.33.0; the other groups stay on 2.32.3
+        "safetensors",  # transformers 5.20 (vllm) needs >=0.8.0; MAX stays on 0.6.2
         "quack-kernels",  # vllm pins 0.6.5, sglang 0.4.1; flash-attn-4 (aarch64/darwin) pins >=0.3.3
         "sse-starlette",  # Follows mcp's split
         "tilelang",  # MAX itself doesn't use tilelang, but the default environment group does; vllm 0.30.0 hard-pins 0.1.12
-        "tokenspeed-mla",  # vllm pins ==0.1.8, sglang pins ==0.1.1
+        "tokenizers",  # Follows transformers' split: 5.12.x caps it at 0.23.0, 5.20 needs >=0.23.1
+        "tokenspeed-mla",  # vllm pins ==2.0.3, sglang pins ==0.1.1
+        "tokenspeed-triton",  # Follows tokenspeed-mla's split
         "torchcodec",  # vllm pins a newer version than sglang
-        "xgrammar",  # vllm 0.31.0 pins 0.2.7; sglang pins 0.2.0
-        "transformers",  # MAX pins 5.12.x; sglang pins 5.3.0, vllm aligns on 5.12.x
+        "xgrammar",  # vllm 0.33.0 pins 0.2.8; sglang pins 0.2.0
+        "transformers",  # MAX pins 5.12.x; sglang pins 5.6.0; vllm 0.33.0 needs >=5.16.1
         "vllm",
         "sglang",
         # aiperf (SemiAnalysis fork) pins different versions for these.

@@ -82,16 +82,20 @@ fn replicas_from(py_replicas: Vec<Vec<PyLeaf>>) -> Vec<Vec<LeafMem>> {
         .map(|leaves| {
             leaves
                 .into_iter()
-                .map(|(units, replicated)| LeafMem {
-                    units: units
+                .map(|(units, replicated)| {
+                    let units = units
                         .into_iter()
                         .map(|(device_id, ptr, bytes)| Unit {
                             device_id,
                             ptr,
                             bytes,
                         })
-                        .collect(),
-                    replicated,
+                        .collect();
+                    if replicated {
+                        LeafMem::replicated(units)
+                    } else {
+                        LeafMem::sharded(units)
+                    }
                 })
                 .collect()
         })

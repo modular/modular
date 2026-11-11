@@ -71,7 +71,15 @@ _NOT_A_TRACE: dict[type, str] = {
 
 #: Dtypes that ``auto_cast`` may convert between. Intentionally narrow;
 #: widen as new pairs are validated.
-_SAFE_CAST_DTYPES: frozenset[DType] = frozenset({DType.float32, DType.bfloat16})
+_SAFE_CAST_DTYPES: frozenset[DType] = frozenset(
+    {DType.float32, DType.bfloat16, DType.float16}
+)
+
+#: Same-width casts that still lose information, keyed by ``(loaded, declared)``.
+_SAME_WIDTH_LOSS: dict[CastRecord, str] = {
+    (DType.bfloat16, DType.float16): "range loss",
+    (DType.float16, DType.bfloat16): "precision loss",
+}
 
 
 #: The external constants added to each graph, keyed by weight name. Weakly
@@ -332,11 +340,10 @@ def log_casts(casts: Mapping[CastRecord, int]) -> None:
         return
     parts = []
     for (loaded, declared), count in casts.items():
-        narrowing = (
-            " (precision loss)"
-            if declared.size_in_bytes < loaded.size_in_bytes
-            else ""
-        )
+        loss = _SAME_WIDTH_LOSS.get((loaded, declared))
+        if loss is None and declared.size_in_bytes < loaded.size_in_bytes:
+            loss = "precision loss"
+        narrowing = f" ({loss})" if loss else ""
         parts.append(
             f"{count} parameter(s) from {loaded} to {declared}{narrowing}"
         )
@@ -393,8 +400,8 @@ def shard_checkpoint(
             :meth:`~max.nn.Module.trace` does.
         arrays: The values of the parameters, keyed by the names that
             :attr:`~max.nn.Module.parameters` yields.
-        auto_cast: Whether to permit a cast between ``float32`` and
-            ``bfloat16``.
+        auto_cast: Whether to permit a cast between ``float32``,
+            ``bfloat16`` and ``float16``.
 
     Returns:
         A mapping from the name of each external constant to its data.

@@ -19,6 +19,7 @@
 """Registers attention graph ops (MHA, MLA, fused QKV) and dispatches them to the `nn.attention` kernels."""
 
 from std.collections import OptionalReg
+from std.builtin.device_passable import DeviceTypeEncoder
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -41,6 +42,9 @@ from linalg.mx_format import MXFormat
 from layout import (
     TileTensor,
     RowMajorLayout,
+    TensorLayout,
+    TensorEngine,
+    DefaultEngine,
     UNKNOWN_VALUE,
 )
 from nn.attention.cpu.mha import flash_attention as nn_flash_attention
@@ -58,6 +62,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
+    generic_flash_attention_kv_cache_ragged_sink,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4,
@@ -75,8 +80,13 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_inplace_decode_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
+from nn.attention.gpu.nvidia.sm100.dispatch import (
+    mha_split_kv_decode_num_partitions,
+)
 from kv_cache.mixed_step_split import (
     MIXED_STEP_DECODE_WIDTH,
+    MIXED_STEP_SPLIT_SIZE,
+    MixedSplit,
     is_packed,
     read_mixed_split,
     rebase_row_offsets,
@@ -109,6 +119,7 @@ from nn.attention.gpu.mla_index_fp8 import (
     mla_indexer_ragged_float8_paged_cp,
 )
 from nn.attention.gpu.cp_merge_topk import cp_merge_topk
+from nn.topk_filtered import FilteredTopk
 from nn.attention.compress_windows import compress_windows_ragged_paged
 from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.gpu.mla_common import SparseRowLayout
@@ -124,6 +135,7 @@ from std.utils import IndexList
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
 from nn.attention.gpu.mla_index_kpool import (
+    kpool_append_ragged_paged,
     kpool_compress_kernel,
     KPOOL_EXPAND_BLOCK_SIZE,
     kpool_expand_topk_kernel,
@@ -594,6 +606,218 @@ struct MLAKPoolRingClose:
         )
 
 
+@extensibility.register("attention.mla.kpool.append.paged")
+struct MLAKPoolAppendPaged:
+    """Registers the `attention.mla.kpool.append.paged` graph op with the graph
+    compiler.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        head_dim: Int,
+        kpool: Int,
+        quantization_granularity: Int,
+    ](
+        # Read only, but `attention.mla.kpool.seed_tail` writes the ring this
+        # same step and must run after this op; see `MLAKPoolRingClose`.
+        tail: Some[MutableInput & Tensor],
+        k: Some[Input & Tensor],
+        gate: Some[Input & Tensor],
+        ape: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        slot_idx: Some[Input & Tensor],
+        scale_ub: Float32,
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        k_scales_blocks: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        k_scales_lookup_table: Some[Input & Tensor],
+        layer_idx: UInt32,
+        ctx: DeviceContext,
+    ) raises:
+        """Pools, FP8-quantizes and caches every k-pool this call completes.
+
+        One launch for what `attention.mla.kpool.ring_close`,
+        `attention.mla.kpool.compress`, `quantize_dynamic_scaled_float8` and
+        the paged K and K-scale stores do together; see `kpool_append_ragged_paged`.
+
+        Parameters:
+            head_dim: Channels per key; also the kernel's block width.
+            kpool: Tokens per pool.
+            quantization_granularity: Cache values per scale.
+
+        Args:
+            tail: Persistent slot-indexed ring `[max_slots, 2, kpool,
+                head_dim]`. Read only.
+            k: This call's layer-normed keys `[total_tokens, head_dim]`.
+            gate: This call's gate scores `[total_tokens, head_dim]`.
+            ape: Within-pool position embedding `[kpool, head_dim]`, float32.
+            input_row_offsets: Token row offsets per request `[batch + 1]`.
+            slot_idx: Ring slot per request `[batch]`.
+            scale_ub: Upper bound on a pool's max-abs before its scale.
+            kv_blocks: The pooled key cache's pages.
+            page_stride: Page stride of `kv_blocks`.
+            cache_lengths: Cached-prefix length per request `[batch]`.
+            kv_lookup_table: Page table.
+            max_prompt_length: Longest new-token count in the batch.
+            max_cache_length: Longest cached prefix in the batch.
+            k_scales_blocks: The pooled key cache's scale pages.
+            scales_page_stride: Page stride of `k_scales_blocks`.
+            k_scales_lookup_table: Scale page table.
+            layer_idx: The layer's index in the cache.
+            ctx: Device context for GPU execution.
+        """
+        comptime assert conforms_to(type_of(tail), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(gate), TileTensorable)
+        comptime assert conforms_to(type_of(ape), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert type_of(tail).rank == 4
+        comptime assert type_of(k).rank == 2
+        comptime assert type_of(gate).rank == 2
+        comptime assert type_of(ape).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(k_scales_blocks).rank == 6
+        comptime cache_dtype = type_of(kv_blocks).dtype
+        comptime scale_dtype = type_of(k_scales_blocks).dtype
+        comptime page_size = type_of(kv_blocks)._shape_types[3].static_value
+        comptime cache_head_dim = type_of(kv_blocks)._shape_types[
+            5
+        ].static_value
+        comptime num_heads = type_of(kv_blocks)._shape_types[4].static_value
+        comptime is_mla = type_of(kv_blocks)._shape_types[1].static_value == 1
+        comptime kv_params = KVCacheStaticParams(
+            num_heads, cache_head_dim, is_mla
+        )
+
+        var k_collection = generic_get_paged_cache_with_scales[
+            cache_dtype,
+            scale_dtype,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            _mut_pointer_tile(kv_blocks.to_tile_tensor[cache_dtype]()),
+            _imm_pointer_tile(page_stride.to_tile_tensor[.int64]()),
+            _imm_pointer_tile(cache_lengths.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(kv_lookup_table.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(max_prompt_length.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(max_cache_length.to_tile_tensor[.uint32]()),
+            _mut_pointer_tile(k_scales_blocks.to_tile_tensor[scale_dtype]()),
+            _imm_pointer_tile(scales_page_stride.to_tile_tensor[.int64]()),
+            _imm_pointer_tile(k_scales_lookup_table.to_tile_tensor[.uint32]()),
+        )
+
+        kpool_append_ragged_paged[head_dim=head_dim, kpool=kpool](
+            tail.to_tile_tensor[type_of(k).dtype]().as_imm(),
+            k.to_tile_tensor().as_imm(),
+            gate.to_tile_tensor[type_of(k).dtype]().as_imm(),
+            ape.to_tile_tensor[.float32]().as_imm(),
+            input_row_offsets.to_tile_tensor[.uint32]().as_imm(),
+            cache_lengths.to_tile_tensor[.uint32]().as_imm(),
+            slot_idx.to_tile_tensor[.uint32]().as_imm(),
+            k_collection.get_key_cache(Int(layer_idx)),
+            scale_ub,
+            ctx,
+        )
+
+
+struct _RebasedRemap[R: SparseIndexRemap](SparseIndexRemap):
+    """Rebases a remap's batch entries to a split view's rows.
+
+    A view's kernels resolve a position against entry `b` of the view,
+    while the tables a remap reads hold the whole batch, so `b` needs the
+    view's first row.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias; the struct is trivially device-passable."""
+
+    comptime enabled = Self.R.enabled
+    """Whether `store` writes anything, as the wrapped remap does."""
+
+    var remap: Self.R
+    """The whole-batch remap, its output at the view's first token."""
+    var first_row: Int32
+    """The view's first row in the batch."""
+
+    @inline(.always)
+    def __init__(out self, remap: Self.R, first_row: Int):
+        """Creates the view's remap.
+
+        Args:
+            remap: The whole-batch remap, its output at the view's first
+                token.
+            first_row: The view's first row in the batch.
+        """
+        self.remap = remap
+        self.first_row = Int32(first_row)
+
+    @inline(.always)
+    def offset(self, slots: Int) -> Self:
+        """Returns this remap with the wrapped output advanced by `slots`.
+
+        Args:
+            slots: Flat slots to advance by.
+
+        Returns:
+            The advanced remap.
+        """
+        return Self(self.remap.offset(slots), Int(self.first_row))
+
+    @inline(.always)
+    def store(self, idx: Int, batch: Int, logical: Int32):
+        """Writes slot `idx` for the batch row the wrapped remap names.
+
+        Args:
+            idx: Flat output slot.
+            batch: Batch entry within the view.
+            logical: The slot's logical token position, or `-1`.
+        """
+        self.remap.store(idx, batch + Int(self.first_row), logical)
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"_RebasedRemap"`.
+        """
+        return "_RebasedRemap"
+
+
+@inline(.always)
+def _split_record_pointer(
+    record: TileTensor[mut=False, DType.uint32, address_space=.GENERIC, ...],
+) -> ImmPointer[UInt32, ImmutAnyOrigin]:
+    """Returns the host pointer the split ops read the record through."""
+    return record.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
+
+
 @inline(.always)
 def _mla_indexer_ragged_float8_paged_execute[
     R: SparseIndexRemap,
@@ -650,11 +874,14 @@ def _mla_indexer_ragged_float8_paged_execute[
     layer_idx: UInt32,
     remap: R,
     ctx: DeviceContext,
+    mixed_step_split: Optional[ImmPointer[UInt32, ImmutAnyOrigin]] = None,
 ) raises:
     """Shared body of the indexer ops.
 
     `remap` is the optional second output; `Topk` is the top-k dispatch,
-    which the op's registration picks.
+    which the op's registration picks. `mixed_step_split` is the KV cache's
+    split record, a host `uint32[MIXED_STEP_SPLIT_SIZE]`: a valid split runs
+    the two views, and any other record keeps the whole-batch run.
     """
     comptime assert output_indices.rank == 2
     comptime assert q.rank == 3
@@ -700,6 +927,119 @@ def _mla_indexer_ragged_float8_paged_execute[
         _imm_pointer_tile(scales_page_stride),
         _imm_pointer_tile(k_scales_lookup_table),
     )
+
+    # A pooled arm's indices count pools, not tokens, so the record's split
+    # cannot cut it; AMD keeps one whole-batch route.
+    comptime if kpool == 1 and ctx.target.is_nvidia_gpu():
+        if case .Some(record) = mixed_step_split:
+            var batch = Int(input_row_offsets.dim[0]()) - 1
+            var max_q_len = Int(k_collection.max_seq_length)
+            if max_q_len > MIXED_STEP_DECODE_WIDTH:
+                # The record's layout is the host array's, so a view of it
+                # needs no caller layout check.
+                var split_args = TileTensor(
+                    record, tt_row_major(MIXED_STEP_SPLIT_SIZE)
+                )
+                if case .Some(split) = read_mixed_split(
+                    split_args,
+                    batch,
+                    Int(q.dim[0]()),
+                    max_q_len,
+                    Int(k_collection.max_cache_length),
+                ):
+                    if (
+                        is_packed(q)
+                        and is_packed(qs)
+                        and is_packed(output_indices)
+                        and is_packed(input_row_offsets)
+                        and is_packed(k_cache_lengths)
+                        and is_packed(k_lookup_table)
+                        and is_packed(k_scales)
+                        and is_packed(k_scales_lookup_table)
+                    ):
+                        var row_offsets = (
+                            input_row_offsets.unsafe_ptr()
+                            .unsafe_mut_cast[True]()
+                            .unsafe_origin_cast[MutAnyOrigin]()
+                        )
+                        for view_idx in range(2):
+                            var view = (
+                                split.tail if view_idx == 1 else split.head
+                            )
+                            var view_row_offsets = row_offsets
+                            var rebased: Optional[DeviceBuffer[.uint32]] = None
+                            if view.first_row != 0:
+                                var rebased_buf = rebase_row_offsets[
+                                    with_cache_offsets=False
+                                ](row_offsets, row_offsets, batch, view, ctx)
+                                view_row_offsets = (
+                                    rebased_buf.unsafe_ptr().unsafe_origin_cast[
+                                        MutAnyOrigin
+                                    ]()
+                                )
+                                rebased = rebased_buf^
+                            mla_indexer_ragged_float8_paged[
+                                DType.float8_e4m3fn,
+                                type_of(k_collection),
+                                num_heads,
+                                depth,
+                                k,
+                                mask_str,
+                                kpool=kpool,
+                                write_logical=write_logical,
+                                Topk=Topk,
+                            ](
+                                _mut_pointer_tile(
+                                    TileTensor(
+                                        output_indices.unsafe_ptr().unsafe_offset(
+                                            view.first_token * k
+                                        ),
+                                        tt_row_major(view.tokens, Idx[k]),
+                                    )
+                                ),
+                                _imm_pointer_tile(
+                                    TileTensor(
+                                        q.unsafe_ptr().unsafe_offset(
+                                            view.first_token * num_heads * depth
+                                        ),
+                                        tt_row_major(
+                                            view.tokens,
+                                            Idx[num_heads],
+                                            Idx[depth],
+                                        ),
+                                    )
+                                ),
+                                _imm_pointer_tile(
+                                    TileTensor(
+                                        qs.unsafe_ptr().unsafe_offset(
+                                            view.first_token * num_heads
+                                        ),
+                                        tt_row_major(
+                                            view.tokens, Idx[num_heads]
+                                        ),
+                                    )
+                                ),
+                                _imm_pointer_tile(
+                                    TileTensor(
+                                        view_row_offsets,
+                                        tt_row_major(view.rows + 1),
+                                    )
+                                ),
+                                k_collection.rows_view(
+                                    view.first_row,
+                                    view.rows,
+                                    UInt32(view.max_q_len),
+                                    UInt32(view.max_cache_len),
+                                ),
+                                layer_idx,
+                                ctx,
+                                _RebasedRemap(
+                                    remap.offset(view.first_token * k),
+                                    view.first_row,
+                                ),
+                            )
+                            _ = rebased^
+                        return
 
     mla_indexer_ragged_float8_paged[
         DType.float8_e4m3fn,
@@ -755,6 +1095,7 @@ struct MLAIndexerRaggedFloat8Paged:
         # when they are paged independently.
         k_scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
+        mixed_step_split: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Compute FP8 attention scores and return top-k key indices per token.
@@ -796,6 +1137,8 @@ struct MLAIndexerRaggedFloat8Paged:
                 [batch_size, pages_per_seq]. Equal to `k_lookup_table` when the
                 scales share the values' block-id space.
             layer_idx: Layer index for retrieving the correct cache layer.
+            mixed_step_split: The KV cache's split record; zeros keep the
+                whole-batch route.
             ctx: Device context for GPU execution.
         """
         comptime assert conforms_to(type_of(output_indices), TileTensorable)
@@ -815,6 +1158,7 @@ struct MLAIndexerRaggedFloat8Paged:
         comptime assert conforms_to(
             type_of(k_scales_lookup_table), TileTensorable
         )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert type_of(output_indices).rank == 2
         comptime assert type_of(q).rank == 3
         comptime assert type_of(qs).rank == 2
@@ -828,6 +1172,7 @@ struct MLAIndexerRaggedFloat8Paged:
         comptime assert type_of(k_scales).rank == 6
         comptime assert type_of(scales_page_stride).rank == 1
         comptime assert type_of(k_scales_lookup_table).rank == 2
+        comptime assert type_of(mixed_step_split).rank == 1
         _mla_indexer_ragged_float8_paged_execute[
             num_heads=num_heads,
             depth=depth,
@@ -853,6 +1198,7 @@ struct MLAIndexerRaggedFloat8Paged:
             layer_idx,
             NoRemap(),
             ctx,
+            _split_record_pointer(mixed_step_split.to_tile_tensor[.uint32]()),
         )
 
 
@@ -864,6 +1210,167 @@ struct MLAIndexerRaggedFloat8PagedRemap:
     position's physical row in the MLA cache, exactly what
     `paged_sparse_kv_index_remap` would compute from the logical output. A
     sparse MLA op given it skips that remap.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        num_heads: Int,
+        depth: Int,
+        k: Int,
+        quantization_granularity: Int,
+        mask_str: StaticString,
+        write_logical: Bool = False,
+    ](
+        output_indices: Some[Output & Tensor],
+        physical_indices: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        qs: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        k_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        k_cache_lengths: Some[Input & Tensor],
+        k_lookup_table: Some[Input & Tensor],
+        k_max_prompt_length: Some[Input & Tensor],
+        k_max_cache_length: Some[Input & Tensor],
+        k_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        k_scales_lookup_table: Some[Input & Tensor],
+        layer_idx: UInt32,
+        mla_kv_blocks: Some[MutableInput & Tensor],
+        mla_lookup_table: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        """Computes top-k key positions and their physical MLA cache rows.
+
+        Parameters:
+            num_heads: Number of query attention heads.
+            depth: Head dimension.
+            k: Number of top indices to return per token.
+            quantization_granularity: Quantization granularity for the K cache.
+            mask_str: Mask type - either MaskName.NULL or MaskName.CAUSAL.
+            write_logical: Whether to write `output_indices` (defaults to
+                `False`). With `False` only the physical rows are written, and
+                `output_indices` may have no rows.
+
+        Args:
+            output_indices: Logical top-k key positions `[total_seq_len, k]`,
+                `-1` past a token's candidates.
+            physical_indices: Physical MLA cache row of each `output_indices`
+                slot, `block_id * page_size + offset`, `-1` where the
+                position is `-1` or its page is unmapped.
+            q: Query tensor [total_seq_len, num_heads, depth] in FP8.
+            qs: Query scales [total_seq_len, num_heads] in float32.
+            input_row_offsets: Ragged row offsets [batch_size + 1] for queries.
+            k_blocks: Paged indexer K cache blocks in FP8.
+            page_stride: Page-to-page distance in elements; -1 when packed.
+            k_cache_lengths: Cache lengths [batch_size].
+            k_lookup_table: Indexer cache page lookup table.
+            k_max_prompt_length: Max prompt (query) length scalar tensor [1].
+            k_max_cache_length: Max cache length scalar tensor [1].
+            k_scales: K scale blocks matching k_blocks shape with scale values.
+            scales_page_stride: The same, for the scales leaf.
+            k_scales_lookup_table: Page lookup table for the scale blocks.
+            layer_idx: Layer index for retrieving the correct cache layer.
+            mla_kv_blocks: The MLA cache's blocks; their page count is the
+                invalid block id and their page size the remap's.
+            mla_lookup_table: The MLA cache's page lookup table
+                `[batch_size, pages_per_seq]`.
+            mixed_step_split: The KV cache's split record; zeros keep the
+                whole-batch route.
+            ctx: Device context for GPU execution.
+        """
+        comptime assert conforms_to(type_of(output_indices), TileTensorable)
+        comptime assert conforms_to(type_of(physical_indices), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(qs), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(k_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(k_cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(k_lookup_table), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(type_of(k_max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(type_of(mla_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(mla_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
+        comptime assert type_of(output_indices).rank == 2
+        comptime assert type_of(physical_indices).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(qs).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(k_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(k_cache_lengths).rank == 1
+        comptime assert type_of(k_lookup_table).rank == 2
+        comptime assert type_of(k_max_prompt_length).rank == 1
+        comptime assert type_of(k_max_cache_length).rank == 1
+        comptime assert type_of(k_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(k_scales_lookup_table).rank == 2
+        comptime assert type_of(mla_kv_blocks).rank == 6
+        comptime assert type_of(mla_lookup_table).rank == 2
+        comptime assert type_of(mixed_step_split).rank == 1
+        comptime mla_page_size = type_of(mla_kv_blocks)._shape_types[
+            3
+        ].static_value
+        # The remap reads the index tables through their flat pointers; a
+        # non-pointer storage policy aborts here at run time.
+        var remap = PagedKVRemap[mla_page_size](
+            physical_indices.to_tile_tensor[.int32]().unsafe_ptr(),
+            mla_lookup_table.to_tile_tensor[.uint32]().unsafe_ptr(),
+            Int(mla_lookup_table.shape()[1].value()),
+            Int(mla_lookup_table.shape()[0].value()),
+            UInt32(Int(mla_kv_blocks.shape()[0].value())),
+        )
+        _mla_indexer_ragged_float8_paged_execute[
+            num_heads=num_heads,
+            depth=depth,
+            k=k,
+            quantization_granularity=quantization_granularity,
+            mask_str=mask_str,
+            kpool=1,
+            write_logical=write_logical,
+        ](
+            output_indices.to_tile_tensor[.int32](),
+            q.to_tile_tensor[.float8_e4m3fn](),
+            qs.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            k_blocks.to_tile_tensor[.float8_e4m3fn](),
+            page_stride.to_tile_tensor[.int64](),
+            k_cache_lengths.to_tile_tensor[.uint32](),
+            k_lookup_table.to_tile_tensor[.uint32](),
+            k_max_prompt_length.to_tile_tensor[.uint32](),
+            k_max_cache_length.to_tile_tensor[.uint32](),
+            k_scales.to_tile_tensor[.float32](),
+            scales_page_stride.to_tile_tensor[.int64](),
+            k_scales_lookup_table.to_tile_tensor[.uint32](),
+            layer_idx,
+            remap,
+            ctx,
+            _split_record_pointer(mixed_step_split.to_tile_tensor[.uint32]()),
+        )
+
+
+@extensibility.register(
+    "attention.mla.indexer.ragged.float8.paged.remap.filtered"
+)
+struct MLAIndexerRaggedFloat8PagedRemapFiltered:
+    """Registers the `attention.mla.indexer.ragged.float8.paged.remap.filtered` graph op.
+
+    `attention.mla.indexer.ragged.float8.paged.remap` with the filtered top-k
+    select (`nn.topk_filtered.FilteredTopk`): bounded rows that fill the GPU
+    keep only the columns at or above a sampled bound before the exact
+    select. Same operands, parameters and outputs. Hy4's indexer calls it at
+    every step; other score windows keep the shared select.
     """
 
     @staticmethod
@@ -981,6 +1488,7 @@ struct MLAIndexerRaggedFloat8PagedRemap:
             UInt32(Int(mla_kv_blocks.shape()[0].value())),
         )
         _mla_indexer_ragged_float8_paged_execute[
+            Topk=FilteredTopk,
             num_heads=num_heads,
             depth=depth,
             k=k,
@@ -1510,6 +2018,7 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
         mla_kv_scales: Some[MutableInput & Tensor],
         mla_scales_page_stride: Some[Input & Tensor],
         mla_scales_lookup_table: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Computes top-k key positions and their value and scale rows.
@@ -1556,6 +2065,8 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
                 in elements; -1 when packed.
             mla_scales_lookup_table: The MLA cache's scales page lookup table
                 `[batch_size, pages_per_seq]`.
+            mixed_step_split: The KV cache's split record; zeros keep the
+                whole-batch route.
             ctx: Device context for GPU execution.
         """
         comptime assert conforms_to(type_of(output_indices), TileTensorable)
@@ -1585,6 +2096,7 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
         comptime assert conforms_to(
             type_of(mla_scales_lookup_table), TileTensorable
         )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert type_of(output_indices).rank == 2
         comptime assert type_of(physical_indices).rank == 2
         comptime assert type_of(q).rank == 3
@@ -1605,6 +2117,7 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
         comptime assert type_of(mla_kv_scales).dtype == DType.float8_e4m3fn
         comptime assert type_of(mla_scales_page_stride).rank == 1
         comptime assert type_of(mla_scales_lookup_table).rank == 2
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime mla_page_size = type_of(mla_kv_blocks)._shape_types[
             3
         ].static_value
@@ -1661,6 +2174,7 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
             layer_idx,
             remap,
             ctx,
+            _split_record_pointer(mixed_step_split.to_tile_tensor[.uint32]()),
         )
 
 
@@ -3701,8 +4215,7 @@ struct Struct_mha_ragged_paged_scalar_args:
     (`kv_cache.mixed_step_split`). On NVIDIA, a valid record runs the decode
     rows and the prefill rows of one replica batch as two views, each on its
     own route, into the one output. Zeros, an invalid record, a strided
-    operand, split head dims, mask operands or another target keep the single
-    launch.
+    operand, mask operands or another target keep the single launch.
     """
 
     @inline(.always)
@@ -3787,6 +4300,10 @@ def _execute_mha_ragged_paged[
     mask_str: StaticString,
     local_window_size: Int,
     v_head_dim: Int,
+    sink: Bool = False,
+    SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
+    # `sink_weights` is optional, so its engine cannot be inferred.
+    SinkEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     q: TileTensor[q_dtype, address_space=.GENERIC, ...],
@@ -3817,20 +4334,28 @@ def _execute_mha_ragged_paged[
     ],
     mask_operands: TensorTuple[*MaskIns],
     context: DeviceContext,
+    sink_weights: OptionalReg[
+        TileTensor[
+            q_dtype, SinkLayoutType, ImmUntrackedOrigin, Engine=SinkEngine
+        ]
+    ] = None,
 ) raises:
-    """Runs `attention.mha.ragged.paged`: split by `mixed_step_split` where the
+    """Runs ragged paged MHA: split by `mixed_step_split` where the
     record and the operands allow it, else one launch."""
     # Mask operands are indexed by the whole batch's sequence ids, which a
     # split view renumbers.
     comptime if (
-        v_head_dim == -1
-        and len(MaskIns) == 0
+        len(MaskIns) == 0
         and context.target.is_gpu()
         and context.target.is_nvidia_gpu()
     ):
         if _mha_ragged_mixed_step_split[
             mask_str=mask_str,
             local_window_size=local_window_size,
+            sink=sink,
+            SinkLayoutType=SinkLayoutType,
+            SinkEngine=SinkEngine,
+            v_head_dim=v_head_dim,
         ](
             output,
             q,
@@ -3845,11 +4370,15 @@ def _execute_mha_ragged_paged[
             layer_idx,
             scale,
             context,
+            sink_weights,
         ):
             return
     _execute_mha_ragged_paged_scalar_args[
         mask_str=mask_str,
+        sink=sink,
         local_window_size=local_window_size,
+        SinkLayoutType=SinkLayoutType,
+        SinkEngine=SinkEngine,
         v_head_dim=v_head_dim,
     ](
         output,
@@ -3866,6 +4395,7 @@ def _execute_mha_ragged_paged[
         mha_decode_dispatch_metadata,
         mask_operands,
         context,
+        sink_weights,
     )
 
 
@@ -3876,6 +4406,11 @@ def _mha_ragged_mixed_step_split[
     *,
     mask_str: StaticString,
     local_window_size: Int,
+    v_head_dim: Int,
+    sink: Bool = False,
+    SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
+    # `sink_weights` is optional, so its engine cannot be inferred.
+    SinkEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     output: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
     q: TileTensor[q_dtype, address_space=.GENERIC, ...],
@@ -3898,6 +4433,11 @@ def _mha_ragged_mixed_step_split[
     layer_idx: UInt32,
     scale: Float32,
     context: DeviceContext,
+    sink_weights: OptionalReg[
+        TileTensor[
+            q_dtype, SinkLayoutType, ImmUntrackedOrigin, Engine=SinkEngine
+        ]
+    ] = None,
 ) raises -> Bool:
     """Runs ragged MHA on the head view, then on the tail view, into the
     one `output`, when `mixed_step_split` holds a split the operands allow.
@@ -3905,7 +4445,8 @@ def _mha_ragged_mixed_step_split[
     Returns False, with nothing launched, to keep the single launch. `q` and
     `output` are `[tokens, heads, depth]`, so a view is a pointer offset at
     any head count. The split-K combine covers every `q` row it gets, so
-    each view gets its own rows and batch-local offsets.
+    each view gets its own rows and batch-local offsets. With `sink`, each
+    view gets the same per-head sink weights.
     """
     if max_q_len <= MIXED_STEP_DECODE_WIDTH:
         return False
@@ -3927,9 +4468,11 @@ def _mha_ragged_mixed_step_split[
         ):
             return False
         comptime num_heads = q.static_shape[1]
-        comptime depth = q.static_shape[2]
+        comptime q_depth = q.static_shape[2]
+        comptime out_depth = output.static_shape[2]
         comptime kv_heads = kv_blocks.static_shape[4]
-        comptime row_width = num_heads * depth
+        comptime q_row_width = num_heads * q_depth
+        comptime out_row_width = num_heads * out_depth
         comptime for view_idx in range(2):
             comptime in_tail = view_idx == 1
             var view = split.tail if in_tail else split.head
@@ -3945,7 +4488,7 @@ def _mha_ragged_mixed_step_split[
                     MutAnyOrigin
                 ]()
                 rebased = rebased_buf^
-            var cache = paged_cache_rows(
+            var cache = paged_cache_rows[v_head_size=v_head_dim](
                 kv_blocks,
                 page_stride,
                 cache_lengths,
@@ -3955,29 +4498,70 @@ def _mha_ragged_mixed_step_split[
                 view.rows,
                 view.lengths_slot,
             )
-            generic_flash_attention_kv_cache_ragged[
-                mask_str=mask_str,
-                local_window_size=local_window_size,
-                output_dtype=out_dtype,
-            ](
-                TileTensor(
-                    q.ptr.unsafe_offset(view.first_token * row_width),
-                    tt_row_major(view.tokens, Idx[num_heads], Idx[depth]),
-                ).as_imm(),
-                TileTensor(row_offsets, tt_row_major(view.rows + 1)).as_imm(),
-                cache,
-                layer_idx,
-                scale,
-                TileTensor(
-                    output.ptr.unsafe_offset(view.first_token * row_width),
-                    tt_row_major(view.tokens, Idx[num_heads], Idx[depth]),
-                ),
-                context,
-                MHADecodeDispatchMetadata.from_runtime_values[
-                    num_heads, num_heads // kv_heads
-                ](view.rows, view.max_q_len, view.max_cache_len, context),
-                TensorTuple(),
+            var q_view = TileTensor(
+                q.ptr.unsafe_offset(view.first_token * q_row_width),
+                tt_row_major(view.tokens, Idx[num_heads], Idx[q_depth]),
+            ).as_imm()
+            var offsets_view = TileTensor(
+                row_offsets, tt_row_major(view.rows + 1)
+            ).as_imm()
+            var output_view = TileTensor(
+                output.ptr.unsafe_offset(view.first_token * out_row_width),
+                tt_row_major(view.tokens, Idx[num_heads], Idx[out_depth]),
             )
+            var decode_metadata: MHADecodeDispatchMetadata
+            comptime if v_head_dim > 0:
+                # The split cache's 1Q route launches this count verbatim,
+                # so it must be the split-cache policy's, like the engine's.
+                decode_metadata = MHADecodeDispatchMetadata(
+                    view.rows,
+                    view.max_q_len,
+                    mha_split_kv_decode_num_partitions[
+                        context.default_device_info.sm_count
+                    ](
+                        view.rows,
+                        view.max_cache_len,
+                        kv_heads,
+                        local_window_size if local_window_size > 0 else 0,
+                    ),
+                    view.max_cache_len,
+                )
+            else:
+                decode_metadata = MHADecodeDispatchMetadata.from_runtime_values[
+                    num_heads, num_heads // kv_heads
+                ](view.rows, view.max_q_len, view.max_cache_len, context)
+            comptime if sink:
+                generic_flash_attention_kv_cache_ragged_sink[
+                    mask_str=mask_str,
+                    local_window_size=local_window_size,
+                    output_dtype=out_dtype,
+                ](
+                    q_view,
+                    offsets_view,
+                    cache,
+                    layer_idx,
+                    scale,
+                    output_view,
+                    context,
+                    sink_weights.value(),
+                    decode_metadata,
+                )
+            else:
+                generic_flash_attention_kv_cache_ragged[
+                    mask_str=mask_str,
+                    local_window_size=local_window_size,
+                    output_dtype=out_dtype,
+                ](
+                    q_view,
+                    offsets_view,
+                    cache,
+                    layer_idx,
+                    scale,
+                    output_view,
+                    context,
+                    decode_metadata,
+                    TensorTuple(),
+                )
             _ = rebased^
         return True
     return False
@@ -3985,7 +4569,11 @@ def _mha_ragged_mixed_step_split[
 
 @extensibility.register("attention.mha.ragged.paged.sink_weights")
 struct Struct_mha_ragged_paged_sink_weights_scalar_args:
-    """Registers the `attention.mha.ragged.paged.sink_weights` graph op with the graph compiler.
+    """Registers the `attention.mha.ragged.paged.sink_weights` graph op with
+    the graph compiler.
+
+    Like `attention.mha.ragged.paged`, it splits a mixed step by the KV
+    leaf's `mixed_step_split` record on NVIDIA targets.
     """
 
     @inline(.always)
@@ -4008,6 +4596,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         scale: Float32,
         sink_weights: Some[Input & Tensor],
         mha_decode_dispatch_metadata: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -4023,6 +4612,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         comptime assert conforms_to(
             type_of(mha_decode_dispatch_metadata), TileTensorable
         )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime dtype = type_of(kv_blocks).dtype
         comptime assert type_of(output).rank == 3
         comptime assert type_of(output).dtype == dtype
@@ -4037,14 +4627,15 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         comptime assert type_of(max_cache_length).rank == 1
         comptime assert type_of(sink_weights).rank == 1
         comptime assert type_of(mha_decode_dispatch_metadata).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         var sink_weights_tt = sink_weights.to_tile_tensor[
             type_of(q).dtype
         ]().as_imm()
-        _execute_mha_ragged_paged_scalar_args[
+        _execute_mha_ragged_paged[
             mask_str=mask_str,
-            sink=True,
             local_window_size=local_window_size,
             v_head_dim=v_head_dim,
+            sink=True,
         ](
             output.to_tile_tensor(),
             q.to_tile_tensor(),
@@ -4058,6 +4649,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
             layer_idx,
             scale,
             mha_decode_dispatch_metadata.to_tile_tensor[.int64](),
+            mixed_step_split.to_tile_tensor[.uint32](),
             TensorTuple(),
             context,
             OptionalReg[type_of(sink_weights_tt)](sink_weights_tt),
@@ -6757,6 +7349,9 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
     """Implements `attention.mla.graph.prefill.decode.paged.fp8`.
 
     Each registration picks its kernels.
+
+    `mixed_step_split` is the KV cache's split record; zeros keep the
+    whole-batch route.
     """
 
     comptime kernels: MLAGraphKernels
@@ -6795,6 +7390,7 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
         w_uv_scale: Some[Input & Tensor],
         scalar_args: Some[Input & Tensor],
         num_partitions_scalar: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -6822,6 +7418,7 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
         comptime assert conforms_to(
             type_of(num_partitions_scalar), TileTensorable
         )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime dtype = type_of(output).dtype
         comptime fp8_dtype = type_of(w_k).dtype
         comptime fp8_scale_dtype = type_of(w_k_scale).dtype
@@ -6847,6 +7444,7 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
         comptime assert type_of(w_uv_scale).rank == 3
         comptime assert type_of(scalar_args).rank == 1
         comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime assert type_of(kv).dtype == DType.bfloat16
         var kv_collection = generic_get_paged_cache(
             kv_blocks.to_tile_tensor(),
@@ -6886,6 +7484,16 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
             "attention.mla.graph.prefill.decode.paged.fp8",
             task_id=get_safe_task_id(context),
         ):
+            var split, decode_num_partitions = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                Int(q.to_tile_tensor().dim[0]()),
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_prefill_decode_graph_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -6916,6 +7524,8 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
                 kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
+                mixed_split=split,
+                decode_num_partitions=decode_num_partitions,
             )
 
 
@@ -6961,6 +7571,9 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
     """Implements `attention.mla.graph.prefill.decode.paged.fp8.sparse`.
 
     Each registration picks its kernels.
+
+    `mixed_step_split` is the KV cache's split record; zeros keep the
+    whole-batch route.
     """
 
     comptime kernels: MLAGraphKernels
@@ -7023,6 +7636,7 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
         attn_sink: Some[Input & Tensor],
         num_partitions_scalar: Some[Input & Tensor],
         selection_lag: Int32,
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -7085,6 +7699,11 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
         comptime assert type_of(w_uv).dtype == fp8_dtype
         comptime assert type_of(w_uk_scale).dtype == fp8_scale_dtype
         comptime assert type_of(w_uv_scale).dtype == fp8_scale_dtype
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
+        comptime assert conforms_to(
+            type_of(num_partitions_scalar), TileTensorable
+        )
+        comptime assert type_of(mixed_step_split).rank == 1
         var kv_collection = generic_get_paged_cache(
             kv_blocks.to_tile_tensor(),
             page_stride.to_tile_tensor[.int64](),
@@ -7156,6 +7775,16 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
                 Int(kv_collection.max_seq_length),
                 context,
             )
+            var split, decode_num_partitions = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                Int(q.to_tile_tensor().dim[0]()),
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_prefill_decode_graph_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -7208,6 +7837,8 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
                 ),
                 prefill_d_indices=prefill_indices,
                 selection_lag=Int(selection_lag),
+                mixed_split=split,
+                decode_num_partitions=decode_num_partitions,
             )
             _ = scratch_sparse_indices^
 
@@ -7258,6 +7889,9 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
     """Implements `attention.mla.graph.prefill.decode.paged`.
 
     Each registration picks its kernels.
+
+    `mixed_step_split` is the KV cache's split record; zeros keep the
+    whole-batch route.
     """
 
     comptime kernels: MLAGraphKernels
@@ -7290,6 +7924,7 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         epsilon: Float32,
         scalar_args: Some[Input & Tensor],
         num_partitions_scalar: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -7314,6 +7949,7 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         comptime assert conforms_to(
             type_of(num_partitions_scalar), TileTensorable
         )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert type_of(output).rank == 3
         comptime assert type_of(q).rank == 3
         comptime assert type_of(kv).rank == 2
@@ -7333,6 +7969,7 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         comptime assert type_of(max_cache_length).rank == 1
         comptime assert type_of(scalar_args).rank == 1
         comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime assert type_of(kv).dtype == DType.bfloat16
         var kv_collection = generic_get_paged_cache(
             kv_blocks.to_tile_tensor(),
@@ -7371,6 +8008,16 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
             "attention.mla.graph.prefill.decode.paged",
             task_id=get_safe_task_id(context),
         ):
+            var split, decode_num_partitions = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                Int(q.to_tile_tensor().dim[0]()),
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
                 kernels=Self.kernels,
@@ -7395,6 +8042,8 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
                 kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
+                mixed_split=split,
+                decode_num_partitions=decode_num_partitions,
             )
 
 
@@ -7566,10 +8215,66 @@ struct Struct_mla_store_ragged_paged:
             )
 
 
+@inline(.always)
+def _mla_mixed_split(
+    mixed_step_split: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    num_partitions_scalar: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    input_row_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    scalar_args: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    q_rows: Int,
+    max_seq_length: Int,
+    max_cache_length: Int,
+    context: DeviceContext,
+) raises -> Tuple[Optional[MixedSplit], Optional[Int]]:
+    """Returns the split the record describes for an MLA combined op and
+    the decode view's split-K count, or None for both to keep the
+    whole-batch route. The dispatch buffer must be packed and hold both
+    views' metadata."""
+    comptime if not context.target.is_nvidia_gpu():
+        return (None, None)
+    if Int(num_partitions_scalar.dim[0]()) < 2:
+        return (None, None)
+    var decode_num_partitions = Int(num_partitions_scalar[1])
+    if decode_num_partitions <= 0:
+        return (None, None)
+    if max_seq_length <= MIXED_STEP_DECODE_WIDTH:
+        return (None, None)
+    if not (
+        is_packed(mixed_step_split)
+        and is_packed(input_row_offsets)
+        and is_packed(scalar_args)
+    ):
+        return (None, None)
+    if Int(scalar_args.dim[0]()) < 6:
+        return (None, None)
+    var batch = Int(input_row_offsets.dim[0]()) - 1
+    var split = read_mixed_split(
+        mixed_step_split,
+        batch,
+        q_rows,
+        max_seq_length,
+        max_cache_length,
+    )
+    if split:
+        return (split, Optional[Int](decode_num_partitions))
+    return (None, None)
+
+
 trait _MLAPrefillGraphDecodePagedSparseOp:
     """Implements `attention.mla.graph.prefill.decode.paged.sparse`.
 
     Each registration picks its kernels.
+
+    `mixed_step_split` is the KV cache's split record
+    (`kv_cache.mixed_step_split`).
     """
 
     comptime kernels: MLAGraphKernels
@@ -7623,6 +8328,7 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
         attn_sink: Some[Input & Tensor],
         num_partitions_scalar: Some[Input & Tensor],
         selection_lag: Int32,
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -7671,6 +8377,11 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
         comptime assert type_of(num_partitions_scalar).rank == 1
         comptime assert type_of(kv).dtype == DType.bfloat16
         comptime cache_dtype = type_of(kv_blocks).dtype
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
+        comptime assert conforms_to(
+            type_of(num_partitions_scalar), TileTensorable
+        )
+        comptime assert type_of(mixed_step_split).rank == 1
         var kv_collection = generic_get_paged_cache(
             kv_blocks.to_tile_tensor(),
             page_stride.to_tile_tensor[.int64](),
@@ -7755,6 +8466,16 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
                 Int(kv_collection.max_seq_length),
                 context,
             )
+            var split, decode_num_partitions = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                Int(q.to_tile_tensor().dim[0]()),
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
                 sparse_mla=True,
@@ -7794,6 +8515,8 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
                 num_partitions_in=None,
                 prefill_d_indices=prefill_indices,
                 selection_lag=Int(selection_lag),
+                mixed_split=split,
+                decode_num_partitions=decode_num_partitions,
             )
             _ = scratch_decode_indices^
             _ = scratch_sparse_indices^
@@ -7845,6 +8568,9 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
     """Implements `attention.mla.graph.prefill.decode.paged.sparse.nvfp4`.
 
     Each registration picks its kernels.
+
+    `mixed_step_split` is the KV cache's split record; zeros keep the
+    whole-batch route.
     """
 
     comptime kernels: MLAGraphKernels
@@ -7895,8 +8621,14 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
         attn_sink: Some[Input & Tensor],
         num_partitions_scalar: Some[Input & Tensor],
         selection_lag: Int32,
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
+        comptime assert conforms_to(
+            type_of(num_partitions_scalar), TileTensorable
+        )
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime assert context.target.is_gpu(), (
             "attention.mla.graph.prefill.decode.paged.sparse.nvfp4 is only"
             " supported on GPU"
@@ -8031,6 +8763,16 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
                 Int(kv_collection.max_seq_length),
                 context,
             )
+            var split, decode_num_partitions = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                Int(q.to_tile_tensor().dim[0]()),
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
                 sparse_mla=True,
@@ -8071,6 +8813,8 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
                 num_partitions_in=None,
                 prefill_d_indices=prefill_indices,
                 selection_lag=Int(selection_lag),
+                mixed_split=split,
+                decode_num_partitions=decode_num_partitions,
             )
             _ = scratch_sparse_indices^
 
@@ -8121,6 +8865,9 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
     """Implements `attention.mla.graph.prefill.decode.paged.quantized`.
 
     Each registration picks its kernels.
+
+    `mixed_step_split` is the KV cache's split record; zeros keep the
+    whole-batch route.
     """
 
     comptime kernels: MLAGraphKernels
@@ -8154,6 +8901,7 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
         epsilon: Float32,
         scalar_args: Some[Input & Tensor],
         num_partitions_scalar: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -8178,6 +8926,7 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
         comptime assert conforms_to(
             type_of(num_partitions_scalar), TileTensorable
         )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert type_of(output).rank == 3
         comptime assert type_of(q).rank == 3
         comptime assert type_of(kv).rank == 2
@@ -8198,6 +8947,7 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
         comptime assert type_of(kv_scales).rank == 6
         comptime assert type_of(scalar_args).rank == 1
         comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime assert type_of(kv).dtype == DType.bfloat16
         var kv_collection = generic_get_paged_cache(
             kv_blocks.to_tile_tensor(),
@@ -8237,6 +8987,16 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
             "attention.mla.graph.prefill.decode.paged.quantized",
             task_id=get_safe_task_id(context),
         ):
+            var split, decode_num_partitions = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                Int(q.to_tile_tensor().dim[0]()),
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
                 kernels=Self.kernels,
@@ -8261,6 +9021,8 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
                 kv_input_fn,
                 context,
                 num_partitions_in=num_partitions_proj,
+                mixed_split=split,
+                decode_num_partitions=decode_num_partitions,
             )
 
 

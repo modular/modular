@@ -12,17 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     PagedKVCache,
     PagedKVCacheCollection,
 )
 from layout import (
     DefaultEngine,
+    ComptimeInt,
     Coord,
     Idx,
     TileTensor,
     row_major,
 )
+from layout.layout import Layout as InternalLayout
 from std.memory import alloc
 from std.memory.alloc import unsafe_alloc
 from std.sys import size_of
@@ -501,16 +504,21 @@ def _build_rows_view_collection[
     value_lut_cols: Int,
     scale_lut_cols: Int,
     distinct_scale_lut: Bool,
+    lut_row_stride: Int = value_lut_cols,
 ]() raises -> _ScaledCollection:
     """Builds a scaled collection whose rows resolve distinct value and
     scale pages, so a row view can be checked against the whole collection.
 
     With `distinct_scale_lut` the scales get their own table and block ids;
-    otherwise the constructor aliases the values table.
+    otherwise the constructor aliases the values table. `lut_row_stride`
+    pads the values table's rows; the scales table keeps its own width.
     """
     comptime assert (
         distinct_scale_lut or scale_lut_cols == value_lut_cols
     ), "an aliased scales table has the values table's width"
+    comptime assert (
+        lut_row_stride >= value_lut_cols
+    ), "a lookup table row must hold its columns"
     comptime num_value_blocks = num_rows * value_lut_cols
     comptime num_scale_blocks = (
         num_value_blocks
@@ -540,17 +548,21 @@ def _build_rows_view_collection[
         .as_imm()
     )
 
-    var lookup_table_ptr = unsafe_alloc[UInt32](num_rows * value_lut_cols)
+    var lookup_table_ptr = unsafe_alloc[UInt32](num_rows * lut_row_stride)
     for row in range(num_rows):
-        for col in range(value_lut_cols):
-            lookup_table_ptr[row * value_lut_cols + col] = UInt32(
-                row * value_lut_cols + col
+        for col in range(lut_row_stride):
+            lookup_table_ptr[row * lut_row_stride + col] = UInt32(
+                row * value_lut_cols + col if col < value_lut_cols else 0
             )
-    var lookup_table = (
-        TileTensor(lookup_table_ptr, row_major(num_rows * value_lut_cols))
-        .reshape(Coord(Int64(num_rows), Int64(value_lut_cols)))
-        .as_imm()
-    )
+    # A padded row keeps its own stride, which a flat `reshape` cannot
+    # express.
+    var lookup_table = TileTensor(
+        lookup_table_ptr,
+        InternalLayout(
+            Coord(Int64(num_rows), Int64(value_lut_cols)),
+            Coord(Int64(lut_row_stride), Idx[1]),
+        ),
+    ).as_imm()
 
     var scales_lookup_table_opt: OptionalReg[
         _ScaledCollection.CacheType.lookup_table_tt_type
@@ -804,6 +816,161 @@ def test_page_stride_overrides_the_packed_distance() raises:
     )
 
 
+def test_paged_rows_view_offsets_a_padded_lookup_table_by_its_row_stride() raises:
+    """A view of a lookup table whose rows are padded must resolve the same
+    blocks as the whole collection.
+    """
+    comptime lut_row_stride = 3
+    var whole = _build_rows_view_collection[
+        3, 2, 2, True, lut_row_stride=lut_row_stride
+    ]()
+    var view = whole.rows_view(1, 2, UInt32(8), UInt32(16))
+
+    var whole_cache = whole.get_key_cache(0)
+    var view_cache = view.get_key_cache(0)
+    for i in range(2):
+        var whole_ptr = whole_cache.block_paged_ptr[_rows_view_page_size](
+            1 + i, 0, 0
+        )
+        var view_ptr = view_cache.block_paged_ptr[_rows_view_page_size](i, 0, 0)
+        assert_true(
+            Int(whole_ptr) == Int(view_ptr),
+            (
+                "view key cache addresses a different block than the whole"
+                " collection"
+            ),
+        )
+
+    _free_rows_view_collection[True](whole)
+
+
+# The continuous-batching rows-view collection type: its pools are
+# `unsafe_alloc`-backed and freed by hand, so untracked origins are true.
+comptime _ContinuousBatchingCollection[
+    kv_params_small: KVCacheStaticParams
+] = ContinuousBatchingKVCacheCollection[
+    .float32,
+    kv_params_small,
+    MutUntrackedOrigin,
+    ImmUntrackedOrigin,
+    ImmUntrackedOrigin,
+]
+
+
+def _build_continuous_batching_rows_view_collection[
+    kv_params_small: KVCacheStaticParams
+]() raises -> Tuple[
+    _ContinuousBatchingCollection[kv_params_small],
+    _ContinuousBatchingCollection[kv_params_small],
+]:
+    """Returns a whole continuous-batching collection and its view of
+    batch rows `[1, 3)`.
+
+    Rows carry distinct cache lengths and distinct lookup rows, so a view
+    that offsets by the wrong row reads a different row's data.
+    """
+    comptime batch_size = 4
+    comptime num_blocks = 4
+
+    comptime num_layers = 1
+    comptime max_seq_len = 8
+    comptime blocks_shape = IndexList[6](
+        num_blocks,
+        2,
+        num_layers,
+        max_seq_len,
+        kv_params_small.num_heads,
+        kv_params_small.head_size,
+    )
+    # Heap-backed: the returned collections view these tables, which a
+    # local `List` would free at return.
+    var blocks_ptr = unsafe_alloc[Float32](blocks_shape.flattened_length())
+    for i in range(blocks_shape.flattened_length()):
+        blocks_ptr[i] = 0
+    var blocks = TileTensor(
+        blocks_ptr, row_major(blocks_shape.flattened_length())
+    ).reshape(
+        Coord(
+            Int64(blocks_shape[0]),
+            Int64(blocks_shape[1]),
+            Int64(blocks_shape[2]),
+            Int64(blocks_shape[3]),
+            Idx[kv_params_small.num_heads],
+            Idx[kv_params_small.head_size],
+        )
+    )
+
+    var cache_lengths_ptr = unsafe_alloc[UInt32](batch_size)
+    for i in range(batch_size):
+        cache_lengths_ptr[i] = UInt32(i + 1)
+    var cache_lengths = TileTensor(
+        cache_lengths_ptr, row_major(batch_size)
+    ).reshape(Coord(Int64(batch_size)))
+
+    # Row `i` resolves through physical block `i`.
+    var lookup_table_ptr = unsafe_alloc[UInt32](batch_size)
+    for i in range(batch_size):
+        lookup_table_ptr[i] = UInt32(i)
+    var lookup_table = TileTensor(
+        lookup_table_ptr, row_major(batch_size)
+    ).reshape(Coord(Int64(batch_size)))
+
+    var collection = _ContinuousBatchingCollection[kv_params_small](
+        rebind[_ContinuousBatchingCollection[kv_params_small].blocks_tt_type](
+            blocks
+        ),
+        cache_lengths.as_imm(),
+        lookup_table.as_imm(),
+        UInt32(2048),
+        UInt32(2048),
+    )
+
+    var view = collection.rows_view(1, 2, UInt32(8), UInt32(16))
+    return (collection, view)
+
+
+def test_continuous_batching_rows_view_matches_whole_collection() raises:
+    """A continuous-batching view's `cache_length`, key-cache lookup row and
+    max lengths must match the whole collection at `first_row + i`.
+    """
+    comptime kv_params_small = KVCacheStaticParams(num_heads=1, head_size=4)
+    var collection, view = _build_continuous_batching_rows_view_collection[
+        kv_params_small
+    ]()
+
+    for i in range(2):
+        assert_true(
+            view.cache_length(i) == collection.cache_length(1 + i),
+            "view cache_length does not match the whole collection",
+        )
+
+    var whole_cache = collection.get_key_cache(0)
+    var view_cache = view.get_key_cache(0)
+    for i in range(2):
+        var whole_ptr = whole_cache.block_paged_ptr[1](1 + i, 0, 0)
+        var view_ptr = view_cache.block_paged_ptr[1](i, 0, 0)
+        assert_true(
+            Int(whole_ptr) == Int(view_ptr),
+            (
+                "view key cache addresses a different block than the whole"
+                " collection"
+            ),
+        )
+
+    assert_true(
+        view.max_seq_length == UInt32(8),
+        "view max_seq_length is not the given one",
+    )
+    assert_true(
+        view.max_cache_length == UInt32(16),
+        "view max_cache_length is not the given one",
+    )
+
+    collection.blocks.ptr.unsafe_free()
+    collection.cache_lengths.ptr.unsafe_mut_cast[True]().unsafe_free()
+    collection.lookup_table.ptr.unsafe_mut_cast[True]().unsafe_free()
+
+
 def main() raises:
     test_page_stride_of_minus_one_keeps_pages_packed()
     test_page_stride_overrides_the_packed_distance()
@@ -814,6 +981,8 @@ def main() raises:
     test_paged_rows_view_resolves_the_rows_of_the_whole_collection()
     test_paged_rows_view_values_and_scales_follow_their_own_tables()
     test_paged_rows_view_scales_follow_the_aliased_values_table()
+    test_paged_rows_view_offsets_a_padded_lookup_table_by_its_row_stride()
+    test_continuous_batching_rows_view_matches_whole_collection()
     do_test[16, 16]()
     do_test[64, 16]()
     do_test[128, 64]()

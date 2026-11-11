@@ -82,6 +82,7 @@ _EXTRA_CONSTRAINTS = {
         "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mha_sliding_window_decode_amd.mojo": ["//:mi355_gpu"],  # the decode fold is gfx950-tuned
     "test_mha_prefill_v2_ragged_gate.mojo": ["//:mi355_gpu"],  # the kernel is tuned for gfx950 (MI355X)
     "test_paged_kv_cache_split_head.mojo": select({
         # Its TMA copies are SM90+; B200 is where the split cache runs.

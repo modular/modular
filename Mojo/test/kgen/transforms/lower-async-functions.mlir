@@ -1,5 +1,4 @@
 // RUN: kgen-opt -lower-async-functions -split-input-file %s | FileCheck %s
-// RUN: kgen-opt -lower-async-functions='use-liveness-frame-evaluation=true' -split-input-file %s | FileCheck %s
 
 // COM: Verify that Await Code Loads/Stores From Frame.
 
@@ -888,7 +887,7 @@ kgen.func @missing_markers(%arg1: index, %arg2: i1) async -> index {
   // CHECK: hlcf.if
   %arg2_sb = pop.cast_from_builtin %arg2 : i1 to !kgen.scalar<bool>
   hlcf.if %arg2_sb {
-    // CHECK-NEXT: [[V12:%.*]] = pop.stack_allocation 1 x index
+    // CHECK-NEXT: [[V12:%.*]] = kgen.struct.gep %arg0[[[#FRAME7 + 1]]]
     // CHECK-NEXT: [[V13:%.*]] = kgen.call @use2([[V12]]) : (!kgen.pointer<index>) -> index
     %3 = pop.stack_allocation 1 x index
     %4 = kgen.call @use2(%3) : (!kgen.pointer<index>) -> index
@@ -896,7 +895,7 @@ kgen.func @missing_markers(%arg1: index, %arg2: i1) async -> index {
   } else {
     hlcf.yield
   }
-  // CHECK:      [[INFRAME:%.*]] = kgen.struct.gep %arg0[[[#FRAME7 + 2]]]
+  // CHECK:      [[INFRAME:%.*]] = kgen.struct.gep %arg0[[[#FRAME7 + 3]]]
   // CHECK-NEXT: [[V6:%.*]] = pop.load [[INFRAME]] : !kgen.pointer<index>
   // CHECK-NEXT: pop.store [[V6]], [[V2]] : !kgen.pointer<index>
   // CHECK-NEXT: kgen.param.constant: i32 = <1>
@@ -1103,8 +1102,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK-NEXT: kgen.struct.gep %arg0
     // CHECK-NEXT: pop.load
     // CHECK-NEXT: pop.cast_from_builtin
-    // CHECK-NEXT: %idx1_0 = index.constant 1
+    // COM: Each region gets its own clone; neither is hoisted out.
     // CHECK-NEXT: hlcf.if
+    // CHECK-NEXT: %idx1_0 = index.constant 1
     // CHECK-NEXT: index.sub %idx1_0, %idx1_0
     %arg0_sb1 = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
     hlcf.if %arg0_sb1 {
@@ -1113,7 +1113,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     } else {
       hlcf.yield
     }
-    // CHECK: index.add %idx1_0, %idx1_0
+    // CHECK:      hlcf.if
+    // CHECK-NEXT: %idx1_0 = index.constant 1
+    // CHECK-NEXT: index.add %idx1_0, %idx1_0
     %arg0_sb2 = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
     hlcf.if %arg0_sb2 {
       %14 = index.add %idx1, %idx1
@@ -1130,7 +1132,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
      hlcf.return
   }
 }
-
 
 // -----
 

@@ -142,6 +142,8 @@ modular_py_test(
     mojo_deps = [
         "//max:shmem",
     ],
+    precompile_device_count = 2,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "requires-network",
@@ -222,6 +224,8 @@ modular_py_test(
         # Needs mo.composite.mega_ffn_nvfp4, registered only by the closed-source kernels.
         "test_ep_moe_mxfp8.py": REQUIRES_INTERNAL_KERNELS,
     },
+    precompile_device_count = 2,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "requires-network",

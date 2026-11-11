@@ -49,6 +49,7 @@ from max.tensor.sharding import DeviceMapping, DeviceMesh, NamedMapping
 from typing_extensions import Self
 
 from ..model_config import HYV4Config
+from . import mxfp8
 from .indexer import HYV4Indexer
 
 __all__ = ["HYV4Attention"]
@@ -234,7 +235,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         prev_topk_indices: Tensor | None,
         buffer_length: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        """Returns the block output and the top-k positions it attended.
+        """Returns the block output and the top-k MLA cache rows it attended.
 
         Args:
             x: ``[tokens, hidden_size]`` normalized hidden states.
@@ -253,9 +254,9 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
                 buffer length as the plan kernel computes it; the graph never
                 reads the plan's own back, which capture would reject.
         """
-        q_resid = self.q_a_layernorm(quant_ops.matmul(x, self.q_a_proj))
-        q = quant_ops.matmul(q_resid, self.q_b_proj)
-        kv = quant_ops.matmul(x, self.kv_a_proj_with_mqa)
+        q_resid = self.q_a_layernorm(mxfp8.matmul(x, self.q_a_proj))
+        q = mxfp8.matmul(q_resid, self.q_b_proj)
+        kv = mxfp8.matmul(x, self.kv_a_proj_with_mqa)
         if not self.rope_interleave:
             q = _neox_to_interleaved(
                 q.reshape([-1, self.n_heads, self.qk_head_dim]),
@@ -271,6 +272,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             input_row_offsets,
             indexer_kv_collection,
             indexer_layer,
+            kv_collection,
             prev_topk_indices,
         )
 
@@ -294,9 +296,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             scalar_args=kv_collection.attention_dispatch_metadata,
             num_partitions_scalar=kv_collection.mla_num_partitions,
             sparse_indices=topk,
-            # The indexer's top-k holds logical token positions, which the
-            # kernels look up in the page table, not physical cache rows.
-            physical_indices=False,
+            physical_indices=True,
             sparse_attn_sink=self.learnable_sink_param,
             sparse_indices_stride=self.index_topk,
         )
@@ -312,7 +312,9 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         # The kernels run per device on its heads.
         attn = attn.rebind_mapping(q.mapping)
         attn = attn.reshape([attn.shape[0], self.n_heads * self.v_head_dim])
-        out = self.o_proj(attn * F.sigmoid(self.linear_gate(x)))
+        out = mxfp8.matmul(
+            attn * F.sigmoid(self.linear_gate(x)), self.o_proj.weight
+        )
         if out.mesh.num_devices > 1:
             out = F.allreduce_sum(out)
         return out, topk

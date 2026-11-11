@@ -26,7 +26,7 @@ import av
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.pipelines.architectures.glm5_next.video_processor import (
+from max.pipelines.architectures.glm5_next.vision.video_processor import (
     Glm5NextVideoProcessor,
 )
 

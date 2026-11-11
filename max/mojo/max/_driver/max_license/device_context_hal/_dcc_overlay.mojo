@@ -40,3 +40,6 @@ from max._driver.max_license.device_context_hal._amdgpu_hip_hal import (
     hipDevice_t,
     hipStream_t,
 )
+
+comptime HAL_DEVICE_CONTEXT = True
+"""Whether `max.gpu.host` is the HAL `DeviceContext`."""

@@ -946,8 +946,12 @@ struct AMDMLA(MLAKernels):
                 # (num_heads<=16, e.g. Kimi-K2.5 TP=4) need D=8 to
                 # spread CTAs; large grids (num_heads>=64) already
                 # saturate CUs at D=4, so going higher just adds
-                # launch overhead.
-                comptime D_TILES_DEFAULT = 8 if num_heads <= 16 else 4
+                # launch overhead. The sparse rows arm launches one
+                # z-slice per query token, so its grid is already wide
+                # and extra depth tiles only add reduce CTAs.
+                comptime D_TILES_DEFAULT = 2 if (
+                    k_t.rows_indexed and not k_t.rows_predicated
+                ) else (8 if num_heads <= 16 else 4)
                 comptime D_TILES = get_defined_int[
                     "MODULAR_MLA_REDUCE_DTILES", D_TILES_DEFAULT
                 ]()

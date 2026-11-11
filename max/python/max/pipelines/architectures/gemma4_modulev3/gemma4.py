@@ -20,7 +20,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
 from max.nn.activation import GatedActivation
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.quant_linear import (
@@ -375,7 +375,7 @@ class Gemma4(Module[..., tuple[Tensor, ...]]):
     ) -> tuple[Tensor, ...]:
         """Runs the decoder and the vision tower together."""
         assert isinstance(self.kv_params, MultiKVCacheParams)
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+        kv_inputs = iter(kv_input_values(variadic_args))
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(
             kv_inputs
         )

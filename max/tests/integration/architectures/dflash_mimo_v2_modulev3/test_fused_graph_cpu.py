@@ -86,6 +86,7 @@ from mimo_dflash_v3_fixtures import (
     fused_weights,
     graph_name,
 )
+from test_common.mixed_step_split_ops import record_sources
 
 GRAPH_NAME = "unified_dflash_mimo_v2"
 """The graph-API pairing's graph name, which Mach's block-spec executor binds
@@ -97,6 +98,14 @@ signature's tokens, offsets, return_n_logits, the self-declared signal
 buffer, the 27 KV leaf inputs (9 per group over 3 groups, the split
 record last), the draft tokens, the 6 sampling tails. The grammar
 bitmask is off: its host-wait op is GPU-only."""
+
+TARGET_ATTENTIONS = len(_FakeAttrConfig.hybrid_layer_pattern)
+"""The target's attention ops: one per decoder layer."""
+
+_DRAFTER_LAYER_TYPES = DFLASH_CONFIG["layer_types"]
+assert isinstance(_DRAFTER_LAYER_TYPES, list)
+DRAFTER_ATTENTIONS = len(_DRAFTER_LAYER_TYPES)
+"""The drafter's attention ops: only the block forward attends."""
 
 
 def test_construct_kv_params_builds_a_tree_the_dkv_connector_serves(
@@ -407,6 +416,27 @@ def test_the_trace_carries_the_drafter_kernels(
     ):
         n = text.count(op)
         assert n == expected, f"{op}: expected {expected}, got {n}"
+
+
+def test_only_the_target_attention_reads_the_split_record(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The drafter must not split on the target's record: the driver strips
+    the record before every draft forward, so the drafter's attention reads
+    a zeros constant while the target's reads the leaf's graph argument."""
+    graph, _ = staged
+    attention = [
+        source
+        for symbol, source in record_sources(graph.graph._mlir_op.block.owner)
+        if symbol
+        in (
+            "attention.mha.ragged.paged",
+            "attention.mha.ragged.paged.sink_weights",
+        )
+    ]
+    assert attention == (
+        ["argument"] * TARGET_ATTENTIONS + ["mo.constant"] * DRAFTER_ATTENTIONS
+    )
 
 
 def test_the_target_layers_read_the_split_cache(

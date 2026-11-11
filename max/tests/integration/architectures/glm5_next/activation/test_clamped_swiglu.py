@@ -14,7 +14,9 @@
 
 The inputs deliberately straddle the limit. Below it every candidate ordering
 agrees, which is why a random-weight smoke test cannot see this and a real
-checkpoint can.
+checkpoint can. The dense MLP and the vision tower are held to the reference
+here; the sharded MLPs in ``test_mlp_shard.py``, and the routed experts' fused
+kernels in ``test_moe_swiglu_fusion_gpu.py``.
 """
 
 from __future__ import annotations
@@ -22,15 +24,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Buffer
+from max.driver import CPU
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn._graph_ops.moe_quant import _gated_activation_ops
-from max.nn.activation import GatedActivation
-from max.pipelines.architectures.glm5_next.layers.clamped_swiglu import (
-    clamped_swiglu,
-)
+from max.pipelines.architectures.glm5_next.layers.mlp import Glm5NextMLP
+from max.pipelines.architectures.glm5_next.vision.tower import clamped_swiglu
+from max.tensor import Tensor, default_device, default_dtype
 
 LIMIT = 10.0
 
@@ -64,7 +62,7 @@ def glm_reference(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
 
 
 def activation_then_clamp(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
-    """What ``linear.py`` and ``make_concatenated_gated_activation_fn`` do."""
+    """What a SwiGLU that clamps its output computes instead."""
     return torch.clamp(_silu(gate), max=LIMIT) * torch.clamp(
         up, min=-LIMIT, max=LIMIT
     )
@@ -134,53 +132,44 @@ def test_gpt_oss_variant_differs(
     )
 
 
-def test_max_implementation_matches_the_reference(
+def test_the_tower_swiglu_matches_the_reference(
     halves: tuple[torch.Tensor, torch.Tensor],
 ) -> None:
-    """MAX's ``clamped_swiglu`` graph op against the transcribed reference."""
+    """The vision tower's ``clamped_swiglu`` against the reference."""
     gate, up = halves
-    device = DeviceRef.CPU()
-    spec = TensorType(DType.float32, shape=GATE.shape, device=device)
-    with Graph("clamped_swiglu", input_types=[spec, spec]) as graph:
-        g, u = graph.inputs
-        graph.output(clamped_swiglu(g.tensor, u.tensor, LIMIT))
-
-    session = InferenceSession(devices=[CPU()])
-    model = session.load(graph)
-    got = model.execute(Buffer.from_dlpack(GATE), Buffer.from_dlpack(UP))[0]
+    with default_device(CPU()):
+        got = clamped_swiglu(
+            Tensor.from_dlpack(GATE), Tensor.from_dlpack(UP), LIMIT
+        )
     np.testing.assert_allclose(
-        np.from_dlpack(got),
-        glm_reference(gate, up).numpy(),
-        rtol=1e-6,
-        atol=1e-6,
+        got.to_numpy(), glm_reference(gate, up).numpy(), rtol=1e-6, atol=1e-6
     )
 
 
-def test_moe_activation_matches_the_reference(
+def test_the_dense_mlp_matches_the_reference(
     halves: tuple[torch.Tensor, torch.Tensor],
 ) -> None:
-    """The MoE's fused ``silu`` activation with a ``limit``, as the FP8 expert
-    path builds it from graph ops on ``[gate | up]`` rows, against the
-    transcribed reference, including past the clamp bound.
+    """The dense MLP clamps its float32 gate and up before the activation.
+
+    With identity gate and down projections and a negated up projection,
+    ``UP`` being ``-GATE``, the MLP's output is the activation itself.
     """
     gate, up = halves
-    gate_up = torch.cat([gate, up], dim=1)
-
-    activation = GatedActivation("silu", limit=LIMIT)
-    device = DeviceRef.CPU()
-    spec = TensorType(
-        DType.float32, shape=(gate_up.shape[0], gate_up.shape[1]), device=device
-    )
-    with Graph("glm_clamped_swiglu", input_types=[spec]) as graph:
-        (x,) = graph.inputs
-        graph.output(_gated_activation_ops(x.tensor, activation))
-
-    session = InferenceSession(devices=[CPU()])
-    model = session.load(graph)
-    got = model.execute(Buffer.from_dlpack(gate_up.numpy()))[0]
+    np.testing.assert_array_equal(UP, -GATE)
+    dim = GATE.shape[1]
+    eye = np.eye(dim, dtype=np.float32)
+    with default_device(CPU()), default_dtype(DType.float32):
+        mlp = Glm5NextMLP(
+            hidden_dim=dim, feed_forward_length=dim, swiglu_limit=LIMIT
+        )
+        mlp.load_state_dict(
+            {
+                "gate_proj.weight": eye,
+                "up_proj.weight": -eye,
+                "down_proj.weight": eye,
+            }
+        )
+        got = mlp(Tensor.from_dlpack(GATE))
     np.testing.assert_allclose(
-        np.from_dlpack(got),
-        glm_reference(gate, up).numpy(),
-        rtol=1e-6,
-        atol=1e-6,
+        got.to_numpy(), glm_reference(gate, up).numpy(), rtol=1e-6, atol=1e-6
     )

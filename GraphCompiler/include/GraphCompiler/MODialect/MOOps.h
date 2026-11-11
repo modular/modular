@@ -60,6 +60,18 @@ class CoordinateTransformModeAttr;
 
 namespace M::MO {
 
+/// Name of the optional attribute holding a graph's `TargetInfoAttr`.
+inline constexpr StringRef kGraphTargetInfoAttrName = "target_info";
+
+/// Derives the per-launch device list from each bundle element's deviceRef.
+/// `BundleType::verify` guarantees every element is a TensorType.
+SmallVector<DeviceRefAttr> deriveLaunchDevicesFromBundle(BundleType bundle);
+
+/// Emits the `kgen` call that an `mo.assert` turns into: `operands` are the
+/// call's operands and `message` becomes its message attribute.
+TypedAttr emitStaticCallImpl(MLIRContext *ctx, ArrayRef<TypedAttr> operands,
+                             const Twine &message);
+
 ParseResult parseParamDecls(OpAsmParser &p,
                             KGEN::ParamDeclArrayAttr &paramDecls);
 

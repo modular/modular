@@ -81,6 +81,14 @@ class GraphRole(str, Enum):
     """The single forward pass of a model without a KV cache, such as an
     embedding model: inputs to embeddings or hidden states."""
 
+    BLOCK_DIFFUSION = "block_diffusion"
+    """One block-diffusion denoise step: canvas tokens and the paged KV
+    cache to the processed self-conditioning logits and the step's sampling
+    statistics.
+
+    A registration that adds it serves through
+    :class:`~max.pipelines.lib.pipeline_variants.block_diffusion_text_generation.BlockDiffusionTextGenerationPipeline`."""
+
     EP_INIT = "ep_init"
     """The one-time expert-parallel setup graph run at engine startup."""
 

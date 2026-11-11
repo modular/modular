@@ -875,3 +875,109 @@ kgen.func @range_loop_preserves_else(%end: !kgen.scalar<index>) {
   }
   hlcf.return
 }
+
+// -----
+
+// The `eq` exit check only fires when the induction variable lands exactly
+// on the bound, which a stride wider than one can skip over, so the loop
+// stays a loop.
+// CHECK-LABEL: @eq_exit_wide_stride
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @eq_exit_wide_stride() {
+  %idx0 = index.constant 0
+  %idx4 = index.constant 4
+  %idx2 = index.constant 2
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %0 = index.cmp eq(%arg0, %idx4)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %1 = index.add %arg0, %idx2
+    kgen.call @foo(%arg0) : (index) -> ()
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The same shape with a unit stride raises to a half-open loop.
+// CHECK-LABEL: @eq_exit_unit_stride
+// CHECK: hlcf.for [%idx0 to %idx4 step %idx1 slt add] (%arg0 = %idx0 : index) {
+// CHECK:        [[IDX:%.*]] = index.add %arg0, %idx1
+// CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
+// CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
+kgen.func @eq_exit_unit_stride() {
+  %idx0 = index.constant 0
+  %idx4 = index.constant 4
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %0 = index.cmp eq(%arg0, %idx4)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %1 = index.add %arg0, %idx1
+    kgen.call @foo(%arg0) : (index) -> ()
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The select's condition is not the `hlcf.if` condition here, so the stride
+// matcher must pick the next-iter arm out of the select's arms.
+// CHECK-LABEL: @select_arms_lookthrough
+// CHECK: hlcf.for [{{.*}} to {{.*}} step {{.*}} slt add]
+kgen.func @select_arms_lookthrough(%ub: !kgen.scalar<index>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+
+  hlcf.loop (%arg0 = %c0 : !kgen.scalar<index>) {
+    %lt = pop.cmp lt(%arg0, %ub) : <1, index>
+    hlcf.if %lt {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.add %arg0, %c1 : !kgen.scalar<index>
+    %eq = pop.cmp eq(%arg0, %ub) : <1, index>
+    %sel = pop.select %eq, %arg0, %next : !kgen.scalar<index>
+    hlcf.continue %sel : !kgen.scalar<index>
+  }
+  hlcf.return
+}
+
+// -----
+
+// The no-progress arm must be the induction variable, or it is not the idiom.
+// CHECK-LABEL: @select_arms_no_progress_arm_not_ind_var
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @select_arms_no_progress_arm_not_ind_var(%ub: !kgen.scalar<index>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+
+  hlcf.loop (%arg0 = %c0 : !kgen.scalar<index>) {
+    %lt = pop.cmp lt(%arg0, %ub) : <1, index>
+    hlcf.if %lt {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.add %arg0, %c1 : !kgen.scalar<index>
+    %eq = pop.cmp eq(%arg0, %ub) : <1, index>
+    %sel = pop.select %eq, %ub, %next : !kgen.scalar<index>
+    hlcf.continue %sel : !kgen.scalar<index>
+  }
+  hlcf.return
+}

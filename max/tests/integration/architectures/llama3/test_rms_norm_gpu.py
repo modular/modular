@@ -101,10 +101,10 @@ def test_rms_norm(
     rms_weight: torch.Tensor,
 ) -> None:
     """Test that RMSNorm matches LlamaRMSNorm."""
+    max_output = generate_max_outputs(llama_config, input_tensor, rms_weight)
     torch_output = generate_torch_outputs(
         llama_config, input_tensor, rms_weight
     )
-    max_output = generate_max_outputs(llama_config, input_tensor, rms_weight)
 
     torch.testing.assert_close(
         torch_output,

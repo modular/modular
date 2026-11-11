@@ -58,8 +58,9 @@ from max.pipelines.architectures.nemotron_h_modulev3.nemotron_h import (
     NemotronH,
 )
 from max.pipelines.lib import KVCacheConfig
-from max.pipelines.lib.interfaces.batch_processor import (
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
@@ -127,9 +128,9 @@ def _production_graph(tmp_path: Path) -> tuple[Graph, dict[str, Tensor]]:
     with F.lazy(), default_device(_device_mesh()), default_dtype(config.dtype):
         model = NemotronH(config)
     assert [kind.value for kind in model.backbone.layer_kinds] == LAYERS
-    staged, registry = model.stage(
-        *modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params, device_refs=refs
+    staged, registry = _DecoderGraph(model).stage(
+        decoder_input_types(
+            config.kv_params, refs[0], input_layout=NemotronH.input_layout
         ),
         weights=_zeros(model.parameters),
     )

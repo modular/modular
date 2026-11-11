@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Common.h"
+#include "HAL/M_driver_flag.h"
 #include "HAL/M_driver_queue.h"
 #include "MetalCpp.h"
 
@@ -45,6 +46,8 @@ struct M_driver_queue {
 
   M_driver_status_t recordEvent(M_driver_event_t event);
   M_driver_status_t waitForEvents(M_driver_event_t *events, uint32_t numEvents);
+  M_driver_status_t waitFlag(M_driver_flag_t flag, uint64_t value,
+                             M_driver_flag_condition_t condition);
 
   M_driver_status_t execute(M_driver_function_t function,
                             M_driver_queue_execute_config_t *config,

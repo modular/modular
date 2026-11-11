@@ -328,6 +328,31 @@ modular_eager_py_test(
 )
 
 modular_eager_py_test(
+    name = "mla_attention_reference_tests_gpu",
+    size = "enormous",
+    srcs = ["test_mla_attention_reference.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
     name = "mla_attention_ragged_tests_gpu",
     size = "enormous",
     srcs = ["test_mla_attention_ragged.py"],
@@ -1056,6 +1081,28 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "kda_bproj_bf16_matmul_tests_gpu",
+    size = "small",
+    srcs = ["test_kda_bproj_bf16_matmul.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
     ],
 )
 

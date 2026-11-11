@@ -18,13 +18,13 @@ differs from its index in the model.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 
@@ -205,10 +205,10 @@ def hybrid_layer_plan(
 
 
 def unflatten_hybrid_kv(
-    kv_params: MultiKVCacheParams, variadic_args: Iterable[Any], tokens: Any
+    kv_params: MultiKVCacheParams, variadic_args: Sequence[Any], tokens: Any
 ) -> tuple[PagedCacheValues, PagedCacheValues]:
     """Splits the graph's KV arguments into sliding and full values."""
-    kv_inputs = iter(x._graph_value for x in variadic_args)
+    kv_inputs = iter(kv_input_values(variadic_args))
     sliding_inputs, full_inputs = kv_params.unflatten_basic_kv_tree(kv_inputs)
     return (
         PagedCacheValues.from_upstream(sliding_inputs, tokens.mapping),

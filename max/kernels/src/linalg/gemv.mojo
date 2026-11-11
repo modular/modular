@@ -2569,7 +2569,14 @@ def _is_amd_small_m_gemv[
     at M >= 8, so it stays on the tiled path. On gfx950 the fp32 band
     extends down to N=8: the 12x7168 KDA beta projection measures ~2x
     faster (2.38x at M=4, 2.04x at M=16) on the single-launch GEMV than
-    on the 16-partition split-K plus separate reduce it replaces.
+    on the 16-partition split-K plus separate reduce it replaces. The
+    bf16 band extends down to N=8 with it, so the same shapes'
+    bf16-in/fp32-out variant keeps the GEMV instead of falling to the
+    generic single-block matmul; its static-K tier runs the 128-thread
+    tiling (bf16 K = 7x1024 does not tile at 256 threads). That variant has
+    no in-tree caller since K3's fused qkvg projection (#109480) replaced
+    the separate 12-column beta GEMM: the band is kept as a general
+    dispatch improvement, measured on those shapes.
     On gfx950 the bf16 band extends up to N=4608 (the KDA qkv
     projection): the static-K GEMV beats the split-K GEMM plus separate
     reduce those shapes otherwise take, with the M reach tiered per N in
@@ -2588,6 +2595,9 @@ def _is_amd_small_m_gemv[
     ), "GEMV exceeds AMD/HIP grid.y limit"
     comptime gfx950 = _amd_small_m_gemv_widened()
     comptime f32_n_min = 8 if gfx950 else n_min
+    # The N<16 bf16 band is only the measured bf16-in/fp32-out variant; a
+    # bf16 output keeps N >= 16 (nothing measured reaches past that).
+    comptime bf16_n_min = 8 if gfx950 and c_type == .float32 else n_min
     comptime bf16_n_max_arch = 4608 if gfx950 else bf16_n_max
     comptime assert (
         bf16_n_max_arch <= grid_y_limit
@@ -2605,7 +2615,7 @@ def _is_amd_small_m_gemv[
             or (
                 a_type == .bfloat16
                 and c_type in (DType.bfloat16, DType.float32)
-                and n_min <= static_N <= bf16_n_max_arch
+                and bf16_n_min <= static_N <= bf16_n_max_arch
                 and k_min <= static_K <= bf16_k_max
             )
         )
@@ -2666,7 +2676,8 @@ def _amd_small_m_gemv_route[
     bf16 N = 128 reaches M=64, N in (576, 2048]
     reaches M=8, wider admitted N reaches only M=2 at the measured K
     (K >= 7168; a wider K range was never probed), and fp32 N below 16
-    reaches M=64. Every arm past M=16, and every arm at N > 576, is
+    reaches M=64, and the bf16-in/fp32-out variant reaches M=64 with it
+    (a bf16 output keeps N >= 16). Every arm past M=16, and every arm at N > 576, is
     static-K staged, so a K the static-K tiling cannot cover keeps the
     tiled GEMM launch there. N in (128, 576] keeps M=16: with warm
     cache-resident weights the tiled GEMM measures faster at every
@@ -2699,7 +2710,7 @@ def _amd_small_m_gemv_route[
             and static_k_threads > 0
         ) else 64 if (
             gfx950
-            and a_type == .float32
+            and a_type in (DType.float32, DType.bfloat16)
             and static_N < 16
             and static_k_threads > 0
         ) else 0 if gfx950
@@ -3300,10 +3311,10 @@ def _gemv_gpu_dispatch_impl[
                     ]()
                     # gfx950 static-K-only tiers (MI355X measurements).
                     # `_amd_small_m_gemv_route` admits M past 16, every N
-                    # past 576, and fp32 N below 16 only with a legal
-                    # static-K tiling, so these branches own those
-                    # launches; every other admitted shape keeps the arms
-                    # below.
+                    # past 576, and N below 16 (fp32, and bf16 with the
+                    # beta-projection widening) only with a legal static-K
+                    # tiling, so these branches own those launches; every
+                    # other admitted shape keeps the arms below.
                     comptime sk_small_n_tier = (
                         gfx950
                         and a_type == .bfloat16
@@ -3319,15 +3330,16 @@ def _gemv_gpu_dispatch_impl[
                     )
                     comptime sk_beta_tier = (
                         gfx950
-                        and a_type == .float32
+                        and a_type in (DType.float32, DType.bfloat16)
                         and static_N < 16
                         and static_k_threads > 0
                     )
                     if bf16_narrow_m8 and m == 8:
                         _gemv_split_k_dispatch[128, 1, 2, False, 1, False]()
                     elif sk_beta_tier and route[0]:
-                        # The 12x7168-style fp32 beta projection: two rows
-                        # per block through M=32, four above.
+                        # The 12x7168-style beta projection (fp32, and the
+                        # bf16-in/fp32-out fold variant): two rows per block
+                        # through M=32, four above.
                         if m <= 32:
                             _gemv_split_k_dispatch[
                                 static_k_threads, 1, 2, False, 2, True

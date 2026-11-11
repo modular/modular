@@ -297,7 +297,7 @@ def _has_native_f8_support() -> Bool:
 def _rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
     """Mask for `SIMD.rotate_left[shift]()`; any sign of `shift`."""
     var res = IndexList[size]()
-    comptime for i in range(size):
+    for i in range(size):
         res[i] = (i + shift + size) % size
     return res
 
@@ -310,7 +310,7 @@ def _shift_mask[size: Int, shift: Int]() -> IndexList[size]:
     out-of-range lanes index `other`, which callers pass as zero.
     """
     var res = IndexList[size]()
-    comptime for i in range(size):
+    for i in range(size):
         var src = i + shift
         if 0 <= src < size:
             res[i] = src
@@ -2477,7 +2477,9 @@ struct SIMD[dtype: DType, length: SIMDLength](
         return SIMD(mlir_value=res)
 
     @always_inline("builtin")
-    def is_power_of_two(self) -> SIMD[.bool, Self.length]:
+    def is_power_of_two(
+        self,
+    ) -> SIMD[.bool, Self.length] where Self.dtype.is_integral():
         """Checks if the input value is a power of 2 for each element of a SIMD vector.
 
         Constraints:
@@ -2487,7 +2489,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A SIMD value where the element at position `i` is True if the integer at
             position `i` of the input value is a power of 2, False otherwise.
         """
-        comptime assert Self.dtype.is_integral(), "must be integral"
 
         return self.gt(0) & (self & (self - 1)).eq(0)
 
@@ -3846,7 +3847,7 @@ def _pow[
         result = {}
 
         comptime for i in range(width):
-            result[i] = _powi(base[i], exp[i].cast[DType.int32]())
+            result[i] = _powi(base[i], exp[i])
     elif base.dtype.is_integral() and exp.dtype.is_floating_point():
         comptime assert False, (
             "an integer cannot be raised to a floating point power; use a"
@@ -3902,7 +3903,11 @@ def _powf[
 
 
 @inline(.always)
-def _powi(base: Scalar, exp: Int32) -> type_of(base):
+def _powi(
+    base: Scalar, exp: Scalar
+) -> type_of(base) where (
+    exp.dtype.is_integral()
+) else "exponent must be integral":
     comptime if base.dtype.is_integral():
         if exp < 0:
             # Trap rather than return a truncated result, the way NumPy rejects
@@ -3913,7 +3918,10 @@ def _powi(base: Scalar, exp: Int32) -> type_of(base):
             )
 
     var a = base
-    var b = abs(exp) if base.dtype.is_floating_point() else exp
+    # Negating in the unsigned type gives `MIN` a magnitude too.
+    var b = exp.cast[_unsigned_integral_type_of[exp.dtype]()]()
+    if exp < 0:
+        b = 0 - b
     var res: Scalar[base.dtype] = 1
     while b > 0:
         if b & 1:

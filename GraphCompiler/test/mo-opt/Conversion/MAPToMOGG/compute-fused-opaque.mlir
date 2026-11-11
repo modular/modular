@@ -51,10 +51,10 @@ mo.graph @mixed_dtype(
 
 // A store-only kernel argument is untouched: store lambda, and the attribute
 // stays at its `false` default, which the printer elides. `computeOutputArg`
-// sorts before `device`, so `device` following the output pointer immediately
-// proves it is absent.
+// sorts before `contract`, so `contract` following the output pointer
+// immediately proves it is absent.
 // CHECK-LABEL: mo.graph @plain_store
-// CHECK:       mogg.tensor.create.epilogue %{{[^ ]+}} (%[[PV:[^ ]+]] : !mogg.simd<f32>, %[[PI:[^ ]+]] : !map.index<1>) capturing {%[[PO:[^ ]+]] = {{.*}} ptr %{{[^ ]+}} device =
+// CHECK:       mogg.tensor.create.epilogue %{{[^ ]+}} (%[[PV:[^ ]+]] : !mogg.simd<f32>, %[[PI:[^ ]+]] : !map.index<1>) capturing {%[[PO:[^ ]+]] = {{.*}} ptr %{{[^ ]+}} contract = <{role = output, fused = true, access = store, capabilities = none}> device =
 // CHECK:         mogg.tensor.store %[[PO]][%[[PI]]]
 mo.graph @plain_store(%a: !mo.tensor<[4], f32>, %b: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
   %c = mo.custom [symbol = "map_lower_one_fused_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>

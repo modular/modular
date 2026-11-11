@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
+    InteractivityMetrics,
     PercentileMetrics,
     PixelGenAggregates,
     RatePercentileMetrics,
@@ -30,6 +31,7 @@ from max.benchmark.benchmark_shared.metrics import (
     TextGenAggregates,
     ThroughputMetrics,
     calculate_spec_decode_stats,
+    interactivity_from_per_request_durations,
 )
 from max.benchmark.benchmark_shared.percentile_metrics import (
     compute_confidence_info,
@@ -1087,3 +1089,77 @@ def test_max_histogram_and_vllm_counters_agree_on_acceptance_length() -> None:
     assert max_stats.acceptance_length == pytest.approx(4.0)
     assert vllm_stats.acceptance_length == pytest.approx(4.0)
     assert max_stats.acceptance_length == vllm_stats.acceptance_length
+
+
+# ---------------------------------------------------------------------------
+# Interactivity (reciprocal-of-statistic per-user token rate)
+# ---------------------------------------------------------------------------
+
+
+def test_interactivity_from_per_request_durations_golden() -> None:
+    """Each statistic is the reciprocal of the same statistic of the input.
+
+    For durations [0.1, 0.2] s: mean 0.15 -> 6.67 tok/s, p50 0.15 ->
+    6.67, p75 0.175 -> 5.71, p90 0.19 -> 5.26, p95 0.195 -> 5.13.
+    """
+    m = interactivity_from_per_request_durations([0.1, 0.2])
+    assert m is not None
+    assert m.unit == "tok/s"
+    assert m.mean == pytest.approx(1.0 / 0.15)
+    assert m.p50 == pytest.approx(1.0 / 0.15)
+    assert m.p75 == pytest.approx(1.0 / 0.175)
+    assert m.p90 == pytest.approx(1.0 / 0.19)
+    assert m.p95 == pytest.approx(1.0 / 0.195)
+
+
+def test_interactivity_is_not_the_mean_of_reciprocals() -> None:
+    """1 / mean(x) differs from mean(1 / x) whenever the values differ;
+    the builder must produce the former."""
+    durations = [0.1, 0.2]
+    m = interactivity_from_per_request_durations(durations)
+    assert m is not None
+    mean_of_reciprocals = float(np.mean([1.0 / d for d in durations]))
+    assert m.mean == pytest.approx(1.0 / float(np.mean(durations)))
+    assert m.mean != pytest.approx(mean_of_reciprocals)
+
+
+def test_interactivity_from_per_request_durations_edge_cases() -> None:
+    """Empty input yields ``None``; non-positive values are dropped."""
+    assert interactivity_from_per_request_durations([]) is None
+    # A zero duration has no reciprocal and is dropped from the series,
+    # as the published figures drop non-positive records -- it neither
+    # collapses the metric nor drags a percentile down.
+    assert interactivity_from_per_request_durations([0.0, 0.0]) is None
+    m = interactivity_from_per_request_durations([0.0, 0.0, 0.1])
+    assert m is not None
+    assert m.mean == pytest.approx(10.0)
+    assert m.p50 == pytest.approx(10.0)
+    # A single sample inverts trivially.
+    m = interactivity_from_per_request_durations([0.05])
+    assert m is not None
+    assert m.mean == pytest.approx(20.0)
+    assert m.p90 == pytest.approx(20.0)
+    assert m.p99 == pytest.approx(20.0)
+
+
+def test_interactivity_metrics_to_flat_dict_and_validation() -> None:
+    m = InteractivityMetrics(
+        mean=120.0,
+        p50=120.0,
+        p75=115.0,
+        p90=110.0,
+        p95=105.0,
+        p99=100.0,
+    )
+    assert m.to_flat_dict("interactivity_tok_s") == {
+        "mean_interactivity_tok_s": 120.0,
+        "p50_interactivity_tok_s": 120.0,
+        "p75_interactivity_tok_s": 115.0,
+        "p90_interactivity_tok_s": 110.0,
+        "p95_interactivity_tok_s": 105.0,
+        "p99_interactivity_tok_s": 100.0,
+    }
+    assert m.validate_metrics() == (True, [])
+    assert InteractivityMetrics(
+        mean=0.0, p50=0.0, p75=0.0, p90=0.0, p95=0.0, p99=0.0
+    ).validate_metrics() == (False, ["Invalid mean: 0.0"])

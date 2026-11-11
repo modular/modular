@@ -117,7 +117,7 @@ def test_conv_transposed[
 
     var output_dims = IndexList[rank](1)
 
-    comptime for i in range(rank):
+    for i in range(rank):
         output_dims[i] = (
             (input_dims[i] - 1) * stride[i]
             - pad[2 * i]

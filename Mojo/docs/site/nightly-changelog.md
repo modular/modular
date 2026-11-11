@@ -41,6 +41,38 @@ This version is still a work in progress.
   def process(p: Optional[Pointer[Int, _]]): ...
   ```
 
+- Mojo now allows unbound a parameter that has a default dependencies, the
+  default value will later be refined when the unbound parameter is provided:
+
+  ```mojo
+  def depends_on_a[a: Int]() -> Int:
+      return a
+
+  struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
+      ...
+
+  # No longer a compilation error
+  comptime Partial = NestedDeps[_]
+
+  # Bound = NestedDeps[3, depend_on_a[3]()]
+  comptime Bound = Partial[3]
+  ```
+
+- A call to a function that takes a variadic pack (`*args: *Ts`) can now mix
+  arguments and unpacked packs. The callee receives one pack with all the
+  elements in order:
+
+  ```mojo
+  def show[*Ts: Writable](*args: *Ts): ...
+
+  def wrap[*Ts: Writable](*args: *Ts):
+      show("[", *args, "]")
+      show(*args, *args)
+  ```
+
+  Unpacking the same pack twice into a `mut` pack argument, such as
+  `update(*args, *args)`, is an aliasing error.
+
 ## Language changes
 
 - `@explicit_destroy("<message>")` on a struct is deprecated and now emits a
@@ -267,6 +299,16 @@ This version is still a work in progress.
   print(i)  # error: use of invalidated interior reference 'opt["value"]'
   ```
 
+- `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
+  and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
+  instead of a `RawFileDescriptor`. You can pass a `FileHandle` or
+  `FileDescriptor` directly, since both convert implicitly:
+
+  ```mojo
+  with open("log.txt", "w") as f:
+      print("hello", file=f)
+  ```
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and
@@ -395,6 +437,10 @@ This version is still a work in progress.
   element-wise path, and aligned slices narrower than the target's native
   vector width, such as the halves `split()` returns for small vectors, now
   use the intrinsic.
+
+- `**` with an integer exponent no longer truncates the exponent to 32 bits,
+  so `Float64(2.0) ** Int64(4294967296)` is now `inf` instead of `1.0`, and
+  `Float64(2.0) ** Int32.MIN` is now `0.0` instead of `1.0`.
 
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns.

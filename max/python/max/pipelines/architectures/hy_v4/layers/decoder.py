@@ -135,5 +135,5 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
     ) -> Tensor:
         if hc is None:
             return h + sublayer(norm(h))
-        post, x = hc(h)
-        return hc.write_back(h, sublayer(norm(x)), post)
+        post, x = hc(h, norm)
+        return hc.write_back(h, sublayer(x), post)

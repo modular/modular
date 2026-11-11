@@ -37,8 +37,10 @@ from max.benchmark.benchmark_shared.datasets import DistributionParameter
 from max.benchmark.benchmark_shared.datasets.all import (
     _resolve_agentic_tool_profiles,
 )
+from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.iteration import resolve_seed
 from max.benchmark.benchmark_shared.workload import (
+    _apply_workload_to_config,
     apply_workload,
     load_workload_file,
 )
@@ -385,6 +387,32 @@ class TestSeedDefaultAndOverride:
     def test_cli_none_maps_to_random(self, value: str) -> None:
         """``--seed none`` (any case) parses to ``None`` (draw a random seed)."""
         assert parse_args(["--model", "m", "--seed", value]).seed is None
+
+
+class TestNumGpusValidation:
+    """``num_gpus`` divides total throughput, so only positive counts parse."""
+
+    def test_positive_count_is_kept(self) -> None:
+        """A real GPU count parses and round-trips."""
+        assert ServingBenchmarkConfig(num_gpus=4).num_gpus == 4
+
+    def test_unset_stays_none(self) -> None:
+        """The default leaves per-GPU throughput unreported, not divided."""
+        assert ServingBenchmarkConfig().num_gpus is None
+
+    @pytest.mark.parametrize("value", [0, -1, -8])
+    def test_non_positive_count_is_rejected(self, value: int) -> None:
+        """Zero or negative counts fail at the config boundary rather than
+        dividing through into a degenerate per-GPU figure."""
+        with pytest.raises(ValidationError):
+            ServingBenchmarkConfig(num_gpus=value)
+
+    def test_assignment_is_revalidated(self) -> None:
+        """Workload YAML application assigns fields, so the bound must hold
+        there too, not only at construction."""
+        config = ServingBenchmarkConfig(num_gpus=2)
+        with pytest.raises(ValidationError):
+            config.num_gpus = 0
 
 
 class TestRenamedWarmupOption:
@@ -1096,3 +1124,96 @@ def test_max_output_len_must_be_positive(value: int) -> None:
         ServingBenchmarkConfig.model_validate(
             {"model": "m", "max_output_len": value}
         )
+
+
+class TestGoodputFlag:
+    """``--goodput`` takes vLLM's space-separated ``key:value`` targets."""
+
+    def test_unset_by_default(self) -> None:
+        config = parse_args(["--model", "m"])
+        assert config.goodput is None
+        assert config.goodput_targets is None
+
+    def test_cli_takes_several_targets(self) -> None:
+        config = parse_args(
+            ["--model", "m", "--goodput", "ttft:500", "tpot:50", "--port", "9"]
+        )
+        assert config.goodput == ["ttft:500", "tpot:50"]
+        assert config.goodput_targets == GoodputTargets(
+            ttft_ms=500.0, tpot_ms=50.0
+        )
+        assert config.port == 9
+
+    def test_cli_takes_one_quoted_string(self) -> None:
+        config = parse_args(["--model", "m", "--goodput", "e2el:2500.5 ttft:1"])
+        assert config.goodput_targets == GoodputTargets(
+            ttft_ms=1.0, e2el_ms=2500.5
+        )
+
+    def test_cli_rejects_unknown_key(self) -> None:
+        with pytest.raises(SystemExit):
+            parse_args(["--model", "m", "--goodput", "itl:5"])
+
+    @pytest.mark.parametrize(
+        ("value", "match"),
+        [
+            ("itl:5", "unknown key 'itl'"),
+            ("ttft", "not a 'key:value' pair"),
+            ("ttft:fast", "needs a number of milliseconds"),
+            ("ttft:-1", "positive, finite"),
+            ("ttft:0", "positive, finite"),
+            ("ttft:inf", "positive, finite"),
+            ("ttft:1 ttft:2", "more than once"),
+            ("", "at least one target"),
+            ([], "at least one target"),
+            ({}, "at least one target"),
+            (5, "expected space-separated"),
+            (["ttft", 500], "expected 'key:value' strings"),
+        ],
+    )
+    def test_rejects_invalid_targets(self, value: object, match: str) -> None:
+        with pytest.raises(ValidationError, match=match):
+            ServingBenchmarkConfig.model_validate({"goodput": value})
+
+    def test_cli_rejects_empty_string(self) -> None:
+        with pytest.raises(SystemExit):
+            parse_args(["--model", "m", "--goodput", ""])
+
+    def test_env_var_takes_space_separated_targets(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_GOODPUT", "ttft:500 tpot:50")
+        config = parse_args(["--model", "m"])
+        assert config.goodput_targets == GoodputTargets(
+            ttft_ms=500.0, tpot_ms=50.0
+        )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "ttft:500 tpot:50",
+            ["ttft:500", "tpot:50"],
+            {"ttft": 500, "tpot": 50},
+        ],
+        ids=["string", "list", "mapping"],
+    )
+    def test_workload_yaml_forms_agree(self, value: object) -> None:
+        config = ServingBenchmarkConfig(model="m")
+        _apply_workload_to_config(config, {"goodput": value})
+        assert config.goodput_targets == GoodputTargets(
+            ttft_ms=500.0, tpot_ms=50.0
+        )
+
+    def test_config_file_mapping(self, tmp_path: Path) -> None:
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(
+            cfg_path,
+            {"benchmark_config": {"model": "m", "goodput": {"tpot": 40}}},
+        )
+        config = ServingBenchmarkConfig(config_file=str(cfg_path))
+        assert config.goodput_targets == GoodputTargets(tpot_ms=40.0)
+
+    def test_workload_yaml_value_is_validated(self) -> None:
+        config = ServingBenchmarkConfig(model="m")
+        with pytest.raises(ValidationError, match="unknown key"):
+            _apply_workload_to_config(config, {"goodput": "slo:5"})

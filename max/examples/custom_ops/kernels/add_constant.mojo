@@ -11,11 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.sys import align_of
+
 import extensibility
 
+from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 
-from extensibility import InputTensor, OutputTensor, Tensor, foreach
+from extensibility import (
+    Input,
+    Output,
+    Tensor,
+    TileTensorable,
+    get_kernel_simd_width,
+)
 
 from std.utils.coord import Coord
 from std.utils.index import IndexList
@@ -25,16 +34,32 @@ from std.utils.index import IndexList
 struct AddConstant[value: Int]:
     @staticmethod
     def execute(
-        output: OutputTensor,
-        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
-        @inline(.always)
-        def add_constant[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
-            return x.load[width](idx) + Scalar[output.dtype](Self.value)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime output_alignment = type_of(output).alignment
+        comptime assert type_of(x).rank == type_of(output).rank
+        var output_tile = output.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
 
-        foreach(add_constant, output, ctx)
+        @inline(.always)
+        def add_constant[width: Int, alignment: Int = 1](idx: Coord) {var}:
+            var result = x_tile.load[width=width, alignment=align_of[dtype]()](
+                idx
+            ) + Scalar[dtype](Self.value)
+            output_tile.store[
+                width=width,
+                alignment=min(output_alignment, alignment * align_of[dtype]()),
+            ](idx, result)
+
+        elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
+            add_constant, output.shape(), ctx
+        )
 
 
 # You only need to implement this if you do not manually annotate

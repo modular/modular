@@ -32,21 +32,31 @@ from .gated_group_rmsnorm import gated_group_rmsnorm
 from .kimi_delta import (
     kda_chunk,
     kda_chunk_is_registered,
+    kda_chunk_rows,
+    kda_chunk_rows_servable,
     kda_chunk_supports_head_dims,
     kda_decode,
     kda_ring_record_elements,
     kda_state_fold,
     kda_verify_ring,
+    kda_verify_ring_conv,
 )
 from .mamba2_replay_fold import mamba2_replay_fold
-from .mamba2_ssd_scan import mamba2_ssd_chunk_scan_varlen_fwd_inplace
+from .mamba2_ssd_scan import (
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace,
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows,
+)
 from .short_conv_ring import short_conv_ring
 from .state_rows import read_state_rows, write_state_rows
-from .varlen_causal_conv1d import causal_conv1d_varlen_fwd
+from .varlen_causal_conv1d import (
+    causal_conv1d_varlen_fwd,
+    causal_conv1d_varlen_fwd_rows,
+)
 
 __all__ = [
     "GatedDeltaReplayInputs",
     "causal_conv1d_varlen_fwd",
+    "causal_conv1d_varlen_fwd_rows",
     "gated_delta_conv1d_fwd",
     "gated_delta_conv1d_verify_fwd",
     "gated_delta_recurrence_fwd",
@@ -55,13 +65,17 @@ __all__ = [
     "gated_group_rmsnorm",
     "kda_chunk",
     "kda_chunk_is_registered",
+    "kda_chunk_rows",
+    "kda_chunk_rows_servable",
     "kda_chunk_supports_head_dims",
     "kda_decode",
     "kda_ring_record_elements",
     "kda_state_fold",
     "kda_verify_ring",
+    "kda_verify_ring_conv",
     "mamba2_replay_fold",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace",
+    "mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows",
     "read_state_rows",
     "short_conv_ring",
     "verify_width_operand",

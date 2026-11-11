@@ -203,13 +203,13 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         level: The minimum severity level for messages to be logged.
     """
 
-    var _fd: RawFileDescriptor
+    var _fd: BorrowedFileDescriptor[ImmStaticOrigin]
     var _prefix: String
     var _source_location: Bool
 
     def __init__(
         out self,
-        fd: RawFileDescriptor = std.sys.stdout,
+        fd: BorrowedFileDescriptor[ImmStaticOrigin] = std.sys.stdout,
         *,
         prefix: String = "",
         source_location: Bool = False,
@@ -450,7 +450,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
     ):
         comptime color = _level.color()
 
-        var file = self._fd
+        var file = self._fd._value
         var buffer = _FlushingWriteBuffer(file)
 
         if self._prefix:

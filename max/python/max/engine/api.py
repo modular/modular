@@ -508,9 +508,9 @@ class CompileOnlyModel:
     need the device. A stand-in that answered those calls with placeholder
     values would move the failure to whatever consumed them.
 
-    Input and output metadata, and the signature derived from them, are the
-    exception: the compile fixes them, so the stand-in reads them from the
-    artifact.
+    Input and output metadata, the signature derived from them, and the kernel
+    summaries are the exception: the compile fixes them, so the stand-in reads
+    them from the artifact.
     """
 
     def __init__(self, name: str, compiled: CompiledModel) -> None:
@@ -553,6 +553,11 @@ class CompileOnlyModel:
     def output_metadata(self) -> list[TensorSpec]:
         """See :attr:`Model.output_metadata`."""
         return self.compiled._model_metadata(self.name).output_metadata
+
+    @property
+    def kernel_summaries(self) -> list[str]:
+        """See :attr:`Model.kernel_summaries`."""
+        return self.compiled._model_metadata(self.name).kernel_summaries
 
     signature = property(_Model_signature)
 

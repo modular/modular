@@ -66,7 +66,6 @@ public:
   ~HIPDevice() override;
 
   ErrorOr<const char *> getArchName() const override;
-  static ErrorOr<std::string> getArchName(hipDevice_t device = 0);
 
   const HIPDriver &hipDriver() const;
   hipDevice_t hipDevice() const;

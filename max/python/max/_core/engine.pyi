@@ -70,6 +70,14 @@ class ModelMetadata:
     def input_metadata(self) -> list[TensorSpec]: ...
     @property
     def output_metadata(self) -> list[TensorSpec]: ...
+    @property
+    def kernel_summaries(self) -> list[str]:
+        """
+        Kernel fusion summaries, one per kernel in the compiled function.
+
+        The same as :attr:`Model.kernel_summaries`, read from the compiled
+        artifact rather than from an initialized model.
+        """
 
 class CompiledModels:
     """A compiled model artifact containing one or more submodels."""

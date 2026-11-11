@@ -35,7 +35,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.pipelines.architectures.kimi_k3_modulev3.layers.attn_residual import (
+    PendingAttnResStream,
     kimi_k3_attn_res_mix_norm,
+    kimi_k3_attn_res_mix_norm_delta,
+    kimi_k3_attn_res_pre_attention,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.layers.norm import (
     kimi_rms_norm,
@@ -404,3 +407,192 @@ def test_fused_graph_runs_no_unfused_mix_kernels() -> None:
     out_np = result.to_numpy()
     assert out_np.shape == (tokens, hidden)
     assert np.isfinite(out_np).all()
+
+
+@pytest.mark.compile_on_gpu("attn_res_mix_norm_delta has no custom.declare")
+@pytest.mark.parametrize(
+    "dtype,hidden,num_candidates",
+    [
+        (DType.bfloat16, _HIDDEN_RAGGED, 2),
+        (DType.bfloat16, _HIDDEN_RAGGED, 9),
+        (DType.bfloat16, _PRODUCTION_HIDDEN, 5),
+        (DType.float32, _HIDDEN_RAGGED, 5),
+        (DType.float32, _PRODUCTION_HIDDEN, 9),
+    ],
+)
+def test_delta_matches_unfused_chain(
+    dtype: DType, hidden: int, num_candidates: int
+) -> None:
+    """The addend fold is bit-identical to the chain it folds, on
+    both outputs: the materialized sum must be exactly
+    bf16(addend + prefix) -- one rounding, the post-attention
+    residual's own -- and the normed value must equal the existing op run
+    on that sum."""
+    rng = np.random.default_rng(29)
+    tokens = 2
+    candidates_np, proj_np, res_norm_np, out_norm_np = _random_inputs(
+        rng, tokens, num_candidates, hidden
+    )
+    addend_np = rng.standard_normal((tokens, hidden)).astype(np.float32)
+
+    with default_device(Accelerator()):
+        prefix = _to_storage_tensor(candidates_np[:, -1, :], dtype)
+        stack = [
+            _to_storage_tensor(candidates_np[:, i, :], dtype)
+            for i in range(num_candidates - 1)
+        ]
+        addend = _to_storage_tensor(addend_np, dtype)
+        proj = _to_storage_tensor(proj_np, dtype)
+        res_norm = _to_storage_tensor(res_norm_np, dtype)
+        out_norm = _to_storage_tensor(out_norm_np, dtype)
+
+        normed, summed = kimi_k3_attn_res_mix_norm_delta(
+            prefix,
+            addend,
+            stack,
+            proj,
+            res_norm,
+            out_norm,
+            _MIX_EPS,
+            _NORM_EPS,
+        )
+        updated = prefix + addend
+        ref_normed = kimi_k3_attn_res_mix_norm(
+            updated, stack, proj, res_norm, out_norm, _MIX_EPS, _NORM_EPS
+        )
+        ref2_normed = kimi_k3_attn_res_mix_norm(
+            summed, stack, proj, res_norm, out_norm, _MIX_EPS, _NORM_EPS
+        )
+        # The fold must be self-consistent too: its own sum, fed back
+        # through the unfused op, must reproduce its normed output.
+        assert np.array_equal(
+            normed.cast(DType.float32).to_numpy(),
+            ref2_normed.cast(DType.float32).to_numpy(),
+        ), (
+            "the single-addend fold is not self-consistent"
+            f" (dtype={dtype}, hidden={hidden}, C={num_candidates})"
+        )
+
+        sum_np = summed.cast(DType.float32).to_numpy()
+        ref_sum_np = updated.cast(DType.float32).to_numpy()
+        normed_np = normed.cast(DType.float32).to_numpy()
+        ref_normed_np = ref_normed.cast(DType.float32).to_numpy()
+
+    assert np.array_equal(sum_np, ref_sum_np), (
+        "the single-addend fold's sum diverged from the unfused add"
+        f" (dtype={dtype}, hidden={hidden}, C={num_candidates})"
+    )
+    assert np.array_equal(normed_np, ref_normed_np), (
+        "the fold's normed output diverged from the unfused"
+        f" chain (dtype={dtype}, hidden={hidden}, C={num_candidates})"
+    )
+
+
+@pytest.mark.compile_on_gpu("attn_res_mix_norm_delta has no custom.declare")
+def test_delta_rejects_mismatched_addend_shape() -> None:
+    """An addend whose shape disagrees with the candidates fails at
+    compile with the op's own message, not garbage codegen."""
+    hidden, num_candidates, tokens = _HIDDEN_RAGGED, 3, 2
+    rng = np.random.default_rng(31)
+    candidates_np, proj_np, res_norm_np, out_norm_np = _random_inputs(
+        rng, tokens, num_candidates, hidden
+    )
+    addend_np = rng.standard_normal((tokens + 1, hidden)).astype(np.float32)
+
+    candidate_type = TensorType(
+        DType.float32, [tokens, hidden], device=DeviceRef.GPU()
+    )
+    wrong_type = TensorType(
+        DType.float32, [tokens + 1, hidden], device=DeviceRef.GPU()
+    )
+    proj_type = TensorType(DType.float32, [1, hidden], device=DeviceRef.GPU())
+    weight_type = TensorType(DType.float32, [hidden], device=DeviceRef.GPU())
+    input_types = [
+        *[candidate_type] * num_candidates,
+        wrong_type,
+        candidate_type,
+        proj_type,
+        weight_type,
+        weight_type,
+    ]
+    with Graph("delta_bad_shape", input_types=input_types) as graph:
+        with ensure_context():
+            values = [Tensor.from_graph_value(v.tensor) for v in graph.inputs]
+            *block_residuals, addend, prefix, proj, res_norm, out_norm = values
+            normed, summed = kimi_k3_attn_res_mix_norm_delta(
+                prefix,
+                addend,
+                block_residuals,
+                proj,
+                res_norm,
+                out_norm,
+                _MIX_EPS,
+                _NORM_EPS,
+            )
+        graph.output(normed, summed)
+
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    arrays = [candidates_np[:, i, :] for i in range(num_candidates)] + [
+        addend_np,
+        candidates_np[:, -1, :],
+        proj_np,
+        res_norm_np,
+        out_norm_np,
+    ]
+    with pytest.raises(Exception, match="attn_res_mix_norm_delta"):
+        model = session.load(graph)
+        device_inputs = [
+            Buffer.from_numpy(arr).to(model.input_devices[i])
+            for i, arr in enumerate(arrays)
+        ]
+        model.execute(*device_inputs)
+
+
+@pytest.mark.compile_on_gpu("attn_res_mix_norm_delta has no custom.declare")
+def test_pre_attention_materializes_pending_stream_on_empty_stack() -> None:
+    """An empty candidate stack has no mixture to fold the pending add
+    into, so `kimi_k3_attn_res_pre_attention` materializes it and takes
+    the plain-norm path -- bit-identical to feeding the summed stream
+    directly. (The model never hits this -- layer 0's input is the
+    embedding -- but the contract must hold.)"""
+    hidden, tokens = _HIDDEN_RAGGED, 2
+    rng = np.random.default_rng(23)
+    stream_np = rng.standard_normal((tokens, hidden)).astype(np.float32)
+    delta_np = rng.standard_normal((tokens, hidden)).astype(np.float32)
+    out_norm_np = rng.standard_normal(hidden).astype(np.float32)
+
+    with default_device(Accelerator()):
+        prefix = _to_storage_tensor(stream_np, DType.float32)
+        delta = _to_storage_tensor(delta_np, DType.float32)
+        out_norm = _to_storage_tensor(out_norm_np, DType.float32)
+
+        normed, prefix_sum, stack = kimi_k3_attn_res_pre_attention(
+            PendingAttnResStream(prefix, delta),
+            [],
+            layer_idx=1,
+            attn_res_block_size=12,
+            proj_weight=prefix,
+            norm_weight=prefix,
+            out_norm_weight=out_norm,
+        )
+        ref_normed, ref_prefix_sum, ref_stack = kimi_k3_attn_res_pre_attention(
+            prefix + delta,
+            [],
+            layer_idx=1,
+            attn_res_block_size=12,
+            proj_weight=prefix,
+            norm_weight=prefix,
+            out_norm_weight=out_norm,
+        )
+
+        assert stack == [] and ref_stack == []
+        assert prefix_sum is not None and ref_prefix_sum is not None
+        assert np.array_equal(
+            prefix_sum.cast(DType.float32).to_numpy(),
+            ref_prefix_sum.cast(DType.float32).to_numpy(),
+        )
+        assert np.array_equal(
+            normed.cast(DType.float32).to_numpy(),
+            ref_normed.cast(DType.float32).to_numpy(),
+        )

@@ -244,7 +244,11 @@ class EPConfig:
         the MX grouped matmul, which the MX dispatch ops derive the same way
         from their EP geometry.
         """
-        n_ranks = self.n_gpus_per_node * self.n_nodes
+        # The allreduce backend routes within one device, so its dispatch ops
+        # see a single rank (`_ep_common_parameters`).
+        n_ranks = (
+            1 if self.use_allreduce else self.n_gpus_per_node * self.n_nodes
+        )
         return (
             ceildiv(self.max_tokens_per_rank * n_ranks, alignment) * alignment
         )

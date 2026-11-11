@@ -114,6 +114,13 @@ def resolve_skip_counts(
     return skip_first, skip_last
 
 
+def draw_seed() -> int:
+    """Draws and logs a fresh random seed, as ``resolve_seed`` does for ``None``."""
+    seed = int(np.random.default_rng().integers(0, 10000))
+    logger.info("Drew a fresh random seed=%d", seed)
+    return seed
+
+
 def resolve_seed(args: ServingBenchmarkConfig) -> None:
     """Draws and records a random seed when one was not pinned.
 
@@ -128,8 +135,7 @@ def resolve_seed(args: ServingBenchmarkConfig) -> None:
             place.
     """
     if args.seed is None:
-        args.seed = int(np.random.default_rng().integers(0, 10000))
-        logger.info("Drew a fresh random seed=%d", args.seed)
+        args.seed = draw_seed()
     else:
         logger.info("Using seed=%d", args.seed)
 

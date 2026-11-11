@@ -20,6 +20,7 @@
 #include "M_driver_device.h"
 #include "M_driver_driver.h"
 #include "M_driver_event.h"
+#include "M_driver_flag.h"
 #include "M_driver_function.h"
 #include "M_driver_memory.h"
 #include "M_driver_peer.h"

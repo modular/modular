@@ -34,9 +34,9 @@ from std.testing import (
 
 
 def test_value_is_c_int() raises:
-    assert_true(type_of(stdout._value) == c_int)
-    assert_equal(stdout._value, 1)
-    assert_equal(stderr._value, 2)
+    assert_true(type_of(stdout._raw()) == c_int)
+    assert_equal(stdout._raw(), 1)
+    assert_equal(stderr._raw(), 2)
     assert_equal(RawFileDescriptor()._value, 1)
 
 

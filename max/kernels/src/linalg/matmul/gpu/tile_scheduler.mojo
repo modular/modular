@@ -461,7 +461,7 @@ struct TileScheduler[
 def _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
     """Check if block cluster is along the raster dimension."""
 
-    comptime for i in range(3):
+    for i in range(3):
         if cluster_dims[i] > 1 and i != Int(raster_dim):
             return False
 

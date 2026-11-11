@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <list>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -245,6 +246,33 @@ public:
   class Chunk;
   class Desc;
 
+  // ---- Allocation statistics (mach and MAX Serve memory ledgers) ----
+  //
+  // Live bytes are the descriptors handed to callers and not yet freed, at
+  // their aligned size; a block a stream freed but still caches is not live.
+  // Peaks run from construction or the last resetAllocationPeaks(). Driver
+  // fallbacks are allocations the manager missed and the device driver served
+  // past the budget; their bytes only add up between resets, since the manager
+  // does not track their frees.
+  struct AllocationStats {
+    uint64_t liveBytes = 0;
+    uint64_t peakLiveBytes = 0;
+    uint64_t maxRequestBytes = 0;
+    uint64_t driverFallbacks = 0;
+    uint64_t driverFallbackBytes = 0;
+    // Distinct sizes of requests of at least kTrackedRequestMinBytes since the
+    // last reset, ascending, at most kMaxTrackedRequestSizes of the largest.
+    std::vector<uint64_t> requestSizes;
+  };
+  static constexpr size_t kTrackedRequestMinBytes = size_t(256) << 20;
+  static constexpr size_t kMaxTrackedRequestSizes = 64;
+  AllocationStats getAllocationStats() const;
+  // Restarts the peaks from the current live bytes and clears the request
+  // sizes, the largest request and the fallback counts.
+  void resetAllocationPeaks();
+  // Records a request the device driver served past the budget.
+  void noteDriverFallback(size_t bytes);
+
   class DescMap {
   public:
     DescMap(int mapSizeLog2);
@@ -328,6 +356,21 @@ public:
   // by later eager allocations), so the steady-state footprint matches an eager
   // full-budget allocation. Must NOT be called while already capturing.
   ErrorOrSuccess preBackForCapture();
+
+  // Allocation misses served by remapping the allocating stream's own free
+  // blocks into a fresh VA range (see remapOwnFreeBlocks), and the bytes of
+  // their physical pages that were reused rather than taken from the root.
+  size_t streamRemaps() const {
+    return streamRemaps_.load(std::memory_order_relaxed);
+  }
+  size_t streamRemapReusedBytes() const {
+    return streamRemapReusedBytes_.load(std::memory_order_relaxed);
+  }
+  // Test-only, take `mu_`: physical pages created so far, counting a page
+  // mapped at two addresses once (mapped + pooled - aliased), and the number
+  // of remapped ranges whose old addresses are not yet retired.
+  size_t createdPhysicalBytesForTesting() const;
+  size_t retiringRangesForTesting() const;
 
   // Allocation misses that retried after a drain, and those the retry served.
   size_t drainRetryAttempts() const {
@@ -439,6 +482,70 @@ private:
   // referenced by in-flight GPU work; unmapping it could fault a live kernel.
   // Caller holds `mu_`.
   void computeUnreclaimableGranules(const Chunk *c, llvm::BitVector &out) const;
+  // ---- Stream-ordered reuse (MAX-1123) ----
+  //
+  // A stream frees a block onto its own free list, and the block migrates to
+  // the root only after an event recorded at the free has fired. Until then
+  // only the same stream may reuse it, and only for requests that fit inside
+  // it. A larger request on that stream misses even when the stream's own
+  // free blocks plus what the root can supply would cover it, because the
+  // bytes are not contiguous. That is the DCP OOM: per-layer pools grow from
+  // 9.2 to 13.7 GiB, and a larger layer misses the block a smaller one freed.
+  //
+  // On such a miss, remapOwnFreeBlocks() takes the pages lying wholly under
+  // `fl`'s free blocks, maps their physical handles a second time into a
+  // fresh, granule-aligned range carved from the root's unbacked VA, backs
+  // the rest of the range from the pool, new pages or reclaimed root pages
+  // (ensureRegionBacked), and hands that range out. A stream is ordered, so
+  // its new work on the pages runs after its old work on them: no host
+  // synchronize and no unmap of a page queued work may still touch. Pages a
+  // side-stream view freed may still be read by its base stream, so the view
+  // gets a stream-side wait on a base-stream event. The old ranges become
+  // retired descs (in use, owned by no free list), recorded with an event on
+  // the stream (and its base); retireCompletedRanges() unmaps them and
+  // returns their VA to the root once that event fires. Returns nullptr when
+  // `fl` holds no reusable page or the request cannot be covered; nothing is
+  // changed then. Caller holds `mu_`; `fl` has a context that is not
+  // capturing.
+  Desc *remapOwnFreeBlocks(MemoryManagerFreeList *fl, size_t size);
+  // Retire every remapped range whose event has fired, or every range after
+  // synchronizing on its events when `wait` (teardown only). Called from
+  // drainCompletedFrees, so the regular flush path retires ranges. Caller
+  // must NOT hold `mu_`.
+  ErrorOrSuccess retireCompletedRanges(bool wait);
+  // Physical pages created so far, a page mapped at two addresses counted
+  // once. Budget checks use this instead of cacheSize_, which counts mapped
+  // slots. Caller holds `mu_`.
+  size_t createdPhysicalBytes() const;
+
+  // One remapped stream's old ranges, waiting for the stream to run past
+  // them.
+  struct RetiringRange {
+    uint64_t seq = 0;
+    llvm::SmallVector<DeviceEventRef, 2> events;
+    // Retired descs over the old VA: in use so nothing allocates or reclaims
+    // them, and skipped by the in-use physical accounting.
+    llvm::SmallVector<Desc *, 4> descs;
+    // Old slots still mapped to a handle that a new slot also maps.
+    llvm::SmallVector<size_t, 8> granules;
+  };
+  // A list: a range holds move-only event refs and is never relocated.
+  std::list<RetiringRange> retiring_;
+  uint64_t nextRetiringSeq_ = 0;
+  // Unmap a retiring range's old slots and return its descs to the root.
+  // Caller holds `mu_`.
+  void retireRange(RetiringRange &range);
+  // drainCompletedFrees' pending-free half. Caller must NOT hold `mu_`.
+  ErrorOrSuccess drainPendingFrees(const MemoryManagerFreeList *only);
+  std::atomic<size_t> retiringCount_ = {0};
+  // Bytes of slots that alias a handle another slot also maps: counted twice
+  // in cacheSize_, once in createdPhysicalBytes().
+  size_t aliasedBytes_ = 0;
+  std::atomic<size_t> streamRemaps_ = {0};
+  std::atomic<size_t> streamRemapReusedBytes_ = {0};
+  // Time spent unmapping retired ranges under `mu_`, for the remap log line.
+  std::atomic<int64_t> retireMicros_ = {0};
+
   // Single-arena VMM (Stage 2): unmap up to `count` mapped granules that are
   // safe to reclaim (see computeUnreclaimableGranules), returning their handles
   // to the free-granule pool for remapping elsewhere. Returns the number
@@ -601,6 +708,14 @@ private:
   static constexpr size_t kLargeAllocSizeFactor = 32;
 
   mutable std::mutex mu_;
+
+  // See AllocationStats. Guarded by `mu_`, except the fallback counters.
+  AllocationStats allocStats_;
+  std::atomic<uint64_t> driverFallbacks_ = {0};
+  std::atomic<uint64_t> driverFallbackBytes_ = {0};
+  // Called with `mu_` held as a descriptor enters or leaves `allocatedMap_`.
+  void noteAllocated(const Desc *desc);
+  void noteFreed(const Desc *desc);
   // List of all chunks allocated from the driver and their total size.
   size_t cacheSize_ = 0;
   std::unique_ptr<Chunk> chunks_ = nullptr;
@@ -688,6 +803,11 @@ private:
   // MemoryManagerFreeList. The oldest list will be flushed to the parent once
   // the pending event handler fires.
   static constexpr int kNumFreeBufferLists = 2;
+  // A free block at least this large is kept whole for requests under
+  // 1/kKeepWholeRatio of it while the root can serve them; see
+  // allocateDescAligned.
+  static constexpr size_t kKeepWholeMinBytes = size_t(1) << 30;
+  static constexpr size_t kKeepWholeRatio = 4;
   static_assert(llvm::isPowerOf2_64(kNumFreeBufferLists),
                 "Must be a non-zero power of two.");
 

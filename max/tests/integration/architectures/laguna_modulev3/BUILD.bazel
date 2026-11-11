@@ -14,7 +14,10 @@ modular_py_test(
     timeout = "long",
     srcs = glob(
         ["test_*.py"],
-        exclude = ["test_logits_parity*.py"],
+        exclude = [
+            "test_logits_parity*.py",
+            "test_moe_gate_gpu.py",
+        ],
     ),
     data = ["//max/tests/integration/architectures/laguna:checkpoint_configs"],
     # Imported dynamically by max._interpreter, never statically; without it
@@ -36,6 +39,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/laguna",
@@ -73,7 +77,10 @@ modular_py_library(
 modular_py_test(
     name = "laguna_modulev3_gpu",
     size = "large",
-    srcs = ["test_logits_parity.py"],
+    srcs = [
+        "test_logits_parity.py",
+        "test_moe_gate_gpu.py",
+    ],
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -84,7 +91,15 @@ modular_py_test(
     imports = ["."],
     precompile_mefs = True,
     tags = ["gpu"],
-    deps = [":laguna_parity"],
+    deps = [
+        ":laguna_parity",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/laguna_modulev3",
+        requirement("torch"),
+    ],
 )
 
 modular_py_test(

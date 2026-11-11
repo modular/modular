@@ -506,6 +506,16 @@ TEST_F(DriverMetalPluginFunctionTest, QueueExecuteRejectsLaunchAttributes) {
   }
 }
 
+TEST_F(DriverMetalPluginFunctionTest, OccupancyIsUnsupported) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    int32_t numBlocks = -1;
+    EXPECT_EQ(M_DRIVER_STATUS_UNSUPPORTED,
+              function_occupancy_max_active_blocks(contexts[i], functions[i],
+                                                   32, 0, &numBlocks));
+    EXPECT_EQ(numBlocks, -1);
+  }
+}
+
 // Requesting more dynamic threadgroup (shared) memory than the device supports
 // must be rejected. Prior to wiring up `shared_mem_bytes`, the field was
 // silently ignored, so an absurd request would "succeed" and the kernel would

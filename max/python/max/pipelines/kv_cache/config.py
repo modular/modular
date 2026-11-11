@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 _KV_CACHE_FORMAT_TO_DTYPE: dict[str, DType] = {
     "float32": DType.float32,
     "bfloat16": DType.bfloat16,
+    "float16": DType.float16,
     "float8_e4m3fn": DType.float8_e4m3fn,
     "float4_e2m1fn": DType.uint8,
     "float4_e2m1": DType.uint8,
@@ -110,8 +111,8 @@ def cache_dtype_for_encoding(
         if dtype is None:
             raise ValueError(
                 f"Unrecognized kv_cache_format override: '{kv_cache_format}'. "
-                "Supported values are 'float32', 'bfloat16', 'float8_e4m3fn',"
-                " and 'float4_e2m1fn'."
+                "Supported values are 'float32', 'bfloat16', 'float16',"
+                " 'float8_e4m3fn', and 'float4_e2m1fn'."
             )
         return dtype
     if not quantization_encoding:
@@ -346,8 +347,9 @@ class KVCacheConfig(ConfigFileModel):
         default=None,
         description=(
             "Override the default data type for the KV cache. "
-            "Supported values: ``float32``, ``bfloat16``, ``float8_e4m3fn``, "
-            "``float4_e2m1fn`` (alias ``float4_e2m1``). ``float4_e2m1fn`` "
+            "Supported values: ``float32``, ``bfloat16``, ``float16``, "
+            "``float8_e4m3fn``, ``float4_e2m1fn`` (alias ``float4_e2m1``). "
+            "``float4_e2m1fn`` "
             "is NVFP4: two E2M1 values per byte with an E4M3 scale per 16 "
             "values. It is supported only by architectures that implement "
             "it (MiniMax-M3 sparse attention on NVIDIA SM100 and AMD "

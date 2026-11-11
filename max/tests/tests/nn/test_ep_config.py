@@ -294,6 +294,15 @@ def _ffn_send_config(
     )
 
 
+def test_max_recv_tokens_per_expert_sees_one_rank_under_allreduce() -> None:
+    """The MX scale slot stride must match the one-rank dispatch geometry the
+    allreduce backend gives its EP ops."""
+    config = _base_ep_config()
+    assert config._max_recv_tokens_per_expert() == 1024 * 8
+    allreduce = dataclasses.replace(config, use_allreduce=True)
+    assert allreduce._max_recv_tokens_per_expert() == 1024
+
+
 def test_ffn_combine_send_off_by_default() -> None:
     """The fused send must be opt-in: it changes what the planner reserves."""
     assert not _base_ep_config().fuse_ffn_combine_send

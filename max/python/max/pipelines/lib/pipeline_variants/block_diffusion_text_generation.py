@@ -15,14 +15,14 @@
 One scheduler step is one full canvas: an encoder pass commits the pending
 tokens (the prompt on the first step, the previously accepted canvas
 afterwards) into the paged KV cache, then an inner denoising loop runs the
-decoder graph up to ``max_denoising_steps`` times with entropy-bound
+denoise step up to ``max_denoising_steps`` times with entropy-bound
 acceptance, a linear temperature schedule, self-conditioning feedback, and
 stable-and-confident early stopping. The accepted canvas, truncated at the
 first EOS, is appended to each request context, so the serving frontend
 streams up to ``canvas_length`` tokens per step. The denoising loop runs
 over at most ``_MAX_CANVAS_BATCH`` requests at a time (see the constant).
 
-Decoder steps never advance the committed context length: canvas K/V land in
+Denoise steps never advance the committed context length: canvas K/V land in
 the cache slots after each request's committed length and are overwritten on
 every denoise step, then once more by the next encoder pass with causal
 values. Architectures selecting this pipeline should set
@@ -43,9 +43,11 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.context.tokens import TokenBuffer
+from max.pipelines.modeling.eager_validation import eager_validator
 from max.pipelines.modeling.types import RequestID, TextGenerationInputs
 from transformers import GenerationConfig
 
+from ..module_registration import BlockDiffusionPipelineModel
 from .text_generation import TextGenerationPipeline
 
 logger = logging.getLogger(__name__)
@@ -62,7 +64,8 @@ _DEFAULT_GENERATION_PARAMS = {
     "pad_token_id": 0,
 }
 
-# A denoise step's memory grows with its request count, so cap it.
+# A denoise step's memory grows with its request count, so cap it. A
+# registered denoiser can set a lower cap (see ``_canvas_batch_cap``).
 _MAX_CANVAS_BATCH = 16
 
 
@@ -98,6 +101,16 @@ class _CanvasTokenView:
 
 class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
     """Drives block-diffusion generation over the compiled graph pair."""
+
+    @property
+    def _denoiser_model(self) -> BlockDiffusionPipelineModel:
+        """The pipeline model a ``BLOCK_DIFFUSION`` registration builds."""
+        pm = self._pipeline_model
+        assert isinstance(pm, BlockDiffusionPipelineModel), (
+            f"{type(self).__name__} drives a registered BLOCK_DIFFUSION "
+            f"module, not {type(pm).__name__}"
+        )
+        return pm
 
     def _generation_params(self) -> dict[str, Any]:
         if not hasattr(self, "_diffusion_params"):
@@ -141,7 +154,12 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
             return {}
 
         # --- 1. Encoder pass: commit pending tokens into the KV cache. ---
-        self._pipeline_model.execute(model_inputs=model_inputs)
+        # Release the encoder's unread outputs, or the validator keeps their
+        # activation block alive through the denoise steps.
+        eager_validator.discard_output(
+            vars(self._pipeline_model.execute(model_inputs=model_inputs)),
+            reason="the encoder pass only commits tokens to the KV cache",
+        )
 
         # Chunked-prefill contexts have more prompt to process before any
         # canvas can be generated; advance their chunk and emit nothing.
@@ -171,7 +189,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         views: list[_CanvasTokenView],
         rng: np.random.Generator,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Runs one decoder forward and samples a candidate canvas.
+        """Runs one denoise step and samples a candidate canvas.
 
         The step reads its self-conditioning logits from ``sc_logits`` and
         leaves the ones for the next step there.
@@ -180,7 +198,6 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
             Host arrays for the argmax canvas, the categorical sample, and
             per-token entropy.
         """
-        pm = self._pipeline_model
         device = self._devices[0]
         batch, canvas_len = current.shape
         n_tokens = batch * canvas_len
@@ -194,16 +211,15 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         kv_inputs = self._kv_manager.runtime_inputs(
             [cast("list[TextContext]", views)]
         )
-        sc_out, argmax_d, topk_p_d, topk_i_d, entropy_d = (
-            pm.execute_decoder_step(  # type: ignore[attr-defined]
-                canvas_tokens=canvas_buf,
-                input_row_offsets=row_offsets,
-                sc_logits=sc_logits,
-                sc_enabled=sc_enabled,
-                temperature=temp_buf,
-                kv_cache_inputs=kv_inputs,
-            )
+        outputs = self._denoiser_model.execute_denoise_step(
+            canvas_tokens=canvas_buf,
+            input_row_offsets=row_offsets,
+            sc_logits=sc_logits,
+            sc_enabled=sc_enabled,
+            temperature=temp_buf,
+            kv_cache_inputs=kv_inputs,
         )
+        sc_out, argmax_d, topk_p_d, topk_i_d, entropy_d = outputs
         # A live step output keeps the step's whole activation block alive.
         sc_logits.inplace_copy_from(sc_out)
 
@@ -218,6 +234,11 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         u = rng.random(n_tokens, dtype=np.float32)
         choice = (cdf < u[:, None]).sum(axis=-1).clip(0, topk_i.shape[1] - 1)
         sampled = topk_i[np.arange(n_tokens), choice].reshape(batch, canvas_len)
+        # The eager usage validator sees no read through a Buffer copy, so it
+        # would hold these outputs, and this step's whole block, as unread.
+        eager_validator.discard_output(
+            outputs, reason="read on the host through Buffer copies"
+        )
         return argmax, sampled, entropy
 
     @staticmethod
@@ -273,30 +294,37 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
                 res[ctx.request_id] = output
         return res
 
+    def _canvas_batch_cap(self) -> int:
+        """Returns the most canvases one denoise step takes.
+
+        It is ``_MAX_CANVAS_BATCH``, or lower when the registered
+        ``BLOCK_DIFFUSION`` module sets ``max_canvas_batch``.
+        """
+        cap = self._denoiser_model.max_canvas_batch
+        if cap is None:
+            return _MAX_CANVAS_BATCH
+        return min(cap, _MAX_CANVAS_BATCH)
+
     def _generate_canvas(
         self, canvas_batch: list[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Denoises the batch's canvases in bounded sub-batches.
 
-        Sub-batching exists only to bound the decoder step's transient
+        Sub-batching exists only to bound the denoise step's transient
         memory (see ``_MAX_CANVAS_BATCH``); each request's canvas is
         denoised exactly as it would be alone.
         """
+        cap = self._canvas_batch_cap()
         res: dict[RequestID, TextGenerationOutput] = {}
-        for start in range(0, len(canvas_batch), _MAX_CANVAS_BATCH):
-            res.update(
-                self._denoise_canvas(
-                    canvas_batch[start : start + _MAX_CANVAS_BATCH]
-                )
-            )
+        for start in range(0, len(canvas_batch), cap):
+            res.update(self._denoise_canvas(canvas_batch[start : start + cap]))
         return res
 
     def _denoise_canvas(
         self, canvas_batch: list[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Runs the full denoise loop for one bounded sub-batch."""
-        pm = self._pipeline_model
-        config = pm.config  # type: ignore[attr-defined]
+        config = self._denoiser_model.config
         params = self._generation_params()
         canvas_len: int = config.canvas_length
         vocab: int = config.text_config.vocab_size

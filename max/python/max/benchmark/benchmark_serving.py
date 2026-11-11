@@ -789,6 +789,8 @@ async def benchmark(
 
     result: BenchmarkResult
     if session.benchmark_task in PIXEL_GENERATION_TASKS:
+        if args.goodput is not None:
+            logger.warning("--goodput is only supported for text-generation")
         result = build_pixel_generation_result(
             outputs=all_outputs,
             benchmark_duration=benchmark_duration,
@@ -818,6 +820,8 @@ async def benchmark(
             gpu_device_groups=gpu_device_groups,
             outputs_by_session=outputs_by_session,
             steady_state_filtering=args.steady_state_filtering,
+            goodput_targets=args.goodput_targets,
+            num_gpus=args.num_gpus,
         )
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics

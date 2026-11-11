@@ -21,8 +21,7 @@ from nn.resize import (
     resize_linear,
     resize_nearest_neighbor,
 )
-from std.math import floor
-from std.testing import assert_almost_equal, assert_equal, assert_true
+from std.testing import assert_almost_equal, assert_equal
 from std.utils import IndexList
 
 
@@ -210,47 +209,48 @@ def _check_cubic_uint8_matches_float32(
             assert_equal(got[i], as_f32[i])
 
 
-def _round_to_uint8(x: Float32) -> UInt8:
-    """Rounds half to even, as `mo.round` does, and clamps to [0, 255]."""
-    var r = floor(x)
-    var frac = x - r
-    if frac > 0.5 or (frac == 0.5 and Int(r) % 2 != 0):
-        r += 1
-    return UInt8(Int(min(max(r, 0), 255)))
-
-
-def _check_cubic_uint8_output(
+def _resize_cubic_u8(
     src: List[UInt8], in_shape: IndexList[4], out_shape: IndexList[4]
-) raises -> List[Float32]:
-    """Checks that a uint8 output is the float32 output rounded and clamped,
-    and returns the float32 output."""
-    var as_f32 = List[Float32](capacity=len(src))
-    for v in src:
-        as_f32.append(v.cast[.float32]())
-    var want = _resize_cubic_f32(as_f32, in_shape, out_shape)
-    var got = List[UInt8](length=out_shape.flattened_length(), fill=0)
+) -> List[UInt8]:
+    var output = List[UInt8](length=out_shape.flattened_length(), fill=0)
     resize_cubic(
         TileTensor(src.unsafe_ptr(), row_major(Coord(in_shape))),
-        TileTensor(got.unsafe_ptr(), row_major(Coord(out_shape))),
+        TileTensor(output.unsafe_ptr(), row_major(Coord(out_shape))),
+    )
+    return output^
+
+
+def _check_cubic_uint8_passes(
+    in_shape: IndexList[4], out_shape: IndexList[4]
+) raises:
+    """Checks that a uint8 resize of both axes is a resize of W, then one of
+    H, each rounded to uint8, and that an NHWC batch resizes as its channel
+    planes do."""
+    var values = _pattern(in_shape.flattened_length())
+    var src = List[UInt8](capacity=len(values))
+    for v in values:
+        src.append(v.cast[.uint8]())
+    var got = _resize_cubic_u8(src, in_shape, out_shape)
+    var mid_shape = in_shape
+    mid_shape[2] = out_shape[2]
+    var want = _resize_cubic_u8(
+        _resize_cubic_u8(src, in_shape, mid_shape), mid_shape, out_shape
     )
     for i in range(len(want)):
-        assert_equal(got[i], _round_to_uint8(want[i]))
-    return want^
-
-
-def _spikes(shape: IndexList[4], axis: Int) -> List[UInt8]:
-    """Returns a profile along axis, constant along the others, whose 2x
-    upscale lands on exact halves and leaves [0, 255]. Interior taps of a 2x
-    upscale weigh multiples of 1/128, so 64 and 192 times them end in .5, and
-    the edges of the 255 plateau ring past both ends of the range."""
-    var profile: List[UInt8] = [0, 0, 64, 0, 0, 192, 0, 0, 255, 255, 255, 0]
-    var values = List[UInt8](capacity=shape.flattened_length())
-    for i in range(shape.flattened_length()):
-        var stride = 1
-        for d in range(axis + 1, 4):
-            stride *= shape[d]
-        values.append(profile[(i // stride) % shape[axis] % len(profile)])
-    return values^
+        assert_equal(got[i], want[i])
+    var c = in_shape[3]
+    var in_plane = IndexList[4](1, in_shape[1], in_shape[2], 1)
+    var out_plane = IndexList[4](1, out_shape[1], out_shape[2], 1)
+    for n in range(in_shape[0]):
+        for ch in range(c):
+            var plane = List[UInt8]()
+            for p in range(in_plane.flattened_length()):
+                plane.append(
+                    src[(n * in_plane.flattened_length() + p) * c + ch]
+                )
+            var resized = _resize_cubic_u8(plane, in_plane, out_plane)
+            for p in range(len(resized)):
+                assert_equal(got[(n * len(resized) + p) * c + ch], resized[p])
 
 
 def _naive_cubic(
@@ -1282,41 +1282,74 @@ def main() raises:
 
     test_cubic_uint8_matches_float32()
 
-    def test_cubic_uint8_output_rounds_float32() raises:
-        print("== test_cubic_uint8_output_rounds_float32")
-        # A 2x upscale of W alone, so H keeps its size, and of H alone.
-        for axis in [2, 1]:
-            var in_shape = IndexList[4](1, 12, 12, 3)
-            var out_shape = in_shape
-            out_shape[axis] *= 2
-            var want = _check_cubic_uint8_output(
-                _spikes(in_shape, axis), in_shape, out_shape
-            )
-            var halves = 0
-            var below = 0
-            var above = 0
-            for v in want:
-                halves += Int(v - floor(v) == 0.5)
-                below += Int(v < -0.5)
-                above += Int(v > 255.5)
-            assert_true(halves > 0 and below > 0 and above > 0)
-        # Upscales and downscales of both axes, of H alone, and of neither.
+    def test_cubic_uint8_matches_pillow() raises:
+        print("== test_cubic_uint8_matches_pillow")
+        # Pillow's `Image.resize(size, Image.Resampling.BICUBIC)` of these
+        # grayscale images. The hard-edged upscale overshoots [0, 255]
+        # between the passes, so a resize that rounds once instead misses
+        # Pillow on 45 of its 99 pixels, by up to 18 levels.
+        # fmt: off
+        var up_src: List[UInt8] = [
+            0, 255, 0, 255, 128,
+            255, 0, 255, 0, 64,
+            0, 0, 255, 255, 200,
+            30, 255, 255, 0, 0,
+        ]
+        var up_want: List[UInt8] = [
+            0, 19, 191, 255, 107, 0, 98, 255, 248, 156, 120,
+            32, 59, 170, 221, 114, 29, 108, 215, 199, 135, 109,
+            173, 163, 121, 100, 132, 155, 128, 86, 76, 79, 79,
+            253, 216, 69, 0, 146, 255, 161, 15, 7, 56, 73,
+            143, 117, 19, 0, 139, 255, 216, 135, 121, 137, 142,
+            8, 6, 0, 8, 139, 255, 255, 253, 233, 207, 196,
+            0, 8, 63, 109, 186, 255, 218, 178, 159, 137, 128,
+            5, 50, 153, 228, 242, 255, 156, 45, 29, 25, 24,
+            10, 65, 190, 255, 255, 255, 131, 0, 0, 0, 0,
+        ]
+        var down_want: List[UInt8] = [
+            92, 136, 113, 91,
+            122, 111, 135, 124,
+            155, 133, 110, 154,
+        ]
+        # fmt: on
+        var up = _resize_cubic_u8(
+            up_src, IndexList[4](1, 4, 5, 1), IndexList[4](1, 9, 11, 1)
+        )
+        for i in range(len(up_want)):
+            assert_equal(up[i], up_want[i])
+        var down_src = List[UInt8]()
+        for v in _pattern(7 * 9):
+            down_src.append(v.cast[.uint8]())
+        var down = _resize_cubic_u8(
+            down_src, IndexList[4](1, 7, 9, 1), IndexList[4](1, 3, 4, 1)
+        )
+        for i in range(len(down_want)):
+            assert_equal(down[i], down_want[i])
+
+    test_cubic_uint8_matches_pillow()
+
+    def test_cubic_uint8_rounds_each_pass() raises:
+        print("== test_cubic_uint8_rounds_each_pass")
+        # Upscales and downscales of both axes, more rows than a W pass
+        # transposes at a time, and a size that does not change.
         var shapes: List[Tuple[IndexList[4], IndexList[4]]] = [
             (IndexList[4](2, 21, 37, 3), IndexList[4](2, 9, 16, 3)),
             (IndexList[4](2, 13, 11, 3), IndexList[4](2, 40, 29, 3)),
-            (IndexList[4](1, 21, 37, 16), IndexList[4](1, 9, 70, 16)),
+            (IndexList[4](1, 70, 9, 4), IndexList[4](1, 33, 30, 4)),
             (IndexList[4](3, 40, 61, 1), IndexList[4](3, 17, 29, 1)),
-            (IndexList[4](1, 21, 37, 3), IndexList[4](1, 9, 37, 3)),
             (IndexList[4](1, 5, 7, 3), IndexList[4](1, 5, 7, 3)),
         ]
         for shape in shapes:
-            var values = _pattern(shape[0].flattened_length())
-            var src = List[UInt8](capacity=len(values))
-            for v in values:
-                src.append(v.cast[.uint8]())
-            _ = _check_cubic_uint8_output(src, shape[0], shape[1])
+            _check_cubic_uint8_passes(shape[0], shape[1])
+        var same = IndexList[4](1, 5, 7, 3)
+        var src = List[UInt8]()
+        for v in _pattern(same.flattened_length()):
+            src.append(v.cast[.uint8]())
+        var copied = _resize_cubic_u8(src, same, same)
+        for i in range(len(src)):
+            assert_equal(copied[i], src[i])
 
-    test_cubic_uint8_output_rounds_float32()
+    test_cubic_uint8_rounds_each_pass()
 
     def test_cubic_fast_paths_match_naive() raises:
         print("== test_cubic_fast_paths_match_naive")

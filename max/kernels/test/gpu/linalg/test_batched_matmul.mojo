@@ -838,6 +838,33 @@ def main() raises:
             K=Int(128),
         ](ctx, 2, 3, 64)
 
+        # transpose_b=True edge cases: odd K, N % 4 != 0, f32, dynamic N.
+        test_static_NK[
+            .bfloat16,
+            transpose_b=True,
+            N=Int(256),
+            K=Int(65),
+        ](ctx, 2, 5)
+
+        test_static_NK[
+            .bfloat16,
+            transpose_b=True,
+            N=Int(6),
+            K=Int(128),
+        ](ctx, 2, 5)
+
+        test_static_NK[
+            .float32,
+            transpose_b=True,
+            N=Int(256),
+            K=Int(128),
+        ](ctx, 2, 5)
+
+        test_dynamic_shapes[
+            .bfloat16,
+            transpose_b=True,
+        ](ctx, 2, 5, 256, 128)
+
         comptime if ctx.target.is_nvidia_gpu():
             # NOTE: these tests should be run on a100 and above
 

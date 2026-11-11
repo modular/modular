@@ -336,14 +336,6 @@ def test_benchmark_dataset_get_dataset_class() -> None:
     assert dataset_class == CodeDebugBenchmarkDataset
 
 
-def test_benchmark_dataset_get_dataset_class_unknown() -> None:
-    """Test _get_dataset_class with unknown dataset name."""
-    with pytest.raises(ValueError) as exc_info:
-        BenchmarkDataset._get_dataset_class("unknown_dataset")
-
-    assert "Unknown dataset: unknown_dataset" in str(exc_info.value)
-
-
 @patch("os.path.exists")
 def test_benchmark_dataset_str_with_dataset_name(mock_exists: Mock) -> None:
     """Test __str__ method with dataset_name."""
@@ -384,58 +376,34 @@ def test_benchmark_dataset_repr(mock_exists: Mock) -> None:
     assert "has_multiturn_chat_support=True" in repr_str
 
 
-@patch("os.path.exists")
-@patch(
-    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
+@pytest.mark.parametrize(
+    ("dataset_name", "repo_id", "filename"),
+    [
+        ("code_debug", "xinrongzhang2022/InfiniteBench", "code_debug.jsonl"),
+        (
+            "sharegpt",
+            "anon8231489123/ShareGPT_Vicuna_unfiltered",
+            "ShareGPT_V3_unfiltered_cleaned_split.json",
+        ),
+    ],
 )
-def test_code_debug_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
-    """Test fetching code_debug dataset from HuggingFace Hub."""
-    mock_download.return_value = "/path/to/downloaded/file.jsonl"
-    mock_exists.return_value = True  # Mock downloaded file exists
+def test_huggingface_dataset_from_flags_downloads(
+    dataset_name: str, repo_id: str, filename: str
+) -> None:
+    """from_flags fetches a Hugging Face dataset's file from the Hub."""
+    with (
+        patch("os.path.exists", return_value=True),
+        patch(
+            "max.benchmark.benchmark_shared.datasets."
+            f"{dataset_name}.hf_hub_download_with_retry",
+            return_value="/path/to/downloaded/file",
+        ) as mock_download,
+    ):
+        dataset = BenchmarkDataset.from_flags(dataset_name=dataset_name)
 
-    dataset = BenchmarkDataset.from_flags(dataset_name="code_debug")
-
-    assert dataset.dataset_path == "/path/to/downloaded/file.jsonl"
+    assert dataset.dataset_path == "/path/to/downloaded/file"
     mock_download.assert_called_once_with(
-        repo_id="xinrongzhang2022/InfiniteBench",
-        filename="code_debug.jsonl",
-        repo_type="dataset",
-    )
-
-
-@patch(
-    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
-)
-def test_code_debug_from_flags_unknown(mock_download: Mock) -> None:
-    """Test fetching unknown dataset raises ValueError."""
-    mock_download.return_value = "/tmp/fake_code_debug.jsonl"
-    dataset = BenchmarkDataset.from_flags(dataset_name="code_debug")
-    # CodeDebugBenchmarkDataset now inherits from HuggingFaceBenchmarkDataset
-    # and will fetch from HF by default, so we test the fetch method directly
-    with patch.object(CodeDebugBenchmarkDataset, "fetch") as mock_fetch:
-        mock_fetch.side_effect = ValueError(
-            "Unknown dataset for CodeDebugBenchmarkDataset: unknown_dataset"
-        )
-        with pytest.raises(ValueError, match="Unknown dataset"):
-            dataset.fetch()
-
-
-@patch("os.path.exists")
-@patch(
-    "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download_with_retry"
-)
-def test_sharegpt_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
-    """Test fetching ShareGPT dataset from HuggingFace Hub."""
-    mock_download.return_value = "/path/to/downloaded/file.json"
-    mock_exists.return_value = True  # Mock downloaded file exists
-
-    dataset = BenchmarkDataset.from_flags(dataset_name="sharegpt")
-
-    assert dataset.dataset_path == "/path/to/downloaded/file.json"
-    mock_download.assert_called_once_with(
-        repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
-        filename="ShareGPT_V3_unfiltered_cleaned_split.json",
-        repo_type="dataset",
+        repo_id=repo_id, filename=filename, repo_type="dataset"
     )
 
 
@@ -793,45 +761,6 @@ def test_local_datasets_require_dataset_path() -> None:
     sonnet_dataset.fetch()
     assert sonnet_dataset.dataset_path is not None
     assert "sonnet_4x.txt" in sonnet_dataset.dataset_path
-
-
-def test_huggingface_datasets_fetch_behavior() -> None:
-    """Test that HuggingFace datasets fetch from HF when used directly."""
-    # Test CodeDebugBenchmarkDataset
-    with patch(
-        "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
-    ) as mock_download:
-        mock_download.return_value = "/path/to/downloaded/file.jsonl"
-
-        code_debug_dataset = CodeDebugBenchmarkDataset()
-        code_debug_dataset.dataset_name = "code_debug"
-        code_debug_dataset.fetch()
-
-        assert (
-            code_debug_dataset.dataset_path == "/path/to/downloaded/file.jsonl"
-        )
-        mock_download.assert_called_once_with(
-            repo_id="xinrongzhang2022/InfiniteBench",
-            filename="code_debug.jsonl",
-            repo_type="dataset",
-        )
-
-    # Test ShareGPTBenchmarkDataset
-    with patch(
-        "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download_with_retry"
-    ) as mock_download:
-        mock_download.return_value = "/path/to/downloaded/file.json"
-
-        sharegpt_dataset = ShareGPTBenchmarkDataset()
-        sharegpt_dataset.dataset_name = "sharegpt"
-        sharegpt_dataset.fetch()
-
-        assert sharegpt_dataset.dataset_path == "/path/to/downloaded/file.json"
-        mock_download.assert_called_once_with(
-            repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
-            filename="ShareGPT_V3_unfiltered_cleaned_split.json",
-            repo_type="dataset",
-        )
 
 
 def test_local_datasets_with_default_files() -> None:

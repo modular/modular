@@ -130,6 +130,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
 from max.pipelines.architectures.kimi_k3_modulev3.spec_mla import (
     kimi_k3_mla_buffer_size,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
+)
 from max.support.math import ceildiv
 from max.tensor import Tensor, default_device
 
@@ -486,6 +489,25 @@ def _draw_bf16(rng: np.random.Generator, shape: tuple[int, ...]) -> np.ndarray:
     return _bf16(rng.standard_normal(shape) * _WEIGHT_SCALE)
 
 
+def _set_latent_projections(
+    layer: KimiK3MLAAttention, weights: dict[str, np.ndarray]
+) -> None:
+    """Loads the drawn q_a and kv_a into the layer's fused input projection.
+
+    The gate rows stay zero: the comparison stops at the attention output,
+    so the gate never runs.
+    """
+    gate = np.zeros(
+        (layer.num_heads * layer.v_head_dim, _HIDDEN), dtype=np.float32
+    )
+    fused = fuse_qkv_a_g_for_tp(
+        weights["q_a_proj"], weights["kv_a_proj_with_mqa"], gate, 1
+    )
+    layer.qkv_a_g_proj.weight = Tensor(fused, dtype=DType.float32).cast(
+        layer.qkv_a_g_proj.weight.dtype
+    )
+
+
 def _make_layer(
     heads: int,
     params: MLAKVCacheParams,
@@ -523,11 +545,12 @@ def _make_layer(
         kv_params=params,
         layer_idx=0,
     )
-    for name, draw in weights.items():
+    _set_latent_projections(layer, weights)
+    for name in ("q_b_proj", "kv_b_proj"):
         weight = getattr(layer, name).weight
-        getattr(layer, name).weight = Tensor(draw, dtype=DType.float32).cast(
-            weight.dtype
-        )
+        getattr(layer, name).weight = Tensor(
+            weights[name], dtype=DType.float32
+        ).cast(weight.dtype)
     layer.q_a_layernorm.weight = Tensor(
         np.ones(_Q_LORA_RANK, np.float32), dtype=DType.float32
     ).cast(layer.q_a_layernorm.weight.dtype)
@@ -620,14 +643,14 @@ def _mla_attention(
             device=device,
         )
 
-    q_lat = layer.q_a_layernorm(layer.q_a_proj(x))
+    # `kv` stays UNNORMALIZED: the kernel normalizes the latent half in the
+    # cache after storing it, so normalizing here would apply the gain twice.
+    q_a, kv, _ = layer.input_projections(x)
+    q_lat = layer.q_a_layernorm(q_a)
     query = F.reshape(
         layer.q_b_proj(q_lat),
         [total_rows, layer.num_heads, layer.q_head_dim],
     )
-    # UNNORMALIZED: the kernel normalizes the latent half in the cache after
-    # storing it, so normalizing here would apply the gain twice.
-    kv = layer.kv_a_proj_with_mqa(x)
     kv_b = F.reshape(
         layer.kv_b_proj.weight.T,
         [
@@ -791,9 +814,7 @@ def _amplify_yarn_rope(
     layer.q_b_proj.weight = Tensor(
         weights["q_b_proj"], dtype=DType.float32
     ).cast(layer.q_b_proj.weight.dtype)
-    layer.kv_a_proj_with_mqa.weight = Tensor(
-        weights["kv_a_proj_with_mqa"], dtype=DType.float32
-    ).cast(layer.kv_a_proj_with_mqa.weight.dtype)
+    _set_latent_projections(layer, weights)
 
 
 def _yarn_drafter_config() -> K3DSparkDraftConfig:

@@ -192,13 +192,6 @@ def LowerAsyncFunctions : Pass<"lower-async-functions", "ModuleOp"> {
      All CO ops except for suspension points are lowered in this pass.
   }];
 
-  let options = [
-    Option<"useLivenessFrameEvaluation", "use-liveness-frame-evaluation",
-           "bool", "false",
-           "If true, compute the coroutine frame from liveness at suspension "
-           "points instead of from state numbering.">,
-  ];
-
   let dependentDialects = [
     "POPDialect",
     "KGENDialect",
@@ -1193,6 +1186,19 @@ def LowerLoops: Pass<"lower-loops", "KGEN::FuncOp"> {
 
   let dependentDialects = ["HLCF::HLCFDialect", "mlir::index::IndexDialect",
                            "POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// ForceAlwaysInline
+//===----------------------------------------------------------------------===//
+
+def ForceAlwaysInline : Pass<"force-always-inline", "KGEN::FuncOp"> {
+  let summary = "Mark every non-external function `always_inline`.";
+  let description = [{
+    Sets `InlineLevel::Always` on every `kgen.func` that has a body. External
+    functions are left alone, since they have nothing to inline. This pass does
+    not check for inline cycles; the inliner does that.
+  }];
 }
 
 //===----------------------------------------------------------------------===//

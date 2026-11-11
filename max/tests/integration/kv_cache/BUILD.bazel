@@ -121,6 +121,7 @@ modular_py_test(
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/kv_cache",
+        "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("hypothesis"),
         requirement("ml-dtypes"),
@@ -361,6 +362,10 @@ modular_py_test(
     srcs = [
         "test_mha_mixed_split_gpu.py",
     ],
+    args = [
+        "-k",
+        "'not sink and not split-head-dims'",
+    ],
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -368,6 +373,41 @@ modular_py_test(
     precompile_mefs = True,
     tags = [
         "gpu",
+    ],
+    deps = [
+        "//max/python/max/_kv_cache_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# The sink and split-head-dims shapes are the split op's new-behavior
+# coverage; they run here to keep the presubmit record in budget.
+modular_py_test(
+    name = "test_mha_mixed_split_postsubmit_gpu",
+    srcs = [
+        "test_mha_mixed_split_gpu.py",
+    ],
+    args = [
+        "-k",
+        "'sink or split-head-dims'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "postsubmit",
     ],
     deps = [
         "//max/python/max/_kv_cache_ops",

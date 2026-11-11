@@ -139,3 +139,74 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
         parameters={"dt_softplus": True},
     )
     return cast(TensorValue, results[0])
+
+
+def mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows(
+    x: TensorValue,
+    dt: TensorValue,
+    A: TensorValue,
+    B: TensorValue,
+    C: TensorValue,
+    D: TensorValue,
+    dt_bias: TensorValue,
+    ssm_pool: BufferValue,
+    query_start_loc: TensorValue,
+    has_initial_state: TensorValue,
+    cache_indices: TensorValue,
+    update_state: TensorValue,
+    xbc: TensorValue,
+    verify_width: TensorValue,
+) -> TensorValue:
+    """Performs the Mamba-2 SSD chunked scan for a mixed verify graph.
+
+    A row longer than ``K + 1`` tokens is a prefill row and commits its
+    state at its last real token; the flag keeps its meaning for shorter
+    rows.
+
+    Args:
+        x: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        dt: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        A: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        B: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        C: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        D: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        dt_bias: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        ssm_pool: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        query_start_loc: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        has_initial_state: As in
+            :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        cache_indices: As in :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`.
+        update_state: The ``[batch]`` bool; always present here.
+        xbc: The conv output; always present here.
+        verify_width: The ``[K]`` int64 operand
+            :func:`verify_width_operand` returns; read for its length only.
+
+    Returns:
+        ``y``, the ``[total_len, nheads, head_dim]`` output (model
+        dtype). ``ssm_pool`` is mutated in place.
+    """
+    device = x.device
+    y_type = TensorType(x.dtype, [x.shape[0], x.shape[1], x.shape[2]], device)
+    results = ops.inplace_custom(
+        "mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows",
+        device,
+        [
+            x,
+            dt,
+            A,
+            B,
+            C,
+            D,
+            dt_bias,
+            ssm_pool,
+            query_start_loc,
+            has_initial_state,
+            cache_indices,
+            update_state,
+            xbc,
+            verify_width,
+        ],
+        [y_type],
+        parameters={"dt_softplus": True},
+    )
+    return cast(TensorValue, results[0])

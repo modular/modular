@@ -494,114 +494,154 @@ struct MatmulGPU:
 
 @extensibility.register("mo.batch_matmul", extensibility.CPU)
 struct BatchMatmulCPU:
-    """Registers the `mo.batch_matmul` graph op for CPU devices."""
+    """Registers the `mo.batch_matmul` graph op for CPU devices.
+
+    Two `execute` overloads under one registration: the graph compiler calls
+    the fused one when the output has a fused epilogue and the plain one when
+    it has none. The fused form's epilogue stores each finished tile into the
+    fused output, while the plain form has the kernel write the output
+    directly. The pair is grandfathered on the graph compiler's allow list;
+    new kernels declare one `execute` with a `StoreAccess` output.
+    """
 
     @staticmethod
     def execute[
-        has_epilogue_fusion: Bool,
-        rank: Int,
         transpose_b: Bool,
     ](
-        c: _FusedComputeOutputTensor[rank=rank, ...],
-        a: InputTensor[rank=rank, ...],
-        b: InputTensor[rank=rank, ...],
+        c: Some[Output & Fused & StoreAccess],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), Storable)
+        comptime dtype = type_of(c).dtype
+
+        # The epilogue closure copies its capture into the kernel's loops, so
+        # refine the output to the register-passable value it arrives as.
+        comptime assert conforms_to(type_of(c), TrivialRegisterPassable)
+
         @inline(.always)
-        def output_fn[
-            _type: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_type, _width]) {var c}:
-            # TODO(GEX-4375): `batched_matmul` only takes a store epilogue, so
-            # take a plain `FusedOutputTensor` and drop this compute branch.
-            comptime has_compute_lambda = type_of(c)._has_compute_fusion
-
-            comptime if has_compute_lambda:
-                var output = c._fused_compute_output_lambda[
-                    element_alignment=alignment
-                ](coords, rebind[SIMD[c.dtype, _width]](val))
-                c.store[element_alignment=alignment](coords, output)
-            else:
-                c._lambda_store[width=_width, element_alignment=alignment](
-                    coords, rebind[SIMD[c.dtype, _width]](val)
-                )
-
-        comptime if has_epilogue_fusion:
-            batched_matmul[
-                transpose_a=False,
-                transpose_b=transpose_b,
-            ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                output_fn,
-                context=ctx,
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var c}:
+            c.store[width=Int(_width), element_alignment=alignment](
+                coords, rebind[SIMD[dtype, Int(_width)]](val)
             )
-        else:
-            batched_matmul[
-                transpose_a=False,
-                transpose_b=transpose_b,
-            ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                context=ctx,
-            )
+
+        # As in `MatmulCPU`, the fused output has no buffer the kernel may use
+        # as `c`, so `c` is supplied here. f16/bf16/f8 outputs accumulate in
+        # registers and read `c` only for its shape, so `c` is a dangling
+        # pointer with the output's layout; this must stay in step with
+        # `_batched_matmul_cpu_impl`. Every other dtype accumulates in `c` (and
+        # Apple Accelerate writes it before the epilogue reads it back), so `c`
+        # is a buffer of the output's size from `ctx`.
+        #
+        # TODO(GEX-4431): take this buffer through an accumulator trait bound
+        # the graph provides and memory plans, instead of allocating it on
+        # every call.
+        var c_layout = row_major(c.shape().tuple())
+        var c_ptr = MutPointer[
+            Scalar[dtype], MutUntrackedOrigin
+        ].unsafe_dangling()
+        var c_buf = Optional[DeviceBuffer[dtype]]()
+        comptime if get_accum_type[dtype]() == dtype:
+            var buf = ctx.enqueue_create_buffer[dtype](c_layout.product())
+            c_ptr = buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            c_buf = buf^
+        batched_matmul[transpose_a=False, transpose_b=transpose_b](
+            TileTensor(c_ptr, c_layout),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            epilogue_fn,
+            context=ctx,
+        )
+        _ = c_buf^
+
+    @staticmethod
+    def execute[
+        transpose_b: Bool,
+    ](
+        c: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+        ctx: DeviceContext,
+    ) raises where not conforms_to(type_of(c), Fused):
+        batched_matmul[transpose_a=False, transpose_b=transpose_b](
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            context=ctx,
+        )
 
 
 @extensibility.register("mo.batch_matmul", extensibility.ACCELERATOR)
 struct BatchMatmulGPU:
-    """Registers the `mo.batch_matmul` graph op for GPU devices."""
+    """Registers the `mo.batch_matmul` graph op for GPU devices.
+
+    Two `execute` overloads under one registration: the graph compiler calls
+    the fused one when the output has a fused epilogue and the plain one when
+    it has none. The fused form's epilogue stores each value into the fused
+    output, while the plain form has the kernel write the output directly.
+    The pair is grandfathered on the graph compiler's allow list; new kernels
+    declare one `execute` with a `StoreAccess` output.
+    """
 
     @staticmethod
     def execute[
-        has_epilogue_fusion: Bool,
-        rank: Int,
         transpose_b: Bool,
     ](
-        c: _FusedComputeOutputTensor[rank=rank, ...],
-        a: InputTensor[rank=rank, ...],
-        b: InputTensor[rank=rank, ...],
+        c: Some[Output & Fused & StoreAccess],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        comptime dtype = type_of(c).dtype
+
+        # The epilogue runs in the kernels the matmul launches, so it
+        # copy-captures the access-enabled view rather than the host proxy.
+        comptime assert conforms_to(type_of(c), UnsafeFusedView)
+        var c_view = unsafe_fused_view(c)
+        comptime assert conforms_to(type_of(c_view), Storable)
+
         @inline(.always)
-        def output_fn[
-            _type: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_type, _width]) {var c}:
-            # TODO(GEX-4375): `batched_matmul` only takes a store epilogue, so
-            # take a plain `FusedOutputTensor` and drop this compute branch.
-            comptime has_compute_lambda = type_of(c)._has_compute_fusion
-
-            comptime if has_compute_lambda:
-                var output = c._fused_compute_output_lambda[
-                    element_alignment=alignment
-                ](coords, rebind[SIMD[c.dtype, _width]](val))
-                c.store[element_alignment=alignment](coords, output)
-            else:
-                c._lambda_store[width=_width, element_alignment=alignment](
-                    coords, rebind[SIMD[c.dtype, _width]](val)
-                )
-
-        comptime if has_epilogue_fusion:
-            batched_matmul[
-                transpose_a=False,
-                transpose_b=transpose_b,
-            ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                output_fn,
-                context=ctx,
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view}:
+            c_view.store[width=Int(_width), element_alignment=alignment](
+                coords,
+                rebind[SIMD[type_of(c_view).dtype, Int(_width)]](val),
             )
-        else:
-            batched_matmul[
-                transpose_a=False,
-                transpose_b=transpose_b,
-            ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                context=ctx,
-            )
+
+        # `epilogue_fn` owns every output store, so `c` supplies only the
+        # shape: a dangling pointer with the output's layout. The batched
+        # matmul never writes `c` under a store epilogue; the one path that
+        # needs the product materialized stages it in its own scratch.
+        var c_ptr = MutPointer[
+            Scalar[dtype], MutUntrackedOrigin
+        ].unsafe_dangling()
+        batched_matmul[transpose_a=False, transpose_b=transpose_b](
+            TileTensor(c_ptr, row_major(c.shape().tuple())),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            epilogue_fn,
+            context=ctx,
+        )
+
+    @staticmethod
+    def execute[
+        transpose_b: Bool,
+    ](
+        c: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+        ctx: DeviceContext,
+    ) raises where not conforms_to(type_of(c), Fused):
+        batched_matmul[transpose_a=False, transpose_b=transpose_b](
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            context=ctx,
+        )
 
 
 @extensibility.register_shape_function("mo.batch_matmul")
@@ -1778,79 +1818,159 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
 @extensibility.register("matmul.dynamic.block.scaled")
 struct Struct_matmul_dynamic_block_scaled:
     """Registers the `matmul.dynamic.block.scaled` graph op with the graph compiler.
+
+    Two `execute` overloads under one registration: the graph compiler calls
+    the fused one when the output has a fused epilogue and the plain one when
+    it has none, in which case the matmul writes the output directly. The pair
+    is grandfathered on the graph compiler's allow list; new kernels declare
+    one `execute` with a `StoreAccess` output.
     """
 
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        a_type: DType,
-        b_type: DType,
-        scales_type: DType,
-        //,
-        has_epilogue_fusion: Bool,
         SF_VECTOR_SIZE: Int,
     ](
-        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=2, ...],
-        a_scales: InputTensor[dtype=scales_type, rank=5, ...],
-        b_scales: InputTensor[dtype=scales_type, rank=5, ...],
+        c: Some[Output & Fused & _LegacyComputeOutput],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        a_scales: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
         tensor_sf: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(a_scales), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime c_type = type_of(c).dtype
+        comptime scales_type = type_of(a_scales).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert type_of(a_scales).rank == 5
+        comptime assert type_of(b_scales).rank == 5
         comptime assert context.target.is_gpu(), (
             "dynamic block scaled matmul only support GPUs with native"
             " block scaled support"
         )
 
+        # The epilogue runs in the kernels the matmul launches, so it
+        # copy-captures the access-enabled view rather than the host proxy.
+        comptime assert conforms_to(type_of(c), UnsafeFusedView)
+
         # The SM100 block-scaled matmul applies the epilogue on the f32
         # accumulator (`_dtype` may be f32), whereas the fusion lambdas operate
-        # on the logical output dtype `c.dtype`. Use `cast` rather than `rebind`
-        # so the conversion is correct on both the structured Mojo path (f32
-        # accumulator) and the vendor path (`_dtype == c.dtype`).
-        @inline(.always)
-        def epilogue_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var c}:
+        # on the logical output dtype. Use `cast` rather than `rebind` so the
+        # conversion is correct on both the structured Mojo path (f32
+        # accumulator) and the vendor path (`_dtype == c_type`).
+        comptime if conforms_to(type_of(c), _LegacyComputable):
+            var c_view = unsafe_fused_view(c)
             comptime assert (
-                coords.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            c._lambda_store[width=_width, element_alignment=alignment](
-                coords,
-                val.cast[c.dtype](),
+                conforms_to(type_of(c_view), Output)
+                and conforms_to(type_of(c_view), _LegacyComputable)
+                and conforms_to(type_of(c_view), TileTensorable)
             )
 
-        @inline(.always)
-        def output_compute_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var c} -> SIMD[
-            _dtype, _width
-        ]:
-            comptime assert (
-                coords.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            return c._fused_compute_output_lambda[element_alignment=alignment](
-                coords, val.cast[c.dtype]()
-            ).cast[_dtype]()
+            @inline(.always)
+            def output_compute_fn[
+                _dtype: DType, _width: SIMDLength, *, alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view} -> SIMD[
+                _dtype, _width
+            ]:
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                return c_view.compute[
+                    width=Int(_width), element_alignment=alignment
+                ](coords, val.cast[type_of(c_view).dtype]()).cast[_dtype]()
 
-        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+            block_scaled_matmul[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=True,
+                has_compute_fn=True,
+            ](
+                c_view.to_tile_tensor(),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                a_scales.to_tile_tensor(),
+                b_scales.to_tile_tensor[scales_type](),
+                tensor_sf,
+                context,
+                compute_fn=output_compute_fn,
+            )
+        else:
+            var c_view = unsafe_fused_view(c)
+            comptime assert conforms_to(type_of(c_view), Storable)
 
-        block_scaled_matmul[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=True,
-            has_epilogue_fn=has_epilogue_fusion and not has_compute_lambda,
-            has_compute_fn=has_epilogue_fusion and has_compute_lambda,
-        ](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            a_scales.to_tile_tensor[.int64](),
-            b_scales.to_tile_tensor[.int64](),
+            @inline(.always)
+            def epilogue_fn[
+                _dtype: DType, _width: SIMDLength, *, alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view}:
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                c_view.store[width=Int(_width), element_alignment=alignment](
+                    coords, val.cast[type_of(c_view).dtype]()
+                )
+
+            # `epilogue_fn` owns every output store, so the matmul gets only
+            # `c`'s shape, over a null pointer; `block_scaled_matmul` stages
+            # its vendor fallback through scratch when `c` is null.
+            var c_ptr: Optional[
+                MutPointer[Scalar[c_type], MutUntrackedOrigin]
+            ] = None
+            block_scaled_matmul[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=True,
+                has_epilogue_fn=True,
+            ](
+                TileTensor(c_ptr._unsafe_nullable(), row_major(c.shape())),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                a_scales.to_tile_tensor(),
+                b_scales.to_tile_tensor[scales_type](),
+                tensor_sf,
+                context,
+                epilogue_fn=epilogue_fn,
+            )
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        SF_VECTOR_SIZE: Int,
+    ](
+        c: Some[Output & TileTensorable],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        a_scales: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
+        tensor_sf: Float32,
+        context: DeviceContext,
+    ) raises where not conforms_to(type_of(c), Fused):
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(a_scales), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime scales_type = type_of(a_scales).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert type_of(a_scales).rank == 5
+        comptime assert type_of(b_scales).rank == 5
+        comptime assert context.target.is_gpu(), (
+            "dynamic block scaled matmul only support GPUs with native"
+            " block scaled support"
+        )
+
+        block_scaled_matmul[SF_VECTOR_SIZE=SF_VECTOR_SIZE, transpose_b=True](
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            a_scales.to_tile_tensor(),
+            b_scales.to_tile_tensor[scales_type](),
             tensor_sf,
             context,
-            epilogue_fn,
-            output_compute_fn,
         )
 
 

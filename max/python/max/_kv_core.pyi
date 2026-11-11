@@ -318,14 +318,22 @@ class JengaBlockPool:
             (the null block) included.
         cache_ratios: How many little blocks of each cache fit in a huge
             block, by cache id.
+        min_huge_bid: The lowest huge block allocation may hand out. Tests
+            raise it to put every block at the top of its id space, where
+            index arithmetic overflows first; ``0`` allows every block.
 
     Raises:
-        ValueError: If ``num_huge_blocks`` is below 2, or ``cache_ratios`` is
-            empty or not all positive.
+        ValueError: If ``num_huge_blocks`` is below 2, ``cache_ratios`` is
+            empty or not all positive, or ``min_huge_bid`` leaves no huge
+            block to allocate.
     """
 
     def __init__(
-        self, num_huge_blocks: int, cache_ratios: Mapping[str, int]
+        self,
+        num_huge_blocks: int,
+        cache_ratios: Mapping[str, int],
+        *,
+        min_huge_bid: int = 0,
     ) -> None: ...
     @property
     def num_huge_blocks(self) -> int:
@@ -333,7 +341,7 @@ class JengaBlockPool:
 
     @property
     def num_allocatable_huge_blocks(self) -> int:
-        """How many huge blocks allocation can hand out: all but the null block's."""
+        """How many huge blocks allocation can hand out, past ``min_huge_bid``."""
 
     @property
     def num_free_huge_blocks(self) -> int:

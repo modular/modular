@@ -290,6 +290,12 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
     """Whether `add_row_bias` adds this mask's additive bias, leaving
     `visibility_mask` the rest of `mask`."""
 
+    comptime supports_decode_token_fold: Bool = False
+    """Whether AMD decode may fold several query tokens into one tile under
+    this mask, and start its split-K key range at `start_column`: both `status`
+    and `start_column` stay valid when asked about the span of query rows a
+    sequence's decode step carries."""
+
     @inline(.always)
     def add_row_bias[
         BN: Int, //
@@ -1346,6 +1352,7 @@ struct SlidingWindowCausalMask[window_size: Int](
     comptime mask_out_of_bound: Bool = True
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
+    comptime supports_decode_token_fold: Bool = True
 
     comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 
@@ -1640,6 +1647,7 @@ struct SlidingWindowNonCausalMask[window_size: Int](
     comptime mask_out_of_bound: Bool = True
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
+    comptime supports_decode_token_fold: Bool = True
 
     comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = Self
 

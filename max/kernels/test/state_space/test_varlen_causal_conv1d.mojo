@@ -15,6 +15,7 @@ from std.math import exp
 
 from layout import Coord, TileTensor, row_major
 from std.random import rand
+from state_space.row_rule import commit_len, is_prefill_row
 from state_space.varlen_causal_conv1d import causal_conv1d_varlen_fwd_cpu
 from std.testing import (
     TestSuite,
@@ -36,6 +37,7 @@ def _conv_cpu[
     silu_activation: Bool,
     use_residual: Bool = False,
     channels_last: Bool = False,
+    ROW_RULE: Bool = False,
 ](
     x: TileTensor[mut=False, dtype, ...],
     weight: TileTensor[mut=False, dtype, ...],
@@ -46,6 +48,7 @@ def _conv_cpu[
     update_state: TileTensor[mut=False, .bool, ...],
     conv_states: TileTensor[mut=True, ...],
     output: TileTensor[mut=True, dtype, ...],
+    num_draft_tokens: Int = 0,
 ):
     """Runs the CPU conv with reader functions over these tensors.
 
@@ -64,7 +67,9 @@ def _conv_cpu[
             return SIMD[.uint32, width](UInt32(b))
         return cache_indices.load[width=width]((b,))
 
-    causal_conv1d_varlen_fwd_cpu[silu_activation, use_residual, channels_last](
+    causal_conv1d_varlen_fwd_cpu[
+        silu_activation, use_residual, channels_last, ROW_RULE
+    ](
         weight,
         bias,
         query_start_loc,
@@ -74,6 +79,7 @@ def _conv_cpu[
         output,
         x_fn,
         slot_fn,
+        num_draft_tokens,
     )
 
 
@@ -447,6 +453,204 @@ def test_varlen_causal_conv1d_fwd_various_widths() raises:
     run_varlen_causal_conv1d_fwd[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=4
     )
+
+
+def run_conv_row_rule[
+    dtype: DType, width: Int
+](
+    dim: Int,
+    seq_lengths: IndexList,
+    num_draft_tokens: Int,
+    nonzero_initial_state: Bool,
+    update_state: Bool = False,
+) raises:
+    """The row rule against main's CPU conv.
+
+    Main's conv on the real tokens only (`len - K`, `update_state` true)
+    names the state a prefill row must commit; main's conv on the full row
+    names every token's output. Rows of `len <= K + 1` keep main's
+    behavior: their slot follows the `update_state` flag.
+    """
+    comptime state_len = width - 1
+    var batch = len(seq_lengths)
+    var total_seqlen = 0
+    for i in range(batch):
+        total_seqlen += seq_lengths[i]
+
+    var x_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var x_h = TileTensor(x_heap, row_major(dim, total_seqlen))
+    var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
+    var weight_h = TileTensor(weight_heap, row_major(dim, width))
+    var bias_heap = List(length=dim, fill=Scalar[dtype](0))
+    var bias_h = TileTensor(bias_heap, row_major(dim))
+    rand[dtype](x_h._storage, dim * total_seqlen)
+    rand[dtype](weight_h._storage, dim * width)
+    rand[dtype](bias_h._storage, dim)
+
+    var query_start_loc_heap = List(length=batch + 1, fill=Int32(0))
+    var query_start_loc_h = TileTensor(
+        query_start_loc_heap, row_major(batch + 1)
+    )
+    var cumsum = 0
+    query_start_loc_h[0] = Int32(0)
+    for i in range(batch):
+        cumsum += seq_lengths[i]
+        query_start_loc_h[i + 1] = Int32(cumsum)
+
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
+    var cache_indices_h = TileTensor(cache_indices_heap, row_major(batch))
+    for i in range(batch):
+        cache_indices_h[i] = UInt32(i)
+
+    var has_initial_state_heap = List(
+        length=batch, fill=Scalar[.bool](nonzero_initial_state)
+    )
+    var has_initial_state_h = TileTensor(
+        has_initial_state_heap, row_major(batch)
+    )
+
+    var update_state_heap = List(length=batch, fill=Scalar[.bool](update_state))
+    var update_state_h = TileTensor(update_state_heap, row_major(batch))
+
+    var conv_states_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_states_h = TileTensor(
+        conv_states_heap, row_major(batch, dim, state_len)
+    )
+    if nonzero_initial_state:
+        rand[dtype](conv_states_h._storage, batch * dim * state_len)
+    var conv_states_seed_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    for i in range(batch * dim * state_len):
+        conv_states_seed_heap[i] = conv_states_h._storage[i]
+
+    var output_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var output_h = TileTensor(output_heap, row_major(dim, total_seqlen))
+    _conv_cpu[False, ROW_RULE=True](
+        x_h,
+        weight_h,
+        bias_h,
+        query_start_loc_h,
+        cache_indices_h,
+        has_initial_state_h,
+        update_state_h,
+        conv_states_h,
+        output_h,
+        num_draft_tokens=num_draft_tokens,
+    )
+
+    # Main's conv on the real tokens only names the committed state.
+    var real_lengths = List[Int](fill=0, length=batch)
+    for i in range(batch):
+        real_lengths[i] = commit_len(seq_lengths[i], num_draft_tokens)
+    var real_total = 0
+    for i in range(batch):
+        real_total += real_lengths[i]
+    var x_real_heap = List(length=dim * real_total, fill=Scalar[dtype](0))
+    var x_real_h = TileTensor(x_real_heap, row_major(dim, real_total))
+    var real_start = 0
+    for i in range(batch):
+        for l in range(real_lengths[i]):
+            for d in range(dim):
+                x_real_h[d, real_start + l] = x_h[
+                    d, Int(query_start_loc_h[i]) + l
+                ]
+        real_start += real_lengths[i]
+    var real_start_loc_heap = List(length=batch + 1, fill=Int32(0))
+    var real_start_loc_h = TileTensor(real_start_loc_heap, row_major(batch + 1))
+    var real_cumsum = 0
+    real_start_loc_h[0] = Int32(0)
+    for i in range(batch):
+        real_cumsum += real_lengths[i]
+        real_start_loc_h[i + 1] = Int32(real_cumsum)
+    var conv_states_ref_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_states_ref_h = TileTensor(
+        conv_states_ref_heap, row_major(batch, dim, state_len)
+    )
+    for i in range(batch * dim * state_len):
+        conv_states_ref_h._storage[i] = conv_states_seed_heap[i]
+    var output_ref_heap = List(length=dim * real_total, fill=Scalar[dtype](0))
+    var output_ref_h = TileTensor(output_ref_heap, row_major(dim, real_total))
+    _conv_cpu[False,](
+        x_real_h,
+        weight_h,
+        bias_h,
+        real_start_loc_h,
+        cache_indices_h,
+        has_initial_state_h,
+        # Empty: every sequence writes its new window.
+        TileTensor(update_state_heap, row_major(0)),
+        conv_states_ref_h,
+        output_ref_h,
+    )
+
+    # Main's conv on the full row names every token's output.
+    var output_main_heap = List(
+        length=dim * total_seqlen, fill=Scalar[dtype](0)
+    )
+    var output_main_h = TileTensor(
+        output_main_heap, row_major(dim, total_seqlen)
+    )
+    var conv_states_main_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_states_main_h = TileTensor(
+        conv_states_main_heap, row_major(batch, dim, state_len)
+    )
+    for i in range(batch * dim * state_len):
+        conv_states_main_h._storage[i] = conv_states_seed_heap[i]
+    _conv_cpu[False,](
+        x_h,
+        weight_h,
+        bias_h,
+        query_start_loc_h,
+        cache_indices_h,
+        has_initial_state_h,
+        # Empty: every sequence writes its new window.
+        TileTensor(update_state_heap, row_major(0)),
+        conv_states_main_h,
+        output_main_h,
+    )
+    for i in range(dim * total_seqlen):
+        assert_equal(output_h._storage[i], output_main_h._storage[i])
+
+    for b in range(batch):
+        var seqlen = seq_lengths[b]
+        var is_prefill = is_prefill_row(seqlen, num_draft_tokens)
+        for d in range(dim):
+            for s in range(state_len):
+                var expected: Scalar[dtype]
+                if is_prefill:
+                    expected = conv_states_ref_h[b, d, s]
+                elif update_state:
+                    # A row of `len <= K + 1` writes at its row end, as on
+                    # main.
+                    expected = conv_states_main_h[b, d, s]
+                else:
+                    # A clear flag leaves the slot seeded.
+                    expected = conv_states_seed_heap[
+                        (b * dim + d) * state_len + s
+                    ]
+                assert_equal(conv_states_h[b, d, s], expected)
+
+
+def test_conv_row_rule() raises:
+    """A prefill row commits its state window at its last real token.
+
+    `update_state` false: prefill rows still write, decode rows keep their
+    seed. One batch runs the flag true: a decode row then writes at its
+    row end, as on main. The 130-token rows cross the 64-token tile
+    boundary the GPU kernel tiles at, keeping the CPU oracle honest there.
+    """
+    run_conv_row_rule[.float32, 4](4, Index(10, 9, 8), 7, True)
+    run_conv_row_rule[.float32, 4](4, Index(9, 8), 7, False)
+    run_conv_row_rule[.float32, 4](4, Index(130, 8), 66, True)
+    run_conv_row_rule[.float32, 4](4, Index(130, 8), 60, True)
+    run_conv_row_rule[.float32, 4](4, Index(8, 9), 7, True, True)
 
 
 def main() raises:

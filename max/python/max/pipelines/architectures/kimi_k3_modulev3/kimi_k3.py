@@ -84,6 +84,8 @@ class KimiK3Decoder(Module[[DecoderInputs], DecoderOutputs]):
                 quant_config=config.quant_config,
                 ep_config=config.ep_config,
                 max_tokens_per_expert=config.max_tokens_per_expert,
+                # The degree the TP branch below shards over.
+                tp_size=1 if config.ep_config is not None else mesh.num_devices,
             )
             if config.ep_config is not None:
                 expert_parallel_kimi_k3_model(model, mesh)

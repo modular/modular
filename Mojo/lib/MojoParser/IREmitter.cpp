@@ -1432,6 +1432,19 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
       }
     }
   }
+
+  // This should be the only representation of a partially bound struct type
+  if (auto gen = StructTypeGenerator::dynCast(type);
+      gen && !gen.getInputParamTypes().empty()) {
+    auto diag = emitError(value.expr->getLoc())
+                << type
+                << " is not concrete, use '[]' to bind missing parameters";
+    for (PogMetadataAttr pog : gen.getMetadata().getPogs())
+      diag.attachNote(value.expr->getLoc())
+          << "missing parameter '" << pog.getName().getValue() << "'";
+    return {};
+  }
+
   if (llvm::any_of(type.getParamBindings(),
                    [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
     auto diag = emitError(value.expr->getLoc())
@@ -1871,8 +1884,7 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
     bindings.add(&tmpExpr, PValue(elt));
 
   // Check the bindings.
-  auto metaType = cast<StructMetaType>(tupleType.extractMetaType());
-  TypeSignatureType sig = metaType.getSignature();
+  TypeSignatureType sig = cast<StructASTDecl>(typeDecl)->getOp().getSignature();
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, typeDecl,
                      /*discardError=*/false,
@@ -2099,18 +2111,19 @@ void IREmitter::emitNormalReturn(Location loc, Value value, bool emitEndFunc) {
 //===--------------------------------------------------------------------===//
 
 VarDeclOp IREmitter::emitVarDecl(const Twine &name, Type type, Location loc,
-                                 VarDeclKind kind) {
+                                 VarDeclKind kind, TypedAttr addressSpace) {
   if (!builder) {
     emitErrorForDynamicValueInParameter(loc);
     return {};
   }
   StringAttr originAttr = declScope.mangleParamName(name);
-  return VarDeclOp::create(*builder, loc, type, name.str(), originAttr, kind);
+  return VarDeclOp::create(*builder, loc, type, name.str(), originAttr, kind,
+                           addressSpace);
 }
 
 VarDeclOp IREmitter::emitVarDecl(StringAttr name, Type type, Location loc,
-                                 VarDeclKind kind) {
-  return emitVarDecl(name.strref(), type, loc, kind);
+                                 VarDeclKind kind, TypedAttr addressSpace) {
+  return emitVarDecl(name.strref(), type, loc, kind, addressSpace);
 }
 
 //===--------------------------------------------------------------------===//
@@ -2127,15 +2140,14 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   ASTType originType = shared.lookupBuiltinType("Origin", declScope, loc);
   if (sugarIsa<TypeCheckErrorType>(originType))
     return {}; // Sanity check the returned declaration.
-  auto originStructType = sugarCast<LIT::StructType>(originType);
 
   // Get the mutability as a Bool.
   auto resultMutability =
       sugarCast<OriginType>(litOrigin.getType()).getIsMutable();
   std::tuple<StringAttr, TypedAttr> field = {
       StringAttr::get(getContext(), "_mlir_value"), resultMutability};
-  auto boolStructType =
-      cast<LIT::StructType>(originStructType.getSignature().getParamTypes()[0]);
+  auto boolStructType = cast<LIT::StructType>(
+      StructTypeGenerator::cast(originType).getInputParamTypes()[0]);
   PValue mutBool = LITStructAttr::get({field}, boolStructType);
 
   ASTDecl *decl = originType.getDecl(shared);

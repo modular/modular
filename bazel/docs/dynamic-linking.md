@@ -37,6 +37,13 @@ entrypoints, default to linking once into a shared library, but you may wish to
 statically link into multiple binaries either for performance or to avoid larger
 dependencies in some cases (i.e. runtimes).
 
+The C++ driver is two such libraries. libMDriverCompilation owns kernel
+compilation, plugin loading, and accelerator detection, and the compiler links
+only it. libMDriver owns the DeviceContext implementation and the runtime
+registries, and everything that runs kernels links it. A static copy in a second
+image gets its own mutexes and device caches, and objects created through one
+copy are then used through another.
+
 Use `-Wl,-Bsymbolic-functions` where appropriate. This flag causes functions to
 always resolve in the same shared library as the caller, which can improve
 performance slightly (avoiding the normal DSO lookup cadence). This can also be
@@ -57,13 +64,20 @@ graph TD
     libMSupportGlobals
     libKGENCompilerRTShared
     libAsyncRTMojoBindings
+    libMDriver
+    libMDriverCompilation
     libMGPRT
     libmax
     mojo
 
     mojo --> libAsyncRTGlobals
+    mojo --> libMDriverCompilation
     libAsyncRTGlobals --> libMSupportGlobals
     libKGENCompilerRTShared --> libAsyncRTGlobals
+    libMDriverCompilation --> libAsyncRTGlobals
+    libMDriver --> libMDriverCompilation
+    libMDriver --> libKGENCompilerRTShared
+    libAsyncRTMojoBindings --> libMDriver
     libmax --> libMGPRT
     libmax --> libAsyncRTMojoBindings
     libMGPRT --> libAsyncRTGlobals
@@ -77,15 +91,23 @@ graph TD
 The runtime libraries (CompilerRT, libAsyncRTGlobals, and the runtime half of
 libmax) still depend on libLLVM and libMLIR. To remove that, in order:
 
-1. Remove MLIR from shared support code: move `configurePassManager` out of
+1. Introduce a `libLLVMSupport` shared library, defined in our tree, that holds
+   the parts of LLVM the runtimes use: `Support` and `TargetParser`, with their
+   dependencies. `libLLVM` links against it instead of containing its own copy,
+   so a process that loads both the runtime and the compiler still has one copy
+   of LLVM's global state. That dependency needs a patch to the LLVM overlay.
+   The patch is temporary: drop it once the runtime no longer uses LLVM's
+   `Support` library, or once no process loads both the runtime and the
+   compiler.
+2. Remove MLIR from shared support code: move `configurePassManager` out of
    `//Support:Base`, split the MLIR hashing out of `//Support:HashUtils`, and
    drop clang from `//Support:MArchTargetMinimal`.
-2. Move compiler libraries (`//Support:MDialect`, `//Support:MArchTarget`,
+3. Move compiler libraries (`//Support:MDialect`, `//Support:MArchTarget`,
    `//Support:Compiler`) out of libAsyncRTGlobals and into a compiler-side
    library.
-3. Split libmax into a runtime library and a compiler library.
-4. Give the runtime libraries the LLVM utilities they still use (filesystem,
+4. Split libmax into a runtime library and a compiler library.
+5. Give the runtime libraries the LLVM utilities they still use (filesystem,
    streams, JSON, `APFloat`) without libLLVM, checking every type that crosses
    into the compiler.
-5. Make CompilerRT independent of libLLVM, and decide whether standalone Mojo
+6. Make CompilerRT independent of libLLVM, and decide whether standalone Mojo
    programs need a fully static runtime.

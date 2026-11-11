@@ -155,6 +155,7 @@ modular_py_test(
         # Resolves SmolLM2 by name at runtime.
         "//max/python/max/pipelines/architectures/llama3",
     ],
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",

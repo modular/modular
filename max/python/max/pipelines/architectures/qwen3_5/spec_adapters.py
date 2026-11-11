@@ -16,7 +16,9 @@ Verifying a speculative window advances every Gated DeltaNet recurrence in the
 target, and no length pointer rewinds one. So the verify reads the live
 recurrent pool without writing it, records each token's update in a ring, and
 the accepted records are folded into the live pool once the accepted count is
-known.
+known. A row longer than the verify window, as a prompt mixed into the batch,
+is committed by the verify itself at its last real token, both leaves, and the
+rollback replays and folds nothing of it.
 
 The conv pool needs no ring. Its window is the last ``kernel_size - 1`` raw
 inputs, so the verify leaves it unwritten and the rollback writes it at the
@@ -73,10 +75,9 @@ from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import SequentialBatch
 from max.pipelines.speculative.gated_delta_rollback import (
-    accepted_lengths,
-    accepted_row_plan,
     fold_state_pools,
     replay_conv_pools,
+    window_row_plan,
 )
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 from max.pipelines.speculative.spec_adapters.target_adapter import (
@@ -140,8 +141,6 @@ class Qwen3_5RecurrentState:
         arithmetic the verify did. Filled by :meth:`capturing` and read by
         :meth:`roll_forward`.
         """
-        self.num_draft_tokens: Dim | None = None
-        """The verify's draft width ``K``. Set by :meth:`capturing`."""
         self.verify_width: TensorValue | None = None
         """The verify width operand the forward and the rollback share.
 
@@ -178,7 +177,11 @@ class Qwen3_5RecurrentState:
         return state
 
     @contextmanager
-    def capturing(self, n_devs: int, num_draft_tokens: Dim) -> Iterator[None]:
+    def capturing(
+        self,
+        n_devs: int,
+        num_draft_tokens: Dim,
+    ) -> Iterator[None]:
         """Binds the linear blocks' replay capture for the verify inside.
 
         The binding is unwound on the way out so the capture cannot leak into
@@ -190,7 +193,6 @@ class Qwen3_5RecurrentState:
             num_draft_tokens: The verify's draft width ``K``.
         """
         self.captures = [[] for _ in range(n_devs)]
-        self.num_draft_tokens = num_draft_tokens
         self.verify_width = verify_width_operand(num_draft_tokens)
         self._bind(self.captures, self.verify_width)
         try:
@@ -242,22 +244,14 @@ class Qwen3_5RecurrentState:
             device: The device the batch-wide tensors live on.
         """
         assert self.verify_width is not None, "roll_forward before capturing"
-        assert self.num_draft_tokens is not None
         window = self.captures[0][0].qkv_window
         assert window is not None
-        # The verify copied its rows whenever it had drafts, which is
-        # whenever the rollback runs. Clamping to the copy keeps the gather in
-        # bounds when it does not.
-        row_indices, replay_offsets = accepted_row_plan(
+        row_indices, replay_offsets = window_row_plan(
             merged_offsets,
             num_accepted,
             num_draft_tokens,
             window.shape[0],
             device,
-            # Each row is one token and its drafts whenever the rollback
-            # runs, and the plan shrinks to a row per request when it does
-            # not.
-            plan_rows=Dim("batch_size") * (1 + self.num_draft_tokens),
         )
         conv, recurrent, ring = (
             [device.leaves[i] for device in state] for i in range(3)
@@ -276,7 +270,9 @@ class Qwen3_5RecurrentState:
             [leaf.live_row_ids for leaf in recurrent],
             [leaf.pool for leaf in ring],
             [leaf.live_row_ids for leaf in ring],
-            accepted_lengths(merged_offsets, num_accepted, num_draft_tokens),
+            merged_offsets,
+            num_accepted,
+            num_draft_tokens,
             signal_buffers,
             self.verify_width,
         )
@@ -474,6 +470,8 @@ _BASE = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
     check=check,
+    # The conv verify and the gated delta ring both commit a long row.
+    verify_commits_long_rows=True,
 )
 # The MTP head reads 3-axis positions past the canonical tail.
 ADAPTER = replace(

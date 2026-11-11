@@ -29,7 +29,7 @@ import torch
 from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
@@ -231,13 +231,12 @@ def _fp8_quant_config() -> QuantConfig:
     )
 
 
-def _run_layer(
+def _load_layer(
     layer: LatentAttentionWithRope | LatentAttentionWithRopeFp8,
     kv_params: KVCacheParams,
-    input_tensor: torch.Tensor,
     device0: Accelerator,
-) -> torch.Tensor:
-    """Build a Graph that calls `layer` once, compile, and execute."""
+) -> tuple[InferenceSession, Model]:
+    """Build a Graph that calls `layer` once, and compile it."""
     rope = _make_rope()
     layer.rope = rope
     session = InferenceSession(devices=[device0])
@@ -268,7 +267,16 @@ def _run_layer(
         )
         graph.output(result)
 
-    compiled = session.load(graph, weights_registry=layer.state_dict())
+    return session, session.load(graph, weights_registry=layer.state_dict())
+
+
+def _run_layer(
+    session: InferenceSession,
+    compiled: Model,
+    kv_params: KVCacheParams,
+    input_tensor: torch.Tensor,
+    device0: Accelerator,
+) -> torch.Tensor:
     kv_manager = PagedKVCacheManager(
         params=kv_params, total_num_pages=8, session=session, max_batch_size=4
     )
@@ -342,8 +350,14 @@ def test_fp8_mla_matches_bf16_reference() -> None:
     torch.manual_seed(7)
     input_tensor = torch.randn(SEQ_LEN, HIDDEN_SIZE, dtype=torch.bfloat16)
 
-    fp8_out = _run_layer(fp8_layer, kv_params, input_tensor, device0)
-    bf16_out = _run_layer(bf16_layer, kv_params, input_tensor, device0)
+    fp8_session, fp8_model = _load_layer(fp8_layer, kv_params, device0)
+    bf16_session, bf16_model = _load_layer(bf16_layer, kv_params, device0)
+    fp8_out = _run_layer(
+        fp8_session, fp8_model, kv_params, input_tensor, device0
+    )
+    bf16_out = _run_layer(
+        bf16_session, bf16_model, kv_params, input_tensor, device0
+    )
 
     assert torch.isfinite(fp8_out.float()).all(), "FP8 output non-finite"
     diff = (fp8_out.float() - bf16_out.float()).abs()

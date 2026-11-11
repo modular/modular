@@ -1237,6 +1237,8 @@ struct AMD4WaveMatmul[
                         )
                     case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
+                    case _:
+                        pass
 
             # Prologue. The schedule overrides `warp_stagger=none()`
             # (4-wave has only 4 warps, so warp-group staggering is
@@ -1833,6 +1835,8 @@ struct AMD4WaveMatmul[
                         )
                     case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
+                    case _:
+                        pass
 
             # Prologue. The schedule overrides `warp_stagger=none()`
             # (4-wave has only 4 warps, so warp-group staggering is

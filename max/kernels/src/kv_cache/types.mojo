@@ -4174,6 +4174,20 @@ trait KVCollectionT(ImplicitlyCopyable):
     def cache_length(self, bs_idx: Int) -> Int:
         ...
 
+    def rows_view(
+        self,
+        first_row: Int,
+        num_rows: Int,
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
+    ) -> Self:
+        """Returns this collection restricted to batch rows
+        `[first_row, first_row + num_rows)`, with the given max lengths.
+
+        The blocks are shared, not copied.
+        """
+        ...
+
 
 struct ContinuousBatchingKVCacheCollection[
     dtype_: DType,
@@ -4329,6 +4343,55 @@ struct ContinuousBatchingKVCacheCollection[
 
     def cache_length(self, bs_idx: Int) -> Int:
         return Int(self.cache_lengths.load((bs_idx,)))
+
+    def rows_view(
+        self,
+        first_row: Int,
+        num_rows: Int,
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
+    ) -> Self:
+        """Returns this collection restricted to batch rows
+        `[first_row, first_row + num_rows)`, with the given max lengths.
+
+        The blocks are shared, not copied.
+        """
+        # A strided table's rows sit at its row stride, so each table is
+        # offset and shaped by its own stride.
+        var view = self
+        view.cache_lengths = _as_cache_tt[
+            Self.CacheType.cache_lengths_tt_layout,
+            Self.CacheType.cache_lengths_engine,
+        ](
+            TileTensor(
+                self.cache_lengths.unsafe_ptr().unsafe_offset(
+                    first_row
+                    * Int(self.cache_lengths.layout.stride[0]().value())
+                ),
+                InternalLayout(
+                    Coord(Int64(num_rows)),
+                    Coord(Int64(self.cache_lengths.layout.stride[0]().value())),
+                ),
+            )
+        )
+        view.lookup_table = _as_cache_tt[
+            Self.CacheType.lookup_table_tt_layout,
+            Self.CacheType.lookup_table_engine,
+        ](
+            TileTensor(
+                self.lookup_table.unsafe_ptr().unsafe_offset(
+                    first_row
+                    * Int(self.lookup_table.layout.stride[0]().value())
+                ),
+                InternalLayout(
+                    Coord(Int64(num_rows)),
+                    Coord(Int64(self.lookup_table.layout.stride[0]().value())),
+                ),
+            )
+        )
+        view.max_seq_length = max_seq_length
+        view.max_cache_length = max_cache_length
+        return view
 
 
 struct PagedKVCacheCollection[
@@ -4682,40 +4745,65 @@ struct PagedKVCacheCollection[
         Returns:
             A view of the collection covering the requested rows only.
         """
+        # The lookup tables' rows sit at their row stride, so each table is
+        # offset and shaped by its own.
         var view = self.copy()
         view.cache_lengths = _as_cache_tt[
             Self.CacheType.cache_lengths_tt_layout,
             Self.CacheType.cache_lengths_tt_type.Engine,
         ](
             TileTensor(
-                self.cache_lengths.unsafe_ptr().unsafe_offset(first_row),
-                row_major(num_rows),
+                self.cache_lengths.unsafe_ptr().unsafe_offset(
+                    first_row
+                    * Int(self.cache_lengths.layout.stride[0]().value())
+                ),
+                InternalLayout(
+                    Coord(Int64(num_rows)),
+                    Coord(Int64(self.cache_lengths.layout.stride[0]().value())),
+                ),
             )
         )
-        var lut_cols = Int(self.lookup_table.dim[1]())
         view.lookup_table = _as_cache_tt[
             Self.CacheType.lookup_table_tt_layout,
             Self.CacheType.lookup_table_tt_type.Engine,
         ](
             TileTensor(
                 self.lookup_table.unsafe_ptr().unsafe_offset(
-                    first_row * lut_cols
+                    first_row
+                    * Int(self.lookup_table.layout.stride[0]().value())
                 ),
-                row_major(num_rows, lut_cols),
+                InternalLayout(
+                    Coord(Int64(num_rows), Int64(self.lookup_table.dim[1]())),
+                    Coord(
+                        Int64(self.lookup_table.layout.stride[0]().value()),
+                        Idx[1],
+                    ),
+                ),
             )
         )
-        # A distinct scales table can have another width than the values
-        # table, so its offset and width come from itself.
-        var scales_lut_cols = Int(self.scales_lookup_table.dim[1]())
+        # The scales table may be the values table or a distinct one with
+        # its own width and stride, so it is offset by its own stride.
         view.scales_lookup_table = _as_cache_tt[
             Self.CacheType.lookup_table_tt_layout,
             Self.CacheType.lookup_table_tt_type.Engine,
         ](
             TileTensor(
                 self.scales_lookup_table.unsafe_ptr().unsafe_offset(
-                    first_row * scales_lut_cols
+                    first_row
+                    * Int(self.scales_lookup_table.layout.stride[0]().value())
                 ),
-                row_major(num_rows, scales_lut_cols),
+                InternalLayout(
+                    Coord(
+                        Int64(num_rows),
+                        Int64(self.scales_lookup_table.dim[1]()),
+                    ),
+                    Coord(
+                        Int64(
+                            self.scales_lookup_table.layout.stride[0]().value()
+                        ),
+                        Idx[1],
+                    ),
+                ),
             )
         )
         view.max_seq_length = max_seq_length

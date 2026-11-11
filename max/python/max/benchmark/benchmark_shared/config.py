@@ -42,6 +42,7 @@ from .datasets import (
     DistributionParameter,
     TurnSelector,
 )
+from .goodput import GoodputTargets, goodput_tokens
 from .utils import int_or_none, parse_comma_separated
 
 logger = logging.getLogger(__name__)
@@ -532,6 +533,21 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     benchmark_task: BenchmarkTask = Field(
         default="text-generation",
         description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video, image-to-video",
+        json_schema_extra={"group": "Backend and API Configuration"},
+    )
+
+    num_gpus: int | None = Field(
+        default=None,
+        # The value divides total throughput, so anything non-positive would
+        # surface as a zero or negative per-GPU figure instead of failing at
+        # the config boundary.
+        gt=0,
+        description=(
+            "Number of GPUs the target server uses. The sweep harness sets"
+            " this from the backend's parallel sizes; set it manually when"
+            " benchmarking an external endpoint so per-GPU throughput is"
+            " reported."
+        ),
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
@@ -1276,6 +1292,25 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Result Saving"},
     )
 
+    # consume_multiple lets the flag take vLLM's spelling,
+    # ``--goodput ttft:500 tpot:50``, rather than one flag per target.
+    goodput: Annotated[list[str] | None, Parameter(consume_multiple=True)] = (
+        Field(
+            default=None,
+            description=(
+                "Per-request latency targets for goodput, as space-separated"
+                " key:value pairs in milliseconds with keys ttft, tpot and e2el"
+                " (e.g. --goodput ttft:500 tpot:50). When set, the result reports"
+                " request_goodput, the measured successful requests per second"
+                " that met every target, and goodput_attainment, their share of"
+                " the measured successful requests. A request without a value"
+                " for a target, such as the TPOT of a one-token reply, misses it."
+                " Text generation only."
+            ),
+            json_schema_extra={"group": "Result Saving"},
+        )
+    )
+
     # Workload config file
     workload_config: str | None = Field(
         default=None,
@@ -1412,6 +1447,28 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         if value is None or (isinstance(value, str) and not value.strip()):
             return None
         return _json_from_argument(value, "tools", "[")
+
+    @field_validator("goodput", mode="before")
+    @classmethod
+    def _parse_goodput(cls, value: object) -> object:
+        """Flattens ``goodput`` to ``key:value`` tokens and validates them.
+
+        Raises:
+            ValueError: If no target is given, or a target's key or value is
+                invalid.
+        """
+        if value is None:
+            return None
+        tokens = goodput_tokens(value)
+        GoodputTargets.parse(tokens)
+        return tokens
+
+    @property
+    def goodput_targets(self) -> GoodputTargets | None:
+        """The parsed ``goodput`` targets, or ``None`` when unset."""
+        if self.goodput is None:
+            return None
+        return GoodputTargets.parse(self.goodput)
 
     @field_validator("response_format")
     @classmethod

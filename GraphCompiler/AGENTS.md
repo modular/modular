@@ -78,13 +78,13 @@ copying it is the most common way an agent damages this architecture.
   queries. Passes are supposed to be independent units with documented
   contracts (principle 7). Do not add another pass that depends on this, and
   do not reorder the passes around it without re-deriving why it is safe.
-- **Execution policy baked into generated Mojo.** `MOGGDialect/MOGGOps.cpp`
-  emits async task creation and worker-affinity selection
-  (`task_id_for_device`, `desired_worker_id`, `$affinity_device_id`). These
-  are executable decisions, not hints the runtime may override. The compiler
-  is supposed to express what, not how, and leave execution strategy to the
-  runtime (principles 1, 2, 9; QA-CR1, QA-CR4). Do not add new scheduling or
-  placement decisions to generated code.
+- **Execution policy baked into generated Mojo.**
+  `MOGGDialect/MOGGOpsEmitters.cpp` emits async task creation and
+  worker-affinity selection (`task_id_for_device`, `desired_worker_id`,
+  `$affinity_device_id`). These are executable decisions, not hints the runtime
+  may override. The compiler is supposed to express what, not how, and leave
+  execution strategy to the runtime (principles 1, 2, 9; QA-CR1, QA-CR4). Do not
+  add new scheduling or placement decisions to generated code.
 - **The quadratic allocation planner.** `DynamicMemoryPlanningPass` builds an
   `n * n` `canShare` matrix over allocations. Compile cost is supposed to
   scale with graph structure, near-linearly in layer count (principle 8,
@@ -128,6 +128,32 @@ If a change can only work by relaxing an enforced invariant or by extending
 one of the exceptions above, that is an architecture decision, not a detail to
 settle in review. Say so in the PR, state which item it affects, and get the
 decision made explicitly. The spec records those as ADRs.
+
+## Where op code goes
+
+A dialect's `<Dialect>Ops.cpp` holds the op methods that fit none of the
+buckets below. Every other op method lives in the file named after what it
+does, in the same directory. Registration stays where the dialect already
+put it (`MOGGDialect.cpp` for MOGG, `MAPDialect.cpp` for MAP). This keeps a
+7k-line file from growing back: a new op adds one `parse`/`print` to the asm
+file, one `verify` to the verifiers, one `emitMojo` to the emitters.
+
+| File                        | Holds                                                                                                              |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------|
+| `<Dialect>OpsAsm.cpp`       | `parse`, `print`, `getAsmBlockArgumentNames`, the `custom<>` directive functions, and the `GET_OP_CLASSES` include |
+| `<Dialect>OpsVerifiers.cpp` | `verify`, `verifyRegions`, `verifySymbolUses`, and their static checks                                             |
+| `<Dialect>OpsEmitters.cpp`  | `emitMojo` and the Mojo-text helpers only it uses                                                                  |
+| `<Dialect>OpsFolders.cpp`   | `fold`, `canonicalize`, `getCanonicalizationPatterns`                                                              |
+| `<Dialect>OpsTraits.cpp`    | `isThrows`, `getEffects`, successors, chains, and the other small interface methods                                |
+| `<Dialect>OpsBuild.cpp`     | `build` overloads, when a dialect has many                                                                         |
+
+`GET_OP_CLASSES` and `GET_OP_LIST` are separate includes and may live in
+different files. The TU that includes `GET_OP_CLASSES` must see every
+`custom<>` directive, so the include goes where the directives are: in the
+asm file when they are file-local there (MOGG, MO), and in the ops file when
+they are declared in a header (MAP). A file-local helper used by
+one bucket moves with it; used by two, it moves to a shared header (usually
+next to the dialect's `Support/`), never copied.
 
 ## Two rules commonly read stricter than they are
 

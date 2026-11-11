@@ -301,7 +301,7 @@ def test_mlp_float8_fbgemm() -> None:
         _generate_weights((seq_len, hidden_dim), torch.bfloat16, seed=45)
         * x_scale
     )
-    x = x.to(torch.bfloat16).cuda()
+    x = x.to(torch.bfloat16)
 
     session = InferenceSession(devices=[device])
     with Graph(
@@ -319,6 +319,8 @@ def test_mlp_float8_fbgemm() -> None:
         graph_output = mlp(graph_input)
         graph.output(graph_output)
 
+    compiled = session.load(graph, weights_registry=mlp.state_dict())
+    x = x.cuda()
     torch_ref = TorchMLPFloat8Reference(
         gate_proj_fp8.cuda(),
         down_proj_fp8.cuda(),
@@ -329,7 +331,6 @@ def test_mlp_float8_fbgemm() -> None:
         activation_function=activation,
     )
     torch_output = torch_ref(x).cpu()
-    compiled = session.load(graph, weights_registry=mlp.state_dict())
     max_output = compiled.execute(x)[0]
 
     assert isinstance(max_output, Buffer)

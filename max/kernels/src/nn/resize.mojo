@@ -782,19 +782,23 @@ def resize_cubic[
     `interpolate(mode="bicubic", antialias=True, align_corners=False)`, and
     the result matches it to float32 rounding.
 
+    A uint8 input with a uint8 output resizes as Pillow's `BICUBIC` resizes a
+    uint8 image, bit for bit, rather than as torch does: the same filter, its
+    weights computed in float64 and rounded to 22-bit fixed point, and each
+    pass summing in int32 and rounding half up and clamping to uint8.
+
     An NHWC batch is `[N, H, W, C]`, and an NCHW batch is `[N * C, H, W, 1]`.
     W is resampled before H, and each output adds up its taps in order with
     FMAs, so every shape gives the same bits for the same pixels. The resize
-    runs on the CPU, on the calling thread, in float32.
+    runs on the CPU, on the calling thread, in float32 or, for a uint8
+    output, in fixed point.
 
     Parameters:
         in_dtype: The type of the input: float32, or an integer type such as
-            uint8. The result is the same as when you convert the input to
-            float32 first.
+            uint8. With a float32 output, the result is the same as when you
+            convert the input to float32 first.
         out_dtype: The type of the output: float32, or uint8 for a uint8
-            input. A uint8 output is the float32 result rounded half to
-            even, as `mo.round` rounds, and clamped to [0, 255]. Only the
-            final store rounds; the passes in between stay float32.
+            input, which resizes as Pillow does.
 
     Args:
         input: The input to be resized, contiguous and row-major.
@@ -831,15 +835,215 @@ def resize_cubic[
         return
     var outer = in_shape[0]
     var inner = in_shape[3]
-    _resize_2d_fused(
-        _AxisTaps(in_shape[2], out_shape[2]),
-        _AxisTaps(in_shape[1], out_shape[1]),
-        input.reshape(row_major((outer, in_shape[1], in_shape[2] * inner))),
-        output.reshape(row_major((outer, out_shape[1], out_shape[2] * inner))),
-        in_shape[2],
-        out_shape[2],
-        inner,
+    var src = input.reshape(
+        row_major((outer, in_shape[1], in_shape[2] * inner))
     )
+    var dst = output.reshape(
+        row_major((outer, out_shape[1], out_shape[2] * inner))
+    )
+    comptime if out_dtype == .uint8:
+        _resize_2d_fixed_point(
+            src.bitcast[.uint8](),
+            dst.bitcast[.uint8](),
+            in_shape[2],
+            out_shape[2],
+            inner,
+        )
+    else:
+        _resize_2d_fused(
+            _AxisTaps(in_shape[2], out_shape[2]),
+            _AxisTaps(in_shape[1], out_shape[1]),
+            src,
+            dst.bitcast[.float32](),
+            in_shape[2],
+            out_shape[2],
+            inner,
+        )
+
+
+comptime _FIXED_BITS = 22
+"""Fraction bits of a uint8 resize's fixed-point weights, Pillow's
+`PRECISION_BITS`, which leave an int32 tap sum two bits of headroom."""
+
+comptime _FIXED_WIDTH = 2 * simd_width_of[DType.int32]()
+"""Int32 lanes a fixed-point pass sums at a time."""
+
+comptime _FIXED_STRIP = 32
+"""Rows a fixed-point W pass transposes at a time, which its H-style pass
+then sums across."""
+
+
+@inline(.always)
+def _pillow_cubic(x: Float64) -> Float64:
+    """Evaluates Pillow's bicubic filter, `a = -0.5`, in float64 and in
+    Pillow's order of operations, so the weights round as Pillow's do."""
+    comptime a = -0.5
+    var t = abs(x)
+    if t < 1:
+        return ((a + 2) * t - (a + 3)) * t * t + 1
+    if t < 2:
+        return (((t - 5) * t + 8) * t - 4) * a
+    return 0
+
+
+struct _FixedTaps(Movable):
+    """Holds Pillow's fixed-point taps of each output index along one resized
+    dimension of a uint8 resize.
+
+    Output i is the sum of the count_of(i) inputs from start[i] on, times
+    weights coeffs[offset[i] : offset[i + 1]] scaled by 2^_FIXED_BITS.
+    """
+
+    var start: List[Int]
+    var offset: List[Int]
+    var coeffs: List[Int32]
+
+    def __init__(out self, in_dim: Int, out_dim: Int):
+        """Builds the taps as Pillow's `precompute_coeffs` and
+        `normalize_coeffs_8bpc` do: the normalized float64 weights of a
+        cubic window around each output's center, stretched by the downscale
+        factor, rounded half away from zero to fixed point. Equal sizes keep
+        the four-tap window, with weight one on the center tap and zero on
+        the rest, so the copy is exact."""
+        self.start = List[Int](capacity=out_dim)
+        self.offset = List[Int](capacity=out_dim + 1)
+        self.offset.append(0)
+        self.coeffs = List[Int32]()
+        var scale = Float64(in_dim) / Float64(out_dim)
+        var stretch = max(scale, 1.0)
+        var support = Float64(_CUBIC_SUPPORT) * stretch
+        var inv_stretch = 1.0 / stretch
+        var weights = List[Float64]()
+        for i in range(out_dim):
+            var center = (Float64(i) + 0.5) * scale
+            # Int truncates toward zero, as Pillow's C casts do.
+            var first = max(Int(center - support + 0.5), 0)
+            var end = min(Int(center + support + 0.5), in_dim)
+            weights.clear()
+            var total = Float64(0)
+            for x in range(first, end):
+                var w = _pillow_cubic((Float64(x) - center + 0.5) * inv_stretch)
+                weights.append(w)
+                total += w
+            for w in weights:
+                var normalized = w / total if total != 0 else w
+                var fixed = normalized * Float64(1 << _FIXED_BITS)
+                self.coeffs.append(
+                    Int32(Int(fixed - 0.5 if normalized < 0 else fixed + 0.5))
+                )
+            self.start.append(first)
+            self.offset.append(len(self.coeffs))
+
+
+def _fixed_point_rows(
+    taps: _FixedTaps,
+    src: TileTensor[.uint8, ...],
+    dst: MutTileTensor[.uint8, ...],
+):
+    """Writes each row i of dst, `[out_dim, cols]`, as the weighted sum of
+    rows of src, `[in_dim, cols]`, rounded half up and clamped to uint8 as a
+    pass of Pillow's uint8 resize rounds. The int32 sum cannot overflow:
+    Pillow's bicubic weights add up to at most 1.27 in magnitude."""
+    var cols = Int(src.dim[1]())
+    for i in range(Int(dst.dim[0]())):
+        var first = taps.start[i]
+        var offset = taps.offset[i]
+        var count = taps.offset[i + 1] - offset
+
+        def row_at[width: Int](c: Int) {imm}:
+            var acc = SIMD[.int32, width](1 << (_FIXED_BITS - 1))
+            for k in range(count):
+                acc += (
+                    src.load[width=width]((first + k, c)).cast[.int32]()
+                    * taps.coeffs[offset + k]
+                )
+            dst.store((i, c), (acc >> _FIXED_BITS).clamp(0, 255).cast[.uint8]())
+
+        vectorize[_FIXED_WIDTH](cols, row_at)
+
+
+def _transpose_pixels(
+    src: TileTensor[.uint8, ...], dst: MutTileTensor[.uint8, ...], inner: Int
+):
+    """Writes src, `[rows, cols * inner]`, into dst, `[cols, rows * inner]`,
+    keeping each pixel's inner values together."""
+    var rows = Int(src.dim[0]())
+    var cols = Int(src.dim[1]()) // inner
+    for r in range(rows):
+        for c in range(cols):
+            for q in range(inner):
+                dst.store(
+                    (c, r * inner + q), src.load[width=1]((r, c * inner + q))
+                )
+
+
+def _fixed_point_w_pass(
+    taps: _FixedTaps,
+    src: TileTensor[.uint8, ...],
+    dst: MutTileTensor[.uint8, ...],
+    in_w: Int,
+    out_w: Int,
+    inner: Int,
+):
+    """Resamples W of src, `[rows, in_w * inner]`, into dst, `[rows, out_w *
+    inner]`. Each strip of rows is transposed so that the W taps sum rows,
+    vectorized across the strip, and transposed back."""
+    var rows = Int(src.dim[0]())
+    var strip_in = List[UInt8](unsafe_uninit_length=in_w * _FIXED_STRIP * inner)
+    var strip_out = List[UInt8](
+        unsafe_uninit_length=out_w * _FIXED_STRIP * inner
+    )
+    var r = 0
+    while r < rows:
+        var n = min(_FIXED_STRIP, rows - r)
+        var columns = TileTensor(strip_in, row_major((in_w, n * inner)))
+        var resized = TileTensor(strip_out, row_major((out_w, n * inner)))
+        _transpose_pixels(src[r : r + n, :], columns, inner)
+        _fixed_point_rows(taps, columns, resized)
+        _transpose_pixels(resized, dst[r : r + n, :], inner)
+        r += n
+
+
+def _resize_2d_fixed_point(
+    src: TileTensor[.uint8, ...],
+    dst: MutTileTensor[.uint8, ...],
+    in_w: Int,
+    out_w: Int,
+    inner: Int,
+):
+    """Resamples W, then H, of `[outer, H, W * inner]` views of row-major
+    uint8 `[outer, H, W, inner]` tensors as Pillow's uint8 `BICUBIC` resize
+    does, rounding to uint8 after each pass. A pass whose size is unchanged
+    is skipped, as Pillow skips it; its taps would copy the pixels. An image
+    more than 100 times taller than wide whose H shrinks resamples H first,
+    as Pillow's `Image.resize` orders it, and the rounding between the
+    passes makes the order visible."""
+    var in_h = Int(src.dim[1]())
+    var out_h = Int(dst.dim[1]())
+    var taps_w = _FixedTaps(in_w, out_w)
+    var taps_h = _FixedTaps(in_h, out_h)
+    var both = in_w != out_w and in_h != out_h
+    var h_first = in_h > in_w * 100 and out_h < in_h
+    var mid_rows = out_h if h_first else in_h
+    var mid_w = in_w if h_first else out_w
+    var mid_buffer = List[UInt8](
+        unsafe_uninit_length=mid_rows * mid_w * inner if both else 0
+    )
+    var mid = TileTensor(mid_buffer, row_major((mid_rows, mid_w * inner)))
+    for o in range(Int(src.dim[0]())):
+        var src_rows = src[o, :, :]
+        var dst_rows = dst[o, :, :]
+        if in_w == out_w:
+            # Equal H taps copy the rows when neither size changes.
+            _fixed_point_rows(taps_h, src_rows, dst_rows)
+        elif in_h == out_h:
+            _fixed_point_w_pass(taps_w, src_rows, dst_rows, in_w, out_w, inner)
+        elif h_first:
+            _fixed_point_rows(taps_h, src_rows, mid)
+            _fixed_point_w_pass(taps_w, mid, dst_rows, in_w, out_w, inner)
+        else:
+            _fixed_point_w_pass(taps_w, src_rows, mid, in_w, out_w, inner)
+            _fixed_point_rows(taps_h, mid, dst_rows)
 
 
 comptime _WIDTH = simd_width_of[DType.float32]()
@@ -977,17 +1181,17 @@ def _tap_offset(pos: Int, center: Float32, inv_stretch: Float32) -> Float32:
 
 @inline(.always)
 def _weighted_row_sum[
-    out_dtype: DType, //, wraps: Bool
+    wraps: Bool
 ](
     taps: _AxisTaps,
     i: Int,
     rows: TileTensor[.float32, ...],
-    dst: MutTileTensor[out_dtype, ...],
+    dst: MutTileTensor[.float32, ...],
     begin: Int,
     end: Int,
 ):
     """Writes columns [begin, end) of row i of dst as a weighted sum of input
-    rows, converted by _narrow. begin is a multiple of _GROUP vectors. With
+    rows. begin is a multiple of _GROUP vectors. With
     wraps, rows is a ring of a power-of-two size holding input row r at
     r % size."""
     comptime block = _GROUP * _WIDTH
@@ -1018,28 +1222,15 @@ def _weighted_row_sum[
                         w, acc[q]
                     )
             comptime for q in range(group):
-                dst.store((i, c + q * _WIDTH), _narrow[out_dtype](acc[q]))
+                dst.store((i, c + q * _WIDTH), acc[q])
             c += span
     while c < end:
         var acc = Float32(0)
         for k in range(n):
             var r = (first + k) & mask if wraps else first + k
             acc = rows.load[width=1]((r, c)).fma(weights.unsafe_get(k), acc)
-        dst.store((i, c), _narrow[out_dtype](acc))
+        dst.store((i, c), acc)
         c += 1
-
-
-@inline(.always)
-def _narrow[
-    width: SIMDLength, //, dtype: DType
-](sums: SIMD[.float32, width]) -> SIMD[dtype, width]:
-    """Converts float32 sums to a float32 or uint8 output. A uint8 output
-    rounds half to even, as `mo.round` does, and clamps to [0, 255]."""
-    comptime if dtype == .float32:
-        return rebind[SIMD[dtype, width]](sums)
-    else:
-        comptime assert dtype == .uint8, "output must be float32 or uint8"
-        return round(sums).clamp(0, 255).cast[dtype]()
 
 
 def _lane_group_mask[
@@ -1611,12 +1802,12 @@ def _resize_rows[
 
 
 def _resize_2d_fused[
-    in_dtype: DType, out_dtype: DType, //
+    in_dtype: DType, //
 ](
     var taps_w: _AxisTaps,
     taps_h: _AxisTaps,
     src: TileTensor[in_dtype, ...],
-    dst: MutTileTensor[out_dtype, ...],
+    dst: MutTileTensor[.float32, ...],
     in_w: Int,
     out_w: Int,
     inner: Int,
@@ -1625,12 +1816,11 @@ def _resize_2d_fused[
     [outer, H, W, inner] tensors, keeping only the W-resampled rows the H
     filter still needs in a ring. Integer input is converted a batch of rows
     at a time, as the W pass reaches it. An unchanged H writes the W pass
-    straight into a float32 dst. A uint8 dst rounds as the H pass stores it,
-    so it runs the H pass even then, one tap of weight one per row.
+    straight into dst.
     """
     var mid_row = out_w * inner
     var in_h = Int(src.dim[1]())
-    var same_h = out_dtype == .float32 and in_h == Int(dst.dim[1]())
+    var same_h = in_h == Int(dst.dim[1]())
     var w_pass = _SlabPass(taps_w^, in_w, out_w, inner, in_h)
     # Filling batch rows while the previous max_count - 1 are live needs
     # max_count + batch - 1 slots. A power of two makes a slot a mask, and a
@@ -1657,14 +1847,10 @@ def _resize_2d_fused[
                 var rows = w_pass.batch(in_h - produced)
                 var batch_rows = src_rows[produced : produced + rows, :]
                 if same_h:
-                    # Only a float32 dst takes this path, so the bitcast
-                    # keeps its dtype.
                     _resize_rows(
                         w_pass,
                         batch_rows,
-                        dst_rows[produced : produced + rows, :].bitcast[
-                            .float32
-                        ](),
+                        dst_rows[produced : produced + rows, :],
                         stage,
                     )
                 else:

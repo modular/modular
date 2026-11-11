@@ -955,6 +955,38 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
   return success();
 }
 
+LogicalResult StructConcatOp::verify() {
+  if (getStructs().empty())
+    return emitOpError() << "expected at least one operand";
+
+  std::optional<SmallVector<Type>> resultTypes = getType().getElementTypes();
+  if (!resultTypes)
+    return success();
+
+  SmallVector<Type> operandTypes;
+  for (Type type : getStructs().getTypes()) {
+    std::optional<SmallVector<Type>> types =
+        cast<StructType>(type).getElementTypes();
+    if (!types)
+      return success();
+    llvm::append_range(operandTypes, *types);
+  }
+
+  if (operandTypes.size() != resultTypes->size()) {
+    return emitOpError() << "operands have " << operandTypes.size()
+                         << " elements but the result has "
+                         << resultTypes->size();
+  }
+  for (auto [i, operandType, resultType] :
+       llvm::enumerate(operandTypes, *resultTypes)) {
+    if (!isEqualCanon(operandType, resultType)) {
+      return emitOpError() << "element #" << i << " has type " << operandType
+                           << " but the result has " << resultType;
+    }
+  }
+  return success();
+}
+
 LogicalResult StructExtractOp::verify() {
   return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
                                getType(), "result");

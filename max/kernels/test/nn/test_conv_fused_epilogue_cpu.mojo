@@ -46,7 +46,7 @@ def test_conv_nhwc_direct_fused() raises:
     var dilation = Index(1, 1)
 
     var output_dims = IndexList[rank](1)
-    comptime for i in range(rank):
+    for i in range(rank):
         output_dims[i] = input_dims[i] - filter_dims[i] + 1
 
     var input_size = N * input_dims[0] * input_dims[1] * C
@@ -164,7 +164,7 @@ def test_conv_transposed_cpu_fused() raises:
     var dilation = Index(1, 1)
 
     var output_dims = IndexList[rank](1)
-    comptime for i in range(rank):
+    for i in range(rank):
         output_dims[i] = (
             (input_dims[i] - 1) * stride[i]
             + dilation[i] * (filter_dims[i] - 1)

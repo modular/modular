@@ -20,7 +20,7 @@ This package provides GPU tensor core and matrix multiplication operations:
 - **arch/**: Architecture-specific MMA implementations (internal)
   - `mma_nvidia`: NVIDIA tensor cores (SM70-SM90)
   - `mma_nvidia_sm100`: NVIDIA Blackwell (SM100)
-  - `mma_amd`: AMD Matrix Cores (CDNA2/3/4)
+  - `mma_amd`: AMD Matrix Cores (CDNA2/3/4 MFMA, CDNA5 WMMA)
   - `mma_amd_rdna`: AMD WMMA (RDNA3/4)
   - `tcgen05`: 5th generation tensor core operations (Blackwell)
 

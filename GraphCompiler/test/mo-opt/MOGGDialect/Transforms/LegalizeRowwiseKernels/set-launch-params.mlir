@@ -72,9 +72,9 @@ func.func @widestState(%ctx: !mogg.context, %x: !mogg.tensor, %os: !mogg.tensor,
       %xv = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
       mogg.yield %xv : !mogg.simd<f32>
     }
-    mogg.rowwise.emit {
-      mogg.tensor.store %cs[%row] = %s : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
-      mogg.tensor.store %ci[%row] = %i : !mogg.tensor, !map.index<2>, !mogg.simd<si64>
+    mogg.rowwise.map (%j : !map.index<2>) {
+      mogg.tensor.store %cs[%j] = %s : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+      mogg.tensor.store %ci[%j] = %i : !mogg.tensor, !map.index<2>, !mogg.simd<si64>
     }
   }
   return

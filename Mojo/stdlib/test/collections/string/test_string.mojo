@@ -1566,6 +1566,64 @@ def test_reserve() raises:
     assert_equal(s.capacity_bytes(), 64)
 
 
+def test_copy_then_append_capacity() raises:
+    def appended_copy(text: String) -> String:
+        var copy = text.copy()
+        copy += "a"
+        return copy^
+
+    # The argument of `appended_copy` stays alive for the whole call, so each
+    # append writes to a buffer that the copy still shares with it. Inline,
+    # the original is destroyed after `copy()` and the buffer is never shared.
+    var text = String()
+    var iterations = 100
+    for _ in range(iterations):
+        var capacity = text.capacity_bytes()
+        text = appended_copy(text)
+        if text.byte_length() <= capacity:
+            assert_equal(text.capacity_bytes(), capacity)
+        else:
+            assert_true(
+                text.capacity_bytes() >= 2 * capacity,
+                "growth must at least double the capacity",
+            )
+    assert_equal(text, String("a") * iterations)
+
+
+def test_unshare_keeps_capacity() raises:
+    var length = 40
+    var original = String(capacity_bytes=64)
+    original += String("x") * length
+    var capacity = original.capacity_bytes()
+
+    # The copy shares the buffer, so each write below must un-share it.
+    var appended = original.copy()
+    assert_true(appended.unsafe_ptr() == original.unsafe_ptr())
+    appended += "y"
+    assert_equal(appended.capacity_bytes(), capacity)
+
+    var pushed = original.copy()
+    pushed.append(Codepoint.ord("y"))
+    assert_equal(pushed.capacity_bytes(), capacity)
+
+    var edited = original.copy()
+    edited.unsafe_as_bytes_mut()[0] = Byte(ord("y"))
+    assert_equal(edited.capacity_bytes(), capacity)
+
+    # Reading `original` here also keeps its buffer shared until this point.
+    assert_equal(original, String("x") * length)
+    assert_equal(appended, String("x") * length + "y")
+    assert_equal(pushed, String("x") * length + "y")
+    assert_equal(edited, "y" + String("x") * (length - 1))
+
+    # A literal's capacity is its length. Writing to it copies the bytes to a
+    # heap buffer; nothing grew, so the capacity must not double.
+    var literal = String("abcdefghijklmnopqrstuvwxyz0123456789")
+    literal.unsafe_as_bytes_mut()[0] = Byte(ord("A"))
+    assert_true(literal.capacity_bytes() < 2 * literal.byte_length())
+    assert_equal(literal, "Abcdefghijklmnopqrstuvwxyz0123456789")
+
+
 def test_resize() raises:
     var s = String()
     s.resize(100, 0)

@@ -48,11 +48,14 @@ from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.interfaces.pipeline_model import PipelineModel
 from max.pipelines.lib.module_registration import (
+    BlockDiffusionPipelineModel,
     DecoderBatchProcessor,
     DecoderModelInputs,
     ModuleV3DecoderPipelineModel,
     RegisteredDecoderBuilder,
+    _block_diffusion_input_types,
     _DecoderGraph,
+    _max_canvas_batch,
     _registered_weight_naming,
     bind_decoder_scratch,
     consumes_vision,
@@ -67,6 +70,9 @@ from max.pipelines.lib.module_registration import (
 )
 from max.pipelines.lib.pipeline_parallel import PipelinedModel, StageTraced
 from max.pipelines.lib.pipeline_stage import PipelineStage
+from max.pipelines.lib.pipeline_variants.block_diffusion_text_generation import (
+    BlockDiffusionTextGenerationPipeline,
+)
 from max.pipelines.lib.registration_graph_api import registered_pipeline_model
 from max.pipelines.lib.registration_runtime import (
     ConstantInputs,
@@ -79,7 +85,10 @@ from max.pipelines.lib.registration_runtime import (
     prepare_weights,
     role_weights,
 )
+from max.pipelines.lib.registry import architecture_pipeline
 from max.pipelines.lib.role_contracts import (
+    BlockDiffusionInputs,
+    BlockDiffusionOutputs,
     DecoderInputs,
     DecoderOutputs,
     VisionInputs,
@@ -182,6 +191,34 @@ class StatefulDecoder(PlainDecoder):
 class ToyVision(PlainDecoder):
     def input_types(self) -> tuple[TensorType, ...]:
         return (X,)
+
+
+class ToyDenoiser(Module[[BlockDiffusionInputs], BlockDiffusionOutputs]):
+    """One denoise step that weighs each input, so a misplaced input shows."""
+
+    graph_name: ClassVar[str] = "toy_denoiser"
+
+    def __init__(self, config: ToyConfig) -> None:
+        super().__init__()
+        self.gain = Tensor.zeros([1], dtype=DType.float32, device=CPU())
+        self.vocab_size = 3
+
+    def forward(self, inputs: BlockDiffusionInputs) -> BlockDiffusionOutputs:
+        return BlockDiffusionOutputs(
+            logits=inputs.sc_logits,
+            argmax=inputs.tokens * 2,
+            top_k_probs=inputs.sc_enabled * self.gain,
+            top_k_indices=inputs.input_row_offsets.cast(DType.int64) * 3,
+            entropy=inputs.temperature * 5 + inputs.kv[0] * 7,
+        )
+
+
+class BoundedDenoiser(ToyDenoiser):
+    max_canvas_batch: ClassVar[int] = 3
+
+
+class UnboundedDenoiser(ToyDenoiser):
+    max_canvas_batch: ClassVar[int] = 0
 
 
 class ToyVisionBatchProcessor(DecoderBatchProcessor):
@@ -1002,6 +1039,27 @@ def test_a_derived_architecture_keeps_its_own_pipeline_model() -> None:
             TypeError,
             "implements VisionBatchProcessor",
         ),
+        (
+            {GraphRole.BLOCK_DIFFUSION: ToyDenoiser},
+            ValueError,
+            "needs a DECODER",
+        ),
+        (
+            {
+                GraphRole.DECODER: PlainDecoder,
+                GraphRole.BLOCK_DIFFUSION: ToyConfig,
+            },
+            TypeError,
+            "max.nn.Module",
+        ),
+        (
+            {
+                GraphRole.DECODER: PlainDecoder,
+                GraphRole.BLOCK_DIFFUSION: UnboundedDenoiser,
+            },
+            ValueError,
+            "max_canvas_batch=0",
+        ),
     ],
 )
 def test_a_malformed_registration_fails(
@@ -1019,6 +1077,187 @@ def test_a_vision_registration_rejects_a_text_batch_processor() -> None:
         )
     assert consumes_vision(VisionDecoder)
     assert not consumes_vision(PlainDecoder)
+
+
+def test_one_pipeline_model_serves_with_or_without_a_denoiser() -> None:
+    denoised = _arch(
+        modules={
+            GraphRole.DECODER: PlainDecoder,
+            GraphRole.BLOCK_DIFFUSION: ToyDenoiser,
+        },
+    ).pipeline_model
+    plain = _arch(modules={GraphRole.DECODER: PlainDecoder}).pipeline_model
+    assert isinstance(denoised, type) and isinstance(plain, type)
+    assert issubclass(denoised, BlockDiffusionPipelineModel)
+    assert issubclass(plain, ModuleV3DecoderPipelineModel)
+    assert not issubclass(plain, BlockDiffusionPipelineModel)
+    assert denoised.denoiser_cls is ToyDenoiser
+    assert pickle.loads(pickle.dumps(denoised)) is denoised
+
+
+def test_a_block_diffusion_model_reports_no_log_probabilities() -> None:
+    # The mixin enters the block-diffusion model's MRO through the decoder
+    # pipeline model, but the denoise loop never scores tokens; the OpenAI
+    # route and ``generate`` read the claim by identity with the base stub.
+    denoised = _arch(
+        modules={
+            GraphRole.DECODER: PlainDecoder,
+            GraphRole.BLOCK_DIFFUSION: ToyDenoiser,
+        },
+    ).pipeline_model
+    plain = _arch(modules={GraphRole.DECODER: PlainDecoder}).pipeline_model
+    assert isinstance(denoised, type) and isinstance(plain, type)
+    assert issubclass(denoised, PipelineModel)
+    assert issubclass(plain, PipelineModel)
+    base = PipelineModel.compute_log_probabilities
+    assert plain.compute_log_probabilities is not base
+    assert denoised.compute_log_probabilities is base
+
+
+def test_the_denoiser_declares_its_canvas_bound() -> None:
+    assert _max_canvas_batch(ToyDenoiser) is None
+    assert _max_canvas_batch(BoundedDenoiser) == 3
+    bounded = _arch(
+        modules={
+            GraphRole.DECODER: PlainDecoder,
+            GraphRole.BLOCK_DIFFUSION: BoundedDenoiser,
+        },
+    ).pipeline_model
+    unbounded = _arch(
+        modules={
+            GraphRole.DECODER: PlainDecoder,
+            GraphRole.BLOCK_DIFFUSION: ToyDenoiser,
+        },
+    ).pipeline_model
+    assert isinstance(bounded, type) and isinstance(unbounded, type)
+    assert issubclass(bounded, BlockDiffusionPipelineModel)
+    assert issubclass(unbounded, BlockDiffusionPipelineModel)
+    assert bounded.max_canvas_batch == 3
+    assert unbounded.max_canvas_batch is None
+
+
+def test_the_block_diffusion_inputs_are_the_role_contract() -> None:
+    kv_params = NonCallableMock(get_symbolic_inputs=lambda: (X,))
+    types = _block_diffusion_input_types(kv_params, DeviceRef.CPU(), 7)
+    # The graph takes the contract's fields in order, named.
+    assert list(types) == [field.name for field in fields(BlockDiffusionInputs)]
+    assert list(types) == [
+        "tokens",
+        "input_row_offsets",
+        "sc_logits",
+        "sc_enabled",
+        "temperature",
+        "kv",
+    ]
+    assert types["tokens"].dtype == DType.int64
+    assert types["input_row_offsets"].dtype == DType.uint32
+    assert types["sc_logits"].dtype == DType.bfloat16
+    assert types["sc_logits"].shape[1] == 7
+    assert types["kv"] == (X,)
+    # An exported denoiser graph names its inputs and outputs.
+    _, inputs_def = tree.flatten(types)
+    assert treedef_to_json(inputs_def)["type"] == "block_diffusion_inputs"
+    outputs = BlockDiffusionOutputs(
+        logits=X, argmax=X, top_k_probs=X, top_k_indices=X, entropy=X
+    )
+    _, outputs_def = tree.flatten(outputs)
+    assert treedef_to_json(outputs_def)["type"] == "block_diffusion_outputs"
+
+
+def test_a_registration_serves_block_diffusion_beside_vision() -> None:
+    """The role combination the DiffusionGemma ModuleV3 port registers."""
+    model = module_pipeline_model(
+        ToyConfig,
+        (
+            (GraphRole.DECODER, VisionDecoder),
+            (GraphRole.VISION, ToyVision),
+            (GraphRole.BLOCK_DIFFUSION, ToyDenoiser),
+        ),
+        ToyVisionBatchProcessor,
+    )
+    assert isinstance(model, type)
+    assert issubclass(model, BlockDiffusionPipelineModel)
+    assert model.decoder_cls is VisionDecoder
+    assert model.vision_cls is ToyVision
+    assert model.denoiser_cls is ToyDenoiser
+    assert pickle.loads(pickle.dumps(model)) is model
+
+
+def test_a_block_diffusion_registration_selects_its_pipeline() -> None:
+    arch = _arch(
+        modules={
+            GraphRole.DECODER: PlainDecoder,
+            GraphRole.BLOCK_DIFFUSION: ToyDenoiser,
+        }
+    )
+    assert architecture_pipeline(arch) is BlockDiffusionTextGenerationPipeline
+    plain = _arch(modules={GraphRole.DECODER: PlainDecoder})
+    assert architecture_pipeline(plain) is None
+
+
+@dataclass(frozen=True)
+class DenoisedConfig(ToyConfig):
+    dtype: DType = DType.float32
+
+
+def _denoised_model() -> Any:
+    cls = module_pipeline_model(
+        DenoisedConfig,
+        (
+            (GraphRole.DECODER, PlainDecoder),
+            (GraphRole.BLOCK_DIFFUSION, ToyDenoiser),
+        ),
+        None,
+    )
+    model: Any = cls.__new__(cls)
+    model.pipeline_config = SimpleNamespace(
+        model=SimpleNamespace(pipeline_stage=None, data_parallel_degree=1)
+    )
+    model.return_hidden_states = ReturnHiddenStates.NONE
+    model._lora_manager = None
+    model._batch_processor = None
+    model.max_batch_size = 1
+    model.devices = [CPU()]
+    model.device_refs = [DeviceRef.CPU()]
+    model.kv_params = NonCallableMock(get_symbolic_inputs=lambda: (X,))
+    model._runtime = NonCallableMock(spec=ModuleRuntime, ep=None)
+    model._checkpoint = {"gain": np.full(1, 2, dtype=np.float32)}
+    return model
+
+
+def test_the_denoiser_compiles_beside_the_encoder_and_runs_one_step() -> None:
+    model = _denoised_model()
+    model._load_state_dict = dict
+    model._create_model_config = lambda state_dict: DenoisedConfig()
+    models = model.load_graphs(InferenceSession(devices=[CPU()]))
+    assert set(models) == {GraphRole.DECODER, GraphRole.BLOCK_DIFFUSION}
+
+    canvas = Buffer.from_numpy(np.array([1, 2], np.int64))
+    offsets = Buffer.from_numpy(np.array([0, 2], np.uint32))
+    sc_logits = Buffer.from_numpy(np.zeros(6, np.uint16)).view(
+        DType.bfloat16, [2, 3]
+    )
+    sc_enabled = Buffer.from_numpy(np.array([1], np.float32))
+    temperature = Buffer.from_numpy(np.array([2], np.float32))
+    kv = (Buffer.from_numpy(np.full(2, 3, np.float32)),)
+    logits, argmax, probs, indices, entropy = model.execute_denoise_step(
+        canvas, offsets, sc_logits, sc_enabled, temperature, kv
+    )
+    # Each output names the input it was fed from, in the contract's order.
+    assert logits.shape == (2, 3) and logits.dtype == DType.bfloat16
+    np.testing.assert_array_equal(np.from_dlpack(argmax), [2, 4])
+    np.testing.assert_array_equal(np.from_dlpack(probs), [2])
+    np.testing.assert_array_equal(np.from_dlpack(indices), [0, 6])
+    np.testing.assert_array_equal(np.from_dlpack(entropy), [31, 31])
+
+
+def test_the_block_diffusion_model_reads_the_finalized_config() -> None:
+    model = _denoised_model()
+    with pytest.raises(AssertionError, match="before the model is built"):
+        _ = model.config
+    config = DenoisedConfig(finalized=True)
+    model._batch_processor = NonCallableMock(config=config)
+    assert model.config is config
 
 
 def test_finalize_config_returns_the_finalized_config() -> None:

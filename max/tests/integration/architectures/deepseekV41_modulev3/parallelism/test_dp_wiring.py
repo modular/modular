@@ -149,7 +149,9 @@ def test_batch_processor_declares_no_pair_at_dp_one() -> None:
         kv_params=kv_params, device_refs=[DeviceRef.GPU(0)]
     )
     splits = TensorType(DType.int64, shape=[2], device=DeviceRef.CPU())
-    assert splits not in inputs
+    # The pair would follow the row offsets, as at dp > 1; an MLA leaf's
+    # two-value host partition scalar shares its type further on.
+    assert splits not in inputs[:4]
 
 
 def test_prepare_inputs_flattens_replica_batches_at_dp() -> None:

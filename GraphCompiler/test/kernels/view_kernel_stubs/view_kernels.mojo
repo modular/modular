@@ -22,15 +22,15 @@
 from max.gpu.host import DeviceContext
 
 import extensibility
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor
 
 
 @extensibility.register("mo.static.broadcast_to", extensibility.ACCELERATOR)
 struct StaticBroadcastTo:
     @staticmethod
     def execute(
-        output: OutputTensor,
-        input: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         pass
@@ -40,9 +40,9 @@ struct StaticBroadcastTo:
 struct Transpose:
     @staticmethod
     def execute(
-        output: OutputTensor,
-        input: InputTensor,
-        permutations: InputTensor,
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        permutations: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         pass

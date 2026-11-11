@@ -456,10 +456,11 @@ __enum OpenColor(ImplicitlyCopyable):
     comptime _enum_is_exhaustive = False
 
 
-# An open enum does not require every known case to appear.
+# An open enum requires a catch-all for cases that may be added later.
 # CHECK-LABEL: lit.fn @"match_open_enum_partial
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
 def match_open_enum_partial(color: OpenColor):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match color:
     case .red:
         case_callee[0]()

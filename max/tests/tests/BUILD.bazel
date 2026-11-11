@@ -264,6 +264,7 @@ modular_eager_py_test(
         "//max/python/max/nn",
         requirement("ml-dtypes"),
         requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 

@@ -14,12 +14,14 @@
 
 The ModuleV3 arch must default the same serving-layer request-handling
 features as its graph counterpart: tool-call parsing, reasoning parsing, and
-the structured-output (constrained decoding) backend. The parsers themselves
-live at the serving layer and are shared; only the ``SupportedArchitecture``
-defaults differ per registration.
+the structured-output (constrained decoding) backend. The parsers live at the
+serving layer, where most pairs share them; GLM-5.3-Flash's arch registers its
+own copies of the GLM-5.x parsers.
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 from max.pipelines.architectures.deepseekV3_2.arch import deepseekV3_2_arch
@@ -34,9 +36,11 @@ from max.pipelines.architectures.gemma4_modulev3.arch import (
     gemma4_modulev3_arch,
     gemma4_unified_modulev3_arch,
 )
-from max.pipelines.architectures.glm5_next.arch import glm5_next_arch
-from max.pipelines.architectures.glm5_next_modulev3.arch import (
-    glm5_next_modulev3_arch,
+from max.pipelines.architectures.glm5_1.tool_parser import (
+    GlmToolParser as Glm51ToolParser,
+)
+from max.pipelines.architectures.glm5_next.arch import (
+    glm5_next_arch,
 )
 from max.pipelines.lib import reasoning, tool_parsing
 from max.pipelines.lib.registry import SupportedArchitecture
@@ -56,7 +60,6 @@ from max.pipelines.lib.registry import SupportedArchitecture
             deepseekV3_2_modulev3_arch,
             id="deepseekV3_2",
         ),
-        pytest.param(glm5_next_arch, glm5_next_modulev3_arch, id="glm5_next"),
     ],
 )
 def test_request_handling_parity(
@@ -115,25 +118,37 @@ def test_deepseekv3_2_modulev3_registration_parity() -> None:
     )
 
 
-def test_glm5_next_modulev3_registration_parity() -> None:
-    """The GLM-5.3-Flash ModuleV3 arch mirrors the graph arch's contract.
+def test_glm5_next_parsers_are_its_own() -> None:
+    """The ModuleV3 arch registers its own copies of the GLM-5.x parsers.
 
-    Importing it here also exercises the package's import graph, which the
-    lazy registration would otherwise only reach at serve time.
+    They read the format GLM-5.1's "glm45" parsers do, under a name of their
+    own, so neither registration replaces the other's.
     """
-    assert (
-        glm5_next_modulev3_arch.name
-        == "Glm5NextForConditionalGeneration_ModuleV3"
+    assert glm5_next_arch.tool_parser == "glm5_next"
+    assert glm5_next_arch.reasoning_parser == "glm5_next"
+    tool_parser_cls = tool_parsing.get_parser_cls("glm5_next")
+    assert tool_parser_cls is not None
+    assert tool_parser_cls.__module__.endswith("glm5_next.tool_parser")
+    reasoning_cls = reasoning.get_parser_cls("glm5_next")
+    assert reasoning_cls is not None
+    assert reasoning_cls.__module__.endswith("glm5_next.reasoning")
+    response = (
+        "Checking.<tool_call>get_weather"
+        "<arg_key>city</arg_key><arg_value>Paris</arg_value>"
+        "<arg_key>days</arg_key><arg_value>3</arg_value>"
+        "</tool_call>"
     )
-    for field in (
-        "default_encoding",
-        "supported_encodings",
-        "example_repo_ids",
-        "multi_gpu_supported",
-        "supports_empty_batches",
-        "requires_max_batch_context_length",
-        "default_structured_output_any_whitespace",
-    ):
-        assert getattr(glm5_next_modulev3_arch, field) == getattr(
-            glm5_next_arch, field
-        ), field
+    parsed = []
+    for parser_cls in (tool_parser_cls, Glm51ToolParser):
+        result = parser_cls().parse_complete(response)
+        parsed.append(
+            (
+                result.content,
+                [(c.name, json.loads(c.arguments)) for c in result.tool_calls],
+            )
+        )
+    assert parsed[0] == parsed[1]
+    assert parsed[0] == (
+        "Checking.",
+        [("get_weather", {"city": "Paris", "days": 3})],
+    )

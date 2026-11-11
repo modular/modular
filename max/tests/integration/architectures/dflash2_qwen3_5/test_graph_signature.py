@@ -38,8 +38,9 @@ from dflash2_pairing_harness import (
     fused_graph,
     state_regions,
 )
-from max.driver import Buffer
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
@@ -66,6 +67,17 @@ def types(fused: FusedGraph) -> list[TensorType | BufferType]:
     types = [t for t in declared if isinstance(t, (TensorType, BufferType))]
     assert len(types) == len(declared)
     return types
+
+
+def test_the_fused_graph_compiles(fused: FusedGraph) -> None:
+    """Checks that the served graph compiles.
+
+    A cond the graph builder accepts can still fail in the compiler, which
+    otherwise only an export would find.
+    """
+    InferenceSession(devices=[Accelerator()]).load(
+        fused.graph, weights_registry=fused.weights_registry
+    )
 
 
 def test_slot_count_matches_the_declared_formula(

@@ -37,7 +37,7 @@ import torch
 from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn._graph_ops import rope_split_store_ragged
 from max.nn.kv_cache import MHAKVCacheParams
@@ -63,19 +63,8 @@ def _make_freqs_cis(max_seq: int, head_dim: int) -> torch.Tensor:
     return freqs
 
 
-def _run_store(
-    cache_dtype: DType,
-    qkv: torch.Tensor,
-    freqs_cis: torch.Tensor,
-    device: Accelerator,
-    session: InferenceSession,
-) -> torch.Tensor:
-    """Store one BF16 QKV projection into a paged cache of ``cache_dtype``.
-
-    Returns the raw KV blocks ``[pages, 2, layers, page_size, heads, head_dim]``
-    read back as fp32.
-    """
-    kv_params = MHAKVCacheParams(
+def _kv_params(cache_dtype: DType) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
         dtype=cache_dtype,
         n_kv_heads=_N_KV_HEADS,
         head_dim=_HEAD_DIM,
@@ -83,6 +72,14 @@ def _run_store(
         page_size=_PAGE_SIZE,
         devices=[DeviceRef.GPU()],
     )
+
+
+def _load_store(
+    cache_dtype: DType, freqs_cis: torch.Tensor, session: InferenceSession
+) -> Model:
+    """Compiles the store of a BF16 QKV projection into a paged cache of
+    ``cache_dtype``."""
+    kv_params = _kv_params(cache_dtype)
     total_seq_len = sum(_PROMPT_LENS)
     qkv_dim = (_NUM_Q_HEADS + 2 * _N_KV_HEADS) * _HEAD_DIM
 
@@ -118,12 +115,25 @@ def _run_store(
         )
         graph.output(roped_q)
 
-    model = session.load(graph)
+    return session.load(graph)
 
+
+def _run_store(
+    model: Model,
+    cache_dtype: DType,
+    qkv: torch.Tensor,
+    freqs_cis: torch.Tensor,
+    device: Accelerator,
+) -> torch.Tensor:
+    """Store one BF16 QKV projection into a paged cache of ``cache_dtype``.
+
+    Returns the raw KV blocks ``[pages, 2, layers, page_size, heads, head_dim]``
+    read back as fp32.
+    """
     offsets = np.zeros(len(_PROMPT_LENS) + 1, dtype=np.uint32)
     offsets[1:] = np.cumsum(_PROMPT_LENS)
     kv_inputs = paged_kv_cache_inputs(
-        kv_params, _PROMPT_LENS, total_num_pages=8
+        _kv_params(cache_dtype), _PROMPT_LENS, total_num_pages=8
     )
 
     qkv_buf = Buffer.from_dlpack(qkv).to(device)
@@ -171,10 +181,12 @@ def test_fp8_kv_store_matches_bf16() -> None:
     # Small magnitudes keep values well inside the e4m3 range.
     qkv = torch.randn(total_seq_len, qkv_dim, dtype=torch.bfloat16) * 0.1
     freqs_cis = _make_freqs_cis(_PAGE_SIZE, _HEAD_DIM)
+    bf16_model = _load_store(DType.bfloat16, freqs_cis, session)
+    fp8_model = _load_store(DType.float8_e4m3fn, freqs_cis, session)
 
-    bf16_blocks = _run_store(DType.bfloat16, qkv, freqs_cis, device, session)
+    bf16_blocks = _run_store(bf16_model, DType.bfloat16, qkv, freqs_cis, device)
     fp8_blocks = _run_store(
-        DType.float8_e4m3fn, qkv, freqs_cis, device, session
+        fp8_model, DType.float8_e4m3fn, qkv, freqs_cis, device
     )
 
     assert torch.isfinite(fp8_blocks).all(), (

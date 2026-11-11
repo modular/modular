@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
+    InteractivityMetrics,
     PixelGenAggregates,
     StandardPercentileMetrics,
     TextGenAggregates,
@@ -33,6 +34,7 @@ def _text_result(**kwargs: object) -> BenchmarkResult:
         "available_gpu_memory_mib": [39000.0, 38500.0],
         "gpu_utilization": [95.0, 97.0],
         "server_startup_time": 12.3,
+        "num_gpus": 2,
         "steady_state_detected": True,
         "steady_state_window_count": 3,
         "steady_state_mode": "mad",
@@ -57,6 +59,31 @@ def _text_result(**kwargs: object) -> BenchmarkResult:
             itl_ms=StandardPercentileMetrics(
                 [0.0082, 0.0083], scale_factor=1000.0, unit="ms"
             ),
+            interactivity_tok_s=InteractivityMetrics(
+                mean=120.0,
+                p50=120.0,
+                p75=115.0,
+                p90=110.0,
+                p95=105.0,
+                p99=100.0,
+            ),
+            full_response_interactivity_tok_s=InteractivityMetrics(
+                mean=110.0,
+                p50=110.0,
+                p75=106.0,
+                p90=102.0,
+                p95=98.0,
+                p99=94.0,
+            ),
+            e2e_normalized_interactivity_tok_s=InteractivityMetrics(
+                mean=100.0,
+                p50=100.0,
+                p75=96.0,
+                p90=92.0,
+                p95=88.0,
+                p99=84.0,
+            ),
+            total_tokens_per_second_per_gpu=2500.0,
             max_input=100,
             max_output=200,
             max_total=300,
@@ -104,6 +131,13 @@ def test_text_groups_cover_expected_sections() -> None:
     assert groups.latency_stats is not None
     assert groups.latency_stats.ttft_ms is not None
     assert groups.throughput_stats is not None
+    assert groups.throughput_stats.interactivity_tok_s is not None
+    assert groups.throughput_stats.full_response_interactivity_tok_s is not None
+    assert (
+        groups.throughput_stats.e2e_normalized_interactivity_tok_s is not None
+    )
+    assert groups.summary.num_gpus == 2
+    assert groups.summary.total_tokens_per_second_per_gpu == 2500.0
     assert groups.cache_stats is not None
     assert groups.cache_stats.global_cached_token_rate == 0.42
 

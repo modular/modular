@@ -25,6 +25,7 @@
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
+#include "Support/LogicalResult.h"
 #include "Traits.h"
 
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -1565,6 +1566,12 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
   if (failed(declsCurrentlyProcessing.insert(&decl, loc))) {
+    // If this is a decl loaded from bytecode, just return, since we just need
+    // to deserialize the bytecode, the recursion is not a true parser cycle (as
+    // we already parsed the bytecode once).
+    if (decl.loadedFromBytecode)
+      return success();
+
     auto diag =
         emitError(decl.getLoc(),
                   "attempt to resolve a recursive reference to declaration");

@@ -269,6 +269,20 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer,
                                          elements);
     return;
   }
+  if (auto concat = dyn_cast<StructConcatOp>(op)) {
+    SmallVector<Value> elements;
+    for (Value operand : concat.getStructs()) {
+      size_t numElements =
+          *cast<StructType>(operand.getType()).getNumElements();
+      for (size_t i = 0; i != numElements; ++i) {
+        elements.push_back(StructExtractOp::create(b, op->getLoc(), operand,
+                                                   b.getIndexAttr(i)));
+      }
+    }
+    b.replaceOpWithNewOp<StructCreateOp>(concat, concat->getResultTypes(),
+                                         elements);
+    return;
+  }
 
   // Handle variant operations.
   if (auto create = dyn_cast<VariantCreateOp>(op)) {

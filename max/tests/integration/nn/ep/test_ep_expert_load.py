@@ -104,10 +104,10 @@ def test_dispatch_adds_routed_tokens_to_the_layer_row(split: bool) -> None:
     n_local = config.n_experts // N_DEVICES
 
     initializer = EPCommInitializer(config)
-    initializer.ep_init(session)
     manager = EPBatchManager(config)
     assert manager.input_tree()["eplb_expert_load"] is not None
     model = session.load(_build_graph(config, manager, split))
+    initializer.ep_init(session)
 
     expected = np.zeros((N_DEVICES, NUM_MOE_LAYERS, n_local), np.uint64)
     torch.manual_seed(7)

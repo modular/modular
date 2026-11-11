@@ -77,7 +77,9 @@ func.func @twoFolds(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, 
       %d = builtin.unrealized_conversion_cast %v, %a : !mogg.simd<f32>, !mogg.simd<f32> to !mogg.simd<f32>
       mogg.yield %d : !mogg.simd<f32>
     }
-    mogg.tensor.store %co[%row] = %b : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    mogg.rowwise.map (%j : !map.index<2>) {
+      mogg.tensor.store %co[%j] = %b : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
   }
   return
 }

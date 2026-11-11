@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from test_common.graph_utils import is_b100_b200
 from torch.utils.dlpack import from_dlpack
 
 HIDDEN = 4096
@@ -27,8 +27,7 @@ GROUPS = 16
 EPS = 1e-6
 
 pytestmark = pytest.mark.skipif(
-    accelerator_count() == 0 or "B200" not in Accelerator().model_name,
-    reason="the routed-rows finalize runs on B200 only",
+    not is_b100_b200(), reason="the routed-rows finalize runs on B200 only"
 )
 
 

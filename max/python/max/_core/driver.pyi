@@ -29,6 +29,42 @@ import max._core.dtype
 import numpy
 from numpy.typing import NDArray
 
+class ArchitectureVersion:
+    """
+    Represents the architecture version of a device.
+
+    The fields follow the vendor's own numbering, so compare versions only
+    between devices with the same :attr:`Device.api`. A version supports
+    ``==`` and hashing but not ordering, because a higher version is not
+    always a newer or more capable part: ``gfx1100`` (RDNA3) is 11.0.0 and
+    ``gfx950`` (CDNA4) is 9.5.0.
+    """
+
+    def __init__(self, major: int, minor: int, stepping: int = 0) -> None:
+        """
+        Creates an architecture version.
+
+        Args:
+            major: The major version.
+            minor: The minor version.
+            stepping: The stepping.
+        """
+
+    @property
+    def major(self) -> int:
+        """The major version."""
+
+    @property
+    def minor(self) -> int:
+        """The minor version."""
+
+    @property
+    def stepping(self) -> int:
+        """The stepping. Only AMD GPUs report a nonzero one."""
+
+    def __eq__(self, arg: object, /) -> bool: ...
+    def __hash__(self) -> int: ...
+
 class Device:
     """
     Represents a compute device available for tensor operations.
@@ -130,6 +166,23 @@ class Device:
         """
 
     @property
+    def memory_manager_stats(self) -> Mapping[str, Any]:
+        """
+        MLRT memory-manager allocation statistics for the device.
+
+        Keys: ``live_bytes``, ``peak_live_bytes``, ``max_request_bytes``,
+        ``driver_fallbacks``, ``driver_fallback_bytes`` and
+        ``request_sizes`` (distinct request sizes
+        of at least 256 MiB since the last reset). Every count is zero when
+        the memory manager is disabled.
+        """
+
+    def reset_memory_manager_peaks(self) -> None:
+        """
+        Restarts the memory manager's peak statistics from its live bytes, and clears the largest request, the recorded request sizes and the driver fallback counts.
+        """
+
+    @property
     def max_single_alloc_size(self) -> int:
         """Largest single contiguous allocation, in bytes."""
 
@@ -199,6 +252,41 @@ class Device:
 
             device = driver.Accelerator()
             device.architecture_name
+        """
+
+    @property
+    def architecture_version(self) -> ArchitectureVersion:
+        """
+        Returns the architecture version as an :class:`ArchitectureVersion`.
+
+        Compare versions instead of parsing :attr:`architecture_name`:
+
+        - NVIDIA GPUs report the compute capability: ``sm_100a`` is 10.0.0.
+        - AMD GPUs report the processor version: ``gfx950`` is 9.5.0 and
+          ``gfx90a`` is 9.0.10.
+        - Apple GPUs report the Apple silicon generation: an M5 is 5.0.0.
+
+        A virtual device for compile-only mode whose target is an
+        architecture name, such as ``sm_100a`` or ``gfx950``, reports the
+        version of that architecture.
+
+        Raises:
+            ValueError: If the device is the CPU, if its API has no known
+                numbering, or if its architecture name can't be read, as for
+                a virtual device whose target is an alias such as ``mi355x``.
+
+        .. invisible-code-block: python
+
+            from max import driver
+
+        .. skip: next if(driver.accelerator_count() == 0, reason="requires an accelerator")
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            version = device.architecture_version
         """
 
     @property
@@ -393,11 +481,9 @@ class CPU(Device):
 
 class CompletionFlag:
     """
-    An 8-byte completion flag in pinned host memory mapped into a device's address space.
+    A 64-bit completion flag that the host signals and a device queue waits on.
 
-    Lets a CPU thread signal a GPU queue (or vice versa) by writing a
-    64-bit value to a single location that is visible to both. Pair
-    with :meth:`DeviceQueue.wait_for_host_value` or the
+    Pair with :meth:`DeviceQueue.wait_for_host_value` or the
     ``runtime.wait_host_value`` graph op to gate downstream GPU work on a
     host-produced result without a second queue or a blocking host
     callback.
@@ -427,16 +513,17 @@ class CompletionFlag:
         """
         Clears the flag back to ``0``.
 
-        Don't reset while a queue is still waiting on the flag, and
-        don't signal a lower value without a reset.
+        Don't reset while a wait on the flag is pending; doing so is
+        undefined behavior. Don't signal a lower value without a reset
+        in between.
         """
 
     def signal(self, value: int) -> None:
         """
         Release-ordered store of ``value`` to the flag.
 
-        Pairs with the GPU-side ``cuStreamWaitValue64`` (or a
-        host-side acquire ``load``).
+        Pairs with a queued device wait on the flag (or a host-side
+        acquire ``load``).
 
         Primary intended use is priming the flag at setup time so
         the first captured-graph replay's ``runtime.wait_host_value``

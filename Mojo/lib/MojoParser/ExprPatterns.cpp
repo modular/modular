@@ -506,8 +506,10 @@ TupleNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                           const PatternPath *path,
                           SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
+  // TODO: kill `getWithoutParameters` as well.
   ASTType tupleType =
-      builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc());
+      builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc())
+          .getWithoutParameters(builder.shared);
 
   if (!tupleType.isEqualCanon(
           subjectType.getWithoutParameters(builder.shared))) {
@@ -2006,7 +2008,8 @@ static bool isTupleType(PatternMatchBuilder &builder, ASTType type, SMLoc loc) {
       builder.shared.lookupBuiltinType("Tuple", builder.declScope, loc);
   if (!tupleType)
     return false;
-  return tupleType.isEqualCanon(type.getWithoutParameters(builder.shared));
+  return tupleType.getWithoutParameters(builder.shared)
+      .isEqualCanon(type.getWithoutParameters(builder.shared));
 }
 
 /// Append EnumLike leaf dimensions under `path`. Returns false if any leaf is
@@ -2673,7 +2676,8 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     SMLoc matchLoc, bool offerMissingCases) {
   // Covering model (see MatchCoveringSpace):
   //   - Closed EnumLike root → FiniteCtors bitset.
-  //   - Open EnumLike root → OpenCtors bitset for duplicate detection.
+  //   - Open EnumLike root → OpenCtors bitset for duplicate detection and
+  //     require a catch-all because additional constructors may exist.
   //   - Tuple/struct of EnumLike leaves → flattened Product cell bitset.
   //   - Product larger than kMaxProductCells → TooComplex (needs `_`).
   //   - Else LiteralSet: track root Equal spellings for duplicates and require
@@ -2762,7 +2766,8 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     return {};
   }
 
-  if (space->kind == MatchCoveringSpace::Kind::LiteralSet) {
+  if (space->kind == MatchCoveringSpace::Kind::OpenCtors ||
+      space->kind == MatchCoveringSpace::Kind::LiteralSet) {
     emitWarning(matchLoc, "'match' is not exhaustive; add a '_' case");
     if (offerMissingCases)
       return formatCaseArms({"_"}, caseEntries.back().caseIndent,

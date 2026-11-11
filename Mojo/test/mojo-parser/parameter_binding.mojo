@@ -26,12 +26,12 @@ struct SomeStruct[a: Int, b: Int, c: Int = 2](Movable where False):
 
 
 # This install default c = 2 and create `SomeStruct[1, ?, 2]`
-# CHECK: lit.alias.decl *"c0`{{.*}}": meta<!lit.struct<#SomeStruct <:!Int {:scalar<index> 1}, :!Int ?, :!Int {:scalar<index> 2}>
+# CHECK: lit.alias.decl *"c0`{{.*}}": !lit.generator<<"b": !Int>meta<!lit.struct<#SomeStruct <:!Int {:scalar<index> 1}, :!Int *(0,0), :!Int {:scalar<index> 2}>
 comptime c0 = SomeStruct[1, _]
 
 # This is SomeStruct[1, ?, ?]
 
-# CHECK: lit.alias.decl *"c1`{{.*}}": meta<!lit.struct<#SomeStruct <:!Int {:scalar<index> 1}, :!Int ?, :!Int ?>
+# CHECK: lit.alias.decl *"c1`{{.*}}": !lit.generator<<"b": !Int, "c": !Int = {:scalar<index> 2}>meta<!lit.struct<#SomeStruct <:!Int {:scalar<index> 1}, :!Int *(0,0), :!Int *(0,1)>
 comptime c1 = SomeStruct[1, _, _]
 
 

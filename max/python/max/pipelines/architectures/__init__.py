@@ -96,6 +96,11 @@ def register_all_models() -> None:
             "DeepseekV32ForCausalLM", ".deepseekV3_2", "deepseekV3_2_arch"
         ),
         _LazyArch("DeepseekV4ForCausalLM", ".deepseekV4", "deepseekV4_arch"),
+        _LazyArch(
+            "DeepseekV4ForCausalLM_ModuleV3",
+            ".deepseekV4_modulev3",
+            "deepseekV4_modulev3_arch",
+        ),
         _LazyArch("DeepseekV41ForCausalLM", ".deepseekV41", "deepseekV41_arch"),
         _LazyArch(
             "DeepseekV41ForCausalLM_ModuleV3",
@@ -239,12 +244,9 @@ def register_all_models() -> None:
             "gemma4_unified_modulev3_arch",
         ),
         _LazyArch(
-            "Glm5NextForConditionalGeneration", ".glm5_next", "glm5_next_arch"
-        ),
-        _LazyArch(
             "Glm5NextForConditionalGeneration_ModuleV3",
-            ".glm5_next_modulev3",
-            "glm5_next_modulev3_arch",
+            ".glm5_next",
+            "glm5_next_arch",
         ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
         _LazyArch(
@@ -345,14 +347,9 @@ def register_all_models() -> None:
         ),
         _LazyArch("MTPHYV4DraftModel", ".mtp_hy_v4", "mtp_hy_v4_draft_arch"),
         _LazyArch(
-            "MTPGlm5NextDraftModel",
+            "MTPGlm5NextDraftModel_ModuleV3",
             ".mtp_glm5_next",
             "mtp_glm5_next_draft_arch",
-        ),
-        _LazyArch(
-            "MTPGlm5NextDraftModel_ModuleV3",
-            ".mtp_glm5_next_modulev3",
-            "mtp_glm5_next_modulev3_draft_arch",
         ),
         _LazyArch(
             "MTPGlmMoeDsaDraftModel_ModuleV3",

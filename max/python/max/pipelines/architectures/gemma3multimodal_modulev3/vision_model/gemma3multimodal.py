@@ -19,7 +19,7 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.norm.layer_norm import LayerNorm
 from max.nn.outputs import ReturnLogits
@@ -65,7 +65,7 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         image_embeddings = image_embeddings.to(self.language_model.mesh)
         image_token_indices = image_token_indices.to(self.language_model.mesh)
 
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+        kv_inputs = iter(kv_input_values(variadic_args))
         kv_cache_local, kv_cache_global = (
             self.kv_params.unflatten_basic_kv_tree(kv_inputs)
         )
