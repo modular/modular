@@ -181,9 +181,6 @@ from extensibility import (
     unsafe_fused_view,
 )
 from extensibility import (
-    _FusedInputTensor as FusedInputTensor,
-)
-from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 from extensibility import (
@@ -6411,15 +6408,10 @@ struct GatedGroupRMSNorm[group_size: Int]:
     """
 
     @staticmethod
-    def execute[
-        gate_dtype: DType,
-    ](
+    def execute(
         output: Some[Output & Tensor],
         y: Some[Input & Tensor],
-        # TODO(GEX-3856): Bind the gate by `Some[Input & Fused & LoadAccess]`
-        # once a trait-bound fused input no longer crashes the KGEN compile
-        # of the gated gate-slice graph on MI355.
-        gate: FusedInputTensor[dtype=gate_dtype, rank=2, ...],
+        gate: Some[Input & Fused & LoadAccess],
         weight: Some[Input & Tensor],
         eps: Float32,
         ctx: DeviceContext,
@@ -6429,8 +6421,10 @@ struct GatedGroupRMSNorm[group_size: Int]:
         comptime assert conforms_to(type_of(weight), TileTensorable)
         comptime assert type_of(output).rank == 2
         comptime assert type_of(y).rank == 2
+        comptime assert type_of(gate).rank == 2
         comptime assert type_of(weight).rank == 1
         comptime dtype = type_of(output).dtype
+        comptime gate_dtype = type_of(gate).dtype
         comptime assert type_of(y).dtype == dtype
         var n_rows = Int(y.shape()[0].value())
         var intermediate = Int(y.shape()[1].value())
@@ -6453,14 +6447,20 @@ struct GatedGroupRMSNorm[group_size: Int]:
         var y_tt = y.to_tile_tensor[dtype]()
         var weight_tt = weight.to_tile_tensor[.float32]()
 
+        comptime assert conforms_to(type_of(gate), UnsafeFusedView)
+        var gate_view = unsafe_fused_view(gate)
+        comptime assert conforms_to(type_of(gate_view), Loadable)
+
         # The gate is often a slice of the in-projection output, fused into
         # this input instead of being copied.
         @inline(.always)
         def gate_fn[
             width: Int, alignment: Int
-        ](n: Int, col: Int) {var gate} -> SIMD[gate_dtype, width]:
-            return gate._fused_load[width, element_alignment=alignment](
-                (n, col)
+        ](n: Int, col: Int) {var gate_view} -> SIMD[gate_dtype, width]:
+            return rebind[SIMD[gate_dtype, width]](
+                gate_view.load[width=width, element_alignment=alignment](
+                    Coord(n, col)
+                )
             )
 
         comptime if ctx.target.is_cpu():
