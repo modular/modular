@@ -1591,6 +1591,7 @@ class ModuleV3DecoderPipelineModel(
                         ep.n_gpus_per_node,
                         ep.use_allreduce,
                         ep.moe_dim,
+                        ep.uses_p2p_small_path,
                     )
                 ],
             )

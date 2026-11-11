@@ -71,6 +71,8 @@ from shmem.ep_comm import (
     NVBlockScaledTokenFormat,
     ep_dispatch_recv_size,
     NullExpertLoad,
+    EP_P2P_SMALL_COMBINE_BYTES,
+    EP_P2P_SMALL_DISPATCH_BYTES,
     fused_silu_kernel,
     fused_silu_mx_kernel,
     fused_silu_mxfp6_kernel,
@@ -241,7 +243,22 @@ struct Struct_ep_init:
             counters_0_size == EPLocalSyncCounters[n_experts].total_size()
             or counters_0_size
             == EPLocalSyncCounters[n_experts].allocation_size()
+            or EPLocalSyncCounters[n_experts].has_p2p_small_words(
+                counters_0_size
+            )
         ), "Atomic counters 0 size doesn't match expected size."
+
+        # A single-node graph opts in to the P2P small path by giving the
+        # counters its words. Its flags then sit just before each published
+        # receive buffer, where every exchange sharing the buffers finds them.
+        comptime p2p_small = n_nodes == 1 and EPLocalSyncCounters[
+            n_experts
+        ].has_p2p_small_words(counters_0_size)
+        comptime dispatch_header = (
+            EP_P2P_SMALL_DISPATCH_BYTES if p2p_small else 0
+        )
+        comptime combine_header = EP_P2P_SMALL_COMBINE_BYTES if p2p_small else 0
+
         var atomic_counters_0_buf = atomic_counters_0.to_tile_tensor[
             .int32
         ]().to_device_buffer(gpu_ctx)
@@ -287,9 +304,13 @@ struct Struct_ep_init:
             dispatch_send_p = gpu_ctx.enqueue_create_buffer[.uint8](
                 dispatch_send_size
             ).take_ptr()
-            dispatch_recv_p = gpu_ctx.enqueue_create_buffer[.uint8](
-                dispatch_recv_size
-            ).take_ptr()
+            dispatch_recv_p = (
+                gpu_ctx.enqueue_create_buffer[.uint8](
+                    dispatch_header + dispatch_recv_size
+                )
+                .take_ptr()
+                .unsafe_offset(dispatch_header)
+            )
             dispatch_recv_count_p = gpu_ctx.enqueue_create_buffer[.uint64](
                 n_experts
             ).take_ptr()
@@ -298,12 +319,37 @@ struct Struct_ep_init:
             # send buffer and directly send tokens to each device's recv buffer.
             # Hence, we don't need to allocate the combine send buffer.
             combine_send_p = None
-            combine_recv_p = gpu_ctx.enqueue_create_buffer[.uint8](
-                combine_recv_size
-            ).take_ptr()
+            combine_recv_p = (
+                gpu_ctx.enqueue_create_buffer[.uint8](
+                    combine_header + combine_recv_size
+                )
+                .take_ptr()
+                .unsafe_offset(combine_header)
+            )
             combine_recv_count_p = gpu_ctx.enqueue_create_buffer[.uint64](
                 n_experts
             ).take_ptr()
+
+        # The P2P small path's flags start at zero, an epoch it never uses.
+        comptime if p2p_small:
+            gpu_ctx.enqueue_memset(
+                DeviceBuffer(
+                    gpu_ctx,
+                    dispatch_recv_p.unsafe_offset(-dispatch_header),
+                    dispatch_header,
+                    owning=False,
+                ),
+                UInt8(0),
+            )
+            gpu_ctx.enqueue_memset(
+                DeviceBuffer(
+                    gpu_ctx,
+                    combine_recv_p.unsafe_offset(-combine_header),
+                    combine_header,
+                    owning=False,
+                ),
+                UInt8(0),
+            )
 
         # Initialize receive count buffers to MAX_FINITE
         # This sentinel value indicates that no data has been received yet

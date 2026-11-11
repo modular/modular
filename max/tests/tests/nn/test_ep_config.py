@@ -16,10 +16,17 @@ import re
 from typing import Any
 
 import pytest
-from max.driver import CPU, Buffer
+from max.driver import (
+    CPU,
+    Buffer,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Type
+from max.nn import ep_config as ep_config_module
 from max.nn._graph_ops import ep as ep_kernels
 from max.nn._graph_ops.ep import (
     _call_mega_ffn_ep_fused,
@@ -35,6 +42,7 @@ from max.nn._graph_ops.ep import (
 )
 from max.nn.ep_config import (
     _EP_LOCAL_SYNC_RESERVED_WORDS,
+    _EP_P2P_SMALL_WORDS,
     NUM_GROUPS,
     EPConfig,
     _ep_fused_moe_requested,
@@ -481,6 +489,136 @@ def test_only_a_fused_capable_config_reserves_counter_words() -> None:
     assert _ep_counter_words(
         256, 8, True, 0
     ) == get_ep_local_sync_counters_size(32)
+
+
+@pytest.mark.parametrize(
+    "api, override, takes_it",
+    [
+        ("hip", {}, True),
+        ("cuda", {}, False),
+        ("cpu", {}, False),
+        ("hip", {"fused_shared_expert": False}, False),
+        ("hip", {"use_allreduce": True}, False),
+        ("hip", {"max_tokens_per_rank": 16}, False),
+        ("hip", {"tokens_split_evenly": False}, False),
+    ],
+)
+def test_only_an_amd_fused_shared_expert_config_takes_the_p2p_small_path(
+    monkeypatch: pytest.MonkeyPatch,
+    api: str,
+    override: dict[str, Any],
+    takes_it: bool,
+) -> None:
+    """The P2P small path's counter words and receive-buffer flags opt the
+    kernels in, so only a configuration they serve allocates them; every other
+    one keeps its graph inputs and memory estimate."""
+    monkeypatch.setattr(
+        ep_config_module, "is_virtual_device_mode", lambda: False
+    )
+    monkeypatch.setattr(ep_config_module, "accelerator_api", lambda: api)
+    config = dataclasses.replace(
+        _base_ep_config(),
+        **{
+            "fused_shared_expert": True,
+            "tokens_split_evenly": True,
+            **override,
+        },
+    )
+    assert config.uses_p2p_small_path == takes_it
+    plain = dataclasses.replace(config, fused_shared_expert=False)
+    words = _ep_counter_words(
+        config.n_experts,
+        config.n_gpus_per_node,
+        config.use_allreduce,
+        config.moe_dim,
+        config.uses_p2p_small_path,
+    )
+    plain_words = _ep_counter_words(
+        plain.n_experts,
+        plain.n_gpus_per_node,
+        plain.use_allreduce,
+        plain.moe_dim,
+        plain.uses_p2p_small_path,
+    )
+    extra = config.estimate_memory_usage() - plain.estimate_memory_usage()
+    if takes_it:
+        assert words == plain_words + _EP_P2P_SMALL_WORDS
+        assert extra == 2 * 4096
+    else:
+        assert words == plain_words
+        assert extra == 0
+
+
+@pytest.mark.parametrize(
+    "override, takes_it",
+    [
+        ({}, True),
+        ({"max_tokens_per_rank": 32}, True),
+        ({"max_tokens_per_rank": 31}, False),
+        # n_experts // n_gpus_per_node + 1 < 256
+        ({"n_experts": 1016, "n_gpus_per_node": 4}, True),
+        ({"n_experts": 1020, "n_gpus_per_node": 4}, False),
+        # top_k * 32 * 4 <= EP_P2P_SMALL_COMBINE_BYTES
+        ({"top_k": 32}, True),
+        ({"top_k": 33}, False),
+        # hidden_size % EP_P2P_SMALL_HIDDEN_MULTIPLE
+        ({"hidden_size": 1024}, True),
+        ({"hidden_size": 512}, False),
+        ({"hidden_size": 7168 + 512}, False),
+    ],
+)
+def test_the_p2p_small_gate_matches_the_kernels_at_the_boundaries(
+    monkeypatch: pytest.MonkeyPatch, override: dict[str, Any], takes_it: bool
+) -> None:
+    """The cases of ``test_ep_p2p_small_gate.mojo``, which pins the kernels'
+    ``ep_p2p_small_on`` at the same boundaries: the property must agree, or the
+    graph opts in a configuration whose kernels fall back (or the reverse)."""
+    monkeypatch.setattr(
+        ep_config_module, "is_virtual_device_mode", lambda: False
+    )
+    monkeypatch.setattr(ep_config_module, "accelerator_api", lambda: "hip")
+    config = dataclasses.replace(
+        _base_ep_config(),
+        **{
+            "fused_shared_expert": True,
+            "tokens_split_evenly": True,
+            "hidden_size": 7168,
+            "n_experts": 256,
+            "n_gpus_per_node": 4,
+            "max_tokens_per_rank": 128,
+            **override,
+        },
+    )
+    assert config.uses_p2p_small_path == takes_it
+
+
+@pytest.mark.parametrize(
+    "virtual_api, host_api, amd",
+    [("hip", "cpu", True), ("hip", "cuda", True), ("cuda", "hip", False)],
+)
+def test_the_p2p_small_path_follows_the_virtual_target_not_the_host(
+    monkeypatch: pytest.MonkeyPatch, virtual_api: str, host_api: str, amd: bool
+) -> None:
+    """A compile-only export for MI355 opts in from a CPU or NVIDIA builder,
+    and one for an NVIDIA target does not from an AMD builder."""
+    set_virtual_device_api(virtual_api)
+    set_virtual_device_target_arch(
+        "gfx950" if virtual_api == "hip" else "sm_100a"
+    )
+    set_virtual_device_count(4)
+    try:
+        monkeypatch.setattr(
+            ep_config_module, "accelerator_api", lambda: host_api
+        )
+        config = dataclasses.replace(
+            _base_ep_config(),
+            fused_shared_expert=True,
+            tokens_split_evenly=True,
+            n_gpus_per_node=4,
+        )
+        assert config.uses_p2p_small_path == amd
+    finally:
+        set_virtual_device_count(0)
 
 
 def test_fused_moe_is_requested_only_by_the_developer_switch(

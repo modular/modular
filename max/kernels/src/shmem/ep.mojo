@@ -27,6 +27,11 @@ from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
+    EP_P2P_SMALL_COMBINE_BYTES,
+    EP_P2P_SMALL_HIDDEN_MULTIPLE,
+    EP_P2P_SMALL_MAX_TOKENS,
+    get_device_alignment,
+    MAX_GPUS_PER_NODE,
     EP_PDL_MAX_RANKS,
     ep_mx_msg_bytes,
     EPLocalSyncCounters,
@@ -39,6 +44,8 @@ from shmem.ep_comm import (
     combine_async_kernel,
     combine_wait_kernel,
     combine_kernel,
+    p2p_small_combine_kernel,
+    p2p_small_dispatch_kernel,
     EPCombineStoreFn,
     RouterWeightsFn,
     InputScalesFn,
@@ -173,6 +180,66 @@ def ep_token_recv[n_nodes: Int]() -> Bool:
         The `token_recv` parameter of the dispatch kernels.
     """
     return n_nodes == 1
+
+
+def ep_p2p_small_on[
+    n_experts: Int,
+    top_k: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool,
+    skip_a2a: Bool,
+    is_amd: Bool,
+    p2p_small_max_tokens: Int,
+    hidden_size: Int,
+    counter_words: Int,
+]() -> Bool:
+    """Returns whether the fused dispatch and combine take the P2P small path.
+
+    Both read this one gate, so they always pair. The graph opts in by giving
+    the counter buffer the small path's words, and does so only when every
+    device holds within one token of every other (see
+    `ep_fused_dispatch_kernel_api`).
+
+    Parameters:
+        n_experts: Total number of experts.
+        top_k: Experts each token is routed to.
+        max_token_per_rank: Maximum tokens a device dispatches.
+        n_gpus_per_node: Number of GPUs per node.
+        n_nodes: Number of physical nodes.
+        fused_shared_expert: Whether the shared expert rides the dispatch.
+        skip_a2a: Whether each device routes within itself.
+        is_amd: Whether the target is an AMD GPU.
+        p2p_small_max_tokens: The small path's bound; 0 turns it off.
+        hidden_size: Model hidden size, which the dispatch and the combine
+            both know.
+        counter_words: Elements of the counter buffer (-1 when dynamic).
+
+    Returns:
+        Whether the small path's kernels run.
+    """
+    return (
+        fused_shared_expert
+        and not skip_a2a
+        and n_nodes == 1
+        and is_amd
+        and p2p_small_max_tokens > 0
+        and max_token_per_rank >= p2p_small_max_tokens
+        and n_gpus_per_node <= MAX_GPUS_PER_NODE
+        and n_gpus_per_node * p2p_small_max_tokens <= 256
+        # One small-kernel thread per local expert group and the shared one.
+        and n_experts // n_gpus_per_node + 1 < 256
+        and top_k * p2p_small_max_tokens * 4 <= EP_P2P_SMALL_COMBINE_BYTES
+        # `_p2p_copy_from_peer` moves whole 16-byte vectors; a message is a
+        # sum of terms aligned to the device alignment.
+        and get_device_alignment() % 16 == 0
+        # `p2p_small_combine_kernel` moves one wavefront of vectors per chunk.
+        # The gate cannot see the combine dtype, so it takes the narrowest
+        # one (16 elements per vector), which divides every other width.
+        and hidden_size % EP_P2P_SMALL_HIDDEN_MULTIPLE == 0
+        and EPLocalSyncCounters[n_experts].has_p2p_small_words(counter_words)
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -621,6 +688,7 @@ def ep_fused_dispatch_kernel_api[
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
     dispatch_warp_min_tokens: Int = -1,
+    p2p_small_max_tokens: Int = EP_P2P_SMALL_MAX_TOKENS,
     ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
@@ -672,6 +740,11 @@ def ep_fused_dispatch_kernel_api[
             Same bytes and receive layout. -1 (the default) keeps the stock
             send and count, as does every configuration but single-node NVFP4
             or MXFP8 without a fused shared expert.
+        p2p_small_max_tokens: Up to this many tokens on every device, a
+            single-node P2P dispatch with a fused shared expert on AMD GPUs
+            runs the single-launch `p2p_small_dispatch_kernel` instead, when
+            `atomic_counters` ends in the small path's words. Must match the
+            combine's; 0 keeps the protocol kernels.
         ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
             compiles the counting away.
 
@@ -707,6 +780,7 @@ def ep_fused_dispatch_kernel_api[
         allreduce_world_size,
         has_input_scales=False,
         dispatch_warp_min_tokens=dispatch_warp_min_tokens,
+        p2p_small_max_tokens=p2p_small_max_tokens,
         ExpertLoadT=ExpertLoadT,
     ](
         token_handler,
@@ -750,6 +824,7 @@ def ep_fused_dispatch_kernel_api[
     allreduce_world_size: Int = 1,
     has_input_scales: Bool = True,
     dispatch_warp_min_tokens: Int = -1,
+    p2p_small_max_tokens: Int = EP_P2P_SMALL_MAX_TOKENS,
     ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
@@ -809,6 +884,11 @@ def ep_fused_dispatch_kernel_api[
             Same bytes and receive layout. -1 (the default) keeps the stock
             send and count, as does every configuration but single-node NVFP4
             or MXFP8 without a fused shared expert.
+        p2p_small_max_tokens: Up to this many tokens on every device, a
+            single-node P2P dispatch with a fused shared expert on AMD GPUs
+            runs the single-launch `p2p_small_dispatch_kernel` instead, when
+            `atomic_counters` ends in the small path's words. Must match the
+            combine's; 0 keeps the protocol kernels.
         ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
             compiles the counting away.
 
@@ -860,6 +940,94 @@ def ep_fused_dispatch_kernel_api[
     comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
+    # A decode step's tokens take the single-launch P2P small path when every
+    # device holds few enough of them. The small kernel decides that from
+    # every device's count, so it always runs; the protocol kernel runs only
+    # when this device's count leaves the decision open or sends the step to
+    # it, and returns at once when the small kernel took the step. That host
+    # decision needs token counts within one of each other on every device
+    # (tensor-parallel attention's even row split), so a device below the
+    # bound knows the step is small; the graph opts in only then
+    # (`EPConfig.uses_p2p_small_path`). The fused combine must follow, and
+    # only a fused shared expert guarantees that: the split dispatch cannot
+    # carry one, so it never pairs with this combine.
+    comptime counter_words = type_of(atomic_counters).static_shape[0]
+    comptime p2p_small = ep_p2p_small_on[
+        n_experts,
+        token_fmt_type.top_k,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        gpu_ctx.target.is_amd_gpu(),
+        p2p_small_max_tokens,
+        token_fmt_type.hid_dim,
+        counter_words,
+    ]()
+    comptime p2p_small_counter_words = counter_words if p2p_small else 0
+    comptime if p2p_small:
+        # The combine cannot see the token format, so a format the small
+        # dispatch cannot serve must not reach here with the words.
+        comptime assert (
+            token_fmt_type.dispatch_smem_size == 0
+        ), "the P2P small path does not serve this dispatch format"
+        comptime small_threads = 256
+        var n_mine = Int(input_tokens.dim(0))
+        comptime small_dispatch = p2p_small_dispatch_kernel[
+            dispatch_dtype,
+            small_threads,
+            input_tokens.LayoutType,
+            topk_ids.LayoutType,
+            row_offsets.LayoutType,
+            expert_ids.LayoutType,
+            src_info.LayoutType,
+            n_experts,
+            n_gpus_per_node,
+            max_token_per_rank,
+            token_fmt_type,
+            InputScalesFnType,
+            fused_shared_expert,
+            has_input_scales,
+            p2p_small_max_tokens,
+            InputTokensEngine=input_tokens.Engine,
+            TopkIdsEngine=topk_ids.Engine,
+            RowOffsetsEngine=row_offsets.Engine,
+            ExpertIdsEngine=expert_ids.Engine,
+            SrcInfoEngine=src_info.Engine,
+            ExpertLoadT=ExpertLoadT,
+        ]
+        var small_func = gpu_ctx.compile_function[small_dispatch]()
+        var small_counters = EPLocalSyncCounters[n_experts](
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
+            )
+        )
+        var small_grid = 1
+        if n_mine <= p2p_small_max_tokens:
+            small_grid = min(
+                n_gpus_per_node * p2p_small_max_tokens,
+                n_gpus_per_node * (n_mine + 1),
+            )
+        small_func._call_with_pack_checked(
+            gpu_ctx,
+            input_tokens,
+            topk_ids,
+            token_handler,
+            row_offsets,
+            expert_ids,
+            src_info,
+            pack_ptrs_array[DType.uint8](recv_ptrs, my_rank),
+            small_counters.get_p2p_small_ptr[counter_words](),
+            my_rank,
+            expert_load,
+            host_args=(input_scales_fn,),
+            grid_dim=small_grid,
+            block_dim=small_threads,
+        )
+        if n_mine < p2p_small_max_tokens:
+            return
+
     comptime hw_info = gpu_ctx.default_device_info
     comptime n_ranks = n_gpus_per_node * n_nodes
 
@@ -885,6 +1053,7 @@ def ep_fused_dispatch_kernel_api[
         allreduce_world_size=allreduce_world_size,
         warp_min_tokens=dispatch_warp_min_tokens,
         token_recv=ep_token_recv[n_nodes](),
+        p2p_small_counter_words=p2p_small_counter_words,
         InputTokensEngine=input_tokens.Engine,
         TopkIdsEngine=topk_ids.Engine,
         RowOffsetsEngine=row_offsets.Engine,
@@ -1440,6 +1609,7 @@ def ep_fused_combine_kernel_api[
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
+    p2p_small_max_tokens: Int = EP_P2P_SMALL_MAX_TOKENS,
     *,
     # The output goes through `store_fn`, so there is no output tile to infer
     # the engine from.
@@ -1486,6 +1656,11 @@ def ep_fused_combine_kernel_api[
         allreduce_world_size: The world size of the allreduce operation. Only
             needed for skip_a2a. Used to calculate the workload distribution for
             the shared expert (if has one).
+        p2p_small_max_tokens: Up to this many tokens on every device, a
+            single-node P2P combine with a fused shared expert on AMD GPUs
+            runs the single-launch `p2p_small_combine_kernel` instead, when
+            `atomic_counters` ends in the small path's words. Must match the
+            dispatch's; 0 keeps the protocol kernels.
         OutputTokensEngine: Storage engine backing the output tokens tile.
 
     Arguments:
@@ -1523,6 +1698,7 @@ def ep_fused_combine_kernel_api[
         use_shmem,
         allreduce_world_size,
         has_router_weights=False,
+        p2p_small_max_tokens=p2p_small_max_tokens,
         OutputTokensEngine=OutputTokensEngine,
     ](
         num_tokens,
@@ -1562,6 +1738,7 @@ def ep_fused_combine_kernel_api[
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
     has_router_weights: Bool = True,
+    p2p_small_max_tokens: Int = EP_P2P_SMALL_MAX_TOKENS,
     *,
     # The output goes through `store_fn`, so there is no output tile to infer
     # the engine from.
@@ -1616,6 +1793,11 @@ def ep_fused_combine_kernel_api[
         has_router_weights: Whether the routed expert outputs are weighted by
             `router_weights_fn` and summed. The overload without
             `router_weights_fn` passes `False`.
+        p2p_small_max_tokens: Up to this many tokens on every device, a
+            single-node P2P combine with a fused shared expert on AMD GPUs
+            runs the single-launch `p2p_small_combine_kernel` instead, when
+            `atomic_counters` ends in the small path's words. Must match the
+            dispatch's; 0 keeps the protocol kernels.
         OutputTokensEngine: Storage engine backing the output tokens tile.
 
     Arguments:
@@ -1661,6 +1843,63 @@ def ep_fused_combine_kernel_api[
         if not topk_ids_p:
             raise "topk_ids_p is required when skip_a2a is True."
 
+    # Pairs with the P2P small path in `ep_fused_dispatch_kernel_api`, under
+    # the same gate; each kernel returns at once on the other's steps.
+    comptime counter_words = type_of(atomic_counters).static_shape[0]
+    comptime p2p_small = ep_p2p_small_on[
+        n_experts,
+        top_k,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        gpu_ctx.target.is_amd_gpu(),
+        p2p_small_max_tokens,
+        hidden_size,
+        counter_words,
+    ]()
+    comptime p2p_small_counter_words = counter_words if p2p_small else 0
+    comptime if p2p_small:
+        if num_tokens <= p2p_small_max_tokens:
+            comptime small_threads = 256
+            comptime small_combine = p2p_small_combine_kernel[
+                combine_dtype,
+                small_threads,
+                input_tokens.LayoutType,
+                src_info.LayoutType,
+                top_k,
+                n_gpus_per_node,
+                max_token_per_rank,
+                StoreFnType,
+                RouterWeightsFnType,
+                has_router_weights,
+                fused_shared_expert,
+                p2p_small_max_tokens,
+                InputTokensEngine=input_tokens.Engine,
+                SrcInfoEngine=src_info.Engine,
+            ]
+            var small_func = gpu_ctx.compile_function[small_combine]()
+            var small_counters = EPLocalSyncCounters[n_experts](
+                MutPointer[Int32, MutUntrackedOrigin](
+                    unsafe_from_address=Int(atomic_counters.ptr)
+                )
+            )
+            small_func._call_with_pack_checked(
+                gpu_ctx,
+                input_tokens,
+                src_info,
+                Int32(num_tokens),
+                pack_ptrs_array[DType.uint8](recv_ptrs, my_rank),
+                small_counters.get_p2p_small_ptr[counter_words](),
+                my_rank,
+                host_args=(store_fn, router_weights_fn),
+                grid_dim=128,
+                block_dim=small_threads,
+            )
+            if num_tokens < p2p_small_max_tokens:
+                return
+
     comptime hw_info = gpu_ctx.default_device_info
     comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes
@@ -1684,6 +1923,7 @@ def ep_fused_combine_kernel_api[
         skip_a2a=skip_a2a,
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
+        p2p_small_counter_words=p2p_small_counter_words,
         InputTokensEngine=input_tokens.Engine,
         SrcInfoEngine=src_info.Engine,
     ]

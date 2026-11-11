@@ -342,7 +342,9 @@ class Glm5NextConfig(
 
         Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
         quantized, else in bf16. The shared expert fuses with the routed ones
-        only when it has their shape and weight layout.
+        only when it has their shape and weight layout. Flash is
+        tensor-parallel only, so attention reduce-scatters every step's tokens
+        evenly across the ranks before the dispatch.
         """
         quant_config = self.quant_config
         quantized_dispatch = quant_config is not None and (
@@ -370,6 +372,7 @@ class Glm5NextConfig(
                 or quant_config.shared_experts_use_quant(self.dtype)
             ),
             use_allreduce=runtime.ep_use_allreduce,
+            tokens_split_evenly=True,
         )
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:

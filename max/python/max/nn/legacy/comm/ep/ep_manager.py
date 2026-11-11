@@ -69,6 +69,7 @@ from max.nn._graph_ops.ep import (
 from max.nn.activation import GatedActivation
 from max.nn.ep_config import (
     _EP_LOCAL_SYNC_RESERVED_WORDS,
+    _EP_P2P_SMALL_WORDS,
     NUM_GROUPS,
     EPConfig,
     _ep_fused_moe_requested,
@@ -159,19 +160,26 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
 
 
 def _ep_counter_words(
-    n_experts: int, n_gpus_per_node: int, use_allreduce: bool, moe_dim: int
+    n_experts: int,
+    n_gpus_per_node: int,
+    use_allreduce: bool,
+    moe_dim: int,
+    p2p_small: bool = False,
 ) -> int:
     """Int32 words of one EP sync-counter buffer.
 
     One buffer per device and buffer group. The allreduce backend routes
     within each device, so its counters cover the local experts only. A config that gives the experts' FFN width
     can host the fused MoE, so its buffers also end in the fused counters'
-    fixed reserve; no other config allocates it.
+    fixed reserve; no other config allocates it. A config that takes the P2P
+    small path (:attr:`~max.nn.ep_config.EPConfig.uses_p2p_small_path`) ends
+    its buffers in that path's words, which is what opts the kernels in.
     """
     words = get_ep_local_sync_counters_size(
         n_experts // n_gpus_per_node if use_allreduce else n_experts
     )
-    return words + (_EP_LOCAL_SYNC_RESERVED_WORDS if moe_dim > 0 else 0)
+    words += _EP_LOCAL_SYNC_RESERVED_WORDS if moe_dim > 0 else 0
+    return words + (_EP_P2P_SMALL_WORDS if p2p_small else 0)
 
 
 def _ep_sync_counter_bytes(
@@ -452,6 +460,7 @@ class EPBatchManager:
                         n_gpus,
                         self.config.use_allreduce,
                         self.config.moe_dim,
+                        self.config.uses_p2p_small_path,
                     )
                 ],
                 device=DeviceRef.GPU(i % n_gpus),
@@ -1456,6 +1465,7 @@ class EPCommInitializer:
             config.n_gpus_per_node,
             config.use_allreduce,
             config.moe_dim,
+            config.uses_p2p_small_path,
         )
 
     def ep_init(self, session: InferenceSession) -> None:
