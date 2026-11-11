@@ -83,6 +83,7 @@ def http_get(url: str, *, is_json: bool = True, **kwargs: Any) -> Any:
         if GH_API_TOKEN:
             headers["Authorization"] = f"token {GH_API_TOKEN}"
         headers["Accept"] = "application/vnd.github.v3+json"
+        headers["X-GitHub-Api-Version"] = "2026-03-10"
     kwargs["headers"] = headers
 
     r = http.request("GET", url, **kwargs)
