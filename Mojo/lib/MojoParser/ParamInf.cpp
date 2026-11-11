@@ -55,10 +55,10 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
   if (!defaultType)
     return {};
   ASTType inferredType =
-      defaultType.getWithUnknownParametersReplaced(declScope.getShared());
+      defaultType.extractAndRelinkParamRef(declScope.getShared());
 
   CallOperands operands =
-      init.getOperandsForInferredType(inferredType, EC_CallArgValue, emitter);
+      init.getOperandsForInferredType(defaultType, EC_CallArgValue, emitter);
 
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
@@ -193,8 +193,8 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
       CallOperands callOperands(CallSyntax::kImplicitConvert, operand.expr,
                                 EC_OverloadResolution, {operand});
       FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
-          expectedType.getWithUnknownParametersReplaced(getShared()),
-          callOperands, getDeclScope(), forwardedNeedingOrigins);
+          expectedType.extractAndRelinkParamRef(getShared()), callOperands,
+          getDeclScope(), forwardedNeedingOrigins);
 
       // If we found one, we succeed if the returned type is compatible with the
       // expected type.  Infer the parameters of this overload candidate against
@@ -445,8 +445,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
         [&](CValue argVal, OperandsNeedingOriginsList *needingOrigins) -> Type {
       CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
                                 EC_TypeParamValue, {{argVal, operand.expr}});
-      auto nonParamType =
-          expectedType.getWithUnknownParametersReplaced(getShared());
+      auto nonParamType = expectedType.extractAndRelinkParamRef(getShared());
       FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
           nonParamType, ctorOperands, getDeclScope(), needingOrigins);
       if (failed(pValue) || !pValue->isYes())

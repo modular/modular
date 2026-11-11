@@ -16,6 +16,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "IREmitter.h"
+#include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/LITDialect/LITAttrs.h"
 #include "ParserEvaluationContext.h"
 
 #include "Mojo/MojoParser/ASTDecl.h"
@@ -1240,6 +1242,101 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
   }
 
   // Otherwise return it with all parameters replaced.
+  if (Type nonParam = getWithoutParameters(shared))
+    return nonParam;
+  return *this;
+}
+
+namespace {
+/// Collects the indices of same-scope parameter references
+struct ParamIndexRefRelinker
+    : public IndexParameterReplacer<ParamIndexRefRelinker> {
+
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    if (auto ref = dyn_cast<ParamIndexRefAttr>(attr);
+        ref && ref.getDepth() == depth) {
+      auto it = seenRefs.find(ref.getIndex());
+      if (it != seenRefs.end()) {
+        // the declared type is at depth 0, but we are now at `depth`. Adjust
+        // the depth.
+        Type t = depth == 0 ? it->second
+                            : IndexDepthAdjuster(depth).replace(it->second);
+        return ParamIndexRefAttr::get(ref.getDepth(),
+                                      std::distance(seenRefs.begin(), it), t);
+      }
+
+      // Relink the type first s.t. we captures dependent parameters first.
+      Type relinkedType = replaceImpl(ref.getType(), depth);
+      // Declare a placeholder at depth 0.
+      seenRefs[ref.getIndex()] =
+          depth == 0
+              ? relinkedType
+              : IndexDepthAdjuster(-depth).replaceAtDepth(relinkedType, depth);
+      return ParamIndexRefAttr::get(ref.getDepth(), seenRefs.size() - 1,
+                                    relinkedType);
+    }
+    return nullptr;
+  }
+
+  Type tryReplace(Type, size_t) { return {}; }
+  llvm::MapVector<unsigned, Type> seenRefs;
+};
+} // namespace
+
+ASTType ASTType::extractAndRelinkParamRef(SharedState &shared) const {
+  // If this is a struct type, try relinking the parameter references in it.
+  auto canonType = getCanonicalType(mlirType);
+
+  // Already wrapped by a generator.
+  if (StructTypeGenerator::dynCast(canonType))
+    return *this;
+
+  if (auto drt = dyn_cast<StructType>(canonType)) {
+    ParamIndexRefRelinker relinker;
+    auto relinkedST = relinker.replace(drt);
+    // Fully bound, simply return.
+    if (relinker.seenRefs.empty())
+      return drt;
+
+    auto body = TypeParamAttr::get(relinkedST, StructMetaType::get(relinkedST));
+    auto types = llvm::to_vector(llvm::make_second_range(relinker.seenRefs));
+
+    // Reusing the pog list on the struct decl to build the generator.
+    PogListAttr structPogs = cast<StructASTDecl>(getDecl(shared))
+                                 ->getOp()
+                                 .getSignature()
+                                 .getParamListAttrs();
+
+    ParameterEvaluator defaultRelinker(relinkedST.getParamValues());
+    SmallVector<PogMetadataAttr> newPogs(relinker.seenRefs.size(), nullptr);
+    bool hasVA = false;
+    for (auto [idx, binding] : llvm::enumerate(relinkedST.getParamValues())) {
+      if (auto ref = dyn_cast<ParamIndexRefAttr>(binding);
+          ref && ref.getDepth() == 0 && newPogs[ref.getIndex()] == nullptr) {
+        // If this is a direct reference, inherits pogs from the original decl.
+        PogMetadataAttr origPog = structPogs.getPogs()[idx];
+        newPogs[ref.getIndex()] = PogMetadataAttr::get(
+            origPog.getName(), PassingKind::Inferred, origPog.getVariadic(),
+            defaultRelinker.replace(origPog.getDefaultValue()));
+        hasVA |= origPog.isAnyVarArg();
+      }
+    }
+    // Any unset pog at the moment, is not directly forwarding the decl
+    // parameter, create a placeholder.
+    for (auto [idx, pog] : llvm::enumerate(newPogs))
+      if (pog == nullptr)
+        pog = PogMetadataAttr::get(
+            StringAttr::get(shared.getContext(), "relinked$" + Twine(idx)),
+            PassingKind::Inferred);
+
+    return ASTType(GeneratorAttr::get(
+        types, body,
+        PogListAttr::get(shared.getContext(), newPogs, /*bodyConstraints=*/{},
+                         hasVA ? structPogs.getOrigVariadicConvention()
+                               : ArgConvention::ByRefError)));
+  }
+
+  // FIXME: what is this?
   if (Type nonParam = getWithoutParameters(shared))
     return nonParam;
   return *this;

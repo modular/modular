@@ -1230,8 +1230,7 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
       // parameters, so do a full conversion check.
 
       // Convert Origin[*(0, 0)] to Origin[?] so we can infer the parameter(s).
-      auto nonParamDRT =
-          ASTType(expDRT).getWithUnknownParametersReplaced(shared);
+      auto nonParamDRT = ASTType(expDRT).extractAndRelinkParamRef(shared);
       CallOperands ctorOperands(CallSyntax::kImplicitConvert, expr,
                                 EC_TypeParamValue, {{actual, expr}});
       FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
