@@ -28,7 +28,7 @@
 # The struct should NOT have any constraint in its trait type.
 # CHECK: lit.struct.decl @UnconditionalMovable<T: !AnyType_Deinitable_Movable>
 # CHECK-NOT: where #kgen.constraint
-# CHECK-SAME: attributes
+# CHECK-SAME: {{$}}
 struct UnconditionalMovable[T: Movable & Deinitable](Movable):
     var value: Self.T
 

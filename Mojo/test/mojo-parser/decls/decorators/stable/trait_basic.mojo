@@ -16,7 +16,8 @@
 # Test that @stable decorator is recognized on traits and trait methods.
 
 
-# CHECK: lit.trait.decl @StableTrait{{.*}}hasStableDecorator
+# CHECK: lit.trait.decl @StableTrait
+# CHECK: } <{{.*}}hasStableDecorator
 @stable
 trait StableTrait:
     pass
@@ -26,12 +27,13 @@ trait StableTrait:
 # CHECK: lit.trait.decl @UnstableTrait
 # CHECK-NOT: hasStableDecorator
 # CHECK-SAME: unspecified
+# CHECK-NOT: hasStableDecorator
 trait UnstableTrait:
     pass
 
 
 # The trait must be @stable to allow @stable members inside it.
-# CHECK: lit.trait.decl @TraitWithStableMethod{{.*}}hasStableDecorator
+# CHECK: lit.trait.decl @TraitWithStableMethod
 @stable
 trait TraitWithStableMethod:
     # CHECK: lit.fn @"stable_trait_method({{.*}}hasStableDecorator
@@ -42,5 +44,6 @@ trait TraitWithStableMethod:
     # CHECK: lit.fn @"unstable_trait_method(
     # CHECK-NOT: hasStableDecorator
     # CHECK-SAME: sourceName = "unstable_trait_method"
+    # CHECK: } <{{.*}}hasStableDecorator
     def unstable_trait_method(self):
         ...

@@ -46,7 +46,7 @@
 # S0: lit.struct.decl @"closure$s0_make_closure{{.*}}::my_closure::__storage"(trait<@"##__mojo_closure__##"<
 # S0-SAME: :param_list<type> [], :param_list<type> [#kgen.quote<!Int{{[0-9]*}}>], :type #kgen.quote<!Int{{[0-9]*}}>
 # S0-SAME: #kgen.fn_metadata<[imm_mem, imm], "none"
-# S0-SAME: >, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>) attributes {{{.*}}synthetic}
+# S0-SAME: >, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>){{$}}
 # S0-NEXT: move :{{.*}}@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
 # S0-NEXT: copy :{{.*}}@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(copy:
 # S0: lit.fn @"my_closure{{.*}}"[mut {{.*}}](%{{.*}}: !lit.ref<!storage{{.*}}, mut {{.*}}> imm_mem, |, %y: {{.*}}) -> {{.*}}
@@ -55,6 +55,7 @@
 # S0: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__call__{{.*}}"
 # S0: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
 # S0: kgen.witness "__deinit__{{.*}}" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__deinit__(
+# S0: } <synthetic
 # S0-NOT: lit.struct.decl @"extension${{.*}}"
 
 
@@ -127,9 +128,10 @@ def s3_make_closure(x: Int, mem: String) -> Int:
 # S4: lit.struct.decl @"closure$s4_make_closure{{.*}}::mutate::__storage"(trait<@"##__mojo_closure__##"<
 # S4-SAME: :param_list<type> [#kgen.quote<origin<true>>, #kgen.quote<!lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *(0,1)>>>]
 # S4-SAME: :param_list<type> [#kgen.quote<!lit.ref<!String, mut *(0,1)>>, #kgen.quote<!lit.ref<!String, imm *[0,1]>>], :type #kgen.quote<none>
-# S4-SAME: >) attributes {{{.*}}synthetic}
+# S4-SAME: >)
 # S4: kgen.conformance @"##__mojo_closure__##"<:param_list<type> [#kgen.quote<origin<true>>
 # S4-DAG: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"{{.*}}::mutate::__storage"::@"__call__{{.*}}"
+# S4: } <synthetic
 # S4-NOT: lit.struct.decl @"extension$
 
 
@@ -145,9 +147,10 @@ def s4_make_closure(x: Int, mem: String) -> Int:
 # COM: Verify storage constructor takes the captured value (no wrapper impl arg).
 # S5: lit.struct.decl @"closure$s5_make_closure{{.*}}::parametric::__storage"(trait<@"##__mojo_closure__##"<
 # S5-SAME: :param_list<type> [#kgen.quote<!AnyType_MyInterface>], :param_list<type> [#kgen.quote<!lit.ref<:!AnyType_MyInterface *(0,1), imm *[0,1]>>], :type #kgen.quote<none>
-# S5-SAME: >, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>) attributes {{{.*}}synthetic}
+# S5-SAME: >, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>)
 # S5: lit.fn @"__init__(::String)"no_nested_origin_exclusivity[imm *"mem`", mut *"self`"]
 # S5-NOT: lit.fn @"__init__($0$)"{{.*}}[mut *"impl`", mut *"self`"]
+# S5: } <synthetic
 
 
 trait s5_MyInterface:

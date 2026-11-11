@@ -16,24 +16,27 @@
 
 from docs_package import documented_method_defined_in_init
 
-# CHECK: #[[MODULE_DOC:.*]] = #lit.doc.string<"This is a module doc."
 # CHECK: #[[ALIAS_DOC:.*]] = #lit.doc.string<"This is an alias doc."
-# CHECK: #[[STRUCT_DOC:.*]] = #lit.doc.string<"This is a struct doc."
 # CHECK: #[[STRUCT_FIELD_DOC:.*]] = #lit.doc.string<"This is a struct field doc."
+# CHECK: #[[STRUCT_DOC:.*]] = #lit.doc.string<"This is a struct doc."
 # CHECK: #[[FUNCTION_DOC:.*]] = #lit.doc.string<"This is a function doc."
-# CHECK: #[[TRAIT_DOC:.*]] = #lit.doc.string<"This is a trait doc."
 # CHECK: #[[TRAIT_FUNCTION_DOC:.*]] = #lit.doc.string<"This is a trait function doc."
-# CHECK: #[[PACKAGE_DOC:.*]] = #lit.doc.string<"This is a test package."
+# CHECK: #[[TRAIT_DOC:.*]] = #lit.doc.string<"This is a trait doc."
+# CHECK: #[[MODULE_DOC:.*]] = #lit.doc.string<"This is a module doc."
 # CHECK: #[[IMPORTED_FUNC_DOC:.*]] = #lit.doc.string<"This is an imported method."
+# CHECK: #[[PACKAGE_DOC:.*]] = #lit.doc.string<"This is a test package."
 
-# CHECK: lit.file_module @parser_doc{{.*}}docString = #[[MODULE_DOC]]
+# CHECK: lit.file_module @parser_doc {
 # CHECK: lit.alias.decl {{.*}}AliasType{{.*}}docString = #[[ALIAS_DOC]]
-# CHECK: lit.struct.decl @Struct{{.*}}docString = #[[STRUCT_DOC]]
-# CHECK: lit.struct.field value{{.*}}docString = #[[STRUCT_FIELD_DOC]]
+# CHECK: lit.struct.decl @Struct(
+# CHECK: lit.struct.field value : {{.*}} <docString = #[[STRUCT_FIELD_DOC]]>
+# CHECK: } <docString = #[[STRUCT_DOC]]
 # CHECK: lit.fn @"foo()"{{.*}}docString = #[[FUNCTION_DOC]]
+# CHECK: } <docString = #[[MODULE_DOC]]>
 
-# CHECK: lit.package @docs_package{{.*}}docString = #[[PACKAGE_DOC]]
+# CHECK: lit.package @docs_package {
 # CHECK: lit.fn @"documented_method_defined_in_init()"{{.*}}docString = #[[IMPORTED_FUNC_DOC]]
+# CHECK: } <docString = #[[PACKAGE_DOC]]>
 
 comptime AliasType = __mlir_type.`!kgen.non_struct_type`
 """This is an alias doc."""

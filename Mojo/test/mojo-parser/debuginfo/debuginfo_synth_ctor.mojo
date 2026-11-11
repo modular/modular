@@ -17,7 +17,7 @@
 # COM: Synthesized constructors should not emit debuginfo.
 
 # CHECK: lit.struct.decl @MyValueStruct(!AnyType_Copyable_Deinitable_Movable)
-# CHECK-SAME: attributes {sourceName = #MyValueStruct_name}
+# CHECK: } <sourceName = #MyValueStruct_name>
 
 # Default trait methods for Copyable / Movable / Deinitable.
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "copy($0)"

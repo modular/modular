@@ -22,11 +22,11 @@ struct Spaceship:
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
+    # CHECK: } <{{.*}}targetStruct = @struct_extensions::@Spaceship
     def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
@@ -42,11 +42,11 @@ struct Spaceship:
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
+    # CHECK: } <{{.*}}targetStruct = @struct_extensions::@Spaceship
     def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
@@ -73,11 +73,11 @@ struct Spaceship:
 # CHECK-LABEL: lit.struct.decl @Spaceship
 # CHECK-NOT: lit.struct.decl @"extension:Spaceship"
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
+    # CHECK: } <{{.*}}targetStruct = @struct_extensions::@Spaceship
     def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
@@ -86,7 +86,7 @@ __extension Spaceship:
 # CHECK-NOT: lit.extension.decl @"extension:Spaceship"
 # Note the quote at the end of this last line -------^
 # This checks that we're naming this struct extension something different.
-# CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
+# CHECK: } <{{.*}}targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
     def something_else(self: Spaceship):
         pass
@@ -104,11 +104,11 @@ struct PlainStruct(Movable where False):
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:PlainStruct"
-# CHECK-SAME: targetStruct = @struct_extensions::@PlainStruct
 __extension PlainStruct:
     # CHECK-LABEL: lit.fn @"__init__
     def __init__(out self):
         pass
+    # CHECK: } <{{.*}}targetStruct = @struct_extensions::@PlainStruct
 
 
 # CHECK-LABEL: lit.fn @"zork
@@ -154,8 +154,6 @@ trait Flying:
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@struct_extensions::@Flying>]>
-# CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
@@ -169,6 +167,7 @@ __extension Spaceship(Flying):
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
 # CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>}
+# CHECK: } <{{.*}}targetStruct = @struct_extensions::@Spaceship{{.*}}immediateParents = [<@struct_extensions::@Flying>]
 
 
 # // -----
@@ -221,8 +220,6 @@ trait Flying:
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@struct_extensions::@Flying>]>
-# CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
@@ -236,6 +233,7 @@ __extension Spaceship(Flying):
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
 # CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>}
+# CHECK: } <{{.*}}targetStruct = @struct_extensions::@Spaceship{{.*}}immediateParents = [<@struct_extensions::@Flying>]
 
 # // -----
 

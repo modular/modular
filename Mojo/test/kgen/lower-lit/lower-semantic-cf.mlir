@@ -313,7 +313,7 @@ lit.fn @suppressed_try() {
     lit.try.yield
   } finally {
     lit.try.yield
-  } {"suppressWarnings" = true}
+  } <suppressWarnings = true>
   // CHECK: hlcf.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   index.constant 0
@@ -692,7 +692,7 @@ lit.fn @try_in_loop(%arg0: !kgen.scalar<bool>) {
       lit.try.yield
     } finally {
       lit.try.yield
-    } {"suppressWarnings" = true}
+    } <suppressWarnings = true>
     // CHECK: hlcf.continue
     lit.loop.continue
   } else {

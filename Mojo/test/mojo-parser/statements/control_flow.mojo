@@ -465,7 +465,7 @@ def for_range_loop():
         # CHECK-NEXT:    lit.try.yield
         # CHECK-NEXT:        } except {
         # CHECK-NEXT:  lit.loop.break.else
-        # CHECK: } {suppressWarnings = true}
+        # CHECK: } <suppressWarnings = true>
         # CHECK-NEXT:  %item = lit.var.decl
         # CHECK: [[TMP:%.*]] = lit.ref.load %item
         # CHECK-NEXT: [[TMPR:%.*]] = kgen.rebind [[TMP]]

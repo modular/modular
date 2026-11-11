@@ -49,7 +49,8 @@
 ## recorded as its link dependency.
 # RUN: %precompile-mojo-isolated -S -I %t.dir/deps %t.dir/user \
 # RUN:   | FileCheck %s --check-prefix=DEPS
-# DEPS: lit.package @user attributes {dependencies = #kgen<link.dependencies[@dep]>}
+# DEPS: lit.package @user {
+# DEPS: } <dependencies = [@dep]>
 
 # RUN: not kgen -precompile %t.dir/user/u.mojo 2>&1 \
 # RUN:   | FileCheck %s --check-prefix=NOT-PKG

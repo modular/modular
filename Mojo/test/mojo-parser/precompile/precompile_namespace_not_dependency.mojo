@@ -38,7 +38,8 @@
 # RUN: kgen-opt %t.dir/lib/pkg.mojoc | FileCheck %s --check-prefix=DEPS
 # RUN: %parse-mojo-isolated -I%t.dir/lib -I%t.dir/src %s | FileCheck %s
 
-# DEPS: lit.package @pkg attributes {dependencies = #kgen<link.dependencies[@std, @ns::@inner::@utils, @ns::@sub]>}
+# DEPS: lit.package @pkg {
+# DEPS: } <dependencies = [@std, @ns::@inner::@utils, @ns::@sub]>
 
 # CHECK: lit.call {{.*}}@pkg::@p::@"pfn()"
 

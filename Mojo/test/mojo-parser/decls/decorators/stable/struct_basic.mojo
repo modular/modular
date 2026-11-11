@@ -18,7 +18,7 @@
 
 
 # CHECK: lit.struct.decl @StableStruct
-# CHECK-SAME: hasStableDecorator
+# CHECK: } <hasStableDecorator
 @stable
 struct StableStruct(Movable where False):
     pass
@@ -26,7 +26,7 @@ struct StableStruct(Movable where False):
 
 # CHECK: lit.struct.decl @UnstableStruct
 # CHECK-NOT: hasStableDecorator
-# CHECK-SAME: sourceName
+# CHECK: } <sourceName
 struct UnstableStruct(Movable where False):
     pass
 
@@ -35,7 +35,7 @@ struct UnstableStruct(Movable where False):
 # The choice of @fieldwise_init is arbitrary - any struct decorator
 # works. This test ensures decorator composition doesn't break @stable.
 # CHECK: lit.struct.decl @StableWithOtherDecorators
-# CHECK-SAME: hasStableDecorator
+# CHECK: } <hasStableDecorator
 @stable
 @fieldwise_init
 struct StableWithOtherDecorators(RegisterPassable):

@@ -21,7 +21,7 @@
 
 
 # CHECK: lit.struct.decl @MyRP
-# CHECK-SAME: sourceName = #[[SOURCENAME_RP]]
+# CHECK: } <sourceName = #[[SOURCENAME_RP]]>
 @fieldwise_init
 struct MyRP[A: Int](TrivialRegisterPassable):
     var a: Int
@@ -34,7 +34,7 @@ struct MyRP[A: Int](TrivialRegisterPassable):
 
 
 # CHECK: lit.struct.decl @MyData
-# CHECK-SAME: sourceName = #[[SOURCENAME_DATA]]
+# CHECK: } <{{.*}}sourceName = #[[SOURCENAME_DATA]]>
 struct MyData[A: Int, B: MyRP[3], C: TrivialRegisterPassable](Movable where False):
     var a: Int
     var b: MyRP[3]

@@ -24,12 +24,12 @@ trait B:
 
     # This is a default value
     # CHECK:      lit.alias.decl *"c`2": !alias_Int1 = <sugar_member_alias(!kgen.param<:!B_AnyType *"_Self`">, "a", #kgen.get_witness<:!B_AnyType *"_Self`", @{{.*}}::@B, "a">)>
-    # CHECK-SAME:   {defaultedAssociatedAlias}
+    # CHECK-SAME:   <defaultedAssociatedAlias>
     comptime c = Self.a
 
     # This is a dependent default type alias
     # CHECK:      lit.alias.decl *"T`3": meta<!lit.struct<#DT <:!Int #kgen.get_witness<:!B_AnyType *"_Self`", @{{.*}}::@B, "a">>>> = <@{{.*}}::@DT<:!Int #kgen.get_witness<:!B_AnyType *"_Self`", @{{.*}}::@B, "a">>>
-    # CHECK-SAME:   {defaultedAssociatedAlias}
+    # CHECK-SAME:   <defaultedAssociatedAlias>
     comptime T = DT[Self.a]
 
 
@@ -49,23 +49,23 @@ struct Foo(B, Movable where False):
 # CHECK-LABEL: lit.trait.decl @C
 trait C:
     # CHECK:      lit.alias.decl *"T`{{[0-9]+}}": !AnyType
-    # CHECK-NOT:    {defaultedAssociatedAlias}
+    # CHECK-NOT:    <defaultedAssociatedAlias>
     comptime T: AnyType
 
 # CHECK-LABEL: lit.trait.decl @D
 trait D(C):
     # CHECK:      lit.alias.decl *"T`{{[0-9]+}}": !AnyType = <!Int>
-    # CHECK-SAME:   {defaultedAssociatedAlias}
+    # CHECK-SAME:   <defaultedAssociatedAlias>
     comptime T: AnyType = Int
 
 # CHECK-LABEL: lit.struct.decl @Bar
 struct Bar(D, Movable where False):
     # COM: The defaulted `T = Int` from D must materialize on the struct exactly
-    # COM: once with `{defaultedAssociatedAlias}` preserved, and both conformances
+    # COM: once with `<defaultedAssociatedAlias>` preserved, and both conformances
     # COM: (to C, the abstract parent, and to D, the refining provider) must emit
     # COM: a witness binding `T = Int`.
     # CHECK:      lit.alias.decl *"T`{{[0-9]+}}": !AnyType = <!Int>
-    # CHECK-SAME:   {defaultedAssociatedAlias}
+    # CHECK-SAME:   <defaultedAssociatedAlias>
     # CHECK:      kgen.conformance {{.*}}@C {
     # CHECK-NEXT:   kgen.witness "T" : !AnyType = !Int
     # CHECK:      kgen.conformance {{.*}}@D {
@@ -80,11 +80,11 @@ struct Bar(D, Movable where False):
 # CHECK-LABEL: lit.trait.decl @Parent
 trait Parent:
     # CHECK:      lit.alias.decl *"A`{{[0-9]+}}": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
-    # CHECK-SAME:   {defaultedAssociatedAlias}
+    # CHECK-SAME:   <defaultedAssociatedAlias>
     comptime A: Int = 1
     # In Parent, `Self.X` lowers to references against Parent's `_Self`.
     # CHECK:      lit.alias.decl *"B`{{[0-9]+}}": !alias_Int1 = <sugar_member_alias(!kgen.param<:!Parent_AnyType *"_Self`">, "A", #kgen.get_witness<:!Parent_AnyType *"_Self`", @{{.*}}::@Parent, "A">)>
-    # CHECK-SAME:   {defaultedAssociatedAlias}
+    # CHECK-SAME:   <defaultedAssociatedAlias>
     comptime B: Int = Self.A
 
 # CHECK-LABEL: lit.trait.decl @Child
@@ -95,9 +95,9 @@ trait Child(Parent):
 
 struct ConformsToChild(Child, Movable where False):
     # CHECK:      lit.alias.decl *"A`{{[0-9]+}}": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
-    # CHECK-SAME:   {defaultedAssociatedAlias}
+    # CHECK-SAME:   <defaultedAssociatedAlias>
     # CHECK:      lit.alias.decl *"B`{{[0-9]+}}": !alias_Int1 = <sugar_member_alias(!ConformsToChild, "A", rebind(:!Int {:scalar<index> 1}))>
-    # CHECK-SAME:   {defaultedAssociatedAlias}
+    # CHECK-SAME:   <defaultedAssociatedAlias>
     # CHECK:      kgen.conformance {{.*}}@Parent {
     # CHECK-NEXT:   kgen.witness "A" : !alias_Int1 = rebind(:!Int {:scalar<index> 1})
     # CHECK-NEXT:   kgen.witness "B" : !alias_Int1 = sugar_member_alias(!ConformsToChild, "A", rebind(:!Int {:scalar<index> 1}))

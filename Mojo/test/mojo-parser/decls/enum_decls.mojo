@@ -23,13 +23,13 @@
 
 
 # CHECK-LABEL: lit.struct.decl @Color(
-# CHECK-SAME: attributes {isEnum,
 # CHECK: lit.enum.case red : []{{$}}
 # CHECK-NEXT: lit.enum.case green : []{{$}}
 # CHECK-NEXT: lit.enum.case rgb : {{\[}}[[INT:!alias_Int[0-9]*]], [[INT]], [[INT]]]{{$}}
 # CHECK: lit.fn @"is_red(
 # CHECK: lit.fn @"make()"(){{.*}}isStatic
 # CHECK: lit.alias.decl *"N`"
+# CHECK: } <{{.*}}isEnum>
 __enum Color:
     case red
     case green
@@ -47,9 +47,9 @@ __enum Color:
 
 # CHECK-LABEL: lit.struct.decl @Result<
 # CHECK-SAME: T: [[BOUND:!AnyType_Deinitable_Movable]], E: [[BOUND]]>
-# CHECK-SAME: isEnum
 # CHECK: lit.enum.case success : [!kgen.param<:[[BOUND]] T>]
 # CHECK-NEXT: lit.enum.case failure : [!kgen.param<:[[BOUND]] E>]
+# CHECK: } <{{.*}}isEnum>
 __enum Result[T: Movable & Deinitable, E: Movable & Deinitable](Movable):
     case success(Self.T)
     case failure(Self.E)
@@ -68,9 +68,9 @@ __enum Forward:
 # The header takes what a struct's does: decorators, conformances and a
 # `where` clause.
 # CHECK-LABEL: lit.struct.decl @Bounded<n: !Int, {<
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"use Color">, isEnum
 # CHECK: lit.enum.case a : {{\[}}[[INT]]]{{$}}
 # CHECK-NEXT: lit.enum.case b : []{{$}}
+# CHECK: } <{{.*}}deprecationInfo = <"use Color">{{.*}}isEnum>
 @deprecated("use Color")
 __enum Bounded[n: Int](Movable) where n > 0:
     case a(Int)
@@ -84,9 +84,9 @@ __enum OneLine: case only
 
 # An enum may declare no cases.
 # CHECK-LABEL: lit.struct.decl @Caseless(
-# CHECK-SAME: attributes {isEnum,
 # CHECK-NOT: lit.enum.case
 # CHECK: lit.fn @"method(
+# CHECK: } <{{.*}}isEnum>
 __enum Caseless:
     def method(self):
         pass
@@ -94,9 +94,9 @@ __enum Caseless:
 
 # Doc strings sit where a field's does: on the lines right after the case.
 # CHECK-LABEL: lit.struct.decl @Documented(
-# CHECK: lit.enum.case red : [] {docString = [[RED_DOC]]}
+# CHECK: lit.enum.case red : [] <docString = [[RED_DOC]]>
 # CHECK-NEXT: lit.enum.case plain : []{{$}}
-# CHECK-NEXT: lit.enum.case rgb : {{\[}}[[INT]], [[INT]], [[INT]]] {docString = [[RGB_DOC]]}
+# CHECK-NEXT: lit.enum.case rgb : {{\[}}[[INT]], [[INT]], [[INT]]] <docString = [[RGB_DOC]]>
 __enum Documented:
     case red
     """Red."""
@@ -108,7 +108,7 @@ __enum Documented:
 
 
 # CHECK-LABEL: lit.struct.decl @AllDocumented(
-# CHECK: lit.enum.case only : [] {docString = [[ONLY_DOC]]}
+# CHECK: lit.enum.case only : [] <docString = [[ONLY_DOC]]>
 __enum AllDocumented:
     case only
     """Only."""

@@ -17,16 +17,16 @@ lit.struct.decl @EmptyStruct {
 }
 
 // A case's payload types are absent until they are resolved.
-// CHECK-LABEL: lit.struct.decl @Color attributes {isEnum}
+// CHECK-LABEL: lit.struct.decl @Color {
 // CHECK-NEXT: lit.enum.case red : []{{$}}
-// CHECK-NEXT: lit.enum.case rgb : [index, index] {docString = #doc_string}
+// CHECK-NEXT: lit.enum.case rgb : [index, index] <docString = #doc_string>
 // CHECK-NEXT: lit.enum.case unresolved{{$}}
-// CHECK-NEXT: }
-lit.struct.decl @Color attributes {isEnum} {
+// CHECK-NEXT: } <isEnum>
+lit.struct.decl @Color {
   lit.enum.case red : []
-  lit.enum.case rgb : [index, index] {docString = #lit.doc.string<"Red, green.">}
+  lit.enum.case rgb : [index, index] <docString = #lit.doc.string<"Red, green.">>
   lit.enum.case unresolved
-}
+} <isEnum>
 
 // CHECK-LABEL: lit.struct.decl @ValueType
 lit.struct.decl @ValueType
@@ -197,8 +197,8 @@ lit.fn @ref_pointer<life: origin<true>, ilife: origin<false>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
   // CHECK: %0 = lit.ref.to_pointer %ref1 : <!lit.struct<@MyStruct>, mut life>
   %ptr = lit.ref.to_pointer %ref1: <!lit.struct<@MyStruct>, mut life>
-  // CHECK: %1 = lit.ref.from_pointer %0 : <!lit.struct<@MyStruct>, imm ilife> {name = "reference value"}
-  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<!lit.struct<@MyStruct>, imm ilife> {name = "reference value"}
+  // CHECK: %1 = lit.ref.from_pointer %0 "reference value" : <!lit.struct<@MyStruct>, imm ilife>
+  %ref2 = lit.ref.from_pointer %ptr "reference value" : !lit.ref<!lit.struct<@MyStruct>, imm ilife>
 
   // CHECK: %2 = lit.ref.to_pointer %1 : <!lit.struct<@MyStruct>, imm ilife>
   %ptr2 = lit.ref.to_pointer %ref2: !lit.ref<!lit.struct<@MyStruct>, imm ilife>
@@ -663,6 +663,7 @@ lit.package namespace @ns {
 lit.package @pkg {
 }
 
-// CHECK-LABEL: lit.package @dependent attributes {dependencies = #kgen<link.dependencies[@pkg, @ns::@sub]>} {
-lit.package @dependent attributes {dependencies = #kgen<link.dependencies[@pkg, @ns::@sub]>} {
-}
+// CHECK-LABEL: lit.package @dependent {
+// CHECK-NEXT: } <dependencies = [@pkg, @ns::@sub]>
+lit.package @dependent {
+} <dependencies = #kgen<link.dependencies[@pkg, @ns::@sub]>>

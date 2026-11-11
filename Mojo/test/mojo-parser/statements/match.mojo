@@ -1081,7 +1081,7 @@ def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
 # CHECK-NEXT:      [[CONSUMING_ELEMENT_PTR:%.*]] = kgen.struct.gep [[CONSUMING_STORAGE_PTR]][0]
 # CHECK-NEXT:      [[CONSUMING_PAYLOAD:%.*]] = lit.ref.from_kgen_ptr [[CONSUMING_ELEMENT_PTR]]
 # CHECK-NEXT:      [[TRANSFER_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
-# CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[TRANSFER_PTR]] end_uninit
+# CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[TRANSFER_PTR]] "(pattern child)" end_uninit
 # CHECK-NEXT:      lit.ownership.mark_destroyed [[SUBJECT]]
 # CHECK-NEXT:      lit.ownership.use [[OWNED_PAYLOAD]]
 # CHECK-NEXT:      {{.*}}@"consume{{.*}}([[OWNED_PAYLOAD]])

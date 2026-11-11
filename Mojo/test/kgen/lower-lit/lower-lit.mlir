@@ -635,13 +635,13 @@ lit.file_module @struct_alignment {
 
   // Test concrete alignment on struct propagates to stack_allocation and does not
   // result in a flattened struct.
-  lit.struct.decl @AlignedStruct64<my_int: !MyInt> attributes {
+  lit.struct.decl @AlignedStruct64<my_int: !MyInt> {
+    lit.struct.field value : index
+  } <
       minAlignment = #kgen.param.expr<apply,
                                       #kgen.gen<#kgen.func.symbol<@struct_alignment::@calculate_alignment>> : !lit.generator<("my_int": !MyInt) -> index>,
                                       #kgen.param.decl.ref<"my_int">: !MyInt> : index
-  } {
-    lit.struct.field value : index
-  }
+  >
 
   // CHECK-LABEL: kgen.generator @"struct_alignment::varDeclAligned64"
   lit.fn @varDeclAligned64() {
@@ -661,9 +661,9 @@ lit.struct.decl @Pair register_passable {
   lit.struct.field second : index
 }
 
-lit.struct.decl @AlignedParam<N: !Pair> attributes {minAlignment = #lit.struct.extract<:!Pair N, "first"> : index} {
+lit.struct.decl @AlignedParam<N: !Pair> {
   lit.struct.field data : index
-}
+} <minAlignment = #lit.struct.extract<:!Pair N, "first"> : index>
 
 // CHECK-LABEL: kgen.generator @varDeclAlignedParam
 lit.fn @varDeclAlignedParam<pair: !Pair>() {
@@ -685,13 +685,13 @@ lit.struct.decl @TestStruct1 {
 
 // CHECK-LABEL: kgen.struct.generator @TestStruct1
 
-lit.extension.decl @"extension:TestStruct1" attributes {targetStruct = @TestStruct1} {
+lit.extension.decl @"extension:TestStruct1" {
   // CHECK-LABEL: kgen.generator @"extension:TestStruct1::extension_method"
   lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct1>, mut O> imm_mem) -> index {
     %result = kgen.param.constant: index = <42>
     hlcf.return %result : index
   }
-}
+} <targetStruct = @TestStruct1>
 
 // -----
 
@@ -699,12 +699,12 @@ lit.extension.decl @"extension:TestStruct1" attributes {targetStruct = @TestStru
 // CHECK-LABEL: kgen.generator @"extension:TestStruct2::extension_method"
 
 // CHECK-LABEL: kgen.struct.generator @TestStruct2
-lit.extension.decl @"extension:TestStruct2" attributes {targetStruct = @TestStruct2} {
+lit.extension.decl @"extension:TestStruct2" {
   lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct2>, mut O> imm_mem) -> index {
     %result = kgen.param.constant: index = <1>
     hlcf.return %result : index
   }
-}
+} <targetStruct = @TestStruct2>
 
 lit.struct.decl @TestStruct2 {
 }

@@ -19,9 +19,9 @@
 
 
 # CHECK-LABEL: lit.struct.decl @Token(!Enum_AnyType_Copyable_Deinitable_EnumLike_Movable)
-# CHECK: lit.alias.decl _enum_case_names: param_list<string> = <["eof", "ident", "span"]> {hasDocHiddenDecorator}
-# CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[[[EMPTY:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[\],[^}]*}>]], [[ONE:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[!String\],[^}]*}>]], [[TUPLE:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[!Int, !Int\],[^}]*}>]]]> {hasDocHiddenDecorator}
-# CHECK: lit.struct.field __enum_storage {isDocHidden} : !lit.struct<#EnumStorage <:param_list<!AnyType> [[[EMPTY]], [[ONE]], [[TUPLE]]]>>
+# CHECK: lit.alias.decl _enum_case_names: param_list<string> = <["eof", "ident", "span"]> <hasDocHiddenDecorator>
+# CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[[[EMPTY:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[\],[^}]*}>]], [[ONE:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[!String\],[^}]*}>]], [[TUPLE:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[!Int, !Int\],[^}]*}>]]]> <hasDocHiddenDecorator>
+# CHECK: lit.struct.field __enum_storage : !lit.struct<#EnumStorage <:param_list<!AnyType> [[[EMPTY]], [[ONE]], [[TUPLE]]]>> <isDocHidden>
 
 # A case without a payload is a `comptime` member:
 # `Token.__enum_init[0]()`, called with an empty pack.
@@ -69,9 +69,9 @@ __enum Token(Copyable):
 
 # An enum without cases gets empty case lists and storage with no alternatives.
 # CHECK-LABEL: lit.struct.decl @Uninhabited(!Enum_AnyType_Deinitable_EnumLike_Movable)
-# CHECK: lit.alias.decl _enum_case_names: param_list<string> = <[]> {hasDocHiddenDecorator}
-# CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[]> {hasDocHiddenDecorator}
-# CHECK: lit.struct.field __enum_storage {isDocHidden} : !lit.struct<#EnumStorage <:param_list<!AnyType> []>>
+# CHECK: lit.alias.decl _enum_case_names: param_list<string> = <[]> <hasDocHiddenDecorator>
+# CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[]> <hasDocHiddenDecorator>
+# CHECK: lit.struct.field __enum_storage : !lit.struct<#EnumStorage <:param_list<!AnyType> []>> <isDocHidden>
 # CHECK: kgen.conformance @std::@builtin::@stubs::@EnumLike {
 # CHECK-NEXT: kgen.witness "_enum_case_names" : param_list<string> = []
 # CHECK-NEXT: kgen.witness "_enum_case_types" : param_list<!AnyType> = []
@@ -83,7 +83,7 @@ __enum Uninhabited:
 # CHECK-LABEL: lit.struct.decl @Maybe<
 # CHECK-SAME: T: [[BOUND:!AnyType_Copyable_Deinitable_Movable]]>
 # CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[[[EMPTY]], [[JUST:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[upcast\(:.* T\)\],[^}]*}>]]]>
-# CHECK: lit.struct.field __enum_storage {isDocHidden} : !lit.struct<#EnumStorage <:param_list<!AnyType> [[[EMPTY]], [[JUST]]]>>
+# CHECK: lit.struct.field __enum_storage : !lit.struct<#EnumStorage <:param_list<!AnyType> [[[EMPTY]], [[JUST]]]>> <isDocHidden>
 # CHECK: lit.alias.decl nothing: !lit.struct<#Maybe <:[[BOUND]] T>> = <apply_result_slot(
 # CHECK: lit.fn @"just($0$)"{{.*}}(%payload: !lit.ref<:[[BOUND]] T, {{.*}}> owned_in_mem, |, ?, %__result__: !lit.ref<!lit.struct<#Maybe <:[[BOUND]] T>>, {{.*}}> byref_result)
 __enum Maybe[T: Copyable & Deinitable](Copyable):

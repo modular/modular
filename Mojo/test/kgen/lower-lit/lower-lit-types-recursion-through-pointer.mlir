@@ -131,13 +131,13 @@ lit.struct.decl @Ptr<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
 
-lit.struct.decl @Aligned register_passable attributes {
+lit.struct.decl @Aligned register_passable {
+  lit.struct.field a : !kgen.scalar<index>
+} <
   minAlignment = #kgen.param.expr<get_alignof,
     #kgen.type<!lit.struct<@Ptr<:type !kgen.scalar<index>>>> : !kgen.type,
     #kgen.param.expr<current_target> : !kgen.target> : index
-} {
-  lit.struct.field a : !kgen.scalar<index>
-}
+>
 
 // CHECK-LABEL: kgen.struct.generator @User
 // CHECK-SAME:    get_alignof

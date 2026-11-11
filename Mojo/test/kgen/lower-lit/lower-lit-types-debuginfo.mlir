@@ -23,10 +23,10 @@ lit.struct.decl @RecursiveStruct register_passable {
 // CHECK-DAG: ![[MEMBER_B:.*]] = !debuginfo.member<b: !kgen.simd<4, f32>>
 // CHECK-DAG: ![[COMPLEX_STRUCT:.*]] = !debuginfo.struct<"module test::struct ComplexStruct[type,type]<`:type Int`,`:type simd<4, f32>`>"(![[MEMBER_A]], ![[MEMBER_B]])>
 #complexStructSourceName = #debuginfo.source_name<(struct)"ComplexStruct"[<"type">, <"type">] from <(module)"test">>
-lit.struct.decl @"$test::ComplexStruct"<A: type, B: type> attributes {sourceName = #complexStructSourceName} {
+lit.struct.decl @"$test::ComplexStruct"<A: type, B: type> {
   lit.struct.field a: !kgen.param<A>
   lit.struct.field b: !kgen.param<B>
-}
+} <sourceName = #complexStructSourceName>
 !structTestComplex = !lit.struct<@"$test::ComplexStruct"<:type Int, :type !kgen.simd<4, f32>>>
 
 // This is only possible in mlir tests. Mojo parser will guarantee all structs have SourceNames.
