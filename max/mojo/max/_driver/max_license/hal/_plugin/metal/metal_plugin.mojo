@@ -12,21 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import CompilationTarget
-from .._trait import HalPlugin, HalPluginHooks
+from .._trait import HalPluginHooks
 from ..._machine import DeviceRef
-from std.collections.string.string_span import _get_kgen_string
 from ...execution_config._apple import ExecutionConfigForTarget
 from ...extensions.metal import MetalHALExtensions
-
-
-struct MetalHalPlugin(HalPlugin):
-    """`PluginHooks` implementation for Apple Metal backends.
-
-    Every hook is left at its `PluginHooks` default.
-    """
-
-    comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["metal"]()
-    comptime HookFor[target: CompilationTarget] = MetalHalPluginHooks[target]
 
 
 struct MetalHalPluginHooks[target: CompilationTarget](HalPluginHooks):

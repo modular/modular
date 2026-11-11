@@ -77,7 +77,6 @@ from ..hal import (
 )
 from max._plugin import MaxPluginForTarget
 from ..hal._machine import DeviceRef, DeviceSpec
-from ..hal._plugin._impl import HalPluginForTarget
 from ..hal._plugin._trait import HalLaunchOptions
 from ..hal.event import EVENT_FLAG_CPU_VISIBLE
 from ..hal.extensions.completion_flag import FlagCondition
@@ -564,9 +563,9 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     comptime device_spec = get_device_spec[0]()
     """`DeviceSpec` describing the device this context targets."""
 
-    comptime _PluginExecutionConfigType: ExecutionConfig = HalPluginForTarget[
+    comptime _PluginExecutionConfigType: ExecutionConfig = MaxPluginForTarget[
         DeviceSpec.target[Self.device_spec]()
-    ].ExecutionConfigType[DeviceRef(Self.device_spec, 0, private=())]
+    ].HalHooks.ExecutionConfigType[DeviceRef(Self.device_spec, 0, private=())]
 
     comptime _plugin_has_clusters = conforms_to(
         Self._PluginExecutionConfigType, ClusterExecutionConfig
@@ -607,7 +606,7 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
 
     comptime _target_value = Self.target._mlir_value
 
-    comptime _HALHooks = HalPluginForTarget[Self.target]
+    comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -3384,9 +3383,9 @@ struct HALDeviceFunction[
     ) raises:
         # Every launch, from a DeviceContext or a DeviceStream, ends up here,
         # so this is the one place the plugin's launcher has to be honored.
-        comptime _HALHooks = HalPluginForTarget[
+        comptime _HALHooks = MaxPluginForTarget[
             CompilationTarget[_mlir_value=ContextT._target_value]()
-        ]
+        ].HalHooks
         _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
         comptime is_grid_block = conforms_to(
             ExecutionConfigType, GridBlockExecutionConfig
@@ -3978,7 +3977,7 @@ struct HALDeviceStreamBase[target: CompilationTarget = default_accelerator()](
 
     comptime _target_value = Self.target._mlir_value
 
-    comptime _HALHooks = HalPluginForTarget[Self.target]
+    comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
 
     # ===-------------------------------------------------------------------===#
     # Fields

@@ -41,7 +41,7 @@ trait HALExtensions(Deinitable, HALPluginConstructable, Movable):
     A capability is a `Supports<Name>V<N>` trait; the vendor set holds its
     symbols as a `RawPluginComponent` field resolved in `__init__`. Callers
     branch on a literal `conforms_to`, which refines `Ext` so the call
-    type-checks; the Bool flags below do not refine:
+    type-checks:
 
     ```mojo
     comptime Ext = type_of(device.extensions())
@@ -51,22 +51,6 @@ trait HALExtensions(Deinitable, HALPluginConstructable, Movable):
         )
     ```
     """
-
-    comptime SupportsGraphCaptureV1: Bool = conforms_to(
-        Self, SupportsGraphCaptureV1
-    )
-    comptime SupportsPeerAccessV1: Bool = conforms_to(
-        Self, SupportsPeerAccessV1
-    )
-    comptime SupportsCompletionFlagV1: Bool = conforms_to(
-        Self, SupportsCompletionFlagV1
-    )
-    comptime SupportsCompletionFlagResetV1: Bool = conforms_to(
-        Self, SupportsCompletionFlagResetV1
-    )
-    comptime SupportsCompletionFlagAddressV1: Bool = conforms_to(
-        Self, SupportsCompletionFlagAddressV1
-    )
 
     def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         ...

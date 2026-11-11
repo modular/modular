@@ -53,6 +53,10 @@ from max.gpu.sync.sync import (
     _BarrierPluginHookFnType,
     _SyncwarpPluginHookFnType,
 )
+from max._driver.max_license.hal._plugin._trait import (
+    DefaultHalPluginHooks,
+    HalPluginHooks,
+)
 
 
 trait MaxPlugin(Plugin):
@@ -514,6 +518,14 @@ trait MaxPluginHooks:
 
     comptime _handles_graph_blobs: Bool = False
     """Whether this plugin implements the hooks a graph blob's kernel calls."""
+
+    comptime HalHooks: HalPluginHooks = DefaultHalPluginHooks[Self.hooks_target]
+    """The HAL backend's hooks for this target.
+
+    The HAL `DeviceContext` and the HAL client API read their execution
+    configuration, extensions and launcher from here, so a plugin names its
+    HAL behavior in one place instead of in a second registry.
+    """
 
 
 struct DefaultMaxPlugin(MaxPlugin):

@@ -23,6 +23,9 @@ from max.gpu.sync.sync import (
 )
 
 from .._trait import MaxPlugin, MaxPluginHooks
+from max._driver.max_license.hal._plugin.metal.metal_plugin import (
+    MetalHalPluginHooks,
+)
 
 
 @inline(.always)
@@ -113,6 +116,8 @@ struct MetalMaxPlugin(MaxPlugin):
 struct MetalMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
     comptime _raw_mlir_target = Self.target._mlir_value
     comptime warp_size = 32
+
+    comptime HalHooks = MetalHalPluginHooks[Self.target]
     comptime barrier_fn: OptionalReg[_BarrierPluginHookFnType] = _barrier
     comptime syncwarp_fn: OptionalReg[_SyncwarpPluginHookFnType] = _syncwarp
 

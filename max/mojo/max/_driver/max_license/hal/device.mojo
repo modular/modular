@@ -19,7 +19,7 @@ from .plugin import (
     DeviceHandle,
     M_driver_dlpack_device,
 )
-from ._plugin._impl import HalPluginForTarget
+from max._plugin import MaxPluginForTarget
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
 from std.collections import Array
@@ -86,9 +86,9 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
     var _self_ref: WeakPointer[Self]
     var id: Int64
 
-    comptime Extensions = HalPluginForTarget[
+    comptime Extensions = MaxPluginForTarget[
         DeviceSpec.target[Self.spec]()
-    ].extensions
+    ].HalHooks.extensions
 
     # SAFETY: this field is immutably shared across the HAL
     # object graph, and must not be mutated without

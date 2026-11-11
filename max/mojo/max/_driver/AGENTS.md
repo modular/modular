@@ -14,13 +14,13 @@ the `CompilationTarget` the type is parameterized on, resolved right where it's
 used:
 
 ```mojo
-struct DeviceContextBase[target: CompilationTarget = default_accelerator()]:
-    comptime _HALHooks = HalPluginForTarget[Self.target]
+struct DeviceContext[target: CompilationTarget = default_accelerator()]:
+    comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
 ```
 
-`HalPluginForTarget` (`hal/_plugin/_impl.mojo`) is the one place the selection
-rule lives, so select through it rather than reading `HAL_PLUGINS` directly, and
-always pass it the type's own target. Don't add a helper that supplies the
+`MaxPluginForTarget` (`max/_plugin`) is the one place the selection rule lives,
+and its `HalHooks` member holds the HAL half of a plugin. Always pass it the
+type's own target. Don't add a helper that supplies the
 target for you (eg, one keyed on `default_accelerator()`). It hides which
 target a lookup is keyed on, and reads like a global even when it isn't one.
 

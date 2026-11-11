@@ -26,6 +26,7 @@ from max.gpu.sync.sync import (
 
 from .._shuffle import shuffle_words
 from .._trait import MaxPlugin, MaxPluginHooks
+from max._driver.max_license.hal._plugin.hip.hip_plugin import HipHalPluginHooks
 
 comptime _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = get_defined_bool[
     "USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM", False
@@ -66,6 +67,8 @@ struct HipMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
     # gfx9 (GCN and CDNA 2 through 4) runs wave64; gfx10 and later, RDNA and
     # CDNA 5, run wave32.
     comptime warp_size = 64 if Self.target._arch().startswith("gfx9") else 32
+
+    comptime HalHooks = HipHalPluginHooks[Self.target]
     comptime barrier_fn: OptionalReg[_BarrierPluginHookFnType] = _barrier
     comptime syncwarp_fn: OptionalReg[_SyncwarpPluginHookFnType] = _syncwarp
 
