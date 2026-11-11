@@ -29,14 +29,24 @@ from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
 from max.gpu.host._legacy.device_context import (
     LegacyDeviceContext,
     _DeviceContextPtr as _LegacyDeviceContextPtr,
+    _LegacyDeviceContextScope,
 )
-from max.gpu.host._overlay import _DeviceContextPtr as _OverlayDeviceContextPtr
+from max.gpu.host._overlay import (
+    StreamPriorityRange as _OverlayStreamPriorityRange,
+    _DeviceContextPtr as _OverlayDeviceContextPtr,
+)
 from max.gpu.host.info import default_accelerator
 from max.gpu.host.launch_config import ExecutionConfig
-
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
     _DeviceContextPtr as _HALDeviceContextPtr,
+    _HALDeviceContextScope,
+)
+from .host_types import (
+    CompletionFlag,
+    Device,
+    DeviceEvent,
+    DeviceStream,
 )
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
@@ -496,6 +506,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             rebind[Self._HAL](self._impl).synchronize()
 
+    @deprecated("Use `DeviceContext.device().id` instead.")
     def id(self) raises -> Int64:
         """Returns the ID of the device this context is associated with.
 
@@ -505,10 +516,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If querying the device ID fails.
         """
-        comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).device().id
-        else:
-            return rebind[Self._HAL](self._impl).device().id
+        return self.device().id
 
     def get_memory_info(self) raises -> Tuple[c_size_t, c_size_t]:
         """Returns the free and total memory of this device.
@@ -524,6 +532,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             return rebind[Self._HAL](self._impl).get_memory_info()
 
+    @deprecated("Use `DeviceContext.device().get_attribute()` instead.")
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the value of a device attribute.
 
@@ -536,10 +545,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If querying the attribute fails.
         """
-        comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).device().get_attribute(attr)
-        else:
-            return rebind[Self._HAL](self._impl).device().get_attribute(attr)
+        return self.device().get_attribute(attr)
 
     def compute_capability(self) raises -> Int:
         """Returns the compute capability of this device.
@@ -599,19 +605,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             return rebind[Self._HAL](self._impl).api()
 
+    @deprecated("Use `DeviceContext.device().get_name()` instead.")
     def name(self) -> String:
         """Returns the device name, defined by the native device API.
 
         Returns:
             A string containing the device name.
         """
-        # The device view reports the driver's error, where the legacy name()
-        # aborts inside the context; keep the legacy contract and abort here.
         try:
-            comptime if use_legacy_backend():
-                return rebind[Self._Legacy](self._impl).device().get_name()
-            else:
-                return rebind[Self._HAL](self._impl).device().get_name()
+            return self.device().get_name()
         except e:
             abort(String(e))
 
@@ -629,6 +631,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             return rebind[Self._HAL](self._impl).get_api_version()
 
+    @deprecated("Use `DeviceContext.device().get_arch()` instead.")
     def arch_name(self) raises -> String:
         """Returns the architecture name of this device.
 
@@ -638,10 +641,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If querying the architecture fails.
         """
-        comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).device().get_arch()
-        else:
-            return rebind[Self._HAL](self._impl).device().get_arch()
+        return self.device().get_arch()
 
     def is_compatible(self) -> Bool:
         """Returns True if this device is compatible with MAX.
@@ -658,6 +658,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             return rebind[Self._HAL](self._impl).is_compatible()
 
+    @deprecated("Use `DeviceContext.device().is_host_unified()` instead.")
     def is_host_unified(self) raises -> Bool:
         """Returns whether this device shares memory with the host.
 
@@ -667,10 +668,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).device().is_host_unified()
-        else:
-            return rebind[Self._HAL](self._impl).device().is_host_unified()
+        return self.device().is_host_unified()
 
     def is_graph_capturing(self) raises -> Bool:
         """Returns whether this context is currently capturing a graph.
@@ -700,6 +698,259 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return LegacyDeviceContext[Self.target].number_of_devices(api=api^)
         else:
             return HALDeviceContext[Self.target].number_of_devices(api=api^)
+
+    # ===-------------------------------------------------------------------===#
+    # Streams, events and completion flags
+    # ===-------------------------------------------------------------------===#
+
+    def stream(self) raises -> DeviceStream:
+        """Returns the context's default stream.
+
+        Returns:
+            The default `DeviceStream`.
+
+        Raises:
+            If the stream cannot be created.
+        """
+        comptime if use_legacy_backend():
+            return DeviceStream(
+                _impl=rebind_var[DeviceStream._Impl](
+                    rebind[Self._Legacy](self._impl).stream()
+                )
+            )
+        else:
+            return DeviceStream(
+                _impl=rebind_var[DeviceStream._Impl](
+                    rebind[Self._HAL](self._impl).stream()
+                )
+            )
+
+    def create_stream(self, *, priority: Int = 0) raises -> DeviceStream:
+        """Creates a new stream on this context's device.
+
+        Args:
+            priority: Requested stream priority.
+
+        Returns:
+            The new `DeviceStream`.
+
+        Raises:
+            If the stream cannot be created.
+        """
+        comptime if use_legacy_backend():
+            return DeviceStream(
+                _impl=rebind_var[DeviceStream._Impl](
+                    rebind[Self._Legacy](self._impl).create_stream(
+                        priority=priority
+                    )
+                )
+            )
+        else:
+            return DeviceStream(
+                _impl=rebind_var[DeviceStream._Impl](
+                    rebind[Self._HAL](self._impl).create_stream(
+                        priority=priority
+                    )
+                )
+            )
+
+    def create_event(self) raises -> DeviceEvent:
+        """Creates a new event for cross-stream synchronization.
+
+        Returns:
+            The new `DeviceEvent`.
+
+        Raises:
+            If the event cannot be created.
+        """
+        comptime if use_legacy_backend():
+            return DeviceEvent(
+                _impl=rebind_var[DeviceEvent._Impl](
+                    rebind[Self._Legacy](self._impl).create_event()
+                )
+            )
+        else:
+            return DeviceEvent(
+                _impl=rebind_var[DeviceEvent._Impl](
+                    rebind[Self._HAL](self._impl).create_event()
+                )
+            )
+
+    def allocate_completion_flag(self) raises -> CompletionFlag:
+        """Allocates a device-side completion flag.
+
+        Returns:
+            The new `CompletionFlag`.
+
+        Raises:
+            If the allocation fails.
+        """
+        comptime if use_legacy_backend():
+            return CompletionFlag(
+                _impl=rebind_var[CompletionFlag._Impl](
+                    rebind[Self._Legacy](self._impl).allocate_completion_flag()
+                )
+            )
+        else:
+            return CompletionFlag(
+                _impl=rebind_var[CompletionFlag._Impl](
+                    rebind[Self._HAL](self._impl).allocate_completion_flag()
+                )
+            )
+
+    def supports_flag_wait(self) -> Bool:
+        """Returns whether this device supports waiting on a completion flag.
+
+        Returns:
+            True when flag waits are supported.
+        """
+        comptime if use_legacy_backend():
+            return rebind[Self._Legacy](self._impl).supports_flag_wait()
+        else:
+            return rebind[Self._HAL](self._impl).supports_flag_wait()
+
+    def num_streams(self) -> Int:
+        """Returns the number of streams available on this device context.
+
+        Returns:
+            The number of streams available on this device context.
+        """
+        comptime assert (
+            use_legacy_backend()
+        ), "num_streams is only available on the legacy DeviceContext"
+        return rebind[Self._Legacy](self._impl).num_streams()
+
+    def select_stream(
+        self, stream_id: Int
+    ) raises -> DeviceContext[Self.target]:
+        """Selects the stream that this context's work runs on.
+
+        Args:
+            stream_id: The index of the stream to select.
+
+        Returns:
+            A context bound to the selected stream.
+
+        Raises:
+            If the stream cannot be selected.
+        """
+        comptime assert (
+            use_legacy_backend()
+        ), "select_stream is only available on the legacy DeviceContext"
+        return rebind_var[DeviceContext[Self.target]](
+            rebind[Self._Legacy](self._impl).select_stream(stream_id)
+        )
+
+    def create_external_stream(
+        self, external_stream: Optional[MutPointer[NoneType, _]]
+    ) raises -> DeviceStream:
+        """Wraps a stream created outside of MAX.
+
+        Args:
+            external_stream: The native stream to wrap.
+
+        Returns:
+            A device stream backed by `external_stream`.
+
+        Raises:
+            If the stream cannot be wrapped.
+        """
+        comptime assert use_legacy_backend(), (
+            "create_external_stream is only available on the legacy"
+            " DeviceContext"
+        )
+        return DeviceStream(
+            _impl=rebind_var[DeviceStream._Impl](
+                rebind[Self._Legacy](self._impl).create_external_stream(
+                    external_stream
+                )
+            )
+        )
+
+    def stream_priority_range(self) raises -> _OverlayStreamPriorityRange:
+        """Returns the range of stream priorities this device supports.
+
+        Returns:
+            The least and greatest stream priorities.
+
+        Raises:
+            If the query fails.
+        """
+        comptime if use_legacy_backend():
+            return rebind_var[_OverlayStreamPriorityRange](
+                rebind[Self._Legacy](self._impl).stream_priority_range()
+            )
+        else:
+            return rebind_var[_OverlayStreamPriorityRange](
+                rebind[Self._HAL](self._impl).stream_priority_range()
+            )
+
+    def push_context(self) raises -> _DeviceContextScope[Self.target]:
+        """Returns a context manager that makes this device's driver context
+        current for the duration of a `with` block.
+
+        Returns:
+            A context manager that manages the driver context stack.
+
+        Raises:
+            If the driver contexts cannot be switched.
+        """
+        return _DeviceContextScope[Self.target](self)
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compares two contexts for identity.
+
+        Args:
+            other: The context to compare with.
+
+        Returns:
+            Whether both contexts are the same.
+        """
+        comptime assert (
+            use_legacy_backend()
+        ), "== is only available on the legacy DeviceContext"
+        return rebind[Self._Legacy](self._impl) == rebind[Self._Legacy](
+            other._impl
+        )
+
+    def __ne__(self, other: Self) -> Bool:
+        """Compares two contexts for identity.
+
+        Args:
+            other: The context to compare with.
+
+        Returns:
+            Whether the contexts differ.
+        """
+        comptime assert (
+            use_legacy_backend()
+        ), "!= is only available on the legacy DeviceContext"
+        return rebind[Self._Legacy](self._impl) != rebind[Self._Legacy](
+            other._impl
+        )
+
+    # ===-------------------------------------------------------------------===#
+    # Device views
+    # ===-------------------------------------------------------------------===#
+
+    def device(ref self) -> Device[Self.target, ImmOrigin(origin_of(self))]:
+        """Returns a view of the device this context runs on.
+
+        Returns:
+            A `Device` that borrows this context.
+        """
+        comptime if use_legacy_backend():
+            return Device[Self.target, ImmOrigin(origin_of(self))](
+                _impl=rebind_var[
+                    Device[Self.target, ImmOrigin(origin_of(self))]._Impl
+                ](rebind[Self._Legacy](self._impl).device())
+            )
+        else:
+            return Device[Self.target, ImmOrigin(origin_of(self))](
+                _impl=rebind_var[
+                    Device[Self.target, ImmOrigin(origin_of(self))]._Impl
+                ](rebind[Self._HAL](self._impl).device())
+            )
 
     # ===-------------------------------------------------------------------===#
     # Buffer allocation
@@ -1447,6 +1698,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # Peer access and waits
     # ===-------------------------------------------------------------------===#
 
+    @deprecated(
+        "Use `DeviceContext.device().can_access_peer(peer.device())` instead."
+    )
     def can_access(self, peer: DeviceContext) raises -> Bool:
         """Returns whether this context can access `peer`'s memory.
 
@@ -1459,18 +1713,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime if use_legacy_backend():
-            return (
-                rebind[Self._Legacy](self._impl)
-                .device()
-                .can_access_peer(rebind[Self._Legacy](peer._impl).device())
-            )
-        else:
-            return (
-                rebind[Self._HAL](self._impl)
-                .device()
-                .can_access_peer(rebind[Self._HAL](peer._impl).device())
-            )
+        return self.device().can_access_peer(peer.device())
 
     def enable_peer_access(self, peer: DeviceContext) raises:
         """Enables access to `peer`'s memory from this context.
@@ -1548,3 +1791,59 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             rebind[Self._HAL](self._impl).enqueue_wait_for(
                 rebind[Self._HAL](other._impl)
             )
+
+
+struct _DeviceContextScope[target: CompilationTarget]:
+    """Makes a device's driver context current for a `with` block."""
+
+    comptime _Legacy = _LegacyDeviceContextScope[Self.target]
+    comptime _HAL = _HALDeviceContextScope
+    comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
+
+    var _impl: Self._Impl
+
+    def __init__(out self, ctx: DeviceContext[Self.target]):
+        """Creates a scope over `ctx`.
+
+        Args:
+            ctx: The device context whose driver context to make current.
+        """
+        comptime if use_legacy_backend():
+            self._impl = rebind_var[Self._Impl](
+                Self._Legacy(
+                    rebind[DeviceContext[Self.target]._Legacy](ctx._impl)
+                )
+            )
+        else:
+            self._impl = rebind_var[Self._Impl](
+                Self._HAL(rebind[DeviceContext[Self.target]._HAL](ctx._impl))
+            )
+
+    def __enter__(mut self) raises -> DeviceContext[Self.target]:
+        """Makes the driver context current.
+
+        Returns:
+            The device context of this scope.
+
+        Raises:
+            If the driver context cannot be made current.
+        """
+        comptime if use_legacy_backend():
+            return rebind_var[DeviceContext[Self.target]](
+                rebind[Self._Legacy](self._impl).__enter__()
+            )
+        else:
+            return rebind_var[DeviceContext[Self.target]](
+                rebind[Self._HAL](self._impl).__enter__()
+            )
+
+    def __exit__(mut self) raises:
+        """Restores the previous driver context.
+
+        Raises:
+            If the previous driver context cannot be restored.
+        """
+        comptime if use_legacy_backend():
+            rebind[Self._Legacy](self._impl).__exit__()
+        else:
+            rebind[Self._HAL](self._impl).__exit__()

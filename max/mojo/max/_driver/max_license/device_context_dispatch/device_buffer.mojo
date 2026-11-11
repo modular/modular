@@ -26,11 +26,14 @@ from max.gpu.host._legacy.device_context import (
     _DeviceBufferPtr as _LegacyDeviceBufferPtr,
 )
 from max.gpu.host.info import default_accelerator
-
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceBuffer,
     _DeviceBufferPtr as _HALDeviceBufferPtr,
 )
+from max._driver.max_license.device_context_dispatch.device_pointer import (
+    DevicePointer,
+)
+from .host_types import Device
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
 )
@@ -565,6 +568,26 @@ struct DeviceBuffer[dtype: DType](
                 rebind[_LegacyDeviceBufferPtr[mut=True]](handle), device_ptr
             )
         )
+
+    def device_ptr(
+        ref self,
+    ) raises -> DevicePointer[Self.dtype, origin_of(self)]:
+        """Returns a pointer to this buffer's device memory.
+
+        Returns:
+            A device pointer that borrows from this buffer.
+
+        Raises:
+            If the pointer cannot be created.
+        """
+        comptime if use_legacy_backend():
+            return rebind_var[DevicePointer[Self.dtype, origin_of(self)]](
+                rebind[Self._Legacy](self._impl).device_ptr()
+            )
+        else:
+            return rebind_var[DevicePointer[Self.dtype, origin_of(self)]](
+                rebind[Self._HAL](self._impl).device_ptr()
+            )
 
     def take_handle(deinit self) -> Self._Handle:
         """Transfers the owning native handle out without releasing it.
