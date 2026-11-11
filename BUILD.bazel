@@ -167,6 +167,41 @@ config_setting(
     ],
 )
 
+config_setting(
+    name = "macos_arm64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:macos",
+    ],
+)
+
+# Platforms and Python versions aiperf has wheels for; the aiperf pip
+# target is incompatible elsewhere.
+selects.config_setting_group(
+    name = "aiperf_supported_platform",
+    match_any = [
+        ":linux_x86_64",
+        ":macos_arm64",
+    ],
+)
+
+selects.config_setting_group(
+    name = "aiperf_supported_python",
+    match_any = [
+        "@rules_python//python/config_settings:is_python_3.11",
+        "@rules_python//python/config_settings:is_python_3.12",
+        "@rules_python//python/config_settings:is_python_3.13",
+    ],
+)
+
+selects.config_setting_group(
+    name = "aiperf_supported",
+    match_all = [
+        ":aiperf_supported_platform",
+        ":aiperf_supported_python",
+    ],
+)
+
 alias(
     name = "lint",
     actual = "//bazel/lint",
