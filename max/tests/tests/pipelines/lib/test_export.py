@@ -42,6 +42,7 @@ from max._artifact.export import (
     pipeline_engine_config,
     pipeline_kv_cache,
     pipeline_modules,
+    pipeline_sampling_defaults,
     vision_preprocess_modules,
 )
 from max._artifact.kv_cache import (
@@ -55,6 +56,7 @@ from max._artifact.kv_cache import (
 )
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
+from max._artifact.sampling_defaults import SamplingDefaults
 from max._artifact.serialization import deserialize, serialize
 from max._artifact.tokenizer import Tokenizer
 from max._artifact.vision import (
@@ -84,6 +86,7 @@ from max.nn.outputs import ReturnLogits
 from max.pipelines import lib as pipelines_lib
 from max.pipelines.architectures.gemma4.arch import gemma4_arch
 from max.pipelines.architectures.llama3.arch import llama_arch
+from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.lib import (
     GraphRole,
     GraphSpec,
@@ -361,6 +364,77 @@ def test_no_roles_are_refused() -> None:
 def _fake(**attrs: object) -> Any:
     """Stands in for an object that exposes only ``attrs``."""
     return SimpleNamespace(**attrs)
+
+
+@pytest.mark.parametrize(
+    ("published", "server", "expected"),
+    [
+        # Nemotron: sampled, with MAX's default top-k (none).
+        (
+            {"do_sample": True, "temperature": 1.0, "top_p": 0.95},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=0.95, repetition_penalty=1.0
+            ),
+        ),
+        # Gemma 4: no do_sample, each value applies.
+        (
+            {"temperature": 1.0, "top_k": 64, "top_p": 0.95},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=64, top_p=0.95, repetition_penalty=1.0
+            ),
+        ),
+        # do_sample false is greedy whatever else the file sets.
+        (
+            {"do_sample": False, "temperature": 0.6},
+            {},
+            SamplingDefaults(
+                temperature=0.0, top_k=1, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+        # A published repetition penalty carries through.
+        (
+            {"repetition_penalty": 1.05},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=1.0, repetition_penalty=1.05
+            ),
+        ),
+        # Nothing published: MAX's own defaults.
+        (
+            {},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+        # The server's --temperature and --top-k override the checkpoint.
+        (
+            {"temperature": 1.0, "top_k": 64},
+            {"temperature": 0.3, "top_k": 8},
+            SamplingDefaults(
+                temperature=0.3, top_k=8, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+    ],
+)
+def test_pipeline_sampling_defaults_resolve_as_max_serve_does(
+    published: dict[str, Any],
+    server: dict[str, Any],
+    expected: SamplingDefaults,
+) -> None:
+    config = _fake(
+        runtime=_fake(
+            temperature=server.get("temperature"), top_k=server.get("top_k")
+        ),
+        model=_fake(
+            sampling_params_defaults=SamplingParamsGenerationConfigDefaults(
+                **published
+            )
+        ),
+    )
+    assert pipeline_sampling_defaults(config) == expected
 
 
 def test_checkpoint_format_spec_is_the_architectures_document() -> None:

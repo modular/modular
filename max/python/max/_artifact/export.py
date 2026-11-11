@@ -34,6 +34,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
 )
+from max.pipelines.context import SamplingParams, SamplingParamsInput
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.lib import SupportedArchitecture, memory_ledger
 from max.pipelines.lib.config import PipelineConfig
@@ -76,6 +77,7 @@ from .kv_cache import (
 )
 from .model_artifact import ModelArtifact
 from .pipeline_modules import PipelineModules
+from .sampling_defaults import SamplingDefaults
 from .serialization import serialize
 from .tokenizer import Tokenizer
 from .value_types import ARTIFACT_SUFFIX, ArtifactError, HuggingFaceRef
@@ -196,6 +198,7 @@ def model_artifact(
     kv_cache: KVCacheLayout | None = None,
     format_spec: FormatSpec | None = None,
     tokenizer: Tokenizer | None = None,
+    sampling_defaults: SamplingDefaults | None = None,
     weight_loader: WeightNaming | None = None,
 ) -> ModelArtifact:
     """Assembles the artifact of a built pipeline's graphs.
@@ -213,6 +216,7 @@ def model_artifact(
         kv_cache: The layout of the pipeline's KV cache, if it has one.
         format_spec: The FormatSpec document of the checkpoint it serves.
         tokenizer: The tokenizer the checkpoint is served with.
+        sampling_defaults: The sampling a request that sets none gets.
         weight_loader: The entries that name each graph's weights.
 
     Returns:
@@ -248,6 +252,7 @@ def model_artifact(
         batch_processor=batch_processor,
         weight_loader=weight_loader,
         vision=vision,
+        sampling_defaults=sampling_defaults,
     )
 
 
@@ -470,6 +475,37 @@ def _quantization(params: KVCacheParams) -> KVCacheQuantization | None:
     )
 
 
+def pipeline_sampling_defaults(
+    pipeline_config: PipelineConfig,
+) -> SamplingDefaults:
+    """Returns the sampling MAX Serve gives a request that sets none.
+
+    It resolves them with MAX Serve's own call: the server's ``--temperature``
+    and ``--top-k``, then the checkpoint's ``generation_config.json``, then
+    :class:`~max.pipelines.context.SamplingParams`'s defaults.
+
+    Args:
+        pipeline_config: The pipeline's configuration.
+
+    Returns:
+        The artifact's ``sampling_defaults`` component.
+    """
+    runtime = pipeline_config.runtime
+    params = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(
+            temperature=runtime.temperature, top_k=runtime.top_k
+        ),
+        sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+    )
+    return SamplingDefaults(
+        temperature=float(params.temperature),
+        # MAX spells "no top-k limit" as a non-positive top_k.
+        top_k=params.top_k if params.top_k > 0 else None,
+        top_p=float(params.top_p),
+        repetition_penalty=float(params.repetition_penalty),
+    )
+
+
 def checkpoint_format_spec(
     arch: SupportedArchitecture | None, repo: HuggingFaceRepo
 ) -> Path | None:
@@ -575,8 +611,9 @@ def export_pipeline(
 
     Builds the pipeline the same way serving does, so the artifact holds the
     graphs a served pipeline compiles, the settings it is built with, the
-    FormatSpec document and tokenizer of the checkpoint it serves, and the
-    entries that name each graph's weights if its naming is rules.
+    FormatSpec document and tokenizer of the checkpoint it serves, the
+    sampling MAX Serve gives a request that sets none, and the entries that
+    name each graph's weights if its naming is rules.
 
     Args:
         pipeline_config: The pipeline's configuration.
@@ -649,6 +686,7 @@ def export_pipeline(
         tokenizer=checkpoint_tokenizer(
             arch, repo, retrieved.tokenizer, pipeline_config
         ),
+        sampling_defaults=pipeline_sampling_defaults(pipeline_config),
         weight_loader=WeightNaming(named_graphs) if named_graphs else None,
     )
     written = serialize(artifact, dest)
