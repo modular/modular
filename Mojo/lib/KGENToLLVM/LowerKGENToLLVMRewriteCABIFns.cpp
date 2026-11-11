@@ -160,12 +160,13 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo,
 
   // A signature that needs no coercion keeps its types, but still needs its
   // attributes, such as the extension of a narrow integer result.
+  SmallVector<NamedAttrList> paramAttrs =
+      sigClass.getParamAttrs(origArgTypes, origRetType, func.getArgAttrsAttr());
   auto applyCABIAttrs = [&] {
-    for (auto [paramIdx, attrs] :
-         llvm::enumerate(sigClass.getParamAttrs(origArgTypes, origRetType))) {
-      for (NamedAttribute attr : attrs)
-        func.setArgAttr(paramIdx, attr.getName(), attr.getValue());
-    }
+    func.setAllArgAttrs(llvm::map_to_vector(
+        paramAttrs, [&](const NamedAttrList &attrs) -> Attribute {
+          return attrs.getDictionary(ctx);
+        }));
     for (NamedAttribute attr : sigClass.getResultAttrs(ctx))
       func.setResultAttr(0, attr.getName(), attr.getValue());
   };

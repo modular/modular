@@ -240,7 +240,7 @@ kgen.func @caller_indirect_narrow(
 // clang does not extend, so neither the definition nor the call marks it,
 // whatever the sign of the field.
 // CHECK-LABEL: llvm.func internal @callee_single_field
-// CHECK-SAME:    (%{{.*}}: i8 {llvm.noundef}, %{{.*}}: i16 {llvm.noundef}, %{{.*}}: i8 {llvm.noundef}) -> i8 attributes
+// CHECK-SAME:    (%{{.*}}: i8, %{{.*}}: i16, %{{.*}}: i8) -> i8 attributes
 kgen.func @callee_single_field(%s: !kgen.struct<(scalar<si8>)>, %u: !kgen.struct<(scalar<ui16>)>, %b: !kgen.struct<(scalar<bool>)>) cabi -> !kgen.struct<(scalar<si8>)> {
   hlcf.return %s : !kgen.struct<(scalar<si8>)>
 }

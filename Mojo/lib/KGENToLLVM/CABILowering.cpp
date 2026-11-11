@@ -171,15 +171,23 @@ static llvm::StringRef getExtAttrName(IntExtKind kind) {
 }
 
 llvm::SmallVector<mlir::NamedAttrList> SignatureClassification::getParamAttrs(
-    mlir::TypeRange argTypes, mlir::Type retType, size_t numArgs) const {
+    mlir::TypeRange argTypes, mlir::Type retType, mlir::ArrayAttr argAttrs,
+    size_t numArgs) const {
   numArgs = std::min(numArgs, args.size());
   llvm::SmallVector<mlir::NamedAttrList> attrs(getLLVMParamIndex(numArgs));
   if (ret.useSRet)
     attrs[0].set(mlir::LLVM::LLVMDialect::getStructRetAttrName(),
                  mlir::TypeAttr::get(retType));
   unsigned paramIdx = getLLVMParamIndex(0);
-  for (auto [coercion, type] :
-       llvm::zip(llvm::ArrayRef(args).take_front(numArgs), argTypes)) {
+  for (auto [argIdx, coercion] :
+       llvm::enumerate(llvm::ArrayRef(args).take_front(numArgs))) {
+    mlir::Type type = argTypes[argIdx];
+    if (argAttrs && argIdx < argAttrs.size()) {
+      if (auto dict = dyn_cast<mlir::DictionaryAttr>(argAttrs[argIdx]))
+        attrs[paramIdx].append(dict.begin(), dict.end());
+      if (!coercion.useIndirect && isa<mlir::LLVM::LLVMStructType>(type))
+        attrs[paramIdx].erase(mlir::LLVM::LLVMDialect::getNoUndefAttrName());
+    }
     if (coercion.useIndirect && coercion.useByval)
       attrs[paramIdx].set(mlir::LLVM::LLVMDialect::getByValAttrName(),
                           mlir::TypeAttr::get(type));

@@ -67,8 +67,9 @@
 //
 // Group H — Attribute remapping
 //   H1  func_attrs_passthrough    funcAttrs = ["noinline"]    → passthrough on llvm.func
-//   H2  arg_attrs_two_reg         argAttrs on two-reg struct  → attr on first register
+//   H2  arg_attrs_two_reg         argAttrs on two-reg struct  -> no noundef on the struct
 //   H3  arg_attrs_sret            argAttrs with sret return   → attr shifted past sret ptr
+//   H4  res_attrs_struct          resAttrs on a struct result -> no noundef on the result
 //
 // Group I - Narrow integer extension (MOCO-5051)
 //   I1  arg_narrow_ints           ui8, si16, bool, si32 args  -> zeroext, signext, zeroext, none
@@ -546,19 +547,22 @@ llvm.func @func_attrs_passthrough(%arg0: i32) {
 // -----
 
 // H2: argAttrs remapped through two-register coercion.
-// The POP call has one struct arg with {llvm.noundef}. After IntegerPair
-// coercion (12-byte struct → (i64, i32)), the argAttr is placed on the first
-// LLVM parameter (i64) and the second (i32) gets empty attrs.
+// The POP call has a struct arg and an i32 arg. Both have {llvm.noundef}.
+// IntegerPair coercion changes the 12-byte struct to (i64, i32). The struct
+// does not keep noundef, because its registers can contain bytes that are
+// not defined. The attributes of the i32 arg move to param 2.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_attrs_two_reg
-llvm.func @arg_attrs_two_reg(%arg0: !llvm.struct<(i32, i32, i32)>) {
+llvm.func @arg_attrs_two_reg(%arg0: !llvm.struct<(i32, i32, i32)>, %arg1: i32) {
   // CHECK: llvm.call @c_h2
-  pop.external_call @c_h2(%arg0) attributes {argAttrs = [{llvm.noundef}]}
-    : (!llvm.struct<(i32, i32, i32)>) -> ()
+  pop.external_call @c_h2(%arg0, %arg1)
+    attributes {argAttrs = [{llvm.noundef}, {llvm.noundef}]}
+    : (!llvm.struct<(i32, i32, i32)>, i32) -> ()
   llvm.return
 }
-// POP arg 0 → LLVM params 0 (i64) and 1 (i32).  argAttr goes to param 0.
-// CHECK: llvm.func @c_h2(i64 {llvm.noundef}, i32)
+// POP arg 0 becomes LLVM params 0 (i64) and 1 (i32). POP arg 1 becomes
+// LLVM param 2.
+// CHECK: llvm.func @c_h2(i64, i32, i32 {llvm.noundef})
 }
 
 // -----
@@ -578,6 +582,28 @@ llvm.func @arg_attrs_sret(%arg0: i32) {
 }
 // sret ptr at param 0, original arg with user attr at param 1.
 // CHECK: llvm.func @c_h3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i32 {llvm.noundef})
+}
+
+// -----
+
+// H4: resAttrs on a struct result.
+// Both POP calls have resAttrs {llvm.noundef}. The struct result is coerced
+// to i64, and bytes 5-7 of the struct are padding, so the declaration does
+// not keep noundef. The scalar result keeps it.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @res_attrs_struct
+llvm.func @res_attrs_struct() {
+  // CHECK: llvm.call @c_h4_struct
+  %s = pop.external_call @c_h4_struct() attributes {resAttrs = {llvm.noundef}}
+    : () -> !llvm.struct<(i32, i8)>
+  // CHECK: llvm.call @c_h4_scalar
+  %i = pop.external_call @c_h4_scalar() attributes {resAttrs = {llvm.noundef}}
+    : () -> i32
+  llvm.return
+}
+// CHECK: llvm.func @c_h4_struct() -> i64
+// CHECK-NOT: noundef
+// CHECK: llvm.func @c_h4_scalar() -> (i32 {llvm.noundef})
 }
 
 //===----------------------------------------------------------------------===//
