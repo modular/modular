@@ -648,6 +648,7 @@ def launch[
     dtype_size: Int = 0,
     name: StaticString = "rowwise",
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
+    max_simd_width: Int = 0,
 ](
     body: Body,
     shape: Coord,
@@ -684,6 +685,9 @@ def launch[
             kernels (NVIDIA SM90+ only). `OVERLAP_AT_BEGINNING` releases
             dependent kernels right after the predecessor wait instead of
             at exit. CPU ignores.
+        max_simd_width: The widest load the body may take, `0` for any:
+            the CPU wide-accumulator path widens only up to it. The GPU
+            tiers already load at `simd_width`.
 
     Args:
         body: The per-row computation. Receives a `Context` and the
@@ -708,6 +712,7 @@ def launch[
                 supports_tiled=True,
                 reduce_shaped=True,
                 supports_splitk=True,
+                max_simd_width=max_simd_width,
             ](body, shape)
         else:
             comptime assert ctx.T.target.is_gpu(), "unknown rowwise target"

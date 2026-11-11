@@ -1910,6 +1910,16 @@ static void appendMaxSimdWidthArg(SmallVectorImpl<MojoValue> &arguments,
       MojoValue(kArgMaxSimdWidth).equal(scalarInt({}, {divisor})));
 }
 
+// The launch's arguments; a width limit is passed as on `_foreach`.
+static SmallVector<MojoValue>
+rowwiseLaunchArgs(CallRowwiseOp op, EmitMojoState &state, MojoValue bodyFn,
+                  MojoValue shape, MojoValue context) {
+  SmallVector<MojoValue> arguments = {bodyFn, shape, context};
+  appendMaxSimdWidthArg(arguments, op.getMaxSimdWidth(),
+                        op.getDynamicMaxSimdWidth(), state);
+  return arguments;
+}
+
 // Prints the kernel as a Row API body and launches it. The body and its
 // closures are always inlined, so the row loop makes no call per row:
 //
@@ -1935,7 +1945,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   MojoValue accum = state.mlirDTypeToMojoType(*accumOr);
 
   MojoValue shape = state.getMojoValueFor(getShape());
-  MojoValue context = state.getMojoValueFor(getContext());
+  MojoValue context = state.getMojoValueFor(getDeviceContext());
   FailureOr<SmallVector<FusedCaptureInfo>> captureInfosOr =
       collectFusedCaptureInfos(state, *this, getCapturing());
   if (failed(captureInfosOr))
@@ -2014,7 +2024,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
        MojoValue("computationally_expensive")
            .equal(MojoValue(getComputationallyExpensive())),
        MojoValue("dtype_size").equal(MojoValue(*getDtypeSize()))},
-      {bodyFn, shape, context});
+      rowwiseLaunchArgs(*this, state, bodyFn, shape, context));
   return success();
 }
 

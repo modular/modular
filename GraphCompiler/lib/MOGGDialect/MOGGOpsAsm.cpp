@@ -875,8 +875,12 @@ ParseResult CallRowwiseOp::parse(OpAsmParser &parser, OperationState &result) {
       parser.parseKeyword("axis") || parser.parseLParen() ||
       parser.parseInteger(axis) || parser.parseRParen() ||
       parser.parseKeyword("context") || parser.parseLParen() ||
-      parser.parseOperand(context) || parser.parseRParen() ||
-      parseLeadingArgs(parser, leadingArgs) ||
+      parser.parseOperand(context) || parser.parseRParen())
+    return failure();
+  std::optional<OpAsmParser::UnresolvedOperand> dynamicMaxSimdWidth;
+  if (parseOptionalDynamicMaxSimdWidth(parser, dynamicMaxSimdWidth))
+    return failure();
+  if (parseLeadingArgs(parser, leadingArgs) ||
       parseBindings(parser, "capturing", entryArgs, captures, captureTypes,
                     /*impliedType=*/Type(), /*required=*/false))
     return failure();
@@ -893,14 +897,22 @@ ParseResult CallRowwiseOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parser.resolveOperand(shape, ShapeType::get(ctx), result.operands) ||
       parser.resolveOperand(context, ContextType::get(ctx), result.operands) ||
       parser.resolveOperands(captures, captureTypes, parser.getNameLoc(),
-                             result.operands))
+                             result.operands) ||
+      (dynamicMaxSimdWidth &&
+       parser.resolveOperand(*dynamicMaxSimdWidth, ShapeType::get(ctx),
+                             result.operands)))
     return failure();
+  result.addAttribute(getOperandSegmentSizesAttrName(result.name),
+                      parser.getBuilder().getDenseI32ArrayAttr(
+                          {1, 1, static_cast<int32_t>(captures.size()),
+                           dynamicMaxSimdWidth ? 1 : 0}));
   return parser.parseRegion(*result.addRegion(), entryArgs);
 }
 
 void CallRowwiseOp::print(OpAsmPrinter &p) {
   p << " shape(" << getShape() << ") axis(" << getAxis() << ") context("
-    << getContext() << ") ";
+    << getDeviceContext() << ") ";
+  printOptionalDynamicMaxSimdWidth(p, getDynamicMaxSimdWidth());
   auto args = getBody().front().getArguments();
   size_t numCaptures = getCapturing().size();
   printLeadingArgs(p, args.drop_front(numCaptures));
@@ -914,7 +926,8 @@ void CallRowwiseOp::print(OpAsmPrinter &p) {
   p.printAttribute(getDeviceAttr());
   p.printOptionalAttrDictWithKeyword(
       (*this)->getAttrs(),
-      {getAxisAttrName().getValue(), getDeviceAttrName().getValue()});
+      {getAxisAttrName().getValue(), getDeviceAttrName().getValue(),
+       getOperandSegmentSizesAttrName().getValue()});
   p << " ";
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
 }

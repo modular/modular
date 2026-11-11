@@ -20,6 +20,7 @@ from std.sys.info import CompilationTarget
 
 from max.algorithm.functional import elementwise
 from algorithm.reduce_op import ReduceOp
+from algorithm.cpu.rowwise import CPU_WIDE_ACCUMULATOR_FACTOR
 from algorithm.rowwise import Row, launch, pick_simd_width
 from algorithm.rowwise_types import ContextParams, RowBody
 
@@ -2422,6 +2423,7 @@ def pow2_divisor_of_dims[rank: Int](dims: IndexList[rank]) -> Int:
 @register_internal("mogg.call.rowwise")
 def _rowwise[
     Body: RowBody,
+    MaxSimdWidth: CoordLike = ComptimeInt[0],
     //,
     SimdMonoid: ReduceOp,
     dtype: DType,
@@ -2431,8 +2433,16 @@ def _rowwise[
     num_phases: Int,
     computationally_expensive: Bool,
     dtype_size: Int,
-](body: Body, shape: Coord, ctx: DeviceContext) raises:
+](
+    body: Body,
+    shape: Coord,
+    ctx: DeviceContext,
+    max_simd_width: MaxSimdWidth = MaxSimdWidth(),
+) raises:
     """Runs a Row API body once per row of `shape` along `axis`.
+
+    The width must divide `max_simd_width`, as for `_foreach`: a static
+    limit caps it at compile time, a run-time one picks it at launch.
 
     Parameters:
         Body: The body's concrete type.
@@ -2457,17 +2467,58 @@ def _rowwise[
         body: The per-row body.
         shape: The iteration domain.
         ctx: The call context (forward this from the custom operation).
+        max_simd_width: A number every width must divide; 0, the default,
+            allows any width.
     """
     comptime simd_width = pick_simd_width[
         SimdMonoid, ctx.target, 64, dtype, accum
     ]()
-    launch[
-        axis=axis,
-        simd_width=simd_width,
-        num_phases=num_phases,
-        computationally_expensive=computationally_expensive,
-        dtype_size=dtype_size,
-    ](body, shape, ctx)
+    comptime if MaxSimdWidth.is_static_value:
+        comptime limit = MaxSimdWidth.static_value
+        comptime width = simd_width if limit == 0 else min(
+            simd_width, limit & -limit
+        )
+        launch[
+            axis=axis,
+            simd_width=width,
+            num_phases=num_phases,
+            computationally_expensive=computationally_expensive,
+            dtype_size=dtype_size,
+            # The widest power of two the limit allows, which may exceed
+            # `width`: the CPU path widens its accumulator up to it.
+            max_simd_width=0 if limit == 0 else limit & -limit,
+        ](body, shape, ctx)
+    else:
+        var limit = Int(max_simd_width.value())
+        comptime steps = Int(bit_width(Scalar[DType.int](simd_width)))
+        comptime for step in range(steps):
+            comptime width = simd_width >> step
+            # On CPU, a limit that allows the widened accumulator too (0, or
+            # a multiple of it) launches uncapped, as no limit does. A limit
+            # between the two keeps `width` as its cap.
+            comptime if step == 0 and ctx.target.is_cpu():
+                if (
+                    limit == 0
+                    or limit % (width * CPU_WIDE_ACCUMULATOR_FACTOR) == 0
+                ):
+                    launch[
+                        axis=axis,
+                        simd_width=width,
+                        num_phases=num_phases,
+                        computationally_expensive=computationally_expensive,
+                        dtype_size=dtype_size,
+                    ](body, shape, ctx)
+                    return
+            if width == 1 or limit % width == 0:
+                launch[
+                    axis=axis,
+                    simd_width=width,
+                    num_phases=num_phases,
+                    computationally_expensive=computationally_expensive,
+                    dtype_size=dtype_size,
+                    max_simd_width=width,
+                ](body, shape, ctx)
+                return
 
 
 @register_internal("mogg.rowwise.splat_lane")

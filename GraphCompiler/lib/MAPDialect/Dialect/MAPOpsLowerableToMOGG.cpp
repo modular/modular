@@ -1136,13 +1136,18 @@ LogicalResult IterRowwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
   for (Value v : captures)
     capturing.push_back(state.mapping.lookup(v));
 
+  // A width limit, as for a foreach.
+  auto [maxSimdWidth, dynamicMaxSimdWidth] =
+      lowerWidthLimit(getMaxSimdWidthAttr(), getShape().getType(), loc, state);
+
   auto callRowwise = MOGG::CallRowwiseOp::create(
       state.builder, loc, rowShape, getAxisAttr(), state.contextArgs.front(),
-      capturing, state.builder.getStringAttr(state.device.getLabel()),
+      capturing, dynamicMaxSimdWidth,
+      state.builder.getStringAttr(state.device.getLabel()),
       /*accum=*/nullptr, /*is_cached=*/nullptr, /*cols=*/nullptr,
       /*num_phases=*/nullptr,
       /*dtype_size=*/nullptr, /*computationally_expensive=*/nullptr,
-      /*simd_monoid=*/nullptr);
+      /*simd_monoid=*/nullptr, maxSimdWidth);
 
   // One arg per capture, then the row index.
   Block *rowwiseBlock = state.builder.createBlock(&callRowwise.getBody());

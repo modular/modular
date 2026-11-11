@@ -51,7 +51,7 @@ ProducerDispatch matchProducerDispatch(Operation *op) {
     return {op, viewCopy.getContext()};
 
   if (auto rowwise = dyn_cast<CallRowwiseOp>(op))
-    return {op, rowwise.getContext()};
+    return {op, rowwise.getDeviceContext()};
 
   return {};
 }

@@ -1744,6 +1744,7 @@ def MOGG_CallViewCopyOp : MOGG_Op<"call.view_copy", [
 }
 
 def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
+  AttrSizedOperandSegments,
   MOGG_CallLike,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
@@ -1773,6 +1774,9 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
       a long row; else 0.
     - `$computationally_expensive`: whether the body writes every element,
       or its per-element work reaches the pass's cost threshold.
+    - `$max_simd_width` / `$dynamic_max_simd_width`: a number every SIMD
+      width must divide, from the `map.iter.rowwise.body`'s
+      `max_simd_width`, as on `mogg.call.foreach`.
     - `$simd_monoid`: the fold monoid that picks the SIMD width, the one
       with the largest state.
 
@@ -1793,8 +1797,12 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   let arguments = (ins
     MOGG_Shape:$shape,
     I64Attr:$axis,
-    MOGG_Context:$context,
+    // Not `$context`, as on `mogg.call.foreach`: `$dynamic_max_simd_width`
+    // makes the op use `AttrSizedOperandSegments`, whose generated code calls
+    // `getContext()` for the MLIR context.
+    MOGG_Context:$device_context,
     Variadic<MOGG_TensorLike>:$capturing,
+    Optional<MOGG_Shape>:$dynamic_max_simd_width,
     StrAttr:$device,
     OptionalAttr<TypeAttr>:$accum,
     UnitAttr:$is_cached,
@@ -1802,7 +1810,8 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
     OptionalAttr<I64Attr>:$num_phases,
     OptionalAttr<I64Attr>:$dtype_size,
     UnitAttr:$computationally_expensive,
-    OptionalAttr<FlatSymbolRefAttr>:$simd_monoid
+    OptionalAttr<FlatSymbolRefAttr>:$simd_monoid,
+    OptionalAttr<I64Attr>:$max_simd_width
   );
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;

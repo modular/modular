@@ -289,6 +289,8 @@ LogicalResult TileStoreOp::verify() {
 }
 
 LogicalResult CallRowwiseOp::verify() {
+  if (failed(verifyMaxSimdWidth(*this)))
+    return failure();
   Block &body = getBody().front();
   bool afterMap = false;
   for (Operation &op : body) {
