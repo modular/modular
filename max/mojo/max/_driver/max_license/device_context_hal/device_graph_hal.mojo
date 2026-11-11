@@ -20,7 +20,7 @@ graph-compiler primitives to compile; none of them can be meaningfully
 constructed or used at runtime.
 """
 
-from .device_context_hal import DeviceBuffer, DeviceContext
+from .device_context_hal import HALDeviceBuffer, HALDeviceContext
 
 
 struct _DeviceGraphBuilderCpp:
@@ -44,14 +44,14 @@ comptime _DeviceGraphPtr[
 ] = Optional[Pointer[_DeviceGraphCpp, origin]]
 
 
-trait DeviceGraphInput:
+trait HALDeviceGraphInput:
     """Unsupported: the HAL DeviceContext has no device-graph support."""
 
     ...
 
 
 @fieldwise_init
-struct StableAddr(TrivialRegisterPassable):
+struct HALStableAddr(TrivialRegisterPassable):
     """Identifies a stable address slot; same layout as the real type so the
     graph-compiler primitives that pass one through compile. No slot is ever
     created on the HAL backend."""
@@ -61,13 +61,13 @@ struct StableAddr(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct DeviceGraphCache:
+struct HALDeviceGraphCache:
     """Unsupported: the HAL DeviceContext has no device-graph support."""
 
     pass
 
 
-struct DeviceGraph(ImplicitlyCopyable):
+struct HALDeviceGraph(ImplicitlyCopyable):
     """Unsupported: the HAL DeviceContext has no device-graph support."""
 
     var _handle: _DeviceGraphPtr[mut=True]
@@ -82,12 +82,12 @@ struct DeviceGraph(ImplicitlyCopyable):
         return self._handle
 
 
-struct DeviceGraphBuilder(Movable):
+struct HALDeviceGraphBuilder(Movable):
     """Unsupported: the HAL DeviceContext has no device-graph support."""
 
-    var _ctx: DeviceContext[]
+    var _ctx: HALDeviceContext[]
 
-    def context(self) -> DeviceContext[]:
+    def context(self) -> HALDeviceContext[]:
         """Returns the device context this builder records against.
 
         Returns:
@@ -95,7 +95,7 @@ struct DeviceGraphBuilder(Movable):
         """
         return self._ctx
 
-    def recording_context(self) raises -> DeviceContext[]:
+    def recording_context(self) raises -> HALDeviceContext[]:
         """Unsupported: returns a `DeviceContext` that records into this builder.
 
         Returns:
@@ -110,7 +110,7 @@ struct DeviceGraphBuilder(Movable):
 
     def create_buffer[
         dtype: DType
-    ](self, size: Int, is_host: Bool) raises -> DeviceBuffer[dtype]:
+    ](self, size: Int, is_host: Bool) raises -> HALDeviceBuffer[dtype]:
         """Unsupported: allocates a buffer owned by the current device graph.
 
         Parameters:
@@ -132,7 +132,9 @@ struct DeviceGraphBuilder(Movable):
 
     def create_input_buffer[
         dtype: DType
-    ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
+    ](
+        self, size: Int, is_host: Bool, out result: HALDeviceBuffer[dtype]
+    ) raises:
         """Unsupported: allocates an input buffer by the current device graph.
 
         Allocation and registration are one step so a `DeviceGraphInput` cannot
@@ -164,7 +166,7 @@ struct DeviceGraphBuilder(Movable):
         """
         pass
 
-    def get_stable(mut self, index: Int) raises -> StableAddr:
+    def get_stable(mut self, index: Int) raises -> HALStableAddr:
         """Unsupported: returns stable address slot `index` of the collective.
 
         Args:
@@ -184,7 +186,7 @@ struct DeviceGraphBuilder(Movable):
         mut self,
         index: Int,
         source: Pointer[mut=True, NoneType, _],
-    ) raises -> StableAddr:
+    ) raises -> HALStableAddr:
         """Unsupported: publishes `source` into stable address slot `index`.
 
         Args:
@@ -202,14 +204,14 @@ struct DeviceGraphBuilder(Movable):
         )
 
 
-struct DeviceGraphNode:
+struct HALDeviceGraphNode:
     """Unsupported: the HAL DeviceContext has no device-graph support."""
 
     pass
 
 
 @doc_hidden
-struct DeviceGraphInputKind(Equatable, TrivialRegisterPassable):
+struct HALDeviceGraphInputKind(Equatable, TrivialRegisterPassable):
     """How a tensor participates as a device graph input.
 
     Mirrors the real type value for value: the graph-compiler primitives
@@ -220,10 +222,10 @@ struct DeviceGraphInputKind(Equatable, TrivialRegisterPassable):
 
     var value: Int
 
-    comptime data = DeviceGraphInputKind(0)
-    comptime mutable = DeviceGraphInputKind(1)
-    comptime host = DeviceGraphInputKind(2)
-    comptime shape_only = DeviceGraphInputKind(3)
+    comptime data = HALDeviceGraphInputKind(0)
+    comptime mutable = HALDeviceGraphInputKind(1)
+    comptime host = HALDeviceGraphInputKind(2)
+    comptime shape_only = HALDeviceGraphInputKind(3)
 
     def __init__(out self, value: Int):
         self.value = value

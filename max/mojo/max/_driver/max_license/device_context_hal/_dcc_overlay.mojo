@@ -16,20 +16,46 @@ Replaces `max/gpu/host/_overlay.mojo` under --config=hal-device-context (see
 `:dcc_overlay` in this package's BUILD.bazel), and exports the same names as
 that file, plus the HAL-only ones. It imports absolutely so it resolves the same
 staged there as here, where it also compiles in every configuration.
+
+The HAL structs carry the backend's name, so this file is where they regain the
+public ones. The explicit aliases below also shadow the `HAL*` names the star
+imports bring in, which is why nothing that imports from `max.gpu.host` names a
+backend.
 """
 
 from max._driver.max_license.device_context_hal.device_context_hal import *
 from max._driver.max_license.device_context_hal.device_context_hal import (
+    HALCompletionFlag as CompletionFlag,
+    HALDevice as Device,
+    HALDeviceBuffer as DeviceBuffer,
+    HALDeviceContext as DeviceContext,
+    HALDeviceContextArray as DeviceContextArray,
+    HALDeviceEvent as DeviceEvent,
+    HALDeviceExternalFunction as DeviceExternalFunction,
+    HALDeviceFunction as DeviceFunction,
+    HALDeviceMulticastBuffer as DeviceMulticastBuffer,
+    HALDevicePointer as DevicePointer,
+    HALDeviceStream as DeviceStream,
+    HALHostBuffer as HostBuffer,
     _CString,
     _DeviceBufferCpp,
     _DeviceContextPtr,
-    _DeviceContextScopeHAL,
+    _HALDeviceContextScope,
     _DeviceFunctionPtr,
     _DumpPath,
     _check_dim_in_range,
     _checked,
 )
 from max._driver.max_license.device_context_hal.device_graph_hal import *
+from max._driver.max_license.device_context_hal.device_graph_hal import (
+    HALDeviceGraph as DeviceGraph,
+    HALDeviceGraphBuilder as DeviceGraphBuilder,
+    HALDeviceGraphCache as DeviceGraphCache,
+    HALDeviceGraphInput as DeviceGraphInput,
+    HALDeviceGraphInputKind as DeviceGraphInputKind,
+    HALDeviceGraphNode as DeviceGraphNode,
+    HALStableAddr as StableAddr,
+)
 from max._driver.max_license.device_context_hal._nvidia_cuda_hal import *
 from max._driver.max_license.device_context_hal._nvidia_cuda_hal import (
     _CUstream_st,

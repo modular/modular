@@ -12,7 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """HIP native-handle accessors for the HAL `DeviceContext`."""
 
-from .device_context_hal import DeviceContext, DeviceFunction, DeviceStreamBase
+from .device_context_hal import (
+    HALDeviceContext,
+    HALDeviceFunction,
+    HALDeviceStreamBase,
+)
 from std.memory.pointer import unsafe_cast
 
 
@@ -40,12 +44,12 @@ comptime hipModule_t = Optional[
 
 
 @inline(.always)
-def HIP(ctx: DeviceContext) raises -> hipDevice_t:
+def HIP(ctx: HALDeviceContext) raises -> hipDevice_t:
     raise Error("hipDevice_t access is not wired for the HAL DeviceContext")
 
 
 @inline(.always)
-def HIP(stream: DeviceStreamBase[_]) raises -> hipStream_t:
+def HIP(stream: HALDeviceStreamBase[_]) raises -> hipStream_t:
     """Returns the `hipStream_t` backing a HAL stream.
 
     Args:
@@ -63,7 +67,7 @@ def HIP(stream: DeviceStreamBase[_]) raises -> hipStream_t:
 
 
 @inline(.always)
-def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
+def HIP_MODULE(func: HALDeviceFunction) raises -> hipModule_t:
     raise Error(
         "hipModule_t access is not wired for the HAL DeviceContext; the HIP"
         " plugin does not answer M_DRIVER_FUNCTION_PROPERTY_NATIVE_HANDLE"

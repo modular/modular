@@ -456,14 +456,14 @@ struct StreamPriorityRange(TrivialRegisterPassable, Writable):
         )
 
 
-comptime DeviceStream = DeviceStreamBase[]
+comptime HALDeviceStream = HALDeviceStreamBase[]
 """A `DeviceStream` on the default accelerator.
 
-See `DeviceStreamBase` for additional documentation.
+See `HALDeviceStreamBase` for additional documentation.
 """
 
 
-struct DeviceContext[target: CompilationTarget = default_accelerator()](
+struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     ImplicitlyCopyable, RegisterPassable, _HALFunctionEnqueuer
 ):
     """Represents a single stream of execution on a particular accelerator
@@ -514,15 +514,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     # DeviceContext is only usable on hosts so `current()` will always be a CPU.
-    comptime CPU = DeviceContext[CompilationTarget.current()]
+    comptime CPU = HALDeviceContext[CompilationTarget.current()]
     """DeviceContext type for the current CPU target."""
 
-    comptime Unknown = DeviceContext[CompilationTarget._unknown()]
+    comptime Unknown = HALDeviceContext[CompilationTarget._unknown()]
     """DeviceContext type whose compilation target is not statically known."""
 
     comptime Optional[
         target: CompilationTarget = default_accelerator()
-    ] = Optional[DeviceContext[target]]
+    ] = Optional[HALDeviceContext[target]]
     """Convenience type alias for an `Optional[DeviceContext[_]]` type parameter.
 
     This associated type worksaround Mojo's missing support for nested
@@ -547,7 +547,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     This alias may be removed once Mojo supports nested auto-parameterization.
     """
 
-    comptime NoneValue = Optional[DeviceContext.CPU]()
+    comptime NoneValue = Optional[HALDeviceContext.CPU]()
     """Convenience helper for constructing a default value for
     `DeviceContext.Optional` parameters. This guides type inference to the CPU
     `target` when the default argument value is used, so omitting the context
@@ -806,27 +806,27 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @staticmethod
     def _from_unsafe_cpp_handle(
         handle: OpaquePointer[MutUntrackedOrigin],
-    ) -> DeviceContext[Self.target]:
-        return handle.unsafe_bitcast[DeviceContext[Self.target]]()[]
+    ) -> HALDeviceContext[Self.target]:
+        return handle.unsafe_bitcast[HALDeviceContext[Self.target]]()[]
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    def cpu() -> DeviceContext.CPU:
+    def cpu() -> HALDeviceContext.CPU:
         """Creates a CPU `DeviceContext`.
 
         Returns:
             A new CPU `DeviceContext`.
         """
         try:
-            return DeviceContext.CPU(api="cpu")
+            return HALDeviceContext.CPU(api="cpu")
         except e:
             abort(t"unable to create CPU DeviceContext: {e}")
 
     @inline(.always)
-    def assert_cpu_target(var self) -> DeviceContext.CPU:
+    def assert_cpu_target(var self) -> HALDeviceContext.CPU:
         """Temporary function to assert and cast this DeviceContext to the CPU
         target.
 
@@ -847,22 +847,22 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     t" from: {call_location()}"
                 )
             )
-        return rebind_var[DeviceContext.CPU](self)
+        return rebind_var[HALDeviceContext.CPU](self)
 
     # FIXME: The more obvious spelling of this currently crashes the compiler:
     #    context.map(DeviceContext.assert_cpu_target)
     @staticmethod
     def _map_assert_cpu_target(
-        ctx: DeviceContext.Optional,
-    ) -> Optional[DeviceContext.CPU]:
-        var cpu_ctx = Optional[DeviceContext.CPU]()
+        ctx: HALDeviceContext.Optional,
+    ) -> Optional[HALDeviceContext.CPU]:
+        var cpu_ctx = Optional[HALDeviceContext.CPU]()
         if case .Some(gpu_ctx) = ctx:
             cpu_ctx = gpu_ctx.assert_cpu_target()
         return cpu_ctx^
 
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
     @inline(.always)
-    def assert_default_target(self) -> DeviceContext[]:
+    def assert_default_target(self) -> HALDeviceContext[]:
         """Temporary function to assert and cast this DeviceContext to the
         default target.
 
@@ -882,10 +882,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             t"using DeviceContext with non-default target is not supported fro"
             t"m: {call_location()}"
         )
-        return rebind[DeviceContext[]](self)
+        return rebind[HALDeviceContext[]](self)
 
     @inline(.always)
-    def into_unknown_target(self) -> DeviceContext.Unknown:
+    def into_unknown_target(self) -> HALDeviceContext.Unknown:
         """Erases this DeviceContext's static target.
 
         For code that only uses the context's handle, so it neither needs nor
@@ -894,7 +894,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Returns:
             This device context with an unknown target.
         """
-        return rebind[DeviceContext.Unknown](self)
+        return rebind[HALDeviceContext.Unknown](self)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -912,7 +912,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def device(ref self) -> Device[Self.target, ImmOrigin(origin_of(self))]:
+    def device(ref self) -> HALDevice[Self.target, ImmOrigin(origin_of(self))]:
         """Returns a view of the device this context runs on.
 
         Returns:
@@ -1044,7 +1044,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         self._context[].set_current()
 
-    def push_context(self) raises -> _DeviceContextScopeHAL:
+    def push_context(self) raises -> _HALDeviceContextScope:
         """Returns a context manager that ensures this device's driver context is active.
 
         This method returns a context manager that pushes this device's driver
@@ -1071,13 +1071,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # Previous context is automatically restored
         ```
         """
-        return _DeviceContextScopeHAL(self)
+        return _HALDeviceContextScope(self)
 
     @doc_hidden
-    def stream(self) -> DeviceStreamBase[Self.target]:
-        return DeviceStreamBase[Self.target](self)
+    def stream(self) -> HALDeviceStreamBase[Self.target]:
+        return HALDeviceStreamBase[Self.target](self)
 
-    def allocate_completion_flag(self) raises -> CompletionFlag:
+    def allocate_completion_flag(self) raises -> HALCompletionFlag:
         """Allocates a `CompletionFlag`, initialized to 0, on this device.
 
         Returns:
@@ -1086,7 +1086,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the device's plugin has no completion flags.
         """
-        return CompletionFlag(
+        return HALCompletionFlag(
             _inner=ArcPointer(_CompletionFlagBox(self.assert_default_target()))
         )
 
@@ -1118,7 +1118,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def create_stream(
         self, *, priority: Int = 0
-    ) raises -> DeviceStreamBase[Self.target]:
+    ) raises -> HALDeviceStreamBase[Self.target]:
         """Creates a new stream associated with the given device context.
 
         Args:
@@ -1133,9 +1133,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If stream creation fails.
         """
         var hal_stream = self._context[].create_stream()
-        return DeviceStreamBase[Self.target](self, hal_stream^)
+        return HALDeviceStreamBase[Self.target](self, hal_stream^)
 
-    def create_event(self) -> DeviceEvent:
+    def create_event(self) -> HALDeviceEvent:
         """Creates a new event for synchronization between streams.
 
         Returns:
@@ -1166,7 +1166,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # The HAL uses logical events where creation and recording happen in
         # one step. To work around this, initially create a DeviceEvent without
         # a backing HAL event.
-        return DeviceEvent._create_unrecorded(self)
+        return HALDeviceEvent._create_unrecorded(self)
 
     @inline(.always)
     def compile_function[
@@ -1182,7 +1182,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         _ptxas_info_verbose: Bool = False,
     ](
         self, *, func_attribute: OptionalReg[FuncAttribute] = None
-    ) raises -> DeviceFunction[func, Self._HALHooks.FunctionWrapper]:
+    ) raises -> HALDeviceFunction[func, Self._HALHooks.FunctionWrapper]:
         """Compiles the provided `capturing` function for execution on this
         device.
 
@@ -1213,7 +1213,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return DeviceFunction[func, Self._HALHooks.FunctionWrapper](
+        return HALDeviceFunction[func, Self._HALHooks.FunctionWrapper](
             self, func_attribute=func_attribute
         )
 
@@ -1347,7 +1347,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     execution_config, location=call_location()
                 )
 
-            var gpu_kernel = DeviceFunction[FuncType.__call__](self)
+            var gpu_kernel = HALDeviceFunction[FuncType.__call__](self)
 
             gpu_kernel._do_call_closure_checked(
                 self,
@@ -1364,7 +1364,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         execution_config: ExecutionConfigType,
-        f: DeviceFunction,
+        f: HALDeviceFunction,
         *args: *Ts,
         location: Optional[SourceLocation] = None,
     ) raises:
@@ -1595,7 +1595,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _check_dim_in_range[
                     "DeviceContext.enqueue_function", "block_dim"
                 ](block_dim, location=call_location())
-            var gpu_kernel = DeviceFunction[FuncType.__call__](
+            var gpu_kernel = HALDeviceFunction[FuncType.__call__](
                 self, func_attribute=func_attribute
             )
             gpu_kernel._call_closure_checked(
@@ -1615,7 +1615,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         *Ts: DevicePassable,
     ](
         self,
-        f: DeviceFunction,
+        f: HALDeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -1707,7 +1707,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         *,
         var function_name: String,
         var asm: String,
-        out result: DeviceExternalFunction,
+        out result: HALDeviceExternalFunction,
     ) raises:
         """Loads a pre-compiled device function from assembly code.
 
@@ -1731,14 +1731,14 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If loading the function fails or the assembly code is invalid.
         """
-        return DeviceExternalFunction(self, function_name^, asm)
+        return HALDeviceExternalFunction(self, function_name^, asm)
 
     @inline(.always)
     def enqueue_function[
         *Ts: AnyType,
     ](
         self,
-        f: DeviceExternalFunction,
+        f: HALDeviceExternalFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -1805,7 +1805,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_create_buffer[
         dtype: DType
-    ](self, size: Int) raises -> DeviceBuffer[dtype]:
+    ](self, size: Int) raises -> HALDeviceBuffer[dtype]:
         """Enqueues a buffer creation using the `DeviceBuffer` constructor.
 
         For GPU devices, the space is allocated in the device's global memory.
@@ -1825,11 +1825,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         # NOTE: The HAL supports doing this asynchronously, but to match
         # existing DeviceContext semantics we create a buffer immediately.
-        return DeviceBuffer[dtype](self, size)
+        return HALDeviceBuffer[dtype](self, size)
 
     def create_buffer_sync[
         dtype: DType
-    ](self, size: Int) raises -> DeviceBuffer[dtype]:
+    ](self, size: Int) raises -> HALDeviceBuffer[dtype]:
         """Creates a buffer synchronously using the `DeviceBuffer` constructor.
 
         Parameters:
@@ -1844,11 +1844,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return DeviceBuffer[dtype](self, size)
+        return HALDeviceBuffer[dtype](self, size)
 
     def enqueue_create_host_buffer[
         dtype: DType
-    ](self, size: Int) raises -> HostBuffer[dtype]:
+    ](self, size: Int) raises -> HALHostBuffer[dtype]:
         """Enqueues the creation of a HostBuffer.
 
         This function allocates memory on the host that is accessible by the device.
@@ -1892,7 +1892,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        return HostBuffer[dtype](self, size)
+        return HALHostBuffer[dtype](self, size)
 
     def enqueue_copy[
         dtype: DType
@@ -1917,15 +1917,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         self.enqueue_copy(
-            DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
-            DeviceBuffer[dtype](self, src_ptr, size, owning=False),
+            HALDeviceBuffer[dtype](self, dst_ptr, size, owning=False),
+            HALDeviceBuffer[dtype](self, src_ptr, size, owning=False),
         )
 
     def enqueue_copy[
         dtype: DType
     ](
         self,
-        dst_buf: DeviceBuffer[dtype],
+        dst_buf: HALDeviceBuffer[dtype],
         src_ptr: Pointer[Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from the host to the provided device
@@ -1952,7 +1952,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         dst_ptr: Pointer[mut=True, Scalar[dtype], _],
-        src_buf: DeviceBuffer[dtype],
+        src_buf: HALDeviceBuffer[dtype],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
@@ -1974,7 +1974,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+    ](
+        self, dst_buf: HALDeviceBuffer[dtype], src_buf: HALDeviceBuffer[dtype]
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -2003,7 +2005,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def _check_device_to_device_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+    ](
+        self, dst_buf: HALDeviceBuffer[dtype], src_buf: HALDeviceBuffer[dtype]
+    ) raises:
         # Runs before any cross-stream wait, which would hand this plugin
         # another driver's event.
         var dst_device = dst_buf._inner[]._context[].device_id()
@@ -2025,7 +2029,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def _enqueue_copy_device_to_device[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+    ](
+        self, dst_buf: HALDeviceBuffer[dtype], src_buf: HALDeviceBuffer[dtype]
+    ) raises:
         var src_context = src_buf._inner[]._context
         var dst_view = dst_buf._inner[]._buffer.view()
         var src_view = src_buf._inner[]._buffer.view()
@@ -2038,7 +2044,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
+    ](
+        self, dst_buf: HALDeviceBuffer[dtype], src_buf: HALHostBuffer[dtype]
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -2061,7 +2069,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+    ](
+        self, dst_buf: HALHostBuffer[dtype], src_buf: HALDeviceBuffer[dtype]
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -2090,7 +2100,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dtype: DType
     ](
         self,
-        dst_buf: HostBuffer[dtype],
+        dst_buf: HALHostBuffer[dtype],
         src_ptr: Pointer[Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from the host to the provided device
@@ -2117,7 +2127,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         dst_ptr: Pointer[mut=True, Scalar[dtype], _],
-        src_buf: HostBuffer[dtype],
+        src_buf: HALHostBuffer[dtype],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
@@ -2139,7 +2149,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
+    ](
+        self, dst_buf: HALHostBuffer[dtype], src_buf: HALHostBuffer[dtype]
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -2162,7 +2174,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src: Span[Scalar[dtype], _]) raises:
+    ](
+        self, dst_buf: HALDeviceBuffer[dtype], src: Span[Scalar[dtype], _]
+    ) raises:
         """Enqueues an async copy from a host `Span` to a device buffer.
 
         The number of bytes copied is determined by the size of the device
@@ -2190,7 +2204,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         dst: Span[mut=True, Scalar[dtype], _],
-        src_buf: DeviceBuffer[dtype],
+        src_buf: HALDeviceBuffer[dtype],
     ) raises:
         """Enqueues an async copy from a device buffer to a host `Span`.
 
@@ -2217,7 +2231,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src: Span[Scalar[dtype], _]) raises:
+    ](self, dst_buf: HALHostBuffer[dtype], src: Span[Scalar[dtype], _]) raises:
         """Enqueues an async copy from a host `Span` to a pinned host buffer.
 
         The number of bytes copied is determined by the size of the device
@@ -2245,7 +2259,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         dst: Span[mut=True, Scalar[dtype], _],
-        src_buf: HostBuffer[dtype],
+        src_buf: HALHostBuffer[dtype],
     ) raises:
         """Enqueues an async copy from a host buffer to a host `Span`.
 
@@ -2288,7 +2302,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_copy_no_cross_stream_sync[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype],) raises:
+    ](
+        self,
+        dst_buf: HALDeviceBuffer[dtype],
+        src_buf: HALDeviceBuffer[dtype],
+    ) raises:
         """Enqueues a device-to-device copy without cross-stream synchronization.
 
         This behaves like `enqueue_copy` for two device buffers, except that
@@ -2440,7 +2458,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_memset[
         dtype: DType
-    ](self, dst: DeviceBuffer[dtype], val: Scalar[dtype]) raises:
+    ](self, dst: HALDeviceBuffer[dtype], val: Scalar[dtype]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination device buffer to the specified value.
 
@@ -2462,7 +2480,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_memset[
         dtype: DType
-    ](self, dst: HostBuffer[dtype], val: Scalar[dtype]) raises:
+    ](self, dst: HALHostBuffer[dtype], val: Scalar[dtype]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination host buffer to the specified value.
 
@@ -2485,7 +2503,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @deprecated(
         "Use `DeviceContext.device().can_access_peer(peer.device())` instead."
     )
-    def can_access(self, peer: DeviceContext) raises -> Bool:
+    def can_access(self, peer: HALDeviceContext) raises -> Bool:
         """Returns True if this device can access the identified peer device.
 
         Args:
@@ -2500,7 +2518,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         return self.device().can_access_peer(peer.device())
 
-    def enable_peer_access(self, peer: DeviceContext) raises:
+    def enable_peer_access(self, peer: HALDeviceContext) raises:
         """Enables direct memory access to the peer device.
 
         Args:
@@ -2597,7 +2615,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         return False
 
-    def enqueue_wait_for(self, other: DeviceContext) raises:
+    def enqueue_wait_for(self, other: HALDeviceContext) raises:
         """Enqueues a wait operation for another device context to complete its work.
 
         This method creates a dependency between two device contexts, ensuring that operations
@@ -2781,7 +2799,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         return False
 
 
-struct Device[target: CompilationTarget, origin: ImmOrigin](
+struct HALDevice[target: CompilationTarget, origin: ImmOrigin](
     TrivialRegisterPassable
 ):
     """A view of the accelerator device behind a `DeviceContext`.
@@ -2794,14 +2812,14 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         origin: The origin of the owning context.
     """
 
-    var _ctx: Pointer[DeviceContext[Self.target], Self.origin]
+    var _ctx: Pointer[HALDeviceContext[Self.target], Self.origin]
 
     var id: Int64
     """The ID of this device among the devices of its driver."""
 
     @doc_hidden
     def __init__(
-        out self, ctx: Pointer[DeviceContext[Self.target], Self.origin]
+        out self, ctx: Pointer[HALDeviceContext[Self.target], Self.origin]
     ):
         self._ctx = ctx
         self.id = ctx[]._device[].id
@@ -2961,7 +2979,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
     def can_access_peer[
         peer_target: CompilationTarget, peer_origin: ImmOrigin, //
-    ](self, peer: Device[peer_target, peer_origin]) raises -> Bool:
+    ](self, peer: HALDevice[peer_target, peer_origin]) raises -> Bool:
         """Returns True if this device can directly access memory on `peer`.
 
         Parameters:
@@ -3000,14 +3018,14 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
             return False
 
 
-struct _DeviceContextScopeHAL(Movable):
-    var _device_context: DeviceContext.Unknown
+struct _HALDeviceContextScope(Movable):
+    var _device_context: HALDeviceContext.Unknown
     # Driver-context handle to restore on exit; only meaningful when `_active`
     # (any value, including zero, can be a live handle).
     var _prev_driver_ctx: Int
     var _active: Bool
 
-    def __init__(out self, device_context: DeviceContext):
+    def __init__(out self, device_context: HALDeviceContext):
         self._device_context = device_context.into_unknown_target()
         self._prev_driver_ctx = 0
         self._active = False
@@ -3022,13 +3040,13 @@ struct _DeviceContextScopeHAL(Movable):
             except e:
                 print("warning: restoring driver context failed:", e)
 
-    def __enter__(mut self) raises -> DeviceContext[]:
+    def __enter__(mut self) raises -> HALDeviceContext[]:
         self._prev_driver_ctx = (
             self._device_context._context[].get_current_driver_context()
         )
         self._device_context._context[].set_current()
         self._active = True
-        return rebind[DeviceContext[]](self._device_context)
+        return rebind[HALDeviceContext[]](self._device_context)
 
     def __exit__(mut self) raises:
         if self._active:
@@ -3043,7 +3061,7 @@ struct _DeviceContextScopeHAL(Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DeviceFunction[
+struct HALDeviceFunction[
     ret_type: AnyType,
     declared_arg_types: TypeList[Trait=AnyType, ...],
     //,
@@ -3093,7 +3111,7 @@ struct DeviceFunction[
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext.Unknown
+    var _ctx: HALDeviceContext.Unknown
     var _inner: ArcPointer[_DeviceFunctionInner]
     # Null until the C++ runtime shim provides it; read by the CUDA/HIP
     # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
@@ -3112,7 +3130,7 @@ struct DeviceFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: HALDeviceContext,
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
@@ -3760,7 +3778,7 @@ struct _ExternalFunctionInner(Movable):
     var _func_handle: FunctionHandle
 
 
-struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
+struct HALDeviceExternalFunction(ImplicitlyCopyable, Movable):
     """Represents an external device function loaded from PTX/SASS assembly.
 
     This class provides functionality to load and execute pre-compiled GPU functions
@@ -3773,7 +3791,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext.Unknown
+    var _ctx: HALDeviceContext.Unknown
     var _inner: ArcPointer[_ExternalFunctionInner]
 
     # ===-------------------------------------------------------------------===#
@@ -3783,7 +3801,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: HALDeviceContext,
         var function_name: String,
         asm: StringSpan,
     ) raises:
@@ -3923,7 +3941,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
+struct HALDeviceStreamBase[target: CompilationTarget = default_accelerator()](
     ImplicitlyCopyable, Movable, _HALFunctionEnqueuer
 ):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
@@ -3951,7 +3969,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     """
 
     comptime ExecutionConfigType: ExecutionConfig = (
-        DeviceContext[Self.target].ExecutionConfigType
+        HALDeviceContext[Self.target].ExecutionConfigType
     )
     """The launch configuration type of the stream's device context."""
 
@@ -3963,7 +3981,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext[Self.target]
+    var _ctx: HALDeviceContext[Self.target]
     var _stream: ArcPointer[Stream[get_device_spec[0]()]]
     # Null until the C++ runtime shim provides it; read by the CUDA/HIP
     # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
@@ -3974,7 +3992,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext[Self.target]):
+    def __init__(out self, ctx: HALDeviceContext[Self.target]):
         """Retrieves the stream associated with the given device context.
 
         Args:
@@ -3987,7 +4005,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext[Self.target],
+        ctx: HALDeviceContext[Self.target],
         var hal_stream: ArcPointer[Stream[get_device_spec[0]()]],
     ):
         """Initializes a new DeviceStream with the given stream handle.
@@ -4065,7 +4083,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         """
         self._stream[].enqueue_host_func(func, user_data)
 
-    def enqueue_wait_for(self, event: DeviceEvent) raises:
+    def enqueue_wait_for(self, event: HALDeviceEvent) raises:
         """Makes this stream wait for the specified event.
 
         This function inserts a wait operation into this stream that will
@@ -4082,7 +4100,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         if case .Some(recorded) = event._event[]:
             self._stream[].wait_for_events(recorded)
 
-    def record_event(self, event: DeviceEvent) raises:
+    def record_event(self, event: HALDeviceEvent) raises:
         """Records an event in this stream.
 
         This function records the given event at the current point in this stream.
@@ -4124,7 +4142,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     @doc_hidden
     def wait_for_flag(
         self,
-        flag: CompletionFlag,
+        flag: HALCompletionFlag,
         value: UInt64,
     ) raises:
         """Stalls the stream until `flag` holds at least `value`.
@@ -4147,7 +4165,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     @doc_hidden
     def wait_for_host_value(
         self,
-        flag: CompletionFlag,
+        flag: HALCompletionFlag,
         value: UInt64,
     ) raises:
         """Stalls this stream until ``flag`` reaches ``value``.
@@ -4343,7 +4361,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 _check_dim_in_range[
                     "DeviceStream.enqueue_function", "block_dim"
                 ](block_dim, location=call_location())
-            var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
+            var gpu_kernel = HALDeviceFunction[FuncType.__call__](self._ctx)
             gpu_kernel._call_closure_checked(
                 self,
                 func,
@@ -4391,7 +4409,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 _check_config_dims["DeviceStream.enqueue_function"](
                     execution_config, location=call_location()
                 )
-            var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
+            var gpu_kernel = HALDeviceFunction[FuncType.__call__](self._ctx)
             gpu_kernel._do_call_closure_checked(
                 self,
                 execution_config,
@@ -4404,7 +4422,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         *Ts: DevicePassable,
     ](
         self,
-        f: DeviceFunction,
+        f: HALDeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -4474,7 +4492,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     ](
         self,
         execution_config: ExecutionConfigType,
-        f: DeviceFunction,
+        f: HALDeviceFunction,
         *args: *Ts,
         location: Optional[SourceLocation] = None,
     ) raises:
@@ -4520,7 +4538,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         *Ts: AnyType,
     ](
         self,
-        f: DeviceExternalFunction,
+        f: HALDeviceExternalFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -4589,7 +4607,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     ](
         self,
         execution_config: ExecutionConfigType,
-        f: DeviceExternalFunction,
+        f: HALDeviceExternalFunction,
         *args: *Ts,
         location: Optional[SourceLocation] = None,
     ) raises:
@@ -4638,7 +4656,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
 # ===-----------------------------------------------------------------------===#
 
 
-struct DeviceEvent(ImplicitlyCopyable, Movable):
+struct HALDeviceEvent(ImplicitlyCopyable, Movable):
     """Represents a GPU event for synchronization between streams.
 
     A DeviceEvent allows for fine-grained synchronization between different
@@ -4673,7 +4691,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
     # `_event` is an `ArcPointer[Optional[...]]` so that all copies of a
     # DeviceEvent  share the same backing event, which matches the behavior
     # of the existing reference-counted DeviceEvent implementation.
-    var _ctx: DeviceContext.Unknown
+    var _ctx: HALDeviceContext.Unknown
     var _event: ArcPointer[Optional[Event[EVENT_FLAG_CPU_VISIBLE]]]
 
     # ===-------------------------------------------------------------------===#
@@ -4681,7 +4699,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext) raises:
+    def __init__(out self, ctx: HALDeviceContext) raises:
         """Creates a new event recorded on the given context's default stream.
 
         Args:
@@ -4697,7 +4715,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: HALDeviceContext,
         var event: Optional[Event[EVENT_FLAG_CPU_VISIBLE]],
     ):
         """Initializes a DeviceEvent wrapping a possibly-empty HAL event.
@@ -4711,9 +4729,11 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
 
     @doc_hidden
     @staticmethod
-    def _create_unrecorded(ctx: DeviceContext) -> DeviceEvent:
+    def _create_unrecorded(ctx: HALDeviceContext) -> HALDeviceEvent:
         """Returns a `DeviceEvent` with no HAL event allocated yet."""
-        return DeviceEvent(ctx, Optional[Event[EVENT_FLAG_CPU_VISIBLE]](None))
+        return HALDeviceEvent(
+            ctx, Optional[Event[EVENT_FLAG_CPU_VISIBLE]](None)
+        )
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -4766,7 +4786,7 @@ struct _HALBufferInner(Movable):
         _ = self._parent^
 
 
-struct DeviceBuffer[dtype: DType](
+struct HALDeviceBuffer[dtype: DType](
     DevicePassable, ImplicitlyCopyable, Movable, Sized
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
@@ -4797,7 +4817,7 @@ struct DeviceBuffer[dtype: DType](
     var _device_ptr: Self._DevicePtr
     # Wrap the inner buffer in an ArcPointer so copies of this DeviceBuffer hold
     # a reference to the same underlying buffer.
-    var _ctx: DeviceContext.Unknown
+    var _ctx: HALDeviceContext.Unknown
     var _inner: ArcPointer[_HALBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -4805,7 +4825,7 @@ struct DeviceBuffer[dtype: DType](
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext, size: Int) raises:
+    def __init__(out self, ctx: HALDeviceContext, size: Int) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
@@ -4824,7 +4844,7 @@ struct DeviceBuffer[dtype: DType](
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: HALDeviceContext,
         ptr: Pointer[Scalar[Self.dtype], ...],
         size: Int,
         *,
@@ -4874,7 +4894,7 @@ struct DeviceBuffer[dtype: DType](
 
     @staticmethod
     @doc_hidden
-    def empty(context: DeviceContext) -> Self:
+    def empty(context: HALDeviceContext) -> Self:
         return Self(
             context,
             Self._DevicePtr.unsafe_dangling(),
@@ -4937,7 +4957,7 @@ struct DeviceBuffer[dtype: DType](
 
     def device_ptr(
         ref self,
-    ) raises -> DevicePointer[Self.dtype, origin_of(self)]:
+    ) raises -> HALDevicePointer[Self.dtype, origin_of(self)]:
         """Returns a `DevicePointer` referencing the start of this buffer.
 
         The returned `DevicePointer` is a non-owning borrow of this
@@ -4953,9 +4973,9 @@ struct DeviceBuffer[dtype: DType](
             If this buffer has size 0.
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
-        return DevicePointer[Self.dtype, origin_of(self)](self)
+        return HALDevicePointer[Self.dtype, origin_of(self)](self)
 
-    def context(self) -> DeviceContext[]:
+    def context(self) -> HALDeviceContext[]:
         """Returns the device context associated with this buffer.
 
         This method retrieves the device context that owns this buffer and is
@@ -4964,7 +4984,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The device context associated with this buffer.
         """
-        return rebind[DeviceContext[]](self._ctx)
+        return rebind[HALDeviceContext[]](self._ctx)
 
     @doc_hidden
     @inline(.always)
@@ -4977,7 +4997,7 @@ struct DeviceBuffer[dtype: DType](
         """
         var ptr = self._device_ptr
         var byte_size = Int(self._inner[]._buffer.byte_size)
-        var box = alloc[DeviceBuffer[Self.dtype]]({length = 1}).unsafe_leak()
+        var box = alloc[HALDeviceBuffer[Self.dtype]]({length = 1}).unsafe_leak()
         box.unsafe_write(self^)
         return external_call[
             "AsyncRT_DeviceBuffer_adoptMojoBox", _DeviceBufferPtr[mut=True]
@@ -5024,7 +5044,7 @@ struct DeviceBuffer[dtype: DType](
     @inline(.always)
     def create_sub_buffer[
         view_type: DType
-    ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
+    ](self, offset: Int, size: Int) raises -> HALDeviceBuffer[view_type]:
         """Creates a sub-buffer view of this buffer with a different element dtype.
 
         This method creates a new buffer that references a subset of the memory in this
@@ -5049,7 +5069,7 @@ struct DeviceBuffer[dtype: DType](
         var byte_size = UInt64(size * elem_size)
         if byte_offset + byte_size > self._inner[]._buffer.byte_size:
             raise Error("create_sub_buffer: view is out of range")
-        var view = DeviceBuffer[view_type](
+        var view = HALDeviceBuffer[view_type](
             self._ctx,
             Pointer[Scalar[view_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(
@@ -5148,7 +5168,7 @@ struct DeviceBuffer[dtype: DType](
             oob_fill,
         )
 
-    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
+    def enqueue_copy_to(self, dst: HALDeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to another device buffer.
 
         This method schedules a memory copy operation from this buffer to the
@@ -5163,7 +5183,7 @@ struct DeviceBuffer[dtype: DType](
         """
         self._ctx.enqueue_copy(dst, self)
 
-    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
+    def enqueue_copy_from(self, src: HALDeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from another device buffer.
 
         This method schedules a memory copy operation to this buffer from the
@@ -5193,7 +5213,7 @@ struct DeviceBuffer[dtype: DType](
         """
         self._ctx.enqueue_copy(self, src_ptr)
 
-    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
+    def enqueue_copy_to(self, dst: HALHostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -5208,7 +5228,7 @@ struct DeviceBuffer[dtype: DType](
         """
         self._ctx.enqueue_copy(dst, self)
 
-    def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
+    def enqueue_copy_from(self, src: HALHostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from a host buffer to this buffer.
 
         This method schedules a memory copy operation from the source host buffer
@@ -5325,7 +5345,7 @@ struct _HostBufferInner(Movable):
             print("warning: free_host_pinned failed:", e)
 
 
-struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
+struct HALHostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     """Represents a block of host-resident storage. For GPU devices, a host
     buffer is allocated in the host's global memory.
 
@@ -5341,7 +5361,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext.Unknown
+    var _ctx: HALDeviceContext.Unknown
     var _inner: ArcPointer[_HostBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -5349,7 +5369,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext, size: Int) raises:
+    def __init__(out self, ctx: HALDeviceContext, size: Int) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
@@ -5372,7 +5392,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
 
     @doc_hidden
     def __init__(
-        out self, ctx: DeviceContext, var inner: ArcPointer[_HostBufferInner]
+        out self, ctx: HALDeviceContext, var inner: ArcPointer[_HostBufferInner]
     ):
         self._ctx = ctx.into_unknown_target()
         self._inner = inner^
@@ -5426,7 +5446,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def context(self) -> DeviceContext[]:
+    def context(self) -> HALDeviceContext[]:
         """Returns the device context associated with this buffer.
 
         This method retrieves the device context that owns this buffer and is
@@ -5435,7 +5455,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         Returns:
             The device context associated with this buffer.
         """
-        return rebind[DeviceContext[]](self._ctx)
+        return rebind[HALDeviceContext[]](self._ctx)
 
     def unsafe_ptr(
         self,
@@ -5473,7 +5493,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
 
     def create_sub_buffer[
         view_type: DType
-    ](self, offset: Int, size: Int) raises -> HostBuffer[view_type]:
+    ](self, offset: Int, size: Int) raises -> HALHostBuffer[view_type]:
         """Creates a sub-buffer view of this buffer with a different element dtype.
 
         This method creates a new buffer that references a subset of the memory in this
@@ -5517,14 +5537,14 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         var buffer = context[].alloc_sync(
             0
         ) if addr == 0 else context[].wrap_memory(addr, UInt64(byte_size))
-        return HostBuffer[view_type](
+        return HALHostBuffer[view_type](
             self._ctx,
             ArcPointer(
                 _HostBufferInner(buffer^, context, host_ptr, [self._inner])
             ),
         )
 
-    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
+    def enqueue_copy_to(self, dst: HALDeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -5539,7 +5559,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         """
         self._ctx.enqueue_copy(dst, self)
 
-    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
+    def enqueue_copy_from(self, src: HALDeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from a device buffer to this buffer.
 
         This method schedules a memory copy operation from the source device buffer
@@ -5585,12 +5605,12 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
 
 
 struct _HostMappedBuffer[dtype: DType]:
-    var _ctx: DeviceContext.Unknown
-    var _dev_buf: DeviceBuffer[Self.dtype]
-    var _cpu_buf: HostBuffer[Self.dtype]
+    var _ctx: HALDeviceContext.Unknown
+    var _dev_buf: HALDeviceBuffer[Self.dtype]
+    var _cpu_buf: HALHostBuffer[Self.dtype]
 
     def __init__(
-        out self, ctx: DeviceContext, buf: DeviceBuffer[Self.dtype]
+        out self, ctx: HALDeviceContext, buf: HALDeviceBuffer[Self.dtype]
     ) raises:
         var cpu_buf = ctx.enqueue_create_host_buffer[Self.dtype](len(buf))
         self._ctx = ctx.into_unknown_target()
@@ -5600,7 +5620,7 @@ struct _HostMappedBuffer[dtype: DType]:
     def __deinit__(deinit self):
         pass
 
-    def __enter__(mut self) raises -> HostBuffer[Self.dtype]:
+    def __enter__(mut self) raises -> HALHostBuffer[Self.dtype]:
         self._dev_buf.enqueue_copy_to(self._cpu_buf)
         self._ctx.synchronize()
         return self._cpu_buf
@@ -5810,7 +5830,7 @@ struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DevicePointer[
+struct HALDevicePointer[
     mut: Bool,
     //,
     dtype: DType,
@@ -5847,7 +5867,7 @@ struct DevicePointer[
         origin: The origin of the borrowed `DeviceBuffer`.
     """
 
-    var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
+    var _buffer: Pointer[HALDeviceBuffer[Self.dtype], Self.origin]
     var _offset: Int
     var _size: Int
 
@@ -5859,7 +5879,7 @@ struct DevicePointer[
     # ===------------------------------------------------------------------=== #
 
     def __init__(
-        out self, ref[Self.origin] buffer: DeviceBuffer[Self.dtype]
+        out self, ref[Self.origin] buffer: HALDeviceBuffer[Self.dtype]
     ) raises:
         """Constructs a `DevicePointer` referencing the start of `buffer`.
 
@@ -5878,7 +5898,9 @@ struct DevicePointer[
         self._size = size
 
     def __init__(
-        out self, ref[Self.origin] buffer: DeviceBuffer[Self.dtype], offset: Int
+        out self,
+        ref[Self.origin] buffer: HALDeviceBuffer[Self.dtype],
+        offset: Int,
     ) raises:
         """Constructs a `DevicePointer` into `buffer` at `offset` with `size`
         elements in range.
@@ -5908,7 +5930,7 @@ struct DevicePointer[
     # Accessors
     # ===------------------------------------------------------------------=== #
 
-    def buffer(self) -> ref[Self.origin] DeviceBuffer[Self.dtype]:
+    def buffer(self) -> ref[Self.origin] HALDeviceBuffer[Self.dtype]:
         """Returns a reference to the `DeviceBuffer` this pointer references.
 
         The reference is non-owning; the underlying `DeviceBuffer` must
@@ -5961,7 +5983,7 @@ struct DevicePointer[
     # `Span.as_imm` does.
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
-    ] = DevicePointer[Self.dtype, target_origin]
+    ] = HALDevicePointer[Self.dtype, target_origin]
 
     @always_inline("builtin")
     def unsafe_mut_cast[
@@ -6070,7 +6092,7 @@ struct DevicePointer[
                 t"DevicePointer: addition of '{n}' results in invalid offset of"
                 t" '{offset}' for DeviceBuffer of size {self._size}"
             )
-        return DevicePointer(self._buffer[], offset)
+        return HALDevicePointer(self._buffer[], offset)
 
     def __sub__(self, n: Int) raises -> Self:
         """Returns a new `DevicePointer` offset backward by `n` elements.
@@ -6092,7 +6114,7 @@ struct DevicePointer[
                 t"DevicePointer: subtraction of '{n}' results in invalid offset"
                 t" of '{offset}' for DeviceBuffer of size {self._size}"
             )
-        return DevicePointer(self._buffer[], offset)
+        return HALDevicePointer(self._buffer[], offset)
 
     def __iadd__(mut self, n: Int) raises:
         """Offsets this `DevicePointer` forward by `n` elements in place.
@@ -6152,7 +6174,7 @@ struct DevicePointer[
         )
 
     @__unsafe_nested_origins_read_only
-    def __eq__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
+    def __eq__(self, other: HALDevicePointer[Self.dtype, _]) -> Bool:
         """Returns `True` if `self` and `other` reference the same buffer and
         offset.
 
@@ -6180,7 +6202,7 @@ struct DevicePointer[
         return not (self == other)
 
     @__unsafe_nested_origins_read_only
-    def __ne__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
+    def __ne__(self, other: HALDevicePointer[Self.dtype, _]) -> Bool:
         """Returns `True` if `self` and `other` differ in buffer or offset.
 
         Args:
@@ -6192,7 +6214,7 @@ struct DevicePointer[
         return not (self == other)
 
     @__unsafe_nested_origins_read_only
-    def __lt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+    def __lt__(self, other: HALDevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes `other` within the same buffer.
 
         Args:
@@ -6212,7 +6234,7 @@ struct DevicePointer[
         return self._offset < other._offset
 
     @__unsafe_nested_origins_read_only
-    def __le__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+    def __le__(self, other: HALDevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes or equals `other` within the
         same buffer.
 
@@ -6233,7 +6255,7 @@ struct DevicePointer[
         return self._offset <= other._offset
 
     @__unsafe_nested_origins_read_only
-    def __gt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+    def __gt__(self, other: HALDevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows `other` within the same buffer.
 
         Args:
@@ -6253,7 +6275,7 @@ struct DevicePointer[
         return self._offset > other._offset
 
     @__unsafe_nested_origins_read_only
-    def __ge__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+    def __ge__(self, other: HALDevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows or equals `other` within the same
         buffer.
 
@@ -6331,7 +6353,7 @@ struct DevicePointer[
 struct _CompletionFlagBox(Movable):
     """A plugin flag shared with the C++ ``M::Driver::CompletionFlag``."""
 
-    var ctx: DeviceContext[]
+    var ctx: HALDeviceContext[]
     var flag: FlagHandle
 
     @staticmethod
@@ -6340,7 +6362,7 @@ struct _CompletionFlagBox(Movable):
             return flags
         raise Error("completion flags are not supported on this device")
 
-    def __init__(out self, ctx: DeviceContext[]) raises:
+    def __init__(out self, ctx: HALDeviceContext[]) raises:
         # `reset` must not fail later inside a driver callback.
         if not ctx.supports_flag_wait():
             raise Error("completion flags are not supported on this device")
@@ -6394,7 +6416,7 @@ struct _CompletionFlagBox(Movable):
 
     def wait[
         target: CompilationTarget
-    ](self, stream: DeviceStreamBase[target], value: UInt64) raises:
+    ](self, stream: HALDeviceStreamBase[target], value: UInt64) raises:
         # The stream's plugin would get a flag handle it didn't create.
         if stream._ctx.api() != self.ctx.api():
             raise Error(
@@ -6403,7 +6425,7 @@ struct _CompletionFlagBox(Movable):
         stream._stream[].wait_flag(self.flag, value, FlagCondition.geq)
 
 
-struct CompletionFlag(ImplicitlyCopyable):
+struct HALCompletionFlag(ImplicitlyCopyable):
     """Host-visible completion flag.
 
     Shares the plugin flag that backs a C++ ``M::Driver::CompletionFlag``, so
@@ -6505,7 +6527,7 @@ struct CompletionFlag(ImplicitlyCopyable):
             abort(t"CompletionFlag.reset: {e}")
 
 
-struct DeviceContextArray[
+struct HALDeviceContextArray[
     length: Int,
     target: CompilationTarget = default_accelerator(),
 ](Copyable, Sized):
@@ -6537,7 +6559,7 @@ struct DeviceContextArray[
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var device_contexts: Array[DeviceContext[Self.target], Self.length]
+    var device_contexts: Array[HALDeviceContext[Self.target], Self.length]
     """The underlying storage for the per-device contexts."""
 
     # ===-------------------------------------------------------------------===#
@@ -6547,7 +6569,7 @@ struct DeviceContextArray[
     @inline(.always)
     def __init__(
         out self,
-        var device_contexts: Array[DeviceContext[Self.target], Self.length],
+        var device_contexts: Array[HALDeviceContext[Self.target], Self.length],
     ):
         """Initialize from an `Array` of `DeviceContext` values.
 
@@ -6560,8 +6582,8 @@ struct DeviceContextArray[
     def __init__[
         *, __literal_size__: Int
     ](
-        out self: DeviceContextArray[__literal_size__, Self.target],
-        var *device_contexts: DeviceContext[Self.target],
+        out self: HALDeviceContextArray[__literal_size__, Self.target],
+        var *device_contexts: HALDeviceContext[Self.target],
         __list_literal__: NoneType = None,
     ):
         """Initialize from a variadic sequence of `DeviceContext` values.
@@ -6590,7 +6612,7 @@ struct DeviceContextArray[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __getitem_param__[index: Int](self) -> DeviceContext[Self.target]:
+    def __getitem_param__[index: Int](self) -> HALDeviceContext[Self.target]:
         """Access a `DeviceContext` at a compile-time known index.
 
         Parameters:
@@ -6601,7 +6623,9 @@ struct DeviceContextArray[
         """
         return self.device_contexts[index]
 
-    def __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext[Self.target]:
+    def __getitem__[
+        I: Indexer, //
+    ](self, idx: I) -> HALDeviceContext[Self.target]:
         """Access a `DeviceContext` using a runtime index value.
 
         Parameters:
@@ -6633,7 +6657,7 @@ struct DeviceContextArray[
 
     def filter_gpu_contexts[
         num_gpu_devices: Int
-    ](self) raises -> Array[DeviceContext[Self.target], num_gpu_devices]:
+    ](self) raises -> Array[HALDeviceContext[Self.target], num_gpu_devices]:
         """Filters CPU contexts out and returns the GPU contexts in order.
 
         Some kernels receive a `DeviceContextArray` that mixes GPU contexts
@@ -6669,27 +6693,19 @@ struct DeviceContextArray[
         # `unsafe_assume_initialized=` constructor then moves every slot
         # into a fully-initialized `Array[DeviceContext]`.
         var staging = Array[
-            MaybeUninit[DeviceContext[Self.target]], num_gpu_devices
+            MaybeUninit[HALDeviceContext[Self.target]], num_gpu_devices
         ](uninitialized=True)
         var dev_idx = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
-                staging[dev_idx].unsafe_write(DeviceContext(copy=self[i]))
+                staging[dev_idx].unsafe_write(HALDeviceContext(copy=self[i]))
                 dev_idx += 1
-        return Array[DeviceContext[Self.target], num_gpu_devices](
+        return Array[HALDeviceContext[Self.target], num_gpu_devices](
             unsafe_assume_initialized=staging^
         )
 
 
-@deprecated(use=DeviceContextArray)
-comptime DeviceContextList = DeviceContextArray
-"""Deprecated: A fixed-size collection of `DeviceContext` values.
-
-This struct has been renamed to `DeviceContextArray`. This alias will be
-removed in a future version of Mojo."""
-
-
-struct DeviceMulticastBuffer[dtype: DType]:
+struct HALDeviceMulticastBuffer[dtype: DType]:
     """A multi-GPU multicast buffer. Not supported by the HAL `DeviceContext`:
     every operation raises, so multicast-aware callers still compile.
 
@@ -6703,7 +6719,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
     @doc_hidden
     def __init__(
-        out self, var contexts: List[DeviceContext[]], size: Int
+        out self, var contexts: List[HALDeviceContext[]], size: Int
     ) raises:
         raise Error("Multicast not supported by the HAL DeviceContext")
 
@@ -6713,14 +6729,14 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
     @doc_hidden
     def unicast_buffer_for(
-        self, ctx: DeviceContext
-    ) raises -> DeviceBuffer[Self.dtype]:
+        self, ctx: HALDeviceContext
+    ) raises -> HALDeviceBuffer[Self.dtype]:
         raise Error("Multicast not supported by the HAL DeviceContext")
 
     @doc_hidden
     def multicast_buffer_for(
-        self, ctx: DeviceContext
-    ) raises -> DeviceBuffer[Self.dtype]:
+        self, ctx: HALDeviceContext
+    ) raises -> HALDeviceBuffer[Self.dtype]:
         raise Error("Multicast not supported by the HAL DeviceContext")
 
 
