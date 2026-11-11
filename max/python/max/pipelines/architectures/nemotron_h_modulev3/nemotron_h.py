@@ -27,7 +27,11 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
 from max.nn import Module, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
@@ -77,10 +81,8 @@ def _distributed_state(
         spec = (None, TP) + (None,) * (pools[0].rank - 2)
         leaves.append(
             RecurrentLeafInputs(
-                pool=Tensor.from_shard_values(
-                    pools, NamedMapping(mapping.mesh, spec)
-                ),
-                live_row_ids=Tensor.from_shard_values(
+                pool=cache_tensor(pools, NamedMapping(mapping.mesh, spec)),
+                live_row_ids=cache_tensor(
                     [
                         device.leaves[index].live_row_ids
                         for device in per_device

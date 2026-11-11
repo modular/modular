@@ -194,13 +194,16 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
 
         inputs_embeds = self.language_model.embed_tokens(input_ids)
 
-        # Merge image embeddings at pre-computed token positions
-        merged_value = merge_multimodal_embeddings(
-            inputs_embeds=TensorValue(inputs_embeds),
-            multimodal_embeddings=TensorValue(image_embeddings),
-            image_token_indices=TensorValue(image_token_indices),
-        )
-        merged = Tensor.from_graph_value(merged_value)
+        # Merge image embeddings at pre-computed token positions. Called
+        # eagerly, the graph values live in the context the block opens.
+        with F.ensure_context():
+            merged = Tensor.from_graph_value(
+                merge_multimodal_embeddings(
+                    inputs_embeds=TensorValue(inputs_embeds),
+                    multimodal_embeddings=TensorValue(image_embeddings),
+                    image_token_indices=TensorValue(image_token_indices),
+                )
+            )
 
         return self.language_model(
             merged, kv_collections[0], return_n_logits, input_row_offsets

@@ -511,10 +511,18 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
             )
         mesh = x.mesh
         n = mesh.num_devices
-        up, down = (self.device_params(proj, mesh) for proj in ("up", "down"))
-        # Each device runs every routed row through its share of each
-        # expert's channels, which gives a partial sum of the output.
+        mapping = DeviceMapping(mesh, (Partial(),)) if n > 1 else x.mapping
+        # Called eagerly, a context runs its ops when it closes, and its graph
+        # values can't be used after it closes, so they all stay in one block.
         with ensure_context():
+            # TODO(MXF-945): Called eagerly, this stacks and places every
+            # routed expert again on each step. Keep the placed params per
+            # mesh after the first eager call.
+            up, down = (
+                self.device_params(proj, mesh) for proj in ("up", "down")
+            )
+            # Each device runs every routed row through its share of each
+            # expert's channels, which gives a partial sum of the output.
             shards = [
                 _routed_experts(
                     TensorValue(x.local_shards[d]),
@@ -525,8 +533,7 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
                 )
                 for d in range(n)
             ]
-        mapping = DeviceMapping(mesh, (Partial(),)) if n > 1 else x.mapping
-        routed = Tensor.from_shard_values(shards, mapping)
+            routed = Tensor.from_shard_values(shards, mapping)
         if isinstance(self.shared_experts, _SharedExpertSlices):
             return routed
         # Under tensor parallelism both are partial sums, which the residual

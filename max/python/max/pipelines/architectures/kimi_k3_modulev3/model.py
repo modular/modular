@@ -233,10 +233,8 @@ def _distributed_kda_state(
         spec = (None, TP) + (None,) * (pools[0].rank - 2)
         leaves.append(
             RecurrentLeafInputs(
-                pool=Tensor.from_shard_values(
-                    pools, NamedMapping(mapping.mesh, spec)
-                ),
-                live_row_ids=Tensor.from_shard_values(
+                pool=cache_tensor(pools, NamedMapping(mapping.mesh, spec)),
+                live_row_ids=cache_tensor(
                     [
                         device.leaves[index].live_row_ids
                         for device in per_device

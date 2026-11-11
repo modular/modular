@@ -26,7 +26,11 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module, ModuleList, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
@@ -247,8 +251,8 @@ class Lfm3Base(Module[..., ModuleV3Outputs]):
         (conv,) = state.leaves
         return (
             kv,
-            Tensor.from_shard_values([conv.pool]),
-            Tensor.from_shard_values([conv.live_row_ids]),
+            cache_tensor([conv.pool]),
+            cache_tensor([conv.live_row_ids]),
         )
 
     def decode(

@@ -33,6 +33,7 @@ from max.graph import (
 from max.nn import _graph_ops as kernels
 from max.nn.common_layers.kv_cache import (
     PagedCacheValues,
+    cache_tensor,
     kv_input_values,
     per_device_caches,
 )
@@ -180,6 +181,29 @@ def test_kv_input_values_keeps_real_tensors() -> None:
     values = kv_input_values(tensors)
     assert len(values) == len(tensors)
     assert all(v is t for v, t in zip(values, tensors, strict=True))
+
+
+def test_cache_tensor_keeps_a_real_state_buffer() -> None:
+    """A decoder called eagerly gets its state pool back as itself, so an
+    op that writes the pool in place writes the cache."""
+    pool = Tensor(storage=Buffer.zeros([2, 4], DType.float32, CPU()))
+    assert cache_tensor([pool]) is pool
+
+
+def test_cache_tensor_while_tracing() -> None:
+    """A traced decoder's state pool stays a buffer value."""
+    graph = Graph(
+        "state",
+        input_types=[BufferType(DType.float32, [2, 4], DeviceRef.CPU())],
+    )
+    with (
+        GraphRealizationContext(graph) as ctx,
+        realization_context(ctx),
+    ):
+        (pool,) = graph.inputs
+        state = cache_tensor([pool.buffer])
+
+        assert isinstance(state._graph_value, BufferValue)
 
 
 def test_from_upstream_keeps_a_real_cache_writable() -> None:
