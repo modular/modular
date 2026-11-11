@@ -317,9 +317,17 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
 
 /// Convert llvm metadata array attrs into dicts by treating every pair of
 /// attributes in the array as (key, value) pairs, where the key is always a
-/// StringAttr.
+/// StringAttr. The Mojo parser wraps non-`TypedAttr` values (e.g. `ArrayAttr`)
+/// in `#kgen.deferred` to satisfy PValue's typed-attribute contract; strip
+/// those wrappers so the assembled dict exposes concrete attributes.
 static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
                                                               ArrayAttr array) {
+  mlir::AttrTypeReplacer stripDeferred;
+  stripDeferred.addReplacement(
+      [](DeferredAttr attr) -> std::pair<Attribute, WalkResult> {
+        return {attr.getAttr(), WalkResult::advance()};
+      });
+
   NamedAttrList llvmMetadata;
   DenseSet<StringAttr> seenMetadataNames;
   for (int i = 0, e = array.size(); i < e; i += 2) {
@@ -335,7 +343,7 @@ static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
       continue;
     }
     seenMetadataNames.insert(name);
-    llvmMetadata.append(name, array[i + 1]);
+    llvmMetadata.append(name, stripDeferred.replace(array[i + 1]));
   }
   return llvmMetadata.getDictionary(array.getContext());
 }
@@ -1643,7 +1651,13 @@ LogicalResult Elaborator::processImplNode(ImplNode *inode) {
     }
     inode->stack.pop_back();
   }
-  assert(!inode->error && "unexpected error");
+  // A node can also reach the end of its stack already carrying an error, when
+  // that error was recorded by a helper with no way to report failure back to
+  // `processScope`: `tryConcretizeDeferredType` calls
+  // `emitMaterializationError` and then returns the un-concretized type, so
+  // evaluation continues normally. Return like the `result.isError()` case
+  // above: `completeImplNodeProcessing` reports the error the node carries,
+  // so the assert that used to abort a debug build on this path is gone.
   return success();
 }
 
