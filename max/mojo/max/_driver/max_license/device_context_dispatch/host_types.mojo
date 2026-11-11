@@ -17,6 +17,8 @@ arrays and multicast buffers. Each forwards to the legacy or the HAL
 implementation, and keeps the legacy signature where the two disagree.
 """
 
+from std.builtin.device_passable import DevicePassable
+from std.collections.optional import OptionalReg
 from std.format import Writer
 from std.sys.info import CompilationTarget
 
@@ -44,10 +46,13 @@ from max.gpu.host._legacy.device_context import (
 from max.gpu.host._driver_handles import (
     _CompletionFlagPtr as _LegacyCompletionFlagPtr,
 )
+from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
 from max.gpu.host._legacy.dim import Dim
+from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from max.gpu.host.info import default_accelerator
 from max._driver.max_license.device_context_dispatch.function import (
+    DeviceFunction,
     _DispatchEnqueuer,
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
@@ -268,6 +273,60 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         self.wait_for_flag(flag, value)
+
+    def enqueue_function[
+        *Ts: DevicePassable
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Enqueues a compiled function for execution on this stream.
+
+        Parameters:
+            Ts: The types of the arguments.
+
+        Args:
+            f: The compiled function to launch.
+            args: The arguments to pass to the function.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: The dynamic shared memory in bytes.
+            attributes: The launch attributes.
+            constant_memory: The constant memory mappings.
+
+        Raises:
+            If the launch fails.
+        """
+        comptime if use_legacy_backend():
+            rebind[Self._Legacy](self._impl).enqueue_function(
+                f.unwrap_legacy(),
+                *args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+            )
+        else:
+            rebind[Self._HAL](self._impl).enqueue_function(
+                f.unwrap_hal(),
+                *args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+            )
 
 
 comptime DeviceStream = DeviceStreamBase[]
