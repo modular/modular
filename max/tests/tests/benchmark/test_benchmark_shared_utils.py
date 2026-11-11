@@ -13,9 +13,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import resource
 import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -120,6 +122,112 @@ def test_get_tokenizer_forwards_local_files_only(
         revision="abc123",
         local_files_only=True,
     )
+
+
+def _write_checkpoint(
+    path: Path,
+    *,
+    config: dict[str, object],
+    tokenizer_config: dict[str, object],
+) -> str:
+    """Writes a checkpoint whose tokenizer maps "hello world" to [0, 1]."""
+    tokenizer: dict[str, object] = {
+        "version": "1.0",
+        "truncation": None,
+        "padding": None,
+        "added_tokens": [],
+        "normalizer": None,
+        "pre_tokenizer": {"type": "Whitespace"},
+        "post_processor": None,
+        "decoder": None,
+        "model": {
+            "type": "WordLevel",
+            "vocab": {"hello": 0, "world": 1, "[UNK]": 2},
+            "unk_token": "[UNK]",
+        },
+    }
+    for name, content in (
+        ("config.json", config),
+        ("tokenizer_config.json", tokenizer_config),
+        ("tokenizer.json", tokenizer),
+    ):
+        (path / name).write_text(json.dumps(content))
+    return str(path)
+
+
+def test_get_tokenizer_loads_tokenizer_files_when_config_fails(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A config.json transformers rejects leaves the tokenizer loadable."""
+    mocker.patch(
+        "transformers.AutoConfig.from_pretrained",
+        side_effect=AttributeError("'NoneType' object has no attribute 'get'"),
+    )
+    path = _write_checkpoint(
+        tmp_path,
+        config={"model_type": "future_model"},
+        tokenizer_config={"tokenizer_class": "PreTrainedTokenizerFast"},
+    )
+
+    tokenizer = get_tokenizer(
+        path, revision=None, model_max_length=262144, local_files_only=True
+    )
+
+    assert tokenizer.encode("hello world", add_special_tokens=False) == [0, 1]
+    assert tokenizer.model_max_length == 262144
+    assert tokenizer._resolved_architectures == []
+
+
+def test_get_tokenizer_refuses_a_custom_tokenizer_without_remote_code(
+    tmp_path: Path,
+) -> None:
+    """A custom tokenizer class is never swapped for a generic one."""
+    path = _write_checkpoint(
+        tmp_path,
+        config={
+            "model_type": "custom_model",
+            "auto_map": {"AutoConfig": "configuration.CustomConfig"},
+        },
+        tokenizer_config={
+            "tokenizer_class": "CustomTokenizer",
+            "auto_map": {
+                "AutoTokenizer": [None, "tokenization.CustomTokenizer"]
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="trust_remote_code"):
+        get_tokenizer(path, revision=None, local_files_only=True)
+
+
+def test_get_tokenizer_raises_the_autotokenizer_error_when_retry_fails(
+    mocker: MockerFixture,
+) -> None:
+    """Without loadable tokenizer files, the original error surfaces."""
+    mocker.patch(
+        "transformers.AutoTokenizer.from_pretrained",
+        side_effect=[
+            ValueError("model type `beam` is not recognized"),
+            ValueError("no tokenizer files"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="beam"):
+        get_tokenizer("repo/model", revision=None, architectures=[])
+
+
+def test_get_tokenizer_does_not_retry_an_os_error(
+    mocker: MockerFixture,
+) -> None:
+    """A gated repo or an unreachable Hub fails without a second load."""
+    from_pretrained = mocker.patch(
+        "transformers.AutoTokenizer.from_pretrained",
+        side_effect=OSError("gated repo"),
+    )
+
+    with pytest.raises(OSError, match="gated repo"):
+        get_tokenizer("repo/model", revision=None, architectures=[])
+    from_pretrained.assert_called_once()
 
 
 def test_get_tokenizer_stashes_resolved_architectures(

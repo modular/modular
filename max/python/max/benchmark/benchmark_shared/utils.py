@@ -32,6 +32,7 @@ from huggingface_hub import HfApi
 from transformers import (
     AutoConfig,
     AutoTokenizer,
+    PreTrainedConfig,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
@@ -266,7 +267,9 @@ def _resolve_architectures(
                 local_files_only=local_files_only,
             )
         return getattr(config, "architectures", None) or []
-    except (ValueError, OSError) as exc:
+    # get_tokenizer loads a tokenizer whose config.json the installed
+    # transformers rejects with any error type, so this probe must too.
+    except Exception as exc:
         if pretrained_model_name_or_path not in _reported_autoconfig_failures:
             _reported_autoconfig_failures.add(pretrained_model_name_or_path)
             logger.warning(
@@ -314,9 +317,34 @@ def get_tokenizer(
     if model_max_length is not None:
         tokenizer_kwargs["model_max_length"] = model_max_length
     with _quiet_hf_hub_retries():
-        tokenizer = AutoTokenizer.from_pretrained(
-            pretrained_model_name_or_path, **tokenizer_kwargs
-        )
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                pretrained_model_name_or_path, **tokenizer_kwargs
+            )
+        except OSError:
+            # Missing files, a gated repo or an unreachable Hub: a retry
+            # fails the same way.
+            raise
+        except Exception as exc:
+            # AutoTokenizer reads the model's config.json first, which fails
+            # for an architecture newer than the installed transformers even
+            # when the tokenizer files themselves are standard. A blank config
+            # makes it pick the class from the tokenizer files alone, and it
+            # still refuses a custom class without trust_remote_code.
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    pretrained_model_name_or_path,
+                    config=PreTrainedConfig(),
+                    **tokenizer_kwargs,
+                )
+            except Exception:
+                raise exc from None
+            logger.warning(
+                "AutoTokenizer failed for %r (%s); loaded its tokenizer files"
+                " without config.json.",
+                pretrained_model_name_or_path,
+                exc,
+            )
     # Stash the resolved revision so downstream consumers (e.g. the worker
     # tokenizer pool) can pin worker loads to the same snapshot without
     # re-resolving against the Hub. Transformers does not expose this on
