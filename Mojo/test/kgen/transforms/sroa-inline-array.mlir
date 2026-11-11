@@ -12,7 +12,7 @@
 // CHECK-NOT:  kgen.struct.gep
 kgen.func @inline_array_del_pattern(%v: !kgen.simd<4, f32>) {
   %arr = pop.stack_allocation 1 x !pop.array<2, struct<(simd<4, f32>)>>
-  %c1 = kgen.param.constant = <1>
+  %c1 = kgen.param.constant: scalar<index> = <1>
   %e0 = pop.pointer.bitcast %arr : !kgen.pointer<array<2, struct<(simd<4, f32>)>>> to !kgen.pointer<struct<(simd<4, f32>)>>
   %e1 = pop.offset %e0[%c1] : !kgen.pointer<struct<(simd<4, f32>)>>
   %f0 = kgen.struct.gep %e0[0] : <struct<(simd<4, f32>)>>
