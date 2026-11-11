@@ -20,19 +20,21 @@ from std.format import Writer
 from std.memory import Pointer
 from std.sys import is_gpu
 
-from .device_context import use_legacy_backend
-from max.gpu.host._legacy.device_context import (
-    LegacyDeviceBuffer,
-    _DeviceBufferPtr as _LegacyDeviceBufferPtr,
-)
-from max.gpu.host.info import default_accelerator
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceBuffer,
+)
+from max.gpu.host._driver_handles import (
     _DeviceBufferPtr as _HALDeviceBufferPtr,
 )
 from max._driver.max_license.device_context_dispatch.device_pointer import (
     DevicePointer,
 )
+from max.gpu.host._legacy.device_context import LegacyDeviceBuffer
+from max.gpu.host._driver_handles import (
+    _DeviceBufferPtr as _LegacyDeviceBufferPtr,
+)
+from .device_context import use_legacy_backend
+from max.gpu.host.info import default_accelerator
 from .host_types import Device
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,

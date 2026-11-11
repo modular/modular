@@ -68,6 +68,7 @@ from max._driver.max_license.device_context_hal._amdgpu_hip_hal import (
 )
 from max.gpu.host._vendor_handles import (
     hipDevice_t,
+    hipModule_t,
     hipStream_t,
 )
 

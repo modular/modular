@@ -69,6 +69,7 @@ from ._legacy._amdgpu_hip import (
 )
 from max.gpu.host._vendor_handles import (
     hipDevice_t,
+    hipModule_t,
     hipStream_t,
 )
 

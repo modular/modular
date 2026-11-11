@@ -15,12 +15,12 @@
 from std.format import Writer
 from std.memory import Pointer
 
-from .device_context import use_legacy_backend
-from max.gpu.host._legacy.device_context import LegacyHostBuffer
-from max.gpu.host.info import default_accelerator
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALHostBuffer,
 )
+from max.gpu.host._legacy.device_context import LegacyHostBuffer
+from .device_context import use_legacy_backend
+from max.gpu.host.info import default_accelerator
 from .host_types import Device
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,

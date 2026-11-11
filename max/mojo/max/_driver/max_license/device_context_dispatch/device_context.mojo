@@ -24,24 +24,33 @@ from std.os import abort
 from std.reflection import call_location
 from std.sys.info import CompilationTarget
 
+from max._driver.max_license.device_context_dispatch.function import (
+    _DispatchEnqueuer,
+)
+from max._driver.max_license.device_context_hal.device_context_hal import (
+    HALDeviceContext,
+    _HALDeviceContextScope,
+)
+from max.gpu.host._driver_handles import (
+    _DeviceContextPtr as _HALDeviceContextPtr,
+)
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
-from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
 from max.gpu.host._legacy.device_context import (
     LegacyDeviceContext,
-    _DeviceContextPtr as _LegacyDeviceContextPtr,
     _LegacyDeviceContextScope,
 )
-from max.gpu.host._overlay import (
+from max.gpu.host._driver_handles import (
+    _DeviceContextPtr as _LegacyDeviceContextPtr,
+)
+from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
+from max.gpu.host._driver_common import (
     StreamPriorityRange as _OverlayStreamPriorityRange,
+)
+from max.gpu.host._driver_handles import (
     _DeviceContextPtr as _OverlayDeviceContextPtr,
 )
 from max.gpu.host.info import default_accelerator
 from max.gpu.host.launch_config import ExecutionConfig
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceContext,
-    _DeviceContextPtr as _HALDeviceContextPtr,
-    _HALDeviceContextScope,
-)
 from .host_types import (
     CompletionFlag,
     Device,
@@ -72,7 +81,7 @@ def use_legacy_backend() -> Bool:
 
 
 struct DeviceContext[target: CompilationTarget = default_accelerator()](
-    ImplicitlyCopyable, RegisterPassable
+    ImplicitlyCopyable, RegisterPassable, _DispatchEnqueuer
 ):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
@@ -459,6 +468,25 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return rebind[_OverlayDeviceContextPtr[mut=True]](
                 rebind[Self._HAL](self._impl)._handle
             )
+
+    # ===-------------------------------------------------------------------===#
+    # Function enqueuer
+    # ===-------------------------------------------------------------------===#
+
+    comptime _LegacyEnqueuer = Self._Legacy
+    comptime _HALEnqueuer = Self._HAL
+
+    def _legacy_enqueuer(self) -> Self._LegacyEnqueuer:
+        comptime assert (
+            use_legacy_backend()
+        ), "this context is not on the legacy backend"
+        return rebind[Self._Legacy](self._impl)
+
+    def _hal_enqueuer(self) -> Self._HALEnqueuer:
+        comptime assert (
+            not use_legacy_backend()
+        ), "this context is not on the HAL backend"
+        return rebind[Self._HAL](self._impl)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

@@ -40,11 +40,16 @@ from max.gpu.host._legacy.device_context import (
     LegacyDeviceMulticastBuffer,
     LegacyDeviceStream,
     LegacyHostBuffer,
+)
+from max.gpu.host._driver_handles import (
     _CompletionFlagPtr as _LegacyCompletionFlagPtr,
 )
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
 from max.gpu.host._legacy.dim import Dim
 from max.gpu.host.info import default_accelerator
+from max._driver.max_license.device_context_dispatch.function import (
+    _DispatchEnqueuer,
+)
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
 )
@@ -63,7 +68,7 @@ comptime _Flag = CompletionFlag
 
 
 struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
-    ImplicitlyCopyable
+    ImplicitlyCopyable, _DispatchEnqueuer
 ):
     """A single stream of execution within a `DeviceContext`.
 
@@ -141,6 +146,25 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
+        return rebind[Self._HAL](self._impl)
+
+    # ===-------------------------------------------------------------------===#
+    # Function enqueuer
+    # ===-------------------------------------------------------------------===#
+
+    comptime _LegacyEnqueuer = LegacyDeviceStream
+    comptime _HALEnqueuer = HALDeviceStreamBase[Self.target]
+
+    def _legacy_enqueuer(self) -> Self._LegacyEnqueuer:
+        comptime assert (
+            use_legacy_backend()
+        ), "this stream is not on the legacy backend"
+        return rebind[Self._Legacy](self._impl)
+
+    def _hal_enqueuer(self) -> Self._HALEnqueuer:
+        comptime assert (
+            not use_legacy_backend()
+        ), "this stream is not on the HAL backend"
         return rebind[Self._HAL](self._impl)
 
     # ===-------------------------------------------------------------------===#
