@@ -63,7 +63,6 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerLowerLIT();
   KGEN::registerLegalizePOPOperations();
   KGEN::registerLowerPOPToLLVM();
-  KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();
   KGEN::registerMem2Reg();
   KGEN::registerRaiseForLoops();

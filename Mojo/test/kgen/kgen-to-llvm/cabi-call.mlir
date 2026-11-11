@@ -1,11 +1,11 @@
-// RUN: kgen-opt -lower-kgen-to-llvm -lower-runtime-closures -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm -split-input-file %s | FileCheck %s
 //
 // Tests for kgen.call / kgen.call_indirect → llvm.call lowering for abi("C")
 // callees.
 //
 // TRANSFORM UNDER TEST:
-//   Mojo/lib/KGENToLLVM/LowerKGENToLLVM.cpp  — ConvertKGENCall
-//   Mojo/lib/KGENToLLVM/LowerKGENClosuresToLLVM.cpp  — CallIndirectOpConversion
+//   Mojo/lib/KGENToLLVM/LowerKGENToLLVM.cpp  — ConvertKGENCall,
+//                                              ConvertKGENCallIndirect
 //   Mojo/lib/KGENToLLVM/CABICallHelpers.cpp  — CABICallHelper
 //
 // Focus: interaction between TailKind and the sret return convention (T1-T4)

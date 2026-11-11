@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Shared C ABI call-lowering helpers used by ConvertPOPExternalCall
-// (LowerPOPToLLVMExternalCalls.cpp) and CallIndirectOpConversion /
+// (LowerPOPToLLVMExternalCalls.cpp) and ConvertKGENCallIndirect /
 // ConvertKGENCall (LowerKGENToLLVM.cpp) to apply C ABI struct coercion.
 //
 //===----------------------------------------------------------------------===//
@@ -32,7 +32,7 @@ namespace M::KGEN {
 
 /// Apply the tail-call kind from a kgen.call / kgen.call_indirect to the
 /// already-created llvm.call.  Extracted here so both ConvertKGENCall and
-/// CallIndirectOpConversion share a single copy.
+/// ConvertKGENCallIndirect share a single copy.
 inline void applyTailKind(mlir::LLVM::CallOp call, TailKind kind) {
   switch (kind) {
   case TailKind::MustTail:

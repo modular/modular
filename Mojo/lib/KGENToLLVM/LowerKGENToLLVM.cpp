@@ -861,6 +861,107 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENCreateFuncPtr
+//===----------------------------------------------------------------------===//
+
+/// Convert `kgen.create_func_ptr` to `llvm.mlir.addressof` of the callee.
+struct ConvertKGENCreateFuncPtr
+    : public ConvertPOPToLLVMPattern<CreateFuncPtrOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(CreateFuncPtrOp op,
+                                CreateFuncPtrOpAdaptor adaptor,
+                                DirectRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
+        op, convertType(op.getType()),
+        cast<FlatSymbolRefAttr>(
+            FuncSymbolGenerator::dynCast(op.getCallee()).getSymbol()));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENCallIndirect
+//===----------------------------------------------------------------------===//
+
+/// Convert `kgen.call_indirect` to an indirect `llvm.call`, unpacking results
+/// if necessary. Calls through an abi("C") function pointer get C ABI coercion.
+struct ConvertKGENCallIndirect
+    : public ConvertPOPToLLVMPattern<CallIndirectOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(CallIndirectOp op,
+                                CallIndirectOpAdaptor adaptor,
+                                DirectRewriter &rewriter) const override {
+    // If there are no result types, set it to void. Otherwise, set the result
+    // type to the packed result types.
+    Type resultType;
+    if (!op.getNumResults())
+      resultType = getVoidType();
+    else
+      resultType = getTypeConverter()->packFunctionResults(op.getResultTypes());
+    if (!resultType)
+      return emitError(op.getLoc(), "failed to convert call result type");
+
+    Value callee = op.getCallee();
+    LLVM::CallOp llvmCall;
+    auto isCABIFnPtr = [](Type type) {
+      if (auto sigType = dyn_cast<FuncTypeGeneratorType>(type))
+        return sigType.getBody().isCABI();
+      return false;
+    };
+
+    if (isCABIFnPtr(callee.getType())) {
+      // C ABI function-pointer call: apply platform C ABI coercion.
+      CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
+      Location loc = op.getLoc();
+
+      // Original LLVM return type (null for void functions).
+      Type origRetTy = op.getNumResults() > 0 ? resultType : Type{};
+
+      auto prep =
+          cabi.prepareCall(op.getArguments().getTypes(), adaptor.getArguments(),
+                           origRetTy, loc, rewriter);
+      // Insert the indirect call target.
+      prep.callArgs.insert(prep.callArgs.begin(), adaptor.getCallee());
+
+      llvmCall = createLLVMCall(rewriter, loc, prep.signature, prep.callArgs);
+      if (Value result =
+              cabi.finishCall(llvmCall, prep, op.getTailKind(), loc, rewriter))
+        rewriter.replaceOp(op, result);
+      else
+        rewriter.eraseOp(op);
+      return success();
+    }
+
+    // Mojo ABI indirect call.
+    // Note: adaptor.getOperands() is a list of callee followed by inputs.
+    SmallVector<Type> wrapperFnArgTypes;
+    llvm::append_range(wrapperFnArgTypes, adaptor.getArguments().getTypes());
+    auto wrapperFnType = LLVM::LLVMFunctionType::get(getContext(), resultType,
+                                                     wrapperFnArgTypes, 0);
+    llvmCall = createLLVMCall(rewriter, op.getLoc(), wrapperFnType,
+                              adaptor.getOperands());
+    applyTailKind(llvmCall, op.getTailKind());
+
+    if (op.getNumResults() <= 1) {
+      rewriter.replaceOp(op, llvmCall.getResults());
+      return success();
+    }
+
+    // Unpack the struct if necessary.
+    SmallVector<Value> results;
+    results.reserve(op.getNumResults());
+    for (unsigned i = 0, e = op.getNumResults(); i < e; ++i)
+      results.push_back(LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
+                                                     llvmCall.getResult(), i));
+
+    rewriter.replaceOp(op, results);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertKGENReturn
 //===----------------------------------------------------------------------===//
 
@@ -1183,6 +1284,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        const AttributeIdentifiers &ids) {
   patterns.insert<
       // clang-format off
+      ConvertKGENCallIndirect,
+      ConvertKGENCreateFuncPtr,
       ConvertKGENSourceLoc,
       ConvertKGENStructCreate,
       ConvertKGENStructGEP,
@@ -1282,9 +1385,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
                                             typeConverter);
 
-  // KGEN must fully lower here, except the ops later passes own. HLCF's
-  // return and unreachable also lower to LLVM here, and a debug op must not
-  // keep types the converter cannot handle.
+  // KGEN must fully lower here, except the struct instances erased below.
+  // HLCF's return and unreachable also lower to LLVM here, and a debug op must
+  // not keep types the converter cannot handle.
   auto mustConvert = [&typeConverter](Operation *op) {
     if (isa<HLCF::ReturnOp, HLCF::UnreachableOp>(op)) {
       return true;
@@ -1293,8 +1396,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
       return !typeConverter.isLegal(op);
     }
     return isa_and_present<KGENDialect>(op->getDialect()) &&
-           !isa<KGEN::CallIndirectOp, KGEN::CreateFuncPtrOp,
-                KGEN::StructInstanceOp>(op);
+           !isa<KGEN::StructInstanceOp>(op);
   };
   if (failed(M::applyDirectConversion(theModule, &typeConverter,
                                       std::move(patterns), /*skipOp=*/nullptr,
