@@ -493,6 +493,7 @@ def _pipeline(
     *,
     speculative: bool,
     kv_cache_format: str | None = None,
+    device_memory_utilization: float | None = None,
 ) -> BatchPipeline:
     # run() registers the architectures before it gets here; a caller
     # prebuilding a pipeline outside it (the shared plain pipeline) must
@@ -525,8 +526,17 @@ def _pipeline(
             ),
             device_specs=device_specs,
             max_length=max_length,
-            kv_cache=KVCacheConfig(
-                enable_prefix_caching=False, kv_cache_format=kv_cache_format
+            kv_cache=(
+                KVCacheConfig(
+                    enable_prefix_caching=False,
+                    kv_cache_format=kv_cache_format,
+                    device_memory_utilization=device_memory_utilization,
+                )
+                if device_memory_utilization is not None
+                else KVCacheConfig(
+                    enable_prefix_caching=False,
+                    kv_cache_format=kv_cache_format,
+                )
             ),
             runtime=PipelineRuntimeConfig(
                 max_batch_size=len(prompts),

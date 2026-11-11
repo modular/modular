@@ -45,11 +45,13 @@ import pytest
 import spec_parity
 from _tiny_pair import (
     DRAFT_WIDTH,
-    MAX_LENGTH,
     TinyPair,
     build_tiny_pair,
     random_prompt_rows,
 )
+
+_MAX_LENGTH = 256
+"""Local max_length, smaller than MAX_LENGTH to reduce memory usage."""
 from max import tree
 from max.driver import Buffer
 from max.dtype import DType
@@ -68,14 +70,16 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 
-_PROMPT_LENGTHS = (3, 60, 124)
+_PROMPT_LENGTHS = (60, 124)
 """Prompt rows chosen so a run's decode lengths cross both the 64-token MLA
 probe bucket and the 128-token page boundary: the 60-token row crosses 64
-within its first decode steps, the 124-token row crosses 128."""
+within its first decode steps, the 124-token row crosses 128. Reduced to 2
+prompts to stay within CI memory budget."""
 
-_PARITY_STEPS = 16
+_PARITY_STEPS = 8
 """Steps the per-step bit-exact comparison drives: enough to pass a bucket
-boundary without paying a full run's snapshot traffic."""
+boundary without paying a full run's snapshot traffic. Reduced from 16 to 8
+to stay within CI memory budget while still crossing both boundaries."""
 
 _Pipeline = OverlapTextGenerationPipeline[TextContext]
 """The concrete pipeline ``spec_parity._pipeline`` builds for this pair."""
@@ -132,7 +136,7 @@ def _spec_pipeline(tiny_pair: TinyPair) -> _Pipeline:
         tiny_pair.target,
         tiny_pair.drafter,
         1,
-        MAX_LENGTH,
+        _MAX_LENGTH,
         DRAFT_WIDTH,
         None,
         True,
@@ -140,6 +144,7 @@ def _spec_pipeline(tiny_pair: TinyPair) -> _Pipeline:
         trust_remote_code=True,
         prompts=list(tiny_pair.prompt_rows),
         speculative=True,
+        device_memory_utilization=0.5,
     )
     assert isinstance(pipeline, OverlapTextGenerationPipeline)
     return pipeline

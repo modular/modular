@@ -84,6 +84,12 @@ modular_py_test(
     name = "test_spec_capture",
     size = "enormous",
     srcs = ["test_spec_capture.py"],
+    env = {
+        # The memory ledger warmups run full forward passes at max_length to
+        # measure transients. Disable them: the tiny model uses a fixed 6 GiB
+        # reserve, and graph capture correctness is what this test grades.
+        "MAX_MEMORY_MEASURE_DISABLE": "1",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "16",
     },
