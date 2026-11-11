@@ -81,7 +81,7 @@ private:
                               int64_t size) const;
 
   /// Merge the class of one more member into its eightbyte's class
-  /// (AMD64 ABI 3.2.3p2, rule 4).
+  /// (System V ABI 3.2.3p2, rule 4).
   ///
   /// Members that share an eightbyte share one register, so the higher class
   /// wins: NoClass < SSEUp < SSE < Integer < Memory.
@@ -92,22 +92,19 @@ private:
   static EightbyteClass mergeEightbyteClass(EightbyteClass accum,
                                             EightbyteClass field);
 
-  /// Classify one flattened member of a struct of at most 16 bytes and merge
-  /// its class into the eightbytes it covers, as clang's
-  /// X86_64ABIInfo::classify does.
+  /// Classify one member of a struct of at most 16 bytes.
   ///
   /// Floats up to 64 bits are SSE. Vectors are classified by size: up to 32
   /// bits Integer, 64 bits SSE, 128 bits SSE with SSEUp for the upper half,
   /// other sizes Memory. Anything else is Integer. A member that is not
   /// aligned is Memory.
   ///
-  /// \param type The member type: a scalar, a vector, or a zero-length array
+  /// \param type The member type: a scalar, a vector, or a type without size
   /// \param offset Byte offset of the member in the struct
-  /// \param lo The class of bytes 0-7, updated in place
-  /// \param hi The class of bytes 8-15, updated in place
-  void classifyMember(mlir::Type type, int64_t offset, EightbyteClass &lo,
-                      EightbyteClass &hi) const;
-
+  /// \return The classes the member gives to bytes 0-7 and to bytes 8-15;
+  ///         NoClass for an eightbyte it does not cover
+  std::pair<EightbyteClass, EightbyteClass>
+  classifyMember(mlir::Type type, int64_t offset) const;
 };
 
 } // namespace M::KGEN

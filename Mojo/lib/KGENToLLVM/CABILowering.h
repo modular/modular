@@ -19,6 +19,7 @@
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Types.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include <memory>
 
@@ -314,21 +315,14 @@ int64_t getStructSize(mlir::LLVM::LLVMStructType type,
 /// Used for ARM64 HFA (Homogeneous Float Aggregate) detection.
 bool isAllFloatStruct(mlir::LLVM::LLVMStructType type);
 
-/// A scalar or vector member of an aggregate, with its byte offset.
-struct MemberAtOffset {
-  mlir::Type type;
-  int64_t offset;
-};
-
-/// Collect the scalar and vector members of `type` into `result`, flattening
-/// nested structs and arrays the way a C compiler sees them. `offset` is the
-/// byte offset of `type` in the outermost aggregate.
-/// A struct around one array (Mojo's `Array`) counts as the array itself.
-/// Empty structs add nothing; a zero-length array is kept as a member without
-/// size. Arrays add one entry per element, so bound the size of `type` first.
-void flattenMembers(mlir::Type type, int64_t offset,
-                    const LLVMDataLayout &dataLayout,
-                    llvm::SmallVectorImpl<MemberAtOffset> &result);
+/// Walk `type` as a tree and call `callback` for each leaf with its type and
+/// byte offset, in the order a C compiler sees the members. Leaves are
+/// scalars, vectors and types without size. `offset` is the byte offset of
+/// `type` in the struct; pass 0 at the top.
+/// Arrays are visited once per element, so bound the size of `type` first.
+void forEachMember(mlir::Type type, int64_t offset,
+                   const LLVMDataLayout &dataLayout,
+                   llvm::function_ref<void(mlir::Type, int64_t)> callback);
 
 /// Get the integer type for a given byte size: 1→i8, 2→i16, ≤4→i32, ≤8→i64.
 mlir::IntegerType getIntegerTypeForSize(int64_t size, mlir::MLIRContext *ctx);

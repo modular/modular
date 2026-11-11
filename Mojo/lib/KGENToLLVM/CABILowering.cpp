@@ -296,55 +296,45 @@ bool CabiUtils::isAllFloatStruct(mlir::LLVM::LLVMStructType type) {
   return getLeafFloatBitWidth(type) != 0;
 }
 
-void CabiUtils::flattenMembers(mlir::Type type, int64_t offset,
-                               const LLVMDataLayout &dataLayout,
-                               llvm::SmallVectorImpl<MemberAtOffset> &result) {
-  auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type);
-  auto arrayType = dyn_cast<mlir::LLVM::LLVMArrayType>(type);
-  // Mojo's Array: a struct around one LLVM array.
-  if (structType && structType.getBody().size() == 1)
-    if (auto body =
-            dyn_cast<mlir::LLVM::LLVMArrayType>(structType.getBody().front()))
-      arrayType = body;
-
-  if (arrayType) {
-    int64_t numElements = arrayType.getNumElements();
-    // A zero-length array has no elements to flatten; it is a member itself.
-    if (numElements == 0) {
-      result.push_back({arrayType, offset});
-      return;
-    }
-    mlir::Type elementType = arrayType.getElementType();
-    int64_t elementSize = dataLayout.getTypeAllocSize(elementType);
-    // Elements without size all sit at one offset, so one visit covers them.
-    if (elementSize == 0)
-      numElements = 1;
-    for (int64_t i = 0; i < numElements; ++i)
-      flattenMembers(elementType, offset + i * elementSize, dataLayout, result);
+void CabiUtils::forEachMember(
+    mlir::Type type, int64_t offset, const LLVMDataLayout &dataLayout,
+    llvm::function_ref<void(mlir::Type, int64_t)> callback) {
+  // A type without size is not opened: an empty struct, a zero-length array,
+  // or an array of either.
+  if (dataLayout.getTypeAllocSize(type) == 0) {
+    callback(type, offset);
     return;
   }
 
-  if (structType) {
-    if (dataLayout.getTypeAllocSize(structType) == 0)
-      return;
-    // Lay out the fields as LLVMDataLayout::getTypeSizeInBits does for a
-    // struct: align each field, then add its alloc size. A packed struct
-    // would break that; Mojo does not emit one.
+  if (auto arrayType = dyn_cast<mlir::LLVM::LLVMArrayType>(type)) {
+    mlir::Type elementType = arrayType.getElementType();
+    int64_t elementSize = dataLayout.getTypeAllocSize(elementType);
+    for (int64_t i = 0, e = arrayType.getNumElements(); i < e; ++i)
+      forEachMember(elementType, offset + i * elementSize, dataLayout,
+                    callback);
+    return;
+  }
+
+  if (auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
+    // The offsets below assume aligned fields. A packed struct would break
+    // them; Mojo does not emit one.
     // TODO(MOCO-3369): Use LLVMDataLayout::getStructFieldOffsets() once it
     // exists.
     assert(!structType.isPacked() &&
-           "packed structs are not flattened; their fields may be unaligned");
+           "packed structs are not supported; their fields may be unaligned");
     int64_t fieldOffset = 0;
     for (mlir::Type fieldType : structType.getBody()) {
+      // Lay out the fields as LLVMDataLayout::getTypeSizeInBits does for a
+      // struct: align each field, then add its alloc size.
       fieldOffset =
           llvm::alignTo(fieldOffset, dataLayout.getTypeABIAlign(fieldType));
-      flattenMembers(fieldType, offset + fieldOffset, dataLayout, result);
+      forEachMember(fieldType, offset + fieldOffset, dataLayout, callback);
       fieldOffset += dataLayout.getTypeAllocSize(fieldType);
     }
     return;
   }
 
-  result.push_back({type, offset});
+  callback(type, offset);
 }
 
 mlir::IntegerType CabiUtils::getIntegerTypeForSize(int64_t size,
