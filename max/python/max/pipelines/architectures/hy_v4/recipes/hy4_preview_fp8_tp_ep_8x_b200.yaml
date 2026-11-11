@@ -17,6 +17,12 @@
 # Attention is tensor-parallel (data_parallel_degree 1 across eight devices).
 # vLLM's FLASHMLA_SPARSE backend has no MAX flag; the sparse MLA kernel is the
 # arch's own. device_graph_capture is left to the arch default, which is on.
+#
+# Env vars:
+#  - MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB=32: init interleaves
+#    each layer's routed gate/up on the device and frees the checkpoint-order
+#    copy; at the default 256 MB pages that traps ~20 GB per device in partly
+#    used pages, and the KV pool allocation fails.
 model:
   model_path: tencent/Hy4-preview-FP8
   device_specs: [0, 1, 2, 3, 4, 5, 6, 7]

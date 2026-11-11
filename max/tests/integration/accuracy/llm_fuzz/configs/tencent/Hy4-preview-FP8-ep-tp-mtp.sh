@@ -13,6 +13,10 @@
 
 # shellcheck disable=SC2034  # Variables are used when sourced
 
+# The recipe's env: init's gate/up permute traps memory in partly used pages
+# at the default 256 MB. Sourced, so `max serve` inherits the export.
+export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB=32
+
 # Mirrors max/pipelines/architectures/hy_v4/recipes/
 # hy4_preview_fp8_tp_ep_8x_b200.yaml; the hy_v4 parsers are the arch default.
 batch_size=64

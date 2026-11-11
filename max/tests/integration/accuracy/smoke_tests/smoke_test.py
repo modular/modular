@@ -596,6 +596,10 @@ def get_server_cmd(
         # VMM on 8 GPUs at the default memory budget.
         if gpu_name.startswith("AMD") and gpu_count <= 4:
             env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
+        # Hy4's recipe env: its init-time gate/up permute traps memory in
+        # partly used pages at the default 256 MB.
+        if "hy4" in model.casefold():
+            env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB"] = "32"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
