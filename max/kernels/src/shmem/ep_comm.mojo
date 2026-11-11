@@ -3540,7 +3540,6 @@ struct EPDispatchKernel[
     # Aux SMs for dispatch_wait kernel: single SM computes offsets.
     comptime n_offset_sms = 1
     # Communication SMs for each kernel phase.
-    comptime n_dispatch_async_comm_sms = Self.n_sms - Self.n_signal_sms
     comptime n_dispatch_wait_comm_sms = Self.n_sms - Self.n_offset_sms
 
     # Atomic counter layout offsets for dispatch_wait kernel.
@@ -5870,7 +5869,6 @@ struct EPCombineKernel[
     # Aux SMs for combine_wait kernel: single SM waits for arrivals.
     comptime n_wait_sms = 1
     # Reduce SMs for combine_wait kernel.
-    comptime n_reduce_sms = Self.n_sms - Self.n_wait_sms
 
     comptime _send_layout = row_major[
         Self.n_local_experts * Self.n_ranks * Self.max_tokens_per_rank,

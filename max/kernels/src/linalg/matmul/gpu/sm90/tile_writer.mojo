@@ -708,7 +708,6 @@ struct RegisterToGMemWriter[
     )
     comptime num_n_frag_mat = Int(Self.wgmma_shape[1]) // 8
     comptime num_m_frag_mat = Int(Self.wgmma_shape[0]) // 4 // 8
-    comptime num_frag_mats = Self.num_n_frag_mat * Self.num_m_frag_mat
 
     var thread_info: ThreadInfo
 

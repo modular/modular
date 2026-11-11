@@ -2366,7 +2366,6 @@ def _grouped_matmul_sm100_persistent[
     comptime output_tile_shape = coord[out_m, out_n]
     comptime split_m = 64 if not transpose_c else width
     comptime split_n = width if not transpose_c else 64
-    comptime split_tile_shape = coord[split_m, split_n]
     comptime c_m = out_m if MMA_M == 256 else split_m
     comptime c_n = out_n if MMA_M == 256 else split_n
     comptime c_tma_tile_shape = coord[c_m, c_n]

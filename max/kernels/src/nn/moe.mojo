@@ -1050,7 +1050,6 @@ def group_limited_router_kernel[
     comptime assert (
         WARP_SIZE % group_size == 0
     ), "WARP_SIZE must be divisible by group_size"
-    comptime n_groups_per_warp = WARP_SIZE // group_size
     comptime assert (
         topk_group * n_experts_per_tok <= WARP_SIZE
     ), "topk_group * n_experts_per_tok must be less than or equal to WARP_SIZE"

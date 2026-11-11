@@ -163,8 +163,6 @@ struct MatmulConfig[
 
     comptime OUTPUT_PRECISION = 2
 
-    comptime ACCUM_PRECISION = 1
-
     # TODO: output precision will break the integration test.
     comptime split_k_reduction_type = Self.c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
 
@@ -364,14 +362,6 @@ struct MatmulKernels[
         transpose_b: Whether `B` is supplied transposed (defaults to
             `False`).
     """
-
-    comptime hopper_128x128_4 = MatmulConfig[
-        Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
-    ](
-        block_tile_shape=(128, 128, _bk_base[Self.a_type]()),
-        warp_tile_shape=(64, 64, _bk_base[Self.a_type]()),
-        num_pipeline_stages=4,
-    )
 
     comptime ampere_128x128_4 = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b

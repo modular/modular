@@ -560,7 +560,6 @@ struct MLAKVLayouts[
     ].static_product
 
     comptime KPairType = TMADestination[Self.k_nope_dtype, Self.k_tma_layout]
-    comptime VPairType = TMADestination[Self.k_nope_dtype, Self.v_tma_layout]
     comptime k_elements = Self.k_nope_tma_layout + Self.k_rope_tma_layout
     comptime v_elements = Self.v_tma_layout
     comptime k_nope_bytes = Self.k_nope_tma_layout * size_of[

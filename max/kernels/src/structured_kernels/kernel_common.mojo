@@ -191,11 +191,6 @@ struct WarpRole1D1D[
     comptime TOTAL_THREADS = (
         Self.NUM_EPILOGUE_THREADS + Self.NUM_LOAD_THREADS + Self.NUM_MMA_THREADS
     )
-    comptime TOTAL_THREADS_WITH_SFB = (
-        Self.TOTAL_THREADS
-        + Self.NUM_SFB_TMA_LOAD_THREADS
-        + Self.NUM_SFB_LOAD_THREADS
-    )
     # Send warps sit at the TOP of the thread space so every role below keeps
     # its exact thread range: at `num_send_warps == 0` this is a no-op and
     # `TOTAL_THREADS_WITH_SCHED` is unchanged.

@@ -491,8 +491,6 @@ def _gemv_kernel_vector_impl[
     # Every warp processes a single row of the resultant vector
     var local_accum = SIMD[accum_type, simd_width](0)
 
-    comptime local_accum_type = type_of(local_accum)
-
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 

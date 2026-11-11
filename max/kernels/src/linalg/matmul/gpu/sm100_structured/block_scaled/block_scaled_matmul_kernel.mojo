@@ -467,12 +467,6 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Internal Swizzled Layouts ==========
     # These layouts encode the swizzle pattern used by TileTensor storage.
     # MMA extracts layout from TileTensor type parameters via coord_to_int_tuple.
-    comptime a_internal_layout = internal_k_major_128B[
-        Self.a_type, Self.BM, Self.BK
-    ]
-    comptime b_internal_layout = internal_k_major_128B[
-        Self.b_type, Self.BN, Self.BK
-    ]
 
     # ========== TMEM and Output Pipeline Types ==========
     comptime Tmem = TmemAllocation[Self.opc.cta_group]

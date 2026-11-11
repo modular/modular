@@ -3336,7 +3336,6 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
 
     # Per-stage SMEM = BM rows x BN_PV/4 cols.
     comptime out_stage_elems = Self.config.BM * (Self.config.BN_PV // 4)
-    comptime out_stage_bytes = Self.out_stage_elems * size_of[Self.dtype]()
 
     var pipe: Self.OutPipeType
 
@@ -4700,12 +4699,8 @@ struct MLA_SM100_Decode_Common[
         4 // size_of[Self.output_dtype]()
     )
     # O: 128 x 256
-    comptime O_M = Self.config.BM * 2  # 128
-    comptime O_N = Self.config.padded_depth // 2  # 256
 
     # S: 128 x 32
-    comptime S_M = Self.config.BM * 2  # 128
-    comptime S_N = Self.config.BN_QK // 2  # 32
     comptime UMMAQKTSS = DecodeSM100QKTSS[
         operand_type=Self.q_type,
         accum_type=Self.AccumType,

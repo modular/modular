@@ -140,7 +140,6 @@ def matmul_dispatch_sm90[
     # fmt: on
 
     comptime N = c.static_shape[1]
-    comptime N_multiple_of_8 = N % 8 == 0
 
     logger.info("------ Dispatching to sm90 ------")
 
