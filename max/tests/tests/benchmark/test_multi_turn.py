@@ -225,6 +225,75 @@ def test_chat_session_driver_disable_ignore_eos_covers_every_turn() -> None:
 
 
 @pytest.mark.parametrize(
+    ("strip", "replayed", "second_prompt_len"),
+    [
+        (True, "thinkanswer", 22),
+        (False, "<|channel|>think<|message|>answer<|end|>", 25),
+    ],
+    ids=["stripped", "kept_by_default"],
+)
+def test_chat_session_driver_strips_harmony_wire_tags_from_history(
+    strip: bool, replayed: str, second_prompt_len: int
+) -> None:
+    """A Harmony chat template rejects wire tags in message text, so a
+    response that echoes them would end the session at the next turn.
+
+    Each tag is one token, so a stripped tag also leaves the next turn's
+    ``prompt_len``.
+    """
+    histories: list[list[str]] = []
+    prompt_lens: list[int] = []
+
+    class EchoingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            assert isinstance(request_func_input.prompt, list)
+            prompt_lens.append(request_func_input.prompt_len)
+            histories.append(
+                [
+                    block.text
+                    for message in request_func_input.prompt
+                    for block in message.content
+                    if isinstance(block, TextContentBlock)
+                ]
+            )
+            return RequestFuncOutput(
+                success=True,
+                latency=0.1,
+                ttft=0.05,
+                generated_text="<|channel|>think<|message|>answer<|end|>",
+                server_token_stats=ServerTokenStats(completion_tokens=5),
+            )
+
+    async def run_test() -> None:
+        messages = [
+            SessionMessage(source="user", content="one", num_tokens=10),
+            SessionMessage(source="assistant", content="", num_tokens=50),
+            SessionMessage(source="user", content="two", num_tokens=10),
+            SessionMessage(source="assistant", content="", num_tokens=50),
+        ]
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=EchoingDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=ChatSession(id=0, messages=messages),
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            strip_harmony_wire_tags=strip,
+        )
+
+    asyncio.run(run_test())
+
+    assert histories[1] == ["one", replayed, "two"]
+    assert prompt_lens == [10, second_prompt_len]
+
+
+@pytest.mark.parametrize(
     ("completion_tokens", "second_prompt_len"),
     [(2, 22), (None, 70)],
     ids=["server_reported", "fallback_to_the_draw"],

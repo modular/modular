@@ -896,6 +896,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
+    strip_harmony_wire_tags: bool = Field(
+        default=False,
+        description="Multi-turn workloads only: remove Harmony wire tags such as <|channel|> from each response before it is sent back as history. A Harmony chat template rejects them in message text, so a response that echoes one would otherwise end its session with a 400. Only the replayed text changes, not what is measured.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
     warmup_multiturn: bool = Field(
         default=True,
         description="Multi-turn workloads only: start each chat session at a randomized later turn, replaying its earlier turns as warmup, so the measured run begins with the turn mix of a long-running server. Disable to start every session at turn 0. Formerly --warmup-to-steady-state, which still works.",
