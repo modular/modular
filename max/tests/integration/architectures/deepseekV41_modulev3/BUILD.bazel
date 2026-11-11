@@ -212,6 +212,22 @@ modular_py_test(
     ],
 )
 
+# MXFP4-packed Engram tables: the quantization config's engram_embed_* keys,
+# the weight adapter's packed views, and the unpack to E4M3 as they are
+# pinned, bit-exact against FP8 twins. CPU only.
+modular_py_test(
+    name = "test_engram_mxfp4_tables",
+    srcs = ["test_engram_mxfp4_tables.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
 # Resolver regressions against the published checkpoint's layer mapping,
 # including its three trailing DSpark draft ratio rows.
 modular_py_test(

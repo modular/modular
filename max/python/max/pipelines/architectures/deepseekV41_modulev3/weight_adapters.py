@@ -39,7 +39,7 @@ from ..deepseekV41.weight_adapters import (
     resolve_quantization_info,
     with_dtype,
 )
-from .model_config import DeepseekV41Config
+from .model_config import DeepseekV41Config, EngramTableFormat
 
 # (first, second, stacked, sharded) module-path suffixes: two projections
 # that read the same activation, stacked into one leaf that runs as one
@@ -86,6 +86,19 @@ _GLOBAL_INPUT_SCALE = "ffn.global_input_scale"
 
 # The Engram embed tables: graph inputs, never module parameters.
 _ENGRAM_EMBED = re.compile(r"^layers\.\d+\.engram\.embed\.(weight|scale)$")
+# Bytes per pinned Engram weight row: 256 E4M3 codes.
+ENGRAM_WEIGHT_COLS = 256
+
+# The E4M3 code of each E2M1 code (+-0, 0.5, 1, 1.5, 2, 3, 4, 6), all exact.
+_E2M1_TO_E4M3 = np.array(
+    [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C]
+    + [0x80, 0xB0, 0xB8, 0xBC, 0xC0, 0xC4, 0xC8, 0xCC],
+    dtype=np.uint8,
+)
+# A packed byte's two E4M3 codes, low nibble first in memory.
+_E2M1_PAIR_TO_E4M3 = _E2M1_TO_E4M3[np.arange(256) & 0x0F].astype("<u2") | (
+    _E2M1_TO_E4M3[np.arange(256) >> 4].astype("<u2") << 8
+)
 
 # Checkpoint tensors the tree does not hold, each for a stated reason; the
 # skip lists account for all 2,671 of them (2,401 mtp + 259 vision + 4
@@ -585,6 +598,17 @@ class AdapterResult(dict[str, WeightData]):
         return self
 
 
+def unpack_e2m1_to_e4m3(packed: np.ndarray, out: np.ndarray) -> None:
+    """Writes packed E2M1 pairs into ``out`` as E4M3 codes, low nibble first.
+
+    Args:
+        packed: uint8 ``[..., K / 2]``, two E2M1 codes per byte.
+        out: uint8 ``[..., K]``, contiguous along its last axis.
+    """
+    # Every byte indexes the table, and "clip" writes ``out`` unbuffered.
+    np.take(_E2M1_PAIR_TO_E4M3, packed, out=out.view("<u2"), mode="clip")
+
+
 @dataclass(frozen=True)
 class EngramTable:
     """One Engram embed table, as zero-copy views for the loader.
@@ -592,8 +616,10 @@ class EngramTable:
     ``weight_codes``/``scale_codes`` alias the checkpoint's own mapping
     (``float8_e4m3fn`` [rows, 256] / ``float8_e8m0fnu`` [rows, 8], viewed
     as uint8 bytes; widening either would materialize ~12.3 GB per
-    table). The loader copies them into its pinned allocation and then
-    drops the table: at production size a held copy is ~98 GB of host
+    table). An MXFP4 checkpoint packs the weight codes as E2M1 pairs,
+    uint8 [rows, 128] (:attr:`packed`), which the loader unpacks to E4M3
+    as it pins them. The loader copies them into its pinned allocation and
+    then drops the table: at production size a held copy is ~98 GB of host
     RAM. ``layer`` is the tree layer id that owns it, so the loader can
     name the ABI inputs by ordinal.
     """
@@ -602,6 +628,11 @@ class EngramTable:
     rows: int
     weight_codes: np.ndarray
     scale_codes: np.ndarray
+
+    @property
+    def packed(self) -> bool:
+        """Whether ``weight_codes`` are E2M1 pairs, half the pinned width."""
+        return self.weight_codes.shape[-1] != ENGRAM_WEIGHT_COLS
 
     def table_names(self, ordinal: int) -> tuple[str, str]:
         """The ABI graph-input names this table feeds.
@@ -638,6 +669,19 @@ def _engram_tables(
         codes = as_uint8(data.data)
         weight, scale, rows = by_layer.get(layer, (None, None, 0))
         if match[1] == "weight":
+            # FP8 codes, or uint8 MXFP4 pairs at half their width.
+            if codes.ndim != 2 or (
+                codes.shape[1] != ENGRAM_WEIGHT_COLS
+                and (
+                    data.dtype != DType.uint8
+                    or 2 * codes.shape[1] != ENGRAM_WEIGHT_COLS
+                )
+            ):
+                raise ValueError(
+                    f"{name}: expected [rows, {ENGRAM_WEIGHT_COLS}] E4M3 "
+                    f"codes or uint8 [rows, {ENGRAM_WEIGHT_COLS // 2}] "
+                    f"MXFP4 pairs; got {data.dtype} {list(codes.shape)}"
+                )
             weight = codes
             rows = int(data.shape[0])
         else:
@@ -810,8 +854,10 @@ def convert_safetensor_state_dict(
     Raises:
         ValueError: Under expert parallelism (``ep_size > 1``), if any
             expert's ``w1`` and ``w3`` ``weight_scale_2`` disagree
-            (:func:`check_expert_gate_up_scale_pairs`); and everything
-            :func:`convert_weight_data` raises.
+            (:func:`check_expert_gate_up_scale_pairs`); if an Engram
+            table is stored in another format than ``quantization_config``
+            declares (:class:`.model_config.EngramTableFormat`); and
+            everything :func:`convert_weight_data` raises.
     """
     text = DeepseekV41Config.get_text_config(huggingface_config)
     resolve_quantization_info(
@@ -819,6 +865,7 @@ def convert_safetensor_state_dict(
         state_dict,
         int(text.num_hidden_layers),
     )
+    table_format = EngramTableFormat.of(huggingface_config)
     has_vision = False
     engram_layer_ids = tuple(
         int(layer) for layer in getattr(text, "engram_layer_ids", ())
@@ -849,12 +896,21 @@ def convert_safetensor_state_dict(
     }
     if ep_size > 1:
         check_expert_gate_up_scale_pairs(loaded)
-    return convert_weight_data(
+    result = convert_weight_data(
         loaded,
         has_vision=has_vision,
         engram_layer_ids=engram_layer_ids,
         n_devices=n_devices,
     )
+    # The memory planner sizes the tables from the declared format.
+    for table in result.engram_tables:
+        if table.packed != (table_format is EngramTableFormat.MXFP4):
+            raise ValueError(
+                f"layers.{table.layer}.engram.embed.weight is "
+                f"{list(table.weight_codes.shape)}, but quantization_config "
+                f"declares {table_format.value} Engram tables"
+            )
+    return result
 
 
 # --------------------------------------------------------------------------- #

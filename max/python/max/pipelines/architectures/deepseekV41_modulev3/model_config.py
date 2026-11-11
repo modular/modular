@@ -27,7 +27,7 @@ resolved here.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from types import SimpleNamespace
@@ -274,6 +274,82 @@ class RoutedExpertFormat(Enum):
             mlp_quantized_layers=set(range(num_layers)),
             attn_quantized_layers=set(),
             can_use_fused_swiglu=True,
+        )
+
+
+class EngramTableFormat(Enum):
+    """How the checkpoint stores the Engram embed tables' codes.
+
+    Resolved from ``quantization_config``'s ``engram_embed_*`` keys
+    (:meth:`from_quantization_config`). Either format carries a UE8M0 scale
+    per 32 codes, and either is pinned as E4M3 codes: the gather kernels
+    read fixed 256-byte rows.
+    """
+
+    FP8 = "fp8"
+    """E4M3 codes, pinned as stored."""
+
+    MXFP4 = "mxfp4"
+    """E2M1 pairs, low nibble first, at half the pinned width. Every E2M1
+    value is exact in E4M3, so the pinned table is bit-identical to an FP8
+    table of the same values."""
+
+    @classmethod
+    def from_quantization_config(
+        cls,
+        quantization_config: Mapping[str, Any] | None,
+        engram_layer_ids: Sequence[int],
+    ) -> EngramTableFormat:
+        """Returns the format ``quantization_config`` declares the tables in.
+
+        A config without ``engram_embed_quant`` stores FP8 tables.
+
+        Raises:
+            ValueError: If the keys declare another format, block size or
+                scale dtype, or ``engram_embed_layers`` other than
+                ``engram_layer_ids``: one format serves every table.
+        """
+        config = quantization_config or {}
+        quant = str(config.get("engram_embed_quant", cls.FP8.value)).lower()
+        if quant not in {member.value for member in cls}:
+            raise ValueError(
+                "DeepSeek-V4.1 Engram tables expect quantization_config."
+                f"engram_embed_quant 'fp8' or 'mxfp4'; got {quant!r}"
+            )
+        for key, want in (
+            ("engram_embed_block_size", "32"),
+            ("engram_embed_scale_dtype", "ue8m0"),
+        ):
+            value = config.get(key)
+            if value is not None and str(value).lower() != want:
+                raise ValueError(
+                    "DeepSeek-V4.1 Engram tables expect quantization_config."
+                    f"{key} {want!r}; got {value!r}"
+                )
+        layers = config.get("engram_embed_layers")
+        want_layers = sorted(int(layer) for layer in engram_layer_ids)
+        if layers is not None and (
+            sorted(int(layer) for layer in layers) != want_layers
+        ):
+            raise ValueError(
+                "DeepSeek-V4.1 Engram tables expect quantization_config."
+                f"engram_embed_layers {want_layers}, the engram_layer_ids; "
+                f"got {list(layers)!r}"
+            )
+        return cls(quant)
+
+    @classmethod
+    def of(cls, huggingface_config: object) -> EngramTableFormat:
+        """Returns the format of a Hugging Face config, as object or mapping."""
+        if isinstance(huggingface_config, Mapping):
+            quantization_config = huggingface_config.get("quantization_config")
+        else:
+            quantization_config = getattr(
+                huggingface_config, "quantization_config", None
+            )
+        text = DeepseekV41Config.get_text_config(huggingface_config)
+        return cls.from_quantization_config(
+            quantization_config, getattr(text, "engram_layer_ids", ())
         )
 
 

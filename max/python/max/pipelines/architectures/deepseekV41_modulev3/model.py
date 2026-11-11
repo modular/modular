@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
@@ -66,7 +67,12 @@ from .layers.engram_token_map import (
     compressed_token_map_array,
 )
 from .model_config import DeepseekV41Config, RoutedExpertFormat, dispatch_rows
-from .weight_adapters import AdapterResult, EngramTable, engram_embed_tables
+from .weight_adapters import (
+    AdapterResult,
+    EngramTable,
+    engram_embed_tables,
+    unpack_e2m1_to_e4m3,
+)
 
 logger = logging.getLogger("max.pipelines")
 _TABLE_WEIGHT_COLS = 256
@@ -75,6 +81,10 @@ _TABLE_SCALE_COLS = 8
 # Bounded by total RAM as well as what is free now, so an undersized host
 # fails fast -- the same bound the V2 loader uses.
 _ENGRAM_HOST_RAM_MAX_FRACTION_OF_TOTAL = 0.8
+# Row chunks a table is pinned in, on this many threads: numpy copies
+# release the GIL, and a production table runs to tens of gigabytes.
+_PIN_CHUNK_BYTES = 64 << 20
+_PIN_THREADS = 16
 
 
 @dataclass
@@ -100,10 +110,45 @@ class _PinnedTable:
 _PINNED_TABLES: dict[tuple[str, int, str, int, int], list[_PinnedTable]] = {}
 
 
-def _table_digest(codes: np.ndarray) -> bytes:
-    """One table's content identity, hashed in place (no copy)."""
-    # ``ndarray.data`` is the zero-copy memoryview of the array's storage.
-    return hashlib.blake2b(codes.data, digest_size=16).digest()
+def _table_digest(codes: np.ndarray, width: int) -> bytes:
+    """One table's content identity as pinned ``width`` bytes wide.
+
+    Packed codes hash as their unpacked rows, a chunk at a time, so they
+    match the pinned copy of the same table.
+    """
+    if codes.shape[-1] == width:
+        # ``ndarray.data`` is the zero-copy memoryview of the array's storage.
+        return hashlib.blake2b(codes.data, digest_size=16).digest()
+    digest = hashlib.blake2b(digest_size=16)
+    rows = max(1, _PIN_CHUNK_BYTES // width)
+    chunk = np.empty((rows, width), np.uint8)
+    for start in range(0, len(codes), rows):
+        source = codes[start : start + rows]
+        unpacked = chunk[: len(source)]
+        unpack_e2m1_to_e4m3(source, unpacked)
+        digest.update(unpacked.data)
+    return digest.digest()
+
+
+def _fill_pinned(codes: np.ndarray, destination: np.ndarray) -> None:
+    """Copies ``codes`` into ``destination`` in row chunks on many threads.
+
+    Codes half as wide as ``destination`` are packed E2M1 pairs, unpacked to
+    E4M3 (:func:`~.weight_adapters.unpack_e2m1_to_e4m3`).
+    """
+    unpack = codes.shape != destination.shape
+    rows = max(1, _PIN_CHUNK_BYTES // max(1, destination[:1].nbytes))
+
+    def fill(start: int) -> None:
+        source = codes[start : start + rows]
+        target = destination[start : start + len(source)]
+        if unpack:
+            unpack_e2m1_to_e4m3(source, target)
+        else:
+            np.copyto(target, source)
+
+    with ThreadPoolExecutor(_PIN_THREADS) as pool:
+        list(pool.map(fill, range(0, len(codes), rows)))
 
 
 def _check_engram_host_ram(name: str, byte_count: int) -> None:
@@ -175,22 +220,33 @@ def _pinned_table(
         rows: Rows in the table.
         width: Bytes per row, the ABI's column count.
         codes: The checkpoint's table bytes, as a uint8 ``[rows, width]``
-            view of its mapping.
+            view of its mapping, or for E4M3 codes the MXFP4-packed
+            ``[rows, width / 2]`` E2M1 pairs, unpacked as they are pinned.
         dtype: The ABI dtype the bytes relabel to (E4M3 codes or E8M0
             scales).
 
     Returns:
         The pinned buffer, shared with every earlier caller that asked for
         the same bytes on the same device.
+
+    Raises:
+        ValueError: If ``codes`` is neither shape.
     """
+    if codes.shape != (rows, width) and not (
+        dtype == DType.float8_e4m3fn and codes.shape == (rows, width // 2)
+    ):
+        raise ValueError(
+            f"{name}: expected [{rows}, {width}] codes, or for E4M3 codes "
+            f"MXFP4 pairs [{rows}, {width // 2}]; got {list(codes.shape)}"
+        )
     key = (device.label, device.id, name, rows, width)
     entries = _PINNED_TABLES.get(key, [])
     # Content identity for the reload dedupe, hashed only when a same-shaped
     # table is already pinned to compare against: a first load pays nothing.
-    digest = _table_digest(codes) if entries else None
+    digest = _table_digest(codes, width) if entries else None
     for entry in entries:
         if entry.digest is None:
-            entry.digest = _table_digest(entry.buffer.to_numpy())
+            entry.digest = _table_digest(entry.buffer.to_numpy(), width)
         if entry.digest == digest:
             return entry.buffer.view(dtype)
     _check_engram_host_ram(name, rows * width)
@@ -212,7 +268,7 @@ def _pinned_table(
     # host-sized copy of a table that reaches tens of gigabytes.
     view = buffer.to_numpy()
     assert not view.flags.owndata, "staging to_numpy must alias the buffer"
-    np.copyto(view, codes)
+    _fill_pinned(codes, view)
     _PINNED_TABLES.setdefault(key, []).append(_PinnedTable(digest, buffer))
     # The kernel consumes the raw bytes as E4M3 codes / E8M0 scales:
     # a bit-preserving view, no value conversion.
