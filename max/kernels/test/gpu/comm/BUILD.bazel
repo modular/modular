@@ -83,6 +83,7 @@ _GPU_MEMORY = {
     "test_scatter.mojo": "3",
     "test_broadcast_subgroup.mojo": "2",
     "test_ep_ord_r_completion.mojo": "2",
+    "test_multicast_window.mojo": "1",
     # MXFP8 rows at 8 ranks x 8,168 tokens need about 2.6 GB.
     "test_ep_dispatch_prefill_send.mojo": "4",
     "test_kernel_load_gate.mojo": "2",
@@ -104,6 +105,12 @@ _TARGET_COMPATIBLE_WITH = {
         "//:b200_gpu": ["//:has_multi_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # The multicast window is NVLS memory, which only SM90+ NVIDIA GPUs map.
+    "test_multicast_window.mojo": select({
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 }
 
 # Tests where assertions push register usage past hardware limits,
@@ -117,7 +124,12 @@ mojo_test(
     name = "test_allreduce_residual_rmsnorm.mojo.test",
     size = "large",
     srcs = ["test_allreduce_residual_rmsnorm.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    # The multicast arm's branch in `allreduce_residual_rmsnorm` is compiled in
+    # only under this define, so the target that exercises the boundary sets it.
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "MODULAR_MULTICAST_ALLREDUCE_RMS_NORM=1",
+    ],
     enable_assertions = False,  # MSTDL-2301: register pressure
     exec_properties = {
         "test.resources:gpu-memory": "3",
@@ -164,6 +176,42 @@ mojo_test(
     ],
 )
 
+# Standalone test: the multicast residual boundary (allreduce + residual +
+# RMSNorm + 1x128 FP8) against an independent host oracle. The arm exchanges
+# through the team's symmetric window, which needs a device set the fabric can
+# address as one team, so this runs on whatever team the host has: two ranks,
+# and four where four devices exist, which is MiMo-V2's tensor-parallel width.
+# A shape ladder at each of two widths plus five captured-graph replays is a few
+# seconds of GPU time. The arm stores through `multimem`, so it is SM90+ NVIDIA
+# only.
+mojo_test(
+    name = "test_mcast_rmsnorm.mojo.test",
+    size = "large",
+    srcs = ["test_mcast_rmsnorm.mojo"],
+    # The arm these kernels serve is compiled in only under this define, so the
+    # target that owns it sets it.
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "MODULAR_MULTICAST_ALLREDUCE_RMS_NORM=1",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    main = "test_mcast_rmsnorm.mojo",
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
 # Regular tests for all other files
 [
     mojo_test(
@@ -204,6 +252,8 @@ mojo_test(
             "test_enum_like_conformance.mojo",  # Has its own standalone rule below
             "test_allreduce_peer_load_codegen.mojo",  # Host-only rule below
             "test_bundled_allreduce_build_graph.mojo",  # Has its own standalone rule above
+            "test_mcar_codegen.mojo",  # Host-only codegen rule above
+            "test_mcast_rmsnorm.mojo",  # Has its own standalone rule above
             "test_blocking_driver_calls.mojo",  # One rule per round, below
         ],
     )
@@ -271,6 +321,26 @@ mojo_test(
         "//max:linalg",
         "//max:nn",
         "//max:pipeline",
+        "@mojo//:std",
+    ],
+)
+
+# Host-only: compiles the multicast boundary's arrival tally for sm_100 and
+# checks the emitted atomic carries acq_rel. No GPU and no device memory: the
+# kernel is built, not run. `_arrive_and_flip` is the one statement whose
+# ordering no correctness test can observe, so it needs a codegen test. Excluded
+# under ASan for the reason its neighbor below is: the instrumented compiler's
+# GPU backend, not host memory, is all ASan would exercise here.
+mojo_test(
+    name = "test_mcar_codegen.mojo.test",
+    srcs = ["test_mcar_codegen.mojo"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:comm",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

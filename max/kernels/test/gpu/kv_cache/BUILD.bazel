@@ -64,6 +64,7 @@ _EXTRA_CONSTRAINTS = {
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_split_head_store_rope.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_rope_qkv_store_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_mha_paged_decode_d64_gqa8_32k.mojo": select({
         # Covers the SM100 FA4 workspace split-K combine.
         "//:b200_gpu": [],

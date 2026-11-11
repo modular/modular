@@ -35,6 +35,9 @@ from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
 from comm.allreduce_residual_rmsnorm import (
     _dispatch_ar_norm,
     allreduce_residual_rmsnorm,
+    mcar_epilogue_serves,
+    mcar_rmsnorm_fits,
+    normalized_scale_group,
 )
 from comm.allgather_rmsnorm import (
     AG_QUANT_ONLY_THRESHOLD,
@@ -43,6 +46,9 @@ from comm.allgather_rmsnorm import (
     allgather_gated_residual_rmsnorm,
     allgather_rmsnorm,
 )
+from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
+from std.utils.coord import ComptimeInt
+from .rowwise_normalization import rms_norm_residual_add
 from linalg.block_scaled_quantization import (
     quantize_mx_amd,
     quantize_mxfp8_lane_group,
@@ -71,6 +77,8 @@ from comm.broadcast import broadcast
 from comm.device_collective import _launch_device_collective
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
+from comm.multicast_window import McarWindow, McarWindowRank, mcar_window
+from comm.workspace import staging_workspace
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.primitives.grid_controls import PDLLevel
@@ -101,6 +109,12 @@ from extensibility import (
 from std.logger import Logger
 
 comptime logger = Logger()
+
+comptime _STAGING_BYTE_ALIGNMENT = 256
+# Bytes every device allocation here is aligned to at least: `cudaMalloc`'s
+# documented guarantee, which the HIP and VMM allocators also meet. The fused
+# op's staging panels are laid out on it, so a caller's element alignment
+# converts to bytes and is clamped to it rather than taken on faith.
 
 from std.utils.index import Index
 from std.collections import Array, Optional
@@ -1175,6 +1189,11 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         # Graph compilers whose copy of the op predates the attribute fuse
         # only multiply-first norms.
         multiply_before_cast: Bool = True,
+        # The quantized epilogue's scale granularity: `K` is one scale per `K`
+        # columns of a row, and the attribute's absence (`-1`, or the row
+        # width) is one per row. The row width is normalized to `-1` below, so
+        # every branch here tests grouping and not spelling.
+        group_size_or_per_token: Int = -1,
     ](
         outputs: TensorTuple[*Outs],
         outputs_scales: TensorTuple[*OutScales],
@@ -1217,6 +1236,79 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         # The kernel also takes CPU operands (`scales_ub` are rank-0 CPU
         # scalars), so CPU devices must be removed.
         var dev_ctxs = dev_ctxs_input.filter_gpu_contexts[num_devices]()
+
+        # The multicast arm's window: one symmetric allocation per device set
+        # and message geometry, created on first use and kept for the process's
+        # life (see `comm.multicast_window`). It is created here, once, before
+        # the per-device launches, so no rank races another into creating a
+        # different one. A device set that cannot map multicast memory -- the
+        # HAL driver, a device without NVLS -- yields `None`, and the dispatch
+        # then keeps every path it had. An allocation failure is the same
+        # fallback, not a failed step. `mcar_window` caches either outcome, so
+        # the probe and the report below run once per team and geometry. A call
+        # that arrives while this op runs inside a device graph capture creates
+        # the window there like any other call -- capture is RELAXED and the
+        # allocation runs on the window's own contexts, not on the recording
+        # stream -- and the arm is captured with the rest of the layer. Only a
+        # failure inside the capture is withheld from the cache, so a capture
+        # that cannot allocate leaves the arm to a later eager call instead of
+        # disabling it for the process.
+        comptime last_dim_idx = rank - 1
+        var cols = Int(inputs[0].shape()[last_dim_idx].value())
+        var rows = Int(inputs[0].shape().product()) // cols
+        # The composite writes a grouped epilogue only when the multicast arm's
+        # epilogue is that same one; every other grouped chain takes the two
+        # launches in `launch_fused_allreduce` (see `mcar_epilogue_serves`).
+        comptime static_cols = Ins[0]._shape_types[last_dim_idx].static_value
+        # One scale a row is spelled `-1` and, by the dialect, the row width;
+        # normalize before anything reads it, so a caller that passes the width
+        # keeps the fused per-row epilogue rather than falling to the staged
+        # chain. `static_cols` is `-1` when the graph does not know the width,
+        # where the spelling cannot be resolved and is left grouped.
+        comptime group = normalized_scale_group[
+            group_size_or_per_token, static_cols
+        ]()
+        var window: Optional[
+            Pointer[McarWindow[num_devices], MutUntrackedOrigin]
+        ] = None
+        # The window costs 16 MiB a rank plus a first-use fill, so an op only
+        # creates one for a shape the arm can take; every other shape runs the
+        # paths it had. `mcar_rmsnorm_fits` is the same test those paths make.
+        # The arm is opt-in per compile: it is validated on one model only, so
+        # a graph compiled without the define never creates a window and keeps
+        # the paths it had.
+        comptime if get_defined_bool[
+            "MODULAR_MULTICAST_ALLREDUCE_RMS_NORM", False
+        ]() and mcar_epilogue_serves[dtype, output_type, scales_type, group]():
+            if mcar_rmsnorm_fits[dtype, num_devices, quantized=group > 0](
+                rows, cols
+            ):
+                var window_ctxs = Array[DeviceContext[], num_devices](
+                    fill_with_unrolled=lambda [i: Int]() -> DeviceContext[]: (
+                        dev_ctxs[i].assert_default_target().copy()
+                    )
+                )
+                try:
+                    window = mcar_window[num_devices, dtype](window_ctxs, cols)
+                except e:
+                    logger.info("multicast window unavailable:", e)
+                    window = None
+
+        # Whether the multicast arm carries a grouped epilogue here, its
+        # epilogue included -- the same test `allreduce_residual_rmsnorm` makes
+        # before it takes the arm. Every rank reads the same shapes and the same
+        # team-wide window, so the whole world agrees on the arm.
+        var mcast_serves = False
+        comptime if group > 0:
+            if static_cols <= 0:
+                raise Error(
+                    "the grouped quantized epilogue needs a static column"
+                    " count; the fusion folds only a statically shaped width"
+                )
+            if case .Some(mcar) = window:
+                mcast_serves = mcar[].rows() >= rows and mcar_rmsnorm_fits[
+                    dtype, num_devices, quantized=True
+                ](rows, cols)
 
         # Marshal input tensors into TileTensors.
         comptime assert conforms_to(type_of(inputs[0]), TileTensorable)
@@ -1264,6 +1356,10 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             imm outputs_residual,
             imm residuals,
             imm scratch_bytes,
+            imm window,
+            imm mcast_serves,
+            imm rows,
+            imm cols,
         }:
             # Marshal per-device outputs and residual as TileTensors.
             comptime assert conforms_to(type_of(outputs[index]), TileTensorable)
@@ -1289,6 +1385,12 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             ]()
             var residual_buf = residuals[index].to_tile_tensor[dtype]().as_imm()
             var gamma_tensor = gammas[index].to_tile_tensor[dtype]()
+            # The graph's own byte alignment, read here so the closures below
+            # need not capture the value to name its type.
+            comptime residual_alignment = type_of(residuals[index]).alignment
+            comptime residual_out_alignment = type_of(
+                outputs_residual[index]
+            ).alignment
 
             # TODO: Add a new struct like `VariadicInputScalar`` to
             # represent instead of manually loading the values in the
@@ -1300,8 +1402,243 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             # The kernel waits for the producing GEMM before it signals its
             # peers, and the next GEMM waits for this kernel to retire, so
             # releasing that GEMM at entry lets it prefetch weights meanwhile.
+            var rank_window: Optional[McarWindowRank] = None
+            if case .Some(mcar) = window:
+                rank_window = mcar[].rank(index)
+
+            # A grouped epilogue the multicast arm does not write runs as the
+            # three launches the unfused graph has: the standalone allreduce
+            # into this rank's staging workspace, then RMSNorm, which writes the
+            # normed rows back in the input dtype, then the grouped quantizer
+            # over them. The extra passes are the cost of not folding.
+            #
+            # That makes the fold byte-inert above the epilogue's row cap, and
+            # only there: a fold has to compute what the unfused chain computes,
+            # so these are that chain's own launches in its order --
+            # `rms_norm_residual_add` rounds the residual add in `dtype`, as the
+            # graph's `mo.add` does, and the quantizer's amax is over the rows
+            # the norm rounded. Below the cap the arm's own kernel is a different
+            # algorithm (an fp32 add, its own reduction tree), so it is
+            # numerics-close to the chain rather than byte-equal to it, and a
+            # chain whose row count crosses the cap moves its bytes there. The
+            # workspace is the op's own rather than the scratch behind the
+            # `Signal` header, which the collectives stage through themselves.
+            comptime if group > 0:
+                if not mcast_serves:
+                    # The standalone allreduce stages `payload / num_devices`
+                    # bytes behind each peer's `Signal` header with no check of
+                    # its own, so this makes the one the unfused allreduce op
+                    # makes: without it a short signal buffer is a silent
+                    # out-of-bounds write. Rank-identical by construction, since
+                    # it reads only the shared shapes and buffer sizes, so
+                    # either every rank raises or none does.
+                    comptime if not get_defined_bool[
+                        "MODULAR_USE_VENDOR_CCL", False
+                    ]():
+                        _check_signal_buffer_size(
+                            size_of[Signal]() + scratch_bytes,
+                            _partitioned_scratch_requirement[
+                                num_devices, dtype
+                            ](rows * cols),
+                        )
+
+                    # Both panels start on a byte boundary, so each one's
+                    # alignment is the allocator's however wide a row is; the
+                    # closures below convert the norm's element alignment to
+                    # bytes and clamp it to that.
+                    comptime chunk_elems = (
+                        _STAGING_BYTE_ALIGNMENT // size_of[dtype]()
+                    )
+                    var panel_elems = rows * cols
+                    var staged_elems = (
+                        (panel_elems + chunk_elems - 1)
+                        // chunk_elems
+                        * chunk_elems
+                    )
+                    var workspace = staging_workspace[dtype](
+                        dev_ctxs[index], staged_elems + panel_elems
+                    )
+                    var summed_ptr = workspace
+                    var staged_ptr = MutPointer[
+                        Scalar[dtype], MutUntrackedOrigin
+                    ](
+                        unsafe_from_address=Int(workspace)
+                        + staged_elems * size_of[dtype]()
+                    )
+                    var summed = TileTensor(summed_ptr, row_major(rows, cols))
+                    var staged = TileTensor(staged_ptr, row_major(rows, cols))
+                    # The unfused chain's allreduce honors the vendor-CCL
+                    # build, so the staged one does too.
+                    comptime if get_defined_bool[
+                        "MODULAR_USE_VENDOR_CCL", False
+                    ]():
+                        # Only device 0 creates the communicators, as in
+                        # `two_launch`; the others wait for them.
+                        comptime if index == 0:
+                            vendor_ccl.init_comms(num_devices)
+                        else:
+                            vendor_ccl.wait_for_comms(num_devices)
+                        # The vendor collective takes default-engine tiles.
+                        comptime VendorInput = TileTensor[
+                            dtype,
+                            InputTensorType.LayoutType,
+                            ImmUntrackedOrigin,
+                        ]
+                        var vendor_inputs = Array[VendorInput, num_devices](
+                            fill_with_unrolled=lambda [
+                                i: Int
+                            ]() -> VendorInput: rebind[VendorInput](
+                                in_tensors[i]
+                            )
+                        )
+                        vendor_ccl.allreduce[ngpus=num_devices](
+                            vendor_inputs,
+                            summed,
+                            rank_sigs,
+                            dev_ctxs[index],
+                        )
+                    else:
+                        allreduce[ngpus=num_devices](
+                            in_tensors,
+                            summed,
+                            rank_sigs,
+                            dev_ctxs[index],
+                            my_rank=index,
+                        )
+
+                    # `alignment` arrives in elements; the loads and stores
+                    # below take bytes, and the region's true bound is the
+                    # panel's (the allocator's) for the workspace and the
+                    # tensor's own for the graph's, so both clamp.
+                    @inline(.always)
+                    def norm_sum[
+                        width: Int, alignment: Int
+                    ](coords: Coord) {var summed} -> SIMD[dtype, width]:
+                        return summed.load[
+                            width=width,
+                            alignment=min(
+                                _STAGING_BYTE_ALIGNMENT,
+                                alignment * align_of[dtype](),
+                            ),
+                        ](coords)
+
+                    @inline(.always)
+                    def norm_residual[
+                        width: Int, alignment: Int
+                    ](coords: Coord) {var residual_buf} -> SIMD[dtype, width]:
+                        return residual_buf.load[
+                            width=width,
+                            alignment=min(
+                                residual_alignment,
+                                alignment * align_of[dtype](),
+                            ),
+                        ](coords)
+
+                    @inline(.always)
+                    def norm_out[
+                        width: SIMDLength, alignment: Int
+                    ](coords: Coord, val: SIMD[dtype, width]) {
+                        var staged
+                    } -> None:
+                        staged.store[
+                            width=width,
+                            alignment=min(
+                                _STAGING_BYTE_ALIGNMENT,
+                                alignment * align_of[dtype](),
+                            ),
+                        ](coords, val)
+
+                    @inline(.always)
+                    def pre_norm_out[
+                        width: SIMDLength, alignment: Int
+                    ](coords: Coord, val: SIMD[dtype, width]) {
+                        var out_residual_buf
+                    } -> None:
+                        out_residual_buf.store[
+                            width=width,
+                            alignment=min(
+                                residual_out_alignment,
+                                alignment * align_of[dtype](),
+                            ),
+                        ](coords, val)
+
+                    # The unfused composite register-caches the row when the
+                    # width is static, and that changes the sum-of-squares
+                    # order, so the static width has to travel as a comptime
+                    # value here too.
+                    comptime if static_cols > 0:
+                        rms_norm_residual_add[
+                            dtype,
+                            rank,
+                            epsilon=epsilon,
+                            weight_offset=weight_offset,
+                            multiply_before_cast=multiply_before_cast,
+                        ](
+                            norm_sum,
+                            norm_residual,
+                            norm_out,
+                            pre_norm_out,
+                            summed.layout.shape_coord(),
+                            ComptimeInt[static_cols](),
+                            gamma_tensor,
+                            dev_ctxs[index],
+                        )
+                    else:
+                        rms_norm_residual_add[
+                            dtype,
+                            rank,
+                            epsilon=epsilon,
+                            weight_offset=weight_offset,
+                            multiply_before_cast=multiply_before_cast,
+                        ](
+                            norm_sum,
+                            norm_residual,
+                            norm_out,
+                            pre_norm_out,
+                            summed.layout.shape_coord(),
+                            Int(cols),
+                            gamma_tensor,
+                            dev_ctxs[index],
+                        )
+
+                    @inline(.always)
+                    def staged_input[
+                        width: Int, alignment: Int
+                    ](row: Int, col: Int) {var staged_ptr, var cols} -> SIMD[
+                        dtype, width
+                    ]:
+                        # Owned captures: the closure outlives this frame as a
+                        # kernel argument, so it carries the pointer itself. The
+                        # rows are one after another, so the load needs no
+                        # layout. `alignment` arrives in elements and the panel
+                        # is the allocator's, so it clamps like the norm's.
+                        return staged_ptr.unsafe_load[
+                            width=width,
+                            alignment=min(
+                                _STAGING_BYTE_ALIGNMENT,
+                                alignment * align_of[dtype](),
+                            ),
+                        ](row * cols + col)
+
+                    quantize_dynamic_scaled_fp8[
+                        out_dtype=output_type,
+                        in_dtype=dtype,
+                        scales_dtype=scales_type,
+                        group_size_or_per_token=group,
+                        num_cols=static_cols,
+                    ](
+                        staged_input,
+                        out_buf.reshape(row_major(rows, cols)),
+                        out_scales_buf,
+                        scale_ub,
+                        dev_ctxs[index],
+                        num_rows=rows,
+                    )
+                    return
+
             allreduce_residual_rmsnorm[
-                multiply_before_cast=multiply_before_cast
+                multiply_before_cast=multiply_before_cast,
+                group_size_or_per_token=group,
             ](
                 in_tensors,
                 residual_buf,
@@ -1316,6 +1653,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
                 dev_ctxs[index],
                 my_rank=index,
                 scratch_bytes=scratch_bytes,
+                window=rank_window,
             )
 
         _launch_device_collective[num_devices](

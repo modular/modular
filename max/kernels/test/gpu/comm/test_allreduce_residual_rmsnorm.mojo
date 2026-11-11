@@ -784,24 +784,39 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     cols: Int,
     *,
     no_scratch: Bool = False,
+    check_per_row_spelling: Bool = False,
 ](list_of_ctx: List[DeviceContext[]]) raises:
     """Verify fused kernel with residual add against separate paths.
 
     With `no_scratch` the signal buffers end at the `Signal` header, so
     payloads the dispatch would stage through scratch must take 1-stage.
+
+    With `check_per_row_spelling` the run repeats the fused call spelling a
+    per-row scale as the row width instead of `-1`, and re-checks both outputs
+    against the poisoned buffers. The spelling reaches the same fused epilogue,
+    so one mid-sized shape covers it and no other shape pays for the repeat.
     """
     comptime length = rows * cols
 
     print(
         t"  test_fused_allreduce_residual_rmsnorm_fp8[ {ngpus} , {in_dtype} ->"
-        t" {out_dtype} , {rows} x {cols} , no_scratch= {no_scratch} ]"
+        t" {out_dtype} , {rows} x {cols} , no_scratch= {no_scratch} ,"
+        t" check_per_row_spelling= {check_per_row_spelling} ]"
     )
 
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var temp_bytes = 0 if no_scratch else ngpus * size_of[in_dtype]() * length
+    # The reset below memsets the whole buffer, so its width is what decides
+    # whether a rank whose reset lands late loses the race against a peer's
+    # push. 8192x8192 -- the shape that exposed that hazard -- is the widest FP8
+    # payload, so the check sizes its signals from it while running the fused
+    # call at this shape's cost.
+    comptime signal_payload = 8192 * 8192 if check_per_row_spelling else length
+    var temp_bytes = (
+        0 if no_scratch else ngpus * size_of[in_dtype]() * signal_payload
+    )
     var scratch_bytes: Optional[Int] = None
     comptime if no_scratch:
         scratch_bytes = 0
@@ -1019,6 +1034,66 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     _assert_scales_close(
         ref_scales_host.unsafe_ptr(), fused_scales_host.unsafe_ptr(), rows
     )
+
+    # --- One scale a row spelled as the row width ---
+    # The dialect spells a per-token scale as the row width, so a caller may
+    # pass `cols` to mean one scale a row. That is the per-row case: it is not
+    # a 1x`cols` group, so it has to reach this same fused epilogue rather than
+    # the grouped arm or a raise. Both outputs are poisoned first, so a run
+    # that writes neither cannot pass on the first run's output. The spelling
+    # changes no work, so one shape covers it and the other shapes skip it;
+    # main() picks a mid-sized shape, wide enough that a rank whose reset lands
+    # late really loses the race that the drain below exists to prevent.
+    comptime if check_per_row_spelling:
+        var poison_fp8_host = ctx.enqueue_create_host_buffer[out_dtype](length)
+        for i in range(length):
+            poison_fp8_host[i] = Float32(-7.0).cast[out_dtype]()
+        ctx.enqueue_copy(fused_fp8_dev, poison_fp8_host)
+        var poison_scales_host = ctx.enqueue_create_host_buffer[.float32](rows)
+        for i in range(rows):
+            poison_scales_host[i] = -1.0
+        ctx.enqueue_copy(fused_scales_dev, poison_scales_host)
+        for i in range(ngpus):
+            init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        # Each reset must land before any rank's kernel starts: the barrier
+        # pushes an arrival into every peer's buffer and waits for an exact
+        # value, so a reset that lands after a push drops that arrival and
+        # both ranks spin forever.
+        for i in range(ngpus):
+            list_of_ctx[i].synchronize()
+
+        group_start()
+
+        comptime for i in range(ngpus):
+            allreduce_residual_rmsnorm[group_size_or_per_token=cols](
+                in_tiles,
+                residual_tile.as_imm(),
+                fused_fp8_tile,
+                fused_residual_output_tile,
+                gamma_tensor,
+                epsilon,
+                weight_offset,
+                scale_ub,
+                fused_scales_tile,
+                rank_sigs,
+                list_of_ctx[i],
+                scratch_bytes=scratch_bytes,
+            )
+        group_end()
+
+        for i in range(ngpus):
+            list_of_ctx[i].synchronize()
+
+        ctx.enqueue_copy(fused_fp8_host, fused_fp8_dev)
+        ctx.enqueue_copy(fused_scales_host, fused_scales_dev)
+        ctx.synchronize()
+
+        _assert_fp8_close(
+            ref_fp8_host.unsafe_ptr(), fused_fp8_host.unsafe_ptr(), length
+        )
+        _assert_scales_close(
+            ref_scales_host.unsafe_ptr(), fused_scales_host.unsafe_ptr(), rows
+        )
 
     # Cleanup.
     _ = signal_buffers^
@@ -2264,8 +2339,20 @@ def main() raises:
         ](list_of_ctx)
 
         # --- rows > 512: exercise persistent row loop ---
+        # The row-width spelling of the per-row scale group is checked here, and
+        # only here: it reaches the same epilogue as `-1`, so the check costs a
+        # second fused call plus two comparisons and no other shape repeats it.
+        # 1024x4096 is the shape to pay it at: it takes the split 2-kernel
+        # path, so the repeat covers two barrier rounds, and the run sizes its
+        # signal buffers from the widest FP8 payload so the resets are as wide
+        # as the 8192x8192 case that exposed the deadlock.
         test_fused_allreduce_residual_rmsnorm_fp8[
-            num_gpus, DType.bfloat16, out_fp8_dtype, 1024, 4096
+            num_gpus,
+            DType.bfloat16,
+            out_fp8_dtype,
+            1024,
+            4096,
+            check_per_row_spelling=True,
         ](list_of_ctx)
         test_fused_allreduce_residual_rmsnorm_fp8[
             num_gpus, DType.bfloat16, out_fp8_dtype, 4096, 8192

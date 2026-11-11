@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Fuses chunked QKV unpacking, partial NeoX RoPE, and paged cache writes."""
+"""Fuses QKV unpacking or head-major projections, partial NeoX RoPE, and
+paged cache writes."""
 
 from std.builtin.device_passable import DevicePassable
 from std.math import ceildiv
@@ -24,6 +25,7 @@ from max.gpu.primitives.grid_controls import (
 )
 from kv_cache.types import (
     KVCacheStaticParams,
+    KVCacheT,
     PagedKVCache,
     PagedKVCacheCollection,
 )
@@ -367,6 +369,568 @@ def chunked_qkv_rope_store_paged_ragged[
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
     ), "Chunked QKV launch captures must support device encoding"
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=ceildiv(count, 128),
+        block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+# The same rotation and store, reading Q, K and V from three head-major
+# projections instead of one chunk-ordered buffer. Drafters keep their
+# projections separate, and the cache write has to see the rotated key, so
+# without this the key is stored twice -- once raw for the in-place rotation to
+# read back, once rotated -- and the value store is a launch of its own.
+#
+# The per-head work is shared by two kernels below. One takes the queries as
+# well and ropes them into the call's output. The other writes K/V only, for a
+# context write that has no query: passing the keys in the query's place would
+# rotate every key twice and allocate an output nobody reads.
+
+
+@inline(.always)
+def _store_roped_k_head[
+    freq_dtype: DType, cache_t: KVCacheT
+](
+    k: TileTensor[mut=False, .bfloat16, ...],
+    freqs: TileTensor[mut=False, freq_dtype, ...],
+    k_cache: cache_t,
+    token: Int,
+    kv_head: Int,
+    batch: Int,
+    position: Int,
+    dim: Int,
+    rope_dim: Int,
+):
+    """Rotates one 8-lane slice of a key on its way into the cache.
+
+    Lanes at or past `rope_dim` pass through unrotated. The rotation runs in
+    the coefficients' own dtype and is rounded to the cache's BF16 once, as
+    `rope_k_cache` reads and rewrites a cached key.
+
+    Parameters:
+        freq_dtype: Element type of the RoPE coefficients.
+        cache_t: The paged key cache's type.
+
+    Args:
+        k: BF16 unrotated keys [tokens, kv_heads, head_size].
+        freqs: Interleaved RoPE coefficients for NeoX-paired inputs
+            [positions, rotary_width].
+        k_cache: Paged key view for the selected layer.
+        token: Row of `k` to read.
+        kv_head: Key head within that row.
+        batch: Batch index owning `token`.
+        position: Cache position to write.
+        dim: First lane of the slice within the head.
+        rope_dim: Width of the rotated prefix.
+    """
+    comptime width = 8
+    comptime half = width // 2
+    comptime alignment = align_of[SIMD[DType.bfloat16, width]]()
+    comptime half_alignment = align_of[SIMD[DType.bfloat16, half]]()
+    comptime freq_alignment = align_of[SIMD[freq_dtype, width]]()
+    if dim < rope_dim:
+        var re_dim, im_dim = get_safetensors_idx(dim, rope_dim)
+        var re = k.load[width=half, alignment=half_alignment](
+            (token, kv_head, re_dim)
+        )
+        var im = k.load[width=half, alignment=half_alignment](
+            (token, kv_head, im_dim)
+        )
+        var freq = freqs.load[width=width, alignment=freq_alignment](
+            (position, dim)
+        )
+        var roped = rope_value(re.interleave(im), freq)
+        var out_re, out_im = roped.deinterleave()
+        k_cache.store(
+            batch, kv_head, position, re_dim, out_re.cast[cache_t.dtype]()
+        )
+        k_cache.store(
+            batch, kv_head, position, im_dim, out_im.cast[cache_t.dtype]()
+        )
+    else:
+        var val: SIMD[DType.bfloat16, width]
+        val = k.load[width=width, alignment=alignment]((token, kv_head, dim))
+        k_cache.store(batch, kv_head, position, dim, val.cast[cache_t.dtype]())
+
+
+@inline(.always)
+def _load_scaled_v_head[
+    width: Int = 8
+](
+    v: TileTensor[mut=False, .bfloat16, ...],
+    token: Int,
+    kv_head: Int,
+    dim: Int,
+    value_scale: Float32,
+) -> SIMD[DType.bfloat16, width]:
+    """Loads one 8-lane slice of a value, scaled before its rounding.
+
+    The store stays with the caller, whose value cache is a different
+    instantiation of the same type as its key cache.
+
+    Parameters:
+        width: Lanes per slice.
+
+    Args:
+        v: BF16 values [tokens, kv_heads, head_size], unscaled.
+        token: Row of `v` to read.
+        kv_head: Value head within that row.
+        dim: First lane of the slice within the head.
+        value_scale: FP32 multiplier applied before V's BF16 rounding.
+
+    Returns:
+        The scaled lanes, rounded to BF16 once after the multiply.
+    """
+    comptime alignment = align_of[SIMD[DType.bfloat16, width]]()
+    var val: SIMD[DType.bfloat16, width]
+    val = v.load[width=width, alignment=alignment]((token, kv_head, dim))
+    # Rounded to BF16 once, after the scale, as a reference multiplying a
+    # BF16 tensor by a Python float does.
+    return (val.cast[DType.float32]() * value_scale).cast[DType.bfloat16]()
+
+
+# HACK: the K/V views share the collection's mutable origins but write
+# disjoint planes, which the exclusivity checker cannot prove. As in
+# `chunked_qkv_rope_store_kernel` above and `_rope_split_store_ragged_impl`,
+# disable nested-origin checks until the views have provably disjoint origins.
+# This also covers `q_output`, which must be disjoint from the cache planes and
+# the projection inputs.
+@__unsafe_nested_origins_read_only
+def rope_qkv_store_kernel[
+    freq_dtype: DType
+](
+    q: TileTensor[mut=False, .bfloat16, ...],
+    k: TileTensor[mut=False, .bfloat16, ...],
+    v: TileTensor[mut=False, .bfloat16, ...],
+    row_offsets: TileTensor[mut=False, .uint32, ...],
+    freqs: TileTensor[mut=False, freq_dtype, ...],
+    k_cache: PagedKVCache,
+    v_cache: type_of(k_cache),
+    q_output: TileTensor[mut=True, .bfloat16, ...],
+    value_scale: Float32,
+):
+    """Rotates Q/K and writes scaled V from head-major projections.
+
+    Query output rows at or past the final ragged offset are left unwritten.
+
+    Parameters:
+        freq_dtype: Element type of the RoPE coefficients (inferred).
+
+    Args:
+        q: BF16 queries [tokens, query_heads, head_size].
+        k: BF16 unrotated keys [tokens, kv_heads, head_size].
+        v: BF16 values [tokens, kv_heads, head_size], unscaled.
+        row_offsets: Ragged offsets [batch_size + 1].
+        freqs: Interleaved RoPE coefficients for NeoX-paired inputs, either
+            dtype; the rotation runs in the coefficients' own dtype, as
+            `rope_k_cache` does.
+        k_cache: Paged key view for the selected layer.
+        v_cache: Disjoint paged value view for the same layer.
+        q_output: Rotated queries [tokens, query_heads, head_size].
+        value_scale: FP32 multiplier applied before V's BF16 rounding.
+
+    Constraints:
+        The cache must be unquantized, non-MLA, and BF16, with a row for the
+        key and a row for the value: a cache whose rows pack a key and a
+        narrower value is unsupported. Q, K and V must be BF16 rank 3,
+        row offsets rank 1, coefficients rank 2 and the query output rank 3.
+        Head counts, head width, rotary width and the cache extents must be
+        static, and the token extents of Q, K and V must match. Head and
+        rotary widths must be multiples of 8, head counts positive, and
+        rotary width must be positive and fit the head.
+    """
+    comptime cache_t = type_of(k_cache)
+    comptime kv_params = cache_t.kv_params
+    comptime assert (
+        not cache_t.quantization_enabled
+    ), "quantized KV caches are unsupported"
+    comptime assert (
+        not kv_params.is_mla
+    ), "cache must have separate K/V planes; MLA is unsupported"
+    comptime assert (
+        not kv_params.is_split()
+    ), "cache rows must hold one head; a split key/value row is unsupported"
+    comptime assert (
+        cache_t.dtype == DType.bfloat16
+    ), "kv_blocks must be a rank-6 BF16 cache"
+    comptime assert (
+        q.flat_rank == 3 and k.flat_rank == 3 and v.flat_rank == 3
+    ), "q, k and v must have rank 3"
+    comptime assert q_output.flat_rank == 3, "query output must have rank 3"
+    comptime assert (
+        row_offsets.flat_rank == 1 and freqs.flat_rank == 2
+    ), "ragged offsets must have rank 1 and freqs_cis must have rank 2"
+    comptime assert q_output.LayoutType._shape_types[
+        1
+    ].is_static_value, "query head and cache extents must be static"
+    comptime assert q_output.LayoutType._shape_types[
+        2
+    ].is_static_value, "query head and cache extents must be static"
+    comptime assert freqs.LayoutType._shape_types[
+        1
+    ].is_static_value, "frequency and cache extents must be static"
+    comptime num_q_heads = Int(q_output.static_shape[1])
+    comptime num_kv_heads = kv_params.num_heads
+    comptime head_size = kv_params.head_size
+    comptime rope_dim = Int(freqs.static_shape[1])
+    comptime assert (
+        num_q_heads > 0 and num_kv_heads > 0
+    ), "head counts must be positive"
+    comptime assert (
+        Int(q.static_shape[1]) == num_q_heads
+    ), "query head count must match the query output"
+    comptime assert (
+        Int(k.static_shape[1]) == num_kv_heads
+        and Int(v.static_shape[1]) == num_kv_heads
+    ), "key and value head counts must match the cache"
+    comptime assert (
+        Int(q.static_shape[2]) == head_size
+        and Int(k.static_shape[2]) == head_size
+        and Int(v.static_shape[2]) == head_size
+        and Int(q_output.static_shape[2]) == head_size
+    ), "query, key, value and query output widths must be the cache head's"
+    comptime assert (
+        rope_dim > 0 and rope_dim <= head_size
+    ), "rotary width must be positive and fit the head"
+    comptime assert (
+        head_size % 8 == 0 and rope_dim % 8 == 0
+    ), "head and rotary widths must be aligned to 8 elements"
+    comptime total_heads = num_q_heads + 2 * num_kv_heads
+    comptime lanes_per_head = _lanes_per_head(kv_params)
+    comptime width = 8
+    comptime half = width // 2
+    comptime alignment = align_of[SIMD[DType.bfloat16, width]]()
+    comptime half_alignment = align_of[SIMD[DType.bfloat16, half]]()
+    comptime freq_alignment = align_of[SIMD[freq_dtype, width]]()
+    var flat = global_idx.x
+    var token = flat // (total_heads * lanes_per_head)
+    if token >= Int(q.dim[0]()) or token >= Int(
+        row_offsets[Int(row_offsets.dim[0]()) - 1]
+    ):
+        return
+    var token_head, lane = divmod(flat, lanes_per_head)
+    var _, head = divmod(token_head, total_heads)
+    var dim = lane * width
+    var batch = get_batch_from_row_offsets(row_offsets, token)
+    var local = Int(UInt32(token) - row_offsets[batch])
+    var position = k_cache.cache_length(batch) + local
+    if head < num_q_heads:
+        if dim < rope_dim:
+            var re_dim, im_dim = get_safetensors_idx(dim, rope_dim)
+            var re = q.load[width=half, alignment=half_alignment](
+                (token, head, re_dim)
+            )
+            var im = q.load[width=half, alignment=half_alignment](
+                (token, head, im_dim)
+            )
+            var freq = freqs.load[width=width, alignment=freq_alignment](
+                (position, dim)
+            )
+            var roped = rope_value(re.interleave(im), freq)
+            var out_re, out_im = roped.deinterleave()
+            q_output.store[alignment=half_alignment](
+                (token, head, re_dim), out_re
+            )
+            q_output.store[alignment=half_alignment](
+                (token, head, im_dim), out_im
+            )
+            return
+        var val: SIMD[DType.bfloat16, width]
+        val = q.load[width=width, alignment=alignment]((token, head, dim))
+        q_output.store[alignment=alignment]((token, head, dim), val)
+        return
+    var kv_head = head - num_q_heads
+    if kv_head < num_kv_heads:
+        _store_roped_k_head[freq_dtype, cache_t](
+            k, freqs, k_cache, token, kv_head, batch, position, dim, rope_dim
+        )
+    else:
+        var v_head = kv_head - num_kv_heads
+        var scaled = _load_scaled_v_head(v, token, v_head, dim, value_scale)
+        v_cache.store(
+            batch, v_head, position, dim, scaled.cast[cache_t.dtype]()
+        )
+
+
+# The same disjoint-plane argument as `rope_qkv_store_kernel`, without the
+# output it also cannot see past.
+@__unsafe_nested_origins_read_only
+def k_rope_v_store_kernel[
+    freq_dtype: DType
+](
+    k: TileTensor[mut=False, .bfloat16, ...],
+    v: TileTensor[mut=False, .bfloat16, ...],
+    row_offsets: TileTensor[mut=False, .uint32, ...],
+    freqs: TileTensor[mut=False, freq_dtype, ...],
+    k_cache: PagedKVCache,
+    v_cache: type_of(k_cache),
+    value_scale: Float32,
+):
+    """Rotates K and writes scaled V, for a call that ropes no query.
+
+    Parameters:
+        freq_dtype: Element type of the RoPE coefficients (inferred).
+
+    Args:
+        k: BF16 unrotated keys [tokens, kv_heads, head_size].
+        v: BF16 values [tokens, kv_heads, head_size], unscaled.
+        row_offsets: Ragged offsets [batch_size + 1].
+        freqs: Interleaved RoPE coefficients for NeoX-paired inputs, either
+            dtype; the rotation runs in the coefficients' own dtype, as
+            `rope_k_cache` does.
+        k_cache: Paged key view for the selected layer.
+        v_cache: Disjoint paged value view for the same layer.
+        value_scale: FP32 multiplier applied before V's BF16 rounding.
+
+    Constraints:
+        As `rope_qkv_store_kernel`, minus the query: the cache must be
+        unquantized, non-MLA, BF16, and not split.
+    """
+    comptime cache_t = type_of(k_cache)
+    comptime kv_params = cache_t.kv_params
+    comptime assert (
+        not cache_t.quantization_enabled
+    ), "quantized KV caches are unsupported"
+    comptime assert (
+        not kv_params.is_mla
+    ), "cache must have separate K/V planes; MLA is unsupported"
+    comptime assert (
+        not kv_params.is_split()
+    ), "cache rows must hold one head; a split key/value row is unsupported"
+    comptime assert (
+        cache_t.dtype == DType.bfloat16
+    ), "kv_blocks must be a rank-6 BF16 cache"
+    comptime assert (
+        k.flat_rank == 3 and v.flat_rank == 3
+    ), "k and v must have rank 3"
+    comptime assert (
+        row_offsets.flat_rank == 1 and freqs.flat_rank == 2
+    ), "ragged offsets must have rank 1 and freqs_cis must have rank 2"
+    comptime assert freqs.LayoutType._shape_types[
+        1
+    ].is_static_value, "frequency and cache extents must be static"
+    comptime num_kv_heads = kv_params.num_heads
+    comptime head_size = kv_params.head_size
+    comptime rope_dim = Int(freqs.static_shape[1])
+    comptime assert num_kv_heads > 0, "head counts must be positive"
+    comptime assert (
+        Int(k.static_shape[1]) == num_kv_heads
+        and Int(v.static_shape[1]) == num_kv_heads
+    ), "key and value head counts must match the cache"
+    comptime assert (
+        Int(k.static_shape[2]) == head_size
+        and Int(v.static_shape[2]) == head_size
+    ), "key and value widths must be the cache head's"
+    comptime assert (
+        rope_dim > 0 and rope_dim <= head_size
+    ), "rotary width must be positive and fit the head"
+    comptime assert (
+        head_size % 8 == 0 and rope_dim % 8 == 0
+    ), "head and rotary widths must be aligned to 8 elements"
+    comptime total_heads = 2 * num_kv_heads
+    comptime lanes_per_head = _lanes_per_head(kv_params)
+    comptime width = 8
+    var flat = global_idx.x
+    var token = flat // (total_heads * lanes_per_head)
+    if token >= Int(k.dim[0]()) or token >= Int(
+        row_offsets[Int(row_offsets.dim[0]()) - 1]
+    ):
+        return
+    var token_head, lane = divmod(flat, lanes_per_head)
+    var _, head = divmod(token_head, total_heads)
+    var dim = lane * width
+    var kv_head = head if head < num_kv_heads else head - num_kv_heads
+    var batch = get_batch_from_row_offsets(row_offsets, token)
+    var local = Int(UInt32(token) - row_offsets[batch])
+    var position = k_cache.cache_length(batch) + local
+    if head < num_kv_heads:
+        _store_roped_k_head[freq_dtype, cache_t](
+            k, freqs, k_cache, token, kv_head, batch, position, dim, rope_dim
+        )
+    else:
+        var scaled = _load_scaled_v_head(v, token, kv_head, dim, value_scale)
+        v_cache.store(
+            batch, kv_head, position, dim, scaled.cast[cache_t.dtype]()
+        )
+
+
+def rope_qkv_store_paged_ragged[
+    freq_dtype: DType
+](
+    q: TileTensor[mut=False, .bfloat16, ...],
+    k: TileTensor[mut=False, .bfloat16, ...],
+    v: TileTensor[mut=False, .bfloat16, ...],
+    row_offsets: TileTensor[mut=False, .uint32, ...],
+    freqs: TileTensor[mut=False, freq_dtype, ...],
+    collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    q_output: TileTensor[mut=True, .bfloat16, ...],
+    value_scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Launches the head-major QKV rotation and store.
+
+    Query output rows at or past the final ragged offset are left unwritten.
+
+    Parameters:
+        freq_dtype: Element type of the RoPE coefficients (inferred).
+
+    Args:
+        q: BF16 queries [tokens, query_heads, head_size].
+        k: BF16 unrotated keys [tokens, kv_heads, head_size].
+        v: BF16 values [tokens, kv_heads, head_size], unscaled.
+        row_offsets: Ragged offsets [batch_size + 1].
+        freqs: RoPE table [max_position, rotary_width], either dtype.
+        collection: Unquantized, non-MLA paged KV collection.
+        layer_idx: Layer to append to in both cache planes.
+        q_output: Rotated queries [tokens, query_heads, head_size].
+        value_scale: FP32 multiplier; V times this scale is rounded to BF16
+            before storing.
+        ctx: GPU device context.
+
+    Constraints:
+        The cache must be unquantized, non-MLA and BF16, with a row for the
+        key and a row for the value. Q, K and V must share a token extent and
+        be as wide as the cache head; `row_offsets` must be non-empty.
+
+    Raises:
+        Error: If the projections' extents differ, the cache layer is
+            invalid, or `row_offsets` is empty.
+    """
+    if (
+        Int(q.dim[0]()) != Int(k.dim[0]())
+        or Int(q.dim[0]()) != Int(v.dim[0]())
+        or Int(q.dim[0]()) != Int(q_output.dim[0]())
+    ):
+        raise Error("Q, K, V and query output token extents must match")
+    if Int(layer_idx) >= Int(collection.blocks.dim[2]()):
+        raise Error("Invalid cache layer")
+    if Int(row_offsets.dim[0]()) < 1:
+        raise Error("Ragged offsets must contain an initial offset")
+    var k_cache = collection.get_key_cache(Int(layer_idx))
+    var v_cache = collection.get_value_cache(Int(layer_idx))
+    comptime cache_t = type_of(k_cache)
+    comptime total_heads = Int(
+        q_output.static_shape[1]
+    ) + 2 * cache_t.kv_params.num_heads
+    comptime lanes_per_head = _lanes_per_head(cache_t.kv_params)
+    var count = Int(q.dim[0]()) * total_heads * lanes_per_head
+    if count == 0:
+        return
+
+    # The closure carries both disjoint views in one device-encoded payload,
+    # as rope_split_store does, rather than passing overlapping launch inputs.
+    def kernel() {
+        var q,
+        var k,
+        var v,
+        var row_offsets,
+        var freqs,
+        var k_cache,
+        var v_cache,
+        var q_output,
+        var value_scale,
+    }:
+        with PDL():
+            rope_qkv_store_kernel[freq_dtype](
+                q,
+                k,
+                v,
+                row_offsets,
+                freqs,
+                k_cache,
+                v_cache,
+                q_output,
+                value_scale,
+            )
+
+    comptime assert conforms_to(
+        type_of(kernel), DevicePassable
+    ), "RoPE QKV store launch captures must support device encoding"
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=ceildiv(count, 128),
+        block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+def k_rope_v_store_paged_ragged[
+    freq_dtype: DType
+](
+    k: TileTensor[mut=False, .bfloat16, ...],
+    v: TileTensor[mut=False, .bfloat16, ...],
+    row_offsets: TileTensor[mut=False, .uint32, ...],
+    freqs: TileTensor[mut=False, freq_dtype, ...],
+    collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    value_scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Launches the head-major K rotation and K/V store, with no query.
+
+    Parameters:
+        freq_dtype: Element type of the RoPE coefficients (inferred).
+
+    Args:
+        k: BF16 unrotated keys [tokens, kv_heads, head_size].
+        v: BF16 values [tokens, kv_heads, head_size], unscaled.
+        row_offsets: Ragged offsets [batch_size + 1].
+        freqs: RoPE table [max_position, rotary_width], either dtype.
+        collection: Unquantized, non-MLA paged KV collection.
+        layer_idx: Layer to append to in both cache planes.
+        value_scale: FP32 multiplier; V times this scale is rounded to BF16
+            before storing.
+        ctx: GPU device context.
+
+    Constraints:
+        As `rope_qkv_store_paged_ragged`, minus the queries: K and V must
+        share a token extent and fill the cache head.
+
+    Raises:
+        Error: If the projections' extents differ, the cache layer is
+            invalid, or `row_offsets` is empty.
+    """
+    if Int(k.dim[0]()) != Int(v.dim[0]()):
+        raise Error("K and V token extents must match")
+    if Int(layer_idx) >= Int(collection.blocks.dim[2]()):
+        raise Error("Invalid cache layer")
+    if Int(row_offsets.dim[0]()) < 1:
+        raise Error("Ragged offsets must contain an initial offset")
+    var k_cache = collection.get_key_cache(Int(layer_idx))
+    var v_cache = collection.get_value_cache(Int(layer_idx))
+    comptime cache_t = type_of(k_cache)
+    comptime total_heads = 2 * cache_t.kv_params.num_heads
+    comptime lanes_per_head = _lanes_per_head(cache_t.kv_params)
+    var count = Int(k.dim[0]()) * total_heads * lanes_per_head
+    if count == 0:
+        return
+
+    def kernel() {
+        var k,
+        var v,
+        var row_offsets,
+        var freqs,
+        var k_cache,
+        var v_cache,
+        var value_scale,
+    }:
+        with PDL():
+            k_rope_v_store_kernel[freq_dtype](
+                k,
+                v,
+                row_offsets,
+                freqs,
+                k_cache,
+                v_cache,
+                value_scale,
+            )
+
+    comptime assert conforms_to(
+        type_of(kernel), DevicePassable
+    ), "RoPE K/V store launch captures must support device encoding"
     ctx.enqueue_function(
         kernel,
         grid_dim=ceildiv(count, 128),
