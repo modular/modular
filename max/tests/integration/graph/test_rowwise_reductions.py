@@ -23,9 +23,11 @@ across a few small column counts (even + odd), on the inner axis and -- for the
 pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
 float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
 group (see :data:`WIDE_CPU_SPECS`) for what only the widest element can reach.
-``rms_norm`` also runs on edge-case shapes (:data:`RMS_NORM_SPECS`): no rows,
-odd, many and long rows, ranks 1 and 5, static row widths, and both
-``multiply_before_cast`` orders with a weight offset.
+``rms_norm`` and ``softmax`` also run on edge-case shapes
+(:data:`RMS_NORM_SPECS`, :data:`SOFTMAX_SPECS`): no rows, odd, many and long
+rows (the GPU split-K and CPU split-axis tiers), and ranks 1 and 5; for
+``rms_norm``, static row widths and both ``multiply_before_cast`` orders with a
+weight offset.
 
 Every case runs on both the CPU and the GPU -- the GPU is where the cooperative
 tiers, the cross-thread combine and the split-K path live, so it is the priority
@@ -59,11 +61,14 @@ from _rowwise_reduction_specs import (
     NONINNER_SPECS,
     RMS_NORM_SPECS,
     RMS_NORM_WEIGHT_OFFSET,
+    SOFTMAX_SPECS,
     WIDE_CPU_SPECS,
     RmsNormSpec,
     RowwiseSpec,
+    SoftmaxSpec,
     build_graph,
     build_rms_norm_graph,
+    build_softmax_graph,
 )
 from max.driver import CPU, Buffer
 from max.dtype import DType
@@ -401,11 +406,11 @@ def test_rowwise_inner_gpu_splitk(
     )
 
 
-# Shapes for the rms_norm graphs, by input rank: no rows, short and odd rows,
-# widths on either side of powers of two, many rows, and few long rows, which
-# take the GPU split-K tier (rows of at least 224 KB) and the CPU split-axis
-# tier (rows of at least 262144 elements).
-_RMS_NORM_SHAPES: dict[int, list[tuple[int, ...]]] = {
+# Shapes for the rms_norm and softmax graphs, by input rank: no rows, short and
+# odd rows, widths on either side of powers of two, many rows, and few long
+# rows, which take the GPU split-K tier (rows of at least 224 KB) and the CPU
+# split-axis tier (rows of at least 262144 elements).
+_EDGE_SHAPES: dict[int, list[tuple[int, ...]]] = {
     1: [(5,), (557,), (8193,)],
     2: [
         (0, 128),
@@ -429,13 +434,13 @@ _RMS_NORM_SHAPES: dict[int, list[tuple[int, ...]]] = {
 }
 # Outer dims for a static row width: several rows per block, and a row count
 # that doesn't divide the block.
-_RMS_NORM_STATIC_OUTER = [(3, 41), (1, 513)]
+_STATIC_OUTER = [(3, 41), (1, 513)]
 
 
 def _rms_norm_shapes(spec: RmsNormSpec) -> list[tuple[int, ...]]:
     if spec.static_cols:
-        return [(*outer, spec.static_cols) for outer in _RMS_NORM_STATIC_OUTER]
-    return _RMS_NORM_SHAPES[spec.rank]
+        return [(*outer, spec.static_cols) for outer in _STATIC_OUTER]
+    return _EDGE_SHAPES[spec.rank]
 
 
 @pytest.mark.parametrize("spec", RMS_NORM_SPECS, ids=lambda s: s.name)
@@ -451,3 +456,24 @@ def test_rms_norm_edges(session: InferenceSession, spec: RmsNormSpec) -> None:
         scale = weight.to(torch.float32) + RMS_NORM_WEIGHT_OFFSET
         ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * scale).numpy()
         _assert_close(got, ref, "rms_norm", spec.dtype, f"shape={shape}")
+
+
+@pytest.mark.parametrize("spec", SOFTMAX_SPECS, ids=lambda s: s.name)
+def test_softmax_edges(session: InferenceSession, spec: SoftmaxSpec) -> None:
+    model = session.load(build_softmax_graph(spec))
+    shapes = (
+        [(*outer, spec.static_cols) for outer in _STATIC_OUTER]
+        if spec.static_cols
+        else _EDGE_SHAPES[spec.rank]
+    )
+    for shape in shapes:
+        torch.manual_seed(0)
+        x = torch.randn(shape).to(_torch_dtype(spec.dtype))
+        got = _read_f32(_feed(model, [x])[0])
+        xf = x.to(torch.float32)
+        ref = (
+            torch.softmax(xf, dim=-1)
+            if spec.op == "softmax"
+            else torch.log_softmax(xf, dim=-1)
+        ).numpy()
+        _assert_close(got, ref, spec.op, spec.dtype, f"shape={shape}")
