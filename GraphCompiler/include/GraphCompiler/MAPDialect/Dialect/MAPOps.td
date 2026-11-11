@@ -400,7 +400,10 @@ def MAP_IterElementwiseBodyOp : MAP_Op<"iter.elementwise.body", [
     `OutlineStructuredKernelBodies` wraps it in a `map.iter.opaque`. The
     opaque's input and output block arguments are its `$captures` (see
     `CapturingFusionClosure`); the leading block argument is the index.
-    `shape` is copied from the wrapped `map.iter.elementwise`.
+    `shape` is copied from the wrapped `map.iter.elementwise`. `max_simd_width`,
+    set by `map-infer-max-simd-width`, is a limit every SIMD width the loop
+    runs at must divide (a constant, a parameter or a `#map.gcd`); unset
+    means no limit.
 
     Example:
     ```mlir
@@ -421,7 +424,8 @@ def MAP_IterElementwiseBodyOp : MAP_Op<"iter.elementwise.body", [
   }];
 
   let arguments = (ins MOSH_ShapeAttr:$shape,
-                       Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures);
+                       Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures,
+                       OptionalAttr<MAP_WidthLimitAttr>:$max_simd_width);
   let regions = (region SizedRegion<1>:$body);
 
   let hasCustomAssemblyFormat = 1;
@@ -903,6 +907,9 @@ def MAP_SliceSelectOp : MAP_Op<"index.slice.select", [
   SingleBlock,
   NoTerminator,
   RecursiveMemoryEffects,
+  // The verifier keeps the innermost dim whole, so the body's index has the
+  // loop's innermost coordinate and its width limits hold as they are.
+  MAP_MaxSimdWidthInterface,
   DeclareOpInterfaceMethods<MAP_DynamicShapeIndexOpInterface>,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
 ]> {

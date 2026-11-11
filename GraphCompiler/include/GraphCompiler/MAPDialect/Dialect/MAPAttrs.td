@@ -21,6 +21,7 @@
 include "GraphCompiler/MAPDialect/Dialect/MAPDialect.td"
 include "GraphCompiler/MOSHDialect/MOSHAttrs.td"
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 // Base class for attributes in this dialect.
 class MAP_Attr<string attrName, string attrMnemonic, list<Trait> traits = []>
@@ -163,6 +164,51 @@ def MAP_TransposeSpecAttr : MAP_Attr<"TransposeSpec", "index.transpose.spec"> {
   let hasCustomAssemblyFormat = 1;
 
   let genVerifyDecl = 1;
+}
+
+def MAP_GCDAttr : MAP_Attr<"GCD", "gcd",
+                          [DeclareAttrInterfaceMethods<TypedAttrInterface>]> {
+  let summary = "The GCD of SIMD width limits";
+  let description = [{
+    A limit on a SIMD width is a number every width must divide. It is a dim:
+    a constant, a parameter known only at run time, or this attribute, the
+    GCD of other limits. Its type is the MOSH dim type, so a GCD nests:
+
+    ```mlir
+    #map.gcd<[6, 10]>
+    #map.gcd<[N0, N1]>
+    #map.gcd<[#map.gcd<[N0, 6]>, 10]>
+    ```
+
+    `getSimplified` builds the GCD of some limits in normal form, which
+    `MAP::simplifyWidthLimit` also gives any limit: nested GCDs are flattened,
+    constants folded, duplicate dims dropped, a 1 absorbs the rest, and a GCD
+    of one element is that element, so the result is a constant, a parameter
+    or a GCD. A parameter must be declared, not an
+    expression: the lowering hands each one to the kernel by name
+    (`buildShape`).
+  }];
+
+  let parameters = (ins ArrayRefParameter<"::mlir::TypedAttr">:$limits);
+
+  let hasCustomAssemblyFormat = 1;
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// Returns the GCD of `limits` in normal form (see above), ignoring null
+    /// limits; null when none is left.
+    static ::mlir::TypedAttr getSimplified(
+        ::mlir::MLIRContext *ctx, ::llvm::ArrayRef<::mlir::TypedAttr> limits);
+  }];
+}
+
+// A SIMD width limit, as a kernel body's `max_simd_width`: a constant or a
+// parameter dim, or a `#map.gcd` of them (`MAP::isWidthLimit`).
+def MAP_WidthLimitAttr : Attr<CPred<"::M::MAP::isWidthLimit($_self)">,
+    "a constant or parameter dim, or a #map.gcd of them"> {
+  let storageType = "::mlir::TypedAttr";
+  let returnType = "::mlir::TypedAttr";
+  let convertFromStorage = "$_self";
 }
 
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPATTRS_TD

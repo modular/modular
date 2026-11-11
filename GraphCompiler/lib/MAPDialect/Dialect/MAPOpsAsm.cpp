@@ -536,6 +536,28 @@ void IterElementwiseOp::print(OpAsmPrinter &p) {
 // map.iter.elementwise.body
 //===----------------------------------------------------------------------===//
 
+// Parses an optional `max_simd_width(<limit>)`.
+static ParseResult parseOptionalMaxSimdWidth(OpAsmParser &parser,
+                                             OperationState &state,
+                                             StringAttr name) {
+  if (failed(parser.parseOptionalKeyword("max_simd_width")))
+    return mlir::success();
+  TypedAttr limit;
+  if (parser.parseLParen() || MAP::parseWidthLimit(parser, limit) ||
+      parser.parseRParen())
+    return mlir::failure();
+  state.addAttribute(name, limit);
+  return mlir::success();
+}
+
+static void printOptionalMaxSimdWidth(OpAsmPrinter &p, TypedAttr limit) {
+  if (!limit)
+    return;
+  p << " max_simd_width(";
+  MAP::printWidthLimit(p, limit);
+  p << ")";
+}
+
 ParseResult IterElementwiseBodyOp::parse(OpAsmParser &parser,
                                          OperationState &state) {
   if (parser.parseLess())
@@ -550,6 +572,9 @@ ParseResult IterElementwiseBodyOp::parse(OpAsmParser &parser,
   if (parser.parseGreater())
     return mlir::failure();
   state.addAttribute(getShapeAttrName(state.name), shapeTypedAttr);
+  if (parseOptionalMaxSimdWidth(parser, state,
+                                getMaxSimdWidthAttrName(state.name)))
+    return mlir::failure();
 
   SmallVector<OpAsmParser::Argument> entryArgs;
   if (parser.parseKeyword("index") || parseBlockArgList(parser, entryArgs))
@@ -580,7 +605,9 @@ ParseResult IterElementwiseBodyOp::parse(OpAsmParser &parser,
 void IterElementwiseBodyOp::print(OpAsmPrinter &p) {
   p << "<[";
   MOSH::printShapeValue(p, getShape().getValues());
-  p << "]> ";
+  p << "]>";
+  printOptionalMaxSimdWidth(p, getMaxSimdWidthAttr());
+  p << " ";
 
   Block &block = getBody().front();
   ValueRange captures = getCaptures();
@@ -598,7 +625,8 @@ void IterElementwiseBodyOp::print(OpAsmPrinter &p) {
   p.decreaseIndent();
 
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
-  p.printOptionalAttrDict(getOperation()->getAttrs(), {"shape"});
+  p.printOptionalAttrDict(getOperation()->getAttrs(),
+                          {"shape", getMaxSimdWidthAttrName().getValue()});
 }
 
 //===----------------------------------------------------------------------===//

@@ -179,10 +179,37 @@ Block::BlockArgListType IterElementwiseOp::getOutputBlockArgs() {
   return getBody().front().getArguments().slice(getInputs().size(), numOutputs);
 }
 
+bool MAP::computesIndex(Operation *op) {
+  auto isIndex = [](Type type) { return isa<IndexType>(type); };
+  return llvm::any_of(op->getResultTypes(), isIndex) ||
+         llvm::any_of(op->getRegions(), [&](Region &region) {
+           return llvm::any_of(region.getArgumentTypes(), isIndex);
+         });
+}
+
+TypedAttr MAP::getMaxSimdWidth(Region &region) {
+  MLIRContext *ctx = region.getContext();
+  SmallVector<TypedAttr> widths;
+  for (Operation &op : region.getOps()) {
+    if (auto constrained = dyn_cast<MaxSimdWidthInterface>(&op)) {
+      widths.push_back(constrained.getMaxSimdWidth());
+      continue;
+    }
+    // An index this op computes isn't the loop's, so what its readers need
+    // can't be stated for the loop's index; width 1 is always valid.
+    if (computesIndex(&op))
+      return MOSH::ShapeAttr::getDim(ctx, 1);
+    for (Region &nested : op.getRegions())
+      widths.push_back(getMaxSimdWidth(nested));
+  }
+  return GCDAttr::getSimplified(ctx, widths);
+}
+
 CapturingFusionClosure
 IterElementwiseOp::createBodyClosure(OpBuilder &builder, Location loc,
                                      ValueRange captures) {
-  return IterElementwiseBodyOp::create(builder, loc, getShape(), captures);
+  return IterElementwiseBodyOp::create(builder, loc, getShape(), captures,
+                                       /*max_simd_width=*/nullptr);
 }
 
 void IterElementwiseOp::insertInputsAt(unsigned idx, ValueRange vals) {
