@@ -387,7 +387,6 @@ LogicalResult FuncOp::emitMojoMGPABI(EmitMojoState &state) {
       {MOGG::NamedMojoDef("arg", vPointer[{vOpaquePointer, vMutAnyOrigin}])},
       std::nullopt, /*exported=*/true, /*raises=*/false,
       /*isAlwaysInline=*/false, [&](const MOGG::FunctionBody &functionBody) {
-        state.currentFunctionBody = functionBody;
         state.builder.comment(
             "This is the entry point of the kernel. The argument is a "
             "pointer to a list of inputs and outputs.");
@@ -493,8 +492,6 @@ LogicalResult FuncOp::emitMojoMOGGABI(EmitMojoState &state) {
       /*exported=*/false,
       /*raises=*/isThrows(), /*isAlwaysInline=*/false,
       [&](const MOGG::FunctionBody &functionBody) {
-        state.currentFunctionBody = functionBody;
-
         for (auto &&[mlirArg, mojoArg] :
              llvm::zip(getBody().getArguments(), functionBody.arguments))
           state.setMojoValueFor(mlirArg, mojoArg);

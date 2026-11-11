@@ -83,9 +83,6 @@ struct EmitMojoState {
   /// One-per-module guard for `kTransformFusionDefs`, emitted by
   /// `emitTransformFusionFunctor`.
   bool emittedTransformFusionArgDefs = false;
-  /// One-per-module import of the `Tensor` and `TileTensorable` marker traits,
-  /// used as shape-function stub parameter bounds.
-  bool emittedTraitMarkerImports = false;
   /// The `mogg.routine.async` return values, set by ops feeding
   /// `mogg.output` (e.g. AsyncReadyOp or AsyncPack*).
   SmallVector<MojoValue> mojoReturnValues;
@@ -113,33 +110,9 @@ struct EmitMojoState {
   };
   llvm::DenseMap<Value, TaskHandleInfo> taskHandleInfos;
 
-  /// Mojo arguments / parameters of the function being lowered.
-  FunctionBody currentFunctionBody;
-
-  /// Like `mlir::OpBuilder::InsertionGuard`, for `currentFunctionBody`.
-  /// Construct inside a nested `MojoBuilder::def` callback (e.g. a fusion
-  /// functor's `__call__`) to span exactly that scope.
-  class FunctionBodyGuard {
-  public:
-    FunctionBodyGuard(EmitMojoState &state, FunctionBody newBody)
-        : state(state),
-          savedFunctionBody(std::move(state.currentFunctionBody)) {
-      state.currentFunctionBody = std::move(newBody);
-    }
-    FunctionBodyGuard(const FunctionBodyGuard &) = delete;
-    FunctionBodyGuard &operator=(const FunctionBodyGuard &) = delete;
-    ~FunctionBodyGuard() {
-      state.currentFunctionBody = std::move(savedFunctionBody);
-    }
-
-  private:
-    EmitMojoState &state;
-    FunctionBody savedFunctionBody;
-  };
-
-  /// Context for an op lowered inside a fused-tensor load/store callback;
-  /// separate from `FunctionBody`, whose other users have no
-  /// tensor/width/alignment.
+  /// Context for an op lowered inside a fused-tensor load/store callback: the
+  /// builder its statements go to, and the width/alignment comptime parameters
+  /// those loads and stores read.
   struct MojoLambdaInfos {
     MojoBuilder *lambdaBuilder = nullptr;
     MojoValue widthParameter;
@@ -147,7 +120,7 @@ struct EmitMojoState {
   };
   MojoLambdaInfos currentLambdaInfo;
 
-  /// `FunctionBodyGuard` for `currentLambdaInfo`.
+  /// Restores `currentLambdaInfo` on scope exit.
   class LambdaInfosGuard {
   public:
     LambdaInfosGuard(EmitMojoState &state, MojoLambdaInfos newInfo)
@@ -215,19 +188,6 @@ struct EmitMojoState {
   /// If true, generate compute lambdas when possible.
   bool enableComputeLambdas;
 
-  /// Used to resolve the per-device `mo.device_info_mapping` (e.g.
-  /// `tile_based_fusion`).
-  mlir::ModuleOp moduleOp;
-
-  /// Name of the entry point of the current kernel
-  std::string currentKernelName;
-
-  /// Maps a BindLambdaOp output value to how it was lowered (a fusion struct).
-  mlir::DenseMap<Value, EmittedLambdaLowering> lambdaLowerings;
-
-  void setFusionStructLoweringFor(Value val, MojoValue instance,
-                                  StringLiteral bindMethod, MojoValue typeName);
-
   /// Emit `kOutputStoreFusionDefs` into `structDefsBuilder` once per module.
   void emitOutputStoreFusionDefsOnce();
 
@@ -236,10 +196,6 @@ private:
   // Holds the bindings made outside any `ValueScope`.
   llvm::ScopedHashTableScope<Value, MojoValue> outermostValueScope{
       mlirValueToMojoValue};
-
-  /// Per-tensor static byte alignment for fused load/store receivers (see
-  /// `setTensorArgAlignmentFor`).
-  mlir::DenseMap<Value, MojoValue> tensorArgAlignments;
 
   /// The decomposed `ManagedTensorSlice` components of a fused load/store
   /// receiver (see `setFusedTensorArgFor`).
@@ -252,9 +208,6 @@ private:
   bool enableDebugDumpFusedTensorSpecs;
 
 public:
-  bool isDebugDumpFusedTensorSpecsEnabled() const {
-    return enableDebugDumpFusedTensorSpecs;
-  }
   using KernelBodyBuilder =
       llvm::function_ref<void(const MOGG::FunctionBody &)>;
 
@@ -272,20 +225,6 @@ public:
                           &outermostValueScope,
                   << "value already bound to a MojoValue");
     mlirValueToMojoValue.insert(val, std::move(mojoVal));
-  }
-
-  /// Record a fused load/store receiver's static byte alignment, keyed by its
-  /// tensor operand. Fusion lanes rebuild the receiver as a bare-pointer
-  /// `TileTensor` without static alignment, so it's threaded through here.
-  void setTensorArgAlignmentFor(Value val, MojoValue alignment) {
-    tensorArgAlignments[val] = std::move(alignment);
-  }
-
-  const MojoValue &getTensorArgAlignmentFor(Value val) const {
-    auto it = tensorArgAlignments.find(val);
-    ASSERT_STREAM(it != tensorArgAlignments.end(),
-                  << "tensor value has no recorded fused-arg alignment");
-    return it->second;
   }
 
   /// Record a fused load/store receiver's `FusedTensorArg`, keyed by its tensor

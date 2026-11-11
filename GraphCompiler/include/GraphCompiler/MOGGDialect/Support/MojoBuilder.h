@@ -157,16 +157,6 @@ struct FunctionBody {
   SmallVector<MojoValue> arguments;
 };
 
-/// A BindLambdaOp output lowered to a `FusionStruct`. `bindMethodName` is the
-/// ManagedTensorSlice helper (e.g. `_bind_to_fused_input`) that attaches it.
-struct FusionStructInfo {
-  MojoValue instance;
-  StringLiteral bindMethodName;
-  MojoValue typeName;
-};
-
-using EmittedLambdaLowering = FusionStructInfo;
-
 // A prefix plus a unique index (e.g. `bar_45`), resolved by MojoBuilder.
 class UniqueMojoIdentifier {
   std::string prefix;
