@@ -22,7 +22,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import BufferValue, Graph, ops
 from max.tensor import realization_context as rc
-from max.tensor.executor import CompilingExecutor
+from max.tensor.executor import CompilingExecutor, default_executor
 from max.tensor.support import _session
 from max.tensor.tensor import (
     Tensor,
@@ -42,7 +42,7 @@ class _FailingExecutor:
     def __init__(self, failures: int = 1) -> None:
         self.failures = failures
         self.calls = 0
-        self._inner = CompilingExecutor()
+        self._inner = default_executor()
 
     def execute(
         self, graph: Graph, inputs: Sequence[Buffer]
@@ -62,7 +62,7 @@ class _FailingAfterExecutionExecutor:
 
     def __init__(self) -> None:
         self.calls = 0
-        self._inner = CompilingExecutor()
+        self._inner = default_executor()
 
     def execute(
         self, graph: Graph, inputs: Sequence[Buffer]
@@ -83,6 +83,8 @@ class _BadResultOnceExecutor:
 
     def __init__(self) -> None:
         self.calls = 0
+        # The retry runs the same graph again. The interpreter lowers the
+        # graph in place, so the retry needs the compiler (MXF-916).
         self._inner = CompilingExecutor()
 
     def execute(
@@ -277,7 +279,7 @@ def test_a_failure_after_execution_stamps_its_mutated_inputs(
         stamp(written, read, error)
 
     monkeypatch.setattr(rc, "stamp_device_write", recording)
-    ctx = rc.EagerRealizationContext(executor=CompilingExecutor())
+    ctx = rc.EagerRealizationContext(executor=default_executor())
     with pytest.raises(RuntimeError, match="event pool exhausted"):
         with ctx, realization_context(ctx):
             F.buffer_store(source, source + 1)
