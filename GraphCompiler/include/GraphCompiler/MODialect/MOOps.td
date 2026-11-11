@@ -2060,21 +2060,6 @@ def MO_LogSoftmaxOp : MO_SoftmaxLikeOp<"reduce.logsoftmax"> {
   }];
 }
 
-def MO_SoftmaxOp : MO_SoftmaxLikeOp<"reduce.softmax"> {
-  let summary = "Softmax operation";
-  let description = [{
-    Returns `exp(x) / sum(exp(x))`, summing along `axis`.
-
-    Example:
-
-    ```mlir
-      %arg: !mo.tensor<[2, 3], f32>
-      %axis: !mo.tensor<[], si64>
-      %res = mo.softmax(%arg, %axis) : (!mo.tensor<[2, 3], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[2, 3], f32>
-    ```
-  }];
-}
-
 //===----------------------------------------------------------------------===//
 // Reduction ops
 //===----------------------------------------------------------------------===//

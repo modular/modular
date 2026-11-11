@@ -1999,9 +1999,10 @@ struct TopKPerRow:
             )
 
 
-@extensibility.register("mo.reduce.softmax")
+@extensibility.register("mo.composite.reduce.softmax")
 struct Softmax:
-    """Registers the `mo.reduce.softmax` graph op with the graph compiler."""
+    """Registers the `mo.composite.reduce.softmax` graph op with the graph
+    compiler."""
 
     @staticmethod
     def execute[
@@ -2011,7 +2012,7 @@ struct Softmax:
         input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
-        """Executes the `mo.reduce.softmax` graph op.
+        """Executes the `mo.composite.reduce.softmax` graph op.
 
         Parameters:
             axis: Dimension along which to reduce.

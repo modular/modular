@@ -154,7 +154,7 @@ _REDUCE_OPS: dict[type[_core.Operation], ReduceSpec] = {
     mo.ReduceMinOp: ReduceSpec(_b_min, DTypeClass.NUMERIC_BOOL),
     mo.ReduceAddOp: ReduceSpec(_b_sum, DTypeClass.NUMERIC),
     mo.ReduceMulOp: ReduceSpec(_b_prod, DTypeClass.NUMERIC),
-    mo.ReduceSoftmaxOp: ReduceSpec(_b_softmax, DTypeClass.FLOAT),
+    mo.CompositeReduceSoftmaxOp: ReduceSpec(_b_softmax, DTypeClass.FLOAT),
     mo.ReduceLogsoftmaxOp: ReduceSpec(_b_logsoftmax, DTypeClass.FLOAT),
     mo.ReduceArgMaxOp: ReduceSpec(_b_argmax, DTypeClass.NUMERIC),
     mo.ReduceArgMinOp: ReduceSpec(_b_argmin, DTypeClass.NUMERIC),

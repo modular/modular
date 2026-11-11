@@ -1207,7 +1207,7 @@ def silu(x: TensorValue):  # noqa: ANN201
     return _activation(x, mo.SiluOp)
 
 
-softmax = _softmax_like(mo.ReduceSoftmaxOp, "softmax")
+softmax = _softmax_like(mo.CompositeReduceSoftmaxOp, "softmax")
 softmax.__doc__ = """Computes the softmax of a tensor along an axis.
 
 Normalizes the values along ``axis`` so that they sum to ``1``, with each

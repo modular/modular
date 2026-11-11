@@ -27,7 +27,7 @@ mo.graph @with_non_elemwise(%arg0 : !tta, %arg1 : !ttb) -> !tta {
     %2 = mo.add(%1, %arg1) : !ttb
     %3 = mo.static.reshape(%2) : !ttb -> !tta
 
-    %4 = mo.reduce.softmax(%3) [axis = 2] : (!tta) -> !tta
+    %4 = mo.composite.reduce.softmax(%3) [axis = 2] : (!tta) -> !tta
 
     %5 = mo.relu(%4) : !tta
     %6 = mo.static.reshape(%5) : !tta -> !ttb

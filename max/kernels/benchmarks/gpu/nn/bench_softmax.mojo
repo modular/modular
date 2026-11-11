@@ -73,7 +73,8 @@ def bench_softmax_gpu[
         BenchId("softmax", input_id=String(fn_name, "/", dtype, "/", shape)),
     )
 
-    # The `algorithm.rowwise` overload — what `mo.reduce.softmax` launches.
+    # The `algorithm.rowwise` overload — what `mo.composite.reduce.softmax`
+    # launches.
     # Benched in the same process so both arms see identical clocks.
     @inline(.always)
     def kernel_launch_rowwise(ctx: DeviceContext[]) raises {mut out_buf, imm}:
