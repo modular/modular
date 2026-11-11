@@ -127,6 +127,25 @@ def test_eager_add_source_is_idempotent() -> None:
         assert state1 == state2
 
 
+def test_one_buffer_through_two_tensors_is_one_mutable_input() -> None:
+    """A buffer reached through two Tensor objects is one graph input.
+
+    `Tensor.local_shards` wraps each shard's buffer in a new Tensor on every
+    call, so a multi-device step reaches one pool through many wrappers. Two
+    `mo.buffer` inputs over the same memory break the compiler's assumption
+    that distinct buffers don't alias, and it drops the ordering between
+    their writes.
+    """
+    pool = Tensor.zeros([4])
+    first = Tensor(storage=pool.storage)
+    second = Tensor(storage=pool.storage)
+
+    with rc.EagerRealizationContext() as ctx, realization_context(ctx):
+        (a,) = ctx.add_mutable_source(first).values
+        (b,) = ctx.add_mutable_source(second).values
+        assert a is b
+
+
 def test_eager_realize_inside_context_raises() -> None:
     with rc.EagerRealizationContext() as ctx, realization_context(ctx):
         a = Tensor.zeros([3, 3])
@@ -360,7 +379,9 @@ def test_signal_buffers_survive_pruning_an_unrelated_source() -> None:
         loaded = Tensor.from_graph_value(ops.buffer_load(buffer))
 
     assert loaded.real
-    assert id(unused) not in ctx.source_values, "the unused source was pruned"
+    assert id(unused.storage) not in ctx.source_values, (
+        "the unused source was pruned"
+    )
     assert ctx.signal_buffers is not None, (
         "an unrelated pruned source reset them"
     )

@@ -285,7 +285,7 @@ class EagerRealizationContext(RealizationContext):
             if (source := self.sources.pop(value, None)) is not None
         ]
         for source in pruned:
-            self.source_values.pop(id(source), None)
+            self.source_values.pop(id(source.storage), None)
         # A tensor a surviving entry still maps keeps its pending state: the
         # read-only argument pruned here can sit beside the mutable input a
         # pending store targets, and the store has yet to run.
@@ -481,7 +481,7 @@ class EagerRealizationContext(RealizationContext):
         # Safe to use IDs because self.sources keeps references alive.
         # If already added, return the cached value — but upgrade to
         # mutable if requested and not already mutable.
-        if (cached := self.source_values.get(id(tensor))) is not None:
+        if (cached := self.source_values.get(id(tensor.storage))) is not None:
             if mutable and not isinstance(cached, BufferValue):
                 # Need to upgrade: remove old read-only input, add mutable.
                 pass  # Fall through to create a new mutable input.
@@ -495,7 +495,7 @@ class EagerRealizationContext(RealizationContext):
         if mutable:
             assert isinstance(value, BufferValue)
         self.sources[value._mlir_value] = tensor
-        self.source_values[id(tensor)] = value
+        self.source_values[id(tensor.storage)] = value
         return RealizationState((cast(GraphValue, value),), self)
 
     def create_unrealized(
