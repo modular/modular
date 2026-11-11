@@ -1888,6 +1888,28 @@ static LogicalResult lowerPhaseBody(EmitMojoState &state,
   return success();
 }
 
+// Appends a launch's width limit to its arguments: a static one as an `Idx`,
+// a run-time one as the largest power of two dividing its dims (widths are
+// powers of two, so that is all the launch needs, not their GCD).
+static void appendMaxSimdWidthArg(SmallVectorImpl<MojoValue> &arguments,
+                                  std::optional<int64_t> maxSimdWidth,
+                                  Value dynamicMaxSimdWidth,
+                                  EmitMojoState &state) {
+  if (maxSimdWidth)
+    arguments.push_back(
+        MojoValue(kArgMaxSimdWidth).equal(MojoValue(kAliasIdx)[*maxSimdWidth]));
+  if (!dynamicMaxSimdWidth)
+    return;
+  MojoValue dims = MojoValue(kFnCoordToIndexList)(
+      {}, {state.getMojoValueFor(dynamicMaxSimdWidth)});
+  MojoValue divisor =
+      state.builder.var(MojoValue(kFnPow2DivisorOfDims)({}, {dims}));
+  MojoValue scalarInt =
+      MojoValue(kStructScalar)[MojoValue(kStructDType).get(kEnumDTypeInt)];
+  arguments.push_back(
+      MojoValue(kArgMaxSimdWidth).equal(scalarInt({}, {divisor})));
+}
+
 // Prints the kernel as a Row API body and launches it. The body and its
 // closures are always inlined, so the row loop makes no call per row:
 //
@@ -3076,7 +3098,7 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
   // `state.currentLambdaInfo` (set via `LambdaInfosGuard` below), since the
   // epilogue `__call__` has a different list.
   MojoValue shape = state.getMojoValueFor(getShape());
-  MojoValue context = state.getMojoValueFor(getContext());
+  MojoValue context = state.getMojoValueFor(getDeviceContext());
   ValueRange capturing = getCapturing();
 
   // Decompose each capture into the (ptr, layout) the closure captures plus its
@@ -3131,9 +3153,16 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
   if (errOccurred)
     return failure();
 
-  state.builder.call(MojoValue(getCallee()),
-                     {MojoValue(kParameterSimdWidth).equal(simdWidth)},
-                     {shape, lambdaVal, context});
+  // `_foreach` picks a width that divides the limit: at compile time when it
+  // is an `Idx`, at launch when it is known only at run time. Widths are
+  // powers of two, so a run-time limit only needs the largest power of two
+  // dividing its dims, not their GCD.
+  SmallVector<MojoValue> parameters = {
+      MojoValue(kParameterPreferredSimdWidth).equal(simdWidth)};
+  SmallVector<MojoValue> arguments = {shape, lambdaVal, context};
+  appendMaxSimdWidthArg(arguments, getMaxSimdWidth(), getDynamicMaxSimdWidth(),
+                        state);
+  state.builder.call(MojoValue(getCallee()), parameters, arguments);
   return success();
 }
 

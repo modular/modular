@@ -42,7 +42,7 @@ ProducerDispatch matchProducerDispatch(Operation *op) {
   }
 
   if (auto foreachRegion = dyn_cast<CallForeachOp>(op))
-    return {op, foreachRegion.getContext()};
+    return {op, foreachRegion.getDeviceContext()};
 
   if (auto foreachTile = dyn_cast<CallForeachTileOp>(op))
     return {op, foreachTile.getContext()};

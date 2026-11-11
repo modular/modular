@@ -346,6 +346,8 @@ constexpr llvm::StringLiteral kFnUnpackTensorSpec =
     "builtin_primitives.primitives.unpack_tensor_spec";
 constexpr llvm::StringLiteral kFnGetSimdWidthForDtypes =
     "builtin_primitives.primitives.get_simd_width_for_dtypes";
+constexpr llvm::StringLiteral kFnPow2DivisorOfDims =
+    "builtin_primitives.primitives.pow2_divisor_of_dims";
 constexpr llvm::StringLiteral kFnUnpackBufferRef =
     "builtin_primitives.primitives.unpack_buffer_ref";
 constexpr llvm::StringLiteral kFnUnpackDeviceCtx =
@@ -480,6 +482,8 @@ constexpr llvm::StringLiteral kParameterSize = "size";
 constexpr llvm::StringLiteral kParameterLength = "length";
 constexpr llvm::StringLiteral kParameterStaticSpecs = "static_specs";
 constexpr llvm::StringLiteral kParameterSimdWidth = "simd_width";
+constexpr llvm::StringLiteral kParameterPreferredSimdWidth = "simd_width";
+constexpr llvm::StringLiteral kArgMaxSimdWidth = "max_simd_width";
 constexpr llvm::StringLiteral kParameterElementAlignment = "element_alignment";
 /// The source tensor's static alignment, which a `TileTensor` does not carry.
 constexpr llvm::StringLiteral kParameterTensorAlignment = "tensor_alignment";

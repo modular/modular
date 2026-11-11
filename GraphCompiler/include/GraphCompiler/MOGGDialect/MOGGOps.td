@@ -1637,6 +1637,7 @@ def MOGG_ConstantScalarOp : MOGG_Op<"constant.scalar", [
 }
 
 def MOGG_CallForeachOp : MOGG_Op<"call.foreach", [
+  AttrSizedOperandSegments,
   MOGG_CallLike,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   NoTerminator,
@@ -1652,16 +1653,27 @@ def MOGG_CallForeachOp : MOGG_Op<"call.foreach", [
     Captures may differ in shape from `$shape` and each other (e.g.
     broadcasts), so there is no shape verifier. A capture is a `!mogg.buffer`
     where in-place fusion folded in a mutable buffer.
+
+    The SIMD widths the loop may run at must divide the
+    `map.iter.elementwise.body`'s `max_simd_width`, when set: `$max_simd_width`
+    when it is a number, else the GCD of `$dynamic_max_simd_width`'s dims,
+    known at run time. At most one of them is set; `$callee` picks the width.
   }];
   let arguments = (ins
     FlatSymbolRefAttr:$callee,
     MOGG_Shape:$shape,
-    MOGG_Context:$context,
+    // Not `$context`: `$dynamic_max_simd_width` makes the op use
+    // `AttrSizedOperandSegments`, whose generated code calls `getContext()`
+    // for the MLIR context, which an operand named `context` would shadow.
+    MOGG_Context:$device_context,
     Variadic<MOGG_TensorLike>:$capturing,
-    StrAttr:$device
+    Optional<MOGG_Shape>:$dynamic_max_simd_width,
+    StrAttr:$device,
+    OptionalAttr<I64Attr>:$max_simd_width
   );
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 def MOGG_CallForeachTileOp : MOGG_Op<"call.foreach.tile", [

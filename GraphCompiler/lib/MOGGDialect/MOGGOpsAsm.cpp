@@ -700,6 +700,23 @@ void TensorCreatePrologueOp::getAsmBlockArgumentNames(
                       getShapeCaptures().size(), {"idx"}, setNameFn);
 }
 
+// A launch's optional run-time width limit, `dynamic_max_simd_width(%shape)`,
+// whose shape's dims every SIMD width must divide.
+static ParseResult parseOptionalDynamicMaxSimdWidth(
+    OpAsmParser &parser,
+    std::optional<OpAsmParser::UnresolvedOperand> &operand) {
+  if (failed(parser.parseOptionalKeyword("dynamic_max_simd_width")))
+    return success();
+  operand.emplace();
+  return failure(parser.parseLParen() || parser.parseOperand(*operand) ||
+                 parser.parseRParen());
+}
+
+static void printOptionalDynamicMaxSimdWidth(OpAsmPrinter &p, Value operand) {
+  if (operand)
+    p << "dynamic_max_simd_width(" << operand << ") ";
+}
+
 // Unlike the epilogue and prologue, the foreach body takes its captures first
 // and the index last.
 ParseResult CallForeachOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -714,8 +731,12 @@ ParseResult CallForeachOp::parse(OpAsmParser &parser, OperationState &result) {
       parser.parseKeyword("shape") || parser.parseLParen() ||
       parser.parseOperand(shape) || parser.parseRParen() ||
       parser.parseKeyword("context") || parser.parseLParen() ||
-      parser.parseOperand(context) || parser.parseRParen() ||
-      parseLeadingArgs(parser, leadingArgs) ||
+      parser.parseOperand(context) || parser.parseRParen())
+    return failure();
+  std::optional<OpAsmParser::UnresolvedOperand> dynamicMaxSimdWidth;
+  if (parseOptionalDynamicMaxSimdWidth(parser, dynamicMaxSimdWidth))
+    return failure();
+  if (parseLeadingArgs(parser, leadingArgs) ||
       parseBindings(parser, "capturing", entryArgs, captures, captureTypes,
                     /*impliedType=*/Type(), /*required=*/false))
     return failure();
@@ -730,15 +751,23 @@ ParseResult CallForeachOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parser.resolveOperand(shape, ShapeType::get(ctx), result.operands) ||
       parser.resolveOperand(context, ContextType::get(ctx), result.operands) ||
       parser.resolveOperands(captures, captureTypes, parser.getNameLoc(),
-                             result.operands))
+                             result.operands) ||
+      (dynamicMaxSimdWidth &&
+       parser.resolveOperand(*dynamicMaxSimdWidth, ShapeType::get(ctx),
+                             result.operands)))
     return failure();
+  result.addAttribute(getOperandSegmentSizesAttrName(result.name),
+                      parser.getBuilder().getDenseI32ArrayAttr(
+                          {1, 1, static_cast<int32_t>(captures.size()),
+                           dynamicMaxSimdWidth ? 1 : 0}));
   return parser.parseRegion(*result.addRegion(), entryArgs);
 }
 
 void CallForeachOp::print(OpAsmPrinter &p) {
   p << " ";
   p.printAttributeWithoutType(getCalleeAttr());
-  p << " shape(" << getShape() << ") context(" << getContext() << ") ";
+  p << " shape(" << getShape() << ") context(" << getDeviceContext() << ") ";
+  printOptionalDynamicMaxSimdWidth(p, getDynamicMaxSimdWidth());
   auto args = getBody().front().getArguments();
   size_t numCaptures = getCapturing().size();
   printLeadingArgs(p, args.drop_front(numCaptures));
@@ -752,7 +781,8 @@ void CallForeachOp::print(OpAsmPrinter &p) {
   p.printAttribute(getDeviceAttr());
   p.printOptionalAttrDictWithKeyword(
       (*this)->getAttrs(),
-      {getCalleeAttrName().getValue(), getDeviceAttrName().getValue()});
+      {getCalleeAttrName().getValue(), getDeviceAttrName().getValue(),
+       getOperandSegmentSizesAttrName().getValue()});
   p << " ";
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
 }

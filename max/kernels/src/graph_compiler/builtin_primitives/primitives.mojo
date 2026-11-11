@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.logger import Logger
+from std.bit import bit_width
 from std.math import gcd
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
@@ -2325,20 +2326,34 @@ def _foreach[
     Lambda: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
+    MaxSimdWidth: CoordLike = ComptimeInt[0],
     //,
     *,
     simd_width: Int,
     _trace_name: StaticString = "mogg.foreach",
-](shape: Coord, lambda_: Lambda, ctx: DeviceContext,) raises:
+](
+    shape: Coord,
+    lambda_: Lambda,
+    ctx: DeviceContext,
+    max_simd_width: MaxSimdWidth = MaxSimdWidth(),
+) raises:
     """Call `lambda_` once per index in `shape`; `lambda_` does its own store.
 
     Unlike `foreach_fusion`, this forwards straight to `elementwise[...]`
     with no intermediate adapter: the closure already captures its own
     tensors and does its own load-compute-store round trip.
 
+    The width must divide `max_simd_width`. A static limit caps
+    `simd_width` at compile time to its largest power-of-two
+    divisor. A run-time one picks, at launch, the widest of
+    `simd_width`, half of it, and so on down to 1, that divides
+    it: one kernel per step, compiled only when the limit is dynamic.
+
     Parameters:
         Lambda: The per-index closure's concrete type.
-        simd_width: The SIMD width to use.
+        MaxSimdWidth: The type of `max_simd_width`, static (`Idx[n]`) or
+            dynamic (`Scalar[DType.int]`).
+        simd_width: The SIMD width to use when the limit allows it.
         _trace_name: Name of the executed operation displayed in the trace.
 
     Args:
@@ -2346,11 +2361,62 @@ def _foreach[
         lambda_: The per-index closure, capturing its own input/output
             tensors.
         ctx: The call context (forward this from the custom operation).
+        max_simd_width: A number every width must divide; 0, the default,
+            allows any width.
     """
-    elementwise[
-        simd_width=simd_width,
-        _trace_description=_trace_name,
-    ](lambda_, shape, ctx)
+    # `min(simd_width, limit & -limit)` divides the limit only when both are
+    # powers of two.
+    comptime assert (
+        simd_width & (simd_width - 1) == 0
+    ), "simd_width must be a power of two"
+    comptime if MaxSimdWidth.is_static_value:
+        comptime limit = MaxSimdWidth.static_value
+        comptime width = simd_width if limit == 0 else min(
+            simd_width, limit & -limit
+        )
+        elementwise[
+            simd_width=width,
+            _trace_description=_trace_name,
+        ](lambda_, shape, ctx)
+    else:
+        var limit = Int(max_simd_width.value())
+        comptime steps = Int(bit_width(Scalar[DType.int](simd_width)))
+        comptime for step in range(steps):
+            comptime width = simd_width >> step
+            comptime if width == 1:
+                elementwise[
+                    simd_width=1,
+                    _trace_description=_trace_name,
+                ](lambda_, shape, ctx)
+            else:
+                if limit % width == 0:
+                    elementwise[
+                        simd_width=width,
+                        _trace_description=_trace_name,
+                    ](lambda_, shape, ctx)
+                    return
+
+
+@inline(.always)
+def pow2_divisor_of_dims[rank: Int](dims: IndexList[rank]) -> Int:
+    """Returns the largest power of two dividing every dim in `dims`.
+
+    It is the lowest set bit of the dims' OR, which is also that of their
+    GCD, without computing the GCD.
+
+    Parameters:
+        rank: The number of dims.
+
+    Args:
+        dims: The dims, read at run time.
+
+    Returns:
+        The power of two, or 0 when every dim is 0, which no width limits.
+    """
+    var bits = 0
+    comptime for i in range(rank):
+        bits |= dims[i]
+    return bits & -bits
 
 
 @register_internal("mogg.call.rowwise")
