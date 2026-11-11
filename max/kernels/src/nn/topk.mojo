@@ -804,9 +804,7 @@ def _top_k_sampling[
         internal_bs, 1
     )
 
-    var reshaped_out_idxs = reshape(
-        out_idxs, coord_to_index_list(internal_out_idxs_shape)
-    )
+    var reshaped_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
     var reshaped_out_vals = reshape(
         out_vals, coord_to_index_list(internal_out_shape)
     )
@@ -821,7 +819,7 @@ def _top_k_sampling[
         out_idxs_tmp_ptr,
         row_major(internal_out_shape),  # topk returns K as last dim
     )
-    var reshaped_input = reshape(input, coord_to_index_list(internal_in_shape))
+    var reshaped_input = reshape(input, internal_in_shape)
     _top_k_cpu[dtype=dtype, largest=True](
         reshaped_input,
         max_k,
@@ -2654,15 +2652,9 @@ def topk_gpu[
                 1, last_idx_dim
             )
             # Reshape 1D inputs to 2D
-            internal_input = reshape(
-                input, coord_to_index_list(internal_in_shape)
-            )
-            internal_out_idxs = reshape(
-                out_idxs, coord_to_index_list(internal_out_idxs_shape)
-            )
-            internal_out_vals = reshape(
-                out_vals, coord_to_index_list(internal_out_vals_shape)
-            )
+            internal_input = reshape(input, internal_in_shape)
+            internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
+            internal_out_vals = reshape(out_vals, internal_out_vals_shape)
         elif input.rank == internal_rank:
             # Input is already 2D, no reshaping needed
             internal_bs = Int(orig_in_shape[0])
@@ -2693,15 +2685,9 @@ def topk_gpu[
             )
 
             # Reshape higher dimensional inputs to 2D
-            internal_input = reshape(
-                input, coord_to_index_list(internal_in_shape)
-            )
-            internal_out_idxs = reshape(
-                out_idxs, coord_to_index_list(internal_out_idxs_shape)
-            )
-            internal_out_vals = reshape(
-                out_vals, coord_to_index_list(internal_out_vals_shape)
-            )
+            internal_input = reshape(input, internal_in_shape)
+            internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
+            internal_out_vals = reshape(out_vals, internal_out_vals_shape)
 
         # Short rows with a small k go to the single-warp, single-launch
         # kernel. An explicit `num_blocks_per_input` is a caller pinning the

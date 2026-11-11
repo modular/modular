@@ -527,7 +527,7 @@ def test_case[
         coord_to_index_list(k.layout.shape_coord()),
         coord_to_index_list(v.layout.shape_coord()),
         coord_to_index_list(mask.layout.shape_coord()),
-        output.reshape(Coord(coord_to_index_list(output.layout.shape_coord()))),
+        output.reshape(output.layout.shape_coord()),
         cfg.scale,
     )
 
@@ -728,7 +728,7 @@ def test_case_split_kv[
         rebind[IndexList[cfg.rank + 1]](kv_past_shape),
         rebind[IndexList[cfg.rank + 1]](kv_past_shape),
         coord_to_index_list(mask.layout.shape_coord()),
-        output.reshape(Coord(coord_to_index_list(output.layout.shape_coord()))),
+        output.reshape(output.layout.shape_coord()),
         cfg.scale,
     )
 
