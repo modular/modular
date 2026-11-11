@@ -139,7 +139,6 @@ public:
   /// Canonicalize a filename by stripping `stripFilenamePrefix` prefix from it
   /// if applicable.
   std::string getCanonicalFilename(StringRef filename) const;
-  StringRef getStripFilenamePrefix() const { return stripFilenamePrefix; }
 
   /// Record the include location to stamp onto the filename's buffer if and
   /// when we resolve it. First-wins, and a no-op once the buffer is already

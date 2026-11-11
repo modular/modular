@@ -164,13 +164,6 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
   using ImplicitLocOpBuilder::getContext;
   using POPToLLVMTypeConverter::getIndexType;
 
-  /// Create an `LLVMFuncOp` with the target info attributes.
-  template <typename... Args>
-  auto createFunc(Args &&...args) {
-    return createLLVMFunc(*this, getTarget(), getLoc(),
-                          std::forward<Args>(args)...);
-  }
-
   /// Create an `unrealized_conversion_cast` operation.
   Value createConversion(Type type, Value src) {
     if (src.getType() == type)
@@ -182,11 +175,6 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
     if (Type type = convertType(src.getType()))
       return createConversion(type, src);
     return {};
-  }
-
-  /// Get the pointer width in bytes.
-  size_t getPointerByteWidth() {
-    return llvm::divideCeil(getIndexTypeBitwidth(), CHAR_BIT);
   }
 };
 
@@ -398,12 +386,6 @@ struct DirectOpToLLVMPattern : public M::DirectOpConversionPattern<OpT> {
   }
 
   Type getIndexType() const { return getTypeConverter()->getIndexType(); }
-
-  Type getIntPtrType(unsigned addressSpace = 0) const {
-    return IntegerType::get(
-        &getTypeConverter()->getContext(),
-        getTypeConverter()->getPointerBitwidth(addressSpace));
-  }
 
   Type getVoidType() const {
     return mlir::LLVM::LLVMVoidType::get(&getTypeConverter()->getContext());

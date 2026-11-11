@@ -294,22 +294,6 @@ struct WarpRole1D1D[
         """
         return ufloordiv(thread_idx.x - Self.EPILOGUE_WARP_START, WARP_SIZE)
 
-    @staticmethod
-    @inline(.always)
-    def is_epilogue_leader() -> Bool:
-        """Returns True for the single leader thread of the epilogue pool.
-
-        This is the election callers mean when they write
-        `thread_idx.x == 0`: lane 0 of the pool's first warp. Writing it
-        as a role predicate keeps the election correct if the pool ever
-        stops starting at thread 0.
-        """
-        return (
-            Self.is_epilogue()
-            and Self.epilogue_role_index() == 0
-            and lane_id() == 0
-        )
-
 
 # =============================================================================
 # KernelContext - Common state for kernel entry points

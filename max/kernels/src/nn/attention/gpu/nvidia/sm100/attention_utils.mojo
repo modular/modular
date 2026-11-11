@@ -3525,10 +3525,6 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     comptime KPairType = Self.PairType  # Alias for backward compatibility
 
     @inline(.always)
-    def get_k_smem[*, qk_stage: Int](self) -> Self.SMemType:
-        return self.get_smem[qk_stage=qk_stage]()
-
-    @inline(.always)
     def get_k[*, qk_stage: Int](self) -> Self.PairType:
         return self.get_tile[qk_stage=qk_stage]()
 
@@ -3539,10 +3535,6 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     @inline(.always)
     def acquire_k[*, qk_stage: Int](self):
         self.acquire[qk_stage=qk_stage]()
-
-    @inline(.always)
-    def get_v_smem(self) -> Self.SMemType:
-        return self.get_smem[qk_stage=0]()
 
     @inline(.always)
     def get_v(self, e: Int32) -> Self.PairType:

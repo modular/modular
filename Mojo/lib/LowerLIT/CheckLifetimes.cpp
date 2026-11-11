@@ -987,9 +987,6 @@ struct ValueRef {
     assert(startBit >= offset && "not offset by this base");
     return ValueRef(valueId, startBit - offset, endBit - offset, isIndirect);
   }
-  ValueRef getWithBaseOffset(unsigned offset) const {
-    return ValueRef(valueId, startBit + offset, endBit + offset, isIndirect);
-  }
 
   /// Return true if this value ref is equal or a superset of the specified one.
   bool contains(ValueRef other) const {

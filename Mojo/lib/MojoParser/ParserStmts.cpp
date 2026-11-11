@@ -225,10 +225,6 @@ struct LoopResult {
     assert(!loopOp && "`LIT::ForOp` was successfully parsed");
     return error == ErrorKind::inLoopBody;
   }
-  bool hasErrorInLoopStmt() const {
-    assert(!loopOp && "`LIT::ForOp` was successfully parsed");
-    return error == ErrorKind::inLoopStmt;
-  }
 
   LIT::LoopOp getLoopOp() const {
     assert(loopOp && "expected non-nullptr `LIT:ForOp`");

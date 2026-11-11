@@ -2304,16 +2304,6 @@ struct OffsetPosition[
         return UInt32(self.cache_len()) + cache_start_pos
 
     @inline(.always)
-    def q_row_offset_at(self, q_local: Int) -> Int:
-        # Per-q_token Q-row offset for TMA load coord (Option A q_len fold,
-        # stored q_row_offset bakes in seq_idx as the q-local term in
-        # both ragged and fixed modes, so we swap seq_idx for q_local.
-        return (
-            self.q_row_offset
-            + (q_local - self.seq_idx) * Self.config.num_q_heads
-        )
-
-    @inline(.always)
     def out_row_offset_at(self, q_local: Int) -> Int:
         # Per-q_token output-row offset for TMA store coord (q_len
         # fold. the stored out_row_offset has
@@ -2323,13 +2313,6 @@ struct OffsetPosition[
             self.out_row_offset
             + (q_local - self.seq_idx) * Self.config.num_q_heads
         )
-
-    @inline(.always)
-    def q_token_idx_at(self, q_local: Int) -> Int:
-        # Global Q-token index for the q_local-th q_token in this CTA's
-        # batch. Stored q_token_idx bakes in seq_idx; swaps
-        # seq_idx for q_local in both ragged and fixed modes.
-        return self.q_token_idx + (q_local - self.seq_idx)
 
 
 # ------------------------------------------------------------------------------
