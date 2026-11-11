@@ -252,19 +252,34 @@ IRASTDecl &DeclResolver::createUnlistedDecl(CValue value, SMLoc loc,
   return *decl;
 }
 
+template <typename DeclT, typename... Args>
+DeclT &DeclResolver::createChildDecl(ASTDecl &parent, StringAttr name,
+                                     Args &&...args) {
+  if (!parent.declsInScope)
+    parent.declsInScope.reset(new ASTDecl::DeclInScopeType());
+
+  auto *decl = shared.persistentAllocator.create<DeclT>(
+      shared, std::forward<Args>(args)...);
+  parsedDeclList.push_back(decl);
+  (*parent.declsInScope)[name].push_back(decl);
+  return *decl;
+}
+
 WitnessASTDecl &
 DeclResolver::createWitnessDecl(WitnessASTDecl::UnresolvedDecls unresolvedDecls,
                                 TraitSymbolAttr traitSymbol, SMLoc loc,
                                 ASTDecl &traitDecl, StringAttr name) {
-  if (!traitDecl.declsInScope)
-    traitDecl.declsInScope.reset(new ASTDecl::DeclInScopeType());
-
-  auto *decl = shared.persistentAllocator.create<WitnessASTDecl>(
-      shared, std::move(unresolvedDecls), traitSymbol, loc, &traitDecl,
+  return createChildDecl<WitnessASTDecl>(
+      traitDecl, name, std::move(unresolvedDecls), traitSymbol, loc, &traitDecl,
       LexerCursor(), LexerCursor(), /*indentation=*/-1);
-  parsedDeclList.push_back(decl);
-  (*traitDecl.declsInScope)[name].push_back(decl);
-  return *decl;
+}
+
+ConformanceWitnessASTDecl &
+DeclResolver::createConformanceMemberDecl(ConformanceASTDecl &conformanceDecl,
+                                          ASTDecl &traitMember,
+                                          StringAttr witnessName) {
+  return createChildDecl<ConformanceWitnessASTDecl>(
+      conformanceDecl, witnessName, traitMember, witnessName, conformanceDecl);
 }
 
 // Check whether we're merging in a bunch of ASTDecls that could all contribute
@@ -547,8 +562,11 @@ void DeclResolver::eraseDecls(llvm::ArrayRef<ASTDecl *> seeds) {
   eraseMappings(declForFuncSymbol);
   eraseMappings(canonicalTraitCompositionDecls);
 
-  llvm::erase_if(parsedDeclList,
-                 [&](ASTDecl *decl) { return toErase.contains(decl); });
+  // During the sweep, erasing would shift entries the walk has not reached
+  // yet, so retired entries stay in place until it finishes.
+  if (!sweepingParsedDecls)
+    llvm::erase_if(parsedDeclList,
+                   [&](ASTDecl *decl) { return toErase.contains(decl); });
   for (ASTDecl *decl : toErase) {
     decl->retired = true;
     retiredDeclList.push_back(decl);
@@ -1726,10 +1744,14 @@ void DeclResolver::resolveReferencedDecls() {
   // the main container (typically stdlib/library declarations).
   llvm::SetVector<ASTDecl *> deferredDecls;
   size_t parsedDeclIt = 0;
+  sweepingParsedDecls = true;
   do {
     // Resolve all of the newly parsed decls that got referenced.
     for (; parsedDeclIt != parsedDeclList.size(); ++parsedDeclIt) {
       ASTDecl &decl = *parsedDeclList[parsedDeclIt];
+      // See `eraseDecls`.
+      if (decl.isRetired())
+        continue;
 
       // If the decl was never touched and we pulled it in from bytecode, treat
       // it as unreachable and don't resolve it now.
@@ -1761,6 +1783,9 @@ void DeclResolver::resolveReferencedDecls() {
       }
     } while (resolvedAnything);
   } while (parsedDeclIt != parsedDeclList.size());
+  sweepingParsedDecls = false;
+  llvm::erase_if(parsedDeclList,
+                 [](ASTDecl *decl) { return decl->isRetired(); });
 }
 
 void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {

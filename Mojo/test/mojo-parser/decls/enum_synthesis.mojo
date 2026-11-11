@@ -42,10 +42,10 @@
 
 # The `__Enum` defaults, `__get_enum_storage`, `__enum_init` and the two
 # `EnumLike` methods, come in as always-inlined wrappers that call them.
-# CHECK: lit.fn @"__get_enum_storage[{{.*}}](enum_synthesis::Token%)__Enum"{{.*}}(%self: !lit.ref<!Token, {{.*}}> ref) refresult {{.*}} always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"__get_enum_storage[{{.*}}", inheritedFrom
-# CHECK-NEXT: lit.call @std::@builtin::@_enum::@__Enum::@"__get_enum_storage[{{.*}}<:!Enum_AnyType_EnumLike !Token, {{.*}}>(%self)
 # CHECK: lit.fn @"__enum_init[{{.*}}__Enum"<{{.*}}, +, id: !Int, Case: !AnyType, Ts: {{.*}} pos_vararg, ?, {{.*}}>{{.*}}(%payload: !lit.ref<!lit.struct<#VariadicPack {{.*}}> owned_in_mem|pack_vararg, ?, %result: !lit.ref<!Token, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"__enum_init[{{.*}}", inheritedFrom = {{.*}}, isStatic, sourceName = "__enum_init"
 # CHECK-NEXT: lit.call @std::@builtin::@_enum::@__Enum::@"__enum_init[{{.*}}<:!Enum_AnyType_EnumLike !Token, :param_list<!AnyType_Movable> {{.*}}, :!Int id, :!AnyType Case, {{.*}}>(%payload, %result)
+# CHECK: lit.fn @"__get_enum_storage[{{.*}}](enum_synthesis::Token%)__Enum"{{.*}}(%self: !lit.ref<!Token, {{.*}}> ref) refresult {{.*}} always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"__get_enum_storage[{{.*}}", inheritedFrom
+# CHECK-NEXT: lit.call @std::@builtin::@_enum::@__Enum::@"__get_enum_storage[{{.*}}<:!Enum_AnyType_EnumLike !Token, {{.*}}>(%self)
 # CHECK: lit.fn @"_get_enum_discriminant(enum_synthesis::Token)__Enum"{{.*}}(%self: !lit.ref<!Token, {{.*}}> imm_mem) -> !alias_Int1 always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"_get_enum_discriminant($0)", inheritedFrom = #kgen.trait_symbol<@std::@builtin::@_enum::@__Enum>
 # CHECK-NEXT: lit.call @std::@builtin::@_enum::@__Enum::@"_get_enum_discriminant($0)"{{.*}}<:!Enum_AnyType_EnumLike !Token>(%self)
 # CHECK: lit.fn @"_unsafe_get_enum_payload[{{.*}}](enum_synthesis::Token%)__Enum"<id: !Int, ?, {{.*}}>(%self: !lit.ref<!Token, {{.*}}> ref) refresult {{.*}} always_inline_no_debug attributes {defaultFnRef = @std::@builtin::@_enum::@__Enum::@"_unsafe_get_enum_payload[{{.*}}", inheritedFrom = #kgen.trait_symbol<@std::@builtin::@_enum::@__Enum>

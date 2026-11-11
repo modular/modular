@@ -28,6 +28,7 @@
 #include <string>
 
 namespace M::KGEN::LIT {
+class ConformanceASTDecl;
 class DocString;
 class TypeScopeASTDecl;
 
@@ -78,6 +79,7 @@ public:
     StructField,
     Trait,
     Witness,
+    ConformanceMember,
   };
 
   virtual ~ASTDecl();
@@ -994,6 +996,10 @@ public:
   /// Return the parameter declaration with the given internal name, if any.
   ASTDecl *getParamByName(StringAttr name) const;
 
+  /// Return this struct's conformance to `traitSymbol`, or null when it
+  /// declares none.
+  ConformanceASTDecl *lookupConformance(TraitSymbolAttr traitSymbol) const;
+
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
@@ -1070,14 +1076,23 @@ public:
 
   ConformanceOp getOp() const { return cast<ConformanceOp>(getOperation()); }
   StructASTDecl &getStructDecl() const;
+  TraitASTDecl &getTraitDecl() const;
   LogicalResult resolveBody(Lexer &lexer) override;
   LogicalResult resolveSyntheticBody() override;
+
+  /// Extensions that may provide witnesses, found when the conformance is body
+  /// resolved.
+  ArrayRef<ASTDecl *> getRelevantExtensions() const {
+    return relevantExtensions;
+  }
 
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
 
   LogicalResult resolveConformance();
+
+  SmallVector<ASTDecl *, 2> relevantExtensions;
 
   ConformanceASTDecl(SharedState &shared, ConformanceOp conformanceOp,
                      llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
@@ -1210,6 +1225,41 @@ private:
                  TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
                  ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
                  ssize_t indentation);
+};
+
+/// One witness of a conformance declaration.
+class ConformanceWitnessASTDecl final : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::ConformanceMember;
+  }
+
+  ConformanceASTDecl &getConformanceDecl() const {
+    return cast<ConformanceASTDecl>(*getParentDecl());
+  }
+  /// The trait requirement this witness satisfies.
+  ASTDecl &getTraitMember() const { return traitMember; }
+  /// The name of the `WitnessOp` this member installs: the mangled symbol of
+  /// a method requirement, the declared name of an alias requirement.
+  StringAttr getWitnessName() const { return witnessName; }
+  /// The installed `WitnessOp`, null until the requirement is checked.
+  WitnessOp getWitness() const { return witness; }
+  void setWitness(WitnessOp op) { witness = op; }
+
+  LogicalResult resolveSyntheticSignature() override { return success(); }
+  LogicalResult resolveSyntheticBody() override;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  ConformanceWitnessASTDecl(SharedState &shared, ASTDecl &traitMember,
+                            StringAttr witnessName,
+                            ConformanceASTDecl &conformanceDecl);
+
+  ASTDecl &traitMember;
+  StringAttr witnessName;
+  WitnessOp witness;
 };
 
 } // namespace M::KGEN::LIT

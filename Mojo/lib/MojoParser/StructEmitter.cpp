@@ -1198,6 +1198,7 @@ static constexpr StringLiteral kEnumPayloadName = "_unsafe_get_enum_payload";
 static constexpr StringLiteral kEnumEltTypeName = "_enum_elt_type_for_case";
 static constexpr StringLiteral kEnumInitName = "__enum_init";
 static constexpr StringLiteral kEnumStorageGetterName = "__get_enum_storage";
+static constexpr StringLiteral kEnumIsExhaustiveName = "_enum_is_exhaustive";
 
 ASTDecl *LIT::lookupEnumSupportDecl(SharedState &shared, StringRef name,
                                     SMLoc loc) {
@@ -1545,20 +1546,19 @@ static CValue emitEnumInitCall(IREmitter &emitter, ASTDecl &enumDecl,
 /// Whether a written `_enum_is_exhaustive` of `enumDecl` fails conformance
 /// to `EnumLike` (e.g. it is not a `Bool`); it is the only member of that
 /// conformance a user can write. The conformance reports the error.
-static bool enumExhaustiveDeclFailedConformance(ASTDecl &enumDecl, SMLoc loc) {
+static bool enumExhaustiveDeclFailedConformance(StructASTDecl &enumDecl,
+                                                SMLoc loc) {
   SharedState &shared = enumDecl.getShared();
   ASTDecl *enumLikeDecl = lookupEnumLikeTrait(shared, loc);
   if (!enumLikeDecl)
     return false;
-  ArrayRef<ASTDecl *> conformanceDecls = enumDecl.lookupInCurrentScope(
-      TraitSymbolAttr::get(enumLikeDecl->getSymbolRef()).getFlattenedName());
-  if (conformanceDecls.empty())
+  ConformanceASTDecl *conformanceDecl = enumDecl.lookupConformance(
+      TraitSymbolAttr::get(enumLikeDecl->getSymbolRef()));
+  if (!conformanceDecl)
     return false;
-  // The enum's body resolution has checked the conformance by now, so this
-  // reads the result.
-  ASTDecl &conformanceDecl = *conformanceDecls.front();
-  return failed(shared.getDeclResolver().resolveBody(conformanceDecl, loc)) ||
-         conformanceDecl.isErroneous();
+  return failed(resolveConformanceMember(
+      *conformanceDecl,
+      StringAttr::get(shared.getContext(), kEnumIsExhaustiveName)));
 }
 
 LogicalResult StructEmitter::populateEnumCaseConstructor(DefASTDecl &fnDecl) {

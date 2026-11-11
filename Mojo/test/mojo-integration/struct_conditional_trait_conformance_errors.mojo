@@ -234,9 +234,6 @@ def main():
     needs_rp(rp_wrapped)
 
 
-# CHECK: comptime member 'Value' type 'AnyStruct[Variant[*T.values]]' does not conform to trait's required type 'Copyable'
-
-
 # ===========================================================================
 # Synthesized copy/move ctor failures driven by variadic helper constraints
 # ===========================================================================
@@ -277,3 +274,8 @@ struct UnsatisfiedVariadicMoveSynthesis[T: Deinitable](
     Movable,
 ):
     var field: NegativeVariadicMoveField[Int, Self.T]
+
+
+# Nothing uses `VariantFromMovablePack`'s conformance, so it is checked by
+# the end-of-parse sweep, after every error above.
+# CHECK: comptime member 'Value' type 'AnyStruct[Variant[*T.values]]' does not conform to trait's required type 'Copyable'

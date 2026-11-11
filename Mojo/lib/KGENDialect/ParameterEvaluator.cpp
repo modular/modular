@@ -195,7 +195,8 @@ bool ParameterEvaluationContext::isMaterializationContext() const {
 }
 
 Operation *ParameterEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol,
+    StringAttr /*witnessName*/) {
   Operation *ret = nullptr;
   withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
                 [&](ParameterEvaluator &evaluator) {

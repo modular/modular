@@ -531,6 +531,14 @@ WitnessASTDecl::WitnessASTDecl(SharedState &shared,
               indentation),
       storage(std::move(unresolvedDecls)), traitSymbol(traitSymbol) {}
 
+ConformanceWitnessASTDecl::ConformanceWitnessASTDecl(
+    SharedState &shared, ASTDecl &traitMember, StringAttr witnessName,
+    ConformanceASTDecl &conformanceDecl)
+    : ASTDecl(Kind::ConformanceMember, shared, conformanceDecl.getLoc(),
+              &conformanceDecl, LexerCursor(), LexerCursor(),
+              /*indentation=*/-1),
+      traitMember(traitMember), witnessName(witnessName) {}
+
 LogicalResult ASTDecl::resolveSignature(Lexer &lexer) {
   auto &resolver = shared.getDeclResolver();
   if (getIfOperation()) {
