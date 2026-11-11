@@ -20,7 +20,7 @@ import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
-from max.config import ConfigFileModel
+from max.config import ConfigFileModel, ConfigModel
 from max.driver import SymmetricPool, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.nn.legacy.comm import MulticastPool
@@ -111,7 +111,7 @@ def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     return None
 
 
-_SubConfigT = TypeVar("_SubConfigT", bound=ConfigFileModel)
+_SubConfigT = TypeVar("_SubConfigT", bound=ConfigModel)
 
 
 def _construct_from_user_fields(
@@ -131,7 +131,7 @@ def _construct_from_user_fields(
 
 
 def _resolved_field_changes(
-    sub: ConfigFileModel, **resolved: Any
+    sub: ConfigModel, **resolved: Any
 ) -> dict[str, Any]:
     """Returns the resolved values that differ from the sub-config's fields.
 

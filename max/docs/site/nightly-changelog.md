@@ -115,6 +115,19 @@ This version is still a work in progress.
 
 ## `max` CLI
 
+- `PipelineArgs` sub-config flags are now flat, matching `max serve`'s
+  spellings everywhere the class is bound with cyclopts. The benchmark
+  engine's `--pipeline.runtime.max-batch-size` becomes
+  `--pipeline.max-batch-size`, `--pipeline.kv-cache.enable-prefix-caching`
+  becomes `--pipeline.enable-prefix-caching`, and
+  `--pipeline.profiling.gpu-profiling` becomes `--pipeline.gpu-profiling`;
+  the `MODULAR_PIPELINE_*` environment variable names change with them
+  (`MODULAR_PIPELINE_MAX_BATCH_SIZE`, not
+  `MODULAR_PIPELINE_RUNTIME_MAX_BATCH_SIZE`). The experimental cascade
+  serve CLI (`//mach:cascade`) now accepts the full `max serve` flag
+  surface, including `--config-file` recipes and the `--model`,
+  `--devices`, and `--use-dummy-weights` aliases.
+
 - `max generate` runs image generation models such as FLUX.2 and saves the
   images to `--output`, which defaults to `image.png` and whose suffix picks
   the format. A path without a suffix is a directory, created with its parents

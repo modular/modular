@@ -512,7 +512,13 @@ def cli_serve(
         from max.experimental.cascade.deployment.context_config import (
             ContextConfig,
         )
-        from max.experimental.cascade.serve.main import serve as cascade_serve
+        from max.experimental.cascade.serve.main import (
+            _serve_deployed as cascade_serve,
+        )
+
+        # ``from_flat_kwargs`` already built ``pipeline_args``.
+        # ``_serve_deployed`` uses it unchanged. Its docstring says why
+        # this skips ``serve``.
 
         # Build the Cascade deployment context from the cascade-only CLI
         # knobs. Unset values fall through to ContextConfig's defaults so

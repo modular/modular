@@ -46,6 +46,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental/cascade/deployment:context_config",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn:core",

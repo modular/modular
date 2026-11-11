@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from max.config import ConfigFileModel
+from max.config import ConfigFileModel, ConfigModel
 from pydantic import ConfigDict, Field, model_validator
 
 __all__ = [
@@ -37,7 +37,7 @@ __all__ = [
 ]
 
 
-class DenoisingCacheSettings(ConfigFileModel):
+class DenoisingCacheSettings(ConfigModel):
     """User denoising-cache settings. Every field is optional.
 
     Construction fills unset fields from the architecture's TaylorSeer

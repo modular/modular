@@ -73,7 +73,26 @@ def _deep_merge(
     return merged
 
 
-class ConfigFileModel(MAXBaseModel):
+class ConfigModel(MAXBaseModel):
+    """Base class for config models that never load a file themselves.
+
+    Sub-configs nested inside a :class:`ConfigFileModel` root inherit from
+    this class. A nested model's ``config_file`` field cannot work: the
+    ``_load_config_file`` validator skips loading when the model is
+    validated as a field (``info.field_name`` is set), so a nested
+    ``config_file`` would only ever store a path. Giving sub-configs no
+    file fields also keeps a cyclopts ``Parameter(name="*")`` flattening
+    from registering duplicate ``--config-file`` flags.
+    """
+
+    # Config models receive values from text sources (environment variables,
+    # CLI arguments, quoted YAML strings) that rely on Pydantic's lax coercion
+    # (e.g. "123" -> int, "1.5" -> float).  Override the strict=True default
+    # inherited from MAXBaseModel so these conversions continue to work.
+    model_config = ConfigDict(strict=False)
+
+
+class ConfigFileModel(ConfigModel):
     """Base class for models that can load configuration from a file.
 
     This class provides functionality for Pydantic-based config classes to load
@@ -92,12 +111,6 @@ class ConfigFileModel(MAXBaseModel):
         config = MyConfig(config_file="config.yaml")
         ```
     """
-
-    # Config models receive values from text sources (environment variables,
-    # CLI arguments, quoted YAML strings) that rely on Pydantic's lax coercion
-    # (e.g. "123" -> int, "1.5" -> float).  Override the strict=True default
-    # inherited from MAXBaseModel so these conversions continue to work.
-    model_config = ConfigDict(strict=False)
 
     config_file: str | None = None
     """Path to the configuration file."""

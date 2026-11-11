@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from max.config import ConfigFileModel
+from max.config import ConfigModel
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -81,7 +81,7 @@ class VerifyWidthRange(BaseModel):
     """How many of the carried drafts the target verifies in this range."""
 
 
-class SpeculativeConfig(ConfigFileModel):
+class SpeculativeConfig(ConfigModel):
     """Configures speculative decoding for a pipeline.
 
     Speculative decoding accelerates token generation by having a small

@@ -19,7 +19,7 @@ __all__ = ["KVCacheConfig", "KVConnectorConfig", "cache_dtype_for_encoding"]
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from max.config import ConfigFileModel
+from max.config import ConfigFileModel, ConfigModel
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
@@ -285,7 +285,7 @@ class KVConnectorConfig(ConfigFileModel):
     """
 
 
-class KVCacheConfig(ConfigFileModel):
+class KVCacheConfig(ConfigModel):
     """Configuration for the paged KV cache."""
 
     model_config = ConfigDict(frozen=True)
