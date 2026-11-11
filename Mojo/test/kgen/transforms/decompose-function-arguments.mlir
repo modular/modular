@@ -88,16 +88,14 @@ kgen.func @whole_aggregate_use(%arg0: !kgen.struct<(memref<128xf32>)>) {
 
 // -----
 
-// A whole-aggregate arg passed straight to a call is rebuilt the same way —
-// and since `callee` is also decomposed, `rewriteCalls` immediately
-// extracts the same leaf back out of the rebuild at the call site.
+// A whole-aggregate arg passed straight to a decomposed callee forwards its
+// leaf directly: calls are rewritten before bodies, so no rebuild is needed.
 // CHECK-LABEL: kgen.func @callee
 // CHECK-SAME:    (%{{[^:]+}}: memref<128xf32>)
 // CHECK-LABEL: kgen.func @caller_passes_whole_arg
 // CHECK-SAME:    (%[[A:[^:]+]]: memref<128xf32>)
-// CHECK:         %[[REBUILT:.+]] = kgen.struct.create(%[[A]])
-// CHECK:         %[[LEAF:.+]] = kgen.struct.extract %[[REBUILT]][0]
-// CHECK:         kgen.call @callee(%[[LEAF]]) : (memref<128xf32>) -> ()
+// CHECK-NOT:     kgen.struct.create
+// CHECK:         kgen.call @callee(%[[A]]) : (memref<128xf32>) -> ()
 kgen.func @callee(%arg0: !kgen.struct<(memref<128xf32>)>) {
   %0 = kgen.struct.extract %arg0[0] : <(memref<128xf32>)>
   "use"(%0) : (memref<128xf32>) -> ()
@@ -194,5 +192,21 @@ kgen.func @dead_volatile_load_survives(%arg0: !kgen.struct<(memref<128xf32>)>) {
   %plain = pop.load %p : !kgen.pointer<scalar<f32>>
   %0 = kgen.struct.extract %arg0[0] : <(memref<128xf32>)>
   "use"(%0) : (memref<128xf32>) -> ()
+  hlcf.return
+}
+
+// -----
+
+// The complement of `@caller_passes_whole_arg`: a callee the pass left alone
+// still takes the whole aggregate, so the operand is rebuilt for it. Only a
+// decomposed callee can be handed the leaves directly. `@untouched` stays
+// undeclared on purpose: the default policy decomposes every `kgen.func` struct
+// argument, so a callee it leaves alone cannot exist in this module.
+// CHECK-LABEL: kgen.func @caller_to_untouched_callee
+// CHECK-SAME:    (%[[A:[^:]+]]: memref<128xf32>)
+// CHECK:         %[[REBUILT:.+]] = kgen.struct.create(%[[A]])
+// CHECK:         kgen.call @untouched(%[[REBUILT]]) : (!kgen.struct<(memref<128xf32>)>) -> ()
+kgen.func @caller_to_untouched_callee(%arg0: !kgen.struct<(memref<128xf32>)>) {
+  kgen.call @untouched(%arg0) : (!kgen.struct<(memref<128xf32>)>) -> ()
   hlcf.return
 }

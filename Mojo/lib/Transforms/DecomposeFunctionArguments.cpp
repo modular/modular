@@ -51,7 +51,9 @@
 // outlives the region it is used in. A use with no covering leaf, or a
 // `pop.store` through a decomposed pointer, is an error.
 //
-// A changed function carries `kgen.decomposed_arg_map`, one `[newStart,
+// Call sites are rewritten before bodies, so a caller forwarding a whole
+// decomposed argument reads leaves through paths its own rewrite handles. A
+// changed function carries `kgen.decomposed_arg_map`, one `[newStart,
 // newLength, wasDecomposed]` per original argument, so a target pass can remap
 // old-argument-indexed metadata.
 //===----------------------------------------------------------------------===//
@@ -826,6 +828,7 @@ void DecomposeFunctionArgumentsPass::runOnOperation() {
   module.walk([&](FuncOp f) { funcs.push_back(f); });
 
   DenseMap<Operation *, FuncPlan> plansByFunc;
+  SmallVector<FuncOp> changedFuncs;
   for (FuncOp f : funcs) {
     FailureOr<FuncPlan> plan = planFor(f, *policy);
     if (failed(plan)) {
@@ -834,16 +837,24 @@ void DecomposeFunctionArgumentsPass::runOnOperation() {
     }
     if (!plan->changed)
       continue;
-    if (failed(rewriteFunc(f, *plan))) {
-      signalPassFailure();
-      return;
-    }
     plansByFunc.try_emplace(f.getOperation(), std::move(*plan));
+    changedFuncs.push_back(f);
   }
 
+  // Calls first: a caller forwarding a whole decomposed arg to a decomposed
+  // callee then reads it through the leaves' paths (`DecomposedArgLeaf` in
+  // KGENPasses.h), which its own rewrite can match, rather than as the whole
+  // arg, which it cannot rebuild.
   if (failed(rewriteCalls(module, plansByFunc))) {
     signalPassFailure();
     return;
+  }
+
+  for (FuncOp f : changedFuncs) {
+    if (failed(rewriteFunc(f, plansByFunc.find(f.getOperation())->second))) {
+      signalPassFailure();
+      return;
+    }
   }
 }
 
