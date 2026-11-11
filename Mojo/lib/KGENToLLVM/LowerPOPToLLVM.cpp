@@ -2231,10 +2231,9 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
       global.getBodyRegion().push_back(new Block);
       ImplicitLocOpBuilder ib(op.getLoc(), op.getContext());
       ib.setInsertionPointToStart(global.getBody());
-      TargetInfoAttr target = getTypeConverter()->getTarget();
-      ErrorOr<Value> value = convertParameterToLLVM(
-          ib, *getTypeConverter(), /*imc=*/nullptr, /*scope=*/nullptr, *init,
-          target);
+      ErrorOr<Value> value =
+          convertParameterToLLVM(ib, *getTypeConverter(), /*imc=*/nullptr,
+                                 /*scope=*/nullptr, *init);
       if (value.isError()) {
         ib.emitError(value.getError());
         return failure();
@@ -2365,9 +2364,8 @@ public:
       b.setInsertionPointToStart(global.getBody());
       InterpreterMemoryConverter::MaterializationScope scope =
           imc.createScope();
-      TargetInfoAttr target = getTypeConverter()->getTarget();
       ErrorOr<Value> value = convertParameterToLLVM(
-          b, *getTypeConverter(), /*imc=*/&imc, &scope, op.getValue(), target);
+          b, *getTypeConverter(), /*imc=*/&imc, &scope, op.getValue());
       if (value.isError()) {
         b.emitError(value.getError());
         return failure();

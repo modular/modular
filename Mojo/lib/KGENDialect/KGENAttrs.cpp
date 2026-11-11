@@ -4716,8 +4716,8 @@ bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
   return false;
 }
 
-ErrorOrSuccess ParamOperatorAttr::validateForElaborator(
-    TargetInfoAttr target) const {
+ErrorOrSuccess
+ParamOperatorAttr::validateForElaborator(TargetInfoAttr target) const {
   // If this is a shift by a constant amount that does not fit in the operand's
   // bit width, produce a clear user-facing diagnostic instead of the generic
   // "could not simplify" note.
@@ -4976,8 +4976,8 @@ ParamIdenticalAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 bool ParamIdenticalAttr::isConstant() const { return false; }
 
-ErrorOrSuccess ParamIdenticalAttr::validateForElaborator(
-    TargetInfoAttr target) const {
+ErrorOrSuccess
+ParamIdenticalAttr::validateForElaborator(TargetInfoAttr target) const {
   ArrayRef<TypedAttr> operands = getOperands();
   std::string operandList;
   llvm::raw_string_ostream os(operandList);

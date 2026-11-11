@@ -1139,8 +1139,7 @@ void KGEN::replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
 ErrorOr<Value> KGEN::convertParameterToLLVM(
     ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
     InterpreterMemoryConverter *imc,
-    InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr,
-    TargetInfoAttr target) {
+    InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr) {
 
   //===--------------------------------------------------------------------===//
   // builtin
@@ -1203,7 +1202,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   // stack allocation.
   if (auto store = dyn_cast<StoreToMemAttr>(attr)) {
     ErrorOr<Value> loweredValue =
-        convertParameterToLLVM(b, tc, imc, scope, store.getValue(), target);
+        convertParameterToLLVM(b, tc, imc, scope, store.getValue());
     if (loweredValue.isError())
       return loweredValue;
     auto value = loweredValue.get();
@@ -1257,7 +1256,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     Value aggregate = LLVM::UndefOp::create(b, type);
     for (auto [idx, value] : llvm::enumerate(arrayAttr.getValues())) {
       ErrorOr<Value> loweredValue =
-          convertParameterToLLVM(b, tc, imc, scope, value, target);
+          convertParameterToLLVM(b, tc, imc, scope, value);
       if (loweredValue.isError())
         return loweredValue;
       aggregate =
@@ -1275,7 +1274,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     Value aggregate = LLVM::UndefOp::create(b, type);
     for (auto [logicalIdx, value] : llvm::enumerate(structAttr.getValues())) {
       ErrorOr<Value> loweredValue =
-          convertParameterToLLVM(b, tc, imc, scope, value, target);
+          convertParameterToLLVM(b, tc, imc, scope, value);
       if (loweredValue.isError())
         return loweredValue;
       // Use remapped field index to account for alignment padding.
@@ -1289,7 +1288,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   // Bitpack union constants.
   if (auto unionAttr = dyn_cast<POP::UnionAttr>(attr)) {
     ErrorOr<Value> loweredValue =
-        convertParameterToLLVM(b, tc, imc, scope, unionAttr.getValue(), target);
+        convertParameterToLLVM(b, tc, imc, scope, unionAttr.getValue());
     if (loweredValue.isError())
       return loweredValue;
     auto value = loweredValue.get();
@@ -1307,7 +1306,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   // If this is an param attribute that refused to fold, see if we're able to
   // get a custom error message from it to explain what is going on.
   if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-    auto errorMessage = itf.validateForElaborator(target);
+    auto errorMessage = itf.validateForElaborator(tc.getTarget());
     if (errorMessage.isError())
       return errorMessage.takeError();
   }

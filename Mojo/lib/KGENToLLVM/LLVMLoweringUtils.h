@@ -318,8 +318,7 @@ void replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
 ErrorOr<Value> convertParameterToLLVM(
     ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
     InterpreterMemoryConverter *imc,
-    InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr,
-    TargetInfoAttr target);
+    InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // DebugInfoTypeConverter
