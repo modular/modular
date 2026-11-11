@@ -7,7 +7,7 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
 //CHECK-EMIT-LLVM: f._global_alloc_0._gpu_shared_mem = internal addrspace(3) global
 //CHECK-EMIT-LLVM: extern_ptr_syml = external dso_local addrspace(3) global
 kgen.func @f() no_inline {
-   %gv = pop.global_alloc "_global_alloc" 1 x scalar<f32> address_space 3  align 4 {memoryType = #pop.global_alloc_addr_space<gpu_shared>}
+   %gv = pop.global_alloc "_global_alloc" 1 x scalar<f32> address_space 3  align 4 <memoryType = gpu_shared>
    %ptr = pop.extern_ptr_symbol "extern_ptr_syml" alignment<4> : <array<0, scalar<f32>>, 3>
    %0 = pop.pointer.bitcast %ptr : !kgen.pointer<array<0, scalar<f32>>, 3> to !kgen.pointer<scalar<f32>, 3>
    %1 = pop.load %0 : !kgen.pointer<scalar<f32>, 3>

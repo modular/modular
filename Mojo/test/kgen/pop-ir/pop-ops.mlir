@@ -703,12 +703,11 @@ kgen.generator @external_call<ty: type, dt: dtype>(%a: !kgen.param<ty>, %b: !kge
   // CHECK: pop.external_call @foo(%{{.*}}, %{{.*}})
   %0 = pop.external_call @foo(%a, %b) : (!kgen.param<ty>, !kgen.scalar<dt>) -> !kgen.simd<4, f32>
   // CHECK: pop.external_call @bar(%arg0, %arg1)
-  // CHECK-SAME: attributes {funcAttrs = ["noinline", ["alignstack", "16"]],
-  // CHECK-SAME: numFixedArgs = 1 : index}
+  // CHECK-SAME: <numFixedArgs = 1 : index,
+  // CHECK-SAME: funcAttrs = ["noinline", ["alignstack", "16"]]>
   pop.external_call @bar(%a, %b)
-    attributes {funcAttrs = ["noinline", ["alignstack", "16"]],
-                numFixedArgs = 1 : index}
     : (!kgen.param<ty>, !kgen.scalar<dt>) -> ()
+    <numFixedArgs = 1 : index, funcAttrs = ["noinline", ["alignstack", "16"]]>
   hlcf.return
 }
 

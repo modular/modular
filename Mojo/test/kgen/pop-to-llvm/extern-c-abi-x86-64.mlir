@@ -446,8 +446,8 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 // CHECK-LABEL: @variadic_scalars
 llvm.func @variadic_scalars(%fixed: i32, %extra: i32) {
   // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, i32) -> ()
-  pop.external_call @c_g1(%fixed, %extra) attributes {numFixedArgs = 1 : index}
-    : (i32, i32) -> ()
+  pop.external_call @c_g1(%fixed, %extra)
+    : (i32, i32) -> () <numFixedArgs = 1 : index>
   llvm.return
 }
 // CHECK: llvm.func @c_g1(i32, ...)
@@ -467,8 +467,8 @@ llvm.func @variadic_large_struct(%fixed: i32,
                                   %s: !llvm.struct<(i64, i64, i64)>) {
   // CHECK: llvm.call @c_g2
   // CHECK-SAME: llvm.byval = !llvm.struct<(i64, i64, i64)>
-  pop.external_call @c_g2(%fixed, %s) attributes {numFixedArgs = 1 : index}
-    : (i32, !llvm.struct<(i64, i64, i64)>) -> ()
+  pop.external_call @c_g2(%fixed, %s)
+    : (i32, !llvm.struct<(i64, i64, i64)>) -> () <numFixedArgs = 1 : index>
   llvm.return
 }
 // The function declaration does NOT have byval — only the call does.
@@ -537,7 +537,7 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 // CHECK-LABEL: @func_attrs_passthrough
 llvm.func @func_attrs_passthrough(%arg0: i32) {
   // CHECK: llvm.call @c_h1
-  pop.external_call @c_h1(%arg0) attributes {funcAttrs = ["noinline"]} : (i32) -> ()
+  pop.external_call @c_h1(%arg0) : (i32) -> () <funcAttrs = ["noinline"]>
   llvm.return
 }
 // CHECK: llvm.func @c_h1
@@ -556,8 +556,7 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 llvm.func @arg_attrs_two_reg(%arg0: !llvm.struct<(i32, i32, i32)>, %arg1: i32) {
   // CHECK: llvm.call @c_h2
   pop.external_call @c_h2(%arg0, %arg1)
-    attributes {argAttrs = [{llvm.noundef}, {llvm.noundef}]}
-    : (!llvm.struct<(i32, i32, i32)>, i32) -> ()
+    : (!llvm.struct<(i32, i32, i32)>, i32) -> () <argAttrs = [{llvm.noundef}, {llvm.noundef}]>
   llvm.return
 }
 // POP arg 0 becomes LLVM params 0 (i64) and 1 (i32). POP arg 1 becomes
@@ -576,8 +575,8 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 // CHECK-LABEL: @arg_attrs_sret
 llvm.func @arg_attrs_sret(%arg0: i32) {
   // CHECK: llvm.call @c_h3
-  %r = pop.external_call @c_h3(%arg0) attributes {argAttrs = [{llvm.noundef}]}
-    : (i32) -> !llvm.struct<(i64, i64, i64)>
+  %r = pop.external_call @c_h3(%arg0)
+    : (i32) -> !llvm.struct<(i64, i64, i64)> <argAttrs = [{llvm.noundef}]>
   llvm.return
 }
 // sret ptr at param 0, original arg with user attr at param 1.
@@ -594,11 +593,11 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 // CHECK-LABEL: @res_attrs_struct
 llvm.func @res_attrs_struct() {
   // CHECK: llvm.call @c_h4_struct
-  %s = pop.external_call @c_h4_struct() attributes {resAttrs = {llvm.noundef}}
-    : () -> !llvm.struct<(i32, i8)>
+  %s = pop.external_call @c_h4_struct()
+    : () -> !llvm.struct<(i32, i8)> <resAttrs = {llvm.noundef}>
   // CHECK: llvm.call @c_h4_scalar
-  %i = pop.external_call @c_h4_scalar() attributes {resAttrs = {llvm.noundef}}
-    : () -> i32
+  %i = pop.external_call @c_h4_scalar()
+    : () -> i32 <resAttrs = {llvm.noundef}>
   llvm.return
 }
 // CHECK: llvm.func @c_h4_struct() -> i64

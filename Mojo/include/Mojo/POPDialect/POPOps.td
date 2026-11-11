@@ -200,7 +200,9 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
                        UnboundOrIndexOrArithmeticSIMD:$rhs);
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
 
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
+  let assemblyFormat = [{
+    $lhs `,` $rhs `:` qualified(type($result)) prop-dict attr-dict
+  }];
   let hasFolder = 1;
 }
 
@@ -283,7 +285,7 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
     ```mlir
     %c = pop.mul %a, %b : !kgen.scalar<type>
     %c = pop.mul %a, %b : !kgen.simd<size, type>
-    %c = pop.mul %a, %b {fastmathFlags = #pop<fmf fast>} : !kgen.simd<size, type>
+    %c = pop.mul %a, %b : !kgen.simd<size, type> <fastmathFlags = fast>
     ```
   }];
   let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
@@ -293,7 +295,9 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
                        DefaultValuedAttr<POP_FastmathFlagsAttr,
                          "FastmathFlags::contract">:$fastmathFlags);
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
+  let assemblyFormat = [{
+    $lhs `,` $rhs `:` qualified(type($result)) prop-dict attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -509,7 +513,7 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
 
   let assemblyFormat = [{
-    $a `,` $b `,` $c attr-dict `:` qualified(type($result))
+    $a `,` $b `,` $c `:` qualified(type($result)) prop-dict attr-dict
   }];
   let hasFolder = 1;
 }
@@ -757,8 +761,8 @@ def POP_CastOp : POPOp<"cast", [Pure,
     %0 = pop.cast %a : !kgen.scalar<si32> to !kgen.scalar<f32>
     %1 = pop.cast %b : !kgen.scalar<ui64> to !kgen.scalar<si32>
     %2 = pop.cast %c : !kgen.simd<4, f64> to !kgen.simd<4, ui32>
-    %3 = pop.cast %c {fastmathFlags = #pop<fmf fast>} :
-        !kgen.scalar<f32> to !kgen.scalar<bf16>
+    %3 = pop.cast %c : !kgen.scalar<f32> to !kgen.scalar<bf16>
+        <fastmathFlags = fast>
     ```
   }];
 
@@ -768,8 +772,8 @@ def POP_CastOp : POPOp<"cast", [Pure,
       "FastmathFlags::none">:$fastmathFlags);
   let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$output);
   let assemblyFormat = [{
-    $input attr-dict `:`
-    qualified(type($input)) `to`  qualified(type($output))
+    $input `:` qualified(type($input)) `to` qualified(type($output))
+    prop-dict attr-dict
   }];
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;
@@ -1751,8 +1755,8 @@ def POP_ExternalCallOp : POPOp<"external_call", [
 
     ```mlir
     pop.external_call @printf(%fmt, %v0, %v1)
-      attributes {numFixedArgs = 1 : index}
       : (!kgen.pointer<scalar<si8>>, !kgen.scalar<f32>, !kgen.scalar<ui32>) -> ()
+      <numFixedArgs = 1 : index>
     ```
 
     The `funcAttrs` attribute specifies LLVM function attributes on the external
@@ -1770,9 +1774,8 @@ def POP_ExternalCallOp : POPOp<"external_call", [
   let results = (outs Optional<AnyType>:$result);
 
   let assemblyFormat = [{
-    custom<ExternalCallee>($func) `(` operands `)`
-    attr-dict-with-keyword `:`
-    functional-type(operands, results)
+    custom<ExternalCallee>($func) `(` operands `)` `:`
+    functional-type(operands, results) prop-dict attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -1862,7 +1865,7 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
     custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
     (`align` custom<IndexParamValue>($alignment)^)?
     custom<OptionalGlobalAllocInitializer>($initializer, ref(type($result)))
-    attr-dict
+    prop-dict attr-dict
   }];
 
   let hasVerifier = 1;
@@ -2064,7 +2067,7 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
   let assemblyFormat = [{
     custom<I1Flag>($hasSideEffects, "\"side_effecting\"")
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
-    attr-dict `:` functional-type($args, $results)
+    `:` functional-type($args, $results) prop-dict attr-dict
   }];
 }
 
