@@ -41,9 +41,6 @@ llvm::DenseMap<const llvm::Function *, std::unique_ptr<llvm::MachineFunction>> &
 getMachineFunctionsFromMachineModuleInfo(
     llvm::MachineModuleInfo &machineModuleInfo);
 
-/// Set private field FunctionNumber in llvm::MachineFunction.
-void setMachineFunctionNumber(llvm::MachineFunction &mf, unsigned number);
-
 /// Set private field NextFnNum in llvm::MachineModuleInfo.
 void setNextFnNum(llvm::MachineModuleInfo &mmi, unsigned value);
 

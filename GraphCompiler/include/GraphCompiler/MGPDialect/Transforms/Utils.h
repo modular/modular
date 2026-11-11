@@ -99,11 +99,6 @@ using ValueSetVector = llvm::SetVector<Value, SmallVector<Value>>;
 /// chain directly to primitiveChains.
 void accumulatePrimitiveChains(ValueSetVector &primitiveChains, Value chain);
 
-/// Moves targetOp before anchorOp, then transitively any operand def not
-/// before its user. Requires a DAG. Not needed for MEF correctness, only for
-/// readable generated MLIR.
-void moveAllBefore(Operation *origTargetOp, Operation *origAnchorOp);
-
 /// Returns a chain value which will be ready only when all of chains (which
 /// cannot be empty) are ready. All chains must use the 'native' chain type
 /// of the given buffer builder, or !mef.chain if the buffer builder is null.
@@ -127,9 +122,6 @@ LogicalResult alsoWaitForChains(OpBuilder &builder,
 /// Helper for modifying the 'init' block.
 struct InitState {
   InitState(ModelOp model);
-
-  /// 'Allocates' a slot in the context.
-  size_t allocSlot();
 
   /// Returns the current final 'init' chain result.
   TypedValue<MEF::ChainType> getFinalChain();

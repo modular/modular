@@ -137,9 +137,6 @@ public:
   /// 'exclusive' relation below.
   bool maybeSameAs(Value lhs, Value rhs) const;
 
-  /// Returns the set { %rhs | maybeSameAs(%lhs, %rhs) }.
-  ValueSet maybeSameAsSet(Value lhs) const;
-
   /// The isAlwaysReady(%value) predicate is true only if at runtime
   ///   valueOf(%value)->isReady()
   /// under all execution paths. For example, %value may be the result of a

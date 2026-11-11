@@ -190,10 +190,6 @@ struct MojoPrecompiledFileMLIRBuffer {
 bool isMojoPrecompiledFile(llvm::MemoryBufferRef buffer);
 
 /// Returns whether the Mojo package (represented by its header) is compatible
-/// with the current compiler.
-bool isCompatiblePrecompiledFile(const MojoPrecompiledFileHeader &header);
-
-/// Returns whether the Mojo package (represented by its header) is compatible
 /// with the current compiler, and returns a message explaining any cause of
 /// incompatibility.
 ErrorOrSuccess

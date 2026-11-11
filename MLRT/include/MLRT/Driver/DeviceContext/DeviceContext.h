@@ -1337,7 +1337,6 @@ public:
   // Debugging helpers.
   bool syncMode() const;
   void incSyncMode();
-  void decSyncMode();
   bool isDebugAllocatorEnabled(StringRef name) const;
 
 protected:

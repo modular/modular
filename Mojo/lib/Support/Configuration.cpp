@@ -125,11 +125,6 @@ StringRef MojoConfig::getDriverPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".driver_path"), "bin/mojo");
 }
 
-StringRef MojoConfig::getJupyterPath() {
-  return getPath(STRINGIFY_MOJO_CONFIG(".jupyter_path"),
-                 "lib/libMojoJupyter" EXT);
-}
-
 StringRef MojoConfig::getLSPServerPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".lsp_server_path"),
                  "bin/mojo-lsp-server");

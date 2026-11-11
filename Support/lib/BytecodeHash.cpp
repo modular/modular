@@ -82,39 +82,3 @@ struct ModuleHashCache {
 
   llvm::SmallVector<std::string> hashes;
 };
-
-FailureOr<std::string> M::getModuleBytecodeHash(mlir::ModuleOp module) {
-  auto context = module.getContext();
-  auto ops =
-      llvm::map_to_vector(module.getOps(), [](Operation &op) { return &op; });
-
-  auto workFunc = [](ModuleHashCache &cache, Operation *op) -> LogicalResult {
-    return cache.computeHash(op);
-  };
-
-  auto consolidateFn = [](ModuleHashCache &original,
-                          MutableArrayRef<ModuleHashCache> caches) {
-    for (ModuleHashCache &cache : caches)
-      original.join(cache);
-  };
-
-  ModuleHashCache resultCache;
-  auto result = failableParallelForEach(
-      /*ctx=*/context,
-      /*range=*/ops,
-      /*func=*/workFunc,
-      /*cache=*/resultCache,
-      /*consolidate=*/consolidateFn);
-
-  if (failed(result))
-    return failure();
-
-  // Sort results to ensure determinism. The multi-threaded processing of
-  // failableParallelForEach does not ensure an particular ordering w.r.t. what
-  // input elements are associated to which cache.
-  llvm::sort(resultCache.hashes);
-
-  raw_xxhash128_stream hasher;
-  llvm::interleave(resultCache.hashes, hasher, "");
-  return hasher.hashString();
-}

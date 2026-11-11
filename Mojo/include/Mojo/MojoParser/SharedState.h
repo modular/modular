@@ -97,7 +97,6 @@ public:
   Capture(CValue value, CaptureConvention kind, StringRef spelling)
       : value(value), kind(kind), spelling(spelling) {}
   CValue getValue() const { return value; }
-  bool isCopy() const;
   bool isRef() const;
   /// The name of the capture
   StringRef getSpelling() const { return spelling; }

@@ -97,8 +97,6 @@ public:
   int32_t getIntegerABIAlign(int32_t bitwidth) const;
   /// Get the ABI alignment of float type in bytes.
   int32_t getFloatABIAlign(int32_t bitwidth) const;
-  /// Get the ABI alignment of a vector type in bytes.
-  int32_t getVectorABIAlign(int32_t numElts, int32_t eltBitWidth) const;
   /// Get the default address space pointer ABI alignment in bytes.
   int32_t getPointerABIAlign(uint32_t addrSpace = 0) const {
     addrSpace = addrSpace >= ptrInfos.size() ? 0 : addrSpace;
@@ -342,11 +340,6 @@ public:
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 
-/// Convert a `DenseElementsAttr` to an `ArrayElementsAttr`. Pass through any
-/// other kind of attribute. This should be the only place where the splatness
-/// and bitpacked-ness of the attribute are handled.
-Attribute convertDenseElements(Attribute attr);
-
 /// Returns an ArrayElementsAttr representing data. The given data is always
 /// copied into the MLIR context.
 MODULAR_CXX_EXPORT ElementsAttr
@@ -364,9 +357,6 @@ getAttrForTensorDataCopy(ShapedType type, StringRef bufferName,
 /// Return the contents of the IntArrayElementsAttr as a vector in int64_t.
 MODULAR_CXX_EXPORT SmallVector<int64_t>
 getIntBlob(IntArrayElementsAttr intElemsAttr);
-
-/// Return the contents of the FloatArrayElementsAttr as a vector in float.
-SmallVector<float> getFloatBlob(FloatArrayElementsAttr floatElemsAttr);
 
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr

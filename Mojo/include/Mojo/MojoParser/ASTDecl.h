@@ -137,9 +137,6 @@ public:
   /// Return the variadic kind for this argument or parameter declaration.
   VariadicKind getPogVariadicKind() const;
 
-  /// Return the source-level type for this argument or parameter declaration.
-  Type getPogType() const;
-
   /// Return the default value for this argument or parameter, if present.
   std::optional<TypedAttr> getPogDefault() const;
 
@@ -377,11 +374,6 @@ public:
   /// subexpressions but whose children will be inherited later by a decl being
   /// resolved.
   void takeDecls(ASTDecl &src);
-
-  /// Append the children decls of `src` into this scope (updating their
-  /// `parentDecl`), without replacing existing names already in this scope.
-  /// Used when promoting temporary pattern-binding scopes into a case scope.
-  void mergeDeclsFrom(ASTDecl &src);
 
   /// Anonymous origins, closure impl structs, and potentially other names are
   /// uniqued to avoid collisions. This returns an ID that is unique to this

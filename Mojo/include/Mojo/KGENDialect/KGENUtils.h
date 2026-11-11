@@ -259,11 +259,6 @@ MODULAR_CXX_EXPORT EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
 void printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly);
 ParseResult parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly);
 
-/// Parser & printer for explicit minimum alignment (e.g., "align(64)").
-/// Uses TypedAttr to support future parametric alignment.
-void printMinAlignment(AsmPrinter &p, TypedAttr minAlignment);
-ParseResult parseMinAlignment(AsmParser &p, TypedAttr &minAlignment);
-
 /// Parser & printer for a single simplified StructDefFieldAttr, spelled
 /// `name: type` with an optional trailing `[annotations...]`.
 ParseResult parseStructDefField(AsmParser &p, StringAttr &name,
@@ -724,7 +719,6 @@ SIMDType getEquivalentSIMDType(Type type);
 
 /// Splat a value of a builtin type to a SIMD type of the given size.
 TypedAttr splatBuiltinToSIMD(TypedAttr builtinScalarVal, TypedAttr simdSize);
-TypedAttr splatFloatLiteralToSIMD(double literal, SIMDType target);
 MODULAR_CXX_EXPORT TypedAttr splatIntLiteralToSIMD(uint64_t literal,
                                                    SIMDType target);
 

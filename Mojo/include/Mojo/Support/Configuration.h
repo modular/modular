@@ -87,9 +87,6 @@ public:
   /// Return the path to the `mojo` driver in the mojo install.
   StringRef getDriverPath();
 
-  /// Return the path to the Mojo jupyter library.
-  StringRef getJupyterPath();
-
   /// Return the path to the Mojo LSP server.
   StringRef getLSPServerPath();
 

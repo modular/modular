@@ -926,18 +926,6 @@ bool ASTType::isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                   shared) == TriBool::yes();
 }
 
-bool ASTType::isProvablyTriviallyMoveable(llvm::SMLoc loc,
-                                          SharedState &shared) const {
-  return isSpecialFunctionTrivial(loc, SpecialFunctionKind::kMoveCtor,
-                                  shared) == TriBool::yes();
-}
-
-bool ASTType::isProvablyTriviallyDeletable(llvm::SMLoc loc,
-                                           SharedState &shared) const {
-  return isSpecialFunctionTrivial(loc, SpecialFunctionKind::kDeinit, shared) ==
-         TriBool::yes();
-}
-
 /// Return true if this type is a register-passable type that can be passed
 /// around and copied in SSA values instead of having to live in memory.
 ///
@@ -1083,12 +1071,6 @@ bool ASTType::provenConformsToBuiltinTrait(
   auto [conformanceResult, traitDecl] =
       conformsToBuiltinTrait(traitName, loc, shared, callerAssumptions);
   return conformanceResult.isTrue();
-}
-
-bool ASTType::isRegisterType(llvm::SMLoc loc, SharedState &shared) const {
-  TypeConvention convention = getRegisterPassability(loc, shared);
-  return convention == TypeConvention::RegisterPassable ||
-         convention == TypeConvention::RegisterPassableTrivial;
 }
 
 bool ASTType::isTrivialRegisterType(llvm::SMLoc loc,

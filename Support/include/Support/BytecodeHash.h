@@ -29,10 +29,5 @@ namespace M {
 /// The hash ignores source location information.
 FailureOr<std::string> getBytecodeHash(mlir::Operation *op);
 
-/// This function computes the bytecode hash similar to getBytecodeHash, but
-/// does so by hashing each individual operation in the module in parallel
-/// (via BytecodeHasher) and then combining the results into a single hash.
-FailureOr<std::string> getModuleBytecodeHash(mlir::ModuleOp module);
-
 } // namespace M
 #endif // SUPPORT_BYTECODEHASH_H

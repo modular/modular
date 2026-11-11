@@ -75,8 +75,6 @@ public:
   int getActiveBookmarkColor() const { return activeBookmarkColor; }
   void setActiveBookmarkColor(int idx) { activeBookmarkColor = idx; }
   bool hasAnyBookmarks() const;
-  // 1-indexed, ascending.
-  llvm::SmallVector<int> sortedBookmarksForGroup(int idx) const;
   // In line order.
   llvm::SmallVector<mlir::Operation *> opsForGroup(int idx) const;
   // Lines are 0-indexed and inclusive.

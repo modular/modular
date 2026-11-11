@@ -522,21 +522,6 @@ std::pair<FnOp, DefASTDecl *> StructEmitter::synthesizeMethodInStruct(
                             fnEffects, suffix, synthetic, inlineLevel);
 }
 
-/// Given a struct and a trait declaration, make the struct inherit from the
-/// trait if it does not already.
-static void addTraitParent(StructDeclOp structOp, TraitASTDecl &traitDecl) {
-  // Pull in the entire ancestor chain of the new symbol.
-  SmallVector<TraitSymbolAttr> newSymbols = {
-      TraitSymbolAttr::get(traitDecl.getSymbolRef())};
-  canonicalizeTraitCompositionSymbols(traitDecl.getShared(), newSymbols);
-  // Merge the new canonical symbols with the existing canonical trait symbols.
-  TraitType trait = structOp.getCanonicalTrait();
-  llvm::append_range(newSymbols, trait.getSymbols());
-  // No need to pull in any ancestors now. Just sort and deduplicate.
-  sortAndDeduplicateTraitSymbols(newSymbols);
-  structOp.setCanonicalTrait(TraitType::get(structOp.getContext(), newSymbols));
-}
-
 /// Add a attribute initializer method for this struct with a body.
 FnOp StructEmitter::synthesizeFieldwiseInit() {
   ASTType selfType = structDecl.getSelfType();
@@ -1035,32 +1020,6 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
     return {};
 
   return result;
-}
-
-std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
-    bool forceGenerateDestructor) {
-  std::optional<ValueInfo> valueInfo = ValueInfo::lookupExisting(structDecl);
-  if (!valueInfo)
-    return {};
-
-  if (!valueInfo->del && forceGenerateDestructor)
-    valueInfo->del = synthesizeEmptyDtor();
-
-  auto addCopyOrMoveBuiltinTrait = [&](StringRef traitName) {
-    TraitASTDecl *traitDecl =
-        shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
-    if (traitDecl) // Don't crash if the builtin trait is not found.
-      addTraitParent(structDeclOp, *traitDecl);
-  };
-
-  if (!valueInfo->copyctor && !structDeclOp.isRegisterPassableTrivial())
-    valueInfo->copyctor = synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
-  addCopyOrMoveBuiltinTrait("ImplicitlyCopyable");
-
-  if (!valueInfo->movector && !structDeclOp.isRegisterPassable())
-    valueInfo->movector = synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
-  addCopyOrMoveBuiltinTrait("Movable");
-  return valueInfo;
 }
 
 /// Synthesize an unresolved alias into the struct with the specified name .

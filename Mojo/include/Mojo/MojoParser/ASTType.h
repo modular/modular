@@ -153,12 +153,6 @@ public:
   bool isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                              SharedState &shared,
                                              ASTDecl &scope) const;
-  /// Return true if this type is provably 'trivially' moveable, as defined by
-  /// its '__move_ctor_is_trivial' member.
-  bool isProvablyTriviallyMoveable(llvm::SMLoc loc, SharedState &shared) const;
-  /// Return true if this type is provably 'trivially' deletable, as defined by
-  /// its '__del__is_trivial' member.
-  bool isProvablyTriviallyDeletable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is implicitly/explicitly copyable, either because
   /// it is trivial or conforms to (Implicitly)Copyable trait. Note:
@@ -181,11 +175,6 @@ public:
   /// `scope` is required so where-clause assumptions from the scope are used
   /// to prove conditional conformances.
   bool isMovable(llvm::SMLoc loc, SharedState &shared, ASTDecl &scope) const;
-
-  /// Return true if this type is register passable or conforms to
-  /// RegisterPassable trait.
-  /// Note: this resolves the body of a struct type.
-  bool isRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is trivial register passable
   /// or conforms to TrivialRegisterPassable trait.

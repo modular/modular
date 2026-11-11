@@ -94,10 +94,6 @@ struct MODULAR_CXX_EXPORT HostMachineInfo {
   void print(HostProperty property, llvm::raw_ostream &os) const;
   void print(HostProperty property, llvm::json::OStream &json) const;
 
-  /// Print information excluding the ones that are likely to change with
-  /// threading configuration, such as number of cores and affinities.
-  void printStaticInfo(llvm::raw_ostream &os) const;
-
   /// Returns a HostMachineInfo matching target info. Only some fields
   /// are captured:
   ///  - triple (captured as triple and osName)

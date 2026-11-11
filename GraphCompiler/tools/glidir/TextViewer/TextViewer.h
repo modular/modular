@@ -218,7 +218,6 @@ private:
   Coordinates ScreenPosToCoordinates(const ImVec2 &aPosition) const;
   Coordinates FindWordStart(const Coordinates &aFrom) const;
   Coordinates FindWordEnd(const Coordinates &aFrom) const;
-  Coordinates FindNextWord(const Coordinates &aFrom) const;
   int GetCharacterIndex(const Coordinates &aCoordinates) const;
   int GetCharacterColumn(int aLine, int aIndex) const;
   int GetLineMaxColumn(int aLine) const;

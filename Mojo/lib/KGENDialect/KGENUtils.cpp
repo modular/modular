@@ -2176,35 +2176,6 @@ ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly) {
   return success();
 }
 
-void KGEN::printMinAlignment(AsmPrinter &p, TypedAttr minAlignment) {
-  // Skip printing if minAlignment is the default (1) to keep IR clean.
-  if (auto intAttr = dyn_cast<IntegerAttr>(minAlignment)) {
-    if (intAttr.getInt() == 1)
-      return;
-    p << " align(" << intAttr.getInt() << ")";
-  } else {
-    // Future parametric support may produce other TypedAttr types.
-    p << " align(" << minAlignment << ")";
-  }
-}
-
-ParseResult KGEN::parseMinAlignment(AsmParser &p, TypedAttr &minAlignment) {
-  if (succeeded(p.parseOptionalKeyword("align"))) {
-    if (p.parseLParen())
-      return failure();
-    uint64_t value;
-    if (p.parseInteger(value))
-      return failure();
-    if (p.parseRParen())
-      return failure();
-    minAlignment = IntegerAttr::get(IndexType::get(p.getContext()), value);
-  } else {
-    // Default alignment is 1 (no explicit alignment).
-    minAlignment = IntegerAttr::get(IndexType::get(p.getContext()), 1);
-  }
-  return success();
-}
-
 ParseResult KGEN::parseStructDefField(AsmParser &p, StringAttr &name,
                                       TypedAttr &typeValue,
                                       ArrayAttr &annotations) {
@@ -3333,9 +3304,6 @@ TypedAttr splatLiteralToSIMDImpl(T literal, SIMDType target) {
   return SIMDSplatAttr::get(target.getContext(), scalar, target);
 }
 
-TypedAttr KGEN::splatFloatLiteralToSIMD(double literal, SIMDType target) {
-  return splatLiteralToSIMDImpl<double>(literal, target);
-}
 TypedAttr KGEN::splatIntLiteralToSIMD(uint64_t literal, SIMDType target) {
   return splatLiteralToSIMDImpl<uint64_t>(literal, target);
 }
