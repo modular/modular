@@ -92,8 +92,8 @@ def test_closure_registers_captured_buffers() raises:
     # their owning buffers' handles — and nothing else.
     assert_equal(len(encoder._buffers), 2)
 
-    var handle_a = a._handle.value()
-    var handle_b = b._handle.value()
+    var handle_a = a.unwrap_legacy()._handle.value()
+    var handle_b = b.unwrap_legacy()._handle.value()
     var found_a = False
     var found_b = False
     for ref handle in encoder._buffers:
@@ -126,8 +126,8 @@ def test_closure_registers_buffers_via_nested_struct() raises:
 
     assert_equal(len(encoder._buffers), 2)
 
-    var handle_a = a._handle.value()
-    var handle_b = b._handle.value()
+    var handle_a = a.unwrap_legacy()._handle.value()
+    var handle_b = b.unwrap_legacy()._handle.value()
     var found_a = False
     var found_b = False
     for ref handle in encoder._buffers:
