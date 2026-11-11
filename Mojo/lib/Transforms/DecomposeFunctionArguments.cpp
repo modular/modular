@@ -10,12 +10,53 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //===----------------------------------------------------------------------===//
-// Flattens `kgen.struct` function arguments into leaf fields. Which arguments
-// and which leaves is the policy's decision
-// (`FunctionArgumentDecompositionPolicy` in KGENPasses.h); this file only knows
-// how to rewrite a signature, its body and its call sites once told.
+// DecomposeFunctionArguments flattens `kgen.struct` arguments and results into
+// their fields, so later passes see scalars instead of aggregates.
+//
+// A plan names each surviving field as a leaf: a type plus a path. The path is
+// the leaf's position in the aggregate's tree, one field index per level down,
+// which is exactly the `struct.extract` chain that reaches it. Three levels of
+// nesting, `{...}` standing for `!kgen.struct<(...)>`:
+//
+//   {i8, {i16, {i32, i64}}, f32}
+//
+//                             root
+//                               |
+//      +-------------------+-----------------------------+
+//   [0] i8                [1]                         [2] f32
+//                          |
+//                +-------------------+
+//           [1, 0] i16            [1, 1]
+//                                    |
+//                             +--------------+
+//                       [1, 1, 0] i32  [1, 1, 1] i64
+//
+// `[1, 1, 0]` is field 0 of field 1 of field 1 of the root, and the five leaves
+// become the five arguments. A function taking the aggregate
+//
+//   kgen.func @f(
+//       %s: !kgen.struct<(i8, struct<(i16, struct<(i32, i64)>)>, f32)>)
+//
+// becomes
+//
+//   kgen.func @f(%a: i8, %b: i16, %c: i32, %d: i64, %e: f32)
+//
+// Which aggregates split, and into which leaves, is the policy's decision
+// (`FunctionArgumentDecompositionPolicy` in KGENPasses.h); this file only
+// rewrites the signature, body and call sites once told.
+//
+// A body use that lands on a leaf is re-rooted on the new argument. A use of a
+// wider aggregate is rebuilt from the leaves with `kgen.struct.create`, and a
+// pointer the policy stripped is rebuilt in a stack slot so its address
+// outlives the region it is used in. A use with no covering leaf, or a
+// `pop.store` through a decomposed pointer, is an error.
+//
+// A changed function carries `kgen.decomposed_arg_map`, one `[newStart,
+// newLength, wasDecomposed]` per original argument, so a target pass can remap
+// old-argument-indexed metadata.
 //===----------------------------------------------------------------------===//
 
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -42,6 +83,11 @@ namespace M::KGEN {
 #define GEN_PASS_DEF_DECOMPOSEFUNCTIONARGUMENTS
 #include "Mojo/KGENPasses.h.inc"
 } // namespace M::KGEN
+
+FailureOr<std::optional<SmallVector<DecomposedArgLeaf>>>
+FunctionArgumentDecompositionPolicy::planResult(FuncOp, unsigned, Type) {
+  return std::optional<SmallVector<DecomposedArgLeaf>>(std::nullopt);
+}
 
 namespace {
 
@@ -104,11 +150,15 @@ private:
   std::shared_ptr<FunctionArgumentDecompositionPolicy> policy;
 
   struct FuncPlan {
-    // One entry per original input; `nullopt` means "leave untouched".
+    /// One entry per original input; `nullopt` leaves it alone. For
+    /// `(i32, {f32, f32})` with the struct decomposed: `{nullopt, [[0], [1]]}`.
     SmallVector<std::optional<SmallVector<DecomposedArgLeaf>>> inputs;
     bool changed = false;
     /// (start, len) range into the decomposed signature per original input.
     SmallVector<std::pair<unsigned, unsigned>> inputRanges;
+    /// One entry per original result, planned the same way as `inputs`: a
+    /// result of `{f32, f32}` decomposed into both fields is `[[0], [1]]`.
+    SmallVector<std::optional<SmallVector<DecomposedArgLeaf>>> results;
   };
 
   FailureOr<FuncPlan> planFor(FuncOp func,
@@ -144,6 +194,14 @@ DecomposeFunctionArgumentsPass::planFor(
     newIdx += len;
     plan.changed |= planned->has_value();
     plan.inputs.push_back(std::move(*planned));
+  }
+  for (auto [i, t] : llvm::enumerate(ft.getResults())) {
+    FailureOr<std::optional<SmallVector<DecomposedArgLeaf>>> planned =
+        policy.planResult(func, static_cast<unsigned>(i), t);
+    if (failed(planned))
+      return mlir::failure();
+    plan.changed |= planned->has_value();
+    plan.results.push_back(std::move(*planned));
   }
   return plan;
 }
@@ -228,16 +286,55 @@ static Type typeAtPath(Type curType, ArrayRef<unsigned> path) {
   return typeAtPath((*elts)[path.front()], path.drop_front(1));
 }
 
+/// Spills `value` to a stack slot and returns its address. The slot goes in
+/// the entry block so it outlives the region spilled in; the store stays at
+/// the spill site, so a per-iteration value is stored per iteration:
+///
+///   entry:
+///     %slot = pop.stack_allocation : !kgen.pointer<T>
+///   ^loop:
+///     pop.store %v, %slot
+///
+/// `slotType` keeps the result's address space and nullability.
+static Value spillToStack(OpBuilder &b, Location loc, Value value,
+                          PointerType slotType) {
+  OpBuilder::InsertPoint ip = b.saveInsertionPoint();
+  if (Block *block = b.getInsertionBlock()) {
+    Operation *parent = block->getParentOp();
+    FuncOp func = dyn_cast<FuncOp>(parent);
+    if (!func)
+      func = parent->getParentOfType<FuncOp>();
+    if (func && !func.getBodyRegion().empty())
+      b.setInsertionPointToStart(&func.getBodyRegion().front());
+  }
+  Value slot = POP::StackAllocationOp::create(b, loc, slotType);
+  b.restoreInsertionPoint(ip);
+  POP::StoreOp::create(b, loc, value, slot);
+  return slot;
+}
+
 /// Rebuilds the value at `prefix`, which lies above the leaves, via nested
-/// `struct.create`. Null if some position under it has no leaf: this only
-/// combines leaves the policy produced, it cannot synthesize one.
+/// `struct.create`. A pointer-typed target, or a leaf whose pointer the policy
+/// stripped, is rebuilt in a stack slot. Null if some position under it has no
+/// leaf: this only combines leaves the policy produced, it cannot synthesize
+/// one.
 static Value materializeAggregate(OpBuilder &b, Location loc, Type targetType,
                                   ArrayRef<unsigned> prefix,
                                   ArrayRef<SmallVector<unsigned>> leafPaths,
                                   ArrayRef<Value> leafValues) {
-  for (auto [path, value] : llvm::zip(leafPaths, leafValues))
-    if (path.size() == prefix.size() && llvm::equal(path, prefix))
-      return value;
+  for (auto [path, value] : llvm::zip(leafPaths, leafValues)) {
+    if (path.size() != prefix.size() || !llvm::equal(path, prefix))
+      continue;
+    auto ptrType = dyn_cast<PointerType>(targetType);
+    if (ptrType && ptrType.getElementType() == value.getType())
+      return spillToStack(b, loc, value, ptrType);
+    return value;
+  }
+  if (auto ptrType = dyn_cast<PointerType>(targetType)) {
+    Value pointee = materializeAggregate(b, loc, ptrType.getElementType(),
+                                         prefix, leafPaths, leafValues);
+    return pointee ? spillToStack(b, loc, pointee, ptrType) : Value();
+  }
   auto st = dyn_cast<StructType>(targetType);
   if (!st)
     return {};
@@ -411,6 +508,20 @@ decomposeSignature(ArrayRef<std::optional<SmallVector<DecomposedArgLeaf>>> plan,
   }
 }
 
+/// The result types after `plan` flattens the results it names.
+static void decomposeResultTypes(
+    ArrayRef<std::optional<SmallVector<DecomposedArgLeaf>>> plan,
+    ArrayRef<Type> origResults, SmallVectorImpl<Type> &results) {
+  for (auto [i, rp] : llvm::enumerate(plan)) {
+    if (!rp) {
+      results.push_back(origResults[i]);
+      continue;
+    }
+    for (const DecomposedArgLeaf &leaf : *rp)
+      results.push_back(leaf.type);
+  }
+}
+
 /// `sig` with its values and per-argument conventions replaced, everything
 /// else kept. `FuncType::getWithValuesReplaced` would keep the old-arity
 /// conventions and let `FuncType::get` resize them, shifting every convention
@@ -435,15 +546,16 @@ DecomposeFunctionArgumentsPass::rewriteFunc(FuncOp func, const FuncPlan &plan) {
   SmallVector<Type> origArgTypes(func.getFunctionType().getInputs().begin(),
                                  func.getFunctionType().getInputs().end());
 
-  // Results are unchanged: writable leaves are only annotated through the
-  // policy's per-leaf attributes, and a target pass turns those into its
-  // calling convention.
+  // Writable leaves are only annotated through the policy's per-leaf
+  // attributes, and a target pass turns those into its calling convention.
   FuncType origFuncType = func.getFuncTypeGenerator().getBody();
   SmallVector<Type> newInputs;
   SmallVector<ArgConvention> newConvs;
   decomposeSignature(plan.inputs, origFuncType, newInputs, newConvs);
-  SmallVector<Type> newResults(func.getFunctionType().getResults().begin(),
-                               func.getFunctionType().getResults().end());
+  SmallVector<Type> origResults(func.getFunctionType().getResults().begin(),
+                                func.getFunctionType().getResults().end());
+  SmallVector<Type> newResults;
+  decomposeResultTypes(plan.results, origResults, newResults);
 
   SmallVector<SmallVector<Value>> leafValuesPerOrigArg;
   SmallVector<SmallVector<SmallVector<unsigned>>> argLeafPaths;
@@ -486,6 +598,46 @@ DecomposeFunctionArgumentsPass::rewriteFunc(FuncOp func, const FuncPlan &plan) {
   if (entry) {
     if (failed(rewriteBody(func, origArgs, origArgTypes, leafValuesPerOrigArg,
                            argLeafPaths)))
+      return mlir::failure();
+    // Results are rewritten through this function's own `hlcf.return`s. A
+    // nested function-like op ends in a return of its own region's values,
+    // which `plan.results` does not describe, so the walk skips it while only
+    // arguments are decomposed.
+    //
+    // TODO: decomposing a result through a nested function-like region needs
+    // that region's results decomposed too. Until then, refuse the combination
+    // rather than skip the region's returns silently.
+    bool decomposesResults = llvm::any_of(
+        plan.results, [](const auto &rp) { return rp.has_value(); });
+    mlir::WalkResult walk =
+        func.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+          if (op != func.getOperation() && isa<FunctionLike>(op)) {
+            if (!decomposesResults)
+              return mlir::WalkResult::skip();
+            op->emitOpError(
+                "cannot decompose a function result through a nested "
+                "function-like region");
+            return mlir::WalkResult::interrupt();
+          }
+          auto ret = dyn_cast<M::HLCF::ReturnOp>(op);
+          if (!ret)
+            return mlir::WalkResult::advance();
+          SmallVector<Value> operands;
+          OpBuilder b(ret);
+          for (auto [i, value] : llvm::enumerate(ret.getOperands())) {
+            if (i >= plan.results.size() || !plan.results[i]) {
+              operands.push_back(value);
+              continue;
+            }
+            for (const DecomposedArgLeaf &leaf : *plan.results[i]) {
+              operands.push_back(materializeLeaf(b, ret.getLoc(), value,
+                                                 origResults[i], leaf.path));
+            }
+          }
+          ret->setOperands(operands);
+          return mlir::WalkResult::advance();
+        });
+    if (walk.wasInterrupted())
       return mlir::failure();
   }
 
@@ -572,12 +724,20 @@ LogicalResult DecomposeFunctionArgumentsPass::rewriteCalls(
     FuncType origSig = call.getCalleeType().getBody();
     FunctionType origFuncTy = origSig.getValues();
     // Operands and the cached type are both indexed by original-arg position
-    // below, so a call that drifted from its callee cannot be expanded.
+    // below, so a call that drifted from its callee cannot be expanded. The
+    // results are indexed the same way.
     if (call.getNumOperands() != calleePlan.inputs.size() ||
-        origFuncTy.getNumInputs() != calleePlan.inputs.size())
+        origFuncTy.getNumInputs() != calleePlan.inputs.size()) {
       return call.emitOpError(
           "cached callee signature disagrees with the callee's argument list, "
           "so its decomposed operands cannot be expanded");
+    }
+    if (call.getNumResults() != calleePlan.results.size() ||
+        origFuncTy.getNumResults() != calleePlan.results.size()) {
+      return call.emitOpError(
+          "cached callee signature disagrees with the callee's result list, "
+          "so its decomposed results cannot be rebuilt");
+    }
 
     OpBuilder b(call);
     SmallVector<Value> newOperands;
@@ -595,16 +755,62 @@ LogicalResult DecomposeFunctionArgumentsPass::rewriteCalls(
             materializeLeaf(b, call.getLoc(), operand, origArgType, leaf.path));
     }
 
-    // Only inputs are decomposed, so results never change here.
-    call->setOperands(newOperands);
     SmallVector<Type> newInputs;
     SmallVector<ArgConvention> newConvs;
     decomposeSignature(calleePlan.inputs, origSig, newInputs, newConvs);
-    auto newFuncTy = FunctionType::get(call.getContext(), newInputs,
-                                       origFuncTy.getResults());
+    SmallVector<Type> origResults(origFuncTy.getResults().begin(),
+                                  origFuncTy.getResults().end());
+    SmallVector<Type> newResults;
+    decomposeResultTypes(calleePlan.results, origResults, newResults);
+    auto newFuncTy =
+        FunctionType::get(call.getContext(), newInputs, newResults);
     FuncType newSig = withSignature(origSig, newFuncTy, newConvs);
-    call.setCalleeAttr(
-        FuncSymbolGenerator::getParamLess(call.getCalleeSymbol(), newSig));
+    auto newCallee =
+        FuncSymbolGenerator::getParamLess(call.getCalleeSymbol(), newSig);
+
+    if (llvm::none_of(calleePlan.results,
+                      [](const auto &rp) { return rp.has_value(); })) {
+      call->setOperands(newOperands);
+      call.setCalleeAttr(newCallee);
+      continue;
+    }
+
+    // The call's result types change, so it is rebuilt; each decomposed
+    // result is re-formed from its leaves for the old uses.
+    auto rebuilt =
+        KGEN::CallOp::create(b, call.getLoc(), newCallee, newOperands);
+    rebuilt->setAttrs(call->getAttrs());
+    // `setAttrs` brings the old callee attr back with the rest of the dict.
+    rebuilt.setCalleeAttr(newCallee);
+    // Build every replacement before moving any use, so a failed rebuild
+    // leaves the module unchanged.
+    unsigned next = 0;
+    SmallVector<Value> replacements;
+    replacements.reserve(call.getNumResults());
+    for (auto [i, oldResult] : llvm::enumerate(call.getResults())) {
+      const auto &rp = calleePlan.results[i];
+      if (!rp) {
+        replacements.push_back(rebuilt.getResult(next++));
+        continue;
+      }
+      SmallVector<Value> leafValues;
+      SmallVector<SmallVector<unsigned>> leafPaths;
+      for (const DecomposedArgLeaf &leaf : *rp) {
+        leafValues.push_back(rebuilt.getResult(next++));
+        leafPaths.push_back(leaf.path);
+      }
+      Value whole = materializeAggregate(b, call.getLoc(), origResults[i], {},
+                                         leafPaths, leafValues);
+      if (!whole) {
+        return call.emitOpError("cannot rebuild a decomposed result from its "
+                                "leaves");
+      }
+      replacements.push_back(whole);
+    }
+    for (auto [oldResult, whole] :
+         llvm::zip_equal(call.getResults(), replacements))
+      oldResult.replaceAllUsesWith(whole);
+    call.erase();
   }
   return mlir::success();
 }

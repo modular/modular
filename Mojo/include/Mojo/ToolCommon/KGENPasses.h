@@ -261,7 +261,8 @@ createForceAlwaysInline(std::function<void(KGEN::FuncOp)> onAnnotated);
 // DecomposeFunctionArguments
 //===----------------------------------------------------------------------===//
 
-/// One flattened leaf surviving a decomposed argument.
+/// One flattened leaf of a decomposed argument: a position that becomes an
+/// argument of its own. `{i32, {f32, f32}}` gives `[0]`, `[1, 0]`, `[1, 1]`.
 struct DecomposedArgLeaf {
   mlir::Type type;
   /// `struct.extract` index path from the original argument to this leaf.
@@ -289,6 +290,12 @@ public:
   /// - vector of decomposed leaves otherwise
   virtual mlir::FailureOr<std::optional<llvm::SmallVector<DecomposedArgLeaf>>>
   planArgument(FuncOp func, unsigned argIdx, mlir::Type argType) = 0;
+
+  /// Plans result `resIdx` (of type `resType`) of `func` the same way; only
+  /// each leaf's type and path are used, as in `DecomposedArgLeaf`. The
+  /// default leaves results alone.
+  virtual mlir::FailureOr<std::optional<llvm::SmallVector<DecomposedArgLeaf>>>
+  planResult(FuncOp func, unsigned resIdx, mlir::Type resType);
 };
 
 /// Default policy: flattens every `kgen.struct` argument unconditionally,

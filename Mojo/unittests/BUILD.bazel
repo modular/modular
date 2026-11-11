@@ -36,10 +36,13 @@ modular_cc_test(
     name = "KGENDialectTest",
     srcs = glob(["kgen-dialect/*.cpp"]),
     deps = [
+        "//Mojo:CODialect",
         "//Mojo:HLCFDialect",
         "//Mojo:KGENDialect",
         "//Mojo:LITDialect",
+        "//Mojo:POPDialect",
         "//Mojo:ToolCommon",
         "//Mojo:Transforms",
+        "@llvm-project//mlir:Parser",
     ],
 )
