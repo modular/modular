@@ -846,11 +846,6 @@ Parameters:
 
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
-def _output_register_size[mma_shape: Coord]() -> Int:
-    comptime assert _supported_mma_shape[mma_shape](), String(
-        t"WGMMA operation of shape '{mma_shape}' is not supported"
-    )
-    return Int(mma_shape[0]) * Int(mma_shape[1]) // 128
 
 
 @inline(.always)
