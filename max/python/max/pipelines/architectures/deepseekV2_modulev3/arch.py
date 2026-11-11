@@ -14,7 +14,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     GraphRole,
     SupportedArchitecture,
@@ -44,7 +43,6 @@ deepseekV2_modulev3_arch = SupportedArchitecture(
     },
     requires_max_batch_context_length=True,
     config=DeepseekV2Config,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

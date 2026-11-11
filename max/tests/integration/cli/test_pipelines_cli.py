@@ -26,7 +26,11 @@ from max._entrypoints import pipelines
 from max._entrypoints.cli import generate as cli_generate
 from max._entrypoints.cli.config import pipeline_config_options
 from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
-from max.pipelines.lib import PixelGenerationPipeline, PixelGenerationTokenizer
+from max.pipelines.lib import (
+    OverlapTextGenerationPipeline,
+    PixelGenerationPipeline,
+    PixelGenerationTokenizer,
+)
 from max.pipelines.lib.generate_images import (
     GenerateImagesResult,
     _ImageRequests,
@@ -236,6 +240,51 @@ def test_pipelines_cli__generate_turns_the_vendor_blas_fallback_off_on_amd(
 
 class _StopAtPipelineArgs(Exception):
     pass
+
+
+def test_pipelines_cli__generate_checks_graph_capture_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``max generate`` holds graph capture to its measured share, as serve does."""
+    calls: list[str] = []
+    pipeline = MagicMock(spec=OverlapTextGenerationPipeline)
+    pipeline.warmup_graph_capture.side_effect = lambda: calls.append("warmup")
+    config = MagicMock()
+    config.runtime.device_graph_capture = True
+    retrieved = MagicMock()
+    retrieved.factory.return_value = pipeline
+
+    class CaptureOverBudget(Exception):
+        pass
+
+    def check_capture(checked: object) -> None:
+        assert checked is pipeline
+        calls.append("check")
+        raise CaptureOverBudget
+
+    monkeypatch.setattr(cli_generate, "_with_debug_defaults", lambda args: args)
+    monkeypatch.setattr(
+        cli_generate,
+        "PipelineConfig",
+        MagicMock(**{"from_args.return_value": config}),
+    )
+    monkeypatch.setattr(
+        cli_generate,
+        "PIPELINE_REGISTRY",
+        MagicMock(**{"retrieve_factory.return_value": retrieved}),
+    )
+    monkeypatch.setattr(
+        cli_generate, "clamp_tokenizer_to_pipeline", lambda *args: None
+    )
+    monkeypatch.setattr(
+        cli_generate.memory_ledger, "check_capture", check_capture
+    )
+
+    with pytest.raises(CaptureOverBudget):
+        cli_generate.generate_text_for_pipeline(
+            MagicMock(), MagicMock(), prompt="hi"
+        )
+    assert calls == ["warmup", "check"]
 
 
 @pytest.mark.parametrize("command", ["serve", "generate"])

@@ -46,7 +46,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     single_replica_context_batch,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from .deepseekV4 import DeepseekV4

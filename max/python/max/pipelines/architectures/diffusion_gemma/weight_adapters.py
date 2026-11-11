@@ -26,7 +26,7 @@ checkpoint stores them stacked, as ``DiffusionGemmaMoE`` reads them.
 
 The encoder and the denoiser load from the same converted dict under the same
 FQNs, but each compiles as its own graph and holds its own device copy of the
-text weights (see ``DiffusionGemmaMemoryPlanner.estimate_weights_size``).
+text weights.
 """
 
 from __future__ import annotations

@@ -113,7 +113,6 @@ Model interface
    :toctree: generated
    :template: autosummary/class.rst
 
-   MemoryEstimator
    ModelInputs
    ModelOutputs
    PipelineModel

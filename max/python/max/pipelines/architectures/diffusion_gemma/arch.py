@@ -26,7 +26,6 @@ from .diffusion_gemma import (
     DiffusionGemmaEncoder,
     DiffusionGemmaVision,
 )
-from .memory_planner import DiffusionGemmaMemoryPlanner
 from .model_config import DiffusionGemmaForBlockDiffusionConfig
 from .tokenizer import Gemma4Tokenizer
 
@@ -54,7 +53,6 @@ diffusion_gemma_arch = SupportedArchitecture(
     config=DiffusionGemmaForBlockDiffusionConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    memory_planner=DiffusionGemmaMemoryPlanner,
     # The decoder writes canvas K/V into uncommitted cache slots and reads
     # them back within a step; prefix-cache block reuse across requests is
     # not yet audited against that pattern.

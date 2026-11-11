@@ -14,12 +14,10 @@
 
 from __future__ import annotations
 
-import math
 import warnings
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
-from unittest.mock import Mock
 
 import pytest
 from _tiny_config import (
@@ -43,22 +41,17 @@ from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.mamba2 import (
-    CausalConv1d,
     NemotronHMamba2Mixer,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
     NemotronHMLP,
     NemotronHMoE,
-    NemotronHRouter,
     _NVFP4Projection,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
     NVFP4Linear,
     RowGroupedLinear,
     nvfp4_block_scale_shape,
-)
-from max.pipelines.architectures.nemotron_h_modulev3.memory_planner import (
-    NemotronHMemoryPlanner,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
     NemotronHConfig,
@@ -734,140 +727,6 @@ def test_nvfp4_experts_split_between_blocks(
         return
     with pytest.raises(ValueError, match="not whole 16-channel blocks"):
         config.check_quantized_modules()
-
-
-def _on_every_device(param: Tensor, n: int) -> bool:
-    """Returns whether each of ``n`` devices holds a whole copy of ``param``.
-
-    The FP8 scales are pinned to the host, outside the model's mesh.
-    """
-    return param.mesh.num_devices == n and all(
-        isinstance(p, Replicated) for p in param.placements
-    )
-
-
-def _bytes_on_devices(config: NemotronHConfig) -> int:
-    """Sums the weight bytes on the devices, as the graph places them.
-
-    A weight the graph places as declared counts once if sharded and once
-    per device if replicated. A module that prepares its weights from their
-    host copies counts as the tensors it gives each device.
-    """
-    n = len(config.devices)
-    mesh = _mesh(n)
-    prepared: list[TensorValue | Tensor] = []
-    replaced: set[int] = set()
-    total = 0
-    with _built_on_devices(config) as model:
-        for _, module in model.descendants:
-            sources: list[Tensor] = []
-            if isinstance(module, NVFP4Linear):
-                for params in module.device_params(mesh):
-                    prepared.extend(params)
-                sources = [param for _, param in module.parameters]
-            elif isinstance(module, NemotronHMoE):
-                for proj in ("up", "down"):
-                    for expert_params in module.device_params(proj, mesh):
-                        prepared.extend(expert_params)
-                # The router and a shared expert run on its own are placed
-                # as declared.
-                runs_alone = isinstance(module.shared_experts, NemotronHMLP)
-                sources = [
-                    param
-                    for name, param in module.parameters
-                    if name.startswith("experts.")
-                    or (name.startswith("shared_experts.") and not runs_alone)
-                ]
-            elif isinstance(module, RowGroupedLinear):
-                prepared.extend(module.placed_weight(mesh).local_shards)
-                sources = [module.weight]
-            elif isinstance(module, CausalConv1d) and module.segments:
-                for placed in module.placed(mesh):
-                    prepared.extend(placed.local_shards)
-                sources = [module.weight, module.bias]
-            elif (
-                isinstance(module, NemotronHAttention) and module.kv_repeats > 1
-            ):
-                prepared.extend(module.qkv_weight(mesh).local_shards)
-                qkv = module.qkv_proj
-                sources = [
-                    qkv.q_proj.weight,
-                    qkv.k_proj.weight,
-                    qkv.v_proj.weight,
-                ]
-            elif isinstance(module, NemotronHRouter):
-                # Each device keeps the gate the graph casts at init, so a
-                # widening cast adds the difference beside the stored gate.
-                gate = module.weight
-                widened = (
-                    module.gate_dtype.size_in_bytes - gate.dtype.size_in_bytes
-                )
-                total += (
-                    math.prod(int(d) for d in gate.shape) * max(widened, 0) * n
-                )
-            replaced.update(id(param) for param in sources)
-        for _, param in model.parameters:
-            if id(param) in replaced:
-                continue
-            total += (
-                math.prod(int(d) for d in param.shape)
-                * param.dtype.size_in_bytes
-                * (n if _on_every_device(param, n) else 1)
-            )
-        for value in prepared:
-            total += (
-                math.prod(int(d) for d in value.shape)
-                * value.dtype.size_in_bytes
-            )
-    return total
-
-
-W4A4_DIMS = WIDE | dict(hidden_size=64, moe_intermediate_size=128)
-
-
-def _scheme_with_w4a4_experts(config: NemotronHConfig) -> NemotronHQuantScheme:
-    return _with_w4a4_experts(config).quant_scheme
-
-
-@pytest.mark.parametrize(
-    "n, dims, scheme",
-    [
-        (2, WIDE, None),
-        (4, WIDE, None),
-        (8, WIDE, None),
-        (2, NVFP4_DIMS, lightning_scheme),
-        (2, NVFP4_DIMS, dense_nvfp4_scheme),
-        # Whole W4A4 scale atoms in both projections, and whole NVFP4 blocks
-        # on each of eight devices.
-        (2, W4A4_DIMS, _scheme_with_w4a4_experts),
-        (4, W4A4_DIMS, _scheme_with_w4a4_experts),
-        (8, W4A4_DIMS, _scheme_with_w4a4_experts),
-    ],
-)
-@pytest.mark.parametrize("bf16_gate", [False, True])
-def test_weights_are_planned_as_the_modules_place_them(
-    n: int, dims: dict[str, int], scheme: Scheme | None, bf16_gate: bool
-) -> None:
-    """Sharded weights are counted once, replicated ones per device, and a
-    repeated KV head once per device that holds it. Weights the graph
-    prepares are counted as each device holds them, padding included, and
-    the router gates in the wider of their stored and routing dtypes."""
-    pipeline = Mock()
-    pipeline.model.weights_size.return_value = 1000
-    one_config = model_config(TINY_LAYERS, dims)
-    config = model_config(TINY_LAYERS, dims, n_devices=n)
-    one_config.bf16_router_gate = bf16_gate
-    config.bf16_router_gate = bf16_gate
-    if scheme is not None:
-        one_config.quant_scheme = scheme(one_config)
-        config.quant_scheme = scheme(config)
-
-    one = NemotronHMemoryPlanner(one_config).estimate_weights_size(pipeline)
-    planned = NemotronHMemoryPlanner(config).estimate_weights_size(pipeline)
-
-    placed = _bytes_on_devices(config)
-    assert planned - one == placed - _bytes_on_devices(one_config)
-    assert planned > one
 
 
 def test_per_device_hidden_states_are_refused() -> None:

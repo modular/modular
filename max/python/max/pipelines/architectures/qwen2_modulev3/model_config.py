@@ -82,7 +82,7 @@ class Qwen2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def devices(self) -> list[DeviceRef]:
-        """Returns the devices in :attr:`mesh`, for the memory planner."""
+        """Returns the devices in :attr:`mesh`."""
         return [DeviceRef.from_device(device) for device in self.mesh.devices]
 
     @override

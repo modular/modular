@@ -20,7 +20,6 @@ from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
 from .layers.language_model import KimiK2_5Decoder
 from .layers.vision.transformer import KimiK2_5VisionEncoder
-from .memory_planner import KimiK25MemoryPlanner
 from .model_config import KimiK2_5Config
 from .tokenizer import KimiK2_5VLTokenizer
 from .weight_adapters import kimik2_5_weight_rules
@@ -55,7 +54,6 @@ kimik2_5_modulev3_arch = SupportedArchitecture(
     config=KimiK2_5Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
-    memory_planner=KimiK25MemoryPlanner,
 )
 
 kimivl_modulev3_arch = SupportedArchitecture(
@@ -83,5 +81,4 @@ kimivl_modulev3_arch = SupportedArchitecture(
     config=KimiK2_5Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
-    memory_planner=KimiK25MemoryPlanner,
 )

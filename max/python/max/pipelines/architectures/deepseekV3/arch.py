@@ -22,7 +22,6 @@ from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .batch_processor import DeepseekV3BatchProcessor
-from .memory_planner import DeepseekV3MemoryPlanner
 from .model import DeepseekV3Model
 from .model_config import DeepseekV3Config
 from .tool_parser import resolve_deepseekv3_tool_parser
@@ -48,7 +47,6 @@ deepseekV3_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,
     tool_parser=resolve_deepseekv3_tool_parser,
-    memory_planner=DeepseekV3MemoryPlanner,
     cascade_pipeline_factory=CommonTextGenPipeline,
     checkpoint_drafts={"mtp": "MTPDeepseekV3DraftModel"},
     # DeepseekV3's Eagle3 drafts declare names Kimi K2.5's fused Eagle3 graph

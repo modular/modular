@@ -43,7 +43,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 
 from .batch_processor import Qwen2_5VLBatchProcessor
 from .model_config import Qwen2_5VLConfig

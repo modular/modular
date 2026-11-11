@@ -19,12 +19,11 @@ read through :mod:`.hybrid_layout`.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, ClassVar
 
-from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
@@ -74,8 +73,6 @@ from .hybrid_layout import (
     SPARSE_ATTENTION,
     layer_indices,
     recurrent_state_bytes,
-    residual_bytes_per_token,
-    state_bounded_batch_size,
 )
 from .quantization import Glm5NextQuantScheme
 from .vision.config import Glm5NextVisionConfig
@@ -480,31 +477,6 @@ class Glm5NextConfig(
         The count is summed over every device.
         """
         return recurrent_state_bytes(self.kv_params, len(self.devices))
-
-    def activation_bytes_per_token(self) -> int:
-        """Returns the bytes one live residual occupies per token."""
-        return residual_bytes_per_token(
-            self.hc_mult, self.hidden_size, self.compute_dtype
-        )
-
-    def infer_optimal_batch_size(
-        self,
-        devices: Sequence[Device],
-        *,
-        weights_size: int,
-        device_memory_utilization: float,
-    ) -> int:
-        """Returns a memory-safe default ``max_batch_size``.
-
-        See
-        :func:`~.hybrid_layout.state_bounded_batch_size`.
-        """
-        return state_bounded_batch_size(
-            self.per_request_state_bytes(),
-            devices,
-            weights_size=weights_size,
-            device_memory_utilization=device_memory_utilization,
-        )
 
     @override
     @classmethod

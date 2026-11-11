@@ -62,7 +62,6 @@ from max.tensor.sharding import DeviceMesh
 from typing_extensions import override
 
 from ..mimo_v2.model import text_model_weights
-from .memory_planner import ep_dispatch_row_budget
 from .mimo_v2 import MiMoV2, MiMoV2SpecTarget
 from .model_config import MiMoV2Config, check_split_verify_rows
 from .quant import MXFP8_DISPATCH_QUANT_CONFIG
@@ -246,6 +245,41 @@ class MiMoV2ModuleV3BatchProcessor(
             kv_cache_inputs=kv_cache_inputs,
             ep_inputs=self._ep_inputs(),
         )
+
+
+def ep_dispatch_row_budget(pipeline_config: PipelineConfig) -> int:
+    """Returns the rows one forward step carries; sizes the EP buffers.
+
+    The scheduler's ``max_batch_input_tokens`` bounds a step's active rows
+    -- chunked prefill makes it hard -- so a forward's dispatch buffers fit
+    it. A speculative verify merges ``draft_width`` draft rows beside each
+    request's active token through every MoE layer, rows the budget never
+    charges, so it counts them too, as DeepSeek-V4.1's DSpark EP config
+    does: the dispatch buffers are fixed at build and the dispatch kernel
+    rejects a wider shard.
+
+    Args:
+        pipeline_config: The pipeline whose scheduler budget and verify
+            width bound the step's rows.
+
+    Raises:
+        ValueError: Speculating without ``max_batch_size``, which bounds the
+            requests a verify step carries and so the draft rows too.
+    """
+    runtime = pipeline_config.runtime
+    speculative = pipeline_config.speculative
+    if speculative is None:
+        return runtime.max_batch_input_tokens
+    if runtime.max_batch_size is None:
+        raise ValueError(
+            "MiMo-V2 speculative decoding under expert parallelism needs"
+            " max_batch_size, which bounds the draft rows a verify step"
+            " adds to max_batch_input_tokens"
+        )
+    return (
+        runtime.max_batch_input_tokens
+        + runtime.max_batch_size * speculative.draft_width
+    )
 
 
 def _validate_data_parallel_attention(

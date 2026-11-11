@@ -24,7 +24,6 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .memory_planner import DeepseekV4MemoryPlanner
 from .model import DeepseekV4Model
 from .model_config import DeepseekV4Config
 from .reasoning import (  # noqa: F401  registers "deepseekv4_modulev3"
@@ -54,7 +53,6 @@ deepseekV4_modulev3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=DeepseekV4Config,
-    memory_planner=DeepseekV4MemoryPlanner,
     reasoning_parser="deepseekv4_modulev3",
     tool_parser="deepseekv4_modulev3",
 )

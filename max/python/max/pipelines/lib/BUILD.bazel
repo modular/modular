@@ -16,6 +16,7 @@ modular_py_library(
     ],
     test_docstring_examples = True,
     deps = [
+        requirement("av"),
         "//max/python/max:_core",
         "//max/python/max:tensor",
         "//max/python/max:tree",

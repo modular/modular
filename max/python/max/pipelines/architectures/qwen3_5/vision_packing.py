@@ -44,6 +44,32 @@ class Qwen3_5VisionInputs:
     cu_seqlens: Buffer
     max_seqlen: Buffer
 
+    def graph_inputs(self, devices: Sequence[Device]) -> list[Buffer]:
+        """Returns the vision graph's inputs, signal buffers aside.
+
+        The graph takes each field once per device, field-major, as
+        ``Qwen3_5VisionTransformer.input_tree`` lays them out. The fields
+        are packed on the first device; each other device gets a copy, and
+        the host scalars are shared.
+        """
+        inputs: list[Buffer] = []
+        for value in (
+            self.pixel_values,
+            self.weights,
+            self.indices,
+            self.vision_position_ids,
+            self.max_grid_size,
+            self.grid_thw,
+            self.cu_seqlens,
+            self.max_seqlen,
+        ):
+            inputs.append(value)
+            inputs.extend(
+                value if value.device.is_host else value.to(device)
+                for device in devices[1:]
+            )
+        return inputs
+
 
 @dataclass
 class _ImagePiece:

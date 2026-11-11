@@ -87,9 +87,7 @@ from .utils import parse_state_dict_from_weights
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-
-    # TODO(MXF-517): Remove the interfaces/memory_estimation import cycle.
-    from .memory_estimation import MemoryPlan
+    from .memory_plan import MemoryPlan
 
 __all__ = [
     "EncoderInputs",

@@ -93,7 +93,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.utils import (
     CompilationTimer,
     compute_data_parallel_splits,
@@ -117,7 +117,6 @@ from .layers.engram_hash import EngramLayout, engram_lookback_token_ids
 from .layers.engram_lookup import EngramLookup
 from .layers.engram_token_map import compressed_token_map_array
 from .layers.moe import DeepseekV41MoE
-from .memory_planner import check_planned_max_length
 from .model_config import (
     DeepseekV41Config,
     forward_row_bound,
@@ -143,6 +142,38 @@ logger = logging.getLogger("max.pipelines")
 # Host-RAM budget for the load (Engram tables can be very large). Bounded by
 # total RAM as well as what is free now, so an undersized host fails fast.
 _ENGRAM_HOST_RAM_MAX_FRACTION_OF_TOTAL = 0.8
+
+
+def check_planned_max_length(
+    *, planned: int | None, requested: int, forward_rows: int
+) -> None:
+    """Refuses a memory plan whose KV pool cannot hold one prefill chunk.
+
+    Without this check the plan would succeed with ``max_length`` clamped to
+    a few tokens. The error is worded like other out-of-memory planning
+    errors so callers that retry with smaller configs recognize it.
+
+    Args:
+        planned: The plan's ``planned_max_length``.
+        requested: The ``max_length`` the config asked for.
+        forward_rows: Query rows one forward carries (the prefill chunk).
+
+    Raises:
+        RuntimeError: If ``planned < min(requested, forward_rows)``.
+    """
+    if not all(isinstance(v, int) for v in (planned, requested, forward_rows)):
+        return  # No plan (virtual devices) or a partial test double.
+    assert planned is not None
+    if planned >= min(requested, forward_rows):
+        return
+    raise RuntimeError(
+        f"DeepSeek-V4.1-Flash: the KV pool left after the weights and the "
+        f"forward's {forward_rows}-row activation reserve holds only "
+        f"{planned} tokens (max_length {requested} requested), so the "
+        "model, activations, and signal buffers don't leave room for KV "
+        "cache. Lower max_length or the prefill chunk "
+        "(max_batch_input_tokens), or raise device_memory_utilization."
+    )
 
 
 def _weight_data_bytes(weight_data: WeightData) -> int:

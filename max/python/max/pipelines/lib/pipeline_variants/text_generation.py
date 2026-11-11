@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import dataclasses
+import gc
 import json
 import logging
 from abc import abstractmethod
@@ -53,7 +54,11 @@ from max.pipelines.context import (
 from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
     InputError,
 )
-from max.pipelines.kv_cache import PagedKVCacheManagerInterface, load_kv_manager
+from max.pipelines.kv_cache import (
+    NullKVCache,
+    PagedKVCacheManagerInterface,
+    load_kv_manager,
+)
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsPooledVisionMetrics,
     VisionEncoderCache,
@@ -87,6 +92,7 @@ from max.pipelines.sampling import (
     apply_logits_processors,
 )
 
+from .. import memory_ledger
 from ..graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
 from ..interfaces import (
     ModelInputs,
@@ -94,7 +100,7 @@ from ..interfaces import (
     PipelineModel,
     PipelineModelWithKVCache,
 )
-from ..memory_estimation import MemoryPlan
+from ..memory_plan import MemoryPlan
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 from ..weight_transform import WeightEntry
@@ -322,17 +328,36 @@ class TextGenerationPipeline(
                 memory_plan=memory_plan,
             )
 
-        available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
-        self._kv_manager = load_kv_manager(
-            params=kv_params,
-            max_batch_size=max_batch_size,
-            max_seq_len=self._pipeline_model.max_seq_len,
-            session=session,
-            available_cache_memory=available_cache_memory,
-            is_di_enabled=pipeline_config.runtime.is_disaggregated,
-            model_name=pipeline_config.model.model_name,
-            max_num_input_tokens=pipeline_config.runtime.max_num_input_tokens,
+        self.memory_plan = memory_plan
+        """The plan the pipeline runs with, its KV budget filled in."""
+        self.memory_ledger: memory_ledger.Ledger | None = None
+        """The warmups' measurement, once :meth:`size_kv_cache` ran."""
+        # With no budget planned, the warmups run against the null page and
+        # memory_ledger.size_kv_cache swaps the real cache in once they are
+        # measured.
+        measuring = (
+            memory_plan.available_cache_memory is None
+            and memory_ledger.measures(self._devices)
+        )
+        self._kv_manager: PagedKVCacheManagerInterface = (
+            NullKVCache(
+                params=kv_params,
+                max_batch_size=max_batch_size,
+                max_seq_len=self._pipeline_model.max_seq_len,
+                max_num_input_tokens=pipeline_config.runtime.max_num_input_tokens,
+            )
+            if measuring
+            else load_kv_manager(
+                params=kv_params,
+                max_batch_size=max_batch_size,
+                max_seq_len=self._pipeline_model.max_seq_len,
+                session=session,
+                available_cache_memory=memory_plan.available_cache_memory,
+                is_di_enabled=pipeline_config.runtime.is_disaggregated,
+                model_name=pipeline_config.model.model_name,
+                max_num_input_tokens=pipeline_config.runtime.max_num_input_tokens,
+            )
         )
 
         self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
@@ -340,8 +365,11 @@ class TextGenerationPipeline(
         )
         self._vision_encoding = vision_encoding(self._pipeline_model)
         if self._vision_encoding is not None:
+            # A block reservation is carved from the measured budget, so
+            # the warmups run with the entry-count cache, which reserves
+            # nothing.
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
-                plan=memory_plan.vision_cache_plan,
+                plan=None if measuring else memory_plan.vision_cache_plan,
                 devices=self._devices,
             )
 
@@ -401,6 +429,39 @@ class TextGenerationPipeline(
                 pipeline_config, self._sampler_device, max_batch_size
             )
         )
+
+        if measuring:
+            memory_ledger.size_kv_cache(self, memory_plan)
+
+    def install_kv_manager(
+        self,
+        kv_manager: PagedKVCacheManagerInterface | None,
+        memory_plan: MemoryPlan,
+    ) -> None:
+        """Replaces the KV cache the pipeline runs against.
+
+        :func:`~max.pipelines.lib.memory_ledger.size_kv_cache` swaps the
+        null cache the warmups ran against for the real one, passing
+        ``None`` first so the null cache is gone before the real one
+        claims its memory.
+
+        Args:
+            kv_manager: The cache, or ``None`` to drop the current one.
+            memory_plan: The plan the cache was sized with.
+        """
+        self._kv_manager = kv_manager  # type: ignore[assignment]
+        self._max_batch_size = memory_plan.planned_max_batch_size
+        self.memory_plan = memory_plan
+        if kv_manager is None:
+            gc.collect()
+        elif (
+            self._vision_encoding is not None
+            and memory_plan.vision_cache_plan is not None
+        ):
+            self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
+                plan=memory_plan.vision_cache_plan,
+                devices=self._devices,
+            )
 
     @property
     def max_batch_size(self) -> int:

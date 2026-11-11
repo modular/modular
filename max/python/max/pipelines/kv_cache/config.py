@@ -333,12 +333,11 @@ class KVCacheConfig(ConfigFileModel):
     """KV cache connector configuration, including the connector ``type``."""
 
     device_memory_utilization: float = Field(
-        default=0.9,
+        default=0.95,
         description=(
-            "The fraction of available device memory that the process "
-            "should consume. The remaining headroom holds the KV cache: "
-            "``kv_cache_workspace = (total_free_memory * "
-            "device_memory_utilization) - model_weights_size``."
+            "The fraction of device memory the process may use. The KV "
+            "cache gets what is left of it after the weights, the measured "
+            "warmup peaks, graph capture and a fixed margin."
         ),
     )
     """The fraction of available device memory the process should consume."""

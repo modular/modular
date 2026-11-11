@@ -14,7 +14,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -36,5 +35,4 @@ flint_arch = SupportedArchitecture(
     use_weight_rules=True,
     task=PipelineTask.TEXT_GENERATION,
     config=FlintConfig,
-    memory_planner=PagedMemoryPlanner,
 )

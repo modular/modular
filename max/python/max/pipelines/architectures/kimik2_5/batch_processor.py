@@ -44,8 +44,8 @@ from max.pipelines.lib.vision_encoder_cache import (
 )
 
 from .context import KimiK2_5TextAndVisionContext
-from .memory_planner import _vision_encoder_token_budget, _vision_merge_sq
 from .model_config import KimiK2_5Config
+from .vision_budget import vision_encoder_token_budget, vision_merge_sq
 
 if TYPE_CHECKING:
     from .model import KimiK2_5ModelInputs
@@ -223,7 +223,7 @@ class KimiK2_5BatchProcessorBase(DeepseekV3BatchProcessorBase[InputsT]):
         else:
             merge_h = int(merge_cfg[0])
             merge_w = int(merge_cfg[1])
-        merge_sq = _vision_merge_sq(self._model_config.vision_config)
+        merge_sq = vision_merge_sq(self._model_config.vision_config)
 
         uncached_contexts = [ctx for ctx, _ in selection]
         request_ids = [str(ctx.request_id) for ctx in uncached_contexts]
@@ -420,8 +420,8 @@ class KimiK2_5BatchProcessorBase(DeepseekV3BatchProcessorBase[InputsT]):
         )
 
         pipeline_config = self.runtime.pipeline_config
-        token_budget = _vision_encoder_token_budget(pipeline_config)
-        merge_sq = _vision_merge_sq(self._model_config.vision_config)
+        token_budget = vision_encoder_token_budget(pipeline_config)
+        merge_sq = vision_merge_sq(self._model_config.vision_config)
 
         if token_budget is None:
             chunks = [list(per_image)]

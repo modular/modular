@@ -77,7 +77,6 @@ from max.pipelines.context import (
     TextAndVisionContext,
     TextContext,
 )
-from max.pipelines.kv_cache.memory_planner import MemoryPlanner
 from max.pipelines.modeling.types import InputModality, RequestID
 from max.pipelines.speculative import proposers, spec_adapters
 from max.pipelines.speculative._tensor_compat import (
@@ -130,7 +129,7 @@ from ..interfaces.pipeline_model import (
     WeightLoad,
     _cast_to_parameter_dtypes,
 )
-from ..memory_estimation import MemoryPlan
+from ..memory_plan import MemoryPlan
 from ..module_registration import (
     ModuleV3DecoderPipelineModel,
     RegisteredDecoderBuilder,
@@ -450,7 +449,6 @@ def spec_decode_architecture(
             if vision_cache
             else SpecDecodeArchConfig
         ),
-        memory_planner=_MemoryPlanner,
         requires_max_batch_context_length=(
             base.requires_max_batch_context_length
             or draft.requires_max_batch_context_length
@@ -787,15 +785,13 @@ def _stage_boundary_input_types(
 class SpecDecodeArchConfig:
     """The target config and the KV tree the target and draft share.
 
-    This is the arch config the memory planner and batch processor read, so
-    the KV params it reports cover the draft as well as the target.
+    This is the arch config the KV cache and batch processor read, so the KV
+    params it reports cover the draft as well as the target.
     """
 
     target: Any
     draft_architecture: SupportedArchitecture
     kv_params: MultiKVCacheParams
-    target_memory_planner: type[MemoryPlanner] | None = None
-    """The target architecture's memory planner."""
     input_spec: SpecDecodeInputTypeSpec | None = None
     """The graph's signature, set once the graph is built."""
 
@@ -819,7 +815,6 @@ class SpecDecodeArchConfig:
             kv_params=_kv_tree(
                 pipeline_config, pairing, target.get_kv_params()
             ),
-            target_memory_planner=pairing.target.memory_planner,
         )
 
     @classmethod
@@ -904,51 +899,6 @@ def _target_config_cls(huggingface_config: Any) -> type[Any]:
     target = _target_architecture(huggingface_config.architectures[0])
     assert target is not None
     return _config_cls(target)
-
-
-class _MemoryPlanner(MemoryPlanner):
-    """Plans with the target's planner, counting the draft's weights too.
-
-    A draft from a checkpoint of its own loads beside the target, so the
-    cache gets what both leave.
-    """
-
-    def __init__(self, config: Any) -> None:
-        super().__init__(config)
-        assert isinstance(config, SpecDecodeArchConfig)
-        planner = config.target_memory_planner or MemoryPlanner
-        self._target = planner(config.target)
-
-    def estimate_weights_size(self, pipeline_config: Any) -> int:
-        """Returns the target's weights plus the draft checkpoint's."""
-        size = self._target.estimate_weights_size(pipeline_config)
-        if pipeline_config.draft_model is not None:
-            size += pipeline_config.draft_model.weights_size()
-        return size
-
-    def estimate_activation_memory(
-        self, pipeline_config: Any, huggingface_config: Any
-    ) -> int:
-        """Returns the target planner's activation estimate."""
-        return self._target.estimate_activation_memory(
-            pipeline_config, huggingface_config
-        )
-
-    def infer_max_batch_size(
-        self, pipeline_config: Any, devices: list[Device], weights_size: int
-    ) -> int | None:
-        """Returns the target planner's default batch size, if it has one."""
-        return self._target.infer_max_batch_size(
-            pipeline_config, devices, weights_size
-        )
-
-    def estimate_signal_buffer_memory(
-        self, pipeline_config: Any, arch_config: Any | None = None
-    ) -> int:
-        """Returns the target planner's signal-buffer estimate."""
-        return self._target.estimate_signal_buffer_memory(
-            pipeline_config, arch_config
-        )
 
 
 @dataclass

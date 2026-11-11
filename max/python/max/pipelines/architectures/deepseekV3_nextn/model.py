@@ -35,7 +35,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.graph_specs import GraphRole
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Model

@@ -40,7 +40,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from .batch_processor import PixtralBatchProcessor

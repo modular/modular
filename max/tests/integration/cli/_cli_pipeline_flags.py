@@ -61,7 +61,9 @@ def pipeline_flags(flag_set: str) -> list[str]:
         "--model-path",
         REPO_ID,
         "--trust-remote-code",
-        "--device-memory-utilization=0.1",
+        # CI sizes the memory manager to the test's gpu-memory resource,
+        # so the pool already is this test's budget.
+        "--device-memory-utilization=0.9",
         "--quantization-encoding=bfloat16",
         "--devices=gpu",
         "--no-prefer-module-v3",

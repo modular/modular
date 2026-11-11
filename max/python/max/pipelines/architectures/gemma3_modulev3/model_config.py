@@ -156,13 +156,7 @@ class Gemma3Config(
 
     @property
     def devices(self) -> list[DeviceRef]:
-        """Returns the devices in :attr:`mesh`.
-
-        Satisfies the ``devices`` member of ``ModelConfig`` in
-        :mod:`max.pipelines.kv_cache.memory_planner`. The paged planner
-        accepts a config through ``ModelConfigWithKVCache``, which requires
-        the ``get_kv_params`` member as well.
-        """
+        """Returns the devices in :attr:`mesh`."""
         return [DeviceRef.from_device(device) for device in self.mesh.devices]
 
     @staticmethod

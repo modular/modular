@@ -21,6 +21,7 @@ from .cache_manager import BlockCount, ByteCount, PagedKVCacheManager
 from .cache_manager_interface import PagedKVCacheManagerInterface
 from .dummy_cache_manager import DummyKVCache
 from .jenga_cache_manager import JengaKVCacheManager
+from .null_cache_manager import NullKVCache
 from .transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -36,6 +37,7 @@ __all__ = [
     "JengaKVCacheManager",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
+    "NullKVCache",
     "PagedKVCacheManager",
     "PagedKVCacheManagerInterface",
     "PrefixCacheHits",

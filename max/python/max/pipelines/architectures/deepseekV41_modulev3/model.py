@@ -55,7 +55,7 @@ from transformers import AutoTokenizer
 from typing_extensions import override
 
 if TYPE_CHECKING:
-    from max.pipelines.lib.memory_estimation import MemoryPlan
+    from max.pipelines.lib.memory_plan import MemoryPlan
 
 from .batch_processor import DeepseekV41BatchProcessor
 from .deepseekV41 import DeepseekV41

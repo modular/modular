@@ -17,7 +17,6 @@ from max.pipelines.context.context_validators import (
     validate_only_one_image,
     validate_requires_vision_context,
 )
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -55,7 +54,6 @@ pixtral_modulev3_arch = SupportedArchitecture(
     ],
     config=PixtralConfig,
     batching=PixtralModuleV3BatchProcessor,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

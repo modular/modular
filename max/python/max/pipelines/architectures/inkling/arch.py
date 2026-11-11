@@ -21,7 +21,6 @@ from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from .memory_planner import InklingMemoryPlanner
 from .model import InklingModel
 from .model_config import InklingConfig
 from .reasoning import InklingReasoningParser  # noqa: F401  registers "inkling"
@@ -47,7 +46,6 @@ inkling_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
     checkpoints_recurrent_state=True,
-    memory_planner=InklingMemoryPlanner,
     reasoning_parser="inkling",
     checkpoint_drafts={"mtp": "MTPInklingDraftModel"},
     spec_decode_graph_names={"mtp": "inkling_with_mtp_graph"},

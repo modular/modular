@@ -18,7 +18,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any, NamedTuple
 
-from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
@@ -31,7 +30,6 @@ from max.nn.kv_cache.cache_params import (
     recurrent_leaf,
 )
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
-from max.pipelines.lib.memory_estimation import FreeMemory
 from transformers import AutoConfig
 
 from .layers.indexer_inputs import indexer_selection_width
@@ -56,9 +54,7 @@ __all__ = [
     "layer_indices",
     "linear_attn_field",
     "recurrent_state_bytes",
-    "residual_bytes_per_token",
     "resolve_layer_types",
-    "state_bounded_batch_size",
 ]
 
 
@@ -108,39 +104,6 @@ def recurrent_state_bytes(
     if state is None:
         return 0
     return state.bytes_per_state * num_devices
-
-
-def residual_bytes_per_token(
-    hc_mult: int, hidden_size: int, dtype: DType
-) -> int:
-    """Returns the bytes one live ``hc_mult``-stream residual takes per token."""
-    return hc_mult * hidden_size * dtype.size_in_bytes
-
-
-def state_bounded_batch_size(
-    per_request_bytes: int,
-    devices: Sequence[Device],
-    *,
-    weights_size: int,
-    device_memory_utilization: float,
-) -> int:
-    """Returns a memory-safe default ``max_batch_size``.
-
-    The state occupies pages of the KV pool, so it is reserved nowhere here.
-    The states get up to half the post-weights budget and the KV absorbs the
-    rest; the halving bounds concurrency, it allocates nothing.
-    """
-    if per_request_bytes == 0:
-        return 32
-    try:
-        free_bytes = FreeMemory.summed(devices).hi
-    except Exception:
-        # Only the minimized bring-up fixture lands here.
-        return 8
-    budget = int(free_bytes * device_memory_utilization) - weights_size
-    if budget <= 0:
-        return 1
-    return min(512, max(1, (budget // 2) // per_request_bytes))
 
 
 def get_text_config(huggingface_config: AutoConfig) -> AutoConfig:

@@ -19,7 +19,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
-from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
@@ -35,7 +34,6 @@ from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithVisionCache
-from max.pipelines.lib.memory_estimation import FreeMemory
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights import resolve_hf_quant_config
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -613,45 +611,6 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             for region in self._linear_regions(ring_len)
             if region.scratch
         )
-
-    def infer_optimal_batch_size(
-        self,
-        devices: list[Device],
-        *,
-        weights_size: int,
-        device_memory_utilization: float,
-        extra_per_request_bytes: int = 0,
-    ) -> int:
-        """Return a memory-safe default `max_batch_size` for this architecture.
-
-        The states get up to half the post-weights utilization budget and the
-        KV absorbs the rest, under the same ``device_memory_utilization``
-        headroom factor as the rest of the pipeline. The halving bounds
-        concurrency; it allocates nothing.
-
-        Falls back to 32—safe for the 27B model on H100/A100 (80 GB)—when
-        the device query fails.
-
-        Args:
-            devices: Loaded devices the model will run on.
-            weights_size: Estimated model weights size in bytes.
-            device_memory_utilization: Headroom factor.
-            extra_per_request_bytes: Per-request state the architecture holds
-                beyond the pool set this config declares -- a speculative
-                arch's verify ring, for one. Added to the divisor so the
-                inferred batch fits what will really be allocated.
-        """
-        per_req = self._per_request_state_bytes() + extra_per_request_bytes
-        try:
-            free_bytes = FreeMemory.summed(devices).hi
-        except Exception:
-            # Conservative fallback: safe for Qwen3.5-27B on H100/A100 (80 GB).
-            return 32
-        budget = int(free_bytes * device_memory_utilization) - weights_size
-        if budget <= 0:
-            return 1
-        max_batch = max(1, (budget // 2) // per_req)
-        return min(512, max_batch)
 
     @override
     @classmethod

@@ -39,7 +39,7 @@ from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
 )
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced

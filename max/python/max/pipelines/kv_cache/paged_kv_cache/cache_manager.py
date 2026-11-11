@@ -664,9 +664,18 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         return tuple(tree.leaves(inputs, leaf=_KVCacheInputsPerDevice))
 
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
-        """Claims a dummy request and maps it to the replica's null block."""
+        """Claims a dummy request and maps every page it needs to the null block.
+
+        The request holds no real KV page: its forward reads and writes the
+        replica's null page.
+        """
         self.claim(ctx, replica_idx)
-        self._block_manager.register_dummy_request(ctx)
+        seq_len = _compute_seq_len(
+            ctx,
+            num_draft_tokens=self.params.num_draft_tokens,
+            num_draft_tokens_per_step=self.params.num_draft_tokens_per_step,
+        )
+        self._block_manager.register_dummy_request(ctx, seq_len)
 
     def block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the device KV cache block occupancy for the given replica."""

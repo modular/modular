@@ -14,7 +14,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     GraphRole,
     SupportedArchitecture,
@@ -60,9 +59,6 @@ gemma3_multimodal_modulev3_arch = SupportedArchitecture(
     context_type=TextAndVisionContext,
     config=Gemma3ForConditionalGenerationConfig,
     batching=Gemma3MultiModalModuleV3BatchProcessor,
-    memory_planner=PagedMemoryPlanner.with_activation_reservation(
-        15 * 1024**3, always_signal_buffers=True
-    ),
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

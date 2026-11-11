@@ -19,7 +19,6 @@ from max.pipelines.architectures.gpt_oss.batch_processor import (
     GptOssBatchProcessor,
 )
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -43,10 +42,6 @@ mimo_v2_arch = SupportedArchitecture(
     config=MiMoV2Config,
     batching=GptOssBatchProcessor,
     multi_gpu_supported=True,
-    # The checkpoint loads as stored, so its files size the weights.
-    memory_planner=PagedMemoryPlanner.with_activation_reservation(
-        0, always_signal_buffers=True
-    ),
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
     # MiMo-V2's DFlash drafter declares the Llama 3 draft's name, but it is

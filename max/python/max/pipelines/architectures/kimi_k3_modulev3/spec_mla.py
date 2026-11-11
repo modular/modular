@@ -44,10 +44,6 @@ each owned by a different file:
   limit plus its verify rows -- never the batch-wide window the cap
   covers, and on the prefill arm that window spans every batch slot's
   copy. ``model.py`` builds it from :func:`kimi_k3_mla_table_rows`.
-* the activation-memory estimate that prices the same cap
-  (``model_config.py``'s ``mla_prefill_scratch_bytes`` and
-  ``memory_planner.py``'s ``_mla_prefill_scratch_bytes`` -- both should
-  receive the same draft-aware value).
 """
 
 from __future__ import annotations
@@ -133,8 +129,7 @@ def kimi_k3_verify_ring_len(pipeline_config: PipelineConfig) -> int:
 
     A speculative verify records its whole ``1 + draft_width`` window, so
     the smallest compiled ring that holds it is the scratch leaf's length;
-    a config without speculation declares none. One copy for both the
-    config that declares the state child and the planner that prices it.
+    a config without speculation declares none.
     """
     speculative = pipeline_config.speculative
     if speculative is None:
@@ -158,11 +153,10 @@ def kimi_k3_mla_folds_on_decode_branch(
     (128) -- so a BF16 cache or a wider head set on AMD, or more rows than
     the fold holds anywhere, routes to the one-shot decompression prefill
     arm. Off AMD the fold serves any cache dtype and head count. Written
-    once here because three sizing decisions key on which arm serves a
-    step: this module's plan cap, the DSpark drafter's own plan cap
-    (``dspark/model_config.py``), and the memory planner's window
-    reservation (``memory_planner.py``) -- they must call this, not restate
-    it, or the three can drift.
+    once here because two sizing decisions key on which arm serves a
+    step: this module's plan cap and the DSpark drafter's own plan cap
+    (``dspark/model_config.py``) -- they must call this, not restate it, or
+    the two can drift.
     """
     return num_query_rows <= _MLA_DECODE_MAX_SEQ_LEN and (
         device_api != "hip"

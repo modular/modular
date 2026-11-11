@@ -19,7 +19,6 @@ from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from ..inkling.memory_planner import InklingMemoryPlanner
 from ..inkling.reasoning import (
     InklingReasoningParser,  # noqa: F401  registers "inkling"
 )
@@ -54,6 +53,5 @@ inkling_modulev3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
     checkpoints_recurrent_state=True,
-    memory_planner=InklingMemoryPlanner,
     reasoning_parser="inkling",
 )

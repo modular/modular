@@ -35,7 +35,7 @@ from max.nn.kv_cache import (
     RecurrentStateParams,
 )
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import SupportedArchitecture, memory_ledger
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.graph_specs import (
     GraphRole,
@@ -44,7 +44,7 @@ from max.pipelines.lib.graph_specs import (
     compile_roles_separately,
 )
 from max.pipelines.lib.interfaces import PipelineModel, PipelineModelWithKVCache
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
@@ -599,7 +599,8 @@ def export_pipeline(
         raise ArtifactError(f"artifact destination {dest} already exists")
     architecture = pipeline_config.models.main_architecture_name
     task = PIPELINE_REGISTRY.retrieve_pipeline_task(architecture)
-    with compile_roles_separately():
+    # Export records graphs; probing would load and warm the model twice.
+    with compile_roles_separately(), memory_ledger.measuring_off():
         retrieved = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config, task=task
         )

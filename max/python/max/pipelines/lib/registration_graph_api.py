@@ -128,9 +128,7 @@ from .weight_transform import CheckpointRole, WeightEntry, WeightTransform
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-
-    # TODO(MXF-517): Remove the interfaces/memory_estimation import cycle.
-    from .memory_estimation import MemoryPlan
+    from .memory_plan import MemoryPlan
 
 __all__ = [
     "GraphApiDecoderBatchProcessor",

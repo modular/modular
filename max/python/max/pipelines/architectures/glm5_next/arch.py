@@ -25,7 +25,6 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Glm5NextBatchProcessor
 from .context import Glm5NextTextAndVisionContext
-from .memory_planner import Glm5NextMemoryPlanner
 from .model_config import Glm5NextConfig
 from .modules import Glm5NextDecoder
 from .reasoning import GlmReasoningParser  # noqa: F401  registers "glm5_next"
@@ -65,7 +64,6 @@ glm5_next_arch = SupportedArchitecture(
     weight_rules=glm5_next_weight_rules,
     use_weight_rules=True,
     config=Glm5NextConfig,
-    memory_planner=Glm5NextMemoryPlanner,
     checkpoints_recurrent_state=True,
     # The KDA state checkpoints only at a page boundary, which a step's
     # accepted drafts move past.

@@ -29,9 +29,9 @@ from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import override
 
-from ..deepseekV3.memory_planner import (
-    _ep_max_rank_send_tokens_for_pipeline,
+from ..deepseekV3.ep_dispatch import (
     ep_fuse_ffn_combine_send_for_pipeline,
+    ep_max_rank_send_tokens_for_pipeline,
 )
 from ..deepseekV3.model import DeepseekV3Model
 from .deepseekV3_2 import DeepseekV3_2
@@ -131,7 +131,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 )
             n_nodes = ep_size // num_devices
 
-            ep_max_rank_send_tokens = _ep_max_rank_send_tokens_for_pipeline(
+            ep_max_rank_send_tokens = ep_max_rank_send_tokens_for_pipeline(
                 pipeline_config
             )
 

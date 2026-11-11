@@ -17,9 +17,6 @@ import dataclasses
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.gemma4.arch import gemma4_arch
 from max.pipelines.architectures.gemma4.context import Gemma4Context
-from max.pipelines.architectures.gemma4.memory_planner import (
-    Gemma4MemoryPlanner,
-)
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.gemma4.weight_adapters import (
     gemma4_weight_rules,
@@ -60,7 +57,6 @@ gemma4_modulev3_arch = SupportedArchitecture(
     tokenizer_family=gemma4_arch.tokenizer_family,
     reasoning_parser="gemma4",
     batching=Gemma4ModuleV3BatchProcessor,
-    memory_planner=Gemma4MemoryPlanner,
     supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
 )

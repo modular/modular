@@ -26,7 +26,7 @@ from max.driver import DeviceSpec
 from max.pipelines.architectures.olmo2_modulev3.model_config import (
     Olmo2Config,
 )
-from max.pipelines.lib import MemoryEstimator
+from max.pipelines.kv_cache import kv_cache_memory_size
 from test_common.mocks import DummyPipelineConfig
 from transformers.models.olmo2.configuration_olmo2 import (
     Olmo2Config as HFOlmo2Config,
@@ -73,28 +73,28 @@ def test_olmo2_modulev3_resolves_max_seq_len(
 
 def test_olmo2_modulev3_kv_sizing_honors_max_length() -> None:
     """KV sizing takes its per-sequence bound from the architecture policy;
-    with ``--max-length`` set below the checkpoint bound, the estimate must be
+    with ``--max-length`` set below the checkpoint bound, the cache must be
     sized for the user value, not the full bound."""
     ample_memory = 1 << 40
 
     bounded_config = _olmo2_pipeline_config(64)
     unbounded_config = _olmo2_pipeline_config(None)
-    bounded = MemoryEstimator._calculate_kv_cache_size(
-        Olmo2Config.initialize(
+    bounded = kv_cache_memory_size(
+        params=Olmo2Config.initialize(
             bounded_config, max_seq_len=_olmo2_max_seq_len(bounded_config)
-        ),
+        ).get_kv_params(),
+        available_cache_memory=ample_memory,
         max_batch_size=1,
-        available_kv_cache_memory=ample_memory,
         max_seq_len=_olmo2_max_seq_len(bounded_config),
         is_di_enabled=False,
         model_name=bounded_config.model.model_name,
     )
-    unbounded = MemoryEstimator._calculate_kv_cache_size(
-        Olmo2Config.initialize(
+    unbounded = kv_cache_memory_size(
+        params=Olmo2Config.initialize(
             unbounded_config, max_seq_len=_olmo2_max_seq_len(unbounded_config)
-        ),
+        ).get_kv_params(),
+        available_cache_memory=ample_memory,
         max_batch_size=1,
-        available_kv_cache_memory=ample_memory,
         max_seq_len=_olmo2_max_seq_len(unbounded_config),
         is_di_enabled=False,
         model_name=unbounded_config.model.model_name,

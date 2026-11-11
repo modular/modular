@@ -476,6 +476,14 @@ def _check_paged_row_ids(
         )
 
 
+def _max_paged_pages(rows_per_page: int, max_row_id: int) -> int:
+    """Returns the most pages whose rows all have ids up to ``max_row_id``.
+
+    The bound :func:`_check_paged_row_ids` holds a leaf's view to.
+    """
+    return (max_row_id + 1) // max(1, rows_per_page)
+
+
 PACKED_PAGE_STRIDE = -1
 """``page_stride`` sentinel meaning the pages are packed."""
 
@@ -1000,6 +1008,14 @@ class KVLeafRegion:
     Setting it promises every kernel reading the leaf takes a page stride, so
     the pool may pad the page to tile a smaller huge block. A leaf read
     through ``PagedKVCache`` must declare a multiple of its row."""
+
+    max_pages: int | None = field(default=None, kw_only=True)
+    """The most pages one device's view of this leaf may hold, or ``None``
+    for no limit.
+
+    A kernel that folds ``page * rows_per_page + row`` into a fixed-width id
+    addresses only so many rows, so the pool holds no more pages than that,
+    whatever the budget."""
 
     @property
     def cacheable(self) -> bool:
@@ -2305,6 +2321,10 @@ class KVCacheParams(KVCacheParamInterface):
                 // self.tensor_parallel_degree,
                 stride_alignment=self.stride_alignment,
                 page_size=self.page_size,
+                # The paged TMA and gather paths fold value rows into int32.
+                max_pages=_max_paged_pages(
+                    math.prod(self.shape_per_block[:-1]), _MAX_INT32_ROW_ID
+                ),
             )
         }
 
@@ -2325,6 +2345,15 @@ class KVCacheParams(KVCacheParamInterface):
                     _SCALE_TMA_ALIGN_BYTES,
                 ),
                 page_size=self.page_size,
+                max_pages=(
+                    _max_paged_pages(
+                        math.prod(self.shape_per_scale_block[:-1]),
+                        self.nvfp4_max_scale_row_id,
+                    )
+                    if self.is_nvfp4_kv_cache
+                    and self.nvfp4_max_scale_row_id is not None
+                    else None
+                ),
             )
 
         return leaves
