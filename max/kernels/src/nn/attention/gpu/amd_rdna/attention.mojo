@@ -732,7 +732,12 @@ struct AttentionRDNA[
         # Decode rows = heads in GQA group (stride=output_depth).
         # Prefill rows = seq positions (stride=num_heads*output_depth).
         comptime row_stride = Self.output_depth if Self.token_gen else Self.num_heads * Self.output_depth
-        var row_bound = Self.group if Self.token_gen else self.seq_len
+        # `output_tile` is already offset to this Q tile, so `global_seq` is
+        # tile-local: bound it by the rows left in this tile, not the full
+        # sequence length, or a partial last tile writes past the output.
+        var row_bound = Self.group if Self.token_gen else min(
+            Self.BM, self.seq_len - Self.q_tile_idx() * Self.BM
+        )
 
         comptime for depth_tile in range(Self.num_n_mmas_output):
             comptime for seq_tile in range(Self.num_m_mmas):
