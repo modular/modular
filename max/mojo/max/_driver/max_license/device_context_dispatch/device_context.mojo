@@ -18,13 +18,21 @@ signature, the wrapper keeps the legacy one, because that is what call sites are
 written against.
 """
 
+from std.builtin.device_passable import DevicePassable
+from std.collections.optional import OptionalReg
 from std.ffi import c_size_t
+from std.iter import downcast
 from std.memory import Pointer
 from std.os import abort
-from std.reflection import call_location
+from std.reflection import (
+    SourceLocation,
+    call_location,
+)
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_dispatch.function import (
+    DeviceExternalFunction,
+    DeviceFunction,
     _DispatchEnqueuer,
 )
 from max._driver.max_license.device_context_hal.device_context_hal import (
@@ -34,14 +42,22 @@ from max._driver.max_license.device_context_hal.device_context_hal import (
 from max.gpu.host._driver_handles import (
     _DeviceContextPtr as _HALDeviceContextPtr,
 )
+from max._plugin import MaxPluginForTarget
+from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
+from max.gpu.host._legacy.dim import Dim
+from max.gpu.host._legacy.func_attribute import FuncAttribute
+from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from max.gpu.host._legacy.device_context import (
+    LegacyDeviceClosureFunction,
     LegacyDeviceContext,
     _LegacyDeviceContextScope,
 )
+from max.gpu.host._driver_common import _DumpPath
 from max.gpu.host._driver_handles import (
     _DeviceContextPtr as _LegacyDeviceContextPtr,
 )
+from max.gpu.host._launch_args import DeviceFunctionWrapper
 from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
 from max.gpu.host._driver_common import (
     StreamPriorityRange as _OverlayStreamPriorityRange,
@@ -50,7 +66,10 @@ from max.gpu.host._driver_handles import (
     _DeviceContextPtr as _OverlayDeviceContextPtr,
 )
 from max.gpu.host.info import default_accelerator
-from max.gpu.host.launch_config import ExecutionConfig
+from max.gpu.host.launch_config import (
+    ExecutionConfig,
+    GridBlockExecutionConfig,
+)
 from .host_types import (
     CompletionFlag,
     Device,
@@ -174,6 +193,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Self._Legacy.default_device_info if use_legacy_backend() else Self._HAL.default_device_info
     )
     """`GPUInfo` object for the default accelerator."""
+
+    comptime FunctionWrapper: DeviceFunctionWrapper = MaxPluginForTarget[
+        Self.target
+    ].FunctionWrapper
+    """Selects the function `compile_function` compiles for a user kernel."""
 
     comptime ExecutionConfigType: ExecutionConfig = (
         Self._Legacy.ExecutionConfigType if use_legacy_backend() else Self._HAL.ExecutionConfigType
@@ -1619,6 +1643,641 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             use_legacy_backend()
         ), "enqueue_cpu_function is only available on the legacy DeviceContext"
         rebind[Self._Legacy](self._impl).enqueue_cpu_function(func)
+
+    # ===-------------------------------------------------------------------===#
+    # Compiling and launching functions
+    # ===-------------------------------------------------------------------===#
+
+    def compile_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(*args: *declared_arg_types) thin -> None,
+        *,
+        compile_options: StaticString = (Self.target.default_compile_options()),
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceFunction[
+            func,
+            Self.FunctionWrapper,
+            target=Self.target,
+            compile_options=compile_options,
+            link_options=link_options,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ],
+    ) raises:
+        """Compiles the provided function for execution on this device.
+
+        Parameters:
+            declared_arg_types: Types of the arguments of the kernel.
+            func: The function to compile.
+            compile_options: The compile options for the function.
+            link_options: The link options for the function.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            func_attribute: An attribute to use when compiling the function.
+
+        Returns:
+            The compiled function.
+
+        Raises:
+            If the compilation fails.
+        """
+        comptime if use_legacy_backend():
+            result = type_of(result)._wrap_legacy(
+                rebind[Self._Legacy](self._impl).compile_function[
+                    func,
+                    compile_options=compile_options,
+                    link_options=link_options,
+                    dump_asm=dump_asm,
+                    dump_llvm=dump_llvm,
+                    _dump_sass=_dump_sass,
+                    _ptxas_info_verbose=_ptxas_info_verbose,
+                ](func_attribute=func_attribute)
+            )
+        else:
+            result = type_of(result)._wrap_hal(
+                rebind[Self._HAL](self._impl).compile_function[
+                    func,
+                    compile_options=compile_options,
+                    link_options=link_options,
+                    dump_asm=dump_asm,
+                    dump_llvm=dump_llvm,
+                    _dump_sass=_dump_sass,
+                    _ptxas_info_verbose=_ptxas_info_verbose,
+                ](func_attribute=func_attribute)
+            )
+
+    def compile_function[
+        ClosureType: RegisterPassable & def() -> None,
+    ](self) raises -> LegacyDeviceClosureFunction[ClosureType, Self.target]:
+        """Compiles a closure as a kernel that takes no arguments.
+
+        Launch the result with `enqueue_function(kernel, closure, ...)`. Only
+        targets whose MAX plugin handles closure kernels support this, and the
+        HAL backend has no closure kernels.
+
+        Parameters:
+            ClosureType: The closure's type, such as `type_of(closure)`.
+
+        Returns:
+            The compiled kernel.
+
+        Raises:
+            If compilation or loading fails.
+        """
+        comptime assert (
+            use_legacy_backend()
+        ), "closure kernels are only available on the legacy DeviceContext"
+        return rebind[Self._Legacy](self._impl).compile_function[ClosureType]()
+
+    def enqueue_function[
+        ClosureType: RegisterPassable & def() -> None,
+    ](
+        self,
+        f: LegacyDeviceClosureFunction[ClosureType, Self.target],
+        closure: ClosureType,
+        *,
+        grid_dim: Dim,
+        block_dim: Dim,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Enqueues a closure kernel compiled by `compile_function[ClosureType]`.
+
+        Parameters:
+            ClosureType: The closure's type.
+
+        Args:
+            f: The compiled kernel.
+            closure: The closure whose captures to launch with.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            location: Source location for the function call.
+
+        Raises:
+            If the launch fails.
+        """
+        comptime assert (
+            use_legacy_backend()
+        ), "closure kernels are only available on the legacy DeviceContext"
+        rebind[Self._Legacy](self._impl).enqueue_function[ClosureType](
+            f,
+            closure,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            location=location,
+        )
+
+    def load_function[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(*args: *declared_arg_types) thin -> ret_type,
+    ](
+        self,
+        *,
+        var function_name: String,
+        var asm: String,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceExternalFunction[target=Self.target],
+    ) raises:
+        """Loads a function from precompiled assembly.
+
+        Parameters:
+            ret_type: The return type of the function.
+            declared_arg_types: Types of the arguments of the function.
+            func: The function signature.
+
+        Args:
+            function_name: The name of the function in the assembly.
+            asm: The assembly containing the function.
+            func_attribute: An attribute to use when loading the function.
+                The HAL backend ignores it.
+
+        Returns:
+            The loaded function.
+
+        Raises:
+            If the load fails.
+        """
+        comptime if use_legacy_backend():
+            result = type_of(result)._wrap_legacy(
+                rebind_var[type_of(result)._Legacy](
+                    rebind[Self._Legacy](self._impl).load_function[func](
+                        function_name=function_name^,
+                        asm=asm^,
+                        func_attribute=func_attribute,
+                    )
+                )
+            )
+        else:
+            result = type_of(result)._wrap_hal(
+                rebind[Self._HAL](self._impl).load_function[func](
+                    function_name=function_name^, asm=asm^
+                )
+            )
+
+    def enqueue_function[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceExternalFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Enqueues a loaded external function for execution on this device.
+
+        Parameters:
+            Ts: The types of the arguments.
+
+        Args:
+            f: The loaded function to launch.
+            args: The arguments to pass to the function.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: The dynamic shared memory in bytes.
+            attributes: The launch attributes.
+            constant_memory: The constant memory mappings.
+            location: The source location of the call.
+
+        Raises:
+            If the launch fails.
+        """
+        comptime if use_legacy_backend():
+            rebind[Self._Legacy](self._impl).enqueue_function(
+                rebind[type_of(f)._Legacy](f._impl),
+                *args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                location=location,
+            )
+        else:
+            rebind[Self._HAL](self._impl).enqueue_function(
+                rebind[type_of(f)._HAL](f._impl),
+                *args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                location=location,
+            )
+
+    def enqueue_function[
+        *Ts: DevicePassable
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Enqueues a compiled function for execution on this device.
+
+        Parameters:
+            Ts: The types of the arguments.
+
+        Args:
+            f: The compiled function to launch.
+            args: The arguments to pass to the function.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: The dynamic shared memory in bytes.
+            attributes: The launch attributes.
+            constant_memory: The constant memory mappings.
+            location: The source location of the call.
+
+        Raises:
+            If the launch fails.
+        """
+        comptime if use_legacy_backend():
+            rebind[Self._Legacy](self._impl).enqueue_function(
+                f.unwrap_legacy(),
+                *args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                location=location,
+            )
+        else:
+            rebind[Self._HAL](self._impl).enqueue_function(
+                f.unwrap_hal(),
+                *args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                location=location,
+            )
+
+    def enqueue_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+        //,
+        func: def(*args: *declared_arg_types) thin -> None,
+        *encoded_types: DevicePassable,
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *encoded_args: *encoded_types,
+        host_args: Tuple[*HostArgs] = (),
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            declared_arg_types: Types of the arguments of the kernel.
+            HostArgs: Types of the host-only arguments.
+            func: The function to compile and launch.
+            encoded_types: The types of the device arguments.
+            link_options: The link options for the function.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA toolkit
+                to be installed.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                toolkit to be installed.
+
+        Args:
+            encoded_args: The device arguments to pass to the kernel.
+            host_args: The host-only arguments to pass to the kernel.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: The dynamic shared memory in bytes.
+            attributes: The launch attributes.
+            constant_memory: The constant memory mappings.
+            func_attribute: An attribute to use when compiling the function.
+            location: The source location of the call.
+
+        Raises:
+            If the compilation or the launch fails.
+        """
+        comptime if use_legacy_backend():
+            # Leaving `host_args` out when there are none lets a plugin's own
+            # `enqueue_function[func]` overload, which takes no host arguments,
+            # win over the base one that raises for targets that launch through
+            # their own overloads.
+            comptime if HostArgs.length == 0:
+                rebind[Self._Legacy](self._impl).enqueue_function[
+                    func,
+                    link_options=link_options,
+                    dump_asm=dump_asm,
+                    dump_llvm=dump_llvm,
+                    _dump_sass=_dump_sass,
+                    _ptxas_info_verbose=_ptxas_info_verbose,
+                ](
+                    *encoded_args,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    cluster_dim=cluster_dim,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=attributes^,
+                    constant_memory=constant_memory^,
+                    func_attribute=func_attribute,
+                    location=location,
+                )
+            else:
+                rebind[Self._Legacy](self._impl).enqueue_function[
+                    func,
+                    link_options=link_options,
+                    dump_asm=dump_asm,
+                    dump_llvm=dump_llvm,
+                    _dump_sass=_dump_sass,
+                    _ptxas_info_verbose=_ptxas_info_verbose,
+                ](
+                    *encoded_args,
+                    host_args=host_args,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    cluster_dim=cluster_dim,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=attributes^,
+                    constant_memory=constant_memory^,
+                    func_attribute=func_attribute,
+                    location=location,
+                )
+        else:
+            rebind[Self._HAL](self._impl).enqueue_function[
+                func,
+                link_options=link_options,
+                dump_asm=dump_asm,
+                dump_llvm=dump_llvm,
+                _dump_sass=_dump_sass,
+                _ptxas_info_verbose=_ptxas_info_verbose,
+            ](
+                *encoded_args,
+                host_args=host_args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                func_attribute=func_attribute,
+                location=location,
+            )
+
+    def enqueue_function[
+        FuncType: DevicePassable & def() -> None,
+        //,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        func: FuncType,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a capturing kernel whose captures are device
+        passable.
+
+        Parameters:
+            FuncType: The type of the capturing kernel.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA toolkit
+                to be installed.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                toolkit to be installed.
+
+        Args:
+            func: The capturing kernel function to compile and launch.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: The dynamic shared memory in bytes.
+            attributes: The launch attributes.
+            constant_memory: The constant memory mappings.
+            func_attribute: An attribute to use when compiling the function.
+            location: The source location of the call.
+
+        Raises:
+            If the compilation or the launch fails.
+        """
+        comptime if use_legacy_backend():
+            rebind[Self._Legacy](self._impl).enqueue_function[
+                dump_asm=dump_asm,
+                dump_llvm=dump_llvm,
+                _dump_sass=_dump_sass,
+                _ptxas_info_verbose=_ptxas_info_verbose,
+            ](
+                func,
+                grid_dim,
+                block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                func_attribute=func_attribute,
+                location=location,
+            )
+        else:
+            comptime assert conforms_to(
+                FuncType, ImplicitlyCopyable & RegisterPassable
+            ), (
+                "the HAL backend launches only copyable, register-passable"
+                " closures"
+            )
+            rebind[Self._HAL](self._impl).enqueue_function(
+                rebind[
+                    downcast[FuncType, ImplicitlyCopyable & RegisterPassable]
+                ](func),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                func_attribute=func_attribute,
+                location=location,
+            )
+
+    def enqueue_function[
+        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
+        //,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        func: FuncType,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        location: Optional[SourceLocation] = None,
+    ) raises where not conforms_to(FuncType, DevicePassable):
+        """Compiles and enqueues a capturing kernel whose captures are plain
+        register-passable values.
+
+        Parameters:
+            FuncType: The type of the capturing kernel.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA toolkit
+                to be installed.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                toolkit to be installed.
+
+        Args:
+            func: The capturing kernel function to compile and launch.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: The dynamic shared memory in bytes.
+            attributes: The launch attributes.
+            constant_memory: The constant memory mappings.
+            func_attribute: An attribute to use when compiling the function.
+            location: The source location of the call.
+
+        Raises:
+            If the compilation or the launch fails.
+        """
+        comptime if use_legacy_backend():
+            rebind[Self._Legacy](self._impl).enqueue_function[
+                dump_asm=dump_asm,
+                dump_llvm=dump_llvm,
+                _dump_sass=_dump_sass,
+                _ptxas_info_verbose=_ptxas_info_verbose,
+            ](
+                func,
+                grid_dim,
+                block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                func_attribute=func_attribute,
+                location=location,
+            )
+        else:
+            rebind[Self._HAL](self._impl).enqueue_function(
+                func,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                func_attribute=func_attribute,
+                location=location,
+            )
+
+    def enqueue_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ConfigType: GridBlockExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+        //,
+        func: def(*args: *declared_arg_types) thin -> None,
+        *encoded_types: DevicePassable,
+    ](
+        self,
+        config: ConfigType,
+        *encoded_args: *encoded_types,
+        host_args: Tuple[*HostArgs] = (),
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a kernel with an execution configuration.
+
+        Parameters:
+            declared_arg_types: Types of the arguments of the kernel.
+            ConfigType: The type of the execution configuration.
+            HostArgs: Types of the host-only arguments.
+            func: The function to compile and launch.
+            encoded_types: The types of the device arguments.
+
+        Args:
+            config: The execution configuration of the launch.
+            encoded_args: The device arguments to pass to the kernel.
+            host_args: The host-only arguments to pass to the kernel.
+            location: The source location of the call.
+
+        Raises:
+            If the compilation or the launch fails.
+        """
+        comptime if use_legacy_backend():
+            rebind[Self._Legacy](self._impl).enqueue_function[func](
+                config,
+                *encoded_args,
+                host_args=host_args,
+                location=location,
+            )
+        else:
+            rebind[Self._HAL](self._impl).enqueue_function[func](
+                config,
+                *encoded_args,
+                host_args=host_args,
+                location=location,
+            )
 
     def execution_time[
         FuncType: def(Self) raises -> None,

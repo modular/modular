@@ -335,14 +335,16 @@ struct DeviceFunction[
             )
 
 
-struct DeviceExternalFunction(Movable):
+struct DeviceExternalFunction[
+    *, target: CompilationTarget = default_accelerator()
+](Movable):
     """A device function loaded from assembly rather than compiled from Mojo."""
 
     # ===-------------------------------------------------------------------===#
     # Backend selection
     # ===-------------------------------------------------------------------===#
 
-    comptime _Legacy = LegacyDeviceExternalFunction[]
+    comptime _Legacy = LegacyDeviceExternalFunction[target=Self.target]
     comptime _HAL = HALDeviceExternalFunction
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
@@ -354,7 +356,7 @@ struct DeviceExternalFunction(Movable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[Self.target],
         *,
         var function_name: String,
         var asm: String,
@@ -375,9 +377,7 @@ struct DeviceExternalFunction(Movable):
         comptime if use_legacy_backend():
             self._impl = rebind_var[Self._Impl](
                 Self._Legacy(
-                    rebind[DeviceContext[default_accelerator()]._Legacy](
-                        ctx._impl
-                    ),
+                    rebind[DeviceContext[Self.target]._Legacy](ctx._impl),
                     function_name=function_name^,
                     asm=asm^,
                     func_attribute=func_attribute,
@@ -386,9 +386,7 @@ struct DeviceExternalFunction(Movable):
         else:
             self._impl = rebind_var[Self._Impl](
                 Self._HAL(
-                    rebind[DeviceContext[default_accelerator()]._HAL](
-                        ctx._impl
-                    ),
+                    rebind[DeviceContext[Self.target]._HAL](ctx._impl),
                     function_name^,
                     asm,
                 )
@@ -397,7 +395,7 @@ struct DeviceExternalFunction(Movable):
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[Self.target],
         info: CompiledFunctionInfo,
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
