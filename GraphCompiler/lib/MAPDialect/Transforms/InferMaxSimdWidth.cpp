@@ -11,8 +11,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Sets each `map.iter.elementwise.body`'s `max_simd_width` from the ops in its
-// body (see `MAP::MaxSimdWidthInterface`).
+// Sets each `map.iter.elementwise.body`'s and `map.iter.rowwise.body`'s
+// `max_simd_width` from the ops in its body (see `MAP::MaxSimdWidthInterface`).
 //
 //===----------------------------------------------------------------------===//
 
@@ -41,9 +41,17 @@ struct InferMaxSimdWidthPass
   using Base::Base;
 
   void runOnOperation() override {
-    getOperation().walk([&](IterElementwiseBodyOp body) {
+    // Both outlined bodies carry the limit of the ops in their region; the
+    // kernel ops they come from (`IterOpInterface`) carry none.
+    auto update = [](auto body) {
       body.setMaxSimdWidthAttr(
           combinedLimit(body, body.getMaxSimdWidthAttr(), body.getBody()));
+    };
+    getOperation().walk([&](Operation *op) {
+      if (auto body = dyn_cast<IterElementwiseBodyOp>(op))
+        update(body);
+      else if (auto body = dyn_cast<IterRowwiseBodyOp>(op))
+        update(body);
     });
   }
 };

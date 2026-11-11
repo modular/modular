@@ -773,6 +773,9 @@ ParseResult IterRowwiseBodyOp::parse(OpAsmParser &parser,
   if (parseRowwiseShapeAndAxis(parser, state, getShapeAttrName(state.name),
                                getAxisAttrName(state.name)))
     return mlir::failure();
+  if (parseOptionalMaxSimdWidth(parser, state,
+                                getMaxSimdWidthAttrName(state.name)))
+    return mlir::failure();
 
   SmallVector<OpAsmParser::Argument> entryArgs;
   if (parser.parseKeyword("row") || parseBlockArgList(parser, entryArgs))
@@ -816,6 +819,7 @@ ParseResult IterRowwiseBodyOp::parse(OpAsmParser &parser,
 
 void IterRowwiseBodyOp::print(OpAsmPrinter &p) {
   printRowwiseShapeAndAxis(p, getShape(), getAxis());
+  printOptionalMaxSimdWidth(p, getMaxSimdWidthAttr());
 
   Block &block = getBody().front();
   ValueRange captures = getCaptures();
@@ -834,9 +838,10 @@ void IterRowwiseBodyOp::print(OpAsmPrinter &p) {
   p.decreaseIndent();
 
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
-  p.printOptionalAttrDict(
-      getOperation()->getAttrs(),
-      {getShapeAttrName().getValue(), getAxisAttrName().getValue()});
+  p.printOptionalAttrDict(getOperation()->getAttrs(),
+                          {getShapeAttrName().getValue(),
+                           getAxisAttrName().getValue(),
+                           getMaxSimdWidthAttrName().getValue()});
 }
 
 ParseResult IterReduceOp::parse(OpAsmParser &parser, OperationState &state) {

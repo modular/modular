@@ -345,9 +345,9 @@ def MAP_StrideViewOpInterface : OpInterface<"StrideViewOpInterface"> {
 
 def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
   let description = [{
-    An op in a fused kernel body (`map.iter.elementwise.body`) that limits the
-    SIMD width the kernel may run at, or whose regions see an index other than
-    the kernel's own.
+    An op in a fused kernel body (`map.iter.elementwise.body` or
+    `map.iter.rowwise.body`) that limits the SIMD width the kernel may run at,
+    or whose regions see an index other than the kernel's own.
 
     `getMaxSimdWidth` returns a limit, a number every width must divide (see
     `MAP::GCDAttr`), for the op and everything nested in its regions,

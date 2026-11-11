@@ -564,7 +564,8 @@ def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
 
   let arguments = (ins MOSH_ShapeAttr:$shape,
                        I64Attr:$axis,
-                       Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures);
+                       Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures,
+                       OptionalAttr<MAP_WidthLimitAttr>:$max_simd_width);
   let regions = (region SizedRegion<1>:$body);
 
   let hasCustomAssemblyFormat = 1;
@@ -583,6 +584,8 @@ def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
 //===----------------------------------------------------------------------===//
 
 def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
+  // Its index is the rowwise kernel's; the ops it holds limit the width.
+  MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
   SingleBlock,
   RecursiveMemoryEffects,
@@ -628,6 +631,8 @@ def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
 //===----------------------------------------------------------------------===//
 
 def MAP_IterCacheOp : MAP_Op<"iter.cache", [
+  // Its index is the rowwise kernel's; the ops it holds limit the width.
+  MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
   SingleBlock,
   RecursiveMemoryEffects,
@@ -692,6 +697,8 @@ def MAP_IterCacheLoadOp : MAP_Op<"iter.cache.load", [
 }
 
 def MAP_IterMapOp : MAP_Op<"iter.map", [
+  // Its index is the rowwise kernel's; the ops it holds limit the width.
+  MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
   SingleBlock,
   NoTerminator,

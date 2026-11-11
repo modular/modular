@@ -253,7 +253,7 @@ CapturingFusionClosure IterRowwiseOp::createBodyClosure(OpBuilder &builder,
                                                         Location loc,
                                                         ValueRange captures) {
   return IterRowwiseBodyOp::create(builder, loc, getShape(), getAxisAttr(),
-                                   captures);
+                                   captures, /*max_simd_width=*/nullptr);
 }
 
 BlockArgument IterRowwiseOp::getRowArg() {
