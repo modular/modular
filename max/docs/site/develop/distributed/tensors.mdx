@@ -20,33 +20,20 @@ The runtime launches each kernel on one device with the local buffers for that
 device's shard. A collective such as
 [`allreduce_sum()`](/api/python/functional/#max.functional.allreduce_sum)
 communicates across devices to combine their values.
-[`Tensor.shape`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.shape)
-reports each axis's global size when the placements define one, and
-[`Tensor.local_shards`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.local_shards)
-returns the per-device tensors and their local shapes.
 
-A [`DeviceMesh`](/api/python/generated/max.tensor.sharding.DeviceMesh/)
-describes the devices and their axes. A placement describes how the data is laid
-out on one mesh axis: devices can hold the same copy, slices along a tensor
-axis, terms of a sum, or values with no established relation. A
+## Global shape
+
+The global shape describes the dimensions of the full array, regardless of how
+its values are distributed across devices. A
+[`DeviceMesh`](/api/python/generated/max.tensor.sharding.DeviceMesh/) describes
+the devices and their axes. A
 [`DeviceMapping`](/api/python/generated/max.tensor.sharding.DeviceMapping/)
 combines a mesh with one placement per mesh axis. It serves as the multi-device
 counterpart of a [`Device`](/api/python/generated/max.driver.Device/) in APIs
 that create or move tensors.
 
-To compare a sharded result with an unsharded run, gather it first:
-[`materialize()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.materialize)
-allreduces [`Partial`](/api/python/generated/max.tensor.sharding.Partial/) axes
-and allgathers [`Sharded`](/api/python/generated/max.tensor.sharding.Sharded/)
-ones, and
-[`to_numpy()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to_numpy)
-does the same.
-
-## Global shape
-
-The global shape describes the dimensions of the full array, regardless of how
-its values are distributed across devices. This example splits 8 rows across 2
-CPU devices on a mesh axis named `tp` (tensor parallelism):
+This example splits 8 rows across 2 CPU devices on a mesh axis named `tp`
+(tensor parallelism):
 
 ```python
 from max.driver import CPU
@@ -172,6 +159,14 @@ sharded: [8, 4] Sharded(axis=0)   partial: [8, 4] Partial()   unknown: [8, 4] Un
 │ [4:, :]  │
 └──────────┘
 ```
+
+To compare a sharded result with an unsharded run, gather it first:
+[`materialize()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.materialize)
+allreduces [`Partial`](/api/python/generated/max.tensor.sharding.Partial/) axes
+and allgathers [`Sharded`](/api/python/generated/max.tensor.sharding.Sharded/)
+ones, and
+[`to_numpy()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to_numpy)
+does the same.
 
 ## Uneven shards
 
