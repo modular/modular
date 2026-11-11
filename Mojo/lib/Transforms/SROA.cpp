@@ -223,10 +223,16 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
         if (!isa<IntegerAttr>(gep.getIndex()))
           return false;
 
-      // If the user is the argument of the store, then we cannot elide.
-      if (auto store = dyn_cast<POP::StoreOp>(user))
+      if (auto store = dyn_cast<POP::StoreOp>(user)) {
+        // If the user is the argument of the store, then we cannot elide.
         if (store.getArg() == alloc)
           return false;
+        // `replaceAllUsesWith` does not type-check, so a store operand can
+        // disagree with the pointer's element type; a non-struct value has no
+        // fields to extract.
+        if (store.getPtr() == alloc && store.getArg().getType() != containerTy)
+          return false;
+      }
     }
     return true;
   }
@@ -386,10 +392,16 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
                StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
         return false;
 
-      // If the user is the argument of the store, then we cannot elide.
-      if (auto store = dyn_cast<POP::StoreOp>(user))
+      if (auto store = dyn_cast<POP::StoreOp>(user)) {
+        // If the user is the argument of the store, then we cannot elide.
         if (store.getArg() == alloc)
           return false;
+        // `replaceAllUsesWith` does not type-check, so a store operand can
+        // disagree with the pointer's element type; a non-array value has no
+        // elements to extract.
+        if (store.getPtr() == alloc && store.getArg().getType() != containerTy)
+          return false;
+      }
 
       // We only support array GEPs of constant array indexing.
       if (auto gep = dyn_cast<POP::ArrayGEPOp>(user)) {
