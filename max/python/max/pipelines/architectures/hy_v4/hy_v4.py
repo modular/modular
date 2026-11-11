@@ -135,7 +135,7 @@ class HYV4TextModel(Module[..., Tensor]):
 
     def head(self, streams: Tensor) -> Tensor:
         """Collapses the streams to the final normalized hidden state."""
-        return self.norm(self.hc_head(streams))
+        return self.hc_head(streams, self.norm)
 
     def logits(self, h: Tensor) -> Tensor:
         return self.lm_head(h).cast(DType.float32)
