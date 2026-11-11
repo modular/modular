@@ -18,18 +18,17 @@ from ..info import default_accelerator, get_gpu_target
 from .constant_memory_mapping import ConstantMemoryMapping
 from .device_attribute import DeviceAttribute
 from .device_context import (
-    CompletionFlag,
-    DeviceBuffer,
-    DeviceClosureFunction,
-    DeviceContext,
-    DeviceContextArray,
-    DeviceContextList,
-    DeviceEvent,
-    DeviceFunction,
-    DeviceMulticastBuffer,
-    DevicePointer,
-    DeviceStream,
-    HostBuffer,
+    LegacyCompletionFlag,
+    LegacyDeviceBuffer,
+    LegacyDeviceClosureFunction,
+    LegacyDeviceContext,
+    LegacyDeviceContextArray,
+    LegacyDeviceEvent,
+    LegacyDeviceFunction,
+    LegacyDeviceMulticastBuffer,
+    LegacyDevicePointer,
+    LegacyDeviceStream,
+    LegacyHostBuffer,
 )
 from .dim import Dim
 from .func_attribute import Attribute, FuncAttribute

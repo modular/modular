@@ -39,8 +39,8 @@ from max.gpu.host import (
 # Hooks the legacy `DeviceContext` calls take its types. It still compiles when
 # `--config=hal-device-context` points `max.gpu.host` at the HAL one.
 from max.gpu.host._legacy.device_context import (
-    DeviceContext as _LegacyDeviceContext,
-    DeviceFunction,
+    LegacyDeviceContext as _LegacyDeviceContext,
+    LegacyDeviceFunction,
 )
 from max.gpu.host.info import get_gpu_info
 from max.gpu.memory.memory import (
@@ -375,7 +375,7 @@ trait MaxPluginHooks:
         *Ts: DevicePassable
     ](
         ctx: _LegacyDeviceContext[Self.hooks_target],
-        f: DeviceFunction,
+        f: LegacyDeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,

@@ -211,6 +211,21 @@ inline bool symbolMatchesRootAndLeaf(mlir::SymbolRefAttr symbol,
   return symbol.getRootReference() == root && symbol.getLeafReference() == leaf;
 }
 
+/// Like `symbolMatchesRootAndLeaf`, but also accepts the leaf with a `Legacy`
+/// or `HAL` prefix: `max.gpu.host` dispatches between the two backend structs
+/// (e.g. `LegacyDeviceContext`, `HALDeviceContext`), and a kernel argument
+/// names whichever one is linked.
+inline bool symbolMatchesBackendLeaf(mlir::SymbolRefAttr symbol,
+                                     llvm::StringRef root,
+                                     llvm::StringRef leaf) {
+  if (symbol.getRootReference() != root)
+    return false;
+  llvm::StringRef name = symbol.getLeafReference();
+  if (!name.consume_front("Legacy"))
+    name.consume_front("HAL");
+  return name == leaf;
+}
+
 llvm::StringRef toString(IOSpec spec);
 std::optional<IOSpec> toIOSpec(llvm::StringRef str);
 std::pair<mlir::TypedAttr, mlir::TypedAttr> getParams(IOSpec ioSpec,

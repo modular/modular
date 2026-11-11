@@ -27,7 +27,7 @@ from .device_context import (
     _DeviceBufferCpp,
     _DeviceFunctionPtr,
     _FunctionEnqueuer,
-    DeviceContext,
+    LegacyDeviceContext,
 )
 
 from . import Dim, LaunchAttribute
@@ -100,7 +100,7 @@ def call_with_pack_metal[
 ](
     ctx: ContextT,
     func_handle: _DeviceFunctionPtr[mut=True],
-    device_context: DeviceContext,
+    device_context: LegacyDeviceContext,
     dense_args_addrs: MutPointer[ImmOpaquePointer[dense_args_origin], _],
     dense_args_sizes: MutPointer[UInt64, _],
     grid_dim: Dim,
@@ -196,7 +196,7 @@ def call_with_pack_checked_metal[
     *args: *Ts,
     host_args: Tuple[*HostArgs],
     func_handle: _DeviceFunctionPtr[mut=True],
-    device_context: DeviceContext,
+    device_context: LegacyDeviceContext,
     translated_arg_offsets: Array[Int, num_passed_args],
     extra_align: Int,
     translated_args_ptr: MutPointer[Byte, _],

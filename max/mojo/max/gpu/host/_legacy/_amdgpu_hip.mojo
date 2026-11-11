@@ -13,8 +13,13 @@
 
 from std.ffi import external_call
 
-from max.gpu.host import DeviceContext, DeviceFunction, DeviceStream
-from max.gpu.host._legacy.device_context import _CString, _checked
+from .device_context import (
+    LegacyDeviceContext,
+    LegacyDeviceFunction,
+    LegacyDeviceStream,
+    _CString,
+    _checked,
+)
 
 
 struct _ihipDevice_t:
@@ -44,7 +49,7 @@ comptime hipModule_t = Optional[
 # Use `var hip_dev: hipDevice_t = HIP(ctx)` where ctx is a `DeviceContext` to get access to the
 # underlying hipDevice_t.
 @inline(.always)
-def HIP(ctx: DeviceContext) raises -> hipDevice_t:
+def HIP(ctx: LegacyDeviceContext) raises -> hipDevice_t:
     var result = hipDevice_t()
     # const char *AsyncRT_DeviceContext_hip_device(hipDevice_t *result, const DeviceContext *ctx)
     _checked(
@@ -59,7 +64,7 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
 # Accessor function to get access to the underlying hipStream_t from an abstract DeviceStream.
 # Use `var hip_stream: hipStream_t = HIP(ctx.stream())` where ctx is a `DeviceContext` to get access to the underlying hipStream_t.
 @inline(.always)
-def HIP(stream: DeviceStream) raises -> hipStream_t:
+def HIP(stream: LegacyDeviceStream) raises -> hipStream_t:
     var result = hipStream_t()
     # const char *AsyncRT_DeviceStream_hip_stream(hipStream_t *result, const DeviceStream *stream)
     _checked(
@@ -76,7 +81,7 @@ def HIP(stream: DeviceStream) raises -> hipStream_t:
 
 # Accessor function to get access to the underlying hipModule_t from a DeviceFunction.
 @inline(.always)
-def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
+def HIP_MODULE(func: LegacyDeviceFunction) raises -> hipModule_t:
     var result = hipModule_t()
     # const char *AsyncRT_DeviceFunction_hip_module(hipModule_t *result, const DeviceFunction *func)
     _checked(

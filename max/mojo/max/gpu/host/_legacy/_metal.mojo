@@ -13,7 +13,7 @@
 
 from std.ffi import external_call
 
-from .device_context import DeviceContext, _CString, _checked
+from .device_context import LegacyDeviceContext, _CString, _checked
 
 
 struct _MTLDevice:
@@ -27,7 +27,7 @@ comptime MTLDevice = Pointer[_MTLDevice, MutAnyOrigin]
 # Use `var metal_device: MTLDevice = metal_device(ctx)` where ctx is a `DeviceContext` to get access to the
 # underlying MTLDevice.
 @inline(.always)
-def metal_device(ctx: DeviceContext) raises -> MTLDevice:
+def metal_device(ctx: LegacyDeviceContext) raises -> MTLDevice:
     var result = Optional[MTLDevice]()
     # const char *AsyncRT_DeviceContext_metal_device(MTL::Device **result, const DeviceContext *ctx)
     _checked(

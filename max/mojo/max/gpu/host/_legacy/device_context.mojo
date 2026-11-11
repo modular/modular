@@ -252,7 +252,7 @@ def _checked_call[
 ](
     err: _CString,
     *,
-    device_context: DeviceContext,
+    device_context: LegacyDeviceContext,
     location: SourceLocation,
 ) raises:
     # Use the source-level function name for the error message. This is purely
@@ -273,7 +273,7 @@ def _raise_call_error(
     err: _CString,
     *,
     func_name: StaticString,
-    device_context: DeviceContext,
+    device_context: LegacyDeviceContext,
     location: SourceLocation,
 ) raises:
     # `_checked_call` is inlined into every kernel launch instantiation and
@@ -373,7 +373,7 @@ struct StreamPriorityRange(TrivialRegisterPassable, Writable):
         )
 
 
-struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
+struct LegacyHostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     """Represents a block of host-resident storage. For GPU devices, a host
     buffer is allocated in the host's global memory.
 
@@ -407,7 +407,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: LegacyDeviceContext,
         size: Int,
     ) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
@@ -446,7 +446,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: LegacyDeviceContext,
         host_ptr: Self._HostPtr,
         size: Int,
         *,
@@ -605,7 +605,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
 
     def create_sub_buffer[
         view_type: DType
-    ](self, offset: Int, size: Int) raises -> HostBuffer[view_type]:
+    ](self, offset: Int, size: Int) raises -> LegacyHostBuffer[view_type]:
         """Creates a sub-buffer view of this buffer with a different element dtype.
 
         This method creates a new buffer that references a subset of the memory in this
@@ -647,11 +647,11 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
                 c_size_t(elem_size),
             )
         )
-        return HostBuffer[view_type](
+        return LegacyHostBuffer[view_type](
             new_handle, new_host_ptr._unsafe_nullable()
         )
 
-    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
+    def enqueue_copy_to(self, dst: LegacyHostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to another host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -666,7 +666,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         """
         dst.context().enqueue_copy(dst, self)
 
-    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
+    def enqueue_copy_to(self, dst: LegacyDeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -704,7 +704,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(dst_ptr, self)
 
-    def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
+    def enqueue_copy_from(self, src: LegacyHostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from another host buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -720,7 +720,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
-    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
+    def enqueue_copy_from(self, src: LegacyDeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from a device buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -852,7 +852,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         return self._host_ptr
 
-    def context(self) raises -> DeviceContext[]:
+    def context(self) raises -> LegacyDeviceContext[]:
         """Returns the device context associated with this buffer.
 
         This method retrieves the device context that owns this buffer and is
@@ -874,7 +874,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         # FIXME(MSTDL-3258):
         #   What if the static target parameter doesn't match the dynamic
         #   target used by this runtime DeviceContext instance?
-        return DeviceContext(ctx_ptr)
+        return LegacyDeviceContext(ctx_ptr)
 
     @__unsafe_nested_origins_read_only
     def as_span[
@@ -904,7 +904,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         )
 
 
-struct DevicePointer[
+struct LegacyDevicePointer[
     mut: Bool,
     //,
     dtype: DType,
@@ -941,7 +941,7 @@ struct DevicePointer[
         origin: The origin of the borrowed `DeviceBuffer`.
     """
 
-    var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
+    var _buffer: Pointer[LegacyDeviceBuffer[Self.dtype], Self.origin]
     var _offset: Int
     var _size: Int
 
@@ -953,7 +953,7 @@ struct DevicePointer[
     # ===------------------------------------------------------------------=== #
 
     def __init__(
-        out self, ref[Self.origin] buffer: DeviceBuffer[Self.dtype]
+        out self, ref[Self.origin] buffer: LegacyDeviceBuffer[Self.dtype]
     ) raises:
         """Constructs a `DevicePointer` referencing the start of `buffer`.
 
@@ -972,7 +972,9 @@ struct DevicePointer[
         self._size = size
 
     def __init__(
-        out self, ref[Self.origin] buffer: DeviceBuffer[Self.dtype], offset: Int
+        out self,
+        ref[Self.origin] buffer: LegacyDeviceBuffer[Self.dtype],
+        offset: Int,
     ) raises:
         """Constructs a `DevicePointer` into `buffer` at `offset` with `size`
         elements in range.
@@ -1002,7 +1004,7 @@ struct DevicePointer[
     # Accessors
     # ===------------------------------------------------------------------=== #
 
-    def buffer(self) -> ref[Self.origin] DeviceBuffer[Self.dtype]:
+    def buffer(self) -> ref[Self.origin] LegacyDeviceBuffer[Self.dtype]:
         """Returns a reference to the `DeviceBuffer` this pointer references.
 
         The reference is non-owning; the underlying `DeviceBuffer` must
@@ -1061,7 +1063,7 @@ struct DevicePointer[
     # `Span.as_imm` does.
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
-    ] = DevicePointer[Self.dtype, target_origin]
+    ] = LegacyDevicePointer[Self.dtype, target_origin]
 
     @always_inline("builtin")
     def unsafe_mut_cast[
@@ -1170,7 +1172,7 @@ struct DevicePointer[
                 t"DevicePointer: addition of '{n}' results in invalid offset of"
                 t" '{offset}' for DeviceBuffer of size {self._size}"
             )
-        return DevicePointer(self._buffer[], offset)
+        return LegacyDevicePointer(self._buffer[], offset)
 
     def __sub__(self, n: Int) raises -> Self:
         """Returns a new `DevicePointer` offset backward by `n` elements.
@@ -1192,7 +1194,7 @@ struct DevicePointer[
                 t"DevicePointer: subtraction of '{n}' results in invalid offset"
                 t" of '{offset}' for DeviceBuffer of size {self._size}"
             )
-        return DevicePointer(self._buffer[], offset)
+        return LegacyDevicePointer(self._buffer[], offset)
 
     def __iadd__(mut self, n: Int) raises:
         """Offsets this `DevicePointer` forward by `n` elements in place.
@@ -1251,7 +1253,7 @@ struct DevicePointer[
         )
 
     @__unsafe_nested_origins_read_only
-    def __eq__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
+    def __eq__(self, other: LegacyDevicePointer[Self.dtype, _]) -> Bool:
         """Returns `True` if `self` and `other` reference the same buffer and
         offset.
 
@@ -1279,7 +1281,7 @@ struct DevicePointer[
         return not (self == other)
 
     @__unsafe_nested_origins_read_only
-    def __ne__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
+    def __ne__(self, other: LegacyDevicePointer[Self.dtype, _]) -> Bool:
         """Returns `True` if `self` and `other` differ in buffer or offset.
 
         Args:
@@ -1291,7 +1293,7 @@ struct DevicePointer[
         return not (self == other)
 
     @__unsafe_nested_origins_read_only
-    def __lt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+    def __lt__(self, other: LegacyDevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes `other` within the same buffer.
 
         Args:
@@ -1311,7 +1313,7 @@ struct DevicePointer[
         return self._offset < other._offset
 
     @__unsafe_nested_origins_read_only
-    def __le__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+    def __le__(self, other: LegacyDevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes or equals `other` within the
         same buffer.
 
@@ -1332,7 +1334,7 @@ struct DevicePointer[
         return self._offset <= other._offset
 
     @__unsafe_nested_origins_read_only
-    def __gt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+    def __gt__(self, other: LegacyDevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows `other` within the same buffer.
 
         Args:
@@ -1352,7 +1354,7 @@ struct DevicePointer[
         return self._offset > other._offset
 
     @__unsafe_nested_origins_read_only
-    def __ge__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+    def __ge__(self, other: LegacyDevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows or equals `other` within the same
         buffer.
 
@@ -1439,7 +1441,7 @@ struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
         value.unsafe_ptr()._to_device_type(self, dst)
 
 
-struct DeviceBuffer[dtype: DType](
+struct LegacyDeviceBuffer[dtype: DType](
     DevicePassable, ImplicitlyCopyable, Sized, Writable
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
@@ -1474,7 +1476,7 @@ struct DeviceBuffer[dtype: DType](
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: LegacyDeviceContext,
         size: Int,
     ) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
@@ -1519,7 +1521,7 @@ struct DeviceBuffer[dtype: DType](
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: LegacyDeviceContext,
         ptr: Self._DevicePtr,
         size: Int,
         *,
@@ -1556,8 +1558,8 @@ struct DeviceBuffer[dtype: DType](
     def __init__[
         _dtype: DType,
     ](
-        out self: DeviceBuffer[_dtype],
-        ctx: DeviceContext,
+        out self: LegacyDeviceBuffer[_dtype],
+        ctx: LegacyDeviceContext,
         ptr: Pointer[Scalar[_dtype], ...],
         size: Int,
         *,
@@ -1650,7 +1652,7 @@ struct DeviceBuffer[dtype: DType](
 
     @staticmethod
     @doc_hidden
-    def empty(context: DeviceContext) -> Self:
+    def empty(context: LegacyDeviceContext) -> Self:
         return Self(
             context,
             Self._DevicePtr.unsafe_dangling(),
@@ -1720,7 +1722,7 @@ struct DeviceBuffer[dtype: DType](
     @inline(.always)
     def create_sub_buffer[
         view_type: DType
-    ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
+    ](self, offset: Int, size: Int) raises -> LegacyDeviceBuffer[view_type]:
         """Creates a sub-buffer view of this buffer with a different element dtype.
 
         This method creates a new buffer that references a subset of the memory in this
@@ -1763,7 +1765,7 @@ struct DeviceBuffer[dtype: DType](
             ),
             location=call_location(),
         )
-        return DeviceBuffer[view_type](new_handle, new_device_ptr.value())
+        return LegacyDeviceBuffer[view_type](new_handle, new_device_ptr.value())
 
     def _tensor_map_encode_tiled(
         self,
@@ -1846,7 +1848,7 @@ struct DeviceBuffer[dtype: DType](
             )
         )
 
-    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
+    def enqueue_copy_to(self, dst: LegacyDeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to another device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -1862,7 +1864,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         dst.context().enqueue_copy(dst, self)
 
-    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
+    def enqueue_copy_to(self, dst: LegacyHostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -1904,7 +1906,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(dst_ptr, self)
 
-    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
+    def enqueue_copy_from(self, src: LegacyDeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from another device buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -1920,7 +1922,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
-    def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
+    def enqueue_copy_from(self, src: LegacyHostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to this buffer from a host buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -2145,7 +2147,7 @@ struct DeviceBuffer[dtype: DType](
 
     def device_ptr(
         ref self,
-    ) raises -> DevicePointer[Self.dtype, origin_of(self)]:
+    ) raises -> LegacyDevicePointer[Self.dtype, origin_of(self)]:
         """Returns a `DevicePointer` referencing the start of this buffer.
 
         The returned `DevicePointer` is a non-owning borrow of this
@@ -2161,9 +2163,9 @@ struct DeviceBuffer[dtype: DType](
             If this buffer has size 0.
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
-        return DevicePointer[Self.dtype, origin_of(self)](self)
+        return LegacyDevicePointer[Self.dtype, origin_of(self)](self)
 
-    def context(self) raises -> DeviceContext[]:
+    def context(self) raises -> LegacyDeviceContext[]:
         """Returns the device context associated with this buffer.
 
         This method retrieves the device context that owns this buffer and is
@@ -2185,7 +2187,7 @@ struct DeviceBuffer[dtype: DType](
         # FIXME(MSTDL-3258):
         #   What if the static target parameter doesn't match the dynamic
         #   target used by this runtime DeviceContext instance?
-        return DeviceContext(ctx_ptr)
+        return LegacyDeviceContext(ctx_ptr)
 
     def map_to_host(
         self,
@@ -2317,7 +2319,7 @@ trait _FunctionEnqueuer:
         ...
 
 
-struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
+struct LegacyDeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
     A DeviceStream provides a queue for GPU operations that can execute concurrently
@@ -2370,7 +2372,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     def __init__(
         out self,
         # FIXME(MSTDL-3258): DeviceContext target type erasure
-        ctx: DeviceContext,
+        ctx: LegacyDeviceContext,
     ) raises:
         """Retrieves the stream associated with the given device context.
 
@@ -2518,7 +2520,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         )
 
     @inline(.always)
-    def enqueue_wait_for(self, event: DeviceEvent) raises:
+    def enqueue_wait_for(self, event: LegacyDeviceEvent) raises:
         """Makes this stream wait for the specified event.
 
         This function inserts a wait operation into this stream that will
@@ -2540,7 +2542,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         )
 
     @inline(.always)
-    def record_event(self, event: DeviceEvent) raises:
+    def record_event(self, event: LegacyDeviceEvent) raises:
         """Records an event in this stream.
 
         This function records the given event at the current point in this stream.
@@ -2617,7 +2619,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     @inline(.always)
     def wait_for_flag(
         self,
-        flag: CompletionFlag,
+        flag: LegacyCompletionFlag,
         value: UInt64,
     ) raises:
         """Stalls this stream until ``flag`` holds at least ``value``.
@@ -2664,7 +2666,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     @inline(.always)
     def wait_for_host_value(
         self,
-        flag: CompletionFlag,
+        flag: LegacyCompletionFlag,
         value: UInt64,
     ) raises:
         """Stalls this stream until ``flag`` reaches ``value``.
@@ -2683,7 +2685,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         *Ts: DevicePassable
     ](
         self,
-        f: DeviceFunction,
+        f: LegacyDeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -2731,7 +2733,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         )
 
 
-struct CompletionFlag(ImplicitlyCopyable):
+struct LegacyCompletionFlag(ImplicitlyCopyable):
     """Refcounted handle to a host-signaled flag that streams wait on.
 
     Allocate one with `DeviceContext.allocate_completion_flag`, or wrap a
@@ -2750,7 +2752,7 @@ struct CompletionFlag(ImplicitlyCopyable):
 
     @doc_hidden
     @inline(.always)
-    def __init__(out self, ctx: DeviceContext) raises:
+    def __init__(out self, ctx: LegacyDeviceContext) raises:
         """Allocates a flag on the given context's device.
 
         Args:
@@ -2849,7 +2851,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         external_call["AsyncRT_CompletionFlag_reset", NoneType](self._handle)
 
 
-struct DeviceEvent(ImplicitlyCopyable):
+struct LegacyDeviceEvent(ImplicitlyCopyable):
     """Represents a GPU event for synchronization between streams.
 
     A DeviceEvent allows for fine-grained synchronization between different
@@ -2890,7 +2892,7 @@ struct DeviceEvent(ImplicitlyCopyable):
 
     @doc_hidden
     @inline(.always)
-    def __init__(out self, ctx: DeviceContext) raises:
+    def __init__(out self, ctx: LegacyDeviceContext) raises:
         """Creates a new event recorded on the given context's default stream.
 
         Args:
@@ -2990,7 +2992,7 @@ def _enqueue_packed_checked[
     ctx: Some[_FunctionEnqueuer],
     *,
     func_handle: _DeviceFunctionPtr[mut=True],
-    device_context: DeviceContext,
+    device_context: LegacyDeviceContext,
     func_name: StaticString,
     dense_args_addrs: MutPointer[ImmOpaquePointer[dense_args_origin], _],
     dense_args_sizes: Optional[Pointer[UInt64, dense_args_sizes_origin]],
@@ -3104,7 +3106,7 @@ def _load_function(
     return result
 
 
-struct DeviceFunction[
+struct LegacyDeviceFunction[
     ret_type: AnyType,
     declared_arg_types: TypeList[Trait=AnyType, ...],
     //,
@@ -3171,7 +3173,7 @@ struct DeviceFunction[
     ]
     """Compilation information for the function."""
 
-    var _context: DeviceContext[Self.target]
+    var _context: LegacyDeviceContext[Self.target]
     """The device context backing the function."""
 
     # ===-------------------------------------------------------------------===#
@@ -3182,7 +3184,7 @@ struct DeviceFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext[Self.target],
+        ctx: LegacyDeviceContext[Self.target],
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
         name: StaticString = "",
@@ -3898,7 +3900,7 @@ struct DeviceFunction[
         return Int(result)
 
 
-struct DeviceExternalFunction[
+struct LegacyDeviceExternalFunction[
     *,
     target: CompilationTarget = default_accelerator(),
 ]:
@@ -3925,7 +3927,7 @@ struct DeviceExternalFunction[
     var _handle: _DeviceFunctionPtr[mut=True]
     """Internal handle to the native device function object."""
 
-    var _context: DeviceContext[Self.target]
+    var _context: LegacyDeviceContext[Self.target]
     """The device context backing the function."""
 
     # ===-------------------------------------------------------------------===#
@@ -3953,7 +3955,7 @@ struct DeviceExternalFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext[Self.target],
+        ctx: LegacyDeviceContext[Self.target],
         info: CompiledFunctionInfo,
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
@@ -3983,7 +3985,7 @@ struct DeviceExternalFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext[Self.target],
+        ctx: LegacyDeviceContext[Self.target],
         *,
         var function_name: String,
         var asm: String,
@@ -4241,7 +4243,7 @@ struct DeviceExternalFunction[
 
 
 @fieldwise_init
-struct DeviceClosureFunction[
+struct LegacyDeviceClosureFunction[
     ClosureType: RegisterPassable & def() -> None,
     target: CompilationTarget,
 ](ImplicitlyCopyable):
@@ -4262,7 +4264,7 @@ struct DeviceClosureFunction[
     """The plugin's compiled kernel."""
 
 
-struct DeviceContext[target: CompilationTarget = default_accelerator()](
+struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
     ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer
 ):
     """Represents a single stream of execution on a particular accelerator
@@ -4313,15 +4315,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     # DeviceContext is only usable on hosts so `current()` will always be a CPU.
-    comptime CPU = DeviceContext[CompilationTarget.current()]
+    comptime CPU = LegacyDeviceContext[CompilationTarget.current()]
     """DeviceContext type for the current CPU target."""
 
-    comptime Unknown = DeviceContext[CompilationTarget._unknown()]
+    comptime Unknown = LegacyDeviceContext[CompilationTarget._unknown()]
     """DeviceContext type whose compilation target is not statically known."""
 
     comptime Optional[
         target: CompilationTarget = default_accelerator()
-    ] = Optional[DeviceContext[target]]
+    ] = Optional[LegacyDeviceContext[target]]
     """Convenience type alias for an `Optional[DeviceContext[_]]` type parameter.
 
     This associated type worksaround Mojo's missing support for nested
@@ -4346,7 +4348,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     This alias may be removed once Mojo supports nested auto-parameterization.
     """
 
-    comptime NoneValue = Optional[DeviceContext.CPU]()
+    comptime NoneValue = Optional[LegacyDeviceContext.CPU]()
     """Convenience helper for constructing a default value for
     `DeviceContext.Optional` parameters. This guides type inference to the CPU
     `target` when the default argument value is used, so omitting the context
@@ -4557,19 +4559,19 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    def cpu() -> DeviceContext.CPU:
+    def cpu() -> LegacyDeviceContext.CPU:
         """Creates a CPU `DeviceContext`.
 
         Returns:
             A new CPU `DeviceContext`.
         """
         try:
-            return DeviceContext.CPU(api="cpu")
+            return LegacyDeviceContext.CPU(api="cpu")
         except e:
             abort(t"unable to create CPU DeviceContext: {e}")
 
     @inline(.always)
-    def assert_cpu_target(var self) -> DeviceContext.CPU:
+    def assert_cpu_target(var self) -> LegacyDeviceContext.CPU:
         """Temporary function to assert and cast this DeviceContext to the CPU
         target.
 
@@ -4590,22 +4592,22 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     t" from: {call_location()}"
                 )
             )
-        return rebind_var[DeviceContext.CPU](self)
+        return rebind_var[LegacyDeviceContext.CPU](self)
 
     # FIXME: The more obvious spelling of this currently crashes the compiler:
     #    context.map(DeviceContext.assert_cpu_target)
     @staticmethod
     def _map_assert_cpu_target(
-        ctx: DeviceContext.Optional,
-    ) -> Optional[DeviceContext.CPU]:
-        var cpu_ctx = Optional[DeviceContext.CPU]()
+        ctx: LegacyDeviceContext.Optional,
+    ) -> Optional[LegacyDeviceContext.CPU]:
+        var cpu_ctx = Optional[LegacyDeviceContext.CPU]()
         if case .Some(gpu_ctx) = ctx:
             cpu_ctx = gpu_ctx.assert_cpu_target()
         return cpu_ctx^
 
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
     @inline(.always)
-    def assert_default_target(self) -> DeviceContext[]:
+    def assert_default_target(self) -> LegacyDeviceContext[]:
         """Temporary function to assert and cast this DeviceContext to the
         default target.
 
@@ -4626,10 +4628,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             t" ({StaticString(self.target.__triple())}) is not supported from:"
             t" {call_location()}"
         )
-        return rebind[DeviceContext[]](self)
+        return rebind[LegacyDeviceContext[]](self)
 
     @inline(.always)
-    def into_unknown_target(self) -> DeviceContext.Unknown:
+    def into_unknown_target(self) -> LegacyDeviceContext.Unknown:
         """Erases this DeviceContext's static target.
 
         For code that only uses the context's handle, so it neither needs nor
@@ -4638,7 +4640,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Returns:
             This device context with an unknown target.
         """
-        return rebind[DeviceContext.Unknown](self)
+        return rebind[LegacyDeviceContext.Unknown](self)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -4700,7 +4702,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def device(ref self) -> Device[Self.target, ImmOrigin(origin_of(self))]:
+    def device(
+        ref self,
+    ) -> LegacyDevice[Self.target, ImmOrigin(origin_of(self))]:
         """Returns a view of the device this context runs on.
 
         Returns:
@@ -4847,7 +4851,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_create_buffer[
         dtype: DType
-    ](self, size: Int) raises -> DeviceBuffer[dtype]:
+    ](self, size: Int) raises -> LegacyDeviceBuffer[dtype]:
         """Enqueues a buffer creation using the `DeviceBuffer` constructor.
 
         For GPU devices, the space is allocated in the device's global memory.
@@ -4864,11 +4868,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return DeviceBuffer[dtype](self, size)
+        return LegacyDeviceBuffer[dtype](self, size)
 
     def create_buffer_sync[
         dtype: DType
-    ](self, size: Int) raises -> DeviceBuffer[dtype]:
+    ](self, size: Int) raises -> LegacyDeviceBuffer[dtype]:
         """Creates a buffer synchronously using the `DeviceBuffer` constructor.
 
         Parameters:
@@ -4883,13 +4887,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        var result = DeviceBuffer[dtype](self, size)
+        var result = LegacyDeviceBuffer[dtype](self, size)
         self.synchronize()
         return result
 
     def enqueue_create_host_buffer[
         dtype: DType
-    ](self, size: Int) raises -> HostBuffer[dtype]:
+    ](self, size: Int) raises -> LegacyHostBuffer[dtype]:
         """Enqueues the creation of a HostBuffer.
 
         This function allocates memory on the host that is accessible by the device.
@@ -4933,7 +4937,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        return HostBuffer[dtype](self, size)
+        return LegacyHostBuffer[dtype](self, size)
 
     @inline(.always)
     def wrap_host_memory[
@@ -4942,7 +4946,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self,
         host_ptr: Pointer[Scalar[dtype], origin],
         size: Int,
-    ) raises -> DeviceBuffer[dtype]:
+    ) raises -> LegacyDeviceBuffer[dtype]:
         """Makes a range of the caller's host memory accessible to this device.
 
         The returned buffer grants access, not ownership. `host_ptr` stays the
@@ -4995,7 +4999,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         comptime elem_size = size_of[dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var device_ptr: Optional[DeviceBuffer[dtype]._DevicePtr] = {}
+        var device_ptr: Optional[LegacyDeviceBuffer[dtype]._DevicePtr] = {}
 
         # const char *AsyncRT_DeviceContext_wrapHostMemory(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, void *host_ptr, size_t len, size_t elem_size)
         _checked(
@@ -5013,7 +5017,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             location=call_location(),
         )
 
-        return DeviceBuffer[dtype](cpp_handle, device_ptr.value())
+        return LegacyDeviceBuffer[dtype](cpp_handle, device_ptr.value())
 
     @inline(.always)
     def compile_function[
@@ -5031,7 +5035,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self,
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: DeviceFunction[
+        out result: LegacyDeviceFunction[
             func,
             Self.FunctionWrapper,
             target=Self.target,
@@ -5113,7 +5117,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         var function_name: String,
         var asm: String,
         func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: DeviceExternalFunction[target=Self.target],
+        out result: LegacyDeviceExternalFunction[target=Self.target],
     ) raises:
         """Loads a pre-compiled device function from assembly code.
 
@@ -5173,7 +5177,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def compile_function[
         ClosureType: RegisterPassable & def() -> None,
-    ](self) raises -> DeviceClosureFunction[ClosureType, Self.target]:
+    ](self) raises -> LegacyDeviceClosureFunction[ClosureType, Self.target]:
         """Compiles a closure as a kernel that takes no arguments.
 
         Launch the result with `enqueue_function(kernel, closure, ...)`, which
@@ -5207,7 +5211,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         *Ts: AnyType
     ](
         self,
-        f: DeviceExternalFunction,
+        f: LegacyDeviceExternalFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -5295,7 +5299,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         *Ts: DevicePassable
     ](
         self,
-        f: DeviceFunction,
+        f: LegacyDeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -5347,7 +5351,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime plugin = MaxPluginForTarget[type_of(f).target]
         comptime if plugin._handles_enqueue_function:
             plugin.enqueue_function_fn(
-                rebind[DeviceContext[plugin.hooks_target]](self),
+                rebind[LegacyDeviceContext[plugin.hooks_target]](self),
                 f,
                 *args,
                 grid_dim=grid_dim,
@@ -5521,7 +5525,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 HostArgs.length == 0
             ), "host_args is not supported on this target"
             plugin.enqueue_function_fn(
-                rebind[DeviceContext[plugin.hooks_target]](self),
+                rebind[LegacyDeviceContext[plugin.hooks_target]](self),
                 gpu_kernel,
                 *encoded_args,
                 grid_dim=grid_dim,
@@ -5551,7 +5555,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ClosureType: RegisterPassable & def() -> None,
     ](
         self,
-        f: DeviceClosureFunction[ClosureType, Self.target],
+        f: LegacyDeviceClosureFunction[ClosureType, Self.target],
         closure: ClosureType,
         *,
         grid_dim: Dim,
@@ -5681,7 +5685,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         comptime launch_target = Self.target
 
-        var gpu_kernel = DeviceFunction[
+        var gpu_kernel = LegacyDeviceFunction[
             FuncType.__call__,
             target=launch_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -5773,7 +5777,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         comptime launch_target = Self.target
 
-        var gpu_kernel = DeviceFunction[
+        var gpu_kernel = LegacyDeviceFunction[
             FuncType.__call__,
             target=launch_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -6051,7 +6055,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         )
         return elapsed_nanos
 
-    def push_context(self) raises -> _DeviceContextScope[Self.target]:
+    def push_context(self) raises -> _LegacyDeviceContextScope[Self.target]:
         """Returns a context manager that ensures this device's driver context is active.
 
         This method returns a context manager that pushes this device's driver
@@ -6079,7 +6083,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ```
         """
         comptime assert not is_gpu(), "DeviceContext is not supported on GPUs"
-        return _DeviceContextScope[Self.target](self)
+        return _LegacyDeviceContextScope[Self.target](self)
 
     def set_as_current(self) raises:
         """For use with libraries that require a specific GPU context to be
@@ -6238,7 +6242,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dtype: DType
     ](
         self,
-        dst_buf: DeviceBuffer[dtype],
+        dst_buf: LegacyDeviceBuffer[dtype],
         src_ptr: Pointer[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from the host to the provided device
@@ -6276,7 +6280,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dtype: DType
     ](
         self,
-        dst_buf: HostBuffer[dtype],
+        dst_buf: LegacyHostBuffer[dtype],
         src_ptr: Pointer[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from the host to the provided device
@@ -6311,7 +6315,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         dst_ptr: Pointer[mut=True, Scalar[dtype], _],
-        src_buf: DeviceBuffer[dtype],
+        src_buf: LegacyDeviceBuffer[dtype],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
@@ -6348,7 +6352,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         dst_ptr: Pointer[mut=True, Scalar[dtype], _],
-        src_buf: HostBuffer[dtype],
+        src_buf: LegacyHostBuffer[dtype],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
@@ -6401,8 +6405,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         def to_device_buffer(
             pointer: Pointer[Scalar[dtype], _]
-        ) {imm} -> DeviceBuffer[dtype]:
-            return DeviceBuffer[dtype](
+        ) {imm} -> LegacyDeviceBuffer[dtype]:
+            return LegacyDeviceBuffer[dtype](
                 self,
                 pointer,
                 size,
@@ -6416,7 +6420,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dtype: DType
     ](
         self,
-        dst_buf: DeviceBuffer[dtype],
+        dst_buf: LegacyDeviceBuffer[dtype],
         src: Span[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from a host `Span` to a device buffer.
@@ -6450,7 +6454,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dtype: DType
     ](
         self,
-        dst_buf: HostBuffer[dtype],
+        dst_buf: LegacyHostBuffer[dtype],
         src: Span[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from a host `Span` to a host buffer.
@@ -6482,7 +6486,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         dst: Span[mut=True, Scalar[dtype], _],
-        src_buf: DeviceBuffer[dtype],
+        src_buf: LegacyDeviceBuffer[dtype],
     ) raises:
         """Enqueues an async copy from a device buffer to a host `Span`.
 
@@ -6517,7 +6521,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         dst: Span[mut=True, Scalar[dtype], _],
-        src_buf: HostBuffer[dtype],
+        src_buf: LegacyHostBuffer[dtype],
     ) raises:
         """Enqueues an async copy from a host buffer to a host `Span`.
 
@@ -6545,7 +6549,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+    ](
+        self,
+        dst_buf: LegacyDeviceBuffer[dtype],
+        src_buf: LegacyDeviceBuffer[dtype],
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -6578,7 +6586,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_copy_no_cross_stream_sync[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+    ](
+        self,
+        dst_buf: LegacyDeviceBuffer[dtype],
+        src_buf: LegacyDeviceBuffer[dtype],
+    ) raises:
         """Enqueues a device-to-device copy without cross-stream synchronization.
 
         This behaves like `enqueue_copy` for two device buffers, except that
@@ -6618,7 +6630,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
+    ](
+        self,
+        dst_buf: LegacyDeviceBuffer[dtype],
+        src_buf: LegacyHostBuffer[dtype],
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -6655,7 +6671,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+    ](
+        self,
+        dst_buf: LegacyHostBuffer[dtype],
+        src_buf: LegacyDeviceBuffer[dtype],
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -6692,7 +6712,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_copy[
         dtype: DType
-    ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
+    ](
+        self, dst_buf: LegacyHostBuffer[dtype], src_buf: LegacyHostBuffer[dtype]
+    ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
@@ -6725,7 +6747,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_memset[
         dtype: DType
-    ](self, dst: DeviceBuffer[dtype, ...], val: Scalar[dtype]) raises:
+    ](self, dst: LegacyDeviceBuffer[dtype, ...], val: Scalar[dtype]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination device buffer to the specified value.
 
@@ -6774,7 +6796,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_memset[
         dtype: DType
-    ](self, dst: HostBuffer[dtype, ...], val: Scalar[dtype]) raises:
+    ](self, dst: LegacyHostBuffer[dtype, ...], val: Scalar[dtype]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination host buffer to the specified value.
 
@@ -6823,10 +6845,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     @doc_hidden
     @inline(.always)
-    def stream(self) raises -> DeviceStream:
-        return DeviceStream(self)
+    def stream(self) raises -> LegacyDeviceStream:
+        return LegacyDeviceStream(self)
 
-    def allocate_completion_flag(self) raises -> CompletionFlag:
+    def allocate_completion_flag(self) raises -> LegacyCompletionFlag:
         """Allocates a `CompletionFlag`, initialized to 0, on this device.
 
         Returns:
@@ -6835,7 +6857,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the device does not support completion flags.
         """
-        return CompletionFlag(self)
+        return LegacyCompletionFlag(self)
 
     def supports_flag_wait(self) -> Bool:
         """Returns whether this device supports completion flags.
@@ -6846,7 +6868,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         return self.api() in ("cuda", "hip", "metal")
 
     @inline(.always)
-    def create_event(self) raises -> DeviceEvent:
+    def create_event(self) raises -> LegacyDeviceEvent:
         """Creates a new event for synchronization between streams.
 
         Events don't record timing, which keeps them cheap to record and wait
@@ -6889,7 +6911,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _DeviceContextPtr[mut=True],
             ](Pointer(to=result), self._handle)
         )
-        return DeviceEvent(result)
+        return LegacyDeviceEvent(result)
 
     def stream_priority_range(self) raises -> StreamPriorityRange:
         """Returns the range of stream priorities supported by this device context.
@@ -6915,7 +6937,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         )
         return StreamPriorityRange(Int(least_priority), Int(greatest_priority))
 
-    def create_stream(self, *, priority: Int = 0) raises -> DeviceStream:
+    def create_stream(self, *, priority: Int = 0) raises -> LegacyDeviceStream:
         """Creates a new stream associated with the given device context.
 
         To create a stream with the highest priority, use:
@@ -6945,11 +6967,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _CString[],
             ](Pointer(to=result), c_int(priority), self._handle)
         )
-        return DeviceStream(result)
+        return LegacyDeviceStream(result)
 
     def create_external_stream(
         self, external_stream: Optional[MutPointer[NoneType, _]]
-    ) raises -> DeviceStream:
+    ) raises -> LegacyDeviceStream:
         """Creates a non-owning stream wrapper around an externally managed GPU stream.
 
         The returned `DeviceStream` does not
@@ -6977,7 +6999,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _CString[],
             ](Pointer(to=result), external_stream, self._handle)
         )
-        return DeviceStream(result)
+        return LegacyDeviceStream(result)
 
     @inline(.always)
     def synchronize(self) raises:
@@ -7001,7 +7023,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             location=call_location(),
         )
 
-    def enqueue_wait_for(self, other: DeviceContext) raises:
+    def enqueue_wait_for(self, other: LegacyDeviceContext) raises:
         """Enqueues a wait operation for another device context to complete its work.
 
         This method creates a dependency between two device contexts, ensuring that operations
@@ -7061,7 +7083,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def select_stream(
         self, stream_id: Int
-    ) raises -> DeviceContext[Self.target]:
+    ) raises -> LegacyDeviceContext[Self.target]:
         """Returns a view of this device context bound to the given stream.
 
         The returned context shares this context's full stream set, driver
@@ -7094,7 +7116,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         )
         # The runtime transferred ownership of the view's reference to us, so
         # the wrapper must own it (and release on destruction).
-        var view = DeviceContext[Self.target](result)
+        var view = LegacyDeviceContext[Self.target](result)
         view._owning = True
         return view^
 
@@ -7301,7 +7323,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         "Use `DeviceContext.device().can_access_peer(peer.device())` instead."
     )
     @inline(.always)
-    def can_access(self, peer: DeviceContext) raises -> Bool:
+    def can_access(self, peer: LegacyDeviceContext) raises -> Bool:
         """Returns True if this device can access the identified peer device.
 
         Args:
@@ -7316,7 +7338,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         return self.device().can_access_peer(peer.device())
 
     @inline(.always)
-    def enable_peer_access(self, peer: DeviceContext) raises:
+    def enable_peer_access(self, peer: LegacyDeviceContext) raises:
         """Enables direct memory access to the peer device.
 
         This method establishes peer-to-peer access from the current device to the
@@ -7557,7 +7579,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         return result
 
 
-struct Device[target: CompilationTarget, origin: ImmOrigin](
+struct LegacyDevice[target: CompilationTarget, origin: ImmOrigin](
     TrivialRegisterPassable
 ):
     """A view of the accelerator device behind a `DeviceContext`.
@@ -7584,7 +7606,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
     ```
     """
 
-    var _ctx: Pointer[DeviceContext[Self.target], Self.origin]
+    var _ctx: Pointer[LegacyDeviceContext[Self.target], Self.origin]
 
     var id: Int64
     """The ID of this device among the devices of its API, as passed to the
@@ -7592,7 +7614,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
     @doc_hidden
     def __init__(
-        out self, ctx: Pointer[DeviceContext[Self.target], Self.origin]
+        out self, ctx: Pointer[LegacyDeviceContext[Self.target], Self.origin]
     ):
         self._ctx = ctx
         # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
@@ -7819,7 +7841,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
     def can_access_peer[
         peer_target: CompilationTarget, peer_origin: ImmOrigin, //
-    ](self, peer: Device[peer_target, peer_origin]) raises -> Bool:
+    ](self, peer: LegacyDevice[peer_target, peer_origin]) raises -> Bool:
         """Returns True if this device can directly access memory on `peer`.
 
         Peer access lets kernels on this device read and write the peer's
@@ -7874,7 +7896,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         return result
 
 
-struct DeviceContextArray[
+struct LegacyDeviceContextArray[
     length: Int,
     target: CompilationTarget = default_accelerator(),
 ](Copyable, Sized):
@@ -7908,7 +7930,7 @@ struct DeviceContextArray[
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var device_contexts: Array[DeviceContext[Self.target], Self.length]
+    var device_contexts: Array[LegacyDeviceContext[Self.target], Self.length]
     """The underlying storage for the per-device contexts."""
 
     # ===-------------------------------------------------------------------===#
@@ -7921,13 +7943,17 @@ struct DeviceContextArray[
         Raises:
             If creating any device context fails.
         """
-        var scratch = Array[Optional[DeviceContext[Self.target]], Self.length]()
+        var scratch = Array[
+            Optional[LegacyDeviceContext[Self.target]], Self.length
+        ]()
 
         for i in range(Self.length):
-            scratch[i] = DeviceContext[Self.target](device_id=i)
+            scratch[i] = LegacyDeviceContext[Self.target](device_id=i)
 
-        self.device_contexts = Array[DeviceContext[Self.target], Self.length](
-            fill_with=lambda (i: Int) {ref} -> DeviceContext[
+        self.device_contexts = Array[
+            LegacyDeviceContext[Self.target], Self.length
+        ](
+            fill_with=lambda (i: Int) {ref} -> LegacyDeviceContext[
                 Self.target
             ]: scratch[i].take()
         )
@@ -7935,7 +7961,9 @@ struct DeviceContextArray[
     @inline(.always)
     def __init__(
         out self,
-        var device_contexts: Array[DeviceContext[Self.target], Self.length],
+        var device_contexts: Array[
+            LegacyDeviceContext[Self.target], Self.length
+        ],
     ):
         """Initialize from an `Array` of `DeviceContext` values.
 
@@ -7948,8 +7976,8 @@ struct DeviceContextArray[
     def __init__[
         *, __literal_size__: Int
     ](
-        out self: DeviceContextArray[__literal_size__, Self.target],
-        var *device_contexts: DeviceContext[Self.target],
+        out self: LegacyDeviceContextArray[__literal_size__, Self.target],
+        var *device_contexts: LegacyDeviceContext[Self.target],
         __list_literal__: NoneType = None,
     ):
         """Initialize from a variadic sequence of `DeviceContext` values.
@@ -7984,7 +8012,7 @@ struct DeviceContextArray[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __getitem_param__[index: Int](self) -> DeviceContext[Self.target]:
+    def __getitem_param__[index: Int](self) -> LegacyDeviceContext[Self.target]:
         """Access a `DeviceContext` at a compile-time known index.
 
         Parameters:
@@ -7995,7 +8023,9 @@ struct DeviceContextArray[
         """
         return self.device_contexts[index]
 
-    def __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext[Self.target]:
+    def __getitem__[
+        I: Indexer, //
+    ](self, idx: I) -> LegacyDeviceContext[Self.target]:
         """Access a `DeviceContext` using a runtime index value.
 
         Parameters:
@@ -8027,7 +8057,7 @@ struct DeviceContextArray[
 
     def filter_gpu_contexts[
         num_gpu_devices: Int
-    ](self) raises -> Array[DeviceContext[Self.target], num_gpu_devices]:
+    ](self) raises -> Array[LegacyDeviceContext[Self.target], num_gpu_devices]:
         """Filters CPU contexts out and returns the GPU contexts in order.
 
         Some kernels receive a `DeviceContextArray` that mixes GPU contexts
@@ -8063,27 +8093,19 @@ struct DeviceContextArray[
         # `unsafe_assume_initialized=` constructor then moves every slot
         # into a fully-initialized `Array[DeviceContext]`.
         var staging = Array[
-            MaybeUninit[DeviceContext[Self.target]], num_gpu_devices
+            MaybeUninit[LegacyDeviceContext[Self.target]], num_gpu_devices
         ](uninitialized=True)
         var dev_idx = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
-                staging[dev_idx].unsafe_write(DeviceContext(copy=self[i]))
+                staging[dev_idx].unsafe_write(LegacyDeviceContext(copy=self[i]))
                 dev_idx += 1
-        return Array[DeviceContext[Self.target], num_gpu_devices](
+        return Array[LegacyDeviceContext[Self.target], num_gpu_devices](
             unsafe_assume_initialized=staging^
         )
 
 
-@deprecated(use=DeviceContextArray)
-comptime DeviceContextList = DeviceContextArray
-"""Deprecated: A fixed-size collection of `DeviceContext` values.
-
-This struct has been renamed to `DeviceContextArray`. This alias will be
-removed in a future version of Mojo."""
-
-
-struct DeviceMulticastBuffer[dtype: DType]:
+struct LegacyDeviceMulticastBuffer[dtype: DType]:
     """Represents a multicast memory object enables special memory operations to be broadcast
     across a group of devices.
 
@@ -8104,7 +8126,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     @doc_hidden
     def __init__(
         out self,
-        var contexts: List[DeviceContext[]],
+        var contexts: List[LegacyDeviceContext[]],
         size: Int,
     ) raises:
         comptime elem_size = size_of[Self.dtype]()
@@ -8137,11 +8159,11 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
     @doc_hidden
     def unicast_buffer_for(
-        self, ctx: DeviceContext
-    ) raises -> DeviceBuffer[Self.dtype]:
+        self, ctx: LegacyDeviceContext
+    ) raises -> LegacyDeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
-        var buf_ptr = Optional[DeviceBuffer[Self.dtype]._DevicePtr]()
+        var buf_ptr = Optional[LegacyDeviceBuffer[Self.dtype]._DevicePtr]()
 
         _checked(
             external_call[
@@ -8155,15 +8177,15 @@ struct DeviceMulticastBuffer[dtype: DType]:
             )
         )
 
-        return DeviceBuffer[Self.dtype](buf_handle, buf_ptr.value())
+        return LegacyDeviceBuffer[Self.dtype](buf_handle, buf_ptr.value())
 
     @doc_hidden
     def multicast_buffer_for(
-        self, ctx: DeviceContext
-    ) raises -> DeviceBuffer[Self.dtype]:
+        self, ctx: LegacyDeviceContext
+    ) raises -> LegacyDeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
-        var buf_ptr = Optional[DeviceBuffer[Self.dtype]._DevicePtr]()
+        var buf_ptr = Optional[LegacyDeviceBuffer[Self.dtype]._DevicePtr]()
 
         _checked(
             external_call[
@@ -8177,16 +8199,18 @@ struct DeviceMulticastBuffer[dtype: DType]:
             )
         )
 
-        return DeviceBuffer[Self.dtype](buf_handle, buf_ptr.value())
+        return LegacyDeviceBuffer[Self.dtype](buf_handle, buf_ptr.value())
 
 
 struct _HostMappedBuffer[dtype: DType]:
-    var _ctx: DeviceContext[]
-    var _dev_buf: DeviceBuffer[Self.dtype]
-    var _cpu_buf: HostBuffer[Self.dtype]
+    var _ctx: LegacyDeviceContext[]
+    var _dev_buf: LegacyDeviceBuffer[Self.dtype]
+    var _cpu_buf: LegacyHostBuffer[Self.dtype]
 
     def __init__(
-        out self, ctx: DeviceContext[], buf: DeviceBuffer[Self.dtype]
+        out self,
+        ctx: LegacyDeviceContext[],
+        buf: LegacyDeviceBuffer[Self.dtype],
     ) raises:
         var cpu_buf = ctx.enqueue_create_host_buffer[Self.dtype](len(buf))
         self._ctx = ctx
@@ -8196,7 +8220,7 @@ struct _HostMappedBuffer[dtype: DType]:
     def __deinit__(deinit self):
         pass
 
-    def __enter__(mut self) raises -> HostBuffer[Self.dtype]:
+    def __enter__(mut self) raises -> LegacyHostBuffer[Self.dtype]:
         self._dev_buf.enqueue_copy_to(self._cpu_buf)
         self._ctx.synchronize()
         return self._cpu_buf
@@ -8207,11 +8231,11 @@ struct _HostMappedBuffer[dtype: DType]:
         self._ctx.synchronize()
 
 
-struct _DeviceContextScope[target: CompilationTarget]:
-    var _ctx: DeviceContext[Self.target]
+struct _LegacyDeviceContextScope[target: CompilationTarget]:
+    var _ctx: LegacyDeviceContext[Self.target]
     var _handle: _DeviceContextScopePtr[mut=True]
 
-    def __init__(out self, ctx: DeviceContext[Self.target]):
+    def __init__(out self, ctx: LegacyDeviceContext[Self.target]):
         self._ctx = ctx
         self._handle = {}
 
@@ -8220,7 +8244,7 @@ struct _DeviceContextScope[target: CompilationTarget]:
         if self._handle:
             self._release()
 
-    def __enter__(mut self) raises -> DeviceContext[Self.target]:
+    def __enter__(mut self) raises -> LegacyDeviceContext[Self.target]:
         # Create a C++ DeviceContextScope
         var cpp_handle: _DeviceContextScopePtr[mut=True] = {}
 

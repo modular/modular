@@ -24,7 +24,6 @@ from ._overlay import (
     DeviceBuffer,
     DeviceContext,
     DeviceContextArray,
-    DeviceContextList,
     DeviceEvent,
     DeviceExternalFunction,
     DeviceFunction,
@@ -40,6 +39,24 @@ from ._overlay import (
     _DumpPath,
     _check_dim_in_range,
     _checked,
+    DeviceGraph,
+    DeviceGraphBuilder,
+    DeviceGraphCache,
+    DeviceGraphInput,
+    DeviceGraphInputKind,
+    DeviceGraphNode,
+    StableAddr,
+    CUDA,
+    CUDA_MODULE,
+    CUDA_get_current_context,
+    CUcontext,
+    CUmodule,
+    CUstream,
+    _CUstream_st,
+    HIP,
+    HIP_MODULE,
+    hipDevice_t,
+    hipStream_t,
 )
 from ._legacy.dim import Dim
 from .launch_config import (
@@ -57,25 +74,6 @@ from ._legacy.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
-from ._overlay import (
-    DeviceGraph,
-    DeviceGraphBuilder,
-    DeviceGraphCache,
-    DeviceGraphInput,
-    DeviceGraphInputKind,
-    DeviceGraphNode,
-    StableAddr,
-)
-from ._overlay import (
-    CUDA,
-    CUDA_MODULE,
-    CUDA_get_current_context,
-    CUcontext,
-    CUmodule,
-    CUstream,
-    _CUstream_st,
-)
-from ._overlay import HIP, HIP_MODULE, hipDevice_t, hipStream_t
 from ._legacy._kernel_load_gate import (
     CollectiveEnqueueScope,
     CollectiveGate,

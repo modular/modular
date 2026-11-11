@@ -52,7 +52,7 @@ from max.gpu.host import _DeviceContextPtr
 # context, import their extensions through `max.gpu.host`, or drop this import
 # if HAL launches need none.
 from max.gpu.host._legacy.device_context import (
-    DeviceContext as _DeviceContextExtensions,
+    LegacyDeviceContext as _DeviceContextExtensions,
 )
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import OwnedPointer, MaybeUninit, alloc

@@ -42,12 +42,12 @@ from std.memory import (
     Layout,
     MaybeUninit,
     Pointer,
+    unsafe_stack_allocation,
 )
 from std.memory.unsafe import bitcast
 from std.pathlib import Path
 from std.utils import Variant
 from std.utils.lock import BlockingScopedLock, BlockingSpinLock
-from std.memory import unsafe_stack_allocation
 from std.os import abort, getenv
 from std.reflection import call_location, reflect, SourceLocation
 from std.sys import (
@@ -56,8 +56,10 @@ from std.sys import (
     size_of,
     CompilationTarget,
 )
-from std.sys.info import _TargetType
-from std.sys.info import is_gpu
+from std.sys.info import (
+    _TargetType,
+    is_gpu,
+)
 from std.time import monotonic
 from std.runtime import parallelism_level
 from std.runtime._asyncrt import TaskGroup
@@ -90,6 +92,17 @@ from max.gpu.host import (
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
     ClusterExecutionConfig,
+    ClusterLaunchConfig,
+    ConstantMemoryMapping,
+    Dim,
+    GridBlockLaunchConfig,
+    LaunchAttribute,
+    LaunchAttributeID,
+    default_accelerator,
+    DeviceAttribute,
+    Attribute,
+    FuncAttribute,
+    _launch_args,
 )
 from ..hal.execution_config import (
     GPUExecutionConfiguration,
@@ -102,24 +115,12 @@ from max.gpu.host.nvidia import (
 )
 from std.builtin.variadics import TypeList
 
-from max.gpu.host import (
-    ClusterLaunchConfig,
-    ConstantMemoryMapping,
-    Dim,
-    GridBlockLaunchConfig,
-    LaunchAttribute,
-    LaunchAttributeID,
-    default_accelerator,
-)
 from max.gpu.host.compile import _compile_code
-from max.gpu.host import DeviceAttribute
 from max.gpu.host.info import (
     GPUInfo,
     get_gpu_info,
     _device_type_encoder_target,
 )
-from max.gpu.host import Attribute, FuncAttribute
-from max.gpu.host import _launch_args
 from max.gpu.host._launch_args import (
     DeviceFunctionWrapper,
     _IdentityWrapper,

@@ -32,9 +32,9 @@ from max.gpu.host import (
     DeviceEvent,
     DeviceStream,
     HostBuffer,
+    _CString,
+    DeviceAttribute,
 )
-from max.gpu.host import _CString
-from max.gpu.host import DeviceAttribute
 from max._driver.max_license.device_context_hal.device_context_hal import (
     _CompletionFlagBox,
     _DeviceContextScopeHAL,

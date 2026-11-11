@@ -19,8 +19,8 @@ Per-target behavior that base code dispatches on belongs in the plugin's
 """
 
 from .._launch_args import _IdentityWrapper
-from .device_context import DeviceContext
+from .device_context import LegacyDeviceContext
 
 
-__extension DeviceContext:
+__extension LegacyDeviceContext:
     comptime FunctionWrapper = _IdentityWrapper

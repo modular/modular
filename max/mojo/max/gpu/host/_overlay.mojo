@@ -16,10 +16,28 @@
 and `_amdgpu_hip` names from here. This variant names the legacy
 implementation; an overlay replaces this file to swap in another one that
 exports the same names.
+
+The backend's own structs carry the backend's name, so this file is where they
+regain the public ones. The explicit aliases below also shadow the `Legacy*`
+names the star imports bring in, which is why nothing that imports from
+`max.gpu.host` mentions a backend.
 """
 
 from ._legacy.device_context import *
 from ._legacy.device_context import (
+    LegacyCompletionFlag as CompletionFlag,
+    LegacyDevice as Device,
+    LegacyDeviceBuffer as DeviceBuffer,
+    LegacyDeviceClosureFunction as DeviceClosureFunction,
+    LegacyDeviceContext as DeviceContext,
+    LegacyDeviceContextArray as DeviceContextArray,
+    LegacyDeviceEvent as DeviceEvent,
+    LegacyDeviceExternalFunction as DeviceExternalFunction,
+    LegacyDeviceFunction as DeviceFunction,
+    LegacyDeviceMulticastBuffer as DeviceMulticastBuffer,
+    LegacyDevicePointer as DevicePointer,
+    LegacyDeviceStream as DeviceStream,
+    LegacyHostBuffer as HostBuffer,
     _CString,
     _DeviceBufferCpp,
     _DeviceContextPtr,
@@ -29,6 +47,16 @@ from ._legacy.device_context import (
     _checked,
 )
 from ._legacy.device_graph import *
+from ._legacy.device_graph import (
+    LegacyDeviceGraph as DeviceGraph,
+    LegacyDeviceGraphBuilder as DeviceGraphBuilder,
+    LegacyDeviceGraphCache as DeviceGraphCache,
+    LegacyDeviceGraphInput as DeviceGraphInput,
+    LegacyDeviceGraphInputKind as DeviceGraphInputKind,
+    LegacyDeviceGraphMemoryPool as DeviceGraphMemoryPool,
+    LegacyDeviceGraphNode as DeviceGraphNode,
+    LegacyStableAddr as StableAddr,
+)
 from ._legacy._nvidia_cuda import *
 from ._legacy._nvidia_cuda import _CUstream_st
 from ._legacy._amdgpu_hip import HIP, HIP_MODULE, hipDevice_t, hipStream_t
