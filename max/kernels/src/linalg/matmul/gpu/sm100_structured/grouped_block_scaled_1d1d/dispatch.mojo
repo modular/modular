@@ -569,14 +569,15 @@ def grouped_matmul_mxfp8_dispatch[
         small prefill (avg_m <= 64): mma_bn=64,  cta_group=2
         large prefill:               mma_bn=128, cta_group=2
 
-    Both the non-fused (BF16-output) and fused paths classify
-    identically, so the fused-SwiGLU epilogue sees the same matmul
-    output as the non-fused reference chain. Pipeline stages are
-    auto-computed; per-(N, K) stage tuning like NVFP4's is a
+    The non-fused (BF16-output) and fused paths classify identically,
+    except that the decode row of two shapes (hidden 6144, moe_dim 2048
+    experts) takes mma_bn=32; tile choice does not change the matmul
+    output, which the fused dispatch test checks byte for byte. Pipeline
+    stages are auto-computed; per-(N, K) stage tuning like NVFP4's is a
     follow-up. Note: the dtype-routing dispatch
     `grouped_matmul_block_scaled_sm100_dispatch` still uses
-    `AB_swapped=False, cta_group=1` for MXFP8; reconciling the two is
-    a follow-up.
+    `AB_swapped=False, cta_group=1` for MXFP8 except one decode shape;
+    reconciling the two is a follow-up.
 
     When `fuse_swiglu=True`, the kernel emits packed MXFP8 plus a 5D
     E8M0 scale tile in place of the BF16 C store. Caller must
@@ -623,18 +624,29 @@ def grouped_matmul_mxfp8_dispatch[
     # (better weight-TMA cadence; numerically identical -- stages is pipeline
     # depth only). Scoped per-(N, K) so only the measured shapes change and
     # all others keep auto; decode regime only (the prefill rows below keep
-    # the classifier's pick); non-fused only, matching what was measured.
+    # the classifier's pick); non-fused only, matching what was measured
+    # (the hidden 6144, moe_dim 2048 rows below set their own).
     # Measured on B200 for an MXFP8 MoE thin-decode workload (EP8), stages=6
     # vs auto across M in {1, 8, 16, 32}:
     #   gate_up N=6144 K=6144: -5.3% (M16: 110.6 -> 104.7 us)
     #   down    N=6144 K=3072: -7.3% (M16:  59.8 ->  55.4 us)
     comptime _decode_N = type_of(c).static_shape[1]
     comptime _decode_K = type_of(a).static_shape[1]
+    # Routed experts of hidden 6144, moe_dim 2048 (the fused gate/up, N 4096
+    # K 6144, and the down, N 6144 K 2048) take a 32-token tile, 8 k-tiles
+    # deep, two a stage: it reads an expert's weights once for up to 32 rows,
+    # where the 8-token tile re-reads them when routing piles tokens on few
+    # experts.
+    comptime _h6144_moe2048 = not is_w4a8_operand_pair[a.dtype, b.dtype]() and (
+        (fuse_swiglu and _decode_N == 4096 and _decode_K == 6144)
+        or (not fuse_swiglu and _decode_N == 6144 and _decode_K == 2048)
+    )
+    comptime _decode_bn = 32 if _h6144_moe2048 else 8
     comptime _decode_stages = 6 if (
         not fuse_swiglu
         and _decode_N == 6144
         and (_decode_K == 6144 or _decode_K == 3072)
-    ) else -1
+    ) else (8 if _h6144_moe2048 else -1)
     # W4A8 decode at these shapes is bound by per-CTA issue rate, not DRAM.
     # Four k-tiles per stage at the same SMEM depth amortize each stage's
     # barrier and SFB handoff over four times the weight bytes. Groups of 6
@@ -644,7 +656,7 @@ def grouped_matmul_mxfp8_dispatch[
         and is_w4a8_operand_pair[a.dtype, b.dtype]()
         and _decode_N == 4096
         and (_decode_K == 4096 or _decode_K == 2048)
-    ) else 1
+    ) else (2 if _h6144_moe2048 else 1)
 
     # Large-prefill k-tiles per pipeline stage for DeepSeek-V4.1's W4A8
     # experts (E2M1 weights, MXFP8 tokens). Two k-tiles a stage halve the
@@ -715,7 +727,7 @@ def grouped_matmul_mxfp8_dispatch[
     # First-match-and-return reproduces the original decode / small-prefill /
     # large-prefill cascade exactly.
     comptime regimes = [
-        (DECODE_AVG_M, 8, 1, _decode_stages, _decode_k_group),
+        (DECODE_AVG_M, _decode_bn, 1, _decode_stages, _decode_k_group),
         (SMALL_PREFILL_AVG_M, 64, 2, -1, 1),
         (-1, 128, 2, -1, _prefill_k_group),
     ]
@@ -748,7 +760,8 @@ def grouped_matmul_block_scaled_sm100_dispatch[
     """Dispatch grouped block-scaled matmul based on input dtypes.
 
     Routes NVFP4 to shape-tuned decode/prefill dispatch, and MXFP4/MXFP8
-    to a common launcher with default configs.
+    to a common launcher with default configs, except MXFP8 at one decode
+    shape, which takes the MXFP8 regime table.
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
@@ -837,6 +850,28 @@ def grouped_matmul_block_scaled_sm100_dispatch[
             ctx,
         )
     elif scaling_kind == UMMAKind.KIND_MXF8F6F4:
+        # Hy4's routed-expert down projection at decode takes the MXFP8
+        # regime table's tuned decode row; prefill keeps the 128-token tile.
+        comptime if (
+            type_of(c).static_shape[1] == 6144
+            and type_of(a).static_shape[1] == 2048
+        ):
+            if estimated_total_m <= num_active_experts * DECODE_AVG_M:
+                grouped_matmul_mxfp8_dispatch[transpose_b, pdl_level=pdl_level](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    a_scale_offsets,
+                    expert_ids,
+                    expert_scales,
+                    num_active_experts,
+                    estimated_total_m,
+                    ctx,
+                )
+                return
         _launch_grouped_block_scaled[
             transpose_b,
             AB_swapped=False,
